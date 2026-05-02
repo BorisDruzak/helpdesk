@@ -9,9 +9,11 @@ import sys
 from typing import Iterable, Sequence
 
 try:
+    import context_index
     import navigation_catalog as nav
     import task_intake
 except ModuleNotFoundError:  # pragma: no cover - package import for pytest
+    from scripts import context_index
     from scripts import navigation_catalog as nav
     from scripts import task_intake
 
@@ -50,6 +52,27 @@ def topics_for_keys(keys: Sequence[str]) -> list[nav.Topic]:
     return [by_key[key] for key in keys if key in by_key]
 
 
+def _format_context_index_item(item: dict[str, object]) -> str:
+    label = str(item.get("name") or item.get("title") or item.get("path") or "")
+    extra = item.get("extra")
+    handler = extra.get("handler") if isinstance(extra, dict) else None
+    if handler:
+        label = f"{label} -> {handler}"
+    location = str(item.get("path") or "")
+    line_start = item.get("line_start")
+    if line_start:
+        location = f"{location}:{line_start}"
+    summary = str(item.get("summary") or "").strip()
+    base = f"[{item.get('kind')}] {label} — {location}"
+    return f"{base} — {summary}" if summary else base
+
+
+def _search_context_index(*, query: str, limit: int) -> list[dict[str, object]]:
+    if not context_index.DEFAULT_INDEX_PATH.exists():
+        context_index.build_index(force=True)
+    return context_index.search_index(query=query, limit=limit, profile="default")
+
+
 def build_context_pack(topic: str, *, max_items: int = DEFAULT_MAX_ITEMS) -> dict[str, object]:
     payload = task_intake.build_intake(task=topic)
     topics = topics_for_keys(payload["matched_topics"])
@@ -62,6 +85,19 @@ def build_context_pack(topic: str, *, max_items: int = DEFAULT_MAX_ITEMS) -> dic
         f"{matched_topic.title}: {matched_topic.summary}"
         for matched_topic in topics
     )
+    warnings = list(payload["warnings"])
+    context_results: list[str] = []
+    try:
+        if context_index.DEFAULT_INDEX_PATH.exists():
+            warning = context_index.format_freshness_warning(context_index.freshness_status())
+            if warning:
+                warnings.append(warning)
+        context_results = [
+            _format_context_index_item(item)
+            for item in _search_context_index(query=topic, limit=min(max_items, 8))
+        ]
+    except Exception as exc:  # pragma: no cover - defensive CLI path
+        warnings.append(f"Context index unavailable: {exc}")
 
     return {
         "topic": topic,
@@ -74,9 +110,10 @@ def build_context_pack(topic: str, *, max_items: int = DEFAULT_MAX_ITEMS) -> dic
         "skills": dedupe(payload["skills"], limit=max_items),
         "checks_to_run": dedupe(payload["checks_to_run"], limit=max_items),
         "suggested_commands": suggested_commands[:max_items],
+        "context_index_results": context_results,
         "docs_to_update_if_code_changes": dedupe(payload["docs_to_update_if_code_changes"], limit=max_items),
         "plan_required": payload["plan_required"],
-        "warnings": payload["warnings"],
+        "warnings": warnings,
     }
 
 
@@ -104,6 +141,7 @@ def render_context_pack(pack: dict[str, object]) -> str:
         ("Skills", pack["skills"]),
         ("Checks", pack["checks_to_run"]),
         ("Search And Commands", pack["suggested_commands"]),
+        ("Context Index Results", pack["context_index_results"]),
         ("Docs To Update If Code Changes", pack["docs_to_update_if_code_changes"]),
         ("Warnings", pack["warnings"]),
     ]

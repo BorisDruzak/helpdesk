@@ -13,7 +13,10 @@
 2. Если задача длинная, затрагивает несколько подсистем или требует нескольких verification stages, вести `PLANS.md`.
 3. Перед правками собрать контекст:
    - для нетривиальной задачи сначала `python scripts/task_intake.py`;
+   - затем `docs/CODEX_WORKFLOW.md` и выбрать рабочий режим: Explore / Debug / Plan / Execute / Feature / Contract / Verify / Commit / Deploy;
    - затем `docs/QUICK_LOOKUP.md`;
+   - затем `docs/ARCHITECTURE_BOUNDARIES.md` и классифицировать change как local / boundary / cross-cutting / release-control;
+   - затем `docs/CONTEXT_INDEX.md`, `python scripts/build_context_pack.py --topic "<описание>"` и точечный `python scripts/search_context_index.py "<символ route error-code concept>"` для быстрого поиска docs/CODEMAP/routes/handlers/tests/symbols; если индекс устарел или search печатает stale-warning, сначала `python scripts/build_context_index.py --force`;
    - затем соответствующий `CODEMAP` и точечный `python scripts/agent_find.py "<паттерн>" --dir server|pc_agent`.
    - если задача затрагивает новый `webapp/`, frontend bundle pipeline или release flow для web-ассетов, перед любыми frontend-командами обязательно выполнить `python scripts/bootstrap_web_toolchain.py`.
 4. При изменении структуры, маршрутов, контрактов или ключевых потоков синхронно обновлять код, docs и канонический `CODEMAP`.
@@ -29,6 +32,9 @@
 ## Контекст и артефакты
 
 - Навигационный индекс: `docs/QUICK_LOOKUP.md`
+- Каноничный workflow Codex по режимам работы: `docs/CODEX_WORKFLOW.md`
+- Карта границ владения и contract surfaces: `docs/ARCHITECTURE_BOUNDARIES.md`
+- Локальный индекс контекста и правила индексации: `docs/CONTEXT_INDEX.md`
 - Индекс документации: `docs/README.md`
 - Серверный CODEMAP: `server/docs/CODEMAP.md`
 - Агентский CODEMAP: `pc_agent/docs/CODEMAP.md`
@@ -39,7 +45,10 @@
 Если меняется структура кода, маршруты, ключевые entrypoints или cross-cutting flow, синхронно обновлять:
 
 - затронутый `CODEMAP`;
+- `docs/CODEX_WORKFLOW.md`, если меняются режимы работы Codex, dirty-worktree правила, commit/deploy flow или обязательные verification gates;
 - `docs/QUICK_LOOKUP.md`;
+- `docs/ARCHITECTURE_BOUNDARIES.md`, если меняются границы владения, contract surfaces или правила классификации изменений;
+- `docs/CONTEXT_INDEX.md`, если меняются правила индексации, источники retrieval, ranking/search profiles, build/search/context-pack команды или freshness cadence;
 - `server/docs/OBSERVER_LAYER.md` и `server/docs/OBSERVER_AUTHORING_RULES.md`, если change затрагивает observer, dangerous flow, tech/support trace UI или trace-visible API;
 - при необходимости `scripts/navigation_catalog.py`;
 - при необходимости `PLANS.md`, если задача ведётся в несколько шагов.

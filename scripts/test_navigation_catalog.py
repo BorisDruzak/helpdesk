@@ -36,8 +36,42 @@ def test_collect_docs_to_update_uses_drift_rules_for_task_intake() -> None:
     docs = nav.collect_docs_to_update((), paths=("scripts/task_intake.py",))
 
     assert "AGENTS.md" in docs
+    assert "docs/CODEX_WORKFLOW.md" in docs
     assert "docs/QUICK_LOOKUP.md" in docs
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in docs
     assert "docs/CONTEXT_EFFICIENCY.md" in docs
+
+
+def test_docs_sync_topic_includes_architecture_boundaries() -> None:
+    topic = next(topic for topic in nav.TOPICS if topic.key == "docs_sync")
+
+    assert "docs/CODEX_WORKFLOW.md" in topic.first_files
+    assert "docs/CODEX_WORKFLOW.md" in topic.related_docs
+    assert "docs/CODEX_WORKFLOW.md" in topic.docs_to_update
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in topic.first_files
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in topic.related_docs
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in topic.docs_to_update
+    assert "docs/CONTEXT_INDEX.md" in topic.first_files
+    assert "docs/CONTEXT_INDEX.md" in topic.related_docs
+    assert "docs/CONTEXT_INDEX.md" in topic.docs_to_update
+    assert "scripts/search_context_index.py" in topic.first_files
+
+
+def test_context_index_topic_routes_retrieval_queries() -> None:
+    topics = nav.find_topics_for_query("rag context index symbols routes")
+
+    assert topics[0].key == "context_index"
+    assert "scripts/build_context_index.py" in topics[0].first_files
+    assert "scripts/search_context_index.py" in topics[0].first_files
+    assert "docs/CONTEXT_INDEX.md" in topics[0].docs_to_update
+
+
+def test_context_index_drift_requires_context_docs() -> None:
+    docs = nav.collect_docs_to_update((), paths=("scripts/context_index.py",))
+
+    assert "docs/CONTEXT_INDEX.md" in docs
+    assert "docs/CODEX_WORKFLOW.md" in docs
+    assert "docs/QUICK_LOOKUP.md" in docs
 
 
 def test_all_topic_artifacts_exist() -> None:

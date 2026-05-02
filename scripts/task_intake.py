@@ -95,6 +95,23 @@ def _build_warnings(
     return warnings
 
 
+def _ensure_workflow_docs(items: Sequence[str]) -> list[str]:
+    """Keep workflow, boundary and retrieval safety gates visible for every routed task."""
+    ordered = list(items)
+    workflow = nav.repo_path(nav.CODEX_WORKFLOW_PATH)
+    boundaries = nav.repo_path(nav.ARCHITECTURE_BOUNDARIES_PATH)
+    context_index = nav.repo_path(nav.CONTEXT_INDEX_PATH)
+
+    quick_lookup = nav.repo_path(nav.QUICK_LOOKUP_PATH)
+    insert_at = ordered.index(quick_lookup) + 1 if quick_lookup in ordered else 0
+
+    for target in (context_index, boundaries, workflow):
+        if target in ordered:
+            continue
+        ordered.insert(insert_at, target)
+    return ordered
+
+
 def build_intake(
     *,
     task: str | None = None,
@@ -127,12 +144,24 @@ def build_intake(
     if not topics:
         open_first = [
             nav.repo_path(nav.QUICK_LOOKUP_PATH),
+            nav.repo_path(nav.CODEX_WORKFLOW_PATH),
+            nav.repo_path(nav.ARCHITECTURE_BOUNDARIES_PATH),
+            nav.repo_path(nav.CONTEXT_INDEX_PATH),
             nav.repo_path(nav.SERVER_CODEMAP_PATH),
             nav.repo_path(nav.AGENT_CODEMAP_PATH),
         ]
         docs_to_read = open_first.copy()
         checks_to_run = ["python scripts/verify_workspace.py"]
-        docs_to_update = ["AGENTS.md", nav.repo_path(nav.QUICK_LOOKUP_PATH)]
+        docs_to_update = [
+            "AGENTS.md",
+            nav.repo_path(nav.CODEX_WORKFLOW_PATH),
+            nav.repo_path(nav.QUICK_LOOKUP_PATH),
+            nav.repo_path(nav.ARCHITECTURE_BOUNDARIES_PATH),
+            nav.repo_path(nav.CONTEXT_INDEX_PATH),
+        ]
+    else:
+        open_first = _ensure_workflow_docs(open_first)
+        docs_to_read = _ensure_workflow_docs(docs_to_read)
 
     return {
         "recommended_mode": recommended_mode,

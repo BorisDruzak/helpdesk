@@ -22,6 +22,12 @@ def test_task_query_routes_handshake_to_protocol_mode() -> None:
     assert payload["recommended_mode"] == "Protocol V3 / WS"
     assert payload["recommended_playbook"] is None
     assert payload["input_paths"] == []
+    assert "docs/CODEX_WORKFLOW.md" in payload["open_first"]
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in payload["open_first"]
+    assert "docs/CONTEXT_INDEX.md" in payload["open_first"]
+    assert "docs/CODEX_WORKFLOW.md" in payload["docs_to_read"]
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in payload["docs_to_read"]
+    assert "docs/CONTEXT_INDEX.md" in payload["docs_to_read"]
     assert "server/docs/PROTOCOL_V3.md" in payload["docs_to_read"]
 
 
@@ -48,8 +54,13 @@ def test_task_query_routes_new_api_route_to_docs_sync() -> None:
 
     assert payload["recommended_mode"] == "Docs + CODEMAP"
     assert payload["recommended_playbook"] is None
+    assert "docs/CODEX_WORKFLOW.md" in payload["open_first"]
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in payload["open_first"]
+    assert "docs/CONTEXT_INDEX.md" in payload["open_first"]
+    assert "docs/CODEX_WORKFLOW.md" in payload["docs_to_update_if_code_changes"]
     assert "server/docs/CODEMAP.md" in payload["docs_to_update_if_code_changes"]
     assert "docs/QUICK_LOOKUP.md" in payload["docs_to_update_if_code_changes"]
+    assert "docs/ARCHITECTURE_BOUNDARIES.md" in payload["docs_to_update_if_code_changes"]
 
 
 def test_task_query_routes_admin_ui_review_to_web_platform() -> None:
@@ -58,6 +69,14 @@ def test_task_query_routes_admin_ui_review_to_web_platform() -> None:
     assert payload["recommended_mode"] == "Internal web platform / React"
     assert "python scripts/bootstrap_web_toolchain.py" in payload["checks_to_run"]
     assert "GUI check via MCP at http://192.168.100.17:8666/admin" in payload["checks_to_run"]
+
+
+def test_task_query_routes_context_index() -> None:
+    payload = task_intake.build_intake(task="rag context index поиск по символам")
+
+    assert payload["recommended_mode"] == "Context index / retrieval"
+    assert "docs/CONTEXT_INDEX.md" in payload["open_first"]
+    assert "python scripts/build_context_index.py --force" in payload["checks_to_run"]
 
 
 def test_task_query_routes_russian_agent_update_aliases() -> None:

@@ -5,8 +5,11 @@
 ## Читать сначала
 
 - `AGENTS.md` - обязательные правила проекта, source of truth, pipeline, Protocol V3 invariants.
+- `docs/CODEX_WORKFLOW.md` - режимы работы Codex: intake, debug, planning, execution, verification, commit, deploy и dirty worktree triage.
 - `docs/QUICK_LOOKUP.md` - быстрый роутер по темам: что открыть первым, какие docs и checks нужны.
-- `scripts/build_context_pack.py --topic "<тема>"` - компактный пакет контекста для Codex из `navigation_catalog`.
+- `docs/ARCHITECTURE_BOUNDARIES.md` - карта границ владения и contract surfaces; читать перед правками, чтобы оценить blast radius и cross-cutting риски.
+- `docs/CONTEXT_INDEX.md` - локальный SQLite/FTS индекс canonical docs, CODEMAP, navigation topics, routes, route handlers, tests и symbols для быстрого поиска контекста; поддерживает профили `debug`, `contract`, `route`, `test`, `web`.
+- `scripts/build_context_pack.py --topic "<тема>"` - компактный пакет контекста для Codex из `navigation_catalog` и top context-index results.
 - `scripts/docs_inventory.py --check-links` - инвентаризация docs, статусы, дубли и проверка локальных markdown-ссылок.
 - `server/docs/CODEMAP.md` - карта серверной части.
 - `pc_agent/docs/CODEMAP.md` - карта агентской части.

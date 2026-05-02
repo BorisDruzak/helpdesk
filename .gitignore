@@ -33,6 +33,12 @@ pc_agent/dist/
 .local-agent/
 .codex/
 artifacts/ci/
+artifacts/browser_checks/
+artifacts/context_index/
+artifacts/diagnostics/
+artifacts/live_checks/
+artifacts/observer_canaries/
+artifacts/release_temp/
 artifacts/gui-agent-update-check.png
 src/venv/
 .env
