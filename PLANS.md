@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14l is locally implemented: `/app/admin/forms` now has an explicit request-template wizard screen map that mirrors the target process model from `Основное` through `Паспорт / Отчётность`. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14l local verification the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 73%, overall about 97.6%. The remaining plan targets release/browser/observer signoff for Slice 14l, any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14l is released: `/app/admin/forms` now has an explicit request-template wizard screen map that mirrors the target process model from `Основное` through `Паспорт / Отчётность`. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14l release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 73%, overall about 97.6%. The remaining plan targets any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -460,6 +460,8 @@ Slice 14l local verification:
 - GREEN focused: same command -> 1 passed.
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 26 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Release/live: committed as `354450a webapp: add request template wizard screen map`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed `Карта экранов мастера`, all 12 target-model screen buttons and navigation to `Паспорт / Отчётность`; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/template-wizard errors, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
