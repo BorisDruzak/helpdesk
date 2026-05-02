@@ -1009,6 +1009,93 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает OLA цели и escalation actions без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Сроки")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить OLA" }));
+
+    fireEvent.change(screen.getByLabelText("Принять P0"), { target: { value: "7m" } });
+    fireEvent.click(screen.getByLabelText("Уведомить исполнителя"));
+    fireEvent.click(screen.getByLabelText("Эскалировать руководителю очереди"));
+    fireEvent.click(screen.getByLabelText("Канал email"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          ola_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.ola_policy).toMatchObject({
+      targets: {
+        ack: {
+          P0: "7m",
+        },
+      },
+      breach_actions: {
+        notify: ["assignee"],
+        escalate_to_queue_lead: true,
+        channels: {
+          email: true,
+        },
+      },
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

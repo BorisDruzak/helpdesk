@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 10e is released: SLA warning/breach actions now use the shared `policy_action_dispatcher`, matching the OLA path for recipient delivery, in-app notifications and idempotent audit events. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10d release/browser signoff the working estimate was backend/runtime about 98.5%, server UI about 79%, agent GUI about 73%, overall about 94.5%. After Slice 10e release/browser signoff the working estimate is backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14a is locally complete: `/app/admin/forms` now has structured OLA target and SLA/OLA escalation controls that write dispatcher-compatible `breach_actions` without manual JSON editing. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10e release/browser signoff the working estimate was backend/runtime about 99%, server UI about 79%, agent GUI about 73%, overall about 95%. After Slice 14a local verification the working estimate is backend/runtime about 99%, server UI about 81%, agent GUI about 73%, overall about 95.5%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -67,7 +67,7 @@ Slice 10c local verification:
 - [x] Use existing `ExternalNotificationProvider` contract for configured external channels and record `external_notification_delivery` audit events.
 - [x] Wire OLA breach checks to dispatch `breach_actions` after writing the canonical `ola_breached` event.
 - [x] Slice 10e: wire SLA warning/breach actions through the same dispatcher after the watchdog writes canonical `sla_warning` / `sla_breached` events.
-- [ ] Extend admin UI policy editors so escalation recipients/channels are structured controls instead of JSON-only fields.
+- [x] Slice 14a: extend SLA/OLA admin policy editors so escalation recipients/channels are structured controls instead of JSON-only fields.
 
 Slice 10d local verification so far:
 
@@ -272,6 +272,13 @@ Slice 10b local verification so far:
 - [ ] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
 - [ ] Tests: Vitest coverage for each structured editor, publish-from-form, policy publish/diff/deactivate/rollback, smart view publish.
 - [ ] Browser signoff: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` after deploy.
+
+Slice 14a local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "OLA цели"` failed because the deadlines step had no structured `Принять P0` OLA target field.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 15 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 

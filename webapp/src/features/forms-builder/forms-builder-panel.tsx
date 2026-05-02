@@ -1505,6 +1505,30 @@ function toggleStringInList(list: unknown, value: string, enabled: boolean): str
   return Array.from(set);
 }
 
+function nestedObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function notifyRecipients(actions: Record<string, unknown>): string[] {
+  const notify = actions.notify;
+  if (Array.isArray(notify)) {
+    return notify.map((item) => String(item)).filter(Boolean);
+  }
+  if (notify && typeof notify === "object") {
+    return Object.entries(notify as Record<string, unknown>)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([recipient]) => recipient);
+  }
+  return [];
+}
+
+function updateNotifyRecipient(actions: Record<string, unknown>, recipient: string, enabled: boolean): Record<string, unknown> {
+  return {
+    ...actions,
+    notify: toggleStringInList(notifyRecipients(actions), recipient, enabled),
+  };
+}
+
 function JsonLinkedCheckbox({
   checked,
   label,
@@ -1519,6 +1543,160 @@ function JsonLinkedCheckbox({
       <input checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
       <span>{label}</span>
     </label>
+  );
+}
+
+function PolicyActionControls({
+  actions,
+  onChange,
+}: {
+  actions: Record<string, unknown>;
+  onChange: (actions: Record<string, unknown>) => void;
+}) {
+  const channels = nestedObject(actions.channels ?? actions.external_channels);
+  const recipients = notifyRecipients(actions);
+  return (
+    <div className="rounded-[0.9rem] border border-border bg-surface-subtle px-3 py-3 lg:col-span-full">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Действия при риске срока</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            Эти настройки сохраняются в `breach_actions` и исполняются dispatcher-слоем после события SLA/OLA.
+          </p>
+        </div>
+        <Badge tone="neutral">breach_actions</Badge>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <JsonLinkedCheckbox
+          checked={recipients.includes("assignee")}
+          label="Уведомить исполнителя"
+          onChange={(checked) => onChange(updateNotifyRecipient(actions, "assignee", checked))}
+        />
+        <JsonLinkedCheckbox
+          checked={recipients.includes("queue_lead") || Boolean(actions.notify_queue_lead)}
+          label="Уведомить руководителя очереди"
+          onChange={(checked) => onChange({ ...updateNotifyRecipient(actions, "queue_lead", checked), notify_queue_lead: checked })}
+        />
+        <JsonLinkedCheckbox
+          checked={Boolean(actions.escalate_to_queue_lead)}
+          label="Эскалировать руководителю очереди"
+          onChange={(checked) => onChange({ ...actions, escalate_to_queue_lead: checked })}
+        />
+        <JsonLinkedCheckbox
+          checked={Boolean(actions.create_internal_event)}
+          label="Создать внутреннее событие"
+          onChange={(checked) => onChange({ ...actions, create_internal_event: checked })}
+        />
+        {["email", "telegram", "vk_teams"].map((channel) => (
+          <JsonLinkedCheckbox
+            checked={Boolean(channels[channel])}
+            key={channel}
+            label={`Канал ${channel}`}
+            onChange={(checked) => onChange({ ...actions, channels: { ...channels, [channel]: checked } })}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OlaPolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const targets = nestedObject(config.targets);
+  const ack = nestedObject(targets.ack);
+  const processing = nestedObject(targets.processing);
+  const breachActions = nestedObject(config.breach_actions);
+  return (
+    <div className="grid gap-3 lg:grid-cols-4">
+      {["P0", "P1", "P2", "P3"].map((priority) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={`ack-${priority}`}>
+          <span>Принять {priority}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) => onChange({ ...config, targets: { ...targets, ack: { ...ack, [priority]: event.currentTarget.value } } })}
+            value={String(ack[priority] ?? "")}
+          />
+        </label>
+      ))}
+      {["P0", "P1", "P2", "P3"].map((priority) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={`processing-${priority}`}>
+          <span>Обработать {priority}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({ ...config, targets: { ...targets, processing: { ...processing, [priority]: event.currentTarget.value } } })
+            }
+            value={String(processing[priority] ?? "")}
+          />
+        </label>
+      ))}
+      <PolicyActionControls
+        actions={breachActions}
+        onChange={(actions) => onChange({ ...config, breach_actions: actions })}
+      />
+    </div>
+  );
+}
+
+function SlaPolicyControls({
+  config,
+  form,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  form: DraftForm | null;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const targets = nestedObject(config.targets);
+  const firstResponse = nestedObject(targets.first_response);
+  const resolution = nestedObject(targets.resolution);
+  const breachActions = nestedObject(config.breach_actions);
+  return (
+    <div className="grid gap-3 lg:grid-cols-4">
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>ID действующей политики сроков</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, sla_policy_id: Number(event.currentTarget.value || 0) || null })}
+          placeholder={form?.sla_policy_id || "1"}
+          type="number"
+          value={Number(config.sla_policy_id ?? 0) || ""}
+        />
+      </label>
+      {["P0", "P1", "P2", "P3"].map((priority) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={`fr-${priority}`}>
+          <span>Ответ {priority}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({ ...config, targets: { ...targets, first_response: { ...firstResponse, [priority]: event.currentTarget.value } } })
+            }
+            value={String(firstResponse[priority] ?? "")}
+          />
+        </label>
+      ))}
+      {["P0", "P1", "P2", "P3"].map((priority) => (
+        <label className="space-y-2 text-sm font-medium text-slate-800" key={`res-${priority}`}>
+          <span>Решение {priority}</span>
+          <input
+            className="field-base h-11 w-full px-4 text-sm"
+            onChange={(event) =>
+              onChange({ ...config, targets: { ...targets, resolution: { ...resolution, [priority]: event.currentTarget.value } } })
+            }
+            value={String(resolution[priority] ?? "")}
+          />
+        </label>
+      ))}
+      <PolicyActionControls
+        actions={breachActions}
+        onChange={(actions) => onChange({ ...config, breach_actions: actions })}
+      />
+    </div>
   );
 }
 
@@ -1580,80 +1758,11 @@ function PolicyKindControls({
   }
 
   if (kind === "sla") {
-    const targets = typeof config.targets === "object" && config.targets ? (config.targets as Record<string, unknown>) : {};
-    const firstResponse =
-      typeof targets.first_response === "object" && targets.first_response ? (targets.first_response as Record<string, unknown>) : {};
-    const resolution = typeof targets.resolution === "object" && targets.resolution ? (targets.resolution as Record<string, unknown>) : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-4">
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>ID действующей политики сроков</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) => onChange({ ...config, sla_policy_id: Number(event.currentTarget.value || 0) || null })}
-            placeholder={form?.sla_policy_id || "1"}
-            type="number"
-            value={Number(config.sla_policy_id ?? 0) || ""}
-          />
-        </label>
-        {["P0", "P1", "P2", "P3"].map((priority) => (
-          <label className="space-y-2 text-sm font-medium text-slate-800" key={`fr-${priority}`}>
-            <span>Ответ {priority}</span>
-            <input
-              className="field-base h-11 w-full px-4 text-sm"
-              onChange={(event) =>
-                onChange({ ...config, targets: { ...targets, first_response: { ...firstResponse, [priority]: event.currentTarget.value } } })
-              }
-              value={String(firstResponse[priority] ?? "")}
-            />
-          </label>
-        ))}
-        {["P0", "P1", "P2", "P3"].map((priority) => (
-          <label className="space-y-2 text-sm font-medium text-slate-800" key={`res-${priority}`}>
-            <span>Решение {priority}</span>
-            <input
-              className="field-base h-11 w-full px-4 text-sm"
-              onChange={(event) =>
-                onChange({ ...config, targets: { ...targets, resolution: { ...resolution, [priority]: event.currentTarget.value } } })
-              }
-              value={String(resolution[priority] ?? "")}
-            />
-          </label>
-        ))}
-      </div>
-    );
+    return <SlaPolicyControls config={config} form={form} onChange={onChange} />;
   }
 
   if (kind === "ola") {
-    const targets = typeof config.targets === "object" && config.targets ? (config.targets as Record<string, unknown>) : {};
-    const ack = typeof targets.ack === "object" && targets.ack ? (targets.ack as Record<string, unknown>) : {};
-    const processing = typeof targets.processing === "object" && targets.processing ? (targets.processing as Record<string, unknown>) : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-4">
-        {["P0", "P1", "P2", "P3"].map((priority) => (
-          <label className="space-y-2 text-sm font-medium text-slate-800" key={`ack-${priority}`}>
-            <span>Принять {priority}</span>
-            <input
-              className="field-base h-11 w-full px-4 text-sm"
-              onChange={(event) => onChange({ ...config, targets: { ...targets, ack: { ...ack, [priority]: event.currentTarget.value } } })}
-              value={String(ack[priority] ?? "")}
-            />
-          </label>
-        ))}
-        {["P0", "P1", "P2", "P3"].map((priority) => (
-          <label className="space-y-2 text-sm font-medium text-slate-800" key={`processing-${priority}`}>
-            <span>Обработать {priority}</span>
-            <input
-              className="field-base h-11 w-full px-4 text-sm"
-              onChange={(event) =>
-                onChange({ ...config, targets: { ...targets, processing: { ...processing, [priority]: event.currentTarget.value } } })
-              }
-              value={String(processing[priority] ?? "")}
-            />
-          </label>
-        ))}
-      </div>
-    );
+    return <OlaPolicyControls config={config} onChange={onChange} />;
   }
 
   if (kind === "routing") {
@@ -2710,23 +2819,50 @@ function TemplateConstructorPanel({
 
         {activeStep === "deadlines" ? (
           <div className="mt-4 grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <label className="space-y-2 text-sm font-medium text-slate-800">
-              <span>Политика сроков ответа</span>
-              <input
-                className="field-base h-11 w-full px-4 text-sm"
-                onChange={(event) => onUpdateForm((current) => ({ ...current, sla_policy_id: event.currentTarget.value }))}
-                placeholder="incident_sla"
-                value={form.sla_policy_id}
-              />
-            </label>
-            <PolicyJsonEditor
-              description="Внутренние сроки очереди: принять, обработать, предупредить руководителя."
-              onChange={(value) => onUpdatePolicyJson("ola_policy_json", value)}
-              presetLabel="Вставить OLA"
-              presetValue={buildOlaPreset()}
-              title="Внутренние сроки очереди"
-              value={form.ola_policy_json}
-            />
+            <div className="space-y-4">
+              <label className="space-y-2 text-sm font-medium text-slate-800">
+                <span>Политика сроков ответа</span>
+                <input
+                  className="field-base h-11 w-full px-4 text-sm"
+                  onChange={(event) => onUpdateForm((current) => ({ ...current, sla_policy_id: event.currentTarget.value }))}
+                  placeholder="incident_sla"
+                  value={form.sla_policy_id}
+                />
+              </label>
+              <Button
+                onClick={() => onUpdatePolicyJson("ola_policy_json", buildOlaPreset())}
+                size="sm"
+                variant="outline"
+              >
+                Вставить OLA
+              </Button>
+            </div>
+            <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Внутренние сроки очереди</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Цели принятия/обработки и действия при риске срока собираются без ручного JSON.
+                  </p>
+                </div>
+                <Badge tone="neutral">OLA policy</Badge>
+              </div>
+              <div className="mt-4">
+                <OlaPolicyControls
+                  config={parseJsonDraft(form.ola_policy_json, parseJsonDraft(buildOlaPreset()))}
+                  onChange={(config) => onUpdatePolicyJson("ola_policy_json", prettyJson(config))}
+                />
+              </div>
+              <details className="mt-4 rounded-[0.8rem] border border-border bg-surface-subtle px-3 py-3">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-700">Расширенный JSON preview</summary>
+                <textarea
+                  className="field-base mt-3 min-h-[160px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"
+                  onChange={(event) => onUpdatePolicyJson("ola_policy_json", event.currentTarget.value)}
+                  spellCheck={false}
+                  value={form.ola_policy_json}
+                />
+              </details>
+            </div>
           </div>
         ) : null}
 
