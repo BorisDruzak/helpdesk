@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QDateEdit, QDateTimeEdit,
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
     build_post_create_process_summary,
+    build_post_create_result_labels,
     build_request_creation_preview,
     build_request_template_card_summary,
     build_diagnostic_consent_payload,
@@ -665,6 +666,74 @@ def test_build_post_create_process_summary_explains_next_steps_without_sla():
     assert "Вам должны ответить до" in summary
     assert "Решение или обходной вариант ожидается до" in summary
     assert "SLA" not in summary
+
+
+def test_build_post_create_process_summary_uses_requester_safe_nested_payload():
+    summary = build_post_create_process_summary(
+        {
+            "ticket_id": "T-100",
+            "status": "waiting_on_internal_team",
+            "queue_code": "internal-sec",
+            "root_cause": "do not show",
+            "ola": {"ack_due_at": "do not show"},
+            "raw_diagnostics": {"stderr": "do not show"},
+            "requester_view": {
+                "public_status_label": "Заявка в работе",
+                "next_action_owner": "requester",
+                "expected_due_at": "2026-05-03T15:45:00+05:00",
+                "queue_name": "Сервис-деск",
+            },
+            "deadlines": {
+                "first_response_due_at": "2026-05-02T11:00:00+05:00",
+                "resolution_due_at": "2026-05-03T15:45:00+05:00",
+            },
+            "passport": {
+                "status": "draft",
+                "user_result_summary": "Доступ к сайту будет проверен после диагностики.",
+            },
+            "requester_resolution_summary": "Пользовательский итог уже подготовлен.",
+        },
+        public_access_code="PUB-42",
+    )
+
+    assert "Код доступа: PUB-42" in summary
+    assert "Статус: Заявка в работе" in summary
+    assert "Очередь: Сервис-деск" in summary
+    assert "Сейчас нужен ваш ответ" in summary
+    assert "Вам должны ответить до" in summary
+    assert "Решение или обходной вариант ожидается до" in summary
+    assert "Ожидаемый срок: " in summary
+    assert "Паспорт решения будет заполнен" in summary
+    assert "Итог для пользователя: Доступ к сайту будет проверен после диагностики." in summary
+    assert "internal-sec" not in summary
+    assert "do not show" not in summary
+    assert "OLA" not in summary
+    assert "SLA" not in summary
+
+
+def test_build_post_create_result_labels_use_requester_view():
+    labels = build_post_create_result_labels(
+        {
+            "ticket_id": "T-101",
+            "next_action_owner": "support",
+            "first_response_due_at": "",
+            "resolution_due_at": "",
+            "requester_view": {
+                "next_action_owner": "requester",
+                "expected_due_at": "2026-05-04T12:00:00+05:00",
+            },
+            "deadlines": {
+                "first_response_due_at": "2026-05-02T11:00:00+05:00",
+            },
+        },
+        public_access_code="PUB-101",
+    )
+
+    assert labels["access_code"] == "Код доступа: PUB-101"
+    assert labels["next_action"] == "Что дальше: сейчас нужен ваш ответ."
+    assert "Вам должны ответить до" in labels["deadlines"]
+    assert "Ожидаемый срок" in labels["deadlines"]
+    assert "Сейчас нужен ваш ответ" in labels["summary"]
 
 
 def test_build_request_creation_preview_uses_template_policies():

@@ -504,6 +504,20 @@ Slice 15b local verification:
 - Commit: `78c09a9 pc_agent: hide internal request form fields`.
 - Release/live: committed docs handoff as `aba884c docs: record agent form visibility slice`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward to `aba884c`, webapp rebuild/upload and smoke OK on attempt 2; browser observer signoff on `http://192.168.100.17:8666/app/admin/observer` confirmed `Runtime: ok` and fresh console errors -> 0; server status/log tail showed authenticated observer requests and no agent form visibility errors, with unrelated existing module reconcile/offline-agent warnings/errors; `python scripts\manage_remote_stack.py stop server` -> stopped, follow-up status confirmed stopped.
 
+Slice 15c target:
+
+- [x] Make post-create summary consume requester-safe `requester_view` / `public_view` blocks when the server returns them.
+- [x] Show public/requester status, expected due dates, next action and passport/result summary from nested server response shapes without exposing internal fields.
+- [x] Keep old flat ticket payload compatibility.
+- [ ] Add focused tests and release/live signoff.
+
+Slice 15c local verification:
+
+- RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_build_post_create_process_summary_uses_requester_safe_nested_payload -q --tb=short` failed because post-create summary rendered internal flat `status`/`queue_code` and ignored nested requester/public blocks.
+- RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_build_post_create_result_labels_use_requester_view -q --tb=short` failed because `build_post_create_result_labels` did not exist.
+- GREEN focused: both tests -> 2 passed.
+- Agent helper regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q --tb=short` -> 55 passed.
+
 ### Slice 16: Migration, Backfill And Compatibility
 
 - [ ] Add migration/backfill from current default `request_forms` pack into `request_templates`, `form_schemas` and initial policy rows.

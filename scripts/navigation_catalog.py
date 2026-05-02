@@ -1150,7 +1150,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",

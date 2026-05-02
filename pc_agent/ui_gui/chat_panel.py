@@ -993,28 +993,104 @@ def _request_template_context(ticket: dict) -> dict[str, Any]:
     return template
 
 
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _first_dict(*values: Any) -> dict[str, Any]:
+    for value in values:
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _post_create_public_context(ticket: dict) -> dict[str, Any]:
+    requester_view = _first_dict(ticket.get("requester_view"), ticket.get("requester_payload"), ticket.get("public_view"))
+    public_view = _first_dict(ticket.get("public_view"))
+    deadlines = _first_dict(
+        requester_view.get("deadlines"),
+        public_view.get("deadlines"),
+        ticket.get("deadlines"),
+        ticket.get("sla"),
+    )
+    passport = _first_dict(
+        requester_view.get("passport"),
+        public_view.get("passport"),
+        ticket.get("passport"),
+        ticket.get("reporting"),
+    )
+    return {
+        "requester_view": requester_view,
+        "public_view": public_view,
+        "deadlines": deadlines,
+        "passport": passport,
+    }
+
+
 def build_post_create_process_summary(ticket: dict, *, public_access_code: str = "") -> str:
     """Requester-facing process summary shown after a ticket is created."""
     if not isinstance(ticket, dict):
         ticket = {}
     template = _request_template_context(ticket)
+    public_context = _post_create_public_context(ticket)
+    requester_view = public_context["requester_view"]
+    public_view = public_context["public_view"]
+    deadlines = public_context["deadlines"]
+    passport = public_context["passport"]
     lines: list[str] = []
-    code = str(public_access_code or ticket.get("public_access_code") or "").strip()
+    code = _first_text(
+        public_access_code,
+        requester_view.get("public_access_code"),
+        public_view.get("public_access_code"),
+        ticket.get("public_access_code"),
+    )
     if code:
         lines.append(f"Код доступа: {code}")
 
-    public_status = str(ticket.get("public_status_label") or ticket_status_label(str(ticket.get("status") or "")) or "").strip()
+    public_status = _first_text(
+        requester_view.get("public_status_label"),
+        requester_view.get("requester_status_label"),
+        requester_view.get("status_label"),
+        public_view.get("public_status_label"),
+        public_view.get("requester_status_label"),
+        public_view.get("status_label"),
+        ticket.get("public_status_label"),
+        ticket.get("requester_status_label"),
+        ticket_status_label(str(ticket.get("status") or "")),
+    )
     if public_status:
         lines.append(f"Статус: {public_status}")
 
-    queue = str(ticket.get("queue_name") or ticket.get("queue_code") or ticket.get("queue_id") or "").strip()
+    queue = _first_text(
+        requester_view.get("queue_name"),
+        requester_view.get("queue_label"),
+        public_view.get("queue_name"),
+        public_view.get("queue_label"),
+        ticket.get("queue_name"),
+        ticket.get("queue_label"),
+    )
     if queue:
         lines.append(f"Очередь: {queue}")
 
-    assignee = str(ticket.get("assignee_display_name") or ticket.get("assignee_name") or ticket.get("assignee_id") or "").strip()
+    assignee = _first_text(
+        requester_view.get("assignee_display_name"),
+        requester_view.get("assignee_name"),
+        public_view.get("assignee_display_name"),
+        public_view.get("assignee_name"),
+        ticket.get("assignee_display_name"),
+        ticket.get("assignee_name"),
+    )
     lines.append(f"Исполнитель: {assignee or 'пока не назначен'}")
 
-    next_owner = str(ticket.get("next_action_owner") or "").strip().lower()
+    next_owner = _first_text(
+        requester_view.get("next_action_owner"),
+        public_view.get("next_action_owner"),
+        ticket.get("next_action_owner"),
+    ).lower()
     if next_owner in {"support", "assignee", "queue"}:
         lines.append("Сейчас работает поддержка.")
     elif next_owner in {"requester", "user"}:
@@ -1034,21 +1110,140 @@ def build_post_create_process_summary(ticket: dict, *, public_access_code: str =
     ):
         lines.append("Диагностика может быть предложена специалистом.")
 
-    first_response_due = _format_user_deadline(ticket.get("first_response_due_at"))
-    resolution_due = _format_user_deadline(ticket.get("resolution_due_at"))
+    first_response_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("first_response_due_at"),
+            public_view.get("first_response_due_at"),
+            deadlines.get("first_response_due_at"),
+            deadlines.get("first_response_due"),
+            ticket.get("first_response_due_at"),
+        )
+    )
+    resolution_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("resolution_due_at"),
+            public_view.get("resolution_due_at"),
+            deadlines.get("resolution_due_at"),
+            deadlines.get("resolution_due"),
+            ticket.get("resolution_due_at"),
+        )
+    )
     if first_response_due:
         lines.append(f"Вам должны ответить до {first_response_due}.")
     if resolution_due:
         lines.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
+    expected_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("expected_due_at"),
+            public_view.get("expected_due_at"),
+            deadlines.get("expected_due_at"),
+            ticket.get("expected_due_at"),
+            ticket.get("next_action_due_at"),
+        )
+    )
+    if expected_due:
+        lines.append(f"Ожидаемый срок: {expected_due}.")
 
     reporting_policy = template.get("reporting_policy") if isinstance(template.get("reporting_policy"), dict) else {}
     closure_policy = template.get("closure_policy") if isinstance(template.get("closure_policy"), dict) else {}
-    if reporting_policy.get("enabled") or reporting_policy.get("required_sections") or closure_policy.get("evidence"):
+    passport_status = _first_text(passport.get("status"), passport.get("state"))
+    if (
+        reporting_policy.get("enabled")
+        or reporting_policy.get("required_sections")
+        or closure_policy.get("evidence")
+        or passport_status
+        or passport.get("required_sections")
+    ):
         lines.append("Паспорт решения будет заполнен по итогам работ.")
+    result_summary = _first_text(
+        requester_view.get("requester_resolution_summary"),
+        requester_view.get("user_result_summary"),
+        requester_view.get("result_summary"),
+        public_view.get("requester_resolution_summary"),
+        public_view.get("user_result_summary"),
+        public_view.get("result_summary"),
+        passport.get("user_result_summary"),
+        passport.get("requester_resolution_summary"),
+        passport.get("result_summary"),
+        ticket.get("requester_resolution_summary"),
+    )
+    if result_summary:
+        lines.append(f"Итог для пользователя: {result_summary}")
 
     if not lines:
         return "Обращение создано. Служба поддержки рассчитает очередь, сроки и дальнейшие действия."
     return "\n".join(lines)
+
+
+def build_post_create_result_labels(ticket: dict, *, public_access_code: str = "") -> dict[str, str]:
+    if not isinstance(ticket, dict):
+        ticket = {}
+    public_context = _post_create_public_context(ticket)
+    requester_view = public_context["requester_view"]
+    public_view = public_context["public_view"]
+    deadlines = public_context["deadlines"]
+    code = _first_text(
+        public_access_code,
+        requester_view.get("public_access_code"),
+        public_view.get("public_access_code"),
+        ticket.get("public_access_code"),
+    )
+
+    next_owner = _first_text(
+        requester_view.get("next_action_owner"),
+        public_view.get("next_action_owner"),
+        ticket.get("next_action_owner"),
+    ).lower()
+    if next_owner in {"support", "assignee", "queue"}:
+        next_action_text = "Что дальше: сейчас работает поддержка."
+    elif next_owner in {"requester", "user"}:
+        next_action_text = "Что дальше: сейчас нужен ваш ответ."
+    elif next_owner in {"approval", "approver"}:
+        next_action_text = "Что дальше: сейчас ожидается согласование."
+    else:
+        next_action_text = "Что дальше: следующий шаг появится в обращении."
+
+    deadline_parts: list[str] = []
+    first_response_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("first_response_due_at"),
+            public_view.get("first_response_due_at"),
+            deadlines.get("first_response_due_at"),
+            deadlines.get("first_response_due"),
+            ticket.get("first_response_due_at"),
+        )
+    )
+    resolution_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("resolution_due_at"),
+            public_view.get("resolution_due_at"),
+            deadlines.get("resolution_due_at"),
+            deadlines.get("resolution_due"),
+            ticket.get("resolution_due_at"),
+        )
+    )
+    expected_due = _format_user_deadline(
+        _first_text(
+            requester_view.get("expected_due_at"),
+            public_view.get("expected_due_at"),
+            deadlines.get("expected_due_at"),
+            ticket.get("expected_due_at"),
+            ticket.get("next_action_due_at"),
+        )
+    )
+    if first_response_due:
+        deadline_parts.append(f"Вам должны ответить до {first_response_due}.")
+    if resolution_due:
+        deadline_parts.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
+    if expected_due:
+        deadline_parts.append(f"Ожидаемый срок: {expected_due}.")
+
+    return {
+        "access_code": f"Код доступа: {code}" if code and code != "—" else "",
+        "next_action": next_action_text,
+        "deadlines": " ".join(deadline_parts) if deadline_parts else "Сроки покажутся в обращении после расчёта сервером.",
+        "summary": build_post_create_process_summary(ticket, public_access_code=public_access_code),
+    }
 
 
 def ticket_matches_query(ticket: dict, query: str) -> bool:
@@ -2360,27 +2555,11 @@ class TicketCreateWizardWidget(QFrame):
 
     def _show_create_result(self, ticket: dict[str, Any], *, public_access_code: str = "") -> None:
         self._last_created_ticket_id = str(ticket.get("ticket_id") or "")
-        code = str(public_access_code or ticket.get("public_access_code") or "").strip()
-        self.access_code_label.setText(f"Код доступа: {code}" if code and code != "—" else "")
-        next_owner = str(ticket.get("next_action_owner") or "").strip().lower()
-        if next_owner in {"support", "assignee", "queue"}:
-            next_action_text = "Что дальше: сейчас работает поддержка."
-        elif next_owner in {"requester", "user"}:
-            next_action_text = "Что дальше: сейчас нужен ваш ответ."
-        elif next_owner in {"approval", "approver"}:
-            next_action_text = "Что дальше: сейчас ожидается согласование."
-        else:
-            next_action_text = "Что дальше: следующий шаг появится в обращении."
-        self.next_action_label.setText(next_action_text)
-        deadline_parts: list[str] = []
-        first_response_due = _format_user_deadline(ticket.get("first_response_due_at"))
-        resolution_due = _format_user_deadline(ticket.get("resolution_due_at"))
-        if first_response_due:
-            deadline_parts.append(f"Вам должны ответить до {first_response_due}.")
-        if resolution_due:
-            deadline_parts.append(f"Решение или обходной вариант ожидается до {resolution_due}.")
-        self.deadline_label.setText(" ".join(deadline_parts) if deadline_parts else "Сроки покажутся в обращении после расчёта сервером.")
-        self.result_label.setText(build_post_create_process_summary(ticket, public_access_code=public_access_code))
+        labels = build_post_create_result_labels(ticket, public_access_code=public_access_code)
+        self.access_code_label.setText(labels["access_code"])
+        self.next_action_label.setText(labels["next_action"])
+        self.deadline_label.setText(labels["deadlines"])
+        self.result_label.setText(labels["summary"])
         has_ticket = bool(self._last_created_ticket_id)
         self.open_created_ticket_btn.setEnabled(has_ticket)
         self.add_message_to_created_ticket_btn.setEnabled(has_ticket)
