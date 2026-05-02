@@ -706,6 +706,47 @@ async def test_ticket_creation_stores_request_template_policy_ref_snapshot(test_
 
 
 @pytest.mark.asyncio
+async def test_legacy_ticket_created_before_registry_resolves_ticket_type_policy(test_engine):
+    await _clear_policy_registry(test_engine)
+    ticket_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=f"device-{ticket_id[:8]}",
+                title="Legacy pre-registry ticket",
+                description="No request_template snapshot exists yet",
+                status="in_progress",
+                requester_id="legacy-user",
+                ticket_type="incident",
+                priority="P3",
+                custom_fields={"priority_class": "P2"},
+            )
+        )
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="closure",
+            code="incident_closure_default",
+            title="Incident closure default",
+            scope_level="ticket_type",
+            scope_ref="incident",
+            config={
+                "before_resolved": {"require_resolution_code": True},
+                "requester_confirmation": {"required": False},
+            },
+            actor_id="admin1",
+            actor_role="admin",
+        )
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+        active_policy = await resolve_effective_ticket_policy(session, ticket, "closure")
+        await session.commit()
+
+    assert active_policy["before_resolved"]["require_resolution_code"] is True
+    assert active_policy["requester_confirmation"]["required"] is False
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publish_from_form_creates_template_policies_and_audit(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     form_key = f"website_{uuid.uuid4().hex[:8]}"

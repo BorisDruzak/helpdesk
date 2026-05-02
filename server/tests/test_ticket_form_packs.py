@@ -288,6 +288,59 @@ async def test_create_ticket_accepts_request_template_key_as_form_alias(test_cli
 
 
 @pytest.mark.asyncio
+async def test_create_ticket_accepts_old_form_key_payload_without_injected_priority_fields(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    form_key = f"legacy_minimal_{uuid.uuid4().hex[:8]}"
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Legacy minimal forms",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_kind": form_key,
+                        "ticket_type": "incident",
+                        "title": "Legacy minimal incident",
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={"Authorization": "Bearer test-ui-admin-token", "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Legacy minimal request",
+            "description": "Old client sends only original fields",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {"summary": "Network is unstable"},
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["request_form_key"] == form_key
+    assert custom_fields["request_form_data"] == {"summary": "Network is unstable"}
+    assert custom_fields["priority_decision"]["effective_priority"] in {"P0", "P1", "P2", "P3"}
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_preview_returns_effective_template_context(test_client, test_engine):
     await _ensure_fallback_queue(test_engine)
     await _ensure_default_sla_policy(test_engine)

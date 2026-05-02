@@ -596,7 +596,13 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
                 continue
             if priority_key in existing_field_keys:
                 continue
-            normalized_fields.append(deepcopy(priority_field))
+            compatibility_field = deepcopy(priority_field)
+            validation = compatibility_field.get("validation") if isinstance(compatibility_field.get("validation"), dict) else {}
+            compatibility_field["validation"] = {
+                **validation,
+                "optional_when_legacy_missing": True,
+            }
+            normalized_fields.append(compatibility_field)
             existing_field_keys.add(priority_key)
             seen_fields.add(priority_key)
 
@@ -770,6 +776,9 @@ def validate_form_submission(
         if not _field_is_visible(field_def, normalized_values):
             continue
         value = normalized_values.get(key)
+        validation = field_def.get("validation") if isinstance(field_def.get("validation"), dict) else {}
+        if validation.get("optional_when_legacy_missing") and key not in raw_values:
+            continue
         if field_def.get("required"):
             if field_def.get("type") == "checkbox":
                 is_empty = value is False
@@ -780,7 +789,6 @@ def validate_form_submission(
             else:
                 is_empty = not str(value or "").strip()
             if is_empty:
-                validation = field_def.get("validation") if isinstance(field_def.get("validation"), dict) else {}
                 required_message = str(validation.get("required_message") or "").strip()
                 errors[key] = required_message or "Поле обязательно"
                 continue

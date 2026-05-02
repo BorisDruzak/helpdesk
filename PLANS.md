@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 15a is released: Agent GUI cached form packs now preserve schema/policy version metadata and refresh even when policy refs change without a pack version bump. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 15a release/smoke/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 91.3%, agent GUI about 74.5%, overall about 97.8%. The remaining plan targets any remaining policy lifecycle edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 16b is in local verification: legacy `request_forms` compatibility now covers old `form_key` create payloads, old packs that predate server-driven priority fields, and pre-registry tickets resolving active ticket-type policies. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 16b local focused regressions the working estimate is backend/runtime about 99.6%, server UI about 91.5%, agent GUI about 74.5%, overall about 98.9%. The remaining plan is mostly final verification/release gates and any follow-up found by full regression.
 
 ### Goal
 
@@ -525,7 +525,7 @@ Slice 15c local verification:
 
 - [x] Add migration/backfill from current default `request_forms` pack into `request_templates`, `form_schemas` and initial policy rows.
 - [x] Add idempotent admin command/API to republish legacy forms into registry.
-- [ ] Add compatibility tests for old clients sending only `form_key`, old packs without priority fields, and tickets created before registry.
+- [x] Add compatibility tests for old clients sending only `form_key`, old packs without priority fields, and tickets created before registry.
 - [x] Add data-quality report: templates missing workflow/priority/routing/SLA/closure policies.
 - [x] Docs: operator migration steps and rollback path.
 
@@ -538,6 +538,14 @@ Slice 16a local verification:
 - Registry payload now exposes `summary.data_quality_issue_count` and `data_quality` rows for active request templates missing workflow/profile, priority, routing, SLA or closure policy links.
 - Rollback path: keep legacy clients on `request_forms` because `/api/tickets/create` and public/agent create still accept `form_key` without requiring a registry template; if registry backfill must be reverted, make the previous form pack preferred and rerun the republish endpoint with `force=true`, while policy/ticket-type rows can also use the existing deactivate/rollback endpoints.
 - Release/live: committed as `74d6039 server: backfill legacy forms into helpdesk registry`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, migration check, webapp rebuild/upload and smoke OK on attempt 2; live authenticated browser fetch confirmed `GET /api/web/admin/helpdesk-model/policies` returns `capabilities.republish_legacy_forms_endpoint=/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms`, `summary.data_quality_issue_count=3`, `active_request_templates_count=1`; validation POST with unsupported pack returned `400 VALIDATION_ERROR`; `/app/admin/observer` showed `Runtime: ok`; server logs showed authenticated registry/observer requests and no registry backfill errors, with unrelated existing offline-agent warning; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 16b local verification:
+
+- RED confirmed: `python -m pytest server\tests\test_ticket_form_packs.py::test_create_ticket_accepts_old_form_key_payload_without_injected_priority_fields -q --tb=short` failed with `400 validation_error` because legacy packs normalized with injected priority fields required `impact_scope` and `work_continuity` from old clients.
+- GREEN focused: same test -> 1 passed after injected default priority fields became optional when absent from legacy payloads; injected checkbox defaults are also not written into `request_form_data` for old submissions.
+- Compatibility coverage: `python -m pytest server\tests\test_ticket_form_packs.py::test_create_ticket_accepts_old_form_key_payload_without_injected_priority_fields server\tests\test_helpdesk_policy_registry.py::test_legacy_ticket_created_before_registry_resolves_ticket_type_policy -q --tb=short` -> 2 passed.
+- Broader focused regression: `python -m pytest server\tests\test_ticket_form_packs.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 39 passed; `python -m pytest server\tests\test_ticket_priority_policy.py -q --tb=short` -> 7 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `git diff --check -- server/tickets/form_catalog.py server/tests/test_ticket_form_packs.py server/tests/test_helpdesk_policy_registry.py PLANS.md server/docs/TICKET_SYSTEM.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md scripts/navigation_catalog.py` -> no whitespace errors; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 17: Verification And Release Gates
 
