@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 13b is in progress: the support queue now has a built-in `mass_incident_candidates` smart view for "Похожие массовые обращения", with backend filtering by open-ticket mass-incident tags and stored policy facts. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After local Slice 13b checks the working estimate is backend/runtime about 99.3%, server UI about 90.2%, agent GUI about 73%, overall about 97.3%. The remaining plan targets final publish diff/impact UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 13b is released: the support queue now has a built-in `mass_incident_candidates` smart view for "Похожие массовые обращения", with backend filtering by open-ticket mass-incident tags and stored policy facts. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 13b release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 90.2%, agent GUI about 73%, overall about 97.3%. The remaining plan targets final publish diff/impact UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -303,6 +303,8 @@ Slice 13b local verification:
 - GREEN focused: same command -> 1 passed.
 - Smart-view focused regression: `python -m pytest server\tests\test_web_support_api.py::test_web_support_queue_applies_smart_view_sla_risk server\tests\test_web_support_api.py::test_web_support_queue_surfaces_ola_risk_smart_view_count server\tests\test_web_support_api.py::test_web_support_queue_applies_mass_incident_candidates_smart_view server\tests\test_web_support_api.py::test_web_support_queue_applies_published_custom_smart_view -q --tb=short` -> 4 passed.
 - Broader support API regression: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` -> 28 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Release/live: committed as `c1ed16d server: add mass incident smart view`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, migration check, webapp rebuild/upload and smoke OK; browser signoff on `http://192.168.100.17:8666/app/tickets` confirmed the "Похожие массовые обращения" smart-view filter renders; live fetch to `/api/web/support/queue?scope=all&smart_view=mass_incident_candidates` returned `200`, `smart_view=mass_incident_candidates`, option label "Похожие массовые обращения" and count item present; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated support queue and observer requests with no smart-view errors, with unrelated existing reconcile/offline-agent warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 14: Server Admin UX To Remove JSON Dependency
 
