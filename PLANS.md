@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 7b is locally complete and pending remote release/browser signoff. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b local verification the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 7b is complete, committed and released to the Linux stand. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate is backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -100,6 +100,7 @@ Slice 7b local verification:
 - Handler/API regression: `python -m pytest server\tests\test_ticket_create_contracts.py::test_requester_reply_requeues_waiting_ticket server\tests\test_ticket_create_contracts.py::test_requester_reply_uses_workflow_trigger_when_profile_configured -q --tb=short` -> 2 passed.
 - Broader local: `python -m pytest server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_create_contracts.py server\tests\test_web_settings_api.py -q --tb=short` -> 36 passed.
 - Web/navigation/workspace: `pnpm --dir webapp exec vitest run src/pages/settings/index.test.tsx` -> 4 passed; `pnpm --dir webapp run build` -> passed; `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `ce680d3 server: add workflow trigger transitions`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward and smoke OK; browser signoff on `http://192.168.100.17:8666/app/settings` confirmed workflow builder `Trigger события` / `Автоматический переход`; `http://192.168.100.17:8666/app/admin/observer` loaded runtime quick traces; browser console errors -> 0.
 
 ### Slice 8: Approval Requests
 
