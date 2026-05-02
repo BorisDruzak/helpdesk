@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, after Slice 5.
+Last updated: 2026-05-03, after Slice 6.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 62.5% (5 of 8 slices complete).
+Current plan completion: 75.0% (6 of 8 slices complete).
 
 ## Goal
 
@@ -180,13 +180,16 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 6: Agent Live UX And Template Create Smoke
 
-- [ ] Add or refresh helper tests for agent post-create public rendering, server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases.
-- [ ] Run agent focused tests: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short`.
-- [ ] Start remote server through release script and run a live agent GUI/API create smoke against current preferred template.
-- [ ] Verify created ticket context on server: `request_template`, `form_schema`, priority decision, routing decision, requester-safe due dates, consent, attachments if used and passport/result summary.
-- [ ] Verify agent result panel text: access code, next action, expected due dates, open/add-message/create-another actions, no raw SLA/OLA/internal wording.
-- [ ] Update `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
-- [ ] Commit and release agent/server changes if any were required by smoke findings.
+- [x] Add or refresh helper tests for agent post-create public rendering, server-preview fallback, dynamic required fields, diagnostic consent and file/picker edge cases. Added conditional hidden-required file coverage and kept existing preview/consent/picker/result-label coverage green.
+- [x] Run agent focused tests: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 67 passed.
+- [x] Add server coverage for schema/template/policy metadata preservation from versioned `request_forms` into `custom_fields.request_template`.
+- [x] Verification: `python -m pytest server\tests\test_ticket_form_packs.py::test_create_ticket_preserves_form_schema_and_policy_refs_in_template_context server\tests\test_ticket_form_packs.py::test_create_ticket_accepts_request_template_key_as_form_alias server\tests\test_ticket_form_packs.py::test_create_ticket_preview_returns_effective_template_context -q --tb=short` -> 3 passed.
+- [x] Verification: `python scripts\verify_workspace.py` -> passed.
+- [x] Start remote server through release script and run a live agent GUI/API create smoke against current preferred template and a temporary schema-backed template version.
+- [x] Verify created ticket context on server: `request_template`, `form_schema`, priority decision, routing decision, requester-safe due dates, consent, attachments if used and passport/result summary. Live schema-backed ticket `1161327d-e873-4ded-bd48-a38b98209722` preserved `form_schema_id`, template version, policy refs, diagnostic consent, P0 priority, fallback routing, attachment message ref and observer root trace. Temporary template was removed from the preferred pack afterwards.
+- [x] Verify agent result panel text: access code, next action, expected due dates, open/add-message/create-another actions, no raw SLA/OLA/internal wording. Source-level button coverage remains in helper tests; live result labels had access code, next action, response/resolution deadlines, diagnostics/passport user wording and no raw SLA/OLA terms.
+- [x] Update `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`, and this plan.
+- [x] Commit and release agent/server changes if any were required by smoke findings: `c204c83 server: preserve request form schema metadata`, remote release smoke passed.
 
 ## Slice 7: Data Cleanup And Mojibake Hardening
 
