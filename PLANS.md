@@ -492,13 +492,16 @@ Slice 15b target:
 - [x] Preserve field-level `visibility`, `process_mapping`, validation and audience metadata in normalized agent form packs.
 - [x] Hide requester-invisible/internal process fields in `TicketDynamicFieldsWidget`, including `ticket_type`, priority/SLA/OLA/routing/workflow/approval/closure/diagnostic/visibility/notification/reporting policy selectors unless explicitly visible to requester.
 - [x] Extend server-backed creation preview rendering with exact first-response/resolution due dates and suggested diagnostic playbook, without raw SLA wording.
-- [ ] Commit/release after focused checks finish.
+- [x] Commit after focused checks finish.
 
 Slice 15b local verification:
 
 - RED confirmed: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py::test_dynamic_fields_widget_hides_internal_process_fields_from_requester pc_agent\tests\test_chat_panel_helpers.py::test_build_request_creation_preview_shows_server_deadlines_and_diagnostics -q --tb=short` failed because internal process fields were rendered and server due dates/diagnostics were ignored.
 - GREEN focused: same command -> 2 passed.
 - Agent helper regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q --tb=short` -> 53 passed.
+- Agent focused regression: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 64 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed; `git diff --check` -> no whitespace errors.
+- Commit: `78c09a9 pc_agent: hide internal request form fields`.
 
 ### Slice 16: Migration, Backfill And Compatibility
 
