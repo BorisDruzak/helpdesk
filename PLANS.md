@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, during Slice 3 verification.
+Last updated: 2026-05-03, after Slice 3.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 37.5% (3 of 8 slices complete after Slice 3 verification).
+Current plan completion: 37.5% (3 of 8 slices complete).
 
 ## Goal
 
@@ -150,9 +150,9 @@ Turn the completed service desk model into a more production-grade operator/requ
 - [x] Add UI preview in the policy editor showing requester view vs support view before publication.
 - [x] Verification: `python -m pytest server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 21 passed.
 - [x] Verification: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 27 passed.
-- [ ] Browser check `/app/admin/forms`, notification/visibility policy editors and preview.
+- [x] Browser check `/app/admin/forms`, notification/visibility policy editors and preview: requester/support preview and notification recipient/channel preview visible, active-tab console errors 0.
 - [x] Update docs/navigation and this plan.
-- [ ] Commit and release if API/runtime/UI changed.
+- [x] Commit and release if API/runtime/UI changed: `efb9c06 server: harden notification visibility policies`, remote smoke passed.
 
 ## Slice 4: Passport And Reporting Enforcement
 
