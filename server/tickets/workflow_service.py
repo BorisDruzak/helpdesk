@@ -365,10 +365,16 @@ class TicketWorkflowService:
                 ticket,
                 to_status=to_status,
                 resolution_code=resolution_code,
-                resolution_summary=resolution_summary or requester_resolution_summary,
+                resolution_summary=resolution_summary,
+                requester_resolution_summary=requester_resolution_summary,
             )
             if closure_decision.get("applied"):
                 event_payload["closure_policy"] = closure_decision
+                confirmation_policy = closure_decision.get("requester_confirmation")
+                if isinstance(confirmation_policy, dict) and confirmation_policy:
+                    custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
+                    custom_fields["resolution_confirmation_policy"] = confirmation_policy
+                    updates["custom_fields"] = custom_fields
             if ticket and getattr(ticket, "evidence_required", False) and not getattr(ticket, "evidence_ref", None):
                 evidence_exists = await self.session.scalar(
                     select(TicketEvidenceItem.id)

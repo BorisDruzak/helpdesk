@@ -1563,8 +1563,23 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
         followup_result = None
         followup_payload = None
         ticket = await repo.get_ticket(ticket.ticket_id)
-        if to_status == "resolved" and is_support_or_admin:
+        closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
+        requester_confirmation_policy = (
+            closure_policy_payload.get("requester_confirmation")
+            if isinstance(closure_policy_payload, dict)
+            else None
+        )
+        requires_requester_confirmation = True
+        if isinstance(requester_confirmation_policy, dict) and "required" in requester_confirmation_policy:
+            requires_requester_confirmation = bool(requester_confirmation_policy.get("required"))
+        if to_status == "resolved" and is_support_or_admin and requires_requester_confirmation:
             confirmation_request = _build_resolution_confirmation_request()
+            if isinstance(requester_confirmation_policy, dict) and requester_confirmation_policy:
+                confirmation_request["policy"] = {
+                    key: requester_confirmation_policy.get(key)
+                    for key in ("auto_close_after_days", "reopen_on_negative_feedback")
+                    if requester_confirmation_policy.get(key) is not None
+                }
             ticket = await _store_resolution_confirmation_state(
                 repo,
                 ticket,

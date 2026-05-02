@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 8c is complete, committed and released to the Linux stand: approval timeout/reminder/escalation runtime and reject-comment enforcement. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 9a is in local verification: closure policy backend/runtime now supports nested closure requirements, operation/approval evidence and policy-driven requester auto-close. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. Slice 9a local target estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90% after release/browser signoff. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -137,11 +137,12 @@ Slice 8c local verification:
 
 ### Slice 9: Closure Policy Completion
 
-- [ ] Expand closure policy runtime to support nested `before_resolved`, `evidence`, `requester_confirmation`, `allowed_resolution_codes`.
-- [ ] Enforce operation log evidence when diagnostic/remediation modules were used.
-- [ ] Enforce approval evidence when approval policy was used.
-- [ ] Implement requester confirmation policy and auto-close-after-days as policy-driven, not just global defaults.
-- [ ] Tests: resolution code whitelist, public/internal summary requirements, P0/P1 evidence, module evidence, approval evidence, requester reject/reopen, auto-close timer.
+- [x] Slice 9a: expand closure policy runtime to support nested `before_resolved`, `evidence`, `requester_confirmation`, `allowed_resolution_codes`.
+- [x] Slice 9a: enforce operation log evidence when diagnostic/remediation modules were used.
+- [x] Slice 9a: enforce approval evidence when approval policy was used.
+- [x] Slice 9a: implement requester confirmation policy and auto-close-after-days as policy-driven, not just global defaults.
+- [x] Slice 9a tests: resolution code whitelist, public/internal summary requirements, P0/P1 evidence, module evidence, approval evidence and auto-close timer.
+- [ ] Add requester reject/reopen behavior to read `requester_confirmation.reopen_on_negative_feedback` instead of always using legacy `assigned`.
 - [ ] UI: support ticket close panel shows exactly which closure requirements are missing.
 
 ### Slice 10: Diagnostic Policy Completion

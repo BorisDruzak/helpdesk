@@ -1,28 +1,44 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ClosurePolicy, HelpdeskPolicyAudit, Ticket, TicketEvidenceItem
+from app.db.models import (
+    ClosurePolicy,
+    HelpdeskPolicyAudit,
+    Ticket,
+    TicketActionLog,
+    TicketApproval,
+    TicketEvidenceItem,
+)
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from app.services.ticket_auto_close_watchdog import TicketAutoCloseWatchdog
 from tickets.workflow_service import TicketWorkflowService
 
 
-def _template_context(closure_policy: dict) -> dict:
+def _template_context(closure_policy: dict, *, approval_policy: dict | None = None) -> dict:
     return {
         "request_template": {
             "key": "website_unavailable",
             "ticket_type": "incident",
             "closure_policy": closure_policy,
+            **({"approval_policy": approval_policy} if approval_policy is not None else {}),
         }
     }
 
 
-async def _seed_ticket(test_engine, *, closure_policy: dict, priority_class: str = "P2") -> str:
+async def _seed_ticket(
+    test_engine,
+    *,
+    closure_policy: dict,
+    priority_class: str = "P2",
+    approval_policy: dict | None = None,
+) -> str:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket_id = str(uuid.uuid4())
     legacy_priority = {"P0": "P1", "P1": "P2", "P2": "P3", "P3": "P4"}[priority_class]
@@ -38,7 +54,7 @@ async def _seed_ticket(test_engine, *, closure_policy: dict, priority_class: str
                 ticket_type="incident",
                 priority=legacy_priority,
                 custom_fields={
-                    **_template_context(closure_policy),
+                    **_template_context(closure_policy, approval_policy=approval_policy),
                     "priority_class": priority_class,
                 },
             )
@@ -78,6 +94,7 @@ async def _resolve_ticket(
     *,
     resolution_code: str | None = None,
     resolution_summary: str | None = None,
+    requester_resolution_summary: str | None = None,
 ) -> dict:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
@@ -92,6 +109,7 @@ async def _resolve_ticket(
             reason="resolution_attempt",
             resolution_code=resolution_code,
             resolution_summary=resolution_summary,
+            requester_resolution_summary=requester_resolution_summary,
             source="test",
         )
         await session.commit()
@@ -188,3 +206,233 @@ async def test_closure_policy_allows_resolution_when_requirements_are_met(test_e
     assert result["updates"]["status"] == "resolved"
     assert result["updates"]["resolution_code"] == "fixed_remote"
     assert result["updates"]["resolution_summary"] == "DNS switched to reserve resolver."
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_supports_nested_summary_and_resolution_code_whitelist(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+                "require_internal_summary": True,
+            },
+            "allowed_resolution_codes": ["fixed_remote", "workaround_provided"],
+        },
+    )
+
+    with pytest.raises(ValueError, match="allowed_resolution_codes"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="done",
+            resolution_summary="Internal fix details",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    with pytest.raises(ValueError, match="internal_summary"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        resolution_summary="DNS switched to reserve resolver.",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    assert result["event_payload"]["closure_policy"]["policy"]["before_resolved"]["require_internal_summary"] is True
+    assert result["event_payload"]["closure_policy"]["policy"]["allowed_resolution_codes"] == [
+        "fixed_remote",
+        "workaround_provided",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_requires_operation_log_when_module_was_used(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+            "evidence": {"require_operation_log_if_module_used": True},
+        },
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        ticket = await repo.get_ticket(ticket_id)
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_started",
+            payload={"event": "tool_call_started", "tool_name": "dns.resolve"},
+            operation_id=str(uuid.uuid4()),
+        )
+        await session.commit()
+
+    with pytest.raises(ValueError, match="operation_log"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    async with session_maker() as session:
+        session.add(
+            TicketActionLog(
+                ticket_id=ticket_id,
+                action_type="diagnostic_operation",
+                title="dns.resolve",
+                summary="Diagnostic module ran before closure.",
+                actor_id="support-test",
+                operation_id=str(uuid.uuid4()),
+            )
+        )
+        await session.commit()
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    assert result["event_payload"]["closure_policy"]["operation_log_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_requires_approved_approval_when_policy_was_used(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+            "evidence": {"require_approval_if_approval_policy_used": True},
+        },
+        approval_policy={"required": True, "approval_mode": "any_one"},
+    )
+
+    with pytest.raises(ValueError, match="approved approval"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            TicketApproval(
+                ticket_id=ticket_id,
+                approval_type="service_owner",
+                approver_id="owner-1",
+                status="approved",
+                requested_by="support-test",
+            )
+        )
+        await session.commit()
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    assert result["event_payload"]["closure_policy"]["approval_evidence_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_records_requester_confirmation_metadata(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+            "requester_confirmation": {
+                "required": True,
+                "auto_close_after_days": 3,
+                "reopen_on_negative_feedback": True,
+            },
+        },
+    )
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    confirmation = result["event_payload"]["closure_policy"]["requester_confirmation"]
+    assert confirmation == {
+        "required": True,
+        "auto_close_after_days": 3,
+        "reopen_on_negative_feedback": True,
+    }
+    assert result["updates"]["custom_fields"]["resolution_confirmation_policy"] == confirmation
+
+
+@pytest.mark.asyncio
+async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+            "requester_confirmation": {
+                "required": True,
+                "auto_close_after_days": 1,
+                "reopen_on_negative_feedback": True,
+            },
+        },
+    )
+
+    await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.resolved_at = datetime.now(timezone.utc) - timedelta(days=2)
+        custom_fields = dict(ticket.custom_fields or {})
+        custom_fields["resolution_confirmation"] = {
+            "pending": True,
+            "request_id": str(uuid.uuid4()),
+        }
+        custom_fields["resolution_confirmation_pending"] = True
+        ticket.custom_fields = custom_fields
+        await session.commit()
+
+    watchdog = TicketAutoCloseWatchdog(session_factory=session_maker)
+    closed_count = await watchdog.process_once(now=datetime.now(timezone.utc), limit=10)
+
+    assert closed_count == 1
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket.status == "closed"
+        confirmation = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
+        assert confirmation.get("pending") is False
+        assert confirmation.get("responded_option_id") == "auto_close"
