@@ -22,6 +22,7 @@
 - Ticket list visuals live in `pc_agent/ui_gui/chat_panel.py` + `pc_agent/ui_gui/tickets_list_model.py`: real `TicketsListModel` data, search/filter chips, card delegate, unread counters and double-click/open-chat flow.
 - GUI line-icons live in `pc_agent/ui_gui/assets/icons/`; keep new icons and theme object names reflected in `pc_agent/docs/CODEMAP.md` and `scripts/navigation_catalog.py`.
 - 2026-04-30 localization cleanup: user-visible agent GUI strings in ticket creation, update status and local lifecycle messages must stay Russian and mojibake-free; requester-facing deadline wording should say what will happen for the user ("вам должны ответить до", "решение ожидается до") instead of exposing raw SLA labels.
+- 2026-05-03 helpdesk historical data cleanup inventory starts from `python scripts/helpdesk_data_cleanup.py`: it is read-only by default, scans live tickets/requester names/module descriptions/tool descriptions for mojibake, `???` placeholders and token-like values, writes UTF-8 JSON/Markdown reports under `artifacts/diagnostics/`, redacts token-like samples, and keeps actual mutation disabled until deterministic cleanup rules are reviewed.
 
 ## 2026-04-24 inventory cleanup and notifications
 
