@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 9b is complete, committed and released to the Linux stand: closure policy backend/runtime now supports nested closure requirements, operation/approval evidence, policy-driven requester auto-close, policy-driven negative feedback behavior and support UI closure requirement surfacing. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. After Slice 9a release/browser signoff the working estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90%. After Slice 9b release/browser signoff the working estimate is backend/runtime about 95%, server UI about 79%, agent GUI about 73%, overall about 91%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 10a is locally verified: diagnostic policy runtime now classifies terminal operation/result payloads into `diagnostic_result` facts and executes `reroute_by_result` queue handoff without changing ticket workflow status. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After completed Slices 1-6 the working estimate was backend/runtime about 88%, server UI about 74%, agent GUI about 73%, overall about 84%. After Slice 7a release verification the working estimate was backend/runtime about 89%, server UI about 76%, agent GUI about 73%, overall about 85%. After Slice 7b release/browser signoff the working estimate was backend/runtime about 90%, server UI about 77%, agent GUI about 73%, overall about 86%. After Slice 8a release/browser signoff the working estimate was backend/runtime about 91%, server UI about 77%, agent GUI about 73%, overall about 87%. After Slice 8b release/browser signoff the working estimate is backend/runtime about 92%, server UI about 77%, agent GUI about 73%, overall about 88%. After Slice 8c release/browser signoff the working estimate is backend/runtime about 93%, server UI about 77%, agent GUI about 73%, overall about 89%. After Slice 9a release/browser signoff the working estimate is backend/runtime about 94%, server UI about 77%, agent GUI about 73%, overall about 90%. After Slice 9b release/browser signoff the working estimate is backend/runtime about 95%, server UI about 79%, agent GUI about 73%, overall about 91%. After Slice 10a local verification the working estimate is backend/runtime about 96%, server UI about 79%, agent GUI about 73%, overall about 92%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -165,11 +165,19 @@ Slice 9b local verification so far:
 
 ### Slice 10: Diagnostic Policy Completion
 
-- [ ] Add `diagnostic_policy` runtime for suggested playbooks, safe auto-run checks, consent requirements, attach results, reroute-by-result.
-- [ ] Keep invariant: `ticket.status` remains workflow status; operation status carries diagnostic running/succeeded/failed.
-- [ ] Add result classification contract (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.) from playbook outputs to routing facts.
+- [x] Slice 10a: classify terminal diagnostic/tool results into `diagnostic_result` facts and execute `diagnostic_policy.reroute_by_result` without changing `ticket.status`.
+- [ ] Add `diagnostic_policy` runtime for suggested playbooks, safe auto-run checks, consent requirements and attach results.
+- [x] Keep invariant: `ticket.status` remains workflow status; operation status carries diagnostic running/succeeded/failed.
+- [x] Add result classification contract (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.) from terminal operation/result payloads to routing facts.
 - [ ] Tests: consent required/denied/granted, auto-run only for allowed priority/online agent, evidence attachment, reroute by diagnostic result, no ticket status misuse.
 - [ ] UI: admin diagnostic editor and support ticket automation panel show suggested playbooks and consent/evidence behavior.
+
+Slice 10a local verification so far:
+
+- RED confirmed: `server/tests/test_ticket_diagnostic_policy.py` initially failed because `apply_diagnostic_result_policy` did not exist.
+- GREEN focused: `python -m pytest server\tests\test_ticket_diagnostic_policy.py -q --tb=short` -> 2 passed.
+- Broader local: `python -m pytest server\tests\test_ticket_diagnostic_policy.py server\tests\test_ticket_passport_service.py server\tests\test_p0_workbench_update_contracts.py::test_tool_call_command_result_creates_ticket_event_and_links_artifacts -q --tb=short` -> 10 passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 11: Notification And Visibility Policy Completion
 

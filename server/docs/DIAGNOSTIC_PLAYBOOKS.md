@@ -1,5 +1,7 @@
 # Diagnostic playbooks
 
+Update note 2026-05-02 diagnostic result routing: terminal diagnostic/tool operations now pass through `tickets.diagnostic_policy.apply_diagnostic_result_policy(...)` from the command-result pipeline. The helper extracts a stable `diagnostic_result` class from result payloads or `Operation.error_code` (`DNS_FAIL`, `HTTP_500`, `TLS_CERT_INVALID`, etc.), stores it in `ticket.custom_fields.diagnostic_result` / `diagnostics`, and executes `diagnostic_policy.reroute_by_result` as a queue handoff with `diagnostic_result_classified`, `routing_applied` and `queue_changed` events. This path is idempotent per `operation_id` and does not change `ticket.status`; operation status remains the source for running/succeeded/failed diagnostics.
+
 Update note 2026-04-30 diagnostic policy evidence: request templates can now execute `diagnostic_policy.attach_results` during passport generation. When `attach_results.as_evidence=true` and `attach_results.to_passport` is not disabled, `server/tickets/diagnostic_policy.py` materializes terminal ticket operations as `ticket_evidence_items` with `evidence_type=diagnostic_result` and `source_ref=operation:<operation_id>`. This keeps `ticket.status` independent from operation status while allowing diagnostic results to satisfy passport/closure evidence requirements.
 
 Update note 2026-04-28 ticket launch: support ticket detail now has typed playbook launch routes. `GET /api/web/support/tickets/{ticket_id}/playbooks` returns published playbook versions with required tools and readiness for the ticket device. `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version through `playbook_engine.start_run` with `trigger_type=support_ticket` and a ticket-bound context.
@@ -99,6 +101,11 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 {
   "diagnostic_policy": {
     "id": "website_diagnostics",
+    "reroute_by_result": {
+      "DNS_FAIL": "networks",
+      "HTTP_500": "information_systems",
+      "TLS_CERT_INVALID": "security_or_servers"
+    },
     "attach_results": {
       "to_passport": true,
       "as_evidence": true
@@ -111,11 +118,14 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 
 Диагностика не является статусом тикета: тикет остаётся, например, `in_progress`, а выполнение/результат живёт в `operations`, playbook tables, timeline и evidence/passport.
 
+Если terminal operation содержит результат классификации, `apply_diagnostic_result_policy(...)` пишет структурированный факт в `custom_fields` и может выполнить `reroute_by_result`. Значение policy может быть кодом очереди (`"networks"`), числовым `queue_id` или объектом `{ "queue": "networks" }` / `{ "queue_id": 12 }`. Ручной routing lock блокирует автоматический handoff, но факт диагностики всё равно сохраняется.
+
 ## Проверки
 
 Минимальный локальный baseline при изменении этого потока:
 
 - `python -m pytest server/tests/test_playbook_scenarios_no_db.py server/tests/test_web_admin_api.py server/tests/test_ticket_form_packs.py -q --tb=short`
+- `python -m pytest server/tests/test_ticket_diagnostic_policy.py -q --tb=short`
 - `python -m pytest server/tests/test_ticket_passport_service.py -q --tb=short`
 - `pnpm --dir webapp run test -- --run src/features/playbooks/playbook-builder-panel.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx src/features/agent-updates/device-update-panel.test.tsx`
 - `pnpm --dir webapp run build`

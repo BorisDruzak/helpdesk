@@ -438,6 +438,20 @@ class CommandResultEventPublisher:
                                 result_summary=operation.result_summary,
                                 result_event_id=result_event[0],
                             )
+                        try:
+                            from tickets.diagnostic_policy import apply_diagnostic_result_policy
+
+                            await apply_diagnostic_result_policy(
+                                session,
+                                ticket_repo=ticket_repo,
+                                operation=operation,
+                                result_payload=payload,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                f"[command_result] diagnostic policy apply failed: "
+                                f"operation_id={operation.operation_id} ticket_id={operation.ticket_id} error={exc}"
+                            )
                         await session.commit()
                         if result_event:
                             await push_ticket_event_committed(

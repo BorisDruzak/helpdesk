@@ -365,6 +365,8 @@ TOPICS: tuple[Topic, ...] = (
             "diagnostic policy",
             "diagnostic_policy",
             "diagnostic_result",
+            "reroute_by_result",
+            "diagnostic_result_classified",
             "ticket_evidence_items",
             "ticket passport evidence",
             "visibility policy",
