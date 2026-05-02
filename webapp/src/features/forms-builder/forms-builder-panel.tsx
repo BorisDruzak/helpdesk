@@ -2044,6 +2044,73 @@ function VisibilityPolicyControls({
   );
 }
 
+const DEFAULT_VISIBILITY_HIDDEN_PREVIEW = [
+  "internal_notes",
+  "internal_queue_comments",
+  "ola_details",
+  "raw_diagnostics",
+  "latest_operations",
+];
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function InlinePolicyList({ items, emptyLabel }: { items: string[]; emptyLabel: string }) {
+  const displayItems = items.length ? items : [emptyLabel];
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {displayItems.map((item) => (
+        <span className="rounded-md border border-border bg-white px-2 py-1 text-xs text-slate-700" key={item}>
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function VisibilityPolicyPreview({ config }: { config: Record<string, unknown> }) {
+  const mapping = nestedObject(config.public_status_mapping);
+  const hidden = uniqueStrings([...DEFAULT_VISIBILITY_HIDDEN_PREVIEW, ...stringList(config.hide_from_requester)]);
+  const requesterFields = stringList(config.show_to_requester);
+  const supportFields = stringList(config.show_to_support ?? config.support_fields);
+  const statusPreview = ["new", "in_progress", "waiting_user", "waiting_approval", "resolved", "closed"]
+    .map((status) => {
+      const value = mapping[status];
+      return value ? `${status}: ${String(value)}` : "";
+    })
+    .filter(Boolean);
+
+  return (
+    <div className="mt-4 border-t border-border pt-4" data-testid="visibility-policy-preview">
+      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Предпросмотр видимости</p>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-3">
+          <p className="text-sm font-semibold text-slate-950">Заявитель</p>
+          <p className="mt-2 text-xs text-slate-600">Публичные статусы</p>
+          <InlinePolicyList items={statusPreview} emptyLabel="Используются статусы по умолчанию" />
+          <p className="mt-3 text-xs text-slate-600">Доступные поля</p>
+          <InlinePolicyList items={requesterFields} emptyLabel="Явный список не задан" />
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+          <p className="text-sm font-semibold text-slate-950">Support</p>
+          <p className="mt-2 text-xs text-slate-600">Скрыто от заявителя</p>
+          <InlinePolicyList items={hidden} emptyLabel="Нет скрытых полей" />
+          <p className="mt-3 text-xs text-slate-600">Support-visible поля</p>
+          <InlinePolicyList items={supportFields} emptyLabel="Support видит полный рабочий payload" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NotificationPolicyControls({
   config,
   onChange,
@@ -2141,6 +2208,53 @@ function NotificationPolicyControls({
         label="Канал: VK Teams"
         onChange={(checked) => updateChannel("vk_teams", checked)}
       />
+    </div>
+  );
+}
+
+function enabledChannelPreview(config: Record<string, unknown>): string[] {
+  const channels = nestedObject(config.channels);
+  return ["web", "email", "telegram", "vk_teams"]
+    .filter((channel) => Boolean(channels[channel] ?? channel === "web"))
+    .map((channel) => (channel === "vk_teams" ? "VK Teams" : channel));
+}
+
+function notificationRecipientPreview(config: Record<string, unknown>): string[] {
+  const events = [
+    ["on_created", "Создание"],
+    ["on_assigned", "Назначение"],
+    ["on_waiting_user", "Ожидание пользователя"],
+    ["on_requester_replied", "Ответ пользователя"],
+    ["on_sla_warning", "SLA риск"],
+    ["on_sla_breach", "SLA нарушение"],
+    ["on_resolved", "Решение"],
+    ["on_closed", "Закрытие"],
+  ];
+  return events
+    .map(([eventName, label]) => {
+      const eventConfig = nestedObject(config[eventName]);
+      const recipients = ["requester", "assignee", "queue", "queue_if_no_assignee", "queue_lead", "watchers"].filter((key) =>
+        Boolean(eventConfig[key])
+      );
+      return recipients.length ? `${label}: ${recipients.join(", ")}` : "";
+    })
+    .filter(Boolean);
+}
+
+function NotificationPolicyPreview({ config }: { config: Record<string, unknown> }) {
+  return (
+    <div className="mt-4 border-t border-border pt-4" data-testid="notification-policy-preview">
+      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Предпросмотр уведомлений</p>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-3">
+          <p className="text-sm font-semibold text-slate-950">Получатели по событиям</p>
+          <InlinePolicyList items={notificationRecipientPreview(config)} emptyLabel="Явные получатели не заданы" />
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+          <p className="text-sm font-semibold text-slate-950">Каналы доставки</p>
+          <InlinePolicyList items={enabledChannelPreview(config)} emptyLabel="Включён только web" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -3718,6 +3832,9 @@ function TemplateConstructorPanel({
                 config={parseJsonDraft(form.visibility_policy_json, parseJsonDraft(buildVisibilityPreset()))}
                 onChange={(config) => onUpdatePolicyJson("visibility_policy_json", prettyJson(config))}
               />
+              <VisibilityPolicyPreview
+                config={parseJsonDraft(form.visibility_policy_json, parseJsonDraft(buildVisibilityPreset()))}
+              />
             </div>
           </div>
         ) : null}
@@ -3748,6 +3865,9 @@ function TemplateConstructorPanel({
               <NotificationPolicyControls
                 config={parseJsonDraft(form.notification_policy_json, parseJsonDraft(buildNotificationPreset()))}
                 onChange={(config) => onUpdatePolicyJson("notification_policy_json", prettyJson(config))}
+              />
+              <NotificationPolicyPreview
+                config={parseJsonDraft(form.notification_policy_json, parseJsonDraft(buildNotificationPreset()))}
               />
             </div>
           </div>

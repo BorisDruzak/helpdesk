@@ -1734,6 +1734,54 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("показывает preview requester/support видимости и каналов до публикации", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Видимость")[0]);
+
+    const visibilityPreview = screen.getByTestId("visibility-policy-preview");
+    expect(visibilityPreview).toHaveTextContent("Предпросмотр видимости");
+    expect(visibilityPreview).toHaveTextContent("Заявитель");
+    expect(visibilityPreview).toHaveTextContent("Support");
+    expect(visibilityPreview).toHaveTextContent("raw_diagnostics");
+    expect(visibilityPreview).toHaveTextContent("expected_due_at");
+
+    fireEvent.click(screen.getAllByText("Уведомления")[0]);
+
+    const notificationPreview = screen.getByTestId("notification-policy-preview");
+    expect(notificationPreview).toHaveTextContent("Предпросмотр уведомлений");
+    expect(notificationPreview).toHaveTextContent("Создание: requester, queue");
+    expect(notificationPreview).toHaveTextContent("email");
+    expect(notificationPreview).toHaveTextContent("web");
+  });
+
   it("настраивает reporting policy в шаблоне без ручного JSON", async () => {
     const saveCalls: unknown[] = [];
 

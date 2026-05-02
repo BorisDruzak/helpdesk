@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional, Set, TYPE_CHECKING
 
 from loguru import logger
@@ -21,6 +22,35 @@ PUBLIC_EVENT_TYPES: Set[str] = {
 }
 
 
+_EVENT_POLICY_ALIASES: dict[str, tuple[str, ...]] = {
+    "ticket_created": ("on_created", "on_ticket_created"),
+    "created": ("on_created",),
+    "ticket_assigned": ("on_assigned", "on_ticket_assigned"),
+    "assigned": ("on_assigned",),
+    "waiting_user": ("on_waiting_user", "on_waiting_on_user"),
+    "waiting_on_user": ("on_waiting_user", "on_waiting_on_user"),
+    "requester_replied": ("on_requester_replied",),
+    "sla_warning": ("on_sla_warning",),
+    "sla_breached": ("on_sla_breach", "on_sla_breached"),
+    "sla_breach": ("on_sla_breach",),
+    "resolved": ("on_resolved",),
+    "closed": ("on_closed",),
+    "approval_escalated": ("on_approval_escalated",),
+    "approval_reminder_due": ("on_approval_reminder", "on_approval_reminder_due"),
+    "approval_timed_out": ("on_approval_timeout", "on_approval_timed_out"),
+    "diagnostic_completed": ("on_diagnostic_completed",),
+    "diagnostics_completed": ("on_diagnostic_completed",),
+}
+
+
+@dataclass(frozen=True)
+class _ExternalChannelAction:
+    channel: str
+    enabled: bool
+    available: bool
+    reason: str | None = None
+
+
 def get_template_notification_policy(ticket: Any) -> dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
     if not isinstance(custom_fields, dict):
@@ -34,7 +64,8 @@ def get_template_notification_policy(ticket: Any) -> dict[str, Any]:
 
 def _event_policy(policy: dict[str, Any], event_type: str) -> dict[str, Any] | None:
     event_key = str(event_type or "").strip()
-    candidates = [f"on_{event_key}", event_key]
+    candidates = list(_EVENT_POLICY_ALIASES.get(event_key, ()))
+    candidates.extend([f"on_{event_key}", event_key])
     if event_key.endswith("ed"):
         candidates.append(f"on_{event_key[:-2]}")
     if event_key.endswith("_sent"):
@@ -56,6 +87,34 @@ def _enabled_external_channels(
     notification_policy: dict[str, Any],
     event_policy: dict[str, Any] | None,
 ) -> list[str]:
+    return [
+        action.channel
+        for action in _external_channel_actions(notification_policy, event_policy, channel_provider=None)
+        if action.enabled and action.available
+    ]
+
+
+def _provider_available_channels(channel_provider: ExternalNotificationProvider | None) -> set[str] | None:
+    if channel_provider is None:
+        return None
+    value = getattr(channel_provider, "available_channels", None)
+    if callable(value):
+        value = value()
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {str(key or "").strip().lower() for key, enabled in value.items() if key and bool(enabled)}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {str(channel or "").strip().lower() for channel in value if str(channel or "").strip()}
+    return None
+
+
+def _external_channel_actions(
+    notification_policy: dict[str, Any],
+    event_policy: dict[str, Any] | None,
+    *,
+    channel_provider: ExternalNotificationProvider | None,
+) -> list[_ExternalChannelAction]:
     channels: dict[str, Any] = {}
     global_channels = notification_policy.get("channels")
     if isinstance(global_channels, dict):
@@ -63,12 +122,25 @@ def _enabled_external_channels(
     event_channels = event_policy.get("channels") if isinstance(event_policy, dict) else None
     if isinstance(event_channels, dict):
         channels.update(event_channels)
-    result: list[str] = []
+
+    provider_channels = _provider_available_channels(channel_provider)
+    actions: list[_ExternalChannelAction] = []
     for channel, enabled in channels.items():
-        channel_name = str(channel or "").strip().lower()
-        if channel_name and channel_name != "web" and bool(enabled):
-            result.append(channel_name)
-    return result
+        channel_name = str(channel or "").strip().lower().replace("-", "_")
+        if not channel_name or channel_name == "web":
+            continue
+        is_enabled = bool(enabled)
+        if not is_enabled:
+            actions.append(_ExternalChannelAction(channel_name, enabled=False, available=False, reason="channel_disabled"))
+            continue
+        if channel_provider is None:
+            actions.append(_ExternalChannelAction(channel_name, enabled=True, available=False, reason="channel_provider_unavailable"))
+            continue
+        if provider_channels is not None and channel_name not in provider_channels:
+            actions.append(_ExternalChannelAction(channel_name, enabled=True, available=False, reason="channel_unavailable"))
+            continue
+        actions.append(_ExternalChannelAction(channel_name, enabled=True, available=True))
+    return actions
 
 
 async def _notification_context(
@@ -159,7 +231,11 @@ async def notify_ticket_event(
     if not ticket:
         return
     recipients = await get_recipients(ticket_repo, ticket_id, event_type, visibility)
-    external_channels = _enabled_external_channels(notification_policy, event_policy)
+    external_channel_actions = _external_channel_actions(
+        notification_policy,
+        event_policy,
+        channel_provider=channel_provider,
+    )
     for actor_id in recipients:
         if initiator_id and str(actor_id) == str(initiator_id):
             suppress = DEFAULT_SUPPRESS_SELF
@@ -184,13 +260,29 @@ async def notify_ticket_event(
             logger.warning(
                 f"[NotificationService] create failed actor_id={actor_id} ticket_id={ticket_id}: {exc}"
             )
-        if channel_provider and external_channels:
-            for channel in external_channels:
+        if external_channel_actions:
+            for action in external_channel_actions:
+                if not action.enabled or not action.available:
+                    await _record_external_delivery_audit(
+                        ticket_repo,
+                        ticket,
+                        {
+                            "channel": action.channel,
+                            "actor_id": actor_id,
+                            "ticket_id": ticket_id,
+                            "event_type": event_type,
+                            "delivery_status": "skipped",
+                            "reason": action.reason,
+                        },
+                    )
+                    continue
+                if channel_provider is None:
+                    continue
                 await _deliver_external_channel(
                     ticket_repo=ticket_repo,
                     ticket=ticket,
                     channel_provider=channel_provider,
-                    channel=channel,
+                    channel=action.channel,
                     actor_id=actor_id,
                     ticket_id=ticket_id,
                     event_type=event_type,

@@ -6,7 +6,7 @@
 
 Created: 2026-05-02.
 
-Last updated: 2026-05-03, after Slice 2.
+Last updated: 2026-05-03, during Slice 3 verification.
 
 The previous service desk model plan is complete. Final signoff covered server/agent/web focused tests, release smoke, browser checks and observer runtime. Working maturity estimate after that signoff:
 
@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 25% (2 of 8 slices complete).
+Current plan completion: 37.5% (3 of 8 slices complete after Slice 3 verification).
 
 ## Goal
 
@@ -110,8 +110,8 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 - Keep workflow transition actions explicit and typed. Runtime may execute safe actions automatically, but high-risk side effects must be auditable and gated.
 - Keep approvals as first-class requests, not only status flags. Support and requester UI must show who is expected to act next.
-- Notification policy chooses intent and recipients; preferences/channel availability remain the final per-recipient filter.
-- Visibility policy owns requester-safe projection. Redaction must happen before public/requester payloads leave the server.
+- Notification policy chooses intent and recipients; preferences/channel availability remain the final per-recipient filter, and unavailable/disabled external channels must leave audit evidence instead of disappearing silently.
+- Visibility policy owns requester-safe projection. Redaction, including nested dotted paths, must happen before public/requester payloads leave the server.
 - Passport/reporting policy owns required facts and export visibility. Closure should block only when the active closure/reporting policy explicitly requires an official dossier.
 - Smart views are saved filters, not ownership queues.
 - Agent live UX should be validated against the remote server with current published templates, not only unit helpers.
@@ -143,15 +143,15 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 3: Notification And Visibility Hardening
 
-- [ ] Add tests for notification events: created, assigned, waiting_user, requester_replied, SLA warning/breach, resolved, closed, approval events and diagnostic completion.
-- [ ] Add channel validation for `web`, `email`, `telegram`, `vk_teams`, provider channels and disabled/unavailable channel audit.
-- [ ] Ensure notification preferences remain the final per-recipient filter after policy recipient resolution.
-- [ ] Expand visibility policy tests for field-level requester/support views, public status mapping, raw diagnostics redaction, OLA hiding and passport export visibility.
-- [ ] Add UI preview in the policy editor showing requester view vs support view before publication.
-- [ ] Verification: `python -m pytest server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py -q --tb=short`.
-- [ ] Verification: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx`.
+- [x] Add tests for notification events: created, assigned, waiting_user, requester_replied, SLA warning/breach, resolved, closed, approval events and diagnostic completion.
+- [x] Add channel validation for `web`, `email`, `telegram`, `vk_teams`, provider channels and disabled/unavailable channel audit.
+- [x] Ensure notification preferences remain the final per-recipient filter after policy recipient resolution.
+- [x] Expand visibility policy tests for field-level requester/support views, public status mapping, raw diagnostics redaction, OLA hiding and passport export visibility.
+- [x] Add UI preview in the policy editor showing requester view vs support view before publication.
+- [x] Verification: `python -m pytest server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py -q --tb=short` -> 21 passed.
+- [x] Verification: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 27 passed.
 - [ ] Browser check `/app/admin/forms`, notification/visibility policy editors and preview.
-- [ ] Update docs/navigation and this plan.
+- [x] Update docs/navigation and this plan.
 - [ ] Commit and release if API/runtime/UI changed.
 
 ## Slice 4: Passport And Reporting Enforcement

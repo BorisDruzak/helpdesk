@@ -110,6 +110,19 @@ def _build_visibility_metadata_with_policy(
     }
 
 
+def _remove_path(payload: dict[str, Any], path: str) -> None:
+    parts = [part for part in str(path or "").split(".") if part]
+    if not parts:
+        return
+    current: Any = payload
+    for part in parts[:-1]:
+        if not isinstance(current, dict):
+            return
+        current = current.get(part)
+    if isinstance(current, dict):
+        current.pop(parts[-1], None)
+
+
 def build_visibility_metadata(ticket: Any) -> dict[str, Any]:
     policy = get_template_visibility_policy(ticket)
     return _build_visibility_metadata_with_policy(
@@ -139,7 +152,7 @@ def _apply_visibility_payload_with_policy(
 
     if str(visibility or "").lower() in {"requester", "public", "user"}:
         for key in metadata["hidden_from_requester"]:
-            result.pop(key, None)
+            _remove_path(result, key)
     return result
 
 
