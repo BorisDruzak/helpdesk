@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import (
     ClosurePolicy,
     HelpdeskPolicyAudit,
+    ReportingPolicy,
     Ticket,
     TicketActionLog,
     TicketApproval,
@@ -19,6 +20,7 @@ from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.ticket_auto_close_watchdog import TicketAutoCloseWatchdog
 from tickets.workflow_service import TicketWorkflowService
+from tickets.passport_service import TicketPassportService
 
 
 def _template_context(closure_policy: dict, *, approval_policy: dict | None = None) -> dict:
@@ -79,6 +81,31 @@ async def _publish_closure_policy(test_engine, config: dict) -> None:
             kind="closure",
             code="website_closure_runtime",
             title="Website closure runtime",
+            scope_level="request_template",
+            scope_ref="website_unavailable",
+            config=config,
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+
+async def _clear_reporting_registry(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
+        await session.execute(delete(ReportingPolicy))
+        await session.commit()
+
+
+async def _publish_reporting_policy(test_engine, config: dict) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_policy(
+            kind="reporting",
+            code="website_reporting_runtime",
+            title="Website reporting runtime",
             scope_level="request_template",
             scope_ref="website_unavailable",
             config=config,
@@ -436,3 +463,102 @@ async def test_closure_policy_auto_close_uses_policy_days(test_engine) -> None:
         confirmation = (ticket.custom_fields or {}).get("resolution_confirmation") or {}
         assert confirmation.get("pending") is False
         assert confirmation.get("responded_option_id") == "auto_close"
+
+
+@pytest.mark.asyncio
+async def test_closure_requires_official_passport_only_when_reporting_policy_requires_it(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem", "evidence", "user_result"],
+            "require_official_passport": True,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="official passport"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        await session.commit()
+
+    with pytest.raises(ValueError, match="passport missing required facts"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.requester_resolution_summary = "Сайт снова открывается."
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="diagnostic_result",
+                title="HTTP check",
+                summary="HTTP 200 OK",
+                source_ref="operation:test",
+                visibility="internal",
+                created_by="support-test",
+            )
+        )
+        await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="refresh")
+        await session.commit()
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    assert result["applied"] is True
+    assert result["event_payload"]["closure_policy"]["official_passport_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_closure_does_not_require_passport_when_reporting_policy_does_not_require_it(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem", "evidence", "user_result"],
+            "require_official_passport": False,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            }
+        },
+    )
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Сайт снова открывается.",
+    )
+
+    assert result["applied"] is True

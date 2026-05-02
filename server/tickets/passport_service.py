@@ -39,6 +39,34 @@ SECTION_KEYS = {
     "repeat_guidance": "repeat_guidance",
 }
 
+PASSPORT_REQUIREMENT_LABELS = {
+    "requester": "Заявитель",
+    "problem": "Описание проблемы",
+    "affected_object": "Затронутый объект",
+    "automated_checks": "Автоматические проверки",
+    "operator_checks": "Проверки оператора",
+    "changes_made": "Выполненные действия",
+    "approvals": "Согласования",
+    "evidence": "Доказательство решения",
+    "user_result": "Итог для пользователя",
+    "internal_result": "Внутренний итог",
+    "repeat_guidance": "Инструкция при повторе",
+}
+
+PASSPORT_REQUIREMENT_SOURCES = {
+    "requester": "ticket.requester_id",
+    "problem": "ticket.title",
+    "affected_object": "ticket.device_id",
+    "automated_checks": "operations",
+    "operator_checks": "ticket_worklogs_or_internal_notes",
+    "changes_made": "public_support_messages",
+    "approvals": "ticket_approvals",
+    "evidence": "ticket_evidence_items",
+    "user_result": "ticket.requester_resolution_summary",
+    "internal_result": "ticket.resolution_summary",
+    "repeat_guidance": "passport.repeat_guidance",
+}
+
 
 def _iso(value: Any) -> str | None:
     if value is None:
@@ -95,6 +123,116 @@ def _apply_reporting_policy_to_sections(
     return result
 
 
+def _reporting_export_preview(policy: dict[str, Any], sections: dict[str, str]) -> dict[str, list[str]]:
+    selected = _string_list(policy.get("required_sections")) if policy else []
+    export_visibility = policy.get("export_visibility") if isinstance(policy, dict) else None
+    hidden = _string_list(export_visibility.get("hide_sections") if isinstance(export_visibility, dict) else [])
+    source_sections = selected or [key for key in SECTION_KEYS if key in sections]
+    hidden_set = set(hidden)
+    return {
+        "visible_sections": [key for key in source_sections if key not in hidden_set],
+        "hidden_sections": hidden,
+    }
+
+
+def _section_has_required_fact(
+    section: str,
+    *,
+    ticket: Ticket,
+    sections: dict[str, str],
+    evidence: list[TicketEvidenceItem],
+    approvals: list[TicketApproval],
+    operations: list[Operation],
+    worklogs: list[TicketWorklog],
+) -> tuple[bool, str | None]:
+    if section == "requester":
+        value = get_requester_display_name(ticket) or getattr(ticket, "requester_id", None)
+        return bool(_clean(value)), _clean(value) or None
+    if section == "problem":
+        value = _join_lines([getattr(ticket, "title", None), getattr(ticket, "description", None)], fallback="")
+        return bool(_clean(value)), _clean(value) or None
+    if section == "affected_object":
+        value = _join_lines([getattr(ticket, "device_id", None), getattr(ticket, "asset_id", None), getattr(ticket, "service_id", None)], fallback="")
+        return bool(_clean(value)), _clean(value) or None
+    if section == "automated_checks":
+        value = _clean(sections.get(section))
+        return bool(operations), value if operations and value else None
+    if section == "operator_checks":
+        value = _clean(sections.get(section))
+        return bool(worklogs), value if worklogs and value else None
+    if section == "changes_made":
+        value = _clean(sections.get(section))
+        return bool(_clean(getattr(ticket, "resolution_summary", None))), value if _clean(getattr(ticket, "resolution_summary", None)) else None
+    if section == "approvals":
+        value = _clean(sections.get(section))
+        return bool(approvals), value if approvals and value else None
+    if section == "evidence":
+        value = _clean(sections.get(section))
+        has_evidence = bool(evidence) or bool(_clean(getattr(ticket, "evidence_ref", None)))
+        return has_evidence, value if has_evidence and value else None
+    if section == "user_result":
+        value = _clean(getattr(ticket, "requester_resolution_summary", None))
+        return bool(value), value or None
+    if section == "internal_result":
+        value = _join_lines(
+            [
+                getattr(ticket, "resolution_code", None),
+                getattr(ticket, "resolution_summary", None),
+                getattr(ticket, "root_cause", None),
+            ],
+            fallback="",
+        )
+        return bool(_clean(value)), _clean(value) or None
+    value = _clean(sections.get(section))
+    return bool(value), value or None
+
+
+def _build_passport_requirements(
+    *,
+    ticket: Ticket,
+    sections: dict[str, str],
+    reporting_policy: dict[str, Any],
+    evidence: list[TicketEvidenceItem],
+    approvals: list[TicketApproval],
+    operations: list[Operation],
+    worklogs: list[TicketWorklog],
+) -> dict[str, Any]:
+    required_sections = _string_list(reporting_policy.get("required_sections")) if isinstance(reporting_policy, dict) else []
+    missing_facts: list[dict[str, Any]] = []
+    for section in required_sections:
+        if section not in SECTION_KEYS:
+            continue
+        met, current_value = _section_has_required_fact(
+            section,
+            ticket=ticket,
+            sections=sections,
+            evidence=evidence,
+            approvals=approvals,
+            operations=operations,
+            worklogs=worklogs,
+        )
+        if met:
+            continue
+        missing_facts.append(
+            {
+                "required_fact": section,
+                "source": PASSPORT_REQUIREMENT_SOURCES.get(section, f"passport.sections.{section}"),
+                "current_value": current_value,
+                "requester_visible_label": PASSPORT_REQUIREMENT_LABELS.get(section, section),
+                "severity": "blocking",
+            }
+        )
+    return {
+        "required_sections": required_sections,
+        "require_official_passport": bool(reporting_policy.get("require_official_passport")) if isinstance(reporting_policy, dict) else False,
+        "missing_facts": missing_facts,
+        "missing_count": len(missing_facts),
+        "blocking_missing_count": sum(1 for item in missing_facts if item.get("severity") == "blocking"),
+        "export_preview": _reporting_export_preview(reporting_policy if isinstance(reporting_policy, dict) else {}, sections),
+        "knowledge_draft_hints": reporting_policy.get("knowledge_draft_hints", {}) if isinstance(reporting_policy, dict) else {},
+    }
+
+
 class TicketPassportService:
     """Builds deterministic resolution passport drafts from ticket facts."""
 
@@ -104,7 +242,16 @@ class TicketPassportService:
 
     async def get_payload(self, ticket_id: str) -> dict[str, Any]:
         passport = await self.repo.get_latest_passport(ticket_id)
-        return await self._build_payload(ticket_id, passport)
+        ticket = await self.session.get(Ticket, ticket_id)
+        reporting_policy = {}
+        if ticket is not None:
+            reporting_policy = await resolve_effective_ticket_policy(
+                self.session,
+                ticket,
+                "reporting",
+                snapshot_fields=("reporting_policy", "passport_policy"),
+            )
+        return await self._build_payload(ticket_id, passport, ticket=ticket, reporting_policy=reporting_policy)
 
     async def generate(
         self,
@@ -140,7 +287,7 @@ class TicketPassportService:
         approvals = await self.repo.list_approvals(ticket_id)
         related_objects = self._related_objects_from_ticket(ticket)
 
-        sections = self._assemble_sections(
+        raw_sections = self._assemble_sections(
             ticket=ticket,
             events=events,
             operations=operations,
@@ -149,13 +296,23 @@ class TicketPassportService:
             approvals=approvals,
             include_internal_notes=include_internal_notes,
         )
-        sections = _apply_reporting_policy_to_sections(sections, reporting_policy)
+        passport_requirements = _build_passport_requirements(
+            ticket=ticket,
+            sections=raw_sections,
+            reporting_policy=reporting_policy,
+            evidence=evidence,
+            approvals=approvals,
+            operations=operations,
+            worklogs=worklogs,
+        )
+        sections = _apply_reporting_policy_to_sections(raw_sections, reporting_policy)
         source_payload = {
             "summary_source": "deterministic",
             "mode": mode,
             "include_internal_notes": include_internal_notes,
             "reporting_policy": reporting_policy,
             "report_tags": _string_list(reporting_policy.get("report_tags") if isinstance(reporting_policy, dict) else []),
+            "passport_requirements": passport_requirements,
             "source_event_ids": [event.id for event in events if event.id is not None],
             "source_operation_ids": [op.operation_id for op in operations],
             "generated_from": {
@@ -180,7 +337,7 @@ class TicketPassportService:
                 objects=related_objects,
             )
         await self._record_passport_event(ticket, passport, actor_id)
-        return await self._build_payload(ticket_id, passport)
+        return await self._build_payload(ticket_id, passport, ticket=ticket, reporting_policy=reporting_policy)
 
     def _assemble_sections(
         self,
@@ -336,15 +493,38 @@ class TicketPassportService:
             )
         return objects
 
-    async def _build_payload(self, ticket_id: str, passport: TicketResolutionPassport | None) -> dict[str, Any]:
+    async def _build_payload(
+        self,
+        ticket_id: str,
+        passport: TicketResolutionPassport | None,
+        *,
+        ticket: Ticket | None = None,
+        reporting_policy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         evidence = await self.repo.list_evidence(ticket_id)
         actions = await self.repo.list_actions(ticket_id)
         approvals = await self.repo.list_approvals(ticket_id)
         related_objects = await self.repo.list_related_objects(ticket_id)
+        requirements: dict[str, Any] = {}
+        if passport is not None:
+            source_payload = passport.source_payload or {}
+            if isinstance(source_payload, dict):
+                requirements = source_payload.get("passport_requirements") or {}
+        elif ticket is not None:
+            requirements = _build_passport_requirements(
+                ticket=ticket,
+                sections={},
+                reporting_policy=reporting_policy or {},
+                evidence=evidence,
+                approvals=approvals,
+                operations=[],
+                worklogs=[],
+            )
         return {
             "ticket_id": ticket_id,
             "passport": self._passport_to_dict(passport) if passport else None,
             "status": "draft" if passport else "missing",
+            "requirements": requirements,
             "evidence": [self._evidence_to_dict(item) for item in evidence],
             "actions": [self._action_to_dict(item) for item in actions],
             "approvals": [self._approval_to_dict(item) for item in approvals],

@@ -111,6 +111,54 @@ describe("TicketPassportPanel", () => {
     expect(screen.getByText("Печать / PDF")).toBeInTheDocument();
     expect(screen.getByText("Сохранить как черновик знания")).toBeInTheDocument();
   });
+  it("renders passport missing facts and export preview", () => {
+    render(
+      <TicketPassportPanel
+        isGenerating={false}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={{
+          ...passportPayload,
+          requirements: {
+            required_sections: ["problem", "evidence", "user_result"],
+            require_official_passport: true,
+            missing_facts: [
+              {
+                required_fact: "evidence",
+                source: "ticket_evidence_items",
+                current_value: null,
+                requester_visible_label: "Доказательство решения",
+                severity: "blocking",
+              },
+              {
+                required_fact: "user_result",
+                source: "ticket.requester_resolution_summary",
+                current_value: null,
+                requester_visible_label: "Итог для пользователя",
+                severity: "blocking",
+              },
+            ],
+            missing_count: 2,
+            blocking_missing_count: 2,
+            export_preview: {
+              visible_sections: ["problem", "evidence", "user_result"],
+              hidden_sections: ["internal_result"],
+            },
+            knowledge_draft_hints: { enabled: true, source: "passport" },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Требования паспорта")).toBeInTheDocument();
+    expect(screen.getByText("2 блокирующих факта")).toBeInTheDocument();
+    expect(screen.getByText("Доказательство решения")).toBeInTheDocument();
+    expect(screen.getByText("ticket_evidence_items")).toBeInTheDocument();
+    expect(screen.getByText("Экспорт")).toBeInTheDocument();
+    expect(screen.getByText("Скрыто: internal_result")).toBeInTheDocument();
+  });
 });
 
 describe("TicketWorkVisibilityCard", () => {

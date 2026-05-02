@@ -11,6 +11,7 @@ from app.db.models import (
     TicketApproval,
     TicketEvent,
     TicketEvidenceItem,
+    TicketResolutionPassport,
     TicketWorklog,
 )
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
@@ -109,6 +110,39 @@ def _requester_confirmation(policy: dict[str, Any]) -> dict[str, Any]:
         "required": required,
         "auto_close_after_days": auto_close_after_days,
         "reopen_on_negative_feedback": bool(raw.get("reopen_on_negative_feedback", True)),
+    }
+
+
+async def _official_passport_requirement(session: Any, ticket: Any) -> dict[str, Any] | None:
+    reporting_policy = await resolve_effective_ticket_policy(
+        session,
+        ticket,
+        "reporting",
+        snapshot_fields=("reporting_policy", "passport_policy"),
+    )
+    if not isinstance(reporting_policy, dict) or not reporting_policy.get("require_official_passport"):
+        return None
+    passport = (
+        await session.execute(
+            select(TicketResolutionPassport)
+            .where(TicketResolutionPassport.ticket_id == ticket.ticket_id)
+            .order_by(TicketResolutionPassport.version.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if passport is None:
+        raise ValueError("closure_policy requires official passport")
+    source_payload = passport.source_payload if isinstance(passport.source_payload, dict) else {}
+    requirements = source_payload.get("passport_requirements") if isinstance(source_payload, dict) else {}
+    if not isinstance(requirements, dict):
+        raise ValueError("closure_policy requires official passport")
+    if int(requirements.get("blocking_missing_count") or 0) > 0:
+        raise ValueError("closure_policy passport missing required facts")
+    return {
+        "required": True,
+        "passport_id": passport.id,
+        "version": passport.version,
+        "blocking_missing_count": int(requirements.get("blocking_missing_count") or 0),
     }
 
 
@@ -413,6 +447,7 @@ async def validate_closure_policy(
             raise ValueError("closure_policy requires approved approval evidence")
 
     requester_confirmation = _requester_confirmation(policy)
+    official_passport = await _official_passport_requirement(session, ticket)
 
     return {
         "applied": True,
@@ -441,5 +476,7 @@ async def validate_closure_policy(
         "priority_class": priority_class,
         "operation_log_required": operation_log_required,
         "approval_evidence_required": approval_evidence_required,
+        "official_passport_required": bool(official_passport),
+        **({"official_passport": official_passport} if official_passport else {}),
         **({"requester_confirmation": requester_confirmation} if requester_confirmation else {}),
     }

@@ -323,6 +323,24 @@ export type SupportTicketPassportPayload = {
     source_payload: Record<string, unknown>;
     stale: boolean;
   } | null;
+  requirements?: {
+    required_sections: string[];
+    require_official_passport: boolean;
+    missing_facts: Array<{
+      required_fact: string;
+      source: string;
+      current_value: string | null;
+      requester_visible_label: string;
+      severity: string;
+    }>;
+    missing_count: number;
+    blocking_missing_count: number;
+    export_preview: {
+      visible_sections?: string[];
+      hidden_sections?: string[];
+    };
+    knowledge_draft_hints: Record<string, unknown>;
+  };
   evidence: Array<{
     id: number;
     ticket_id: string;

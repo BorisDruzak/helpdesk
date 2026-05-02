@@ -1234,6 +1234,10 @@ export function TicketPassportPanel({
   }
 
   const passport = payload.passport;
+  const requirements = payload.requirements;
+  const missingFacts = requirements?.missing_facts ?? [];
+  const hiddenExportSections = requirements?.export_preview?.hidden_sections ?? [];
+  const visibleExportSections = requirements?.export_preview?.visible_sections ?? [];
 
   return (
     <div className="space-y-5">
@@ -1267,6 +1271,46 @@ export function TicketPassportPanel({
       {knowledgeDraftMessage ? (
         <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
           {knowledgeDraftMessage}
+        </div>
+      ) : null}
+
+      {requirements ? (
+        <div className="rounded-[1.1rem] border border-border bg-white px-5 py-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Требования паспорта</p>
+              <p className="mt-2 text-sm text-slate-600">
+                {requirements.require_official_passport ? "Официальный паспорт обязателен перед закрытием." : "Паспорт не блокирует закрытие."}
+              </p>
+            </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800">
+              {requirements.blocking_missing_count} блокирующих факта
+            </div>
+          </div>
+          {missingFacts.length ? (
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {missingFacts.map((fact) => (
+                <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-3" key={`${fact.required_fact}:${fact.source}`}>
+                  <p className="text-sm font-semibold text-slate-950">{fact.requester_visible_label}</p>
+                  <p className="mt-1 text-xs text-slate-600">{fact.source}</p>
+                  {fact.current_value ? <p className="mt-2 text-xs text-slate-700">{fact.current_value}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              Все обязательные факты заполнены.
+            </p>
+          )}
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-sm font-semibold text-slate-950">Экспорт</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Видно: {visibleExportSections.length ? visibleExportSections.join(", ") : "все доступные разделы"}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              Скрыто: {hiddenExportSections.length ? hiddenExportSections.join(", ") : "нет скрытых разделов"}
+            </p>
+          </div>
         </div>
       ) : null}
 

@@ -17,6 +17,8 @@ from app.db.models import (
     Playbook,
     PlaybookStep,
     PlaybookVersion,
+    HelpdeskPolicyAudit,
+    ReportingPolicy,
     Ticket,
     TicketApproval,
     UiUser,
@@ -199,6 +201,45 @@ async def test_web_support_passport_mutations_require_manage_permission(test_cli
     )
 
     await _assert_forbidden_permission(response, "ticket.passport.manage")
+
+
+@pytest.mark.asyncio
+async def test_web_support_passport_payload_exposes_reporting_requirements(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, status="in_progress")
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        from sqlalchemy import delete
+
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
+        await session.execute(delete(ReportingPolicy))
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.custom_fields = {
+            "request_template": {
+                "key": "website_unavailable",
+                "ticket_type": "incident",
+                "reporting_policy": {
+                    "required_sections": ["problem", "evidence", "user_result"],
+                    "export_visibility": {"hide_sections": ["internal_result"]},
+                    "require_official_passport": True,
+                },
+            }
+        }
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/passport",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    requirements = payload["data"]["requirements"]
+    assert requirements["require_official_passport"] is True
+    assert requirements["blocking_missing_count"] == 2
+    assert requirements["export_preview"]["hidden_sections"] == ["internal_result"]
+    missing_by_key = {item["required_fact"]: item for item in requirements["missing_facts"]}
+    assert missing_by_key["evidence"]["requester_visible_label"] == "Доказательство решения"
+    assert missing_by_key["user_result"]["source"] == "ticket.requester_resolution_summary"
 
 
 @pytest.mark.asyncio

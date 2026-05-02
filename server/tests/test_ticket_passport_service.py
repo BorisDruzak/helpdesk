@@ -425,3 +425,60 @@ async def test_passport_service_applies_reporting_policy_sections_and_evidence_p
     assert passport["source_payload"]["reporting_policy"]["required_sections"] == ["problem", "evidence", "user_result"]
     assert payload["actions"] == []
     assert payload["related_objects"] == []
+
+
+@pytest.mark.asyncio
+async def test_passport_service_reports_missing_required_facts_and_export_preview(test_engine):
+    from sqlalchemy import delete
+
+    from app.db.models import HelpdeskPolicyAudit, ReportingPolicy
+
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
+        await session.execute(delete(ReportingPolicy))
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Cannot open reporting site",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                        "reporting_policy": {
+                            "required_sections": ["problem", "evidence", "user_result", "internal_result"],
+                            "export_visibility": {"hide_sections": ["internal_result", "operator_checks"]},
+                            "require_official_passport": True,
+                            "knowledge_draft_hints": {"enabled": True, "source": "passport"},
+                        },
+                    },
+                },
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+    requirements = payload["requirements"]
+    assert requirements["required_sections"] == ["problem", "evidence", "user_result", "internal_result"]
+    assert requirements["require_official_passport"] is True
+    assert requirements["blocking_missing_count"] == 3
+    missing_by_key = {item["required_fact"]: item for item in requirements["missing_facts"]}
+    assert missing_by_key["evidence"]["source"] == "ticket_evidence_items"
+    assert missing_by_key["evidence"]["current_value"] is None
+    assert missing_by_key["evidence"]["requester_visible_label"] == "Доказательство решения"
+    assert missing_by_key["user_result"]["source"] == "ticket.requester_resolution_summary"
+    assert missing_by_key["internal_result"]["source"] == "ticket.resolution_summary"
+    assert requirements["export_preview"]["visible_sections"] == ["problem", "evidence", "user_result"]
+    assert requirements["export_preview"]["hidden_sections"] == ["internal_result", "operator_checks"]
+    assert requirements["knowledge_draft_hints"] == {"enabled": True, "source": "passport"}
+    assert payload["passport"]["source_payload"]["passport_requirements"]["blocking_missing_count"] == 3

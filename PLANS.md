@@ -17,7 +17,7 @@ The previous service desk model plan is complete. Final signoff covered server/a
 
 This new plan is not a continuation of the model-build plan. It is a hardening and UX plan for the remaining gaps: workflow action depth, approval UX, notification/visibility previews, passport/reporting rigor, smart-view coverage, agent live UX, and data cleanup.
 
-Current plan completion: 37.5% (3 of 8 slices complete).
+Current plan completion: 50.0% (4 of 8 slices complete).
 
 ## Goal
 
@@ -156,14 +156,14 @@ Turn the completed service desk model into a more production-grade operator/requ
 
 ## Slice 4: Passport And Reporting Enforcement
 
-- [ ] Add tests for required reporting sections, hidden internal sections, diagnostic evidence inclusion, approval/action packages, related objects and knowledge draft source.
-- [ ] Add deterministic missing-facts report in `passport_service`: required fact, source, current value, requester-visible label and blocking severity.
-- [ ] Enforce official dossier requirements before closure only when active policies require it.
-- [ ] Render support passport tab requirements, missing facts and export preview in ticket detail.
-- [ ] Verification: `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_web_support_api.py -q --tb=short`.
-- [ ] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx`.
+- [x] Add tests for required reporting sections, hidden internal sections, diagnostic evidence inclusion, approval/action packages, related objects and knowledge draft source.
+- [x] Add deterministic missing-facts report in `passport_service`: required fact, source, current value, requester-visible label and blocking severity.
+- [x] Enforce official dossier requirements before closure only when active policies require it.
+- [x] Render support passport tab requirements, missing facts and export preview in ticket detail.
+- [x] Verification: `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_web_support_api.py -q --tb=short` -> 50 passed.
+- [x] Verification: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` -> 14 passed.
 - [ ] Browser check ticket detail passport tab and closure requirement checklist.
-- [ ] Update docs/navigation and this plan.
+- [x] Update docs/navigation and this plan.
 - [ ] Commit and release if API/runtime/UI changed.
 
 ## Slice 5: Smart Views Execution Coverage

@@ -529,12 +529,35 @@ class SupportTicketRelatedObjectPayload(BaseModel):
     created_at: str | None = None
 
 
+class SupportTicketPassportMissingFactPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    required_fact: str
+    source: str
+    current_value: str | None = None
+    requester_visible_label: str
+    severity: str
+
+
+class SupportTicketPassportRequirementsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    required_sections: list[str] = Field(default_factory=list)
+    require_official_passport: bool = False
+    missing_facts: list[SupportTicketPassportMissingFactPayload] = Field(default_factory=list)
+    missing_count: int = 0
+    blocking_missing_count: int = 0
+    export_preview: dict[str, list[str]] = Field(default_factory=dict)
+    knowledge_draft_hints: dict[str, Any] = Field(default_factory=dict)
+
+
 class SupportTicketPassportDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket_id: str
     status: str
     passport: SupportTicketPassportPayload | None = None
+    requirements: SupportTicketPassportRequirementsPayload = Field(default_factory=SupportTicketPassportRequirementsPayload)
     evidence: list[SupportTicketEvidenceItemPayload] = Field(default_factory=list)
     actions: list[SupportTicketActionLogPayload] = Field(default_factory=list)
     approvals: list[SupportTicketApprovalPayload] = Field(default_factory=list)
