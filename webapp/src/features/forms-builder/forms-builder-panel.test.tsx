@@ -1583,6 +1583,105 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает notification policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Уведомления")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить уведомления" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.click(templateControl("Создание: очереди"));
+    fireEvent.click(templateControl("Ответ пользователя: исполнителю"));
+    fireEvent.click(templateControl("Ответ пользователя: очередь без исполнителя"));
+    fireEvent.click(templateControl("Нарушение срока: руководителю"));
+    fireEvent.click(templateControl("Канал: Telegram"));
+    fireEvent.click(templateControl("Канал: VK Teams"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          notification_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.notification_policy).toMatchObject({
+      on_created: {
+        requester: true,
+        queue: false,
+      },
+      on_requester_replied: {
+        assignee: false,
+        queue_if_no_assignee: false,
+      },
+      on_sla_breach: {
+        queue_lead: false,
+      },
+      channels: {
+        web: true,
+        email: true,
+        telegram: true,
+        vk_teams: true,
+      },
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14f is released: `/app/admin/forms` now has structured visibility-policy controls for public status mapping, requester-hidden fields and requester-visible metadata in both the request-template step and the standalone policy editor, before the advanced JSON editor. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10f release/browser signoff the working estimate was backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. After Slice 14f release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14g is in progress: the next JSON-dependency removal target is structured notification-policy controls in `/app/admin/forms`, so the request-template `Уведомления` step can edit event recipients/channels without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 10f release/browser signoff the working estimate was backend/runtime about 99%, server UI about 86%, agent GUI about 73%, overall about 96.5%. After Slice 14f release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 87%, agent GUI about 73%, overall about 96.7%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -336,6 +336,20 @@ Slice 14f local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `9ae3561 webapp: add structured visibility controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed structured visibility fields in the template `Видимость` step; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder errors, with one unrelated missing-agent warning for old `slice5-live-device`; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14g target:
+
+- [x] Extract reusable notification-policy controls for event recipients and channels.
+- [x] Use the controls in both the standalone policy editor and the request-template `Уведомления` step before the advanced JSON editor.
+- [x] Add Vitest coverage proving `notification_policy` saves from structured controls without manual JSON.
+
+Slice 14g local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "notification policy"` failed because the template `Уведомления` step had no structured `Создание: очереди` control.
+- GREEN focused: same command -> 1 passed.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 21 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
+- Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 

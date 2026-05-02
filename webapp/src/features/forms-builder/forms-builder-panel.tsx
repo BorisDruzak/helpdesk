@@ -1949,6 +1949,107 @@ function VisibilityPolicyControls({
   );
 }
 
+function NotificationPolicyControls({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const channels = nestedObject(config.channels);
+  const updateEvent = (eventName: string, field: string, checked: boolean) => {
+    const eventConfig = nestedObject(config[eventName]);
+    onChange({ ...config, [eventName]: { ...eventConfig, [field]: checked } });
+  };
+  const updateChannel = (channel: string, checked: boolean) => {
+    onChange({ ...config, channels: { ...channels, [channel]: checked } });
+  };
+  const isEnabled = (eventName: string, field: string, fallback = false) => {
+    const eventConfig = nestedObject(config[eventName]);
+    return Boolean(eventConfig[field] ?? fallback);
+  };
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_created", "requester")}
+        label="Создание: заявителю"
+        onChange={(checked) => updateEvent("on_created", "requester", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_created", "queue")}
+        label="Создание: очереди"
+        onChange={(checked) => updateEvent("on_created", "queue", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_assigned", "assignee")}
+        label="Назначение: исполнителю"
+        onChange={(checked) => updateEvent("on_assigned", "assignee", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_waiting_user", "requester")}
+        label="Ожидание пользователя: заявителю"
+        onChange={(checked) => updateEvent("on_waiting_user", "requester", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_requester_replied", "assignee")}
+        label="Ответ пользователя: исполнителю"
+        onChange={(checked) => updateEvent("on_requester_replied", "assignee", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_requester_replied", "queue_if_no_assignee")}
+        label="Ответ пользователя: очередь без исполнителя"
+        onChange={(checked) => updateEvent("on_requester_replied", "queue_if_no_assignee", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_sla_warning", "assignee")}
+        label="Риск срока: исполнителю"
+        onChange={(checked) => updateEvent("on_sla_warning", "assignee", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_sla_warning", "queue_lead")}
+        label="Риск срока: руководителю"
+        onChange={(checked) => updateEvent("on_sla_warning", "queue_lead", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_sla_breach", "assignee")}
+        label="Нарушение срока: исполнителю"
+        onChange={(checked) => updateEvent("on_sla_breach", "assignee", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_sla_breach", "queue_lead")}
+        label="Нарушение срока: руководителю"
+        onChange={(checked) => updateEvent("on_sla_breach", "queue_lead", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={isEnabled("on_resolved", "requester")}
+        label="Решено: заявителю"
+        onChange={(checked) => updateEvent("on_resolved", "requester", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(channels.web ?? true)}
+        label="Канал: web"
+        onChange={(checked) => updateChannel("web", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(channels.email)}
+        label="Канал: email"
+        onChange={(checked) => updateChannel("email", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(channels.telegram)}
+        label="Канал: Telegram"
+        onChange={(checked) => updateChannel("telegram", checked)}
+      />
+      <JsonLinkedCheckbox
+        checked={Boolean(channels.vk_teams)}
+        label="Канал: VK Teams"
+        onChange={(checked) => updateChannel("vk_teams", checked)}
+      />
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -2292,25 +2393,7 @@ function PolicyKindControls({
   }
 
   if (kind === "notification") {
-    const updateEvent = (eventName: string, field: string, checked: boolean) => {
-      const eventConfig =
-        typeof config[eventName] === "object" && config[eventName] ? (config[eventName] as Record<string, unknown>) : {};
-      onChange({ ...config, [eventName]: { ...eventConfig, [field]: checked } });
-    };
-    const channels = typeof config.channels === "object" && config.channels ? (config.channels as Record<string, unknown>) : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-3">
-        <JsonLinkedCheckbox checked={Boolean((config.on_created as Record<string, unknown> | undefined)?.requester)} label="Создание: заявителю" onChange={(checked) => updateEvent("on_created", "requester", checked)} />
-        <JsonLinkedCheckbox checked={Boolean((config.on_created as Record<string, unknown> | undefined)?.queue)} label="Создание: очереди" onChange={(checked) => updateEvent("on_created", "queue", checked)} />
-        <JsonLinkedCheckbox checked={Boolean((config.on_assigned as Record<string, unknown> | undefined)?.assignee)} label="Назначение: исполнителю" onChange={(checked) => updateEvent("on_assigned", "assignee", checked)} />
-        <JsonLinkedCheckbox checked={Boolean((config.on_sla_warning as Record<string, unknown> | undefined)?.queue_lead)} label="Риск срока: руководителю" onChange={(checked) => updateEvent("on_sla_warning", "queue_lead", checked)} />
-        <JsonLinkedCheckbox checked={Boolean((config.on_resolved as Record<string, unknown> | undefined)?.requester)} label="Решено: заявителю" onChange={(checked) => updateEvent("on_resolved", "requester", checked)} />
-        <JsonLinkedCheckbox checked={Boolean(channels.web ?? true)} label="Канал: web" onChange={(checked) => onChange({ ...config, channels: { ...channels, web: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(channels.email)} label="Канал: email" onChange={(checked) => onChange({ ...config, channels: { ...channels, email: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(channels.telegram)} label="Канал: Telegram" onChange={(checked) => onChange({ ...config, channels: { ...channels, telegram: checked } })} />
-        <JsonLinkedCheckbox checked={Boolean(channels.vk_teams)} label="Канал: VK Teams" onChange={(checked) => onChange({ ...config, channels: { ...channels, vk_teams: checked } })} />
-      </div>
-    );
+    return <NotificationPolicyControls config={config} onChange={onChange} />;
   }
 
   if (kind === "reporting") {
@@ -3337,6 +3420,26 @@ function TemplateConstructorPanel({
             title="Политика видимости"
             value={form.visibility_policy_json}
           />
+        ) : null}
+
+        {activeStep === "notifications" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Политика уведомлений</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Получатели событий тикета и каналы доставки настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">notification policy</Badge>
+            </div>
+            <div className="mt-4">
+              <NotificationPolicyControls
+                config={parseJsonDraft(form.notification_policy_json, parseJsonDraft(buildNotificationPreset()))}
+                onChange={(config) => onUpdatePolicyJson("notification_policy_json", prettyJson(config))}
+              />
+            </div>
+          </div>
         ) : null}
 
         {activeStep === "notifications" ? (
