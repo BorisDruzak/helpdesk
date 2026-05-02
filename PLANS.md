@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 13b is released: the support queue now has a built-in `mass_incident_candidates` smart view for "Похожие массовые обращения", with backend filtering by open-ticket mass-incident tags and stored policy facts. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 13b release/browser/observer signoff the working estimate is backend/runtime about 99.3%, server UI about 90.2%, agent GUI about 73%, overall about 97.3%. The remaining plan targets final publish diff/impact UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14j is locally implemented: `/app/admin/forms` policy editors now show a publication impact preview for active request templates and ticket-type defaults that reference the draft policy code. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14j local Vitest/build signoff the working estimate is backend/runtime about 99.3%, server UI about 90.7%, agent GUI about 73%, overall about 97.4%. The remaining plan targets final publish diff UX, any remaining smart-view edge coverage and agent GUI final consumer alignment for the chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 13b is released: the support queue now has a built-in `mass_incide
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, а built-in operational smart views теперь включают `mass_incident_candidates`; deeper publish-impact/diff UX ещё требует добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies и common smart-view filters уже имеют structured controls, smart-view publish validation закрыта в Slice 13a, built-in operational smart views теперь включают `mass_incident_candidates`, а policy publish impact preview закрыт в Slice 14j; deeper diff UX ещё требует добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -311,8 +311,8 @@ Slice 13b local verification:
 - [x] Convert policy editors in `/app/admin/forms` from raw JSON-first to structured controls for priority, SLA, OLA, routing, approvals, diagnostics, closure, visibility, notifications, reporting and common smart-view fields.
 - [ ] Keep advanced JSON preview/edit behind explicit advanced mode with validation/diff.
 - [ ] Add template wizard screens: Основное, Классификация, Форма, Процесс, Приоритет, Роутинг, SLA/OLA, Согласования, Диагностика, Закрытие, Видимость/Уведомления, Паспорт/Отчётность.
-- [ ] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
-- [ ] Tests: finish coverage for policy publish/diff/deactivate/rollback and strict smart-view validation; structured editor publish paths now have focused Vitest coverage through Slice 14i.
+- [x] Add "publish impact preview": what templates/ticket types/categories will be affected by policy publication.
+- [ ] Tests: finish coverage for policy publish/diff/deactivate/rollback and strict smart-view validation; structured editor publish paths now have focused Vitest coverage through Slice 14j.
 - [ ] Browser signoff: `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` after deploy.
 
 Slice 14a local verification:
@@ -414,6 +414,20 @@ Slice 14i local verification:
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
 - Release/live: committed as `f8428f9 webapp: add structured smart view controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed structured smart-view fields; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/smart-view errors, with unrelated existing canary/offline-agent reconcile warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
+
+Slice 14j target:
+
+- [x] Add a policy publication impact preview to `/app/admin/forms` direct policy editors.
+- [x] Show active request templates whose `*_policy_code` points at the draft policy code.
+- [x] Show active ticket types whose default policy code points at the draft policy code.
+- [x] Keep the preview derived from the already loaded helpdesk registry payload, without a new server round trip.
+
+Slice 14j local verification:
+
+- RED confirmed: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --testNamePattern "предпросмотр влияния"` failed because the policy editor had no `Предпросмотр влияния публикации` block.
+- GREEN focused: same command -> 1 passed, 23 skipped.
+- Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 24 passed.
+- Web build: `pnpm --dir webapp run build` -> passed.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 

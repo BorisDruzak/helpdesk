@@ -41,6 +41,8 @@ import {
   type AdminHelpdeskPolicyDiffResult,
   type AdminHelpdeskPolicyItem,
   type AdminHelpdeskModelPayload,
+  type AdminHelpdeskRequestTemplateItem,
+  type AdminHelpdeskTicketTypeItem,
   deactivateHelpdeskPolicyVersion,
   diffHelpdeskPolicyVersions,
   fetchHelpdeskModelRegistry,
@@ -1503,6 +1505,57 @@ function buildPolicyEditorDraft(kind: PolicyEditorKind, form: DraftForm | null):
   };
 }
 
+const TEMPLATE_POLICY_CODE_FIELDS: Record<PolicyEditorKind, keyof AdminHelpdeskRequestTemplateItem> = {
+  priority: "priority_policy_code",
+  sla: "sla_policy_code",
+  ola: "ola_policy_code",
+  routing: "routing_policy_code",
+  approval: "approval_policy_code",
+  closure: "closure_policy_code",
+  diagnostic: "diagnostic_policy_code",
+  notification: "notification_policy_code",
+  visibility: "visibility_policy_code",
+  reporting: "reporting_policy_code",
+};
+
+const TICKET_TYPE_POLICY_CODE_FIELDS: Record<PolicyEditorKind, keyof AdminHelpdeskTicketTypeItem> = {
+  priority: "default_priority_policy_code",
+  sla: "default_sla_policy_code",
+  ola: "default_ola_policy_code",
+  routing: "default_routing_policy_code",
+  approval: "default_approval_policy_code",
+  closure: "default_closure_policy_code",
+  diagnostic: "default_diagnostic_policy_code",
+  notification: "default_notification_policy_code",
+  visibility: "default_visibility_policy_code",
+  reporting: "default_reporting_policy_code",
+};
+
+function buildPolicyImpactPreview(
+  data: AdminHelpdeskModelPayload | undefined,
+  draft: PolicyEditorDraft
+): {
+  templates: AdminHelpdeskRequestTemplateItem[];
+  ticketTypes: AdminHelpdeskTicketTypeItem[];
+  scopeLabel: string;
+} {
+  const policyCode = draft.code.trim();
+  if (!data || !policyCode) {
+    return { templates: [], ticketTypes: [], scopeLabel: "scope не выбран" };
+  }
+
+  const templateField = TEMPLATE_POLICY_CODE_FIELDS[draft.kind];
+  const ticketTypeField = TICKET_TYPE_POLICY_CODE_FIELDS[draft.kind];
+  const templates = data.request_templates.filter(
+    (template) => template.is_active && String(template[templateField] ?? "") === policyCode
+  );
+  const ticketTypes = data.ticket_types.filter(
+    (ticketType) => ticketType.is_active && String(ticketType[ticketTypeField] ?? "") === policyCode
+  );
+  const scopeLabel = draft.scope_ref.trim() ? `${draft.scope_level}: ${draft.scope_ref.trim()}` : draft.scope_level;
+  return { templates, ticketTypes, scopeLabel };
+}
+
 function getFirstRule(config: Record<string, unknown>): Record<string, unknown> {
   const rules = Array.isArray(config.rules) ? config.rules : [];
   const first = rules[0];
@@ -2642,6 +2695,10 @@ function PolicyRegistryEditors({
       data.capabilities.policy_deactivate_endpoint &&
       data.capabilities.policy_rollback_endpoint
   );
+  const impactPreview = useMemo(
+    () => buildPolicyImpactPreview(data, draft),
+    [data, draft.code, draft.kind, draft.scope_level, draft.scope_ref]
+  );
 
   useEffect(() => {
     if (!sameCodePolicies.length) {
@@ -2830,6 +2887,49 @@ function PolicyRegistryEditors({
             <p className="mt-1 text-sm text-slate-600">
               {latestForCode ? `${latestForCode.version} опубликована` : "Для этого кода ещё нет активной версии"}
             </p>
+          </div>
+          <div className="rounded-[0.9rem] border border-amber-200 bg-amber-50/70 px-3 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-950">Предпросмотр влияния публикации</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Перед публикацией проверьте активные шаблоны и типы тикетов, которые уже ссылаются на этот policy code.
+                </p>
+              </div>
+              <Badge tone="neutral">{impactPreview.scopeLabel}</Badge>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-[0.75rem] border border-amber-100 bg-white px-3 py-2">
+                <p className="text-xs font-semibold text-slate-800">Шаблонов: {impactPreview.templates.length}</p>
+                <div className="mt-2 space-y-1 text-xs text-slate-600">
+                  {impactPreview.templates.length ? (
+                    impactPreview.templates.slice(0, 4).map((template) => (
+                      <p className="truncate" key={template.template_code}>
+                        {template.public_title || template.template_code}
+                      </p>
+                    ))
+                  ) : (
+                    <p>Прямых ссылок нет.</p>
+                  )}
+                  {impactPreview.templates.length > 4 ? <p>Ещё: {impactPreview.templates.length - 4}</p> : null}
+                </div>
+              </div>
+              <div className="rounded-[0.75rem] border border-amber-100 bg-white px-3 py-2">
+                <p className="text-xs font-semibold text-slate-800">Типов тикетов: {impactPreview.ticketTypes.length}</p>
+                <div className="mt-2 space-y-1 text-xs text-slate-600">
+                  {impactPreview.ticketTypes.length ? (
+                    impactPreview.ticketTypes.slice(0, 4).map((ticketType) => (
+                      <p className="truncate" key={ticketType.code}>
+                        {ticketType.title || ticketType.code}
+                      </p>
+                    ))
+                  ) : (
+                    <p>Defaults не используют этот code.</p>
+                  )}
+                  {impactPreview.ticketTypes.length > 4 ? <p>Ещё: {impactPreview.ticketTypes.length - 4}</p> : null}
+                </div>
+              </div>
+            </div>
           </div>
           <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
             <div className="flex items-start justify-between gap-3">

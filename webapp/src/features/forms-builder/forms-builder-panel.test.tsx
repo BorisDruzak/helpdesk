@@ -2025,6 +2025,135 @@ describe("FormsBuilderPanel", () => {
     expect(await screen.findByText(/Политика printer_routing_policy опубликована/)).toBeInTheDocument();
   });
 
+  it("показывает предпросмотр влияния перед публикацией политики", async () => {
+    const registryPayload = createHelpdeskModelRegistryPayload();
+    registryPayload.request_templates = [
+      {
+        template_code: "printer",
+        version: "1.0.1",
+        public_title: "Печать / принтер",
+        internal_name: "Incident / Printer",
+        description: "Проблемы печати",
+        ticket_type: "incident",
+        category_id: 10,
+        service_id: null,
+        subcategory_id: null,
+        form_schema_id: "printer_form",
+        workflow_profile_id: "incident_default",
+        priority_policy_code: null,
+        routing_policy_code: "printer_routing_policy",
+        sla_policy_id: null,
+        sla_policy_code: null,
+        ola_policy_code: null,
+        approval_policy_code: null,
+        diagnostic_policy_code: null,
+        closure_policy_code: null,
+        visibility_policy_code: null,
+        notification_policy_code: null,
+        reporting_policy_code: null,
+        config: {},
+        overrides: {},
+        is_active: true,
+        published_at: "2026-05-02T18:00:00+05:00",
+        created_at: "2026-05-02T18:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-05-02T18:00:00+05:00",
+        updated_by: "admin1"
+      },
+      {
+        template_code: "site_unavailable",
+        version: "1.0.1",
+        public_title: "Не открывается сайт",
+        internal_name: "Incident / Website unavailable",
+        description: "Проблемы доступа к сайту",
+        ticket_type: "incident",
+        category_id: 10,
+        service_id: null,
+        subcategory_id: null,
+        form_schema_id: "site_form",
+        workflow_profile_id: "incident_default",
+        priority_policy_code: null,
+        routing_policy_code: "printer_routing_policy",
+        sla_policy_id: null,
+        sla_policy_code: null,
+        ola_policy_code: null,
+        approval_policy_code: null,
+        diagnostic_policy_code: null,
+        closure_policy_code: null,
+        visibility_policy_code: null,
+        notification_policy_code: null,
+        reporting_policy_code: null,
+        config: {},
+        overrides: {},
+        is_active: true,
+        published_at: "2026-05-02T18:00:00+05:00",
+        created_at: "2026-05-02T18:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-05-02T18:00:00+05:00",
+        updated_by: "admin1"
+      },
+    ];
+    registryPayload.ticket_types = [
+      {
+        code: "incident",
+        version: "1.0.1",
+        title: "Инцидент",
+        description: null,
+        default_workflow_profile_id: "incident_default",
+        default_priority_policy_code: null,
+        default_routing_policy_code: "printer_routing_policy",
+        default_sla_policy_id: null,
+        default_sla_policy_code: null,
+        default_ola_policy_code: null,
+        default_approval_policy_code: null,
+        default_diagnostic_policy_code: null,
+        default_closure_policy_code: null,
+        default_visibility_policy_code: null,
+        default_notification_policy_code: null,
+        default_reporting_policy_code: null,
+        feature_flags: {},
+        config: {},
+        is_active: true,
+        published_at: "2026-05-02T18:00:00+05:00",
+        created_at: "2026-05-02T18:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-05-02T18:00:00+05:00",
+        updated_by: "admin1"
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: registryPayload });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редакторы политик");
+    expect(await screen.findByText("Предпросмотр влияния публикации")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Шаблонов: 2")).toBeInTheDocument();
+      expect(screen.getByText("Типов тикетов: 1")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText("Печать / принтер").length).toBeGreaterThan(0);
+    expect(screen.getByText("Не открывается сайт")).toBeInTheDocument();
+    expect(screen.getAllByText("Инцидент").length).toBeGreaterThan(0);
+  });
+
   it("публикует reporting policy для паспорта решения", async () => {
     const publishCalls: Record<string, unknown>[] = [];
 
