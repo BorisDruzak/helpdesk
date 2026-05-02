@@ -2,7 +2,7 @@
 
 ## 2026-05-01 Service desk модель: доведение соответствия с 72% до 100%
 
-Status: Slice 14h is in progress: `/app/admin/forms` is adding structured reporting/passport controls to the request-template wizard so admins can configure required passport sections, evidence/export packages, report tags and knowledge hints without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14g release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 88%, agent GUI about 73%, overall about 96.8%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
+Status: Slice 14h is released: `/app/admin/forms` now has a structured request-template `Паспорт` step for reporting/passport controls, so admins can configure required passport sections, evidence/action packages, export visibility, report tags, official-passport requirement and knowledge hints without raw JSON. Baseline audit was backend/runtime about 76%, server UI about 70%, agent GUI about 73%, overall configurable service desk maturity about 72%. After Slice 14h release/browser/observer signoff the working estimate is backend/runtime about 99%, server UI about 89%, agent GUI about 73%, overall about 96.9%. The remaining plan targets the full chain `request_template -> form -> workflow -> priority -> SLA/OLA -> routing -> approvals -> diagnostics -> closure -> reporting/passport`.
 
 ### Goal
 
@@ -31,7 +31,7 @@ Status: Slice 14h is in progress: `/app/admin/forms` is adding structured report
 - Active gap list starts at Slice 7a below; detailed historical verification for Slice 1-6 is intentionally removed from this active plan block to keep the plan readable.
 - Уже есть inheritance `system -> ticket_type -> category -> request_template`.
 - Уже исполняются routing, priority facts, workflow gates, SLA/OLA timers, approval gate, closure gate, visibility, notifications, diagnostic evidence и passport/reporting policy.
-- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification policies уже имеют structured controls, а reporting/passport и smart-view UX ещё требуют добивки.
+- Серверный UI `/app/admin/forms` умеет visual chain и registry publication; OLA/routing/approval/diagnostic/closure/visibility/notification/reporting policies уже имеют structured controls, а smart-view UX и deeper publish-impact/diff UX ещё требуют добивки.
 - Agent GUI уже потребляет request-template-aware forms, priority fields, picker/file fields, diagnostic consent и server-backed create preview.
 
 ### Decisions Added 2026-05-02
@@ -366,6 +366,7 @@ Slice 14h local verification:
 - Forms builder regression: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx` -> 22 passed.
 - Web build: `pnpm --dir webapp run build` -> passed.
 - Navigation/workspace: `python -m pytest scripts\test_navigation_catalog.py -q --tb=short` -> 10 passed; `python scripts\verify_workspace.py` -> passed.
+- Release/live: committed as `34c6474 webapp: add structured reporting controls`; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` -> remote fast-forward, webapp rebuild and smoke OK; browser signoff on `http://192.168.100.17:8666/app/admin/forms` confirmed the template `Паспорт` step and structured reporting fields; observer workbench loaded with `Runtime: ok`; fresh browser console errors -> 0; server status/log tail showed authenticated forms/observer requests and no forms-builder/reporting errors, with unrelated existing canary/offline-agent reconcile warnings; `python scripts\manage_remote_stack.py stop server` -> stopped.
 
 ### Slice 15: Agent GUI Final Consumer Alignment
 
