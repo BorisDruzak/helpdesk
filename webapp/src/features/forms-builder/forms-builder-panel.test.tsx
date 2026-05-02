@@ -1096,6 +1096,104 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("настраивает routing policy в шаблоне без ручного JSON", async () => {
+    const saveCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/save" && method === "POST") {
+          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              summary: {
+                ...createFormsPayload().summary,
+                version: "1.0.4"
+              },
+              forms: createFormsPayload().forms,
+              message: "Каталог опубликован как версия 1.0.4."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByText("Визуальный конструктор шаблона обращения");
+    fireEvent.click(screen.getAllByText("Роутинг")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Вставить роутинг" }));
+
+    const templateControl = (label: string) => {
+      const controls = screen.getAllByLabelText(label);
+      return controls[controls.length - 1];
+    };
+
+    fireEvent.change(templateControl("Очередь по умолчанию"), { target: { value: "servicedesk_l2" } });
+    fireEvent.change(templateControl("Поле условия роутинга"), { target: { value: "request_form_data.problem_area" } });
+    fireEvent.change(templateControl("Значения условия"), { target: { value: "website, dns" } });
+    fireEvent.change(templateControl("Куда направить"), { target: { value: "networks" } });
+    fireEvent.change(templateControl("Повысить приоритет на"), { target: { value: "2" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+
+    const savedPrinter = (
+      saveCalls[0] as {
+        forms: Array<{
+          key: string;
+          routing_policy?: Record<string, unknown>;
+        }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+
+    expect(savedPrinter?.routing_policy).toMatchObject({
+      default_queue: "servicedesk_l2",
+      rules: [
+        {
+          when: {
+            field: "request_form_data.problem_area",
+            op: "in",
+            values: ["website", "dns"],
+          },
+          then: {
+            queue: "networks",
+            priority_boost: 2,
+          },
+        },
+      ],
+      fallback: {
+        queue: "servicedesk_l2",
+      },
+    });
+  });
+
   it("публикует выбранный шаблон и политики в отдельный реестр целевой модели", async () => {
     const publishCalls: unknown[] = [];
 

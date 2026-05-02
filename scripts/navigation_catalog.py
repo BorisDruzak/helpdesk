@@ -345,6 +345,8 @@ TOPICS: tuple[Topic, ...] = (
             "standalone ola",
             "structured OLA editor",
             "OLA target controls",
+            "structured routing editor",
+            "routing target controls",
             "ola runtime",
             "ola_started",
             "ola_paused",

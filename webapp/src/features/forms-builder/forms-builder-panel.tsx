@@ -1495,6 +1495,118 @@ function updateFirstRule(
   return { ...config, rules };
 }
 
+function routingValuesText(values: unknown, fallback: unknown): string {
+  return Array.isArray(values) ? values.map((item) => String(item)).join(", ") : String(fallback ?? "");
+}
+
+function RoutingPolicyControls({
+  config,
+  form,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  form: DraftForm | null;
+  onChange: (config: Record<string, unknown>) => void;
+}) {
+  const rule = getFirstRule(config);
+  const when = typeof rule.when === "object" && rule.when ? (rule.when as Record<string, unknown>) : {};
+  const then = typeof rule.then === "object" && rule.then ? (rule.then as Record<string, unknown>) : {};
+  const fallback = typeof config.fallback === "object" && config.fallback ? (config.fallback as Record<string, unknown>) : {};
+  const currentDefaultQueue = String(config.default_queue ?? config.default_queue_id ?? "");
+  const updateDefaultQueue = (queue: string) => {
+    const shouldSyncFallback = !fallback.queue || String(fallback.queue) === currentDefaultQueue;
+    onChange({
+      ...config,
+      default_queue: queue,
+      fallback: shouldSyncFallback ? { ...fallback, queue } : fallback,
+    });
+  };
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Очередь по умолчанию</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => updateDefaultQueue(event.currentTarget.value)}
+          value={currentDefaultQueue}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Поле условия роутинга</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange(updateFirstRule(config, (current) => ({ ...current, when: { ...when, field: event.currentTarget.value } })))
+          }
+          placeholder="request_form_data.affected_scope"
+          value={String(when.field ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Значения условия</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange(
+              updateFirstRule(config, (current) => ({
+                ...current,
+                when: {
+                  ...when,
+                  op: "in",
+                  values: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
+                },
+              }))
+            )
+          }
+          placeholder="department, whole_building"
+          value={routingValuesText(when.values, when.value)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Куда направить</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange(updateFirstRule(config, (current) => ({ ...current, then: { ...then, queue: event.currentTarget.value } })))
+          }
+          placeholder={form?.default_queue_id || "servicedesk_l1"}
+          value={String(then.queue ?? then.queue_id ?? "")}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Повысить приоритет на</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange(
+              updateFirstRule(config, (current) => ({
+                ...current,
+                then: { ...then, priority_boost: Number(event.currentTarget.value || 0) },
+              }))
+            )
+          }
+          type="number"
+          value={Number(then.priority_boost ?? 0)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800">
+        <span>Максимум авто-маршрутов</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) => onChange({ ...config, max_auto_reroutes: Number(event.currentTarget.value || 0) })}
+          type="number"
+          value={Number(config.max_auto_reroutes ?? 3)}
+        />
+      </label>
+      <JsonLinkedCheckbox
+        checked={Boolean(config.do_not_reroute_if_assignee_locked ?? true)}
+        label="Не менять маршрут при закреплённом исполнителе"
+        onChange={(checked) => onChange({ ...config, do_not_reroute_if_assignee_locked: checked })}
+      />
+    </div>
+  );
+}
+
 function toggleStringInList(list: unknown, value: string, enabled: boolean): string[] {
   const set = new Set(Array.isArray(list) ? list.map((item) => String(item)) : []);
   if (enabled) {
@@ -1766,88 +1878,7 @@ function PolicyKindControls({
   }
 
   if (kind === "routing") {
-    const rule = getFirstRule(config);
-    const when = typeof rule.when === "object" && rule.when ? (rule.when as Record<string, unknown>) : {};
-    const then = typeof rule.then === "object" && rule.then ? (rule.then as Record<string, unknown>) : {};
-    return (
-      <div className="grid gap-3 lg:grid-cols-3">
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Очередь по умолчанию</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) => onChange({ ...config, default_queue: event.currentTarget.value })}
-            value={String(config.default_queue ?? config.default_queue_id ?? "")}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Поле условия роутинга</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange(updateFirstRule(config, (current) => ({ ...current, when: { ...when, field: event.currentTarget.value } })))
-            }
-            placeholder="request_form_data.affected_scope"
-            value={String(when.field ?? "")}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Значения условия</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange(
-                updateFirstRule(config, (current) => ({
-                  ...current,
-                  when: {
-                    ...when,
-                    op: "in",
-                    values: event.currentTarget.value.split(",").map((item) => item.trim()).filter(Boolean),
-                  },
-                }))
-              )
-            }
-            placeholder="department, whole_building"
-            value={Array.isArray(when.values) ? when.values.join(", ") : String(when.value ?? "")}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Куда направить</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange(updateFirstRule(config, (current) => ({ ...current, then: { ...then, queue: event.currentTarget.value } })))
-            }
-            placeholder={form?.default_queue_id || "servicedesk_l1"}
-            value={String(then.queue ?? then.queue_id ?? "")}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Повысить приоритет на</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) =>
-              onChange(
-                updateFirstRule(config, (current) => ({
-                  ...current,
-                  then: { ...then, priority_boost: Number(event.currentTarget.value || 0) },
-                }))
-              )
-            }
-            type="number"
-            value={Number(then.priority_boost ?? 0)}
-          />
-        </label>
-        <label className="space-y-2 text-sm font-medium text-slate-800">
-          <span>Максимум авто-маршрутов</span>
-          <input
-            className="field-base h-11 w-full px-4 text-sm"
-            onChange={(event) => onChange({ ...config, max_auto_reroutes: Number(event.currentTarget.value || 0) })}
-            type="number"
-            value={Number(config.max_auto_reroutes ?? 3)}
-          />
-        </label>
-      </div>
-    );
+    return <RoutingPolicyControls config={config} form={form} onChange={onChange} />;
   }
 
   if (kind === "approval") {
@@ -2862,6 +2893,27 @@ function TemplateConstructorPanel({
                   value={form.ola_policy_json}
                 />
               </details>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === "routing" ? (
+          <div className="mt-4 rounded-[1rem] border border-border bg-white px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Политика маршрутизации</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Очередь, первое правило и защита от автоматических перекидываний настраиваются без ручного JSON.
+                </p>
+              </div>
+              <Badge tone="neutral">routing policy</Badge>
+            </div>
+            <div className="mt-4">
+              <RoutingPolicyControls
+                config={parseJsonDraft(form.routing_policy_json, parseJsonDraft(buildRoutingPreset(form)))}
+                form={form}
+                onChange={(config) => onUpdatePolicyJson("routing_policy_json", prettyJson(config))}
+              />
             </div>
           </div>
         ) : null}
