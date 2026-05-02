@@ -2321,6 +2321,38 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("скрывает JSON и lifecycle-действия политики до открытия advanced режима", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: createHelpdeskModelRegistryPayload() });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    await screen.findByText("Редакторы политик");
+    expect(screen.queryByRole("button", { name: "Сравнить версии" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "JSON конфигурации политики" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Расширенный JSON и версии" }));
+
+    expect(screen.getByRole("button", { name: "Сравнить версии" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "JSON конфигурации политики" })).toBeInTheDocument();
+  });
+
   it("вызывает diff, deactivate и rollback для версий политики", async () => {
     const lifecycleCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const registryPayload = createHelpdeskModelRegistryPayload();
@@ -2423,6 +2455,8 @@ describe("FormsBuilderPanel", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Код политики")).toHaveValue("printer_routing_policy");
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Расширенный JSON и версии" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Сравнить версии" }));
     expect(await screen.findByText("config.default_queue")).toBeInTheDocument();

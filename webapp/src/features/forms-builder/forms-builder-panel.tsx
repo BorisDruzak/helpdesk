@@ -2638,9 +2638,11 @@ function PolicyRegistryEditors({
   const [deactivateVersion, setDeactivateVersion] = useState("");
   const [rollbackVersion, setRollbackVersion] = useState("");
   const [diffResult, setDiffResult] = useState<AdminHelpdeskPolicyDiffResult | null>(null);
+  const [showPolicyAdvanced, setShowPolicyAdvanced] = useState(false);
 
   useEffect(() => {
     setDraft(buildPolicyEditorDraft(kind, selectedForm));
+    setShowPolicyAdvanced(false);
   }, [kind, selectedForm?.key]);
 
   const config = useMemo(() => {
@@ -2934,6 +2936,28 @@ function PolicyRegistryEditors({
           <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
+                <p className="text-xs font-semibold text-slate-950">Расширенные действия</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  JSON, сравнение версий, деактивация и rollback скрыты от основного сценария публикации.
+                </p>
+              </div>
+              <Badge tone={showPolicyAdvanced ? "success" : "neutral"}>{showPolicyAdvanced ? "открыто" : "скрыто"}</Badge>
+            </div>
+            <Button
+              aria-expanded={showPolicyAdvanced}
+              className="mt-3 w-full"
+              onClick={() => setShowPolicyAdvanced((current) => !current)}
+              size="sm"
+              variant="outline"
+            >
+              Расширенный JSON и версии
+            </Button>
+          </div>
+          {showPolicyAdvanced ? (
+            <>
+              <div className="rounded-[0.9rem] border border-border bg-white px-3 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
                 <p className="text-xs font-semibold text-slate-950">Жизненный цикл версии</p>
                 <p className="mt-1 text-xs leading-5 text-slate-600">
                   Сравнение показывает отличия JSON-конфига. Откат публикует новую активную версию из выбранной старой версии.
@@ -3056,13 +3080,16 @@ function PolicyRegistryEditors({
                 Откатить к выбранной версии
               </Button>
             </div>
-          </div>
-          <textarea
-            className="field-base min-h-[300px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"
-            onChange={(event) => setDraft((current) => ({ ...current, jsonText: event.currentTarget.value }))}
-            spellCheck={false}
-            value={draft.jsonText}
-          />
+              </div>
+              <textarea
+                aria-label="JSON конфигурации политики"
+                className="field-base min-h-[300px] w-full resize-y px-4 py-3 font-mono text-xs leading-5"
+                onChange={(event) => setDraft((current) => ({ ...current, jsonText: event.currentTarget.value }))}
+                spellCheck={false}
+                value={draft.jsonText}
+              />
+            </>
+          ) : null}
           <div className="max-h-36 overflow-y-auto rounded-[0.9rem] border border-border bg-white px-3 py-3">
             <p className="text-xs font-semibold text-slate-950">Активные политики этого типа</p>
             <div className="mt-2 space-y-1 text-xs text-slate-600">
