@@ -115,22 +115,32 @@ def _external_channel_actions(
     *,
     channel_provider: ExternalNotificationProvider | None,
 ) -> list[_ExternalChannelAction]:
-    channels: dict[str, Any] = {}
+    global_channels_normalized: dict[str, bool] = {}
     global_channels = notification_policy.get("channels")
     if isinstance(global_channels, dict):
-        channels.update(global_channels)
+        for channel, enabled in global_channels.items():
+            channel_name = str(channel or "").strip().lower().replace("-", "_")
+            if channel_name and channel_name != "web":
+                global_channels_normalized[channel_name] = bool(enabled)
+    event_channels_normalized: dict[str, bool] = {}
     event_channels = event_policy.get("channels") if isinstance(event_policy, dict) else None
     if isinstance(event_channels, dict):
-        channels.update(event_channels)
+        for channel, enabled in event_channels.items():
+            channel_name = str(channel or "").strip().lower().replace("-", "_")
+            if channel_name and channel_name != "web":
+                event_channels_normalized[channel_name] = bool(enabled)
 
     provider_channels = _provider_available_channels(channel_provider)
     actions: list[_ExternalChannelAction] = []
-    for channel, enabled in channels.items():
-        channel_name = str(channel or "").strip().lower().replace("-", "_")
-        if not channel_name or channel_name == "web":
-            continue
-        is_enabled = bool(enabled)
+    channel_order = list(global_channels_normalized)
+    channel_order.extend(channel for channel in event_channels_normalized if channel not in global_channels_normalized)
+    for channel_name in channel_order:
+        global_enabled = global_channels_normalized.get(channel_name)
+        event_has_override = channel_name in event_channels_normalized
+        is_enabled = event_channels_normalized[channel_name] if event_has_override else bool(global_enabled)
         if not is_enabled:
+            if not global_enabled:
+                continue
             actions.append(_ExternalChannelAction(channel_name, enabled=False, available=False, reason="channel_disabled"))
             continue
         if channel_provider is None:
