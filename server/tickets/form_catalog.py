@@ -117,13 +117,15 @@ _TEMPLATE_DICT_FIELDS = (
     "reporting_policy",
 )
 _TEMPLATE_INT_FIELDS = (
-    "request_template_version",
-    "form_schema_version",
     "category_id",
     "service_id",
     "subcategory_id",
     "default_queue_id",
     "sla_policy_id",
+)
+_TEMPLATE_VERSION_FIELDS = (
+    "request_template_version",
+    "form_schema_version",
 )
 _TEMPLATE_STRING_FIELDS = (
     "form_schema_id",
@@ -670,6 +672,14 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
             value = _normalize_optional_int(raw_form.get(int_field), int_field)
             if value is not None:
                 template_context[int_field] = value
+        for version_field in _TEMPLATE_VERSION_FIELDS:
+            raw_value = raw_form.get(version_field)
+            if isinstance(raw_value, int):
+                template_context[version_field] = raw_value
+                continue
+            value = str(raw_value or "").strip()
+            if value:
+                template_context[version_field] = value
         suggested_playbook_id = str(raw_form.get("suggested_playbook_id") or "").strip()
         if suggested_playbook_id:
             template_context["suggested_playbook_id"] = suggested_playbook_id

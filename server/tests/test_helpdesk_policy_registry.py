@@ -355,6 +355,28 @@ async def test_web_admin_publish_from_form_creates_form_schema_reference(test_cl
     assert result["request_template"]["form_schema_id"] == f"{form_key}_form"
     assert result["request_template"]["config"]["form_schema"]["version"] == "1.0.1"
 
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Schema snapshot request",
+            "description": "Verify registry template and form schema versions are snapped.",
+            "device_id": str(uuid.uuid4()),
+            "request_template_key": form_key,
+            "form_payload": {"url": "https://snapshot.example.test"},
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    ticket_id = (await create_response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    template_snapshot = ticket.custom_fields["request_template"]
+    assert template_snapshot["request_template_version"] == "1.0.1"
+    assert template_snapshot["form_schema_version"] == "1.0.1"
+
     registry_response = await test_client.get(
         "/api/web/admin/helpdesk-model/policies",
         headers=_admin_headers(),

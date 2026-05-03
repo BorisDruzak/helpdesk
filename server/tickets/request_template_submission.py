@@ -77,8 +77,8 @@ def _registry_pack_from_template(
         ("request_template_version", template.get("version")),
     ):
         version_text = str(raw_version or "").strip()
-        if version_text.isdigit():
-            raw_form[target_key] = int(version_text)
+        if version_text:
+            raw_form[target_key] = int(version_text) if version_text.isdigit() else version_text
     for kind in (
         "priority",
         "routing",
