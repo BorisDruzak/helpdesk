@@ -104,6 +104,30 @@ def test_compute_priority_from_policy_uses_configurable_matrix_and_rule_modifier
     assert result["priority_explanation"]["summary"] == "Приоритет рассчитан по матрице влияния и срочности."
 
 
+def test_compute_priority_from_policy_accepts_template_specific_raw_matrix_values():
+    result = compute_priority_from_policy(
+        priority_policy={
+            "impact_field": "affected_scope",
+            "urgency_field": "work_continuity",
+            "importance_field": "business_importance",
+            "matrix": {
+                "company": {"blocked": "P0", "workaround_available": "P1"},
+                "department": {"blocked": "P1", "workaround_available": "P2"},
+                "single_user": {"blocked": "P2", "workaround_available": "P3"},
+            },
+        },
+        submitted_values={
+            "affected_scope": "company",
+            "work_continuity": "blocked",
+            "business_importance": "high",
+        },
+    )
+
+    assert result["computed_priority"] == "P0"
+    assert result["effective_priority"] == "P0"
+    assert result["priority_source"] == "priority_policy"
+
+
 def test_compute_priority_from_policy_enforces_manual_override_policy():
     result = compute_priority_from_policy(
         priority_policy={

@@ -27,6 +27,7 @@ _IMPACT_ALIASES = {
     "high": 3,
     "building_or_org": 3,
     "building": 3,
+    "company": 3,
     "organization": 3,
     "critical_system": 3,
 }
@@ -42,6 +43,7 @@ _URGENCY_ALIASES = {
     "partial_work": 2,
     "strongly_degraded": 2,
     "high": 3,
+    "blocked": 3,
     "work_stopped_no_workaround": 3,
     "work_stopped": 3,
     "no_workaround": 3,
