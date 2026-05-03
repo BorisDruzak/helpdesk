@@ -111,6 +111,7 @@ describe("appRoutes", () => {
     expect(screen.getByLabelText("Логин")).toBeInTheDocument();
     expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
     expect(screen.getByText(/admin \/ admin123/)).toBeInTheDocument();
+    expect(screen.getByText(/op1 \/ 1\.Abcdef/)).toBeInTheDocument();
   });
 
   it("opens the new tickets page for support role and hides admin menu", async () => {

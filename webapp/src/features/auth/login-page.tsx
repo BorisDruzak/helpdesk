@@ -154,7 +154,7 @@ export function LoginPage() {
             </form>
 
             <div className="rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
-              Для локальной проверки фикстур используйте `support / secret` или `admin / admin123`.
+              Для локальной проверки фикстур используйте `op1 / 1.Abcdef` или `admin / admin123`.
             </div>
           </div>
         </div>
