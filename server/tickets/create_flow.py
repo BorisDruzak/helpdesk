@@ -23,6 +23,7 @@ from tickets.public_access import (
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
+from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.workflow_service import TicketWorkflowService
 from playbooks.form_triggers import start_ticket_created_playbooks
 from utils import new_ticket_id
@@ -107,6 +108,31 @@ async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, 
     return ticket
 
 
+def _approval_waiting_status(policy: dict[str, Any]) -> str:
+    statuses = policy.get("statuses") if isinstance(policy.get("statuses"), dict) else {}
+    return str(statuses.get("waiting_status") or "waiting_on_approval").strip() or "waiting_on_approval"
+
+
+async def _enter_initial_approval_wait_if_required(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
+    if not ticket or getattr(ticket, "status", None) != "new":
+        return ticket
+    approval_policy = await resolve_effective_ticket_policy(session, ticket, "approval")
+    if not approval_policy or not approval_policy.get("required"):
+        return ticket
+    waiting_status = _approval_waiting_status(approval_policy)
+    workflow = TicketWorkflowService(session, ticket_repo)
+    await workflow.apply_status_transition(
+        ticket_id=ticket.ticket_id,
+        from_status="new",
+        to_status=waiting_status,
+        actor_id="system",
+        actor_role="system",
+        reason="approval_required_on_create",
+        source="system",
+    )
+    return await ticket_repo.get_ticket(ticket.ticket_id)
+
+
 async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
     devices_repo = DevicesRepo(session)
     routing = TicketRoutingService(session, ticket_repo, devices_repo)
@@ -137,6 +163,9 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
     except Exception as exc:
         logger.warning(f"[create] ola failed ticket_id={ticket.ticket_id} err={exc}")
     ticket = await ticket_repo.get_ticket(ticket.ticket_id)
+    ticket = await _enter_initial_approval_wait_if_required(session, ticket_repo, ticket)
+    if ticket and getattr(ticket, "status", None) != "new":
+        return ticket
     ticket = await _auto_assign_if_possible(session, ticket_repo, ticket)
     if (
         ticket

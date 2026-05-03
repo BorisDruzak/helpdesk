@@ -254,7 +254,18 @@ async def _validate_transition_gate(
 
 async def load_ticket_workflow_profile(session, ticket) -> WorkflowProfile:
     profiles = await load_workflow_profiles(session)
-    return workflow_profile_by_type(profiles, getattr(ticket, "ticket_type", None) if ticket else None)
+    profile_key = getattr(ticket, "ticket_type", None) if ticket else None
+    custom_fields = getattr(ticket, "custom_fields", None) or {}
+    if isinstance(custom_fields, dict):
+        request_template = custom_fields.get("request_template") or {}
+        if isinstance(request_template, dict):
+            profile_key = (
+                request_template.get("workflow_profile_id")
+                or request_template.get("workflow_profile")
+                or request_template.get("workflow_profile_code")
+                or profile_key
+            )
+    return workflow_profile_by_type(profiles, profile_key)
 
 
 async def validate_transition_for_ticket(

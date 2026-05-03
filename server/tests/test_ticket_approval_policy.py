@@ -7,10 +7,11 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval, TicketEvent
+from app.db.models import ApprovalPolicy, HelpdeskPolicyAudit, Ticket, TicketApproval, TicketEvent, TicketQueue
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.approval_policy import process_approval_policy_timeouts
+from tickets.create_flow import create_ticket_with_side_effects
 from tickets.workflow_service import TicketWorkflowService
 
 
@@ -201,6 +202,66 @@ async def test_approval_policy_creates_request_when_entering_waiting_status(test
     assert approvals[0].requested_by == "support-test"
     assert result["event_payload"]["approval_policy"]["requests_created"] == 1
     assert result["event_payload"]["approval_policy"]["approval_requests"][0]["approver_id"] == "service-owner-1"
+
+
+@pytest.mark.asyncio
+async def test_create_flow_enters_approval_waiting_before_queue_status(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    queue_code = f"approval_queue_{uuid.uuid4().hex[:8]}"
+    async with session_maker() as session:
+        queue = TicketQueue(
+            code=queue_code,
+            name="Approval Queue",
+            is_triage=False,
+            is_active=True,
+            auto_assign_enabled=False,
+        )
+        session.add(queue)
+        await session.flush()
+
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=f"device-{uuid.uuid4().hex[:8]}",
+            requester_id="requester-create-approval",
+            title="Create flow approval wait",
+            description="Approval-required ticket should not enter protected queue status first.",
+            user_display_name="Requester",
+            include_public_access=False,
+            ticket_type="custom_live_access_type",
+            extra_custom_fields={
+                "request_template": {
+                    "key": "custom_live_access",
+                    "ticket_type": "custom_live_access_type",
+                    "workflow_profile_id": "access_request",
+                    "routing_policy": {"default_queue_id": queue.id},
+                    "approval_policy": {
+                        "required": True,
+                        "approval_mode": "any_one",
+                        "approver_source": {
+                            "type": "explicit_user",
+                            "user_id": "service-owner-1",
+                        },
+                        "protected_statuses": ["queued", "assigned", "in_progress", "resolved"],
+                        "statuses": {
+                            "waiting_status": "waiting_on_approval",
+                            "approved_transition": "in_progress",
+                            "rejected_transition": "canceled",
+                        },
+                    },
+                }
+            },
+        )
+        await session.commit()
+
+        ticket = created["ticket"]
+        approvals = (
+            await session.execute(select(TicketApproval).where(TicketApproval.ticket_id == created["ticket_id"]))
+        ).scalars().all()
+
+    assert ticket.status == "waiting_on_approval"
+    assert ticket.queue_id == queue.id
+    assert len(approvals) == 1
+    assert approvals[0].approver_id == "service-owner-1"
 
 
 @pytest.mark.asyncio
