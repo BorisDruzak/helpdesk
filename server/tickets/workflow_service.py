@@ -176,6 +176,21 @@ def _transition_log_field_payload(gate: WorkflowTransitionGate | None, *, ticket
     return payload
 
 
+def _validate_status_invariants(ticket, to_status: str) -> None:
+    if to_status != "assigned":
+        return
+    missing_fields = []
+    if _is_missing_required_value(getattr(ticket, "queue_id", None)):
+        missing_fields.append("queue_id")
+    if _is_missing_required_value(getattr(ticket, "assignee_id", None)):
+        missing_fields.append("assignee_id")
+    if missing_fields:
+        raise ValueError(
+            "workflow_profile transition gate missing required_fields: "
+            + ", ".join(missing_fields)
+        )
+
+
 async def _validate_transition_gate(
     *,
     gate: WorkflowTransitionGate | None,
@@ -351,6 +366,7 @@ class TicketWorkflowService:
         if internal_comment is not None:
             event_payload["internal_comment"] = internal_comment
 
+        _validate_status_invariants(ticket, to_status)
         transition_gate = _transition_gate_for_profile(workflow_profile, from_status, to_status)
         gate_payload = await _validate_transition_gate(
             gate=transition_gate,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketApproval, TicketEvidenceItem
+from app.db.models import Ticket, TicketApproval, TicketEvidenceItem, TicketQueue
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 
@@ -85,6 +85,44 @@ async def test_configured_workflow_profile_controls_ticket_transitions(test_engi
 
         assert await validate_transition_for_ticket(session, ticket, "waiting_on_approval", True)
         assert not await validate_transition_for_ticket(session, ticket, "queued", True)
+
+
+@pytest.mark.asyncio
+async def test_workflow_blocks_assigned_status_without_assignee(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf04"
+    async with session_maker() as session:
+        queue = TicketQueue(code="stage18_assigned_invariant", name="Stage 18 assigned invariant")
+        session.add(queue)
+        await session.flush()
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-assigned-invariant",
+                title="Assigned invariant",
+                description="Assigned status must not be set without assignee.",
+                status="queued",
+                requester_id="requester",
+                queue_id=queue.id,
+                assignee_id=None,
+                ticket_type="incident",
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        with pytest.raises(ValueError, match="assignee_id"):
+            await workflow.apply_status_transition(
+                ticket_id=ticket_id,
+                from_status="queued",
+                to_status="assigned",
+                actor_id="support-test",
+                actor_role="support",
+                reason="assigned_without_assignee",
+                source="test",
+            )
 
 
 @pytest.mark.asyncio
