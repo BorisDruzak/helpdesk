@@ -776,7 +776,14 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
                     "suggested_playbooks": ["diagnose.website"],
                     "attach_results": {"to_passport": True, "as_evidence": True},
                 },
+                "sla_policy": {
+                    "targets": {
+                        "first_response": {"P2": "45m"},
+                        "resolution": {"P2": "2h"},
+                    },
+                },
                 "notification_policy": {"on_created": {"requester": True, "queue": True}},
+                "reporting_policy": {"report_tags": ["website", "live_acceptance"]},
                 "fields": [
                     {"key": "url", "label": "Адрес сайта", "type": "text", "required": True},
                     {"key": "impact_scope", "label": "Кого затронуло", "type": "text", "required": True},
@@ -796,10 +803,14 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
     assert result["request_template"]["template_code"] == form_key
     assert result["request_template"]["priority_policy_code"] == f"{form_key}_priority_policy"
     assert result["request_template"]["routing_policy_code"] == f"{form_key}_routing_policy"
+    assert result["request_template"]["sla_policy_code"] == f"{form_key}_sla_policy"
     assert result["request_template"]["diagnostic_policy_code"] == f"{form_key}_diagnostic_policy"
     assert result["request_template"]["notification_policy_code"] == f"{form_key}_notification_policy"
+    assert result["request_template"]["reporting_policy_code"] == f"{form_key}_reporting_policy"
     assert result["policies"]["priority"]["config"]["impact_field"] == "impact_scope"
     assert result["policies"]["routing"]["config"]["rules"][0]["then"]["queue_id"] == 40
+    assert result["policies"]["sla"]["config"]["targets"]["first_response"]["P2"] == "45m"
+    assert result["policies"]["reporting"]["config"]["report_tags"] == ["website", "live_acceptance"]
 
     registry_response = await test_client.get(
         "/api/web/admin/helpdesk-model/policies",
@@ -818,7 +829,7 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
         audit_count = len((await session.execute(select(HelpdeskPolicyAudit))).scalars().all())
 
     assert template.config_json["form"]["key"] == form_key
-    assert audit_count == 6
+    assert audit_count == 8
 
 
 @pytest.mark.asyncio

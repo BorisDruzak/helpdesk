@@ -681,6 +681,7 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
         "field_roles",
         "priority_policy",
         "routing_policy",
+        "sla_policy",
         "approval_policy",
         "diagnostic_policy",
         "ola_policy",
