@@ -15,10 +15,14 @@ from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
+from app.services.operation_service import OperationService
 from app.services.playbook_engine import start_run
 from auth.middleware import require_auth
+from core.policy_engine import PolicyDecision, PolicyEngine
+from core.tool_metadata import ToolMetadata
 from observer.service import ObserverOverlayService
 from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
+from shared.tool_contracts import normalize_risk_level
 from tickets.handlers import (
     RESOLUTION_CONFIRMATION_TEXT,
     _build_resolution_confirmation_request,
@@ -92,6 +96,7 @@ from web_api.dto.support import (
     SupportToolParameter,
     SupportToolPreset,
 )
+from config import ALLOW_REMOTE_CODE
 
 
 SCOPE_OPTIONS = [
@@ -213,6 +218,72 @@ async def _resolve_tool_risk_level(
         if normalized is not None:
             return normalized.risk_level
     return "safe_read"
+
+
+def _tool_metadata_from_raw_tool(raw_tool: dict, tool_name: str) -> ToolMetadata:
+    spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
+    spec_metadata = spec.get("metadata") if isinstance(spec.get("metadata"), dict) else {}
+    raw_metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
+    metadata = dict(spec_metadata)
+    metadata.update(raw_metadata)
+
+    allow_roles = metadata.get("allow_roles")
+    if tool_name in ("screen.collect", "screen.record"):
+        screen_roles = ["user", "agent", "llm", "support", "admin"]
+        allow_roles = list(dict.fromkeys((allow_roles or []) + screen_roles))
+        metadata["requires_consent"] = False
+
+    return ToolMetadata(
+        risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
+        scopes=metadata.get("scopes", []),
+        requires_consent=bool(metadata.get("requires_consent")),
+        allow_roles=allow_roles,
+    )
+
+
+async def _resolve_tool_policy_decision(
+    *,
+    tool_service: ToolExecutionService,
+    device_id: str,
+    tool_name: str,
+    actor_role: str,
+    params: dict,
+) -> PolicyDecision:
+    policy_engine = PolicyEngine(config={"allow_remote_code": ALLOW_REMOTE_CODE})
+    for source, method_name in (("device", "get_tools_list"), ("server", "get_tools_from_server")):
+        method = getattr(tool_service, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            raw_items = await method(device_id) or []
+        except Exception as exc:
+            logger.debug(
+                f"[web_support_run_tool] policy lookup skipped: device_id={device_id}, "
+                f"tool={tool_name}, source={source}, error={exc}"
+            )
+            raw_items = []
+        raw_tool = _find_raw_tool_entry(raw_items, tool_name)
+        if raw_tool is not None:
+            return policy_engine.check_policy(
+                actor_role=actor_role,
+                tool_name=tool_name,
+                metadata=_tool_metadata_from_raw_tool(raw_tool, tool_name),
+                params=params,
+            )
+
+    fallback_metadata = ToolMetadata(risk_level="safe_read")
+    if tool_name in ("screen.collect", "screen.record"):
+        fallback_metadata = ToolMetadata(
+            risk_level="sensitive_read",
+            allow_roles=["user", "agent", "llm", "support", "admin"],
+            requires_consent=False,
+        )
+    return policy_engine.check_policy(
+        actor_role=actor_role,
+        tool_name=tool_name,
+        metadata=fallback_metadata,
+        params=params,
+    )
 
 
 def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
@@ -1978,24 +2049,66 @@ async def handle_web_support_run_tool(request: web.Request):
             denied = await _require_permission(session, auth_context, _tool_risk_permission(risk_level))
             if denied:
                 return denied
-            params_with_operation = await _build_tool_params_for_dispatch(
+
+            policy_decision = await _resolve_tool_policy_decision(
                 tool_service=tool_service,
                 device_id=device_id,
                 tool_name=tool_name,
+                actor_role=auth_context.actor_role,
                 params=params,
-                preset_id=preset_id,
-                operation_id=operation_id,
             )
+            if not policy_decision.allow:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Policy violation",
+                        "error_code": policy_decision.reason,
+                        "required_role": policy_decision.required_role,
+                        "actor_role": auth_context.actor_role,
+                    },
+                    status=403,
+                )
 
-            result = await tool_service.run_tool(
-                device_id=device_id,
-                ticket_id=ticket.ticket_id,
-                tool_name=tool_name,
-                params=params_with_operation,
-                call_id=str(uuid.uuid4()),
-                auth_context=auth_context,
-                wait_for_result=False,
-            )
+            if policy_decision.requires_consent:
+                ui_publisher = request.app["state"].ui_publisher if hasattr(request.app["state"], "ui_publisher") else None
+                op_service = OperationService(session, publisher=ui_publisher)
+                operation = await op_service.enqueue_operation(
+                    operation_id=operation_id,
+                    device_id=device_id,
+                    kind="tool_call",
+                    tool_name=tool_name,
+                    ticket_id=ticket.ticket_id,
+                    job_id=None,
+                    actor_role=auth_context.actor_role,
+                    trace_id=str(uuid.uuid4()),
+                    initial_status="waiting_consent",
+                )
+                await session.commit()
+                result = {
+                    "status": "waiting_consent",
+                    "operation_id": operation.operation_id,
+                    "poll_url": f"/api/operations/{operation.operation_id}",
+                    "trace_id": operation.trace_id,
+                }
+            else:
+                params_with_operation = await _build_tool_params_for_dispatch(
+                    tool_service=tool_service,
+                    device_id=device_id,
+                    tool_name=tool_name,
+                    params=params,
+                    preset_id=preset_id,
+                    operation_id=operation_id,
+                )
+
+                result = await tool_service.run_tool(
+                    device_id=device_id,
+                    ticket_id=ticket.ticket_id,
+                    tool_name=tool_name,
+                    params=params_with_operation,
+                    call_id=str(uuid.uuid4()),
+                    auth_context=auth_context,
+                    wait_for_result=False,
+                )
     except Exception as exc:
         logger.warning(
             f"[web_support_run_tool] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"

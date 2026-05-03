@@ -1726,6 +1726,91 @@ async def test_web_support_tool_action_returns_typed_result_and_dispatches_run_t
 
 
 @pytest.mark.asyncio
+async def test_web_support_tool_action_keeps_consent_required_tool_waiting(test_client, test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-tool-consent",
+            title="Нужен запуск инструмента с согласием",
+            description="Typed support endpoint должен остановить consent-required tool до dispatch.",
+            status="in_progress",
+            requester_id="user-tool-consent",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    class FakeToolExecutionService:
+        def __init__(self, _state):
+            pass
+
+        async def get_tools_list(self, device_id):
+            assert device_id == "device-tool-consent"
+            return []
+
+        async def get_tools_from_server(self, device_id):
+            assert device_id == "device-tool-consent"
+            return [
+                {
+                    "tool": "observer_canary.consent_probe",
+                    "module": "observer_canary",
+                    "description": "Consent gate probe",
+                    "spec": {
+                        "risk_level": "sensitive_read",
+                        "params_schema": {},
+                        "metadata": {
+                            "risk_level": "sensitive_read",
+                            "requires_consent": True,
+                            "allow_roles": ["admin", "support"],
+                        },
+                    },
+                    "metadata": {
+                        "risk_level": "sensitive_read",
+                        "requires_consent": True,
+                        "allow_roles": ["admin", "support"],
+                    },
+                    "install_required": True,
+                }
+            ]
+
+        async def run_tool(self, **_kwargs):
+            raise AssertionError("consent-required tool must not be dispatched before approval")
+
+    monkeypatch.setattr(support_handlers_module, "ToolExecutionService", FakeToolExecutionService)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/tools/run",
+        headers=_support_headers(),
+        json={
+            "tool_name": "observer_canary.consent_probe",
+            "params": {"label": "stage23-consent"},
+        },
+    )
+
+    assert response.status == 202, await response.text()
+    payload = await response.json()
+    operation_id = payload["data"]["operation_id"]
+
+    assert payload["status"] == "success"
+    assert payload["data"]["dispatch_status"] == "waiting_consent"
+    assert payload["data"]["poll_url"] == f"/api/operations/{operation_id}"
+
+    async with session_maker() as session:
+        operation = await session.scalar(select(Operation).where(Operation.operation_id == operation_id))
+        assert operation is not None
+        assert operation.status == "waiting_consent"
+        assert operation.ticket_id == ticket_id
+        assert operation.device_id == "device-tool-consent"
+        assert operation.tool_name == "observer_canary.consent_probe"
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_playbooks_returns_published_playbooks_for_ticket(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
 

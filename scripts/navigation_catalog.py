@@ -144,7 +144,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="run_tool",
         title="run_tool / consent",
-        summary="Single path for tool execution, consent approval, operation queueing, agent-side execution lanes and module execution tracing.",
+        summary="Single path for tool execution, typed support tool actions, metadata-driven consent approval, operation queueing, agent-side execution lanes and module execution tracing.",
         aliases=(
             "run_tool",
             "tool_call_started",
@@ -161,6 +161,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/tools/service.py",
             "server/tools/handlers.py",
+            "server/web_api/support_handlers.py",
             "server/app/services/operation_service.py",
             "pc_agent/core/orchestrator.py",
         ),
