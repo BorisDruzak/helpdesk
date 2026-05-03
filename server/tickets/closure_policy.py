@@ -113,7 +113,62 @@ def _requester_confirmation(policy: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _official_passport_requirement(session: Any, ticket: Any) -> dict[str, Any] | None:
+async def _passport_blocking_missing_facts_for_closure(
+    session: Any,
+    ticket: Any,
+    requirements: dict[str, Any],
+    *,
+    public_summary: str | None,
+    internal_summary: str | None,
+) -> list[dict[str, Any]]:
+    raw_missing = requirements.get("missing_facts")
+    if not isinstance(raw_missing, list):
+        return []
+
+    blocking: list[dict[str, Any]] = []
+    module_usage_checked = False
+    module_was_used = False
+    operation_log_checked = False
+    has_operation_log = False
+    approval_usage_checked = False
+    approval_used = False
+
+    for item in raw_missing:
+        if not isinstance(item, dict) or item.get("severity") != "blocking":
+            continue
+        required_fact = str(item.get("required_fact") or "").strip()
+        if required_fact == "user_result" and _has_text(public_summary):
+            continue
+        if required_fact == "internal_result" and _has_text(internal_summary):
+            continue
+        if required_fact == "automated_checks":
+            if not module_usage_checked:
+                module_was_used = await _ticket_module_was_used(session, ticket)
+                module_usage_checked = True
+            if not module_was_used:
+                continue
+            if not operation_log_checked:
+                has_operation_log = await _ticket_has_operation_log(session, ticket)
+                operation_log_checked = True
+            if has_operation_log:
+                continue
+        if required_fact == "approvals":
+            if not approval_usage_checked:
+                approval_used = _approval_policy_used(ticket) or await _ticket_has_any_approval(session, ticket)
+                approval_usage_checked = True
+            if not approval_used:
+                continue
+        blocking.append(item)
+    return blocking
+
+
+async def _official_passport_requirement(
+    session: Any,
+    ticket: Any,
+    *,
+    public_summary: str | None,
+    internal_summary: str | None,
+) -> dict[str, Any] | None:
     reporting_policy = await resolve_effective_ticket_policy(
         session,
         ticket,
@@ -136,13 +191,20 @@ async def _official_passport_requirement(session: Any, ticket: Any) -> dict[str,
     requirements = source_payload.get("passport_requirements") if isinstance(source_payload, dict) else {}
     if not isinstance(requirements, dict):
         raise ValueError("closure_policy requires official passport")
-    if int(requirements.get("blocking_missing_count") or 0) > 0:
+    blocking_missing = await _passport_blocking_missing_facts_for_closure(
+        session,
+        ticket,
+        requirements,
+        public_summary=public_summary,
+        internal_summary=internal_summary,
+    )
+    if blocking_missing:
         raise ValueError("closure_policy passport missing required facts")
     return {
         "required": True,
         "passport_id": passport.id,
         "version": passport.version,
-        "blocking_missing_count": int(requirements.get("blocking_missing_count") or 0),
+        "blocking_missing_count": len(blocking_missing),
     }
 
 
@@ -447,7 +509,12 @@ async def validate_closure_policy(
             raise ValueError("closure_policy requires approved approval evidence")
 
     requester_confirmation = _requester_confirmation(policy)
-    official_passport = await _official_passport_requirement(session, ticket)
+    official_passport = await _official_passport_requirement(
+        session,
+        ticket,
+        public_summary=public_summary,
+        internal_summary=internal_summary,
+    )
 
     return {
         "applied": True,

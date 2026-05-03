@@ -535,6 +535,110 @@ async def test_closure_requires_official_passport_only_when_reporting_policy_req
 
 
 @pytest.mark.asyncio
+async def test_closure_passport_accepts_transition_summary_for_user_result(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem", "evidence", "user_result"],
+            "require_official_passport": True,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            }
+        },
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="diagnostic_result",
+                title="HTTP check",
+                summary="HTTP 200 OK",
+                source_ref="operation:test",
+                visibility="internal",
+                created_by="support-test",
+            )
+        )
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        await session.commit()
+
+    missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
+    assert set(missing_by_key) == {"user_result"}
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Website is available again.",
+    )
+
+    assert result["applied"] is True
+    assert result["event_payload"]["closure_policy"]["official_passport_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_closure_passport_allows_non_applicable_reporting_sections(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem", "automated_checks", "approvals", "evidence", "user_result"],
+            "require_official_passport": True,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+            "evidence": {
+                "require_operation_log_if_module_used": True,
+                "require_approval_if_approval_policy_used": True,
+            },
+        },
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="diagnostic_result",
+                title="Manual browser check",
+                summary="Live UI check passed",
+                source_ref="stage17:browser",
+                visibility="internal",
+                created_by="support-test",
+            )
+        )
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        await session.commit()
+
+    missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
+    assert {"automated_checks", "approvals", "user_result"}.issubset(missing_by_key)
+
+    result = await _resolve_ticket(
+        test_engine,
+        ticket_id,
+        resolution_code="fixed_remote",
+        requester_resolution_summary="Website is available again.",
+    )
+
+    assert result["applied"] is True
+    assert result["event_payload"]["closure_policy"]["official_passport_required"] is True
+
+
+@pytest.mark.asyncio
 async def test_closure_does_not_require_passport_when_reporting_policy_does_not_require_it(test_engine) -> None:
     await _clear_reporting_registry(test_engine)
     await _publish_reporting_policy(
