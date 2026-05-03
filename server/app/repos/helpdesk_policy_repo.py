@@ -93,6 +93,62 @@ def normalize_template_code(raw_value: Any) -> str:
     return cleaned.strip("_.-")
 
 
+def _normalize_positive_int(raw_value: Any, *, field_name: str) -> int | None:
+    if raw_value in (None, ""):
+        return None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"routing policy {field_name} must be integer") from exc
+    if value <= 0:
+        raise ValueError(f"routing policy {field_name} must be positive integer")
+    return value
+
+
+def _normalize_non_negative_int(raw_value: Any, *, field_name: str) -> int | None:
+    if raw_value in (None, ""):
+        return None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"routing policy {field_name} must be integer") from exc
+    if value < 0:
+        raise ValueError(f"routing policy {field_name} must be non-negative integer")
+    return value
+
+
+def _validate_routing_action_targets(actions: Any, *, field_name: str) -> None:
+    if actions in (None, ""):
+        return
+    if not isinstance(actions, dict):
+        raise ValueError(f"routing policy {field_name} must be an object")
+    for key in ("queue_id", "target_queue_id"):
+        if key in actions:
+            _normalize_positive_int(actions.get(key), field_name=f"{field_name}.{key}")
+
+
+def _validate_routing_policy_config(config: dict[str, Any]) -> None:
+    _normalize_positive_int(config.get("default_queue_id"), field_name="default_queue_id")
+    _normalize_non_negative_int(config.get("max_auto_reroutes"), field_name="max_auto_reroutes")
+    _validate_routing_action_targets(config.get("fallback"), field_name="fallback")
+
+    rules = config.get("rules")
+    if rules in (None, ""):
+        return
+    if not isinstance(rules, list):
+        raise ValueError("routing policy rules must be an array")
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            raise ValueError(f"routing policy rules[{index}] must be an object")
+        actions = rule.get("then") if "then" in rule else rule
+        _validate_routing_action_targets(actions, field_name=f"rules[{index}].then")
+
+
+def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
+    if kind == "routing":
+        _validate_routing_policy_config(config)
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(base)
     for key, value in override.items():
@@ -889,6 +945,7 @@ class HelpdeskPolicyRepo:
             raise ValueError("policy code is required")
         if not isinstance(config, dict):
             raise ValueError("policy config must be object")
+        _validate_policy_config(normalized_kind, config)
 
         existing_rows = list(
             (

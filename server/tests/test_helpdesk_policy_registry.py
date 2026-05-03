@@ -1167,6 +1167,38 @@ async def test_web_admin_helpdesk_policy_lifecycle_endpoints(test_client, test_e
 
 
 @pytest.mark.asyncio
+async def test_web_admin_publish_routing_policy_rejects_invalid_targets(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "routing",
+            "code": f"routing_invalid_{uuid.uuid4().hex[:8]}",
+            "title": "Invalid routing policy",
+            "scope_level": "request_template",
+            "scope_ref": "printer",
+            "config": {
+                "default_queue_id": -999,
+                "max_auto_reroutes": -1,
+                "rules": [
+                    {
+                        "priority_order": 10,
+                        "when": {"field": "request_form_data.room", "op": "eq", "value": "214"},
+                        "then": {"queue_id": -999},
+                    }
+                ],
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "routing policy" in payload["error"]
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     response = await test_client.post(
