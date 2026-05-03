@@ -2230,6 +2230,8 @@ async def handle_ticket_sla_get(request: web.Request) -> web.Response:
             resolution_at=ticket.resolution_at.isoformat() if ticket.resolution_at else None,
             first_response_breached_at=ticket.first_response_breached_at.isoformat() if ticket.first_response_breached_at else None,
             resolution_breached_at=ticket.resolution_breached_at.isoformat() if ticket.resolution_breached_at else None,
+            sla_paused_at=ticket.sla_paused_at.isoformat() if ticket.sla_paused_at else None,
+            sla_paused_seconds=ticket.sla_paused_seconds,
             ola=build_ola_block(ticket),
         )
 

@@ -129,6 +129,90 @@ async def test_workflow_blocks_assigned_status_without_assignee(test_engine) -> 
 
 
 @pytest.mark.asyncio
+async def test_workflow_passes_target_status_to_sla_pause(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf06"
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident SLA pause target status",
+                        "purpose": "restore_service",
+                        "suggested_path": ["in_progress", "waiting_on_user"],
+                        "allowed_statuses": ["in_progress", "waiting_on_user", "canceled"],
+                        "transitions": {
+                            "in_progress": [
+                                {
+                                    "to": "waiting_on_user",
+                                    "actions": {"sla": "pause"},
+                                }
+                            ],
+                            "waiting_on_user": ["canceled"],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-sla-pause",
+                title="Workflow SLA pause",
+                description="Workflow target status should satisfy SLA pause condition.",
+                status="in_progress",
+                requester_id="requester",
+                ticket_type="incident",
+                custom_fields={
+                    "priority_class": "P3",
+                    "request_template": {
+                        "sla_policy": {
+                            "code": "workflow_pause_sla",
+                            "pause_conditions": ["waiting_user"],
+                            "targets": {
+                                "first_response": {"P3": "30m"},
+                                "resolution": {"P3": "2h"},
+                            },
+                        }
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        result = await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status="in_progress",
+            to_status="waiting_on_user",
+            actor_id="support-test",
+            actor_role="support",
+            reason="needs_requester",
+            source="test",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "sla_paused")
+            )
+        ).scalar_one_or_none()
+
+    assert result["event_payload"]["workflow_transition_action_results"]["sla"]["status"] == "executed"
+    assert ticket.sla_paused_at is not None
+    assert event is not None
+
+
+@pytest.mark.asyncio
 async def test_workflow_passes_transition_trigger_to_sla_resume(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket_id = "00000000-0000-0000-0000-00000000wf05"

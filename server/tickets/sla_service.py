@@ -411,7 +411,7 @@ class TicketSlaService:
         logger.debug(f"[SLA] FRT closed for ticket_id={ticket_id}")
         return True
 
-    async def pause_sla(self, ticket_id: str, *, trigger: str = "status_changed") -> bool:
+    async def pause_sla(self, ticket_id: str, *, trigger: str = "status_changed", status: str | None = None) -> bool:
         """Поставить SLA на паузу (Waiting on User/Vendor): записать sla_paused_at."""
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
@@ -420,11 +420,13 @@ class TicketSlaService:
             return True  # уже на паузе
         policy, _ = await self._get_policy_and_targets(ticket)
         config = _sla_policy_config(policy)
+        effective_status = status if status is not None else ticket.status
         if not _conditions_allow(
             config.get("pause_conditions"),
             ticket=ticket,
             trigger=trigger,
-            default=_normalized_status(ticket.status) in WAITING_STATUSES,
+            status=effective_status,
+            default=_normalized_status(effective_status) in WAITING_STATUSES,
         ):
             return False
         now = datetime.now(timezone.utc)
@@ -442,7 +444,7 @@ class TicketSlaService:
         logger.debug(f"[SLA] Paused for ticket_id={ticket_id}")
         return True
 
-    async def resume_sla(self, ticket_id: str, *, trigger: str = "status_changed") -> bool:
+    async def resume_sla(self, ticket_id: str, *, trigger: str = "status_changed", status: str | None = None) -> bool:
         """Снять паузу: накопить sla_paused_seconds и очистить sla_paused_at."""
         ticket = await self.ticket_repo.get_ticket(ticket_id)
         if not ticket:
@@ -451,11 +453,13 @@ class TicketSlaService:
             return True
         policy, _ = await self._get_policy_and_targets(ticket)
         config = _sla_policy_config(policy)
+        effective_status = status if status is not None else ticket.status
         if not _conditions_allow(
             config.get("resume_conditions"),
             ticket=ticket,
             trigger=trigger,
-            default=_normalized_status(ticket.status) not in WAITING_STATUSES,
+            status=effective_status,
+            default=_normalized_status(effective_status) not in WAITING_STATUSES,
         ):
             return False
         now = datetime.now(timezone.utc)
