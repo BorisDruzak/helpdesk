@@ -89,6 +89,37 @@
         }
     }
 
+    function nextActionOwnerLabel(owner) {
+        const value = String(owner || "").trim();
+        const labels = {
+            requester: "заявитель",
+            support: "поддержка",
+            approver: "согласующий",
+            internal_team: "внутренняя команда",
+            vendor: "поставщик",
+            system: "система",
+        };
+        return labels[value] || value;
+    }
+
+    function renderTicketMeta(ticket) {
+        const statusLabel = ticket.public_status_label
+            || ticket.requester_status_label
+            || ticket.status_label
+            || ticket.public_status
+            || ticket.requester_status
+            || ticket.status
+            || "—";
+        const parts = ["Статус: " + statusLabel];
+        const ownerLabel = nextActionOwnerLabel(ticket.next_action_owner);
+        if (ownerLabel) parts.push("Следующее действие: " + ownerLabel);
+        const firstResponseDue = formatTs(ticket.first_response_due_at);
+        if (firstResponseDue) parts.push("Первая реакция до: " + firstResponseDue);
+        const resolutionDue = formatTs(ticket.resolution_due_at);
+        if (resolutionDue) parts.push("Решение до: " + resolutionDue);
+        return parts.join(" · ");
+    }
+
     function renderMessages(messages) {
         const history = el("chatHistory");
         if (!history) return;
@@ -332,7 +363,7 @@
         }
         const ticket = data.ticket || {};
         el("chatTitle").textContent = ticket.ticket_code || ticket.ticket_id || "Тикет";
-        el("chatMeta").textContent = "Статус: " + (ticket.status || "—");
+        el("chatMeta").textContent = renderTicketMeta(ticket);
         renderMessages(data.messages || []);
         showChatMode();
         setStatus("Тикет загружен");
