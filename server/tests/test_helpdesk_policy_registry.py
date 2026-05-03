@@ -786,6 +786,16 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
                 "reporting_policy": {"report_tags": ["website", "live_acceptance"]},
                 "fields": [
                     {"key": "url", "label": "Адрес сайта", "type": "text", "required": True},
+                    {
+                        "key": "symptoms",
+                        "label": "Симптомы",
+                        "type": "multi_select",
+                        "required": False,
+                        "options": [
+                            {"value": "dns", "label": "DNS"},
+                            {"value": "proxy", "label": "Прокси"},
+                        ],
+                    },
                     {"key": "impact_scope", "label": "Кого затронуло", "type": "text", "required": True},
                     {"key": "work_continuity", "label": "Можно ли работать", "type": "text", "required": True},
                     {"key": "business_importance", "label": "Важность", "type": "text", "required": False},
@@ -811,6 +821,9 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
     assert result["policies"]["routing"]["config"]["rules"][0]["then"]["queue_id"] == 40
     assert result["policies"]["sla"]["config"]["targets"]["first_response"]["P2"] == "45m"
     assert result["policies"]["reporting"]["config"]["report_tags"] == ["website", "live_acceptance"]
+    symptoms_field = next(field for field in result["form_schema"]["fields"] if field["key"] == "symptoms")
+    assert symptoms_field["type"] == "multi_select"
+    assert symptoms_field["options"] == [{"value": "dns", "label": "DNS"}, {"value": "proxy", "label": "Прокси"}]
 
     registry_response = await test_client.get(
         "/api/web/admin/helpdesk-model/policies",

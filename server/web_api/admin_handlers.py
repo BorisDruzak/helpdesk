@@ -630,7 +630,7 @@ def _serialize_admin_form_field_request(payload: AdminFormsSaveFieldRequest) -> 
     help_text = str(payload.help_text or "").strip()
     if help_text:
         field_payload["help_text"] = help_text
-    if field_payload["type"] in {"select", "radio"}:
+    if field_payload["type"] in {"select", "radio", "multi_select"}:
         field_payload["options"] = [
             {
                 "value": str(option.value or "").strip(),
