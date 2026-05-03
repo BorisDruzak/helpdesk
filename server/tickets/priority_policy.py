@@ -375,6 +375,8 @@ def compute_priority_from_policy(
     if manual_priority:
         manual_override = priority_policy.get("manual_override") if isinstance(priority_policy.get("manual_override"), Mapping) else {}
         actor_role = str(fallback.get("manual_actor_role") or fallback.get("actor_role") or "").strip()
+        if actor_role in {"public", "requester", "user"}:
+            raise ValueError("manual priority override is not allowed for this role")
         allowed_roles = manual_override.get("allowed_roles") if isinstance(manual_override.get("allowed_roles"), list) else []
         if allowed_roles and actor_role not in {str(item) for item in allowed_roles}:
             raise ValueError("manual priority override is not allowed for this role")

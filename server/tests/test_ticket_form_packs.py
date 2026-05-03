@@ -664,6 +664,58 @@ async def test_create_ticket_manual_priority_override_rejects_requester_role(tes
 
 
 @pytest.mark.asyncio
+async def test_public_create_ticket_manual_priority_override_rejects_requester(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _publish_manual_priority_form_pack(test_client)
+    body = _manual_priority_create_payload(str(uuid.uuid4()))
+    body.pop("device_id")
+    body["user_display_name"] = "Public requester"
+    body["manual_reason"] = "Public requester tries to force priority."
+    body["urgency"] = False
+    body["importance"] = False
+    body["urgency_reason"] = "Public create baseline"
+    body["importance_reason"] = "Public create baseline"
+
+    response = await test_client.post("/public_api/tickets/create", json=body)
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["details"]["form_payload"] == "manual priority override is not allowed for this role"
+
+
+@pytest.mark.asyncio
+async def test_public_create_ticket_manual_priority_override_rejects_legacy_policy_without_role_list(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    response = await test_client.post(
+        "/public_api/tickets/create",
+        json={
+            "title": "Public manual override",
+            "description": "Requester must not force priority.",
+            "user_display_name": "Public requester",
+            "request_template_key": "site_system",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "issue_kind": "site_down",
+                "system_name": "Stage19",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
+            "manual_priority": "P1",
+            "manual_reason": "Requester tries to force priority.",
+            "urgency": False,
+            "importance": False,
+            "urgency_reason": "Public create baseline",
+            "importance_reason": "Public create baseline",
+        },
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["details"]["form_payload"] == "manual priority override is not allowed for this role"
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_stores_diagnostic_consent(test_client, test_engine):
     device_id = str(uuid.uuid4())
     response = await test_client.post(
