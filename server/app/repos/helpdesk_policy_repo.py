@@ -81,7 +81,24 @@ SCOPE_RANK = {
 }
 
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]*)\s*$")
+_APPROVAL_DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?\s*$", re.IGNORECASE)
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+_APPROVAL_SOURCE_TYPES = {
+    "explicit_user",
+    "user",
+    "specific_user",
+    "explicit_users",
+    "users",
+    "group_members",
+    "group",
+    "approval_group",
+    "security_role",
+    "form_field",
+    "requester_manager",
+    "service_owner",
+    "queue_lead",
+}
+_APPROVAL_MODES = {"any_one", "all", "sequential"}
 
 
 def normalize_policy_kind(raw_kind: Any) -> str:
@@ -295,6 +312,103 @@ def _validate_ola_policy_config(config: dict[str, Any]) -> None:
             )
 
 
+def _validate_approval_duration(raw_value: Any, *, field_name: str) -> None:
+    if raw_value in (None, ""):
+        return
+    if isinstance(raw_value, bool):
+        raise ValueError(f"approval policy {field_name} must be non-negative duration")
+    if isinstance(raw_value, (int, float)):
+        if raw_value < 0:
+            raise ValueError(f"approval policy {field_name} must be non-negative duration")
+        return
+    match = _APPROVAL_DURATION_RE.match(str(raw_value).strip())
+    if not match:
+        raise ValueError(f"approval policy {field_name} must be non-negative duration")
+
+
+def _validate_approval_source(source: Any, *, field_name: str) -> None:
+    if source in (None, ""):
+        return
+    if isinstance(source, str):
+        source_type = source.strip()
+        if source_type and source_type not in _APPROVAL_SOURCE_TYPES:
+            raise ValueError(f"approval policy {field_name}.type is unsupported")
+        return
+    if not isinstance(source, dict):
+        raise ValueError(f"approval policy {field_name} must be an object")
+    source_type = str(source.get("type") or source.get("source") or "").strip()
+    if not source_type:
+        return
+    if source_type not in _APPROVAL_SOURCE_TYPES:
+        raise ValueError(f"approval policy {field_name}.type is unsupported")
+    if source_type == "form_field" and not str(source.get("field") or source.get("field_key") or "").strip():
+        raise ValueError(f"approval policy {field_name}.field is required")
+    if source_type in {"group", "approval_group"} and not str(
+        source.get("group_id") or source.get("id") or source.get("code") or ""
+    ).strip():
+        raise ValueError(f"approval policy {field_name}.group_id is required")
+    if "fallback" in source:
+        _validate_approval_source(source.get("fallback"), field_name=f"{field_name}.fallback")
+
+
+def _validate_approval_policy_config(config: dict[str, Any]) -> None:
+    mode = str(config.get("approval_mode") or config.get("mode") or "").strip().lower()
+    if mode and mode not in _APPROVAL_MODES:
+        raise ValueError("approval policy approval_mode is unsupported")
+    _validate_approval_source(config.get("approver_source") or config.get("approvers"), field_name="approver_source")
+    timeout = config.get("timeout")
+    if timeout in (None, ""):
+        return
+    if not isinstance(timeout, dict):
+        raise ValueError("approval policy timeout must be an object")
+    for key in ("reminder_after", "escalate_after", "due_in"):
+        _validate_approval_duration(timeout.get(key), field_name=f"timeout.{key}")
+
+
+def _validate_visibility_path(raw_path: Any, *, policy_name: str, field_name: str) -> None:
+    path = str(raw_path or "").strip()
+    if not path:
+        raise ValueError(f"{policy_name} {field_name} contains empty path")
+    if path.startswith(".") or path.endswith(".") or ".." in path:
+        raise ValueError(f"{policy_name} {field_name} contains invalid path")
+    for part in path.split("."):
+        if not part or not all(ch.isalnum() or ch in {"_", "-"} for ch in part):
+            raise ValueError(f"{policy_name} {field_name} contains invalid path")
+
+
+def _validate_visibility_path_list(value: Any, *, field_name: str) -> None:
+    if value in (None, ""):
+        return
+    if not isinstance(value, list):
+        raise ValueError(f"visibility policy {field_name} must be an array")
+    for index, item in enumerate(value):
+        _validate_visibility_path(item, policy_name="visibility policy", field_name=f"{field_name}[{index}]")
+
+
+def _validate_visibility_mapping(value: Any, *, field_name: str) -> None:
+    if value in (None, ""):
+        return
+    if not isinstance(value, dict):
+        raise ValueError(f"visibility policy {field_name} must be an object")
+    for status, entry in value.items():
+        status_key = str(status or "").strip()
+        if not status_key:
+            raise ValueError(f"visibility policy {field_name} contains empty status")
+        if isinstance(entry, dict):
+            for key in ("status", "code", "label", "title"):
+                if key in entry and entry.get(key) is not None and not str(entry.get(key)).strip():
+                    raise ValueError(f"visibility policy {field_name}.{status_key}.{key} must be non-empty")
+        elif entry is not None and not str(entry).strip():
+            raise ValueError(f"visibility policy {field_name}.{status_key} must be non-empty")
+
+
+def _validate_visibility_policy_config(config: dict[str, Any]) -> None:
+    for key in ("hide_from_requester", "show_to_requester", "show_to_support", "support_fields"):
+        _validate_visibility_path_list(config.get(key), field_name=key)
+    _validate_visibility_mapping(config.get("public_status_mapping"), field_name="public_status_mapping")
+    _validate_visibility_mapping(config.get("public_statuses"), field_name="public_statuses")
+
+
 def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
     if kind == "routing":
         _validate_routing_policy_config(config)
@@ -302,6 +416,10 @@ def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
         _validate_sla_policy_config(config)
     elif kind == "ola":
         _validate_ola_policy_config(config)
+    elif kind == "approval":
+        _validate_approval_policy_config(config)
+    elif kind == "visibility":
+        _validate_visibility_policy_config(config)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

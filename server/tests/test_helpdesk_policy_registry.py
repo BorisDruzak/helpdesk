@@ -1251,6 +1251,60 @@ async def test_web_admin_publish_ola_policy_rejects_invalid_targets(test_client,
 
 
 @pytest.mark.asyncio
+async def test_web_admin_publish_approval_policy_rejects_unknown_approver_source(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "approval",
+            "code": "invalid_approval_policy",
+            "title": "Invalid approval",
+            "scope_level": "request_template",
+            "scope_ref": "access_request",
+            "config": {
+                "required": True,
+                "approval_mode": "all",
+                "approver_source": {"type": "telepathy", "field": "manager_login"},
+                "timeout": {"reminder_after": "30m", "escalate_after": "45m", "due_in": "1h"},
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "approval policy" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publish_visibility_policy_rejects_invalid_requester_paths(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "visibility",
+            "code": "invalid_visibility_policy",
+            "title": "Invalid visibility",
+            "scope_level": "request_template",
+            "scope_ref": "incident",
+            "config": {
+                "hide_from_requester": ["", ".raw", "ola..runtime"],
+                "public_status_mapping": "not-an-object",
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "visibility policy" in payload["error"]
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     response = await test_client.post(
