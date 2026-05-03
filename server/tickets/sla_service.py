@@ -109,6 +109,22 @@ def _normalized_status(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+_STATUS_ALIASES = {
+    "waiting_user": "waiting_on_user",
+    "wait_user": "waiting_on_user",
+    "waiting_approval": "waiting_on_approval",
+    "waiting_internal": "waiting_on_internal_team",
+    "waiting_internal_team": "waiting_on_internal_team",
+    "waiting_vendor": "waiting_on_vendor",
+}
+
+_EVENT_STATUS_ALIASES = {
+    "ticket_resolved": {"resolved"},
+    "ticket_closed": {"closed"},
+    "ticket_terminal": set(TERMINAL_STATUSES) | {"resolved", "closed"},
+}
+
+
 def _condition_matches(
     condition: Any,
     *,
@@ -122,6 +138,14 @@ def _condition_matches(
         raw = condition.strip()
         lowered = raw.lower()
         if trigger_value and lowered == trigger_value.lower():
+            return True
+        if lowered == current_status:
+            return True
+        status_alias = _STATUS_ALIASES.get(lowered)
+        if status_alias and current_status == status_alias:
+            return True
+        event_statuses = _EVENT_STATUS_ALIASES.get(lowered)
+        if event_statuses and current_status in event_statuses:
             return True
         if lowered.startswith("status in"):
             _, _, tail = lowered.partition("in")

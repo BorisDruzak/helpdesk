@@ -443,6 +443,81 @@ async def test_sla_stop_conditions_control_frt_and_resolution_stop(test_engine, 
 
 
 @pytest.mark.asyncio
+async def test_sla_policy_accepts_live_status_and_resolution_aliases(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(sla_service_module, "datetime", FrozenDateTime)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=f"device-{ticket_id[:8]}",
+            title="Live SLA aliases",
+            description="Live policy aliases should drive SLA lifecycle.",
+            status="waiting_on_user",
+            requester_id="requester-sla-alias",
+            ticket_type="incident",
+            priority="P3",
+            custom_fields={
+                "priority_class": "P3",
+                "request_template": {
+                    "sla_policy": {
+                        "code": "live_alias_sla",
+                        "version": "1.0.0",
+                        "pause_conditions": ["waiting_user", "waiting_approval"],
+                        "resume_conditions": ["requester_replied", "approval_completed"],
+                        "stop_conditions": {"resolution": ["ticket_resolved", "ticket_closed"]},
+                        "targets": {
+                            "first_response": {"P3": "30m"},
+                            "resolution": {"P3": "2h"},
+                        },
+                    }
+                },
+            },
+        )
+        session.add(ticket)
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        service = TicketSlaService(session, repo)
+        assert await service.pause_sla(ticket_id, trigger="status_changed") is True
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.status = "in_progress"
+        ticket.sla_paused_at = datetime(2026, 5, 4, 16, 0, tzinfo=timezone.utc)
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        service = TicketSlaService(session, repo)
+        assert await service.resume_sla(ticket_id, trigger="requester_replied") is True
+        assert await service.stop_resolution(ticket_id, status="resolved", trigger="status_changed") is True
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event_types = [
+            row[0]
+            for row in (
+                await session.execute(
+                    select(TicketEvent.event_type)
+                    .where(TicketEvent.ticket_id == ticket_id)
+                    .where(TicketEvent.event_type.in_(["sla_paused", "sla_resumed", "sla_resolution_stopped"]))
+                    .order_by(TicketEvent.id)
+                )
+            ).all()
+        ]
+
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_paused_seconds == 1800
+    assert ticket.resolution_at == datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc)
+    assert event_types == ["sla_paused", "sla_resumed", "sla_resolution_stopped"]
+
+
+@pytest.mark.asyncio
 async def test_sla_watchdog_emits_configured_warning_before_breach(test_engine, monkeypatch) -> None:
     monkeypatch.setattr(sla_watchdog_module, "datetime", FrozenDateTime)
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

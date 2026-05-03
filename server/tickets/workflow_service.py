@@ -468,8 +468,17 @@ class TicketWorkflowService:
             updates["root_cause"] = None
             updates["canceled_at"] = None
 
+        transition_trigger = transition_gate.trigger if transition_gate and transition_gate.trigger else None
+        approval_completed_trigger = (
+            "approval_completed"
+            if transition_gate and transition_gate.require_approval and from_status == "waiting_on_approval"
+            else None
+        )
+        pause_trigger = transition_trigger or "status_changed"
+        resume_trigger = transition_trigger or approval_completed_trigger or "status_changed"
+
         if to_status in WAITING_STATUSES:
-            await self.sla_service.pause_sla(ticket_id, trigger="status_changed")
+            await self.sla_service.pause_sla(ticket_id, trigger=pause_trigger)
             try:
                 from tickets.ola_service import pause_ola
 
@@ -478,7 +487,7 @@ class TicketWorkflowService:
                 pass
 
         if from_status in WAITING_STATUSES and to_status not in WAITING_STATUSES:
-            await self.sla_service.resume_sla(ticket_id, trigger="status_changed")
+            await self.sla_service.resume_sla(ticket_id, trigger=resume_trigger)
             try:
                 from tickets.ola_service import resume_ola
 
@@ -487,13 +496,13 @@ class TicketWorkflowService:
                 pass
 
         if transition_gate and transition_gate.sla_action == "pause":
-            applied = await self.sla_service.pause_sla(ticket_id, trigger="workflow_transition_gate")
+            applied = await self.sla_service.pause_sla(ticket_id, trigger=pause_trigger)
             event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
                 "status": "executed" if applied else "no_op",
                 "action": "pause",
             }
         elif transition_gate and transition_gate.sla_action == "resume":
-            applied = await self.sla_service.resume_sla(ticket_id, trigger="workflow_transition_gate")
+            applied = await self.sla_service.resume_sla(ticket_id, trigger=resume_trigger)
             event_payload.setdefault("workflow_transition_action_results", {})["sla"] = {
                 "status": "executed" if applied else "no_op",
                 "action": "resume",

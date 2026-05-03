@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, TicketApproval, TicketEvidenceItem, TicketQueue
+from app.db.models import Ticket, TicketApproval, TicketEvent, TicketEvidenceItem, TicketQueue
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 
@@ -123,6 +126,94 @@ async def test_workflow_blocks_assigned_status_without_assignee(test_engine) -> 
                 reason="assigned_without_assignee",
                 source="test",
             )
+
+
+@pytest.mark.asyncio
+async def test_workflow_passes_transition_trigger_to_sla_resume(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf05"
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident SLA resume trigger",
+                        "purpose": "restore_service",
+                        "suggested_path": ["waiting_on_user", "in_progress"],
+                        "allowed_statuses": ["waiting_on_user", "in_progress", "canceled"],
+                        "transitions": {
+                            "waiting_on_user": [
+                                {
+                                    "to": "in_progress",
+                                    "trigger": "requester_replied",
+                                    "actions": {"sla": "resume"},
+                                }
+                            ],
+                            "in_progress": ["canceled"],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-sla-resume",
+                title="Workflow SLA resume",
+                description="Workflow trigger should satisfy SLA resume condition.",
+                status="waiting_on_user",
+                requester_id="requester",
+                ticket_type="incident",
+                sla_paused_at=datetime(2026, 5, 4, 16, 0, tzinfo=timezone.utc),
+                custom_fields={
+                    "priority_class": "P3",
+                    "request_template": {
+                        "sla_policy": {
+                            "code": "workflow_resume_sla",
+                            "resume_conditions": ["requester_replied"],
+                            "targets": {
+                                "first_response": {"P3": "30m"},
+                                "resolution": {"P3": "2h"},
+                            },
+                        }
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        result = await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status="waiting_on_user",
+            to_status="in_progress",
+            actor_id="support-test",
+            actor_role="support",
+            reason="requester_replied",
+            source="test",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "sla_resumed")
+            )
+        ).scalar_one_or_none()
+
+    assert result["event_payload"]["workflow_transition_action_results"]["sla"]["status"] == "executed"
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_paused_seconds is not None
+    assert event is not None
+    assert event.payload["trigger"] == "requester_replied"
 
 
 @pytest.mark.asyncio
