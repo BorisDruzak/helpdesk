@@ -408,6 +408,7 @@ async def pause_ola(
     ticket_id: str,
     *,
     trigger: str = "status_changed",
+    status: str | None = None,
 ) -> bool:
     if not TICKET_OLA_ENABLED:
         return False
@@ -415,15 +416,22 @@ async def pause_ola(
     if not ticket or ticket.ola_paused_at is not None:
         return False
     policy = await _get_ola_policy(session, ticket)
+    effective_status = status or ticket.status
     if not _conditions_allow(
         policy.get("pause_conditions"),
         ticket=ticket,
         trigger=trigger,
-        default=_normalized_status(ticket.status) in WAITING_STATUSES,
+        status=effective_status,
+        default=_normalized_status(effective_status) in WAITING_STATUSES,
     ):
         return False
     now = datetime.now(timezone.utc)
-    custom_fields = _set_ola_runtime(ticket, pause_reason=trigger, paused_at=now.isoformat())
+    custom_fields = _set_ola_runtime(
+        ticket,
+        pause_reason=trigger,
+        pause_status=effective_status,
+        paused_at=now.isoformat(),
+    )
     await session.execute(
         update(Ticket).where(Ticket.ticket_id == ticket_id).values(ola_paused_at=now, custom_fields=custom_fields)
     )
@@ -434,6 +442,7 @@ async def pause_ola(
         {
             "ticket_id": ticket_id,
             "trigger": trigger,
+            "status": effective_status,
             "paused_at": now.isoformat(),
             "ola_policy": _ola_policy_metadata(policy),
         },
@@ -446,6 +455,7 @@ async def resume_ola(
     ticket_id: str,
     *,
     trigger: str = "status_changed",
+    status: str | None = None,
 ) -> bool:
     if not TICKET_OLA_ENABLED:
         return False
@@ -453,11 +463,13 @@ async def resume_ola(
     if not ticket or ticket.ola_paused_at is None:
         return False
     policy = await _get_ola_policy(session, ticket)
+    effective_status = status or ticket.status
     if not _conditions_allow(
         policy.get("resume_conditions"),
         ticket=ticket,
         trigger=trigger,
-        default=_normalized_status(ticket.status) not in WAITING_STATUSES,
+        status=effective_status,
+        default=_normalized_status(effective_status) not in WAITING_STATUSES,
     ):
         return False
     now = datetime.now(timezone.utc)
@@ -466,6 +478,7 @@ async def resume_ola(
     custom_fields = _set_ola_runtime(
         ticket,
         resume_reason=trigger,
+        resume_status=effective_status,
         resumed_at=now.isoformat(),
         ola_paused_seconds=total_paused,
     )
@@ -481,6 +494,7 @@ async def resume_ola(
         {
             "ticket_id": ticket_id,
             "trigger": trigger,
+            "status": effective_status,
             "resumed_at": now.isoformat(),
             "added_pause_sec": added_pause_sec,
             "ola_paused_seconds": total_paused,

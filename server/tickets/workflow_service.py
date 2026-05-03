@@ -482,7 +482,7 @@ class TicketWorkflowService:
             try:
                 from tickets.ola_service import pause_ola
 
-                await pause_ola(self.session, ticket_id, trigger="status_changed")
+                await pause_ola(self.session, ticket_id, trigger=pause_trigger, status=to_status)
             except Exception:
                 pass
 
@@ -491,7 +491,7 @@ class TicketWorkflowService:
             try:
                 from tickets.ola_service import resume_ola
 
-                await resume_ola(self.session, ticket_id, trigger="status_changed")
+                await resume_ola(self.session, ticket_id, trigger=resume_trigger, status=to_status)
             except Exception:
                 pass
 

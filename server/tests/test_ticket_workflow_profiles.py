@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketApproval, TicketEvent, TicketEvidenceItem, TicketQueue
 from app.repos.ticket_events_repo import TicketEventsRepo
+from tickets import ola_service
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 
 from tickets.workflow_profiles import (
@@ -298,6 +299,172 @@ async def test_workflow_passes_transition_trigger_to_sla_resume(test_engine) -> 
     assert ticket.sla_paused_seconds is not None
     assert event is not None
     assert event.payload["trigger"] == "requester_replied"
+
+
+@pytest.mark.asyncio
+async def test_workflow_passes_target_status_to_ola_pause(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(ola_service, "TICKET_OLA_ENABLED", True)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf21"
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident OLA pause target status",
+                        "purpose": "restore_service",
+                        "suggested_path": ["in_progress", "waiting_on_vendor"],
+                        "allowed_statuses": ["in_progress", "waiting_on_vendor", "canceled"],
+                        "transitions": {
+                            "in_progress": ["waiting_on_vendor"],
+                            "waiting_on_vendor": ["canceled"],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-ola-pause",
+                title="Workflow OLA pause",
+                description="Workflow target status should satisfy OLA pause condition.",
+                status="in_progress",
+                requester_id="requester",
+                ticket_type="incident",
+                custom_fields={
+                    "priority_class": "P3",
+                    "request_template": {
+                        "ola_policy": {
+                            "code": "workflow_pause_ola",
+                            "pause_conditions": [{"status": "waiting_on_vendor"}],
+                            "targets": {
+                                "ack": {"P3": "30m"},
+                                "processing": {"P3": "2h"},
+                            },
+                        }
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status="in_progress",
+            to_status="waiting_on_vendor",
+            actor_id="support-test",
+            actor_role="support",
+            reason="needs_vendor",
+            source="test",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "ola_paused")
+            )
+        ).scalar_one_or_none()
+
+    assert ticket.ola_paused_at is not None
+    assert event is not None
+
+
+@pytest.mark.asyncio
+async def test_workflow_passes_transition_trigger_to_ola_resume(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(ola_service, "TICKET_OLA_ENABLED", True)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = "00000000-0000-0000-0000-00000000wf22"
+    async with session_maker() as session:
+        await save_workflow_profiles(
+            session,
+            {
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Incident OLA resume trigger",
+                        "purpose": "restore_service",
+                        "suggested_path": ["waiting_on_vendor", "in_progress"],
+                        "allowed_statuses": ["waiting_on_vendor", "in_progress", "canceled"],
+                        "transitions": {
+                            "waiting_on_vendor": [
+                                {
+                                    "to": "in_progress",
+                                    "trigger": "vendor_replied",
+                                }
+                            ],
+                            "in_progress": ["canceled"],
+                            "canceled": [],
+                        },
+                    }
+                ]
+            },
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="device-workflow-ola-resume",
+                title="Workflow OLA resume",
+                description="Workflow trigger should satisfy OLA resume condition.",
+                status="waiting_on_vendor",
+                requester_id="requester",
+                ticket_type="incident",
+                ola_paused_at=datetime(2026, 5, 4, 16, 0, tzinfo=timezone.utc),
+                custom_fields={
+                    "priority_class": "P3",
+                    "request_template": {
+                        "ola_policy": {
+                            "code": "workflow_resume_ola",
+                            "resume_conditions": ["vendor_replied"],
+                            "targets": {
+                                "ack": {"P3": "30m"},
+                                "processing": {"P3": "2h"},
+                            },
+                        }
+                    },
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = TicketEventsRepo(session)
+        workflow = TicketWorkflowService(session, repo)
+        await workflow.apply_status_transition(
+            ticket_id=ticket_id,
+            from_status="waiting_on_vendor",
+            to_status="in_progress",
+            actor_id="support-test",
+            actor_role="support",
+            reason="vendor_replied",
+            source="test",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "ola_resumed")
+            )
+        ).scalar_one_or_none()
+
+    assert ticket.ola_paused_at is None
+    assert ticket.ola_paused_seconds is not None
+    assert event is not None
+    assert event.payload["trigger"] == "vendor_replied"
 
 
 @pytest.mark.asyncio
