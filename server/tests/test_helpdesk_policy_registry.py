@@ -1199,6 +1199,58 @@ async def test_web_admin_publish_routing_policy_rejects_invalid_targets(test_cli
 
 
 @pytest.mark.asyncio
+async def test_web_admin_publish_sla_policy_rejects_invalid_targets_and_calendar(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "sla",
+            "code": "invalid_sla_policy",
+            "title": "Invalid SLA",
+            "scope_level": "request_template",
+            "scope_ref": "incident",
+            "config": {
+                "targets": {
+                    "first_response": {"P1": "-5m"},
+                    "resolution": {"P1": "soon"},
+                },
+                "calendar": {"timezone": "UTC", "weekly_hours_json": "not-an-array"},
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "sla policy" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publish_ola_policy_rejects_invalid_targets(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        json={
+            "kind": "ola",
+            "code": "invalid_ola_policy",
+            "title": "Invalid OLA",
+            "scope_level": "request_template",
+            "scope_ref": "incident",
+            "config": {"targets": {"ack": {"P1": "-1m"}, "processing": {"P1": "later"}}},
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "ola policy" in payload["error"]
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publishes_sla_ola_and_smart_view_versions(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     response = await test_client.post(

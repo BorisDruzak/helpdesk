@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import re
 from typing import Any
+import zoneinfo
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +80,9 @@ SCOPE_RANK = {
     "request_template": 3,
 }
 
+_DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]*)\s*$")
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
 
 def normalize_policy_kind(raw_kind: Any) -> str:
     kind = str(raw_kind or "").strip().lower()
@@ -144,9 +149,159 @@ def _validate_routing_policy_config(config: dict[str, Any]) -> None:
         _validate_routing_action_targets(actions, field_name=f"rules[{index}].then")
 
 
+def _duration_to_minutes(raw_value: Any, *, policy_name: str, field_name: str, allow_zero: bool = False) -> float:
+    if raw_value in (None, "") or isinstance(raw_value, bool):
+        raise ValueError(f"{policy_name} {field_name} must be duration")
+    if isinstance(raw_value, (int, float)):
+        minutes = float(raw_value)
+    else:
+        match = _DURATION_RE.match(str(raw_value).strip())
+        if not match:
+            raise ValueError(f"{policy_name} {field_name} must be duration")
+        amount = float(match.group(1))
+        unit = match.group(2).strip().lower()
+        if unit in {"", "m", "min", "mins", "minute", "minutes"}:
+            multiplier = 1
+        elif unit in {"h", "hr", "hour", "hours"}:
+            multiplier = 60
+        elif unit in {"d", "day", "days"}:
+            multiplier = 24 * 60
+        else:
+            raise ValueError(f"{policy_name} {field_name} has unsupported duration unit")
+        minutes = amount * multiplier
+    if minutes < 0 or (minutes == 0 and not allow_zero):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{policy_name} {field_name} must be {qualifier} duration")
+    return minutes
+
+
+def _validate_policy_duration_map(
+    target_map: Any,
+    *,
+    policy_name: str,
+    field_name: str,
+    allow_zero: bool = False,
+) -> None:
+    if target_map in (None, ""):
+        return
+    if not isinstance(target_map, dict):
+        raise ValueError(f"{policy_name} {field_name} must be an object")
+    for priority, raw_duration in target_map.items():
+        priority_key = str(priority or "").strip()
+        if not priority_key:
+            raise ValueError(f"{policy_name} {field_name} priority key is required")
+        _duration_to_minutes(
+            raw_duration,
+            policy_name=policy_name,
+            field_name=f"{field_name}.{priority_key}",
+            allow_zero=allow_zero,
+        )
+
+
+def _parse_policy_time(raw_value: Any, *, policy_name: str, field_name: str) -> int:
+    if not isinstance(raw_value, str) or not _TIME_RE.match(raw_value.strip()):
+        raise ValueError(f"{policy_name} {field_name} must be HH:MM")
+    hours, minutes = raw_value.strip().split(":", 1)
+    return int(hours) * 60 + int(minutes)
+
+
+def _validate_calendar_slots(slots: Any, *, policy_name: str, field_name: str) -> None:
+    if slots in (None, ""):
+        return
+    if not isinstance(slots, list):
+        raise ValueError(f"{policy_name} {field_name} must be an array")
+    for index, slot in enumerate(slots):
+        slot_name = f"{field_name}[{index}]"
+        if not isinstance(slot, dict):
+            raise ValueError(f"{policy_name} {slot_name} must be an object")
+        day_raw = slot.get("day")
+        if isinstance(day_raw, bool):
+            raise ValueError(f"{policy_name} {slot_name}.day must be integer 0-6")
+        try:
+            day = int(day_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{policy_name} {slot_name}.day must be integer 0-6") from exc
+        if day < 0 or day > 6:
+            raise ValueError(f"{policy_name} {slot_name}.day must be integer 0-6")
+        start_minutes = _parse_policy_time(slot.get("start"), policy_name=policy_name, field_name=f"{slot_name}.start")
+        end_minutes = _parse_policy_time(slot.get("end"), policy_name=policy_name, field_name=f"{slot_name}.end")
+        if start_minutes >= end_minutes:
+            raise ValueError(f"{policy_name} {slot_name}.start must be before end")
+
+
+def _validate_calendar_config(calendar: Any, *, policy_name: str, field_name: str = "calendar") -> None:
+    if calendar in (None, ""):
+        return
+    if not isinstance(calendar, dict):
+        raise ValueError(f"{policy_name} {field_name} must be an object")
+    timezone_name = calendar.get("timezone")
+    if timezone_name not in (None, ""):
+        try:
+            zoneinfo.ZoneInfo(str(timezone_name))
+        except Exception as exc:
+            raise ValueError(f"{policy_name} {field_name}.timezone is unknown") from exc
+    _validate_calendar_slots(
+        calendar.get("weekly_hours_json") if "weekly_hours_json" in calendar else calendar.get("weekly_hours"),
+        policy_name=policy_name,
+        field_name=f"{field_name}.weekly_hours_json",
+    )
+    holidays = calendar.get("holidays_json") if "holidays_json" in calendar else calendar.get("holidays")
+    if holidays in (None, ""):
+        return
+    if not isinstance(holidays, list):
+        raise ValueError(f"{policy_name} {field_name}.holidays_json must be an array")
+    for index, item in enumerate(holidays):
+        if not isinstance(item, str):
+            raise ValueError(f"{policy_name} {field_name}.holidays_json[{index}] must be YYYY-MM-DD")
+        try:
+            datetime.strptime(item, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(f"{policy_name} {field_name}.holidays_json[{index}] must be YYYY-MM-DD") from exc
+
+
+def _validate_sla_policy_config(config: dict[str, Any]) -> None:
+    targets = config.get("targets")
+    if targets not in (None, "") and not isinstance(targets, dict):
+        raise ValueError("sla policy targets must be an object")
+    target_source = targets if isinstance(targets, dict) else config
+    for key in ("first_response", "first_response_targets", "resolution", "resolution_targets"):
+        if key in target_source:
+            _validate_policy_duration_map(
+                target_source.get(key),
+                policy_name="sla policy",
+                field_name=f"targets.{key}",
+            )
+
+    _validate_calendar_config(config.get("calendar"), policy_name="sla policy")
+    business_hours = config.get("business_hours_json") if "business_hours_json" in config else config.get("business_hours")
+    if isinstance(business_hours, dict):
+        _validate_calendar_config(business_hours, policy_name="sla policy", field_name="business_hours_json")
+    else:
+        _validate_calendar_slots(business_hours, policy_name="sla policy", field_name="business_hours_json")
+
+
+def _validate_ola_policy_config(config: dict[str, Any]) -> None:
+    targets = config.get("targets")
+    if targets not in (None, "") and not isinstance(targets, dict):
+        raise ValueError("ola policy targets must be an object")
+    target_source = targets if isinstance(targets, dict) else config
+    for key in ("ack", "processing"):
+        if key in target_source:
+            _validate_policy_duration_map(
+                target_source.get(key),
+                policy_name="ola policy",
+                field_name=f"targets.{key}",
+                allow_zero=True,
+            )
+
+
 def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
     if kind == "routing":
         _validate_routing_policy_config(config)
+    elif kind == "sla":
+        _validate_sla_policy_config(config)
+    elif kind == "ola":
+        _validate_ola_policy_config(config)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
