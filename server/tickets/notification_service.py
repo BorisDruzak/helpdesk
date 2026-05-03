@@ -38,6 +38,8 @@ _EVENT_POLICY_ALIASES: dict[str, tuple[str, ...]] = {
     "approval_escalated": ("on_approval_escalated",),
     "approval_reminder_due": ("on_approval_reminder", "on_approval_reminder_due"),
     "approval_timed_out": ("on_approval_timeout", "on_approval_timed_out"),
+    "approval_approved": ("on_approval_approved", "on_approval_decided"),
+    "approval_rejected": ("on_approval_rejected", "on_approval_decided"),
     "diagnostic_completed": ("on_diagnostic_completed",),
     "diagnostics_completed": ("on_diagnostic_completed",),
 }

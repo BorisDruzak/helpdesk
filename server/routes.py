@@ -223,6 +223,7 @@ from web_api.access_handlers import (
 )
 from web_api.support_handlers import (
     handle_web_support_bootstrap,
+    handle_web_support_approval_decision,
     handle_web_support_change_status,
     handle_web_support_ticket_passport,
     handle_web_support_ticket_passport_evidence,
@@ -444,6 +445,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
         web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
+        web.post('/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision', handle_web_support_approval_decision),
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),

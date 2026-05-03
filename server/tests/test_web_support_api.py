@@ -21,6 +21,8 @@ from app.db.models import (
     ReportingPolicy,
     Ticket,
     TicketApproval,
+    TicketEvent,
+    TicketNotification,
     UiUser,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
@@ -1400,6 +1402,144 @@ async def test_web_support_detail_exposes_approval_policy_summary(test_client, t
     assert payload["data"]["actions"]["approval"]["approved_transition"] == "in_progress"
     assert payload["data"]["actions"]["approval"]["rejected_transition"] == "canceled"
     assert payload["data"]["actions"]["approval"]["reject_requires_comment"] is True
+
+
+async def _seed_approval_decision_ticket(
+    test_engine,
+    *,
+    approver_id: str = "support-test",
+    require_comment_on_reject: bool = True,
+) -> tuple[str, int]:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(
+            session,
+            code=f"approval_decision_{uuid.uuid4().hex[:8]}",
+            name="Approval decision queue",
+            members=["support-test", "op-a"],
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id=f"device-approval-decision-{uuid.uuid4().hex[:6]}",
+            title="Approval decision",
+            description="Support approval decision endpoint should persist decisions.",
+            status="waiting_on_approval",
+            requester_id="requester-approval",
+            queue_id=queue.id,
+            ticket_type="access_request",
+            custom_fields={
+                "request_template": {
+                    "key": "access_request",
+                    "ticket_type": "access_request",
+                    "approval_policy": {
+                        "required": True,
+                        "approval_mode": "any_one",
+                        "approver_source": {"type": "explicit_user", "user_id": approver_id},
+                        "statuses": {
+                            "waiting_status": "waiting_on_approval",
+                            "approved_transition": "in_progress",
+                            "rejected_transition": "canceled",
+                        },
+                        "require_comment_on_reject": require_comment_on_reject,
+                    },
+                    "notification_policy": {
+                        "on_approval_approved": {"queue": True},
+                        "on_approval_rejected": {"queue": True},
+                    },
+                },
+            },
+        )
+        session.add(ticket)
+        approval = TicketApproval(
+            ticket_id=ticket.ticket_id,
+            approval_type="explicit_user",
+            approver_id=approver_id,
+            status="requested",
+            reason="approval_policy_request",
+            requested_by="support-test",
+            requested_at=datetime.now(timezone.utc),
+        )
+        session.add(approval)
+        await session.flush()
+        ticket_id = ticket.ticket_id
+        approval_id = int(approval.id)
+        await session.commit()
+        return ticket_id, approval_id
+
+
+@pytest.mark.asyncio
+async def test_web_support_approval_decision_approves_and_notifies(test_client, test_engine):
+    ticket_id, approval_id = await _seed_approval_decision_ticket(test_engine)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision",
+        headers=_support_headers(),
+        json={"decision": "approved", "reason": "approved for live acceptance"},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["approval"]["status"] == "approved"
+    assert payload["data"]["approval_summary"]["approved_count"] == 1
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        approval = await session.get(TicketApproval, approval_id)
+        events = (
+            await session.execute(
+                select(TicketEvent.event_type, TicketEvent.payload)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "approval_approved")
+            )
+        ).all()
+        notifications = (
+            await session.execute(
+                select(TicketNotification)
+                .where(TicketNotification.ticket_id == ticket_id)
+                .where(TicketNotification.event_type == "approval_approved")
+            )
+        ).scalars().all()
+
+    assert approval.status == "approved"
+    assert approval.decided_at is not None
+    assert approval.reason == "approved for live acceptance"
+    assert len(events) == 1
+    assert events[0].payload["approval_id"] == approval_id
+    assert {item.actor_id for item in notifications} == {"op-a"}
+
+
+@pytest.mark.asyncio
+async def test_web_support_approval_decision_reject_requires_comment(test_client, test_engine):
+    ticket_id, approval_id = await _seed_approval_decision_ticket(test_engine, require_comment_on_reject=True)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision",
+        headers=_support_headers(),
+        json={"decision": "rejected"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "APPROVAL_COMMENT_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_web_support_approval_decision_rejects_non_approver(test_client, test_engine):
+    ticket_id, approval_id = await _seed_approval_decision_ticket(test_engine, approver_id="service-owner-1")
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision",
+        headers=_support_headers(),
+        json={"decision": "approved", "reason": "wrong actor"},
+    )
+
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "APPROVAL_ACTOR_MISMATCH"
 
 
 @pytest.mark.asyncio

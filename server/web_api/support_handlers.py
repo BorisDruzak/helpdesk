@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime, timezone
 
 from aiohttp import web
 from loguru import logger
@@ -8,7 +9,7 @@ from sqlalchemy import func, select
 from access_control.service import can
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketResolutionPassport
+from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketApproval, TicketResolutionPassport
 from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
@@ -42,6 +43,7 @@ from tickets.statuses import (
 from tickets.sla_service import TicketSlaService
 from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
+from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
@@ -1720,6 +1722,201 @@ async def handle_web_support_change_status(request: web.Request):
                 "status": "error",
                 "error": "Не удалось обновить статус из нового workspace",
                 "error_code": "STATUS_ACTION_FAILED",
+            },
+            status=503,
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_approval_decision(request: web.Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Invalid JSON", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    if not isinstance(data, dict):
+        return web.json_response(
+            {"status": "error", "error": "Request body must be an object", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+
+    raw_decision = str(data.get("decision") or data.get("status") or "").strip().lower()
+    decision = {
+        "approve": "approved",
+        "approved": "approved",
+        "reject": "rejected",
+        "rejected": "rejected",
+        "deny": "rejected",
+        "denied": "rejected",
+        "decline": "rejected",
+        "declined": "rejected",
+    }.get(raw_decision)
+    if decision not in {"approved", "rejected"}:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "decision must be approved or rejected",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    try:
+        approval_id = int(str(request.match_info.get("approval_id") or "").strip())
+    except ValueError:
+        return web.json_response(
+            {"status": "error", "error": "approval_id must be an integer", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+
+    reason = str(data.get("reason") or data.get("comment") or "").strip()
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.status.change")
+            if denied:
+                return denied
+
+            approval = await session.get(TicketApproval, approval_id)
+            if approval is None or str(approval.ticket_id) != str(ticket.ticket_id):
+                return web.json_response(
+                    {"status": "error", "error": "approval not found", "error_code": "APPROVAL_NOT_FOUND"},
+                    status=404,
+                )
+
+            approver_id = str(approval.approver_id or "").strip()
+            if approver_id and approver_id != str(auth_context.actor_id or "").strip():
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "current actor is not the requested approver",
+                        "error_code": "APPROVAL_ACTOR_MISMATCH",
+                    },
+                    status=403,
+                )
+
+            current_status = str(approval.status or "").strip().lower()
+            if current_status not in {"requested", "pending", "waiting"}:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": f"approval is already decided: {current_status}",
+                        "error_code": "APPROVAL_ALREADY_DECIDED",
+                    },
+                    status=409,
+                )
+
+            summary_before = await build_approval_summary(session, ticket, requester_safe=False)
+            current_ids = {
+                int(item["id"])
+                for item in (summary_before or {}).get("items", [])
+                if item.get("current")
+            }
+            if current_ids and approval_id not in current_ids:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "approval is not current for the active approval mode",
+                        "error_code": "APPROVAL_NOT_CURRENT",
+                    },
+                    status=409,
+                )
+            if decision == "rejected" and (summary_before or {}).get("require_comment_on_reject") and not reason:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "approval reject comment required",
+                        "error_code": "APPROVAL_COMMENT_REQUIRED",
+                    },
+                    status=400,
+                )
+
+            now = datetime.now(timezone.utc)
+            previous_status = current_status
+            approval.status = decision
+            approval.reason = reason or approval.reason
+            approval.decided_at = now
+            next_requested_id = None
+            if decision == "approved" and (summary_before or {}).get("approval_mode") == "sequential":
+                next_approval = (
+                    await session.execute(
+                        select(TicketApproval)
+                        .where(
+                            TicketApproval.ticket_id == ticket.ticket_id,
+                            TicketApproval.status == "pending",
+                        )
+                        .order_by(TicketApproval.id.asc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if next_approval is not None:
+                    next_approval.status = "requested"
+                    next_requested_id = int(next_approval.id)
+
+            event_type = "approval_approved" if decision == "approved" else "approval_rejected"
+            payload = {
+                "ticket_id": ticket.ticket_id,
+                "approval_id": approval_id,
+                "approval_type": approval.approval_type,
+                "approver_id": approval.approver_id,
+                "decision": decision,
+                "previous_status": previous_status,
+                "reason": reason,
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "decided_at": now.isoformat(),
+                "next_requested_approval_id": next_requested_id,
+            }
+            await repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type=event_type,
+                payload=payload,
+                trace_id=str(uuid.uuid4()),
+            )
+            await notify_ticket_event(
+                repo,
+                NotificationRepo(session),
+                ticket.ticket_id,
+                event_type,
+                payload,
+                visibility="internal",
+                initiator_id=auth_context.actor_id,
+            )
+            await session.flush()
+            summary_after = await build_approval_summary(session, ticket, requester_safe=False)
+            await session.commit()
+
+            return json_model_response(
+                SuccessResponse[dict](
+                    data={
+                        "ticket_id": ticket.ticket_id,
+                        "approval": {
+                            "id": approval_id,
+                            "approval_type": approval.approval_type,
+                            "approver_id": approval.approver_id,
+                            "status": decision,
+                            "reason": approval.reason,
+                            "decided_at": now.isoformat(),
+                        },
+                        "approval_summary": summary_after,
+                        "event_type": event_type,
+                        "next_requested_approval_id": next_requested_id,
+                    }
+                )
+            )
+    except Exception as exc:
+        logger.error(f"[web_support_approval_decision] Failed: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Failed to record approval decision",
+                "error_code": "APPROVAL_DECISION_FAILED",
             },
             status=503,
         )
