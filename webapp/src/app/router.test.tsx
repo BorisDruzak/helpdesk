@@ -110,6 +110,7 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("heading", { name: "Добро пожаловать" })).toBeInTheDocument();
     expect(screen.getByLabelText("Логин")).toBeInTheDocument();
     expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
+    expect(screen.getByText(/admin \/ admin123/)).toBeInTheDocument();
   });
 
   it("opens the new tickets page for support role and hides admin menu", async () => {
