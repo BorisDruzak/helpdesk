@@ -70,6 +70,63 @@ async def _ensure_default_sla_policy(test_engine) -> None:
         await session.commit()
 
 
+async def _publish_manual_priority_form_pack(test_client) -> None:
+    response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Manual priority test catalog",
+                "forms": [
+                    {
+                        "key": "manual_priority_form",
+                        "request_kind": "manual_priority_form",
+                        "ticket_type": "incident",
+                        "title": "Manual priority form",
+                        "priority_policy": {
+                            "impact_field": "affected_scope",
+                            "urgency_field": "work_continuity",
+                            "importance_field": "business_importance",
+                            "matrix": {
+                                "single_user": {
+                                    "workaround_available": "P3",
+                                },
+                            },
+                            "manual_override": {
+                                "allowed_roles": ["admin"],
+                                "require_reason": True,
+                            },
+                        },
+                        "fields": [
+                            {"key": "affected_scope", "label": "Scope", "type": "text", "required": True},
+                            {"key": "work_continuity", "label": "Continuity", "type": "text", "required": True},
+                            {"key": "business_importance", "label": "Importance", "type": "text", "required": False},
+                        ],
+                    }
+                ],
+            },
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+
+
+def _manual_priority_create_payload(device_id: str) -> dict:
+    return {
+        "title": "Manual priority override",
+        "description": "Manual priority override should be governed.",
+        "device_id": device_id,
+        "request_template_key": "manual_priority_form",
+        "form_pack_key": "request_forms",
+        "form_payload": {
+            "affected_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
+        "manual_priority": "P1",
+    }
+
+
 @pytest.mark.asyncio
 async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
@@ -568,6 +625,42 @@ async def test_create_ticket_preview_returns_effective_template_context(test_cli
     assert preview["sla"]["first_response_due_at"]
     assert preview["sla"]["resolution_due_at"]
     assert {"key": "room", "label": "Кабинет", "value": "214"} in preview["summary_rows"]
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_manual_priority_override_requires_reason(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _ensure_fallback_queue(test_engine)
+    await _publish_manual_priority_form_pack(test_client)
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json=_manual_priority_create_payload(str(uuid.uuid4())),
+        headers={"Authorization": "Bearer test-ui-admin-token"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["details"]["form_payload"] == "manual_reason is required for manual priority override"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_manual_priority_override_rejects_requester_role(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    await _ensure_fallback_queue(test_engine)
+    await _publish_manual_priority_form_pack(test_client)
+    body = _manual_priority_create_payload(str(uuid.uuid4()))
+    body["manual_reason"] = "Requester tries to force priority."
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json=body,
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["details"]["form_payload"] == "manual priority override is not allowed for this role"
 
 
 @pytest.mark.asyncio

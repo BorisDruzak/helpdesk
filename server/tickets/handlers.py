@@ -783,6 +783,21 @@ def _default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     return normalize_ticket_priority_inputs(urgency, importance, urgency_reason, importance_reason)
 
 
+def _priority_policy_fallback(data: Dict[str, Any], *, actor_role: str) -> Dict[str, Any]:
+    fallback: Dict[str, Any] = {
+        "impact": data.get("impact"),
+        "urgency": data.get("urgency"),
+        "importance": data.get("importance"),
+        "actor_role": actor_role,
+        "manual_actor_role": actor_role,
+    }
+    manual_priority = data.get("manual_priority")
+    if manual_priority is not None:
+        fallback["manual_priority"] = manual_priority
+        fallback["manual_reason"] = data.get("manual_reason") or data.get("manual_priority_reason")
+    return fallback
+
+
 async def handle_tickets_create(request: web.Request) -> web.Response:
     auth_context = _auth(request)
     if auth_context.actor_role not in {"user", "agent", "admin", "support"}:
@@ -854,11 +869,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
                     normalized_priority = compute_priority_from_policy(
                         priority_policy=priority_policy,
                         submitted_values=validated_submission.get("submitted_values") or {},
-                        fallback={
-                            "impact": data.get("impact"),
-                            "urgency": data.get("urgency"),
-                            "importance": data.get("importance"),
-                        },
+                        fallback=_priority_policy_fallback(data, actor_role=auth_context.actor_role),
                     )
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
@@ -939,11 +950,7 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
                 normalized_priority = compute_priority_from_policy(
                     priority_policy=priority_policy,
                     submitted_values=validated_submission.get("submitted_values") or {},
-                    fallback={
-                        "impact": data.get("impact"),
-                        "urgency": data.get("urgency"),
-                        "importance": data.get("importance"),
-                    },
+                    fallback=_priority_policy_fallback(data, actor_role=auth_context.actor_role),
                 )
         except ValueError as exc:
             details = exc.args[0] if exc.args else "invalid form payload"

@@ -50,6 +50,21 @@ from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
 
 
+def _priority_policy_fallback(data: Dict[str, Any]) -> Dict[str, Any]:
+    fallback: Dict[str, Any] = {
+        "impact": data.get("impact"),
+        "urgency": data.get("urgency"),
+        "importance": data.get("importance"),
+        "actor_role": "requester",
+        "manual_actor_role": "requester",
+    }
+    manual_priority = data.get("manual_priority")
+    if manual_priority is not None:
+        fallback["manual_priority"] = manual_priority
+        fallback["manual_reason"] = data.get("manual_reason") or data.get("manual_priority_reason")
+    return fallback
+
+
 def _validation_error(details: Dict[str, Any]) -> web.Response:
     return web.json_response(
         {"status": "error", "error": "validation_error", "details": details},
@@ -155,11 +170,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                         normalized_priority = compute_priority_from_policy(
                             priority_policy=priority_policy,
                             submitted_values=validated_submission.get("submitted_values") or {},
-                            fallback={
-                                "impact": data.get("impact"),
-                                "urgency": urgency_input,
-                                "importance": importance_input,
-                            },
+                            fallback=_priority_policy_fallback(data),
                         )
                 except ValueError as exc:
                     details = exc.args[0] if exc.args else "invalid form payload"
