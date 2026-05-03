@@ -517,6 +517,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tickets/ola_service.py",
             "server/tickets/routing_service.py",
             "server/tickets/form_catalog.py",
+            "server/tickets/request_template_submission.py",
             "scripts/helpdesk_data_cleanup.py",
             "server/chat/",
             "server/api/events.py",

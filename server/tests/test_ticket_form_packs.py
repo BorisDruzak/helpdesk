@@ -18,6 +18,7 @@ from app.db.models import (
     TicketSlaPolicy,
     TicketSlaTarget,
 )
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
@@ -361,6 +362,123 @@ async def test_create_ticket_preserves_form_schema_and_policy_refs_in_template_c
     assert template["sla_policy_code"] == "incident_sla"
     assert template["closure_policy_code"] == "incident_closure"
     assert template["policy_refs"]["form_schema"] == f"{form_key}_schema@7"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_accepts_standalone_helpdesk_registry_template(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    template_code = f"registry_template_{uuid.uuid4().hex[:8]}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        form_schema = await repo.publish_form_schema(
+            schema_id=f"{template_code}_form",
+            title="Registry-backed form",
+            form_key=template_code,
+            request_template_code=template_code,
+            ticket_type="incident",
+            fields=[
+                {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                {"key": "impact_scope", "label": "Impact", "type": "select", "required": True, "options": [{"value": "single_user", "label": "Single user"}]},
+            ],
+            actor_id="test",
+            actor_role="admin",
+        )
+        await repo.publish_request_template(
+            template_code=template_code,
+            public_title="Registry-backed request",
+            internal_name="Registry-backed request",
+            ticket_type="incident",
+            form_schema_id=form_schema["schema_id"],
+            workflow_profile_id="incident",
+            actor_id="test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Registry standalone create",
+            "description": "Create from standalone helpdesk registry template",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "request_template_key": template_code,
+            "form_pack_key": "request_forms",
+            "form_payload": {"summary": "Registry path works", "impact_scope": "single_user"},
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    assert ticket.ticket_type == "incident"
+    assert ticket.custom_fields["request_form_key"] == template_code
+    assert ticket.custom_fields["request_template"]["key"] == template_code
+    assert ticket.custom_fields["request_template"]["form_schema_id"] == f"{template_code}_form"
+    assert ticket.custom_fields["request_form_data"]["summary"] == "Registry path works"
+
+
+@pytest.mark.asyncio
+async def test_public_create_ticket_accepts_standalone_helpdesk_registry_template(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    template_code = f"public_registry_template_{uuid.uuid4().hex[:8]}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        form_schema = await repo.publish_form_schema(
+            schema_id=f"{template_code}_form",
+            title="Public registry-backed form",
+            form_key=template_code,
+            request_template_code=template_code,
+            ticket_type="request",
+            fields=[
+                {"key": "question", "label": "Question", "type": "textarea", "required": True},
+                {"key": "impact_scope", "label": "Impact", "type": "select", "required": True, "options": [{"value": "single_user", "label": "Single user"}]},
+            ],
+            actor_id="test",
+            actor_role="admin",
+        )
+        await repo.publish_request_template(
+            template_code=template_code,
+            public_title="Public registry-backed request",
+            internal_name="Public registry-backed request",
+            ticket_type="request",
+            form_schema_id=form_schema["schema_id"],
+            workflow_profile_id="request",
+            actor_id="test",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/public_api/tickets/create",
+        json={
+            "title": "Public registry standalone create",
+            "description": "Create public ticket from standalone registry template",
+            "user_display_name": "Public Alice",
+            "request_template_key": template_code,
+            "form_pack_key": "request_forms",
+            "form_payload": {"question": "Registry public path works", "impact_scope": "single_user"},
+            "urgency": False,
+            "importance": False,
+            "urgency_reason": "not urgent",
+            "importance_reason": "normal",
+        },
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    assert ticket.ticket_type == "request"
+    assert ticket.custom_fields["request_form_key"] == template_code
+    assert ticket.custom_fields["request_template"]["key"] == template_code
+    assert ticket.custom_fields["request_form_data"]["question"] == "Registry public path works"
 
 
 @pytest.mark.asyncio

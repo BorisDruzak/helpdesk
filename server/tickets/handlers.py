@@ -21,7 +21,6 @@ from app.repos import (
     NotificationPrefsRepo,
     NotificationRepo,
     ProblemsRepo,
-    TicketFormPacksRepo,
     TicketEventsRepo,
 )
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
@@ -36,11 +35,10 @@ from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
     build_form_custom_fields,
-    resolve_ticket_form_pack,
-    validate_form_submission,
 )
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
+from tickets.request_template_submission import resolve_create_form_submission
 from tickets.ola_service import build_ola_block, close_ola_processing, start_ola_for_ticket
 from tickets.public_access import (
     mark_public_ticket_unbound,
@@ -833,14 +831,12 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
         ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
         if form_key:
             try:
-                form_pack = await resolve_ticket_form_pack(
-                    TicketFormPacksRepo(session),
+                validated_submission = await resolve_create_form_submission(
+                    session,
                     pack_key=pack_key,
-                    version=pack_version,
-                )
-                validated_submission = validate_form_submission(
-                    form_pack,
+                    pack_version=pack_version,
                     form_key=form_key,
+                    request_template_key=request_template_key,
                     raw_values=form_payload or {},
                 )
                 validated_submission = await apply_effective_registry_policies(session, validated_submission)
@@ -926,14 +922,12 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         try:
-            form_pack = await resolve_ticket_form_pack(
-                TicketFormPacksRepo(session),
+            validated_submission = await resolve_create_form_submission(
+                session,
                 pack_key=pack_key,
-                version=pack_version,
-            )
-            validated_submission = validate_form_submission(
-                form_pack,
+                pack_version=pack_version,
                 form_key=form_key,
+                request_template_key=request_template_key,
                 raw_values=data.get("form_payload") or {},
             )
             validated_submission = await apply_effective_registry_policies(session, validated_submission)

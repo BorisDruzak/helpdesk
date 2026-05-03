@@ -23,7 +23,7 @@ from utils import new_ticket_id
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.repos import DevicesRepo, TicketEventsRepo, TicketFormPacksRepo
+from app.repos import DevicesRepo, TicketEventsRepo
 from tickets.assignment_service import (
     MAX_ACTIVE_TICKETS_PER_OPERATOR,
     TicketAssignmentError,
@@ -41,12 +41,11 @@ from tickets.statuses import (
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
     build_form_custom_fields,
-    resolve_ticket_form_pack,
-    validate_form_submission,
 )
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
+from tickets.request_template_submission import resolve_create_form_submission
 from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
 
@@ -136,14 +135,12 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
             ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
             if form_key:
                 try:
-                    form_pack = await resolve_ticket_form_pack(
-                        TicketFormPacksRepo(db_session),
+                    validated_submission = await resolve_create_form_submission(
+                        db_session,
                         pack_key=pack_key,
-                        version=pack_version,
-                    )
-                    validated_submission = validate_form_submission(
-                        form_pack,
+                        pack_version=pack_version,
                         form_key=form_key,
+                        request_template_key=request_template_key,
                         raw_values=form_payload or {},
                     )
                     validated_submission = await apply_effective_registry_policies(db_session, validated_submission)
