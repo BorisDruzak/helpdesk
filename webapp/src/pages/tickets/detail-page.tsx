@@ -1273,6 +1273,51 @@ export const PASSPORT_SECTION_LABELS: Array<[string, string]> = [
   ["repeat_guidance", "Что делать при повторе"],
 ];
 
+const PASSPORT_REQUIREMENT_SOURCE_LABELS: Record<string, string> = {
+  ticket_evidence_items: "доказательства тикета",
+  "ticket.requester_resolution_summary": "публичный итог для пользователя",
+  "ticket.resolution_summary": "внутренний итог решения",
+  ticket_approvals: "согласования",
+  ticket_worklogs: "worklog",
+  operations: "операции тикета",
+  observer_traces: "observer trace",
+};
+
+const PASSPORT_STALE_REASON_LABELS: Record<string, string> = {
+  evidence_changed: "Новые доказательства",
+  events_changed: "Новые сообщения или события",
+  operations_changed: "Новые операции",
+  worklogs_changed: "Новый worklog",
+  approvals_changed: "Новые согласования",
+  related_objects_changed: "Новые связанные объекты",
+};
+
+function asPassportText(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function formatPassportRequirementSource(source: string | null | undefined): string {
+  const raw = String(source || "").trim();
+  if (!raw) {
+    return "Источник не указан";
+  }
+  return `Источник: ${PASSPORT_REQUIREMENT_SOURCE_LABELS[raw] || raw}`;
+}
+
+function formatPassportStaleReason(reason: string): string {
+  return PASSPORT_STALE_REASON_LABELS[reason] || reason;
+}
+
+function passportSourceCandidates(
+  fact: NonNullable<SupportTicketPassportPayload["requirements"]>["missing_facts"][number],
+): Array<Record<string, unknown>> {
+  return Array.isArray(fact.source_candidates) ? fact.source_candidates : [];
+}
+
+function passportEvidenceSourceLabel(item: SupportTicketPassportPayload["evidence"][number]): string {
+  return item.source_ref || [item.source_kind, item.source_id].filter(Boolean).join(":") || "Источник не указан";
+}
+
 export function TicketPassportPanel({
   disabledReason = null,
   isCreatingKnowledgeDraft = false,
@@ -1318,6 +1363,13 @@ export function TicketPassportPanel({
   const missingFacts = requirements?.missing_facts ?? [];
   const hiddenExportSections = requirements?.export_preview?.hidden_sections ?? [];
   const visibleExportSections = requirements?.export_preview?.visible_sections ?? [];
+  const staleReasons = Array.isArray(passport.source_payload?.stale_reasons)
+    ? passport.source_payload.stale_reasons.map(String).filter(Boolean)
+    : [];
+  const currentSourceCounts =
+    passport.source_payload?.current_source_counts && typeof passport.source_payload.current_source_counts === "object"
+      ? (passport.source_payload.current_source_counts as Record<string, unknown>)
+      : {};
 
   return (
     <div className="space-y-5">
@@ -1354,6 +1406,39 @@ export function TicketPassportPanel({
         </div>
       ) : null}
 
+      {passport.stale ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-950">Паспорт устарел</p>
+              <p className="mt-1 text-sm text-amber-800">
+                После сборки появились новые источники. Обновите паспорт перед закрытием или экспортом.
+              </p>
+            </div>
+            <Button disabled={Boolean(disabledReason) || isGenerating} onClick={onRefresh} size="sm">
+              {isGenerating ? "Обновляем..." : "Обновить паспорт"}
+            </Button>
+          </div>
+          {staleReasons.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {staleReasons.map((reason) => (
+                <Badge key={reason} tone="warning">
+                  {formatPassportStaleReason(reason)}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+          {Object.keys(currentSourceCounts).length ? (
+            <p className="mt-3 text-xs text-amber-800">
+              Текущие источники:{" "}
+              {Object.entries(currentSourceCounts)
+                .map(([key, value]) => `${key}: ${String(value)}`)
+                .join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {requirements ? (
         <div className="rounded-[1.1rem] border border-border bg-white px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1369,13 +1454,53 @@ export function TicketPassportPanel({
           </div>
           {missingFacts.length ? (
             <div className="mt-4 grid gap-2 md:grid-cols-2">
-              {missingFacts.map((fact) => (
-                <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-3" key={`${fact.required_fact}:${fact.source}`}>
-                  <p className="text-sm font-semibold text-slate-950">{fact.requester_visible_label}</p>
-                  <p className="mt-1 text-xs text-slate-600">{fact.source}</p>
-                  {fact.current_value ? <p className="mt-2 text-xs text-slate-700">{fact.current_value}</p> : null}
-                </div>
-              ))}
+              {missingFacts.map((fact) => {
+                const sourceCandidates = passportSourceCandidates(fact);
+                const recommendedActions = Array.isArray(fact.recommended_actions) ? fact.recommended_actions : [];
+                return (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-3" key={`${fact.required_fact}:${fact.source}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">{fact.requester_visible_label}</p>
+                        <p className="mt-1 text-xs text-slate-600">{formatPassportRequirementSource(fact.source)}</p>
+                      </div>
+                      <Badge tone={fact.severity === "blocking" ? "warning" : "neutral"}>
+                        {fact.severity === "blocking" ? "Блокирует закрытие" : "Проверить"}
+                      </Badge>
+                    </div>
+                    {fact.current_value ? <p className="mt-2 text-xs text-slate-700">{fact.current_value}</p> : null}
+                    {recommendedActions.length ? (
+                      <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                        {recommendedActions.map((action) => (
+                          <li key={action}>{action}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button disabled={Boolean(disabledReason) || isGenerating} onClick={onRefresh} size="sm" variant="outline">
+                        Обновить паспорт
+                      </Button>
+                      {sourceCandidates.length ? <Badge tone="info">Кандидаты: {sourceCandidates.length}</Badge> : null}
+                    </div>
+                    {sourceCandidates.length ? (
+                      <div className="mt-3 space-y-2">
+                        {sourceCandidates.slice(0, 3).map((candidate, index) => {
+                          const title = asPassportText(candidate.title) || asPassportText(candidate.candidate_id) || `Кандидат ${index + 1}`;
+                          const summary = asPassportText(candidate.summary);
+                          const sourceKind = asPassportText(candidate.source_kind);
+                          return (
+                            <div className="rounded-md border border-white/80 bg-white px-3 py-2 text-xs" key={`${title}:${index}`}>
+                              <p className="font-semibold text-slate-900">{title}</p>
+                              {summary ? <p className="mt-1 text-slate-600">{summary}</p> : null}
+                              {sourceKind ? <p className="mt-1 text-slate-500">Тип источника: {sourceKind}</p> : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -1393,6 +1518,50 @@ export function TicketPassportPanel({
           </div>
         </div>
       ) : null}
+
+      <div className="rounded-[1.1rem] border border-border bg-white px-5 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Доказательства паспорта</p>
+            <p className="mt-2 text-sm text-slate-600">
+              Принятые и проверяемые факты, которые подтверждают официальный итог.
+            </p>
+          </div>
+          <Badge tone={payload.evidence.length ? "brand" : "neutral"}>{payload.evidence.length}</Badge>
+        </div>
+        {payload.evidence.length ? (
+          <div className="mt-4 space-y-2">
+            {payload.evidence.map((item) => (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3" key={item.id}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-950">{item.title}</p>
+                    {item.summary ? <p className="mt-1 text-sm text-slate-600">{item.summary}</p> : null}
+                    <p className="mt-1 text-xs text-slate-500">Источник: {passportEvidenceSourceLabel(item)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone="info">{item.evidence_type}</Badge>
+                    <Badge tone={item.verification_status === "accepted" ? "success" : "neutral"}>
+                      {item.verification_status || "unverified"}
+                    </Badge>
+                    <Badge tone={item.export_visibility === "public" ? "success" : "neutral"}>
+                      {item.export_visibility || item.visibility}
+                    </Badge>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Факт: {item.required_fact || "не привязан"} • раздел: {item.section_key || "не указан"} • добавил:{" "}
+                  {item.created_by || "неизвестно"}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+            Доказательства ещё не привязаны.
+          </p>
+        )}
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {PASSPORT_SECTION_LABELS.map(([key, label]) => (

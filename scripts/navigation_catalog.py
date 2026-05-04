@@ -394,6 +394,8 @@ TOPICS: tuple[Topic, ...] = (
             "diagnostic_result_classified",
             "ticket_evidence_items",
             "ticket passport evidence",
+            "passport evidence appendix",
+            "evidence dossier",
             "evidence-candidates",
             "passport/evidence/link",
             "passport/evidence/{evidence_id}",

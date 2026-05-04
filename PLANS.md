@@ -893,7 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-05:
 
-- Progress: 82% of Stage 33A backend scope verified locally and partly live; UI evidence workspace remains explicitly out of this backend slice.
+- Progress: 88% of Stage 33A backend + first functional UI scope verified locally; broad visual workspace redesign remains explicitly out of this slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -909,6 +909,7 @@ Backend execution status, 2026-05-05:
   - accepted evidence can satisfy matching passport facts by `required_fact`, `section_key` or accepted `evidence_type`, while rejected/archived/superseded evidence stays excluded;
   - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure;
   - official-passport closure gates now reject stale passports and expose `official_passport_stale` with stale reasons/current source counts in support detail.
+  - React passport tab now shows stale passport warnings, readable missing-fact sources, recommended actions, candidate previews and evidence dossier rows; print/PDF page includes an evidence appendix.
 - Verified on Linux stand:
   - release `3ed5de1` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` passport refresh completed as version 3 with no missing facts after existing accepted evidence/summary coverage;
@@ -929,6 +930,8 @@ Backend execution status, 2026-05-05:
 - Local verification pending deploy:
   - `python -m pytest server\tests\test_ticket_passport_service.py::test_passport_payload_marks_stale_after_new_worklog_source server\tests\test_ticket_closure_policy.py::test_closure_requirements_block_stale_official_passport -q --tb=short` -> 2 passed;
   - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_web_api.py server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 36 passed after a transient first-run harness miss was not reproduced.
+  - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/tickets/passport-print-page.test.tsx` -> 16 passed;
+  - `pnpm --dir webapp exec tsc --noEmit`, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and focused passport/support pytest -> passed.
 - Still backend-open:
   - live browser/UI treatment for stale passport and source preview actions;
   - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
@@ -1107,6 +1110,7 @@ Implementation plan:
     - links candidate evidence;
     - shows stale passport warning;
     - print page includes evidence appendix.
+  - 2026-05-05 functional UI slice complete locally for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix. Full candidate drawer, manual evidence form and section editor remain open for the later visual/workflow slice.
 
 - [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
   - Keep current low-code redesign deferred, but make existing policy controls honest.

@@ -68,7 +68,19 @@ describe("TicketPassportPrintPage", () => {
                 source_payload: {},
                 stale: false,
               },
-              evidence: [{ id: 1, title: "Скриншот", ticket_id: "ticket-1" }],
+              evidence: [
+                {
+                  id: 1,
+                  title: "Скриншот",
+                  summary: "Печать восстановлена",
+                  evidence_type: "screenshot",
+                  source_ref: "artifact:screen-1",
+                  required_fact: "evidence",
+                  verification_status: "accepted",
+                  export_visibility: "public",
+                  ticket_id: "ticket-1",
+                },
+              ],
               actions: [{ id: 1, title: "Диагностика", ticket_id: "ticket-1" }],
               approvals: [],
               related_objects: [],
@@ -87,6 +99,9 @@ describe("TicketPassportPrintPage", () => {
     expect(screen.getByText("Кто и откуда обратился")).toBeInTheDocument();
     expect(screen.getByText("Иванов Иван, кабинет 214")).toBeInTheDocument();
     expect(screen.getByText("Что делать при повторе")).toBeInTheDocument();
+    expect(screen.getByText("Приложение доказательств")).toBeInTheDocument();
+    expect(screen.getByText("Скриншот")).toBeInTheDocument();
+    expect(screen.getByText("artifact:screen-1")).toBeInTheDocument();
     expect(screen.getByText("Печать / PDF")).toBeInTheDocument();
   });
 });

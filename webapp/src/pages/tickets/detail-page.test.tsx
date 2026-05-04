@@ -65,10 +65,36 @@ describe("TicketPassportPanel", () => {
       },
       source_event_ids: [1],
       source_operation_ids: ["operation-1"],
-      source_payload: {},
+      source_payload: {
+        current_source_counts: {
+          events: 2,
+          operations: 1,
+          worklogs: 1,
+        },
+        stale_reasons: ["events_changed", "worklogs_changed"],
+      },
       stale: false,
     },
-    evidence: [],
+    evidence: [
+      {
+        id: 1,
+        ticket_id: "ticket-1",
+        passport_id: 1,
+        evidence_type: "diagnostic_result",
+        source_ref: "operation:operation-1",
+        source_kind: "operation",
+        source_id: "operation-1",
+        required_fact: "evidence",
+        section_key: "evidence",
+        title: "HTTP проверка",
+        summary: "HTTP 200 OK",
+        visibility: "internal",
+        verification_status: "accepted",
+        export_visibility: "internal",
+        created_by: "op1",
+        created_at: "2026-04-26T13:01:00Z",
+      },
+    ],
     actions: [],
     approvals: [],
     related_objects: [],
@@ -131,6 +157,16 @@ describe("TicketPassportPanel", () => {
                 current_value: null,
                 requester_visible_label: "Доказательство решения",
                 severity: "blocking",
+                candidate_count: 1,
+                recommended_actions: ["Привяжите результат диагностики."],
+                source_candidates: [
+                  {
+                    candidate_id: "operation:operation-1",
+                    source_kind: "operation",
+                    title: "HTTP проверка",
+                    summary: "HTTP 200 OK",
+                  },
+                ],
               },
               {
                 required_fact: "user_result",
@@ -155,9 +191,40 @@ describe("TicketPassportPanel", () => {
     expect(screen.getByText("Требования паспорта")).toBeInTheDocument();
     expect(screen.getByText("2 блокирующих факта")).toBeInTheDocument();
     expect(screen.getByText("Доказательство решения")).toBeInTheDocument();
-    expect(screen.getByText("ticket_evidence_items")).toBeInTheDocument();
+    expect(screen.getByText("Источник: доказательства тикета")).toBeInTheDocument();
+    expect(screen.getByText("Привяжите результат диагностики.")).toBeInTheDocument();
+    expect(screen.getByText("Кандидаты: 1")).toBeInTheDocument();
+    expect(screen.getAllByText("HTTP проверка").length).toBeGreaterThan(0);
     expect(screen.getByText("Экспорт")).toBeInTheDocument();
     expect(screen.getByText("Скрыто: internal_result")).toBeInTheDocument();
+  });
+
+  it("renders stale warning and evidence dossier rows", () => {
+    render(
+      <TicketPassportPanel
+        isGenerating={false}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={{
+          ...passportPayload,
+          passport: {
+            ...passportPayload.passport,
+            stale: true,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Паспорт устарел")).toBeInTheDocument();
+    expect(screen.getByText("Новые сообщения или события")).toBeInTheDocument();
+    expect(screen.getByText("Новый worklog")).toBeInTheDocument();
+    expect(screen.getByText("Доказательства паспорта")).toBeInTheDocument();
+    expect(screen.getByText("HTTP проверка")).toBeInTheDocument();
+    expect(screen.getByText("diagnostic_result")).toBeInTheDocument();
+    expect(screen.getByText("accepted")).toBeInTheDocument();
+    expect(screen.getByText("Источник: operation:operation-1")).toBeInTheDocument();
   });
 });
 

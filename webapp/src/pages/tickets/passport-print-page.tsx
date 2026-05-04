@@ -99,6 +99,47 @@ export function TicketPassportPrintPage() {
               </section>
             ))}
 
+            <section className="break-inside-avoid rounded-[0.75rem] border border-slate-200 px-5 py-5 print:border-slate-300">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Приложение доказательств</h2>
+              {payload?.evidence.length ? (
+                <div className="mt-4 space-y-3">
+                  {payload.evidence.map((item) => (
+                    <div className="rounded-[0.6rem] border border-slate-200 px-4 py-3" key={item.id}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">{item.title}</p>
+                          {item.summary ? <p className="mt-1 text-sm text-slate-700">{item.summary}</p> : null}
+                        </div>
+                        <Badge tone={item.verification_status === "accepted" ? "success" : "neutral"}>
+                          {item.verification_status || "unverified"}
+                        </Badge>
+                      </div>
+                      <dl className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                        <div>
+                          <dt className="font-semibold text-slate-800">Тип</dt>
+                          <dd>{item.evidence_type || "Не указан"}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-semibold text-slate-800">Источник</dt>
+                          <dd>{item.source_ref || "Не указан"}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-semibold text-slate-800">Факт</dt>
+                          <dd>{item.required_fact || "Не привязан"}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-semibold text-slate-800">Экспорт</dt>
+                          <dd>{item.export_visibility || item.visibility || "Не указан"}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-600">Доказательства не приложены к паспорту.</p>
+              )}
+            </section>
+
             <footer className="grid gap-4 border-t border-slate-200 pt-6 text-sm text-slate-600 md:grid-cols-3">
               <div>
                 <p className="font-semibold text-slate-950">Доказательства</p>
