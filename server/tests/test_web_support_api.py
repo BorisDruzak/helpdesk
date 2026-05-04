@@ -609,12 +609,24 @@ async def test_web_support_queue_applies_published_custom_smart_view(test_client
             Ticket(
                 ticket_id=str(uuid.uuid4()),
                 device_id="device-custom-risk",
-                title="Custom deadline visible",
+                title="Custom deadline visible early",
                 description="Published smart view should include this ticket",
                 status="in_progress",
                 requester_id="user-custom-risk",
                 queue_id=queue.id,
                 first_response_due_at=now + timedelta(minutes=45),
+                updated_at=now - timedelta(minutes=5),
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-custom-risk-later",
+                title="Custom deadline visible later",
+                description="Published smart view should sort this after the earlier deadline",
+                status="in_progress",
+                requester_id="user-custom-risk-later",
+                queue_id=queue.id,
+                first_response_due_at=now + timedelta(minutes=90),
+                updated_at=now,
             ),
             Ticket(
                 ticket_id=str(uuid.uuid4()),
@@ -663,7 +675,10 @@ async def test_web_support_queue_applies_published_custom_smart_view(test_client
 
     assert payload["status"] == "success"
     assert payload["data"]["smart_view"] == "custom_answer_deadline"
-    assert [item["title"] for item in payload["data"]["tickets"]] == ["Custom deadline visible"]
+    assert [item["title"] for item in payload["data"]["tickets"]] == [
+        "Custom deadline visible early",
+        "Custom deadline visible later",
+    ]
     assert {"value": "custom_answer_deadline", "label": "Проверка срока ответа"} in payload["data"]["filters"]["smart_view_options"]
 
 

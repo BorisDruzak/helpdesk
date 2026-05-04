@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
+from functools import cmp_to_key
 
 from aiohttp import web
 from loguru import logger
@@ -404,6 +405,90 @@ def _build_smart_view_counts(
             )
         )
     return counts
+
+
+def _get_ticket_data_path(ticket_data: dict[str, object], path: str) -> object:
+    current: object = ticket_data
+    for part in str(path or "").split("."):
+        if not part:
+            continue
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def _normalize_sort_value(value: object) -> object:
+    if isinstance(value, datetime):
+        normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return normalized.timestamp()
+    if isinstance(value, (int, float, bool)):
+        return value
+    if value is None:
+        return None
+    parsed = None
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+    if parsed is not None:
+        normalized = parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return normalized.timestamp()
+    return str(value).lower()
+
+
+def _compare_sort_values(left: object, right: object, *, direction: str) -> int:
+    left_value = _normalize_sort_value(left)
+    right_value = _normalize_sort_value(right)
+    if left_value is None and right_value is None:
+        return 0
+    if left_value is None:
+        return 1
+    if right_value is None:
+        return -1
+    if left_value == right_value:
+        return 0
+    result = -1 if left_value < right_value else 1
+    return -result if direction == "desc" else result
+
+
+def _apply_custom_smart_view_sort(
+    entries: list[tuple[dict, SupportQueueTicketItem]],
+    *,
+    smart_view: str,
+    custom_smart_view_map: dict[str, dict[str, object]],
+) -> list[tuple[dict, SupportQueueTicketItem]]:
+    view = custom_smart_view_map.get(smart_view)
+    if not view:
+        return entries
+    sort_config = view.get("sort")
+    if not isinstance(sort_config, list) or not sort_config:
+        return entries
+
+    normalized_sort: list[tuple[str, str]] = []
+    for raw_item in sort_config:
+        if not isinstance(raw_item, dict):
+            continue
+        field = str(raw_item.get("field") or "").strip()
+        direction = str(raw_item.get("direction") or "asc").strip().lower()
+        if field and direction in {"asc", "desc"}:
+            normalized_sort.append((field, direction))
+    if not normalized_sort:
+        return entries
+
+    def compare(left: tuple[dict, SupportQueueTicketItem], right: tuple[dict, SupportQueueTicketItem]) -> int:
+        for field, direction in normalized_sort:
+            result = _compare_sort_values(
+                _get_ticket_data_path(left[0], field),
+                _get_ticket_data_path(right[0], field),
+                direction=direction,
+            )
+            if result:
+                return result
+        return 0
+
+    return sorted(entries, key=cmp_to_key(compare))
 
 
 async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> SupportTicketActions:
@@ -1172,8 +1257,8 @@ async def handle_web_support_queue(request: web.Request):
             actor_id=auth_context.actor_id,
             custom_smart_view_map=custom_smart_view_map,
         )
-        accessible_items = [
-            item
+        matching_entries = [
+            (ticket_data, item)
             for ticket_data, item in accessible_entries
             if matches_smart_view(
                 ticket_data,
@@ -1182,6 +1267,12 @@ async def handle_web_support_queue(request: web.Request):
                 custom_views=custom_smart_view_map,
             )
         ]
+        matching_entries = _apply_custom_smart_view_sort(
+            matching_entries,
+            smart_view=smart_view,
+            custom_smart_view_map=custom_smart_view_map,
+        )
+        accessible_items = [item for _ticket_data, item in matching_entries]
         scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
         status_counts = _build_status_counts(accessible_items)
         status_values = {item.status for item in accessible_items if item.status}
