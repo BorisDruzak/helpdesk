@@ -30,6 +30,10 @@
 - Для rollout сначала делать canary на одном устройстве, затем bulk.
 - Для ручного update/restart действия указывать `reason`, чтобы он попал в audit и diagnostics.
 
+### 2.2 2026-05-04 release note
+
+- `3.1.27` is the Windows stable agent release for requester-safe request-template GUI fixes after `3.1.26`. Publish it as a new build/upload/rollout target; do not overwrite the existing `3.1.26` artifact.
+
 ### 2.1 2026-04-22 hardening notes
 
 - `pending_update.json` is a single-flight latch. If one update is already pending, a new update command must not overwrite it. The only allowed duplicate is the exact same `operation_id`, which should be treated as idempotent.

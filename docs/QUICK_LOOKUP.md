@@ -14,6 +14,7 @@
 - Agent-side update scheduling is now single-flight: an existing `updates/pending_update.json` blocks overlapping update requests, while a repeated request with the same `operation_id` is treated as idempotent.
 - Runtime/UI status now surfaces both `pending_update_*` and `update_request_*` through `GET /ui/agent/status`, so the local GUI can show `requesting -> requested -> pending_restart` instead of looking hung after `POST /ui/agent/update`.
 - Launcher publish now uses staging + backup/restore, verify returns diagnostic output, `tar.gz` extraction restores POSIX mode bits and rejects links, and both launcher entrypoints roll back after repeated immediate crash of the newly switched version.
+- 2026-05-04 agent release check: Windows stable `3.1.27` supersedes `3.1.26` for requester-safe request-template GUI fixes. Upload and rollout must target a new `3.1.27` build, not overwrite the existing `3.1.26` artifact.
 
 ## 2026-04-28 local agent Qt GUI redesign
 
