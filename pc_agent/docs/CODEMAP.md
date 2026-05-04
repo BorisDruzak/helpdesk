@@ -152,7 +152,7 @@
   - Update tracing now spans `ws_agent.trigger_recommended_update` -> `core/orchestrator._handle_update` -> `ws_agent_runtime_helpers.shutdown_for_update` -> `launcher/installer.py::apply_update`, all through the shared `core/action_trace.py` recorder / external bridge.
 - **update_request_state, pending_restart, truthful scheduled** — `ws_agent.py`, `core/orchestrator.py`, `ui_gui/main_window.py`, `launcher/installer.py`, `launcher/launcher_main.py`
 - **GUI, SSE, UI bridge, профили инициатора** — `ui_gui/*`, `ui_bridge/*`
-- **agent request-template create smoke** — `ui_gui/chat_panel.py`, `ui_gui/server_api.py`, `tests/test_chat_panel_helpers.py`, `tests/test_ticket_api_client_attachments.py`; live checks should cover server preview, dynamic required/file/picker behavior, diagnostic consent payloads, attachment upload/message refs, requester-safe result labels, and observer summary for the created ticket.
+- **agent request-template create/detail smoke** — `ui_gui/chat_panel.py`, `ui_gui/server_api.py`, `tests/test_chat_panel_helpers.py`, `tests/test_ticket_api_client_attachments.py`; live checks should cover server preview, dynamic required/file/picker behavior, explicit required diagnostic-consent hint, diagnostic consent payloads, attachment upload/message refs, requester-safe result labels, visible diagnostics/deadline/assignment summaries in detail, Russian system event text, and observer summary for the created ticket.
 - **SQLite, миграции схемы** — `core/database.py` (DB_SCHEMA_VERSION), `docs/DATABASE.md`
 
 ---

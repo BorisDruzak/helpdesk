@@ -611,11 +611,20 @@ def diagnostic_consent_required(form_def: Optional[dict[str, Any]]) -> bool:
     return bool(diagnostic_policy.get("requires_user_consent") or consent.get("required_for_requester_device"))
 
 
+def build_diagnostic_consent_requirement_hint(form_def: Optional[dict[str, Any]]) -> str:
+    if not diagnostic_consent_required(form_def):
+        return ""
+    return (
+        "Обязательно: поставьте галочку, если разрешаете поддержке выполнить диагностику этого устройства. "
+        "Без согласия обращение не отправится по этому шаблону."
+    )
+
+
 def diagnostic_consent_submission_error(form_def: Optional[dict[str, Any]], *, granted: bool) -> str:
     if diagnostic_consent_required(form_def) and not granted:
         return (
             "Для этого шаблона требуется согласие на диагностику. "
-            "Отметьте согласие или выберите шаблон без автодиагностики."
+            "Поставьте галочку согласия или выберите шаблон без автодиагностики."
         )
     return ""
 
@@ -976,17 +985,7 @@ def can_user_confirm_close(ticket: dict) -> bool:
 
 
 def build_ticket_sla_user_summary(ticket: dict) -> str:
-    priority = str(ticket.get("priority_class") or ticket.get("priority") or "").strip()
-    first_response = str(ticket.get("first_response_due_at") or "").strip()
-    resolution = str(ticket.get("resolution_due_at") or "").strip()
-    parts: list[str] = []
-    if priority:
-        parts.append(f"Приоритет: {priority}")
-    if first_response:
-        parts.append(f"Вам должны ответить до {first_response}")
-    if resolution:
-        parts.append(f"Решение или обходной вариант ожидается до {resolution}")
-    return "; ".join(parts)
+    return build_ticket_deadlines_status_summary(ticket)
 
 
 def _format_user_deadline(value: Any) -> str:
@@ -994,6 +993,150 @@ def _format_user_deadline(value: Any) -> str:
     if not text:
         return ""
     return normalize_iso_ts(text) or text
+
+
+def _event_payload(event: dict[str, Any]) -> dict[str, Any]:
+    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    return payload
+
+
+def _event_type(event: dict[str, Any]) -> str:
+    return str(event.get("type") or event.get("event_type") or "").strip()
+
+
+def _event_support_actor_label(event: dict[str, Any]) -> str:
+    payload = _event_payload(event)
+    actor_role = str(payload.get("actor_role") or event.get("actor_role") or "").strip().lower()
+    if actor_role not in {"support", "admin"}:
+        return ""
+    return _first_text(
+        payload.get("actor_display_name"),
+        payload.get("actor_name"),
+        payload.get("sender_display_name"),
+        event.get("actor_display_name"),
+        event.get("actor_name"),
+        payload.get("actor_id"),
+        event.get("actor_id"),
+    )
+
+
+def _last_support_actor_label(events: Optional[list[dict[str, Any]]]) -> str:
+    for event in reversed(events or []):
+        actor = _event_support_actor_label(event)
+        if actor:
+            return actor
+    return ""
+
+
+def build_ticket_assignee_user_text(ticket: dict, events: Optional[list[dict[str, Any]]] = None) -> str:
+    assignee = _first_text(
+        ticket.get("assignee_display_name"),
+        ticket.get("assignee_name"),
+        ticket.get("assignee_id"),
+    )
+    if assignee:
+        return assignee
+    status = str(ticket.get("status") or "").strip().lower()
+    requester_status = str(ticket.get("requester_status") or "").strip().lower()
+    next_owner = str(ticket.get("next_action_owner") or "").strip().lower()
+    if status in {"assigned", "in_progress"} or requester_status == "in_work" or next_owner in {"support", "assignee", "queue"}:
+        actor = _last_support_actor_label(events)
+        suffix = f" ({actor})" if actor else ""
+        return f"Не назначен персонально; обращение в работе у поддержки{suffix}"
+    return "Не назначен"
+
+
+def build_ticket_deadlines_status_summary(ticket: dict) -> str:
+    priority = _first_text(
+        ticket.get("priority_class"),
+        (ticket.get("custom_fields") or {}).get("priority_class") if isinstance(ticket.get("custom_fields"), dict) else "",
+        ticket.get("priority"),
+    )
+    parts: list[str] = []
+    if priority:
+        parts.append(f"Приоритет: {priority}")
+
+    first_due = _format_user_deadline(ticket.get("first_response_due_at"))
+    first_done = _format_user_deadline(ticket.get("first_response_at"))
+    first_breached = _format_user_deadline(ticket.get("first_response_breached_at"))
+    if first_done:
+        verdict = "с нарушением" if first_breached else "без нарушения"
+        due = f", срок был до {first_due}" if first_due else ""
+        parts.append(f"Ответ получен {first_done}{due}, {verdict}")
+    elif first_breached:
+        parts.append(f"Ответ просрочен с {first_breached}")
+    elif first_due:
+        parts.append(f"Вам должны ответить до {first_due}")
+
+    resolution_due = _format_user_deadline(ticket.get("resolution_due_at"))
+    resolution_done = _format_user_deadline(ticket.get("resolution_at") or ticket.get("closed_at") or ticket.get("resolved_at"))
+    resolution_breached = _format_user_deadline(ticket.get("resolution_breached_at"))
+    if resolution_done:
+        verdict = "с нарушением" if resolution_breached else "без нарушения"
+        due = f", срок был до {resolution_due}" if resolution_due else ""
+        parts.append(f"Решение выполнено {resolution_done}{due}, {verdict}")
+    elif resolution_breached:
+        parts.append(f"Решение просрочено с {resolution_breached}")
+    elif resolution_due:
+        parts.append(f"Решение или обходной вариант ожидается до {resolution_due}")
+
+    return "; ".join(parts)
+
+
+def _diagnostic_skip_reason_text(payload: dict[str, Any]) -> str:
+    reason = str(payload.get("reason") or "").strip()
+    priority = str(payload.get("priority_class") or "").strip()
+    if reason == "priority_not_allowed":
+        return f"приоритет {priority or 'обращения'} не входит в условия автозапуска"
+    if reason == "consent_required":
+        return "нет подтверждённого согласия пользователя"
+    if reason == "agent_offline":
+        return "агент был не в сети"
+    if reason == "auto_run_disabled":
+        return "автозапуск отключён политикой"
+    return reason.replace("_", " ") if reason else "условия автозапуска не выполнены"
+
+
+def build_ticket_diagnostics_user_summary(
+    ticket: dict,
+    events: Optional[list[dict[str, Any]]] = None,
+) -> str:
+    custom_fields = ticket.get("custom_fields") if isinstance(ticket.get("custom_fields"), dict) else {}
+    diagnostic_consent = custom_fields.get("diagnostic_consent") if isinstance(custom_fields.get("diagnostic_consent"), dict) else {}
+    result = custom_fields.get("diagnostic_result") if isinstance(custom_fields.get("diagnostic_result"), dict) else {}
+    diagnostics = custom_fields.get("diagnostics") if isinstance(custom_fields.get("diagnostics"), dict) else {}
+    lines: list[str] = []
+    if result:
+        status = _first_text(result.get("status"), result.get("result_class"), result.get("summary"))
+        if status:
+            lines.append(f"Диагностика: результат {status}.")
+    elif diagnostics:
+        status = _first_text(diagnostics.get("status"), diagnostics.get("summary"))
+        if status:
+            lines.append(f"Диагностика: {status}.")
+
+    for event in reversed(events or []):
+        if _event_type(event) != "diagnostic_autorun_skipped":
+            continue
+        payload = _event_payload(event)
+        playbook = _first_text(payload.get("playbook_title"), payload.get("playbook_key"))
+        playbook_text = f" ({playbook})" if playbook else ""
+        lines.append(f"Диагностика{playbook_text} не запускалась автоматически: {_diagnostic_skip_reason_text(payload)}.")
+        break
+
+    if not lines:
+        template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
+        diagnostic_policy = template.get("diagnostic_policy") if isinstance(template.get("diagnostic_policy"), dict) else {}
+        if diagnostic_policy.get("suggested_playbooks") or diagnostic_policy.get("suggested_playbook"):
+            lines.append("Диагностика настроена для шаблона, но результатов по этому обращению пока нет.")
+
+    if diagnostic_consent:
+        if diagnostic_consent.get("granted"):
+            lines.append("Согласие получено.")
+        elif diagnostic_consent.get("required"):
+            lines.append("Согласие требуется, но ещё не получено.")
+
+    return " ".join(lines)
 
 
 def _request_template_context(ticket: dict) -> dict[str, Any]:
@@ -2045,10 +2188,20 @@ class TicketCreateDialog(QDialog):
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
         self.diagnostic_consent_checkbox = QCheckBox(
-            "Разрешаю автодиагностику моего устройства сразу после создания обращения"
+            "Обязательно: разрешаю автодиагностику моего устройства"
         )
         self.diagnostic_consent_checkbox.setVisible(False)
+        self.diagnostic_consent_checkbox.stateChanged.connect(lambda *_: self._on_form_fields_changed())
         layout.addWidget(self.diagnostic_consent_checkbox)
+        self.diagnostic_consent_hint_label = QLabel("")
+        self.diagnostic_consent_hint_label.setWordWrap(True)
+        self.diagnostic_consent_hint_label.setVisible(False)
+        _palette = theme.current_palette()
+        self.diagnostic_consent_hint_label.setStyleSheet(
+            f"padding: 8px 10px; border: 1px solid {_palette.status_busy_fg}; border-radius: 10px; "
+            f"color: {_palette.status_busy_fg}; background: {_palette.status_busy_bg}; font-weight: 600;"
+        )
+        layout.addWidget(self.diagnostic_consent_hint_label)
 
         buttons = QHBoxLayout()
         self.create_btn = QPushButton("Создать")
@@ -2119,6 +2272,8 @@ class TicketCreateDialog(QDialog):
             self.form_summary.setText("Каталог форм не загружен.")
             self.dynamic_fields_widget.clear_form()
             self.priority_dynamic_fields_widget.clear_form()
+            self.diagnostic_consent_checkbox.setVisible(False)
+            self.diagnostic_consent_hint_label.setVisible(False)
             return
         self.form_summary.setText(form.get("description") or "Уточните детали обращения, чтобы оно сразу попало в нужный поток.")
         priority_keys = set(ticket_form_priority_field_keys(form))
@@ -2129,6 +2284,8 @@ class TicketCreateDialog(QDialog):
         consent_required = diagnostic_consent_required(form)
         self.diagnostic_consent_checkbox.setVisible(consent_required)
         self.diagnostic_consent_checkbox.setChecked(False)
+        self.diagnostic_consent_hint_label.setVisible(consent_required)
+        self.diagnostic_consent_hint_label.setText(build_diagnostic_consent_requirement_hint(form))
 
     def _on_form_fields_changed(self) -> None:
         self.form_summary.setText((self._selected_form() or {}).get("description") or "")
@@ -2490,10 +2647,19 @@ class TicketCreateWizardWidget(QFrame):
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
         self.diagnostic_consent_checkbox = QCheckBox(
-            "Разрешаю автодиагностику моего устройства сразу после создания обращения"
+            "Обязательно: разрешаю автодиагностику моего устройства"
         )
         self.diagnostic_consent_checkbox.stateChanged.connect(self._update_navigation_state)
         layout.addWidget(self.diagnostic_consent_checkbox)
+        self.diagnostic_consent_hint_label = QLabel("")
+        self.diagnostic_consent_hint_label.setWordWrap(True)
+        self.diagnostic_consent_hint_label.setObjectName("ProfileHint")
+        _palette = theme.current_palette()
+        self.diagnostic_consent_hint_label.setStyleSheet(
+            f"padding: 8px 10px; border: 1px solid {_palette.status_busy_fg}; border-radius: 10px; "
+            f"color: {_palette.status_busy_fg}; background: {_palette.status_busy_bg}; font-weight: 600;"
+        )
+        layout.addWidget(self.diagnostic_consent_hint_label)
 
         summary = QLabel(
             "После подтверждения обращение создастся с выбранным профилем, шаблоном, описанием и материалами."
@@ -2768,6 +2934,8 @@ class TicketCreateWizardWidget(QFrame):
             self.dynamic_fields_widget.clear_form()
             self.priority_dynamic_fields_widget.clear_form()
             self.priority_fallback_group.setVisible(True)
+            self.diagnostic_consent_checkbox.setVisible(False)
+            self.diagnostic_consent_hint_label.setVisible(False)
         else:
             self._sync_template_list_selection(form.get("key"))
             self.form_summary.setText(
@@ -2786,6 +2954,8 @@ class TicketCreateWizardWidget(QFrame):
             consent_required = diagnostic_consent_required(form)
             self.diagnostic_consent_checkbox.setVisible(consent_required)
             self.diagnostic_consent_checkbox.setChecked(False)
+            self.diagnostic_consent_hint_label.setVisible(consent_required)
+            self.diagnostic_consent_hint_label.setText(build_diagnostic_consent_requirement_hint(form))
         self._update_navigation_state()
         self._update_creation_preview()
         self._schedule_server_creation_preview()
@@ -3706,23 +3876,36 @@ class ChatPanel(QWidget):
         center_layout.addWidget(self.input_line)
 
         self.resolution_message_widget = QWidget()
+        self.resolution_message_widget.setObjectName("ResolutionConfirmationCard")
+        self.resolution_message_widget.setStyleSheet(
+            f"QWidget#ResolutionConfirmationCard {{"
+            f"background: {theme.INFO_BG}; border: 2px solid {theme.ACCENT}; border-radius: 14px;"
+            f"}}"
+        )
         resolution_layout = QHBoxLayout(self.resolution_message_widget)
-        resolution_layout.setContentsMargins(10, 8, 10, 8)
-        resolution_layout.setSpacing(10)
+        resolution_layout.setContentsMargins(14, 12, 14, 12)
+        resolution_layout.setSpacing(12)
         self.resolution_prompt_label = QLabel(
-            "Поддержка отметила обращение как решённое. Подтвердите закрытие или верните обращение в работу."
+            "<b>Требуется подтверждение решения.</b><br>"
+            "Поддержка отметила обращение как решённое. Если всё работает, закройте обращение. "
+            "Если проблема осталась, верните его в работу."
         )
         self.resolution_prompt_label.setWordWrap(True)
+        self.resolution_prompt_label.setTextFormat(Qt.TextFormat.RichText)
         self.resolution_prompt_label.setStyleSheet(
             f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_PRIMARY}; background: transparent;"
         )
         self.resolution_confirm_btn = QPushButton("Подтвердить и закрыть")
         self.resolution_confirm_btn.setObjectName("PrimaryButton")
-        self.resolution_confirm_btn.setMinimumWidth(170)
+        self.resolution_confirm_btn.setMinimumSize(220, 46)
+        self.resolution_confirm_btn.setStyleSheet(
+            f"background: {theme.PRIMARY_BTN}; color: {theme.PRIMARY_BTN_TEXT}; "
+            f"border: 1px solid {theme.PRIMARY_BTN}; border-radius: 12px; font-weight: 800;"
+        )
         self.resolution_confirm_btn.clicked.connect(lambda: self._spawn_task(self._async_close_ticket()))
         self.resolution_reject_btn = QPushButton("Отклонить решение")
         self.resolution_reject_btn.setObjectName("SecondaryButton")
-        self.resolution_reject_btn.setMinimumWidth(150)
+        self.resolution_reject_btn.setMinimumSize(170, 46)
         self.resolution_reject_btn.clicked.connect(self._on_reject_resolution)
         resolution_layout.addWidget(self.resolution_prompt_label, 1)
         resolution_layout.addWidget(self.resolution_confirm_btn)
@@ -4663,7 +4846,7 @@ class ChatPanel(QWidget):
         status_style = (
             f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
         )
-        meta_html = self._build_ticket_meta_html(ticket)
+        meta_html = self._build_ticket_meta_html(ticket, events)
         self.ticket_info_label.setText(info_html)
         self.ticket_status_top.setText(status_text)
         self.ticket_status_top.setStyleSheet(status_style)
@@ -4691,7 +4874,13 @@ class ChatPanel(QWidget):
             ts = message.get("ts")
             text = (message.get("text") or "").strip()
             sender_kind = message_visual_role(message)
-            sender = requester_name if sender_kind == "self" else assignee_name if sender_kind == "support" else "Система"
+            support_sender = _first_text(
+                message.get("sender_display_name"),
+                message.get("sender_name"),
+                message.get("actor_display_name"),
+                assignee_name,
+            )
+            sender = requester_name if sender_kind == "self" else support_sender if sender_kind == "support" else "Система"
             reply_to = self._resolve_reply_reference(
                 message.get("reply_to") or ((message.get("metadata") or {}).get("reply_to")),
                 message_index,
@@ -4849,29 +5038,31 @@ class ChatPanel(QWidget):
             return f"офлайн, последний пинг {last_seen}"
         return "офлайн"
 
-    def _build_ticket_meta_html(self, ticket: dict) -> str:
+    def _build_ticket_meta_html(self, ticket: dict, events: Optional[List[dict]] = None) -> str:
         requester = ticket.get("requester_display_name") or "Пользователь"
         profile = ticket.get("requester_profile") or {}
         location = " ".join(
             part for part in (profile.get("building"), profile.get("room")) if part
         ).strip() or "—"
+        deadlines_summary = build_ticket_deadlines_status_summary(ticket)
+        diagnostics_summary = build_ticket_diagnostics_user_summary(ticket, events)
         rows = [
             ("Пользователь", requester),
             ("ФИО", profile.get("full_name") or "—"),
             ("Кабинет", location),
             ("Телефон", profile.get("phone") or "—"),
             ("Приоритет", ticket.get("priority_class") or ticket.get("priority") or "—"),
+            ("Сроки", deadlines_summary or "—"),
             ("Очередь", ticket.get("queue_code") or ticket.get("queue_id") or "—"),
-            ("Исполнитель", ticket.get("assignee_id") or "Не назначен"),
+            ("Исполнитель", build_ticket_assignee_user_text(ticket, events)),
             ("Поддержка", self._support_presence_text(ticket)),
+            ("Диагностика", diagnostics_summary or "Нет данных по диагностике."),
             ("Создан", self._format_ts(ticket.get("created_at")) or "—"),
             ("Обновлён", self._format_ts(ticket.get("updated_at")) or "—"),
             ("Решён", self._format_ts(ticket.get("resolved_at")) or "—"),
             ("Закрыт", self._format_ts(ticket.get("closed_at")) or "—"),
             ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
-        rows.insert(5, ("Ответить должны до", self._format_ts(ticket.get("first_response_due_at")) or "-"))
-        rows.insert(6, ("Решение ожидается до", self._format_ts(ticket.get("resolution_due_at")) or "-"))
         rows.extend(ticket_request_form_summary_rows(ticket))
         return "".join(
             f"<div style='margin-bottom:8px; font-size:{theme.BODY_PT}pt; line-height:1.5;'>"
@@ -5236,6 +5427,41 @@ class ChatPanel(QWidget):
         tool_label = self._friendly_tool_name(tool_name or action)
         status_label = self._friendly_status_label(status)
 
+        if event_type == "status_changed":
+            from_status = ticket_status_label(str(payload.get("from_status") or ""))
+            to_status = ticket_status_label(str(payload.get("to_status") or ""))
+            actor = _event_support_actor_label(event) or _first_text(payload.get("actor_id"), event.get("actor_id"))
+            actor_text = f" Оператор: {actor}." if actor else ""
+            if from_status and to_status:
+                return f"Статус изменён: {from_status} → {to_status}.{actor_text}"
+            if to_status:
+                return f"Статус изменён: {to_status}.{actor_text}"
+            return f"Статус обращения изменён.{actor_text}"
+        if event_type == "queue_changed":
+            queue = _first_text(payload.get("queue_name"), payload.get("queue_code"), payload.get("queue_id"))
+            return f"Очередь изменена: {queue}." if queue else "Очередь обращения изменена."
+        if event_type == "sla_started":
+            priority = _first_text(payload.get("priority"), (payload.get("targets") or {}).get("priority") if isinstance(payload.get("targets"), dict) else "")
+            first_due = _format_user_deadline(payload.get("first_response_due_at"))
+            resolution_due = _format_user_deadline(payload.get("resolution_due_at"))
+            bits = [f"приоритет {priority}" if priority else ""]
+            if first_due:
+                bits.append(f"ответ до {first_due}")
+            if resolution_due:
+                bits.append(f"решение до {resolution_due}")
+            return "Сроки обращения рассчитаны: " + "; ".join(bit for bit in bits if bit) + "."
+        if event_type == "sla_first_response_stopped":
+            stopped = _format_user_deadline(payload.get("stopped_at"))
+            return f"Срок первого ответа остановлен: ответ получен {stopped}." if stopped else "Срок первого ответа остановлен."
+        if event_type == "sla_resolution_stopped":
+            stopped = _format_user_deadline(payload.get("stopped_at"))
+            return f"Срок решения остановлен: обращение решено {stopped}." if stopped else "Срок решения остановлен."
+        if event_type == "ola_processing_stopped":
+            return "Внутренний срок работы очереди остановлен: обращение решено."
+        if event_type == "diagnostic_autorun_skipped":
+            playbook = _first_text(payload.get("playbook_title"), payload.get("playbook_key"))
+            playbook_text = f" ({playbook})" if playbook else ""
+            return f"Диагностика{playbook_text} не запускалась автоматически: {_diagnostic_skip_reason_text(payload)}."
         if event_type == "tool_requested":
             return f"Запрошено действие {tool_label}."
         if event_type == "tool_started":

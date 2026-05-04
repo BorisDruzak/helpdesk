@@ -1106,7 +1106,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, cached form-pack schema/policy version refs (`form_schema_id`, `*_policy_code`, `policy_refs`) plus metadata-aware cache refresh and open-wizard refresh, searchable request-template chooser, selected-template summary cards, inline required-field errors, native date/datetime controls, replaceable/clearable file fields with attachment size labels and pre-submit checks, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback and non-blocking preview warning, post-create result panel for access code/owner/next step/deadlines/passport plus add-message action without raw SLA wording, diagnostic consent payloads, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, cached form-pack schema/policy version refs (`form_schema_id`, `*_policy_code`, `policy_refs`) plus metadata-aware cache refresh and open-wizard refresh, searchable request-template chooser, selected-template summary cards, inline required-field errors, native date/datetime controls, replaceable/clearable file fields with attachment size labels and pre-submit checks, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback and non-blocking preview warning, post-create result panel for access code/owner/next step/deadlines/passport plus add-message action without raw SLA wording, explicit required diagnostic-consent hint and payloads, support assignment fallback, visible diagnostics/deadline summaries, Russian system event text, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -1498,7 +1498,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump from 3.1.27 to 3.1.28 for requester confirmation and diagnostic consent GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump to 3.1.29 for requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",

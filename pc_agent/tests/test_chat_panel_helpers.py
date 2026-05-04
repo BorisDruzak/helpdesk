@@ -19,7 +19,10 @@ from ui_gui.chat_panel import (  # noqa: E402
     build_request_creation_preview,
     build_request_template_card_summary,
     build_diagnostic_consent_payload,
+    build_diagnostic_consent_requirement_hint,
     build_default_ticket_form_pack,
+    build_ticket_deadlines_status_summary,
+    build_ticket_diagnostics_user_summary,
     diagnostic_consent_submission_error,
     format_attachment_item_label,
     build_priority_facts_payload,
@@ -889,10 +892,25 @@ def test_diagnostic_consent_submission_error_blocks_silent_skip():
 
     assert diagnostic_consent_submission_error(form, granted=False) == (
         "Для этого шаблона требуется согласие на диагностику. "
-        "Отметьте согласие или выберите шаблон без автодиагностики."
+        "Поставьте галочку согласия или выберите шаблон без автодиагностики."
     )
     assert diagnostic_consent_submission_error(form, granted=True) == ""
     assert diagnostic_consent_submission_error({}, granted=False) == ""
+
+
+def test_diagnostic_consent_requirement_hint_marks_required_user_action():
+    form = {
+        "request_template_key": "network",
+        "diagnostic_policy": {
+            "consent": {"required_for_requester_device": True},
+        },
+    }
+
+    hint = build_diagnostic_consent_requirement_hint(form)
+
+    assert "Обязательно" in hint
+    assert "поставьте галочку" in hint
+    assert build_diagnostic_consent_requirement_hint({}) == ""
 
 
 def test_build_priority_facts_payload_keeps_legacy_booleans_and_structured_facts():
@@ -954,8 +972,44 @@ def test_build_ticket_meta_html_includes_request_form_summary():
     assert "Поломка" in html
     assert "Что сломалось" in html
     assert "МФУ" in html
-    assert "Ответить должны до" in html
+    assert "Вам должны ответить до" in html
     assert "2026-04-16T15:12:09+00:00" in html
+
+
+def test_build_ticket_meta_html_explains_support_work_without_assignee():
+    panel = ChatPanel.__new__(ChatPanel)
+    panel._format_ts = lambda value: value or ""
+    panel._support_presence_text = lambda _ticket: "онлайн"
+    panel._escape_html = lambda value: str(value)
+
+    html = panel._build_ticket_meta_html(
+        {
+            "requester_display_name": "Борис",
+            "requester_profile": {},
+            "status": "in_progress",
+            "requester_status": "in_work",
+            "next_action_owner": "support",
+            "queue_code": "servicedesk_l1",
+            "assignee_id": "",
+            "created_at": "2026-05-04T14:20:20+00:00",
+            "updated_at": "2026-05-04T14:23:48+00:00",
+        },
+        events=[
+            {
+                "event_type": "status_changed",
+                "payload": {
+                    "actor_id": "op1",
+                    "actor_role": "support",
+                    "to_status": "in_progress",
+                },
+            }
+        ],
+    )
+
+    assert "Исполнитель" in html
+    assert "Не назначен персонально" in html
+    assert "op1" in html
+    assert "работе у поддержки" in html
 
 
 def test_build_ticket_sla_user_summary_uses_dynamic_due_dates():
@@ -970,6 +1024,84 @@ def test_build_ticket_sla_user_summary_uses_dynamic_due_dates():
     assert "Приоритет: P0" in summary
     assert "Вам должны ответить до 2026-04-16T15:12:09+00:00" in summary
     assert "Решение или обходной вариант ожидается до 2026-04-16T18:57:09+00:00" in summary
+
+
+def test_build_ticket_deadlines_status_summary_explains_stopped_sla():
+    summary = build_ticket_deadlines_status_summary(
+        {
+            "priority_class": "P3",
+            "first_response_due_at": "2026-05-04T16:20:20+00:00",
+            "first_response_at": "2026-05-04T14:20:22+00:00",
+            "resolution_due_at": "2026-05-05T14:20:20+00:00",
+            "resolution_at": "2026-05-04T14:25:38+00:00",
+            "status": "closed",
+        }
+    )
+
+    assert "Приоритет: P3" in summary
+    assert "Ответ получен" in summary
+    assert "Решение выполнено" in summary
+    assert "без нарушения" in summary
+
+
+def test_build_ticket_diagnostics_user_summary_explains_priority_skip():
+    ticket = {
+        "priority_class": "P3",
+        "custom_fields": {
+            "diagnostic_consent": {"required": True, "granted": True},
+        },
+    }
+    events = [
+        {
+            "event_type": "diagnostic_autorun_skipped",
+            "payload": {
+                "reason": "priority_not_allowed",
+                "priority_class": "P3",
+                "playbook_key": "diagnose.website",
+                "consent_required": True,
+                "consent_granted": True,
+            },
+        }
+    ]
+
+    summary = build_ticket_diagnostics_user_summary(ticket, events)
+
+    assert "Диагностика" in summary
+    assert "не запускалась автоматически" in summary
+    assert "приоритет P3" in summary
+    assert "Согласие получено" in summary
+
+
+def test_format_event_text_localizes_status_and_diagnostic_events():
+    panel = ChatPanel.__new__(ChatPanel)
+
+    status_text = panel._format_event_text(
+        {
+            "event_type": "status_changed",
+            "payload": {
+                "from_status": "queued",
+                "to_status": "in_progress",
+                "actor_role": "support",
+                "actor_id": "op1",
+            },
+        }
+    )
+    diagnostic_text = panel._format_event_text(
+        {
+            "event_type": "diagnostic_autorun_skipped",
+            "payload": {
+                "reason": "priority_not_allowed",
+                "priority_class": "P3",
+                "playbook_key": "diagnose.website",
+            },
+        }
+    )
+
+    assert "Статус изменён" in status_text
+    assert "В работе" in status_text
+    assert "op1" in status_text
+    assert "Диагностика" in diagnostic_text
+    assert "приоритет P3" in diagnostic_text
 
 
 def test_ticket_status_label_is_localized():

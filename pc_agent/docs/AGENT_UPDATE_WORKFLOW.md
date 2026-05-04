@@ -32,7 +32,7 @@
 
 ### 2.2 2026-05-04 release note
 
-- `3.1.28` is the Windows stable agent release for requester confirmation and diagnostic consent GUI fixes after `3.1.27`. Publish it as a new build/upload/rollout target; do not overwrite the existing `3.1.27` artifact.
+- `3.1.29` is the Windows stable agent release for follow-up requester GUI fixes after `3.1.28`: required diagnostic-consent hint, clearer confirmation card, diagnostics/deadline/assignment summaries, and Russian system event text. Publish it as a new build/upload/rollout target; do not overwrite existing artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 

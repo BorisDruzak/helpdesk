@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 32 bugfix implementation deployed and browser-rechecked; compiled Windows agent `3.1.28` is uploaded to the server and assigned in rollout policy. Real requester-device re-check for a new diagnostic-consent ticket remains user/agent dependent.
+Last updated: 2026-05-04, Stage 32 follow-up agent GUI bugfix implementation is in progress after user live QA on agent `3.1.28` and ticket `#T-000511`: consent hint, assignment/work status, SLA/deadline summary, diagnostics visibility, confirmation emphasis and Russian event text.
 
-Current plan completion: 98.3%.
+Current plan completion: 97.8%.
 
-Current execution mode: Stage 32 bugfix gate, agent/live-user recheck slice. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, agent runtime/GUI live acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed and live browser-rechecked; final confidence now depends on a real agent `3.1.28` update and a new requester-device diagnostic consent ticket.
+Current execution mode: Stage 32 follow-up agent GUI bugfix gate. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` local fixes must be verified, built, uploaded and assigned before the next user live re-check.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -225,11 +225,11 @@ Evidence summary must include:
 
 This section must be updated during execution. Do not mark final completion until each item is either completed by the user or explicitly accepted as residual risk.
 
-- [~] Agent GUI visual flow: Stage 29 exercised the live GUI-owned automation surface for profile selection, form-pack refresh, create, attachment, add-message and post-create state; user live QA confirms multiple GUI fields still shift/overflow. Stage 32 shipped scoped prompt/consent label fixes in agent `3.1.28`; broader GUI overflow remains for visual re-check after the agent updates.
+- [~] Agent GUI visual flow: Stage 29 exercised the live GUI-owned automation surface for profile selection, form-pack refresh, create, attachment, add-message and post-create state; user live QA on `3.1.28` confirms consent hint, confirmation emphasis, assignment/SLA/diagnostics visibility and system event localization still need a follow-up agent build. Local `3.1.29` fixes are in progress.
 - [x] Tray/minimize behavior: Stage 29 verified runtime behavior and user live QA confirmed tray works.
 - [ ] External notification channels: user may need to confirm real email/Telegram/VK Teams delivery if providers are unavailable or disabled on the stand.
 - [ ] Long calendar boundary behavior: user may need to accept simulated clock/API evidence instead of waiting real business hours.
-- [U] Real requester-device consent prompt: Stage 23 verified server-side support consent gating and deny path live, but user live QA on `T-000509` saw `diagnostic autorun skipped` and no consent prompt. Root cause was a ticket created with `diagnostic_consent.granted=false`; agent `3.1.28` now blocks silent submit when consent is required and unchecked. Needs a new ticket from updated agent to verify the corrected live path.
+- [U] Real requester-device consent prompt: Stage 23 verified server-side support consent gating and deny path live, but user live QA on `T-000509` saw `diagnostic autorun skipped` and no consent prompt. Root cause was a ticket created with `diagnostic_consent.granted=false`; agent `3.1.28` blocked silent submit and `3.1.29` adds an explicit required-action hint. Needs a new ticket from updated agent to verify the corrected live path.
 - [x] Ticket requester messages: user live QA confirms messages are visible.
 - [ ] External notifications: user explicitly deferred notification checks for now; do not block the current bugfix gate on provider delivery.
 
@@ -261,12 +261,33 @@ Do these before final cleanup, scoring, or any broad visual redesign:
    - Symptom: fields and controls shift/overflow in the user agent GUI.
    - Expected: request wizard, chat/detail pane and action rows remain readable at common Windows window sizes; long Russian labels wrap without covering adjacent controls.
    - Scope: `pc_agent/ui_gui/chat_panel.py`, theme/QSS helpers, any small widget layout helpers; avoid broad visual redesign in this bugfix gate.
-   - 2026-05-04 local fix: resolved confirmation row wraps prompt text and gives action buttons stable minimum widths; diagnostic consent label is clearer. Broader GUI overflow remains a user-attention visual check after `3.1.28` rollout.
+   - 2026-05-04 local fix: resolved confirmation row wraps prompt text and gives action buttons stable minimum widths; diagnostic consent label is clearer. Follow-up `3.1.29` makes the confirmation card more prominent and the diagnostic consent hint explicit. Broader GUI overflow remains a user-attention visual check after rollout.
 
 5. `BUG-SUPPORT-WORKSPACE-DISCOVERY`: support workspace lacks intuitive process visibility.
    - Symptom: many panels exist, but the operator cannot easily see where the active process state, SLA, OLA, playbooks, consent, evidence and closure action live.
    - Expected for current bugfix gate: do not redesign yet; only document the element inventory and preserve it for the future redesign plan.
    - Scope: plan/design inventory only until the explicit redesign stage begins.
+
+6. `BUG-AGENT-CONSENT-HINT`: consent checkbox exists but is not clearly marked as required.
+   - Symptom: in agent create flow the checkbox is present, but the user has no clear visual instruction that it must be checked.
+   - Expected: required diagnostic consent is labelled as mandatory, has a visible hint, blocks submit until checked, and the error text says exactly what to do.
+   - 2026-05-04 local fix: `3.1.29` adds explicit mandatory wording and a highlighted hint in both create dialog and wizard.
+
+7. `BUG-AGENT-ASSIGNMENT-SLA-DIAGNOSTICS`: agent detail does not explain work owner, deadlines or diagnostics.
+   - Symptom: `#T-000511` was closed correctly, but agent detail showed no useful diagnostic block, SLA/deadline status was unclear, and executor looked missing.
+   - Evidence: DB shows `#T-000511` has no personal `assignee_id`, status was moved to `in_progress` by support actor `op1`; SLA started/stopped successfully; diagnostics were skipped with `reason=priority_not_allowed` because the network diagnostic policy auto-runs only for `P0/P1/P2`, while the ticket was `P3`.
+   - Expected: agent detail shows "not personally assigned, in work by support/op1" when applicable, deadline status with stopped/no-breach facts, and a visible diagnostic summary explaining why no diagnostic result exists.
+   - 2026-05-04 local fix: `3.1.29` adds assignment fallback, deadline status summary and diagnostics summary from ticket events/custom fields.
+
+8. `BUG-AGENT-EVENT-LOCALIZATION`: agent chat system events are raw/non-Russian.
+   - Symptom: chat shows raw labels such as `status changed` and generic notifications that do not explain what changed.
+   - Expected: system events are Russian, state the actual transition or diagnostic reason, and avoid raw event names for normal users.
+   - 2026-05-04 local fix: `3.1.29` localizes status, queue, SLA stop/start, OLA stop and diagnostic skipped events.
+
+9. `BUG-AGENT-CONFIRMATION-EMPHASIS`: resolution confirmation exists but is visually weak.
+   - Symptom: user sees the confirmation controls, but the block is not visually obvious and the primary action can look disabled.
+   - Expected: confirmation is a highlighted card with a clear heading and large primary/secondary actions.
+   - 2026-05-04 local fix: `3.1.29` styles the confirmation block as an emphasized card and increases action button size/contrast.
 
 ## Live Fixture Manifest
 
@@ -778,7 +799,7 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Preserve observer trace visibility for both skipped and waiting-consent branches.
   - Implemented as an agent-side create guard: required requester-device diagnostic consent cannot be submitted unchecked, preventing silent `diagnostic_autorun_skipped(consent_required)` tickets.
 - [U] Live re-check `#T-000509` successor ticket:
-  - Create a new ticket from updated agent `3.1.28` with the same diagnostic-consent template; old `#T-000509` cannot prove the fix because it was already created with `granted=false`.
+  - Create a new ticket from updated agent `3.1.29` with the same diagnostic-consent template; old `#T-000509` cannot prove the fix because it was already created with `granted=false`.
   - Verify the user sees the required consent checkbox and cannot submit while it is unchecked.
   - Verify that after checking consent the ticket stores `diagnostic_consent.granted=true`.
   - Verify support sees the same state in ticket detail/playbook panel.
@@ -788,7 +809,7 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Capture visible order and scroll behavior.
 - [x] Add focused regression for `BUG-AGENT-CHAT-ORDER` around support/detail timeline ordering in `server/tests/test_web_support_api.py`.
 - [x] Fix `BUG-AGENT-CHAT-ORDER` and re-check support workspace ordering.
-  - Support API/web order fixed and tested; browser re-check for `#T-000508` shows chronological order. Native agent GUI order still needs user visual confirmation after `3.1.28`.
+  - Support API/web order fixed and tested; browser re-check for `#T-000508` shows chronological order. Native agent GUI order still needs user visual confirmation after `3.1.29`.
 - [~] Reproduce `BUG-AGENT-GUI-LAYOUT` at common Windows sizes:
   - Request wizard with long Russian labels and picker/file/date fields.
   - Ticket detail/chat with resolved confirmation row.
@@ -808,7 +829,23 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Commit `84f4262 service-desk: fix requester confirmation and consent UX`.
 - [ ] Update docs/CODEMAP only if contracts, routes, protocol, observer behavior or file ownership changed.
 - Evidence: defect table, screenshots, test commands, live re-check for `#T-000508`, agent build/upload/rollout status, commit hashes.
-- User attention: user should re-open `#T-000508` to confirm the visual experience if desired, and create a fresh `#T-000509`-style ticket from updated agent `3.1.28` to confirm diagnostic consent because the original ticket was created with `granted=false`.
+- User attention: user should re-open `#T-000508` to confirm the visual experience if desired, and create a fresh `#T-000509`-style ticket from updated agent `3.1.29` to confirm diagnostic consent because the original ticket was created with `granted=false`.
+
+### Stage 32B: Agent GUI Follow-Up Bugfix Gate (3 points)
+
+- [x] Reproduce root cause from `#T-000511` live data:
+  - Diagnostics: `diagnostic_autorun_skipped(reason=priority_not_allowed)` because network auto-run priority list is `P0/P1/P2` and ticket is `P3`.
+  - Assignment: personal `assignee_id` is empty; support actor `op1` moved the ticket into work.
+  - SLA/deadline data exists and stopped without breach, but agent detail did not explain it.
+- [x] Add focused agent GUI helper regressions for consent hint, assignment fallback, deadline summary, diagnostics summary and Russian event text.
+- [~] Implement scoped agent GUI fixes in `pc_agent/ui_gui/chat_panel.py`.
+- [ ] Run focused and relevant agent tests.
+- [ ] Build Windows agent `3.1.29`, run compiled `--verify`, upload and assign rollout.
+- [U] User live re-check after `3.1.29`:
+  - Create a new diagnostic-consent ticket and confirm the consent hint is obvious.
+  - Open `#T-000511` or a similar ticket and confirm executor/work owner, deadlines and diagnostics are readable.
+  - Resolve a ticket and confirm the confirmation card is visually obvious.
+  - Confirm system timeline events are Russian and explain the actual change.
 
 ### Stage 33: Cleanup, Final Evidence And Score (4 points)
 
