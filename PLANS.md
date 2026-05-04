@@ -924,6 +924,8 @@ Backend execution status, 2026-05-05:
   - `#T-000513` before refresh had polluted passport `source_operation_ids=10`; after refresh with the new backend it had `source_operation_ids=1` and only ticket-scoped evidence candidate `operation:8bcdf81d-167e-42d9-8c9d-2be3d0da505e`;
   - `#T-000513` evidence candidate link endpoint created accepted structured evidence `id=16` with `source_kind=operation`, `required_fact=automated_checks`, and repeated link stayed idempotent with `evidence_count=1`;
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
+  - release `7087a44` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
+  - disposable live ticket `255d438e-7802-4ddf-a5a3-20d02f4a0234` generated passport version 1 with `stale=false`; after a new support message, support detail returned `official_passport_stale` with `stale_reasons=["events_changed"]`, and resolving returned `400 CLOSURE_POLICY_BLOCKED` / `closure_policy requires fresh official passport`.
 - Local verification pending deploy:
   - `python -m pytest server\tests\test_ticket_passport_service.py::test_passport_payload_marks_stale_after_new_worklog_source server\tests\test_ticket_closure_policy.py::test_closure_requirements_block_stale_official_passport -q --tb=short` -> 2 passed;
   - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_web_api.py server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 36 passed after a transient first-run harness miss was not reproduced.
