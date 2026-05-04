@@ -893,6 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-04:
 
+- Progress: 62% of Stage 33A backend scope verified live/tested; UI evidence workspace remains explicitly out of this backend slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -905,6 +906,11 @@ Backend execution status, 2026-05-04:
   - `PATCH /api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}` verifies/rejects/archives evidence with actor, reason and metadata;
   - passport payloads mark `stale=true` with `stale_reasons=["evidence_changed"]` when accepted/new evidence appears after generation.
 - Verified on Linux stand:
+  - release `a8929f5` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
+  - `#T-000513` live candidate API returned operation, requester/support chat-message and observer-trace candidates; existing operation evidence `id=16` stayed idempotently linked;
+  - live internal evidence `id=18` was created for `#T-000513`, then patched through `accepted -> rejected -> archived`; final state is `archived` with `verified_by=op1` and `verification_reason`;
+  - `#T-000513` passport payload returned `stale=true` and `stale_reasons=["evidence_changed"]` after evidence added after generation;
+  - live ticket `650e5ee8-a73d-4138-9efc-998b0fde0b19` confirmed worklog and approval candidates in addition to chat, observer-trace and operation candidates.
   - release `cd5271d` deployed with migration `069`;
   - smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` before refresh had polluted passport `source_operation_ids=10`; after refresh with the new backend it had `source_operation_ids=1` and only ticket-scoped evidence candidate `operation:8bcdf81d-167e-42d9-8c9d-2be3d0da505e`;
