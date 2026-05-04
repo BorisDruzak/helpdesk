@@ -75,7 +75,7 @@ export function AppShell({ children }: AppShellProps) {
             workspaceValue={workspaceValue}
           />
 
-          <main className="flex-1 px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">{children}</main>
+          <main className="min-w-0 flex-1 px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">{children}</main>
         </div>
       </div>
     </div>

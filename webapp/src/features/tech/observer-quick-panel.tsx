@@ -1034,7 +1034,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
           value={activeTab}
         />
 
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="flex min-w-0 flex-col gap-3">
           {activeTab === "runtime" ? null : (
             <SearchField
               className="flex-1"
@@ -1043,9 +1043,9 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
               value={search}
             />
           )}
-          <div className="grid grid-cols-2 gap-3 md:flex">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             <Select
-              className="min-w-[160px]"
+              className="min-w-0"
               onChange={(event) => setRootKindFilter(event.target.value as AdminObserverRootKindFilter)}
               value={rootKindFilter}
             >
@@ -1056,7 +1056,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
               ))}
             </Select>
             <Select
-              className="min-w-[160px]"
+              className="min-w-0"
               disabled={activeTab === "signatures" || activeTab === "degradations" || activeTab === "quick"}
               onChange={(event) => setStatusFilter(event.target.value as AdminObserverTraceStatusFilter)}
               value={statusFilter}

@@ -98,8 +98,8 @@ export function AppTopbar({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="w-full min-w-[240px] max-w-[420px] flex-1">
+          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:flex-wrap xl:w-auto">
+            <div className="col-span-2 min-w-0 md:w-full md:min-w-[240px] md:max-w-[420px] md:flex-1">
               <SearchField placeholder={searchPlaceholder} />
             </div>
 
@@ -119,7 +119,7 @@ export function AppTopbar({
               </button>
 
               {notificationsOpen ? (
-                <div className="absolute right-0 top-12 z-30 w-[340px] overflow-hidden rounded-panel border border-border bg-white shadow-soft">
+                <div className="absolute right-0 top-12 z-30 w-[min(340px,calc(100vw-2rem))] overflow-hidden rounded-panel border border-border bg-white shadow-soft">
                   <div className="border-b border-border px-4 py-3">
                     <p className="text-sm font-semibold text-slate-950">Уведомления</p>
                     <p className="mt-0.5 text-xs text-slate-500">

@@ -3497,7 +3497,7 @@ function TemplateConstructorPanel({
         </div>
       </div>
 
-      <div className="mt-5 overflow-x-auto pb-2">
+      <div className="mt-5 max-w-full overflow-x-auto pb-2">
         <div className="flex min-w-[980px] items-stretch gap-2">
           {TEMPLATE_STEPS.map((step, index) => {
             const Icon = step.icon;

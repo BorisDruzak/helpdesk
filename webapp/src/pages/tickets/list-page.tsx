@@ -238,8 +238,8 @@ export function TicketListPage() {
             ) : null}
 
             {queue && queue.tickets.length > 0 ? (
-              <div className="overflow-hidden rounded-[1.1rem] border border-border">
-                <table className="min-w-full divide-y divide-border text-left text-sm">
+              <div className="overflow-x-auto rounded-[1.1rem] border border-border">
+                <table className="min-w-[760px] divide-y divide-border text-left text-sm">
                   <thead className="bg-surface-subtle text-slate-500">
                     <tr>
                       <th className="px-5 py-3.5 font-medium">ID</th>
