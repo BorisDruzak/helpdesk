@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 33A backend slice deployed and live-checked on `#T-000512` and `#T-000513`: structured evidence contract, ticket-scoped passport operations, evidence candidates/link API and closure evidence verification are active on the Linux stand.
+Last updated: 2026-05-05, Stage 33A passport/evidence UI contract deployed and live-checked on disposable `#T-000516`: stale passport state, missing fact actions, evidence dossier rows and print evidence appendix are active on the Linux stand.
 
-Current plan completion: 99.3%; passport/evidence remains an open product-quality track before final acceptance.
+Current plan completion: 99.4%; passport/evidence remains an open product-quality track before final acceptance.
 
-Current execution mode: Stage 33A backend implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current backend work deliberately excludes visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
+Current execution mode: Stage 33A passport/evidence functional implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -893,7 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-05:
 
-- Progress: 88% of Stage 33A backend + first functional UI scope verified locally; broad visual workspace redesign remains explicitly out of this slice.
+- Progress: 92% of Stage 33A backend + first functional UI scope verified on the Linux stand; broad visual workspace redesign remains explicitly out of this slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -911,6 +911,11 @@ Backend execution status, 2026-05-05:
   - official-passport closure gates now reject stale passports and expose `official_passport_stale` with stale reasons/current source counts in support detail.
   - React passport tab now shows stale passport warnings, readable missing-fact sources, recommended actions, candidate previews and evidence dossier rows; print/PDF page includes an evidence appendix.
 - Verified on Linux stand:
+  - release `abf8190` deployed after webapp rebuild and smoke passed on `http://192.168.100.17:8666/api/health`;
+  - disposable live ticket `#T-000516` (`8cfb760e-f4cd-4a14-a109-3b63aed9262c`) confirmed the React passport tab shows `Паспорт устарел`, translated stale reasons `Новые доказательства` / `Новые сообщения или события`, current source counts, readable missing fact source `Источник: публичный итог для пользователя`, and evidence dossier rows;
+  - `POST /api/web/support/tickets/{ticket_id}/passport/evidence` added UTF-8 evidence `Stage33A проверка UTF-8` with `source_ref=operation:stage33a-ui-utf8-check`, and the support UI rendered the Russian title/summary without mojibake;
+  - print route `/app/tickets/8cfb760e-f4cd-4a14-a109-3b63aed9262c/passport/print` confirmed `ПРИЛОЖЕНИЕ ДОКАЗАТЕЛЬСТВ`, evidence type/status/export visibility and source refs are printed;
+  - browser console warnings/errors: 0; checked screenshots: `stage33a_passport_ui_20260505.png`, `stage33a_passport_evidence_rows_wheel_20260505.png`, `stage33a_passport_print_20260505.png`.
   - release `3ed5de1` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` passport refresh completed as version 3 with no missing facts after existing accepted evidence/summary coverage;
   - `2973d55a-be8d-4125-8c02-38672f885a73` (`Stage 18 missing_evidence_high_priority`) returned missing facts with source candidate counts: `automated_checks` warning candidate from observer trace and `user_result` blocking candidates from chat messages;
@@ -927,13 +932,12 @@ Backend execution status, 2026-05-05:
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
   - release `7087a44` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - disposable live ticket `255d438e-7802-4ddf-a5a3-20d02f4a0234` generated passport version 1 with `stale=false`; after a new support message, support detail returned `official_passport_stale` with `stale_reasons=["events_changed"]`, and resolving returned `400 CLOSURE_POLICY_BLOCKED` / `closure_policy requires fresh official passport`.
-- Local verification pending deploy:
+- Local verification:
   - `python -m pytest server\tests\test_ticket_passport_service.py::test_passport_payload_marks_stale_after_new_worklog_source server\tests\test_ticket_closure_policy.py::test_closure_requirements_block_stale_official_passport -q --tb=short` -> 2 passed;
   - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_web_api.py server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 36 passed after a transient first-run harness miss was not reproduced.
   - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/tickets/passport-print-page.test.tsx` -> 16 passed;
   - `pnpm --dir webapp exec tsc --noEmit`, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and focused passport/support pytest -> passed.
 - Still backend-open:
-  - live browser/UI treatment for stale passport and source preview actions;
   - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
@@ -1090,7 +1094,7 @@ Implementation plan:
     - rejected/archived evidence does not unblock closure.
   - 2026-05-05 backend slice complete for rejected/archived/superseded evidence exclusion, support-detail `closure_requirements` passport missing fact keys, and stale official-passport guard via `official_passport_stale`.
 
-- [ ] Stage 33A.7 - Support UI passport redesign inside current workspace.
+- [~] Stage 33A.7 - Support UI passport redesign inside current workspace.
   - Modify `webapp/src/pages/tickets/detail-page.tsx` and focused tests.
   - Required UI blocks:
     - top status: `missing/draft/stale/ready/blocking`;
@@ -1110,7 +1114,7 @@ Implementation plan:
     - links candidate evidence;
     - shows stale passport warning;
     - print page includes evidence appendix.
-  - 2026-05-05 functional UI slice complete locally for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix. Full candidate drawer, manual evidence form and section editor remain open for the later visual/workflow slice.
+  - 2026-05-05 functional UI slice complete and live-checked for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix. Full candidate drawer, manual evidence form and section editor remain open for the later visual/workflow slice.
 
 - [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
   - Keep current low-code redesign deferred, but make existing policy controls honest.
