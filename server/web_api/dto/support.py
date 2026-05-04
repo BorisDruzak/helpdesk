@@ -690,6 +690,18 @@ class SupportTicketPassportEvidenceLinkRequest(BaseModel):
     visibility: str = "internal"
 
 
+class SupportTicketPassportEvidenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verification_status: str | None = None
+    reason: str | None = None
+    visibility: str | None = None
+    export_visibility: str | None = None
+    public_summary: str | None = None
+    internal_summary: str | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class SupportTicketKnowledgeDraftPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

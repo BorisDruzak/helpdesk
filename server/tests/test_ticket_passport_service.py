@@ -422,6 +422,51 @@ async def test_passport_refresh_creates_new_version_without_overwriting_previous
         assert "Первое описание" in passports[0].problem_summary
         assert "Описание после уточнения" in passports[1].problem_summary
 @pytest.mark.asyncio
+async def test_passport_payload_marks_stale_after_new_evidence(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Stale passport",
+                description="Initial passport",
+                status="in_progress",
+                requester_id="user-stale",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        first = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="manual_note",
+                source_kind="manual",
+                source_id="note-after-passport",
+                required_fact="evidence",
+                section_key="evidence",
+                source_ref="manual:note-after-passport",
+                title="Evidence after passport",
+                summary="Added after generation",
+                visibility="internal",
+                verification_status="accepted",
+                created_by="op1",
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).get_payload(ticket_id)
+
+        assert first["passport"]["stale"] is False
+        assert payload["passport"]["stale"] is True
+        assert payload["passport"]["source_payload"]["stale_reasons"] == ["evidence_changed"]
+
+
+@pytest.mark.asyncio
 async def test_passport_service_applies_reporting_policy_sections_and_evidence_package(test_engine):
     from sqlalchemy import delete
 

@@ -604,9 +604,17 @@ class TicketPassportService:
                 operations=[],
                 worklogs=[],
             )
+        passport_stale = False
+        passport_stale_reasons: list[str] = []
+        if passport is not None:
+            passport_stale, passport_stale_reasons = self._passport_stale_state(
+                passport,
+                ticket=ticket,
+                evidence=evidence,
+            )
         return {
             "ticket_id": ticket_id,
-            "passport": self._passport_to_dict(passport) if passport else None,
+            "passport": self._passport_to_dict(passport, passport_stale, passport_stale_reasons) if passport else None,
             "status": "draft" if passport else "missing",
             "requirements": requirements,
             "evidence": [self._evidence_to_dict(item) for item in evidence],
@@ -669,9 +677,31 @@ class TicketPassportService:
             event_id=f"passport-generated-{passport.id}",
         )
 
-    def _passport_to_dict(self, passport: TicketResolutionPassport) -> dict[str, Any]:
+    def _passport_stale_state(
+        self,
+        passport: TicketResolutionPassport | None,
+        *,
+        ticket: Ticket | None,
+        evidence: list[TicketEvidenceItem],
+    ) -> tuple[bool, list[str]]:
+        if passport is None:
+            return False, []
+        generated_at = passport.generated_at
+        reasons: list[str] = []
+        if any(item.created_at and item.created_at > generated_at for item in evidence):
+            reasons.append("evidence_changed")
+        return bool(reasons), reasons
+
+    def _passport_to_dict(
+        self,
+        passport: TicketResolutionPassport,
+        stale: bool = False,
+        stale_reasons: list[str] | None = None,
+    ) -> dict[str, Any]:
         sections = {key: getattr(passport, attr) or "" for key, attr in SECTION_KEYS.items()}
-        source_payload = passport.source_payload or {}
+        source_payload = dict(passport.source_payload or {})
+        if stale_reasons:
+            source_payload["stale_reasons"] = stale_reasons
         reporting_policy = source_payload.get("reporting_policy") if isinstance(source_payload, dict) else {}
         if isinstance(reporting_policy, dict) and reporting_policy:
             sections = _apply_reporting_policy_to_sections(sections, reporting_policy)
@@ -689,7 +719,7 @@ class TicketPassportService:
             "source_event_ids": passport.source_event_ids or [],
             "source_operation_ids": passport.source_operation_ids or [],
             "source_payload": source_payload,
-            "stale": False,
+            "stale": stale,
         }
 
     def _evidence_to_dict(self, item: TicketEvidenceItem) -> dict[str, Any]:

@@ -901,6 +901,9 @@ Backend execution status, 2026-05-04:
   - `TicketEvidenceService` collects ticket-scoped operation/artifact candidates and links candidates into accepted evidence;
   - typed backend API now exposes `GET /api/web/support/tickets/{ticket_id}/passport/evidence-candidates` and `POST /api/web/support/tickets/{ticket_id}/passport/evidence/link`;
   - closure policy ignores rejected/archived/superseded evidence.
+  - evidence candidates now also include worklogs, approvals, support/requester/internal chat messages and ticket observer traces;
+  - `PATCH /api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}` verifies/rejects/archives evidence with actor, reason and metadata;
+  - passport payloads mark `stale=true` with `stale_reasons=["evidence_changed"]` when accepted/new evidence appears after generation.
 - Verified on Linux stand:
   - release `cd5271d` deployed with migration `069`;
   - smoke passed on `http://192.168.100.17:8666/api/health`;
@@ -908,9 +911,8 @@ Backend execution status, 2026-05-04:
   - `#T-000513` evidence candidate link endpoint created accepted structured evidence `id=16` with `source_kind=operation`, `required_fact=automated_checks`, and repeated link stayed idempotent with `evidence_count=1`;
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
 - Still backend-open:
-  - worklog, approval, chat-message and observer-trace candidates;
-  - stale passport detection after new source/evidence changes;
-  - verify/reject/archive update endpoint;
+  - stale detection beyond evidence changes, e.g. new worklog/approval/chat/observer source after generation;
+  - richer source previews for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
 Current context and confirmed gaps:
@@ -994,7 +996,7 @@ Implementation plan:
     - `#T-000513`-style ticket with no ticket-bound operation does not import unrelated device operations;
     - playbook run operations linked by context are collected;
     - uploaded artifacts are offered as candidates.
-  - 2026-05-04 backend slice complete for ticket-scoped operations, playbook-context operations and artifacts. Worklog, approval, chat-message and observer-trace candidates remain open.
+  - 2026-05-04 backend slice complete for ticket-scoped operations, playbook-context operations, artifacts, worklogs, approvals, chat messages and observer traces.
 
 - [ ] Stage 33A.3 - Missing fact engine.
   - Extend `_build_passport_requirements()` into a policy-aware fact coverage engine.
@@ -1034,7 +1036,7 @@ Implementation plan:
     - requester-safe projection must never expose internal evidence unless policy says so.
   - Events:
     - write `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`.
-  - 2026-05-04 backend slice complete for create manual evidence, candidate listing and source linking. Verify/reject/archive update endpoints remain open.
+  - 2026-05-04 backend slice complete for create manual evidence, candidate listing, source linking and verify/reject/archive status update.
 
 - [ ] Stage 33A.5 - Passport generation and stale detection.
   - `TicketPassportService.generate()` must:
@@ -1048,6 +1050,7 @@ Implementation plan:
     - refresh creates new version and previous manual edits are either carried forward or explicitly marked superseded;
     - stale flag changes after new evidence/action;
     - generated evidence section lists evidence titles/source refs, not just a count.
+  - 2026-05-04 backend slice complete for stale after evidence changes. Broader stale source coverage remains open.
 
 - [ ] Stage 33A.6 - Closure policy integration.
   - Update `server/tickets/closure_policy.py` so closure checks use the same fact coverage/evidence service as the UI.

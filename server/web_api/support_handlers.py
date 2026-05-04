@@ -92,6 +92,7 @@ from web_api.dto.support import (
     SupportTicketPassportDetailPayload,
     SupportTicketPassportEvidenceLinkRequest,
     SupportTicketPassportEvidenceRequest,
+    SupportTicketPassportEvidenceUpdateRequest,
     SupportTicketPassportGenerateRequest,
     SupportTicketPassportPatchRequest,
     SupportTicketPlaybooksPayload,
@@ -1918,6 +1919,93 @@ async def handle_web_support_ticket_passport_evidence_link(request: web.Request)
                 "status": "error",
                 "error": "Не удалось привязать доказательство",
                 "error_code": "PASSPORT_EVIDENCE_LINK_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_ticket_passport_evidence_update(request: web.Request):
+    try:
+        evidence_id = int(request.match_info.get("evidence_id") or "0")
+    except ValueError:
+        return web.json_response({"status": "error", "error": "Некорректный evidence_id"}, status=400)
+    try:
+        raw = await request.json()
+    except Exception:
+        return web.json_response({"status": "error", "error": "Некорректный JSON"}, status=400)
+    if not isinstance(raw, dict):
+        return web.json_response({"status": "error", "error": "Тело запроса должно быть объектом"}, status=400)
+    data = SupportTicketPassportEvidenceUpdateRequest.model_validate(raw)
+
+    try:
+        async with get_session() as session:
+            ticket, error, ticket_repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
+            item = await TicketEvidenceService(session).update_evidence(
+                ticket.ticket_id,
+                evidence_id,
+                verification_status=data.verification_status,
+                actor_id=auth_context.actor_id,
+                reason=data.reason,
+                visibility=data.visibility,
+                export_visibility=data.export_visibility,
+                public_summary=data.public_summary,
+                internal_summary=data.internal_summary,
+                metadata_json=data.metadata_json,
+            )
+            event_type_by_status = {
+                "accepted": "passport_evidence_verified",
+                "rejected": "passport_evidence_rejected",
+                "archived": "passport_evidence_archived",
+                "superseded": "passport_evidence_superseded",
+                "unverified": "passport_evidence_unverified",
+            }
+            event_type = event_type_by_status.get(item.verification_status, "passport_evidence_updated")
+            await ticket_repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type=event_type,
+                payload={
+                    "event_id": f"{event_type}-{item.id}",
+                    "actor_id": auth_context.actor_id,
+                    "evidence_id": item.id,
+                    "evidence_type": item.evidence_type,
+                    "source_kind": item.source_kind,
+                    "source_id": item.source_id,
+                    "required_fact": item.required_fact,
+                    "verification_status": item.verification_status,
+                    "reason": data.reason,
+                },
+                event_id=f"{event_type}-{item.id}-{uuid.uuid4().hex[:8]}",
+            )
+            await session.commit()
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Доказательство не найдено или статус некорректен",
+                "error_code": str(exc) or "EVIDENCE_UPDATE_FAILED",
+            },
+            status=404,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_evidence_update] failed: ticket_id={request.match_info.get('ticket_id')}, evidence_id={request.match_info.get('evidence_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось обновить доказательство",
+                "error_code": "PASSPORT_EVIDENCE_UPDATE_FAILED",
             },
             status=503,
         )

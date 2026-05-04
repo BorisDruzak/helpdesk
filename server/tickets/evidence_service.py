@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Artifact, Operation, PlaybookRun, Ticket, TicketApproval, TicketEvidenceItem, TicketWorklog
+from app.db.models import (
+    Artifact,
+    ObserverTrace,
+    Operation,
+    PlaybookRun,
+    Ticket,
+    TicketApproval,
+    TicketEvent,
+    TicketEvidenceItem,
+    TicketWorklog,
+)
 from app.repos.ticket_passport_repo import TicketPassportRepo
 
 
@@ -135,6 +145,147 @@ class TicketEvidenceService:
                 }
             )
 
+        worklogs = await self._load_ticket_worklogs(ticket_id)
+        for worklog in worklogs:
+            candidates.append(
+                {
+                    "candidate_id": f"worklog:{worklog.id}",
+                    "source_kind": "worklog",
+                    "source_id": str(worklog.id),
+                    "source_ref": f"worklog:{worklog.id}",
+                    "source_quality": "ticket",
+                    "evidence_type": "worklog",
+                    "required_fact": "operator_checks",
+                    "section_key": "operator_checks",
+                    "title": f"Worklog {worklog.spent_minutes} min",
+                    "summary": worklog.note or f"{worklog.spent_minutes} min by {worklog.actor_id}",
+                    "visibility": "internal",
+                    "captured_at": _iso(worklog.created_at),
+                    "metadata_json": {
+                        "actor_id": worklog.actor_id,
+                        "spent_minutes": worklog.spent_minutes,
+                    },
+                    "existing_evidence_id": self._existing_id(
+                        existing_by_source,
+                        "worklog",
+                        str(worklog.id),
+                        "operator_checks",
+                    ),
+                }
+            )
+
+        approvals = await self._load_ticket_approvals(ticket_id)
+        for approval in approvals:
+            if approval.status not in {"approved", "rejected"}:
+                continue
+            candidates.append(
+                {
+                    "candidate_id": f"approval:{approval.id}",
+                    "source_kind": "approval",
+                    "source_id": str(approval.id),
+                    "source_ref": f"approval:{approval.id}",
+                    "source_quality": "ticket",
+                    "evidence_type": "approval",
+                    "required_fact": "approvals",
+                    "section_key": "approvals",
+                    "title": f"{approval.approval_type}: {approval.status}",
+                    "summary": approval.reason or approval.status,
+                    "visibility": "internal",
+                    "captured_at": _iso(approval.decided_at or approval.requested_at),
+                    "metadata_json": {
+                        "approval_type": approval.approval_type,
+                        "approver_id": approval.approver_id,
+                        "status": approval.status,
+                        "requested_by": approval.requested_by,
+                    },
+                    "existing_evidence_id": self._existing_id(
+                        existing_by_source,
+                        "approval",
+                        str(approval.id),
+                        "approvals",
+                    ),
+                }
+            )
+
+        chat_events = await self._load_ticket_chat_events(ticket_id)
+        for event in chat_events:
+            text = _clean(event.payload.get("text") or event.payload.get("message") or event.payload.get("body"))
+            if not text:
+                continue
+            sender_role = _clean(event.payload.get("sender_role") or event.payload.get("from_role")).lower()
+            visibility = _clean(event.payload.get("visibility") or "public").lower()
+            if sender_role in {"requester", "user", "client", "device"}:
+                required_fact = "user_result"
+            elif visibility == "internal":
+                required_fact = "operator_checks"
+            else:
+                required_fact = "changes_made"
+            candidates.append(
+                {
+                    "candidate_id": f"chat_message:{event.id}",
+                    "source_kind": "chat_message",
+                    "source_id": str(event.id),
+                    "source_ref": f"event:{event.id}",
+                    "source_quality": "ticket",
+                    "evidence_type": "chat_message",
+                    "required_fact": required_fact,
+                    "section_key": required_fact,
+                    "title": f"Chat message #{event.id}",
+                    "summary": text,
+                    "visibility": "internal" if visibility == "internal" else "public",
+                    "captured_at": _iso(event.created_at),
+                    "metadata_json": {
+                        "event_type": event.event_type,
+                        "message_id": event.payload.get("message_id"),
+                        "sender_role": sender_role,
+                        "visibility": visibility,
+                    },
+                    "existing_evidence_id": self._existing_id(
+                        existing_by_source,
+                        "chat_message",
+                        str(event.id),
+                        required_fact,
+                    ),
+                }
+            )
+
+        observer_traces = await self._load_ticket_observer_traces(ticket_id)
+        for trace in observer_traces:
+            summary = _clean(trace.attrs_json.get("summary") if isinstance(trace.attrs_json, dict) else "")
+            if not summary:
+                summary = _clean(trace.attrs_json.get("signature") if isinstance(trace.attrs_json, dict) else "") or trace.status
+            candidates.append(
+                {
+                    "candidate_id": f"observer_trace:{trace.trace_id}",
+                    "source_kind": "observer_trace",
+                    "source_id": trace.trace_id,
+                    "source_ref": f"trace:{trace.trace_id}",
+                    "source_quality": "ticket",
+                    "evidence_type": "observer_trace",
+                    "required_fact": "automated_checks",
+                    "section_key": "automated_checks",
+                    "title": trace.root_kind or "observer_trace",
+                    "summary": summary,
+                    "visibility": "internal",
+                    "captured_at": _iso(trace.finished_at or trace.started_at),
+                    "metadata_json": {
+                        "root_kind": trace.root_kind,
+                        "status": trace.status,
+                        "operation_id": trace.operation_id,
+                        "duration_ms": trace.duration_ms,
+                        "span_count": trace.span_count,
+                        "error_count": trace.error_count,
+                        "attrs": trace.attrs_json or {},
+                    },
+                    "existing_evidence_id": self._existing_id(
+                        existing_by_source,
+                        "observer_trace",
+                        trace.trace_id,
+                        "automated_checks",
+                    ),
+                }
+            )
+
         return candidates
 
     async def link_source(
@@ -180,6 +331,51 @@ class TicketEvidenceService:
             created_by=actor_id,
         )
 
+    async def update_evidence(
+        self,
+        ticket_id: str,
+        evidence_id: int,
+        *,
+        verification_status: str | None,
+        actor_id: str | None,
+        reason: str | None = None,
+        visibility: str | None = None,
+        export_visibility: str | None = None,
+        public_summary: str | None = None,
+        internal_summary: str | None = None,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> TicketEvidenceItem:
+        item = await self.session.scalar(
+            select(TicketEvidenceItem)
+            .where(TicketEvidenceItem.ticket_id == ticket_id, TicketEvidenceItem.id == evidence_id)
+            .limit(1)
+        )
+        if item is None:
+            raise ValueError("evidence_not_found")
+        if verification_status:
+            normalized = verification_status.strip().lower()
+            if normalized not in {"accepted", "unverified", "rejected", "archived", "superseded"}:
+                raise ValueError("invalid_verification_status")
+            item.verification_status = normalized
+            item.verified_by = actor_id
+            item.verified_at = datetime.now(timezone.utc)
+        if visibility:
+            item.visibility = visibility if visibility in {"public", "internal"} else item.visibility
+        if export_visibility:
+            item.export_visibility = export_visibility if export_visibility in {"public", "internal", "hidden"} else item.export_visibility
+        if public_summary is not None:
+            item.public_summary = public_summary
+        if internal_summary is not None:
+            item.internal_summary = internal_summary
+        metadata = dict(item.metadata_json or {})
+        if metadata_json:
+            metadata.update(metadata_json)
+        if reason:
+            metadata["verification_reason"] = reason
+        item.metadata_json = metadata
+        await self.session.flush()
+        return item
+
     async def _load_ticket_operations(self, ticket_id: str, device_id: str | None) -> list[Operation]:
         playbook_run_ids = (
             select(PlaybookRun.id)
@@ -207,6 +403,42 @@ class TicketEvidenceService:
             select(Artifact)
             .where(Artifact.ticket_id == ticket_id)
             .order_by(Artifact.created_at.asc(), Artifact.artifact_id.asc())
+            .limit(100)
+        )
+        return list(result.scalars().all())
+
+    async def _load_ticket_worklogs(self, ticket_id: str) -> list[TicketWorklog]:
+        result = await self.session.execute(
+            select(TicketWorklog)
+            .where(TicketWorklog.ticket_id == ticket_id)
+            .order_by(TicketWorklog.created_at.asc(), TicketWorklog.id.asc())
+            .limit(100)
+        )
+        return list(result.scalars().all())
+
+    async def _load_ticket_approvals(self, ticket_id: str) -> list[TicketApproval]:
+        result = await self.session.execute(
+            select(TicketApproval)
+            .where(TicketApproval.ticket_id == ticket_id)
+            .order_by(TicketApproval.requested_at.asc(), TicketApproval.id.asc())
+            .limit(100)
+        )
+        return list(result.scalars().all())
+
+    async def _load_ticket_chat_events(self, ticket_id: str) -> list[TicketEvent]:
+        result = await self.session.execute(
+            select(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id, TicketEvent.event_type == "chat_message")
+            .order_by(TicketEvent.created_at.asc(), TicketEvent.id.asc())
+            .limit(100)
+        )
+        return list(result.scalars().all())
+
+    async def _load_ticket_observer_traces(self, ticket_id: str) -> list[ObserverTrace]:
+        result = await self.session.execute(
+            select(ObserverTrace)
+            .where(ObserverTrace.ticket_id == ticket_id)
+            .order_by(ObserverTrace.started_at.asc(), ObserverTrace.trace_id.asc())
             .limit(100)
         )
         return list(result.scalars().all())

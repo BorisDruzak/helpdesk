@@ -157,6 +157,48 @@ async def test_evidence_candidates_and_link_endpoint(test_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_update_evidence_status_endpoint(test_client, test_engine):
+    ticket_id = await _seed_visible_ticket(test_engine)
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/passport/evidence",
+        headers=_support_headers(),
+        json={
+            "evidence_type": "manual_note",
+            "source_ref": "manual:status",
+            "source_kind": "manual",
+            "source_id": "status",
+            "required_fact": "evidence",
+            "section_key": "evidence",
+            "title": "Manual evidence",
+            "summary": "Needs verification",
+            "visibility": "internal",
+            "verification_status": "accepted",
+        },
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    evidence_id = payload["data"]["evidence"][0]["id"]
+
+    update_response = await test_client.patch(
+        f"/api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}",
+        headers=_support_headers(),
+        json={
+            "verification_status": "rejected",
+            "reason": "Not enough detail",
+            "export_visibility": "hidden",
+        },
+    )
+
+    assert update_response.status == 200, await update_response.text()
+    updated_payload = await update_response.json()
+    evidence = updated_payload["data"]["evidence"][0]
+    assert evidence["verification_status"] == "rejected"
+    assert evidence["verified_by"] == "support-test"
+    assert evidence["metadata_json"]["verification_reason"] == "Not enough detail"
+    assert evidence["export_visibility"] == "hidden"
+
+
+@pytest.mark.asyncio
 async def test_requester_cannot_generate_passport(test_client, test_engine):
     ticket_id = await _seed_visible_ticket(test_engine, requester_id="user-passport")
 

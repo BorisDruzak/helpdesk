@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Artifact, Operation, Ticket, TicketEvidenceItem
+from app.db.models import Artifact, ObserverTrace, Operation, Ticket, TicketApproval, TicketEvent, TicketEvidenceItem, TicketWorklog
 from tickets.evidence_service import TicketEvidenceService
 
 
@@ -149,3 +149,139 @@ async def test_evidence_service_links_candidate_idempotently(test_engine):
         assert first.source_id == operation_id
         assert first.required_fact == "automated_checks"
         assert first.verification_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_evidence_service_collects_worklog_approval_chat_and_observer_candidates(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Need broader evidence",
+                description="Collect proof from all backend sources",
+                status="in_progress",
+                requester_id="user-evidence",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        session.add(
+            TicketWorklog(
+                ticket_id=ticket_id,
+                actor_id="op1",
+                spent_minutes=15,
+                note="Checked printer queue and restarted spooler.",
+            )
+        )
+        session.add(
+            TicketApproval(
+                ticket_id=ticket_id,
+                approval_type="manager",
+                approver_id="manager1",
+                status="approved",
+                reason="Approved remote diagnostic.",
+                requested_by="op1",
+                decided_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="chat_message",
+                payload={
+                    "message_id": "msg-support-1",
+                    "text": "Проблема устранена, сервис доступен.",
+                    "sender_role": "support",
+                    "visibility": "public",
+                },
+            )
+        )
+        session.add(
+            ObserverTrace(
+                trace_id=trace_id,
+                root_kind="playbook_run",
+                ticket_id=ticket_id,
+                device_id=device_id,
+                operation_id=None,
+                status="failed",
+                started_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                duration_ms=1200,
+                span_count=3,
+                error_count=1,
+                attrs_json={"signature": "MODULE_NOT_ON_SERVER", "summary": "Tool missing on server"},
+            )
+        )
+        await session.flush()
+
+        candidates = await TicketEvidenceService(session).collect_candidates(ticket_id)
+
+    by_kind = {item["source_kind"]: item for item in candidates}
+    assert by_kind["worklog"]["evidence_type"] == "worklog"
+    assert by_kind["worklog"]["required_fact"] == "operator_checks"
+    assert "spooler" in by_kind["worklog"]["summary"]
+    assert by_kind["approval"]["evidence_type"] == "approval"
+    assert by_kind["approval"]["required_fact"] == "approvals"
+    assert by_kind["chat_message"]["evidence_type"] == "chat_message"
+    assert by_kind["chat_message"]["required_fact"] == "changes_made"
+    assert by_kind["observer_trace"]["source_id"] == trace_id
+    assert by_kind["observer_trace"]["required_fact"] == "automated_checks"
+
+
+@pytest.mark.asyncio
+async def test_evidence_service_updates_verification_status_and_archive(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=str(uuid.uuid4()),
+                title="Need verification",
+                description="Evidence status update",
+                status="in_progress",
+                requester_id="user-evidence",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        item = TicketEvidenceItem(
+            ticket_id=ticket_id,
+            evidence_type="manual_note",
+            source_kind="manual",
+            source_id="note-1",
+            required_fact="evidence",
+            section_key="evidence",
+            source_ref="manual:note-1",
+            title="Manual note",
+            summary="Initial proof",
+            visibility="internal",
+            verification_status="accepted",
+            created_by="op1",
+        )
+        session.add(item)
+        await session.flush()
+
+        updated = await TicketEvidenceService(session).update_evidence(
+            ticket_id,
+            item.id,
+            verification_status="rejected",
+            actor_id="op2",
+            reason="Not enough detail",
+            export_visibility="hidden",
+        )
+
+        assert updated.verification_status == "rejected"
+        assert updated.verified_by == "op2"
+        assert updated.verified_at is not None
+        assert updated.export_visibility == "hidden"
+        assert updated.metadata_json["verification_reason"] == "Not enough detail"
