@@ -166,6 +166,18 @@ async def handle_tools_run(request):
                 "error": "validation_error",
                 "details": validation_errors
             }, status=400)
+
+        if auth_context.actor_role == "agent" and device_id != auth_context.actor_id:
+            logger.warning(
+                "[handle_tools_run] Agent device context mismatch: "
+                f"actor_id={auth_context.actor_id!r} target_device_id={device_id!r} "
+                f"ticket_id={ticket_id!r} tool={tool_name!r}"
+            )
+            return web.json_response({
+                "status": "error",
+                "error": "Agent token is not allowed for this device context",
+                "error_code": "DEVICE_CONTEXT_MISMATCH",
+            }, status=403)
         
         # Check ?wait=1 parameter
         wait_mode = request.query.get("wait", "0") == "1"

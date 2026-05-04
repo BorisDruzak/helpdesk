@@ -67,11 +67,58 @@ async def test_tools_run_async_returns_poll_url(test_client_no_db, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_tools_run_rejects_agent_token_for_different_device_context(monkeypatch):
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="device-owned",
+            actor_role="agent",
+            auth_type=AuthType.AGENT_TOKEN,
+            token="agent-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    bind_app_value(app, key=STATE_APP_KEY, legacy_name="state", value=object())
+    app.router.add_post("/api/tools/run", handle_tools_run)
+
+    async def _fake_get_tools_list(self, _device_id):
+        return []
+
+    async def _fake_get_tools_from_server(self, _device_id):
+        return []
+
+    async def _unexpected_run_tool(self, **_kwargs):
+        pytest.fail("agent device context mismatch reached dispatch")
+
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _unexpected_run_tool)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/tools/run",
+            json={
+                "device_id": "device-other",
+                "ticket_id": "ticket-other-device",
+                "tool_name": "screen.collect",
+                "params": {},
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 403
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "DEVICE_CONTEXT_MISMATCH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_tools_run_uses_server_registry_metadata_when_device_snapshot_is_stale(monkeypatch):
     @web.middleware
     async def auth_context_middleware(request, handler):
         request["auth_context"] = AuthContext(
-            actor_id="agent-test",
+            actor_id="device-async-2",
             actor_role="agent",
             auth_type=AuthType.AGENT_TOKEN,
             token="agent-token",

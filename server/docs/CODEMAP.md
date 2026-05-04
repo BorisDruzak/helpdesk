@@ -103,7 +103,7 @@
 | Файл | Назначение |
 |------|------------|
 | `server/tools/service.py` | Канонический вход `ToolExecutionService.run_tool` (совместим с `ToolService`): pre-start event `tool_call_started`, version-aware auto-install/auto-update module pack по preferred version, фиксация desired state перед `run_tool`; после успешного auto-install ставит follow-up `list_installed_modules` + `list_tools` для convergence inventory/toolset snapshots |
-| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService`; `/api/tools/run` по умолчанию возвращает async `202 Accepted` + `operation_id` + `poll_url`, sync path допускается только через явный `wait=1` |
+| `server/tools/handlers.py` | HTTP handlers, которые делегируют run_tool в `ToolExecutionService`; `/api/tools/run` по умолчанию возвращает async `202 Accepted` + `operation_id` + `poll_url`, sync path допускается только через явный `wait=1`; agent-token requests сверяют `device_id` с `AuthContext.actor_id` до policy/dispatch и отклоняют чужой device context через 403 `DEVICE_CONTEXT_MISMATCH` |
 | `server/app/services/operation_service.py` | Ветка consent: `approve_consent()` переводит operation `waiting_consent -> queued` и enqueue `run_tool` в `device_outbox` (исполнение после явного approve) |
 | `server/websocket/protocol.py` | Транспорт: `send_ws_command(..., wait_for_result=...)` enqueue в `device_outbox` + опционально ожидание `command_result`; caller params are copied before internal `_operation_id` handling |
 

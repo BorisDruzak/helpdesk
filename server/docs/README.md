@@ -727,7 +727,7 @@ Protocol documentation endpoint.
 ### Tools API
 
 - `GET /api/tools?device_id=...` — список инструментов с агента (`tools`) и с сервера (`tools_from_server`). Инструменты из `tools_from_server` помечаются в UI как «с установкой» (модуль установится при run_tool).
-- `POST /api/tools/run` — выполнение инструмента (тело: `device_id`, `ticket_id`, `tool_name`, опционально `params`, `preset_id`)
+- `POST /api/tools/run` — выполнение инструмента (тело: `device_id`, `ticket_id`, `tool_name`, опционально `params`, `preset_id`); при agent-token auth `device_id` обязан совпадать с `AuthContext.actor_id`, иначе 403 `DEVICE_CONTEXT_MISMATCH`.
 
 ### Modules API
 
@@ -941,4 +941,3 @@ MIT License
 - PostgreSQL как Source of Truth для истории тикетов
 - aiohttp для асинхронного WebSocket сервера
 - SQLAlchemy для работы с базой данных
-
