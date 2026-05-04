@@ -1853,8 +1853,8 @@ export function TicketDetailPage() {
         />
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px]">
-        <Card className="overflow-hidden xl:sticky xl:top-[8.5rem] xl:self-start">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+        <Card className="w-full overflow-hidden xl:sticky xl:top-[8.5rem] xl:self-start">
           <CardHeader>
             <CardTitle>Очередь</CardTitle>
             <CardDescription>
@@ -1979,7 +1979,7 @@ export function TicketDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden">
+        <Card className="w-full overflow-hidden">
           <CardContent className="flex h-[min(72vh,62rem)] min-h-[34rem] flex-col px-0 pb-0 pt-0">
             <div className="border-b border-border px-6 py-5">
               <Tabs items={tabItems} onValueChange={setActiveTab} value={activeTab} />
@@ -2337,7 +2337,7 @@ export function TicketDetailPage() {
           </CardContent>
         </Card>
 
-        <div className="space-y-4 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
+        <div className="min-w-0 space-y-4 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-10rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           {detail ? <TicketWorkVisibilityCard ticket={detail.ticket} /> : null}
 
           <Card>
