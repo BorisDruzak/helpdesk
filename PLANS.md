@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 32C support/playbook diagnostics fixes are deployed to the Linux stand and live-checked on `T-000512` and `T-000513`.
+Last updated: 2026-05-04, Stage 33A passport/evidence build-out plan added after live analysis of `T-000512` and `T-000513`.
 
-Current plan completion: 99.3%.
+Current plan completion: 99.3%; passport/evidence remains an open product-quality track before final acceptance.
 
-Current execution mode: Stage 32C live-defect fix slice is deployed and re-checked. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` is live on `AD-MAIN`. Stage 32C now blocks missing-tool/missing-param playbooks before enqueue, surfaces ticket playbook failures, keeps operations ticket-scoped, hides internal SLA/OLA pause/resume noise from requester chat, and auto-assigns support actor on taking work where allowed.
+Current execution mode: Stage 33A planning. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. The next implementation gate is not visual redesign; it is making passport/evidence usable, traceable and closure-grade.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -886,6 +886,230 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Confirm the selected playbook is disabled with explicit missing tools/params instead of only saying "Плейбук поставлен в очередь выполнения".
   - Confirm "Операции этого тикета" no longer shows unrelated device operations.
   - Confirm SLA/OLA pause/resume no longer appears in requester/agent chat.
+
+### Stage 33A: Passport / Evidence Functional Build-Out Plan (8 points)
+
+Purpose: turn the current generated passport into an operator-usable official resolution dossier. The passport must show which facts are missing, where each fact can come from, how to create/link evidence, which evidence satisfies closure/reporting policy, and which parts are safe for requester/export.
+
+Current context and confirmed gaps:
+
+- Data model exists but is thin:
+  - `server/app/db/models.py`: `TicketResolutionPassport`, `TicketEvidenceItem`, `TicketActionLog`, `TicketApproval`, `TicketRelatedObject`.
+  - `TicketEvidenceItem` currently stores only `evidence_type`, `source_ref`, `title`, `summary`, `visibility`, `created_by`, `created_at`.
+  - Missing: source kind/source id normalization, artifact/file linkage, required fact linkage, verification status, captured timestamp, public/internal summaries, hash/size/mime metadata, redaction/export flags, stale status and superseded evidence.
+- Service exists but mixes source quality:
+  - `server/tickets/passport_service.py` generates sections and `requirements.missing_facts`.
+  - `_load_operations(ticket_id, device_id)` falls back to recent device-wide operations when ticket operations are missing. Live `#T-000513` showed the result: passport had `evidenceCount=0`, `missing_facts=[]`, but `automated_checks` included device/update/no-target operations that are not clear evidence for the ticket.
+  - Playbook operations linked by `PlaybookRun.context_json.ticket_id` are not first-class passport sources yet.
+  - Existing chat attachments/artifacts are displayed in ticket files but are not first-class evidence candidates.
+- UI exists but is not operational:
+  - `webapp/src/pages/tickets/detail-page.tsx` passport tab can generate/refresh/print and shows section cards plus counts.
+  - It does not show an evidence table, source previews, attach/link actions, required-fact coverage, "create evidence for this missing fact", or why a fact is accepted/rejected.
+  - `webapp/src/pages/tickets/passport-print-page.tsx` prints sections and counts, not the evidence appendix.
+- Policy hooks exist but need a stronger contract:
+  - `server/tickets/closure_policy.py` can block on evidence, operation logs, approvals and official passport.
+  - `server/tickets/diagnostic_policy.py` can materialize diagnostic operation evidence when `attach_results.as_evidence=true`.
+  - `webapp/src/features/forms-builder/forms-builder-panel.tsx` already has closure/reporting/evidence policy controls, but the passport UI does not explain how those policies map to evidence actions.
+
+Target functional model:
+
+- Passport sections remain stable:
+  - `requester`, `problem`, `affected_object`, `automated_checks`, `operator_checks`, `changes_made`, `approvals`, `evidence`, `user_result`, `internal_result`, `repeat_guidance`.
+- Evidence becomes a typed dossier item:
+  - `diagnostic_result`: terminal operation/playbook result.
+  - `operation_log`: operation/run log or observer trace proving an action happened.
+  - `screenshot` / `video` / `file_attachment`: artifact uploaded by requester/support/agent.
+  - `chat_message`: public/internal message selected as proof.
+  - `worklog`: operator work record.
+  - `approval`: approved decision record.
+  - `observer_trace`: trace/signature/degradation evidence.
+  - `manual_note`: support-entered proof with no artifact.
+  - `resolution_summary`: public/internal resolution text.
+  - `requester_confirmation`: user's accept/reject/autoclose decision.
+- Source refs must be deterministic and clickable where possible:
+  - `operation:<operation_id>`
+  - `playbook_run:<id>`
+  - `playbook_step:<id>`
+  - `event:<ticket_event_id>`
+  - `artifact:<artifact_id>`
+  - `approval:<id>`
+  - `worklog:<id>`
+  - `trace:<trace_id>`
+  - `ticket:<field_name>`
+- Missing facts must become actionable:
+  - Each missing fact includes label, severity, required section, accepted evidence types, source candidates, recommended actions and whether it blocks closure.
+  - Example: `evidence` -> actions: link completed diagnostic result, attach screenshot/file, add manual note, run safe diagnostic playbook if available.
+  - Example: `user_result` -> action: fill requester-visible resolution summary in status transition or passport editor.
+  - Example: `operator_checks` -> action: add worklog/internal note or link tool result.
+
+Implementation plan:
+
+- [ ] Stage 33A.1 - Contract and schema decision.
+  - Files to inspect/update: `server/app/db/models.py`, migration after `068`, `server/app/repos/ticket_passport_repo.py`, `server/web_api/dto/support.py`, `webapp/src/features/queues/api.ts`.
+  - Decide whether to extend `ticket_evidence_items` in place or add `metadata_json` + indexed columns.
+  - Required minimum fields:
+    - `source_kind`, `source_id`, `required_fact`, `section_key`, `artifact_id`, `verification_status`, `verified_by`, `verified_at`, `captured_at`, `public_summary`, `internal_summary`, `metadata_json`, `export_visibility`.
+  - Add unique/idempotency rule for `(ticket_id, evidence_type, source_kind, source_id, required_fact)` where source is present.
+  - Regression tests:
+    - evidence can be inserted idempotently by source;
+    - artifact metadata is retained;
+    - old rows without new fields still serialize.
+
+- [ ] Stage 33A.2 - Evidence candidate collector.
+  - Create or split into `server/tickets/evidence_service.py` instead of expanding `passport_service.py`.
+  - Collect candidates from:
+    - ticket-scoped `Operation.ticket_id`;
+    - playbook operations through `PlaybookRun.context_json.ticket_id`;
+    - `TicketEvent` chat/tool/status/passport/closure events;
+    - uploaded artifacts/attachments from timeline payloads;
+    - `TicketWorklog`;
+    - `TicketApproval`;
+    - observer root/related traces for the ticket;
+    - ticket fields: requester, title, description, affected device/asset/service, resolution summaries, root cause.
+  - Remove passport's device-wide operation fallback. Device-wide operations may appear only as explicit candidate suggestions with `source_quality=weak`, never as accepted evidence.
+  - Regression tests:
+    - `#T-000513`-style ticket with no ticket-bound operation does not import unrelated device operations;
+    - playbook run operations linked by context are collected;
+    - uploaded artifacts are offered as candidates.
+
+- [ ] Stage 33A.3 - Missing fact engine.
+  - Extend `_build_passport_requirements()` into a policy-aware fact coverage engine.
+  - Output shape should include:
+    - `required_fact`, `section_key`, `source`, `current_value`, `requester_visible_label`, `severity`;
+    - `accepted_evidence_types`;
+    - `candidate_count`;
+    - `recommended_actions`;
+    - `blocking_for_closure`;
+    - `satisfied_by_evidence_ids`.
+  - Applicability rules:
+    - `automated_checks` blocks only if module/playbook/tool use is expected or actually happened.
+    - `approvals` blocks only if approval policy was used or an approval exists.
+    - `evidence` blocks when reporting/closure policy requires it, priority requires it, or an official passport requires evidence.
+    - `user_result` may be satisfied by the current resolve transition public summary.
+  - Regression tests:
+    - non-applicable automated/approval sections are warnings, not closure blockers;
+    - missing evidence gives actionable recommended actions;
+    - transition summaries satisfy `user_result` during resolve.
+
+- [ ] Stage 33A.4 - Evidence creation/linking API.
+  - Extend `POST /api/web/support/tickets/{ticket_id}/passport/evidence`.
+  - Add endpoints if cleaner:
+    - `GET /api/web/support/tickets/{ticket_id}/passport/evidence-candidates`;
+    - `POST /api/web/support/tickets/{ticket_id}/passport/evidence/link`;
+    - `PATCH /api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}`;
+    - optional `DELETE`/archive endpoint with audit, not hard delete.
+  - Actions must support:
+    - create manual evidence;
+    - link existing operation/playbook step/trace/message/worklog/approval/artifact;
+    - attach evidence to a required fact;
+    - mark evidence public/internal/export-hidden;
+    - verify/reject evidence with reason.
+  - RBAC:
+    - create/link/verify requires `ticket.passport.manage`;
+    - read is allowed to support/admin/auditor;
+    - requester-safe projection must never expose internal evidence unless policy says so.
+  - Events:
+    - write `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`.
+
+- [ ] Stage 33A.5 - Passport generation and stale detection.
+  - `TicketPassportService.generate()` must:
+    - materialize diagnostic/playbook evidence only from ticket-linked sources;
+    - generate sections from structured accepted evidence where available;
+    - preserve manual section edits separately from generated text;
+    - mark passport `stale=true` when source events/operations/evidence changed after generation;
+    - store source coverage in `source_payload.source_counts`.
+  - `TicketPassportRepo.update_passport_sections()` should support all editable sections or a controlled subset with clear payload names.
+  - Regression tests:
+    - refresh creates new version and previous manual edits are either carried forward or explicitly marked superseded;
+    - stale flag changes after new evidence/action;
+    - generated evidence section lists evidence titles/source refs, not just a count.
+
+- [ ] Stage 33A.6 - Closure policy integration.
+  - Update `server/tickets/closure_policy.py` so closure checks use the same fact coverage/evidence service as the UI.
+  - The support status panel must receive a precise closure checklist:
+    - missing public summary;
+    - missing internal summary;
+    - missing evidence for priority;
+    - missing operation log because module/playbook was used;
+    - missing approved approval;
+    - missing official passport or stale passport.
+  - Regression tests:
+    - closure block message includes the exact missing fact keys;
+    - accepted evidence unblocks closure;
+    - rejected/archived evidence does not unblock closure.
+
+- [ ] Stage 33A.7 - Support UI passport redesign inside current workspace.
+  - Modify `webapp/src/pages/tickets/detail-page.tsx` and focused tests.
+  - Required UI blocks:
+    - top status: `missing/draft/stale/ready/blocking`;
+    - "Чего не хватает" checklist with action buttons per fact;
+    - "Доказательства" table/cards with type, source, linked fact, status, visibility, created_by, created_at;
+    - "Кандидаты" drawer: operations, playbook runs/steps, files, messages, approvals, worklogs, observer traces;
+    - manual evidence form;
+    - section editor for user/internal result, operator checks, changes made, repeat guidance;
+    - export visibility preview;
+    - print/PDF with evidence appendix.
+  - UX rules:
+    - no raw `ticket_evidence_items` as the main user label;
+    - Russian labels must be clear and mojibake-free;
+    - no "hung" state: every loading/candidate/generate action must have success/error/empty state.
+  - Frontend tests:
+    - renders missing facts with action buttons;
+    - links candidate evidence;
+    - shows stale passport warning;
+    - print page includes evidence appendix.
+
+- [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
+  - Keep current low-code redesign deferred, but make existing policy controls honest.
+  - Files: `webapp/src/features/forms-builder/forms-builder-panel.tsx`, `server/web_api/admin_handlers.py`, `server/tickets/helpdesk_policy_runtime.py`.
+  - Ensure reporting policy can define:
+    - required sections;
+    - required evidence types per section;
+    - export hidden sections;
+    - whether official passport is required before resolve/close;
+    - knowledge draft hints;
+    - requester-visible evidence policy.
+  - Add validation so policy cannot require unsupported evidence types without warning.
+
+- [ ] Stage 33A.9 - Agent/requester evidence path.
+  - Agent-created ticket attachments already upload artifacts; plan must link those artifacts as evidence candidates.
+  - Public/requester chat attachments should also become candidates, but not accepted evidence automatically unless policy allows requester-provided evidence.
+  - Agent GUI should not need full passport management now, but ticket detail should show whether evidence is needed and which uploaded files may satisfy it.
+  - Tests: `pc_agent/tests/test_chat_panel_helpers.py` for evidence-needed copy and attachment refs.
+
+- [ ] Stage 33A.10 - Observer and audit.
+  - Update observer docs if evidence uses observer traces as proof.
+  - Add trace correlation for evidence link/verify events where possible.
+  - Evidence source provenance must be inspectable from support UI and API.
+  - Docs to update:
+    - `docs/QUICK_LOOKUP.md`;
+    - `server/docs/CODEMAP.md`;
+    - `server/docs/DIAGNOSTIC_PLAYBOOKS.md`;
+    - `server/docs/OBSERVER_LAYER.md` if observer traces become evidence sources;
+    - `scripts/navigation_catalog.py`.
+
+Verification plan:
+
+- Local tests:
+  - `python scripts\verify_workspace.py`
+  - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_web_support_api.py -q --tb=short`
+  - new `server\tests\test_ticket_evidence_service.py -q --tb=short`
+  - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/tickets/passport-print-page.test.tsx`
+  - `pnpm --dir webapp run build`
+- Live checks:
+  - Open `#T-000512`: generate passport and confirm failed playbook runs can be linked as evidence or shown as rejected/failed evidence candidates.
+  - Open `#T-000513`: confirm unrelated device-wide operations no longer appear as accepted automated checks.
+  - Create a fresh diagnostic ticket with consent and at least one attachment; confirm attachment and diagnostic result appear as evidence candidates.
+  - Try resolve before evidence: support UI and server must show exact missing facts.
+  - Link evidence and resolve: closure must pass.
+  - Print passport: evidence appendix must include source refs and visibility/export status.
+
+User attention checks for this stage:
+
+- Confirm the business wording of passport sections: whether `changes_made`, `operator_checks`, `internal_result` and `user_result` are the right names for your support process.
+- Confirm which evidence types are acceptable for official closure: screenshot, video, diagnostic result, worklog, approval, observer trace, requester confirmation.
+- Confirm which evidence can be visible to the requester and which must remain internal.
+- Confirm whether official passport should be required before `resolved`, before `closed`, or only for selected priorities/types.
 
 ### Stage 33: Cleanup, Final Evidence And Score (4 points)
 
