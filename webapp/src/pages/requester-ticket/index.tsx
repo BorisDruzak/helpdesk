@@ -116,6 +116,12 @@ export function RequesterTicketPage() {
 
   const ticket = ticketQuery.data?.ticket;
   const messages = useMemo(() => ticketQuery.data?.messages ?? [], [ticketQuery.data?.messages]);
+  const requesterStatusLabel =
+    ticket?.public_status_label?.trim() ||
+    ticket?.requester_status_label?.trim() ||
+    ticket?.status_label?.trim() ||
+    ticket?.status ||
+    "загрузка";
 
   if (!ticketId) {
     return (
@@ -188,7 +194,7 @@ export function RequesterTicketPage() {
                 <CardDescription>{ticket?.title || "Чат по заявке"}</CardDescription>
               </div>
               <Badge tone={ticket?.status === "resolved" ? "success" : "neutral"} withDot>
-                {ticket?.status ?? "загрузка"}
+                {requesterStatusLabel}
               </Badge>
             </div>
           </CardHeader>
@@ -267,7 +273,7 @@ export function RequesterTicketPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-600">
               <p>Тикет: {ticket?.ticket_code || ticketId}</p>
-              <p>Статус: {ticket?.status ?? "загрузка"}</p>
+              <p>Статус: {requesterStatusLabel}</p>
               {ticket?.status === "resolved" ? (
                 <Button
                   disabled={closeMutation.isPending}

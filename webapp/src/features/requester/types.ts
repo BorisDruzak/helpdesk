@@ -38,6 +38,11 @@ export type PublicTicket = {
   title?: string | null;
   description?: string | null;
   status?: string | null;
+  status_label?: string | null;
+  requester_status?: string | null;
+  requester_status_label?: string | null;
+  public_status?: string | null;
+  public_status_label?: string | null;
 };
 
 export type PublicTicketMessage = {
