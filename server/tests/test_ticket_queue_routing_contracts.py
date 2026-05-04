@@ -7,6 +7,8 @@ from app.db.engine import async_sessionmaker
 from app.db.models import (
     Ticket,
     TicketBusinessCalendar,
+    TicketKbLink,
+    TicketLink,
     TicketPriorityMatrix,
     TicketQueue,
     TicketQueueMember,
@@ -14,6 +16,8 @@ from app.db.models import (
     TicketRoutingRule,
     TicketSlaPolicy,
     TicketSlaTarget,
+    TicketWatcher,
+    TicketWorklog,
     UiUser,
 )
 from tests.conftest import TEST_UI_SUPPORT_TOKEN
@@ -46,6 +50,77 @@ async def _seed_queue(
 
 def _support_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}
+
+
+@pytest.mark.asyncio
+async def test_support_snapshot_serializes_ticket_relation_collections(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    related_ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(
+            session,
+            code="snapshot_relations",
+            name="Snapshot Relations",
+            members=["support-test"],
+        )
+        session.add_all([
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=str(uuid.uuid4()),
+                title="Snapshot relation ticket",
+                description="Support snapshot should serialize relation rows",
+                status="new",
+                requester_id="user-a",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=related_ticket_id,
+                device_id=str(uuid.uuid4()),
+                title="Related relation ticket",
+                description="Linked ticket",
+                status="new",
+                requester_id="user-b",
+                queue_id=queue.id,
+            ),
+            TicketWatcher(ticket_id=ticket_id, actor_id="support-test"),
+            TicketLink(
+                src_ticket_id=ticket_id,
+                dst_ticket_id=related_ticket_id,
+                link_type="related",
+                created_by="support-test",
+            ),
+            TicketKbLink(
+                ticket_id=ticket_id,
+                article_ref="KB-SNAPSHOT-REL",
+                title="Snapshot relation article",
+                source="test",
+                created_by="support-test",
+            ),
+            TicketWorklog(
+                ticket_id=ticket_id,
+                actor_id="support-test",
+                spent_minutes=15,
+                note="Snapshot relation worklog",
+            ),
+        ])
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/tickets/{ticket_id}/snapshot",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["watchers"] == [{"ticket_id": ticket_id, "actor_id": "support-test"}]
+    assert payload["links"][0]["src_ticket_id"] == ticket_id
+    assert payload["links"][0]["dst_ticket_id"] == related_ticket_id
+    assert payload["links"][0]["link_type"] == "related"
+    assert payload["kb_links"][0]["article_ref"] == "KB-SNAPSHOT-REL"
+    assert payload["worklogs"][0]["spent_minutes"] == 15
 
 
 @pytest.mark.asyncio

@@ -172,6 +172,47 @@ def _resolution_confirmation_pending(ticket: Any) -> bool:
     return bool(_resolution_confirmation_state(ticket).get("pending"))
 
 
+def _serialize_ticket_watcher(watcher: Any) -> Dict[str, Any]:
+    return {
+        "ticket_id": getattr(watcher, "ticket_id", None),
+        "actor_id": getattr(watcher, "actor_id", None),
+    }
+
+
+def _serialize_ticket_link(link: Any) -> Dict[str, Any]:
+    return {
+        "id": getattr(link, "id", None),
+        "src_ticket_id": getattr(link, "src_ticket_id", None),
+        "dst_ticket_id": getattr(link, "dst_ticket_id", None),
+        "link_type": getattr(link, "link_type", None),
+        "created_by": getattr(link, "created_by", None),
+        "created_at": serialize_datetime_recursive(getattr(link, "created_at", None)),
+    }
+
+
+def _serialize_ticket_kb_link(kb_link: Any) -> Dict[str, Any]:
+    return {
+        "id": getattr(kb_link, "id", None),
+        "ticket_id": getattr(kb_link, "ticket_id", None),
+        "article_ref": getattr(kb_link, "article_ref", None),
+        "title": getattr(kb_link, "title", None),
+        "source": getattr(kb_link, "source", None),
+        "created_by": getattr(kb_link, "created_by", None),
+        "created_at": serialize_datetime_recursive(getattr(kb_link, "created_at", None)),
+    }
+
+
+def _serialize_ticket_worklog(worklog: Any) -> Dict[str, Any]:
+    return {
+        "id": getattr(worklog, "id", None),
+        "ticket_id": getattr(worklog, "ticket_id", None),
+        "actor_id": getattr(worklog, "actor_id", None),
+        "spent_minutes": getattr(worklog, "spent_minutes", None),
+        "note": getattr(worklog, "note", None),
+        "created_at": serialize_datetime_recursive(getattr(worklog, "created_at", None)),
+    }
+
+
 def _resolution_confirmation_policy(ticket: Any) -> Dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None)
     if not isinstance(custom_fields, dict):
@@ -1323,10 +1364,10 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
                 "parent_ticket_id": parent_ticket_id,
                 "child_ticket_ids": [t.ticket_id for t in child_tickets],
             },
-            "watchers": serialize_datetime_recursive(watchers),
-            "links": serialize_datetime_recursive(links),
-            "kb_links": serialize_datetime_recursive(kb_links),
-            "worklogs": serialize_datetime_recursive(worklogs),
+            "watchers": [_serialize_ticket_watcher(watcher) for watcher in watchers],
+            "links": [_serialize_ticket_link(link) for link in links],
+            "kb_links": [_serialize_ticket_kb_link(kb_link) for kb_link in kb_links],
+            "worklogs": [_serialize_ticket_worklog(worklog) for worklog in worklogs],
             "worklog_totals": {"total_minutes": worklog_total},
             "device_summary": {
                 "device_id": ticket.device_id,
