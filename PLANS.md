@@ -893,7 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-05:
 
-- Progress: 72% of Stage 33A backend scope verified locally; UI evidence workspace remains explicitly out of this backend slice.
+- Progress: 76% of Stage 33A backend scope verified live/tested; UI evidence workspace remains explicitly out of this backend slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -909,6 +909,10 @@ Backend execution status, 2026-05-05:
   - accepted evidence can satisfy matching passport facts by `required_fact`, `section_key` or accepted `evidence_type`, while rejected/archived/superseded evidence stays excluded;
   - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure.
 - Verified on Linux stand:
+  - release `3ed5de1` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
+  - `#T-000513` passport refresh completed as version 3 with no missing facts after existing accepted evidence/summary coverage;
+  - `2973d55a-be8d-4125-8c02-38672f885a73` (`Stage 18 missing_evidence_high_priority`) returned missing facts with source candidate counts: `automated_checks` warning candidate from observer trace and `user_result` blocking candidates from chat messages;
+  - after passport generation for that Stage 18 ticket, support detail `closure_requirements` exposed `passport_missing:evidence` and `passport_missing:user_result`, including fact keys, candidate count and recommended action detail.
   - release `a8929f5` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` live candidate API returned operation, requester/support chat-message and observer-trace candidates; existing operation evidence `id=16` stayed idempotently linked;
   - live internal evidence `id=18` was created for `#T-000513`, then patched through `accepted -> rejected -> archived`; final state is `archived` with `verified_by=op1` and `verification_reason`;
@@ -921,7 +925,6 @@ Backend execution status, 2026-05-05:
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
 - Still backend-open:
   - stale detection beyond evidence changes, e.g. new worklog/approval/chat/observer source after generation;
-  - live verification for Stage 33A.3 after deploy;
   - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
