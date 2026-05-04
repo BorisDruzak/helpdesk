@@ -316,13 +316,82 @@ async def _ticket_has_approved_approval(session: Any, ticket: Any) -> bool:
     return approval_id is not None
 
 
-def _requirement(key: str, label: str, met: bool, detail: str | None = None) -> dict[str, Any]:
+def _requirement(key: str, label: str, met: bool, detail: str | None = None, **extra: Any) -> dict[str, Any]:
     return {
         "key": key,
         "label": label,
         "met": bool(met),
         "detail": detail or "",
+        **extra,
     }
+
+
+def _passport_missing_fact_requirement(item: dict[str, Any]) -> dict[str, Any]:
+    fact_key = str(item.get("required_fact") or "").strip()
+    label = str(item.get("requester_visible_label") or fact_key or "Факт паспорта")
+    recommended_actions = item.get("recommended_actions") if isinstance(item.get("recommended_actions"), list) else []
+    detail_parts = [str(action).strip() for action in recommended_actions if str(action).strip()]
+    if not detail_parts:
+        source = str(item.get("source") or "").strip()
+        detail_parts = [f"Заполните или привяжите источник: {source}."] if source else ["Заполните недостающий факт паспорта."]
+    return _requirement(
+        f"passport_missing:{fact_key}",
+        f"Паспорт: {label}",
+        False,
+        " ".join(detail_parts),
+        fact_key=fact_key,
+        severity=str(item.get("severity") or "blocking"),
+        recommended_actions=recommended_actions,
+        candidate_count=int(item.get("candidate_count") or 0),
+        source_candidates=item.get("source_candidates") if isinstance(item.get("source_candidates"), list) else [],
+    )
+
+
+async def _official_passport_missing_fact_requirements(session: Any, ticket: Any) -> list[dict[str, Any]]:
+    reporting_policy = await resolve_effective_ticket_policy(
+        session,
+        ticket,
+        "reporting",
+        snapshot_fields=("reporting_policy", "passport_policy"),
+    )
+    if not isinstance(reporting_policy, dict) or not reporting_policy.get("require_official_passport"):
+        return []
+    passport = (
+        await session.execute(
+            select(TicketResolutionPassport)
+            .where(TicketResolutionPassport.ticket_id == ticket.ticket_id)
+            .order_by(TicketResolutionPassport.version.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if passport is None:
+        return [
+            _requirement(
+                "official_passport",
+                "Официальный паспорт решения",
+                False,
+                "Соберите паспорт решения перед закрытием.",
+            )
+        ]
+    source_payload = passport.source_payload if isinstance(passport.source_payload, dict) else {}
+    requirements = source_payload.get("passport_requirements") if isinstance(source_payload, dict) else {}
+    if not isinstance(requirements, dict):
+        return [
+            _requirement(
+                "official_passport",
+                "Официальный паспорт решения",
+                False,
+                "Пересоберите паспорт решения: требования паспорта отсутствуют.",
+            )
+        ]
+    missing = await _passport_blocking_missing_facts_for_closure(
+        session,
+        ticket,
+        requirements,
+        public_summary=getattr(ticket, "requester_resolution_summary", None) or getattr(ticket, "resolution_summary", None),
+        internal_summary=getattr(ticket, "resolution_summary", None),
+    )
+    return [_passport_missing_fact_requirement(item) for item in missing]
 
 
 async def build_closure_requirements(session: Any, ticket: Any) -> list[dict[str, Any]]:
@@ -447,6 +516,7 @@ async def build_closure_requirements(session: Any, ticket: Any) -> list[dict[str
                 "Будет запрошено после перевода в Решено.",
             )
         )
+    requirements.extend(await _official_passport_missing_fact_requirements(session, ticket))
     return requirements
 
 

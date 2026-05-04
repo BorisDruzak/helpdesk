@@ -891,9 +891,9 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
 
 Purpose: turn the current generated passport into an operator-usable official resolution dossier. The passport must show which facts are missing, where each fact can come from, how to create/link evidence, which evidence satisfies closure/reporting policy, and which parts are safe for requester/export.
 
-Backend execution status, 2026-05-04:
+Backend execution status, 2026-05-05:
 
-- Progress: 62% of Stage 33A backend scope verified live/tested; UI evidence workspace remains explicitly out of this backend slice.
+- Progress: 72% of Stage 33A backend scope verified locally; UI evidence workspace remains explicitly out of this backend slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -905,6 +905,9 @@ Backend execution status, 2026-05-04:
   - evidence candidates now also include worklogs, approvals, support/requester/internal chat messages and ticket observer traces;
   - `PATCH /api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}` verifies/rejects/archives evidence with actor, reason and metadata;
   - passport payloads mark `stale=true` with `stale_reasons=["evidence_changed"]` when accepted/new evidence appears after generation.
+  - missing facts now include source candidate previews/counts from the same candidate collector used by evidence-linking;
+  - accepted evidence can satisfy matching passport facts by `required_fact`, `section_key` or accepted `evidence_type`, while rejected/archived/superseded evidence stays excluded;
+  - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure.
 - Verified on Linux stand:
   - release `a8929f5` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` live candidate API returned operation, requester/support chat-message and observer-trace candidates; existing operation evidence `id=16` stayed idempotently linked;
@@ -918,7 +921,8 @@ Backend execution status, 2026-05-04:
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
 - Still backend-open:
   - stale detection beyond evidence changes, e.g. new worklog/approval/chat/observer source after generation;
-  - richer source previews for worklog/approval/chat/observer candidates in the later UI slice;
+  - live verification for Stage 33A.3 after deploy;
+  - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
 Current context and confirmed gaps:
@@ -1022,6 +1026,7 @@ Implementation plan:
     - non-applicable automated/approval sections are warnings, not closure blockers;
     - missing evidence gives actionable recommended actions;
     - transition summaries satisfy `user_result` during resolve.
+  - 2026-05-05 backend slice complete locally: missing facts expose candidate previews/counts; accepted evidence satisfies facts by source/fact/type; support closure checklist exposes `passport_missing:<fact>` with recommended actions and source candidate metadata.
 
 - [ ] Stage 33A.4 - Evidence creation/linking API.
   - Extend `POST /api/web/support/tickets/{ticket_id}/passport/evidence`.
@@ -1071,7 +1076,7 @@ Implementation plan:
     - closure block message includes the exact missing fact keys;
     - accepted evidence unblocks closure;
     - rejected/archived evidence does not unblock closure.
-  - 2026-05-04 backend slice complete for rejected/archived/superseded evidence exclusion. Exact support-panel message wiring remains open.
+  - 2026-05-05 backend slice complete for rejected/archived/superseded evidence exclusion and support-detail `closure_requirements` passport missing fact keys. Stale-passport closure guard remains open for Stage 33A.5/33A.6 follow-up.
 
 - [ ] Stage 33A.7 - Support UI passport redesign inside current workspace.
   - Modify `webapp/src/pages/tickets/detail-page.tsx` and focused tests.

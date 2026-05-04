@@ -341,6 +341,11 @@ class SupportClosureRequirement(BaseModel):
     label: str
     met: bool
     detail: str = ""
+    fact_key: str | None = None
+    severity: str | None = None
+    recommended_actions: list[str] = Field(default_factory=list)
+    candidate_count: int = 0
+    source_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SupportTicketActions(BaseModel):

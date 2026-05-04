@@ -227,6 +227,11 @@ export type SupportTicketDetailPayload = {
       label: string;
       met: boolean;
       detail: string;
+      fact_key?: string | null;
+      severity?: string | null;
+      recommended_actions?: string[];
+      candidate_count?: number;
+      source_candidates?: Array<Record<string, unknown>>;
     }>;
     approval?: {
       waiting_status?: string | null;

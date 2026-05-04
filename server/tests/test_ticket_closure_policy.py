@@ -21,6 +21,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.ticket_auto_close_watchdog import TicketAutoCloseWatchdog
 from tickets.workflow_service import TicketWorkflowService
 from tickets.passport_service import TicketPassportService
+from tickets.closure_policy import build_closure_requirements
 
 
 def _template_context(closure_policy: dict, *, approval_policy: dict | None = None) -> dict:
@@ -69,7 +70,9 @@ async def _clear_closure_registry(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "closure_policies"))
+        await session.execute(delete(HelpdeskPolicyAudit).where(HelpdeskPolicyAudit.entity_type == "reporting_policies"))
         await session.execute(delete(ClosurePolicy))
+        await session.execute(delete(ReportingPolicy))
         await session.commit()
 
 
@@ -661,7 +664,8 @@ async def test_closure_passport_allows_non_applicable_reporting_sections(test_en
         await session.commit()
 
     missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
-    assert {"automated_checks", "approvals", "user_result"}.issubset(missing_by_key)
+    assert {"approvals", "user_result"}.issubset(missing_by_key)
+    assert "automated_checks" not in missing_by_key
 
     result = await _resolve_ticket(
         test_engine,
@@ -672,6 +676,40 @@ async def test_closure_passport_allows_non_applicable_reporting_sections(test_en
 
     assert result["applied"] is True
     assert result["event_payload"]["closure_policy"]["official_passport_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_closure_requirements_include_official_passport_missing_facts(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem", "evidence", "user_result"],
+            "require_official_passport": True,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+        },
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        requirements = await build_closure_requirements(session, ticket)
+
+    by_key = {item["key"]: item for item in requirements}
+    assert by_key["passport_missing:evidence"]["met"] is False
+    assert by_key["passport_missing:evidence"]["fact_key"] == "evidence"
+    assert by_key["passport_missing:evidence"]["recommended_actions"]
+    assert by_key["passport_missing:user_result"]["met"] is False
+    assert by_key["passport_missing:user_result"]["fact_key"] == "user_result"
 
 
 @pytest.mark.asyncio

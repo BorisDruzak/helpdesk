@@ -613,3 +613,74 @@ async def test_passport_service_reports_missing_required_facts_and_export_previe
     assert requirements["export_preview"]["hidden_sections"] == ["internal_result", "operator_checks"]
     assert requirements["knowledge_draft_hints"] == {"enabled": True, "source": "passport"}
     assert payload["passport"]["source_payload"]["passport_requirements"]["blocking_missing_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_passport_missing_facts_include_source_candidates(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    operation_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Website unavailable",
+                description="Need evidence candidates",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "website_unavailable",
+                        "ticket_type": "incident",
+                        "reporting_policy": {
+                            "required_sections": ["problem", "evidence", "user_result"],
+                            "require_official_passport": True,
+                        },
+                    },
+                },
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool",
+                tool_name="network.ping",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                result_summary="Host reachable",
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="chat_message",
+                payload={
+                    "text": "У меня сайт всё ещё не открывается.",
+                    "sender_role": "requester",
+                    "visibility": "public",
+                },
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+    missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
+    assert missing_by_key["evidence"]["candidate_count"] == 1
+    assert missing_by_key["evidence"]["source_candidates"][0]["candidate_id"] == f"operation:{operation_id}"
+    assert missing_by_key["evidence"]["source_candidates"][0]["source_kind"] == "operation"
+    assert missing_by_key["user_result"]["candidate_count"] == 1
+    assert missing_by_key["user_result"]["source_candidates"][0]["source_kind"] == "chat_message"
+    assert missing_by_key["user_result"]["source_candidates"][0]["required_fact"] == "user_result"

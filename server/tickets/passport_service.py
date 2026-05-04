@@ -23,6 +23,7 @@ from app.db.models import (
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.diagnostic_policy import materialize_diagnostic_operation_evidence
+from tickets.evidence_service import TicketEvidenceService
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.statuses import get_requester_display_name, get_requester_profile
 
@@ -147,15 +148,60 @@ def _usable_evidence(evidence: list[TicketEvidenceItem]) -> list[TicketEvidenceI
     ]
 
 
-def _evidence_candidate_count(section: str, evidence: list[TicketEvidenceItem]) -> int:
+def _evidence_matches_section(section: str, item: TicketEvidenceItem) -> bool:
     accepted = set(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
-    if not accepted:
-        return 0
-    count = 0
-    for item in evidence:
-        if item.required_fact == section or item.section_key == section or item.evidence_type in accepted:
-            count += 1
-    return count
+    return bool(
+        item.required_fact == section
+        or item.section_key == section
+        or (accepted and item.evidence_type in accepted)
+    )
+
+
+def _candidate_matches_section(section: str, candidate: dict[str, Any]) -> bool:
+    accepted = set(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
+    return bool(
+        candidate.get("required_fact") == section
+        or candidate.get("section_key") == section
+        or (accepted and candidate.get("evidence_type") in accepted)
+    )
+
+
+def _source_candidate_preview(candidates: list[dict[str, Any]], section: str) -> list[dict[str, Any]]:
+    preview: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not _candidate_matches_section(section, candidate):
+            continue
+        candidate_id = str(candidate.get("candidate_id") or f"{candidate.get('source_kind')}:{candidate.get('source_id')}")
+        if candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        preview.append(
+            {
+                "candidate_id": candidate_id,
+                "source_kind": candidate.get("source_kind"),
+                "source_id": candidate.get("source_id"),
+                "source_ref": candidate.get("source_ref"),
+                "source_quality": candidate.get("source_quality"),
+                "evidence_type": candidate.get("evidence_type"),
+                "required_fact": candidate.get("required_fact"),
+                "section_key": candidate.get("section_key"),
+                "title": candidate.get("title"),
+                "summary": candidate.get("summary"),
+                "existing_evidence_id": candidate.get("existing_evidence_id"),
+            }
+        )
+        if len(preview) >= 8:
+            break
+    return preview
+
+
+def _satisfied_evidence_ids(section: str, evidence: list[TicketEvidenceItem]) -> list[int]:
+    ids: list[int] = []
+    for item in _usable_evidence(evidence):
+        if item.id is not None and _evidence_matches_section(section, item):
+            ids.append(item.id)
+    return ids
 
 
 def _is_blocking_required_fact(section: str, reporting_policy: dict[str, Any]) -> bool:
@@ -213,6 +259,10 @@ def _section_has_required_fact(
     operations: list[Operation],
     worklogs: list[TicketWorklog],
 ) -> tuple[bool, str | None]:
+    evidence_ids = _satisfied_evidence_ids(section, evidence)
+    if evidence_ids:
+        titles = [item.title for item in _usable_evidence(evidence) if item.id in set(evidence_ids) and item.title]
+        return True, _join_lines(titles, fallback=f"evidence:{evidence_ids[0]}")
     if section == "requester":
         value = get_requester_display_name(ticket) or getattr(ticket, "requester_id", None)
         return bool(_clean(value)), _clean(value) or None
@@ -236,7 +286,7 @@ def _section_has_required_fact(
         return bool(approvals), value if approvals and value else None
     if section == "evidence":
         value = _clean(sections.get(section))
-        has_evidence = bool(_usable_evidence(evidence)) or bool(_clean(getattr(ticket, "evidence_ref", None)))
+        has_evidence = bool(_clean(getattr(ticket, "evidence_ref", None)))
         return has_evidence, value if has_evidence and value else None
     if section == "user_result":
         value = _clean(getattr(ticket, "requester_resolution_summary", None))
@@ -264,9 +314,11 @@ def _build_passport_requirements(
     approvals: list[TicketApproval],
     operations: list[Operation],
     worklogs: list[TicketWorklog],
+    source_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     required_sections = _string_list(reporting_policy.get("required_sections")) if isinstance(reporting_policy, dict) else []
     missing_facts: list[dict[str, Any]] = []
+    candidates = source_candidates or []
     for section in required_sections:
         if section not in SECTION_KEYS:
             continue
@@ -282,6 +334,7 @@ def _build_passport_requirements(
         if met:
             continue
         blocking_for_closure = _is_blocking_required_fact(section, reporting_policy)
+        candidate_preview = _source_candidate_preview(candidates, section)
         missing_facts.append(
             {
                 "required_fact": section,
@@ -291,11 +344,11 @@ def _build_passport_requirements(
                 "requester_visible_label": PASSPORT_REQUIREMENT_LABELS.get(section, section),
                 "severity": "blocking" if blocking_for_closure else "warning",
                 "accepted_evidence_types": PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []),
-                "candidate_count": _evidence_candidate_count(section, evidence),
+                "candidate_count": len(candidate_preview),
                 "recommended_actions": PASSPORT_RECOMMENDED_ACTIONS.get(section, []),
                 "blocking_for_closure": blocking_for_closure,
-                "satisfied_by_evidence_ids": [],
-                "source_candidates": [],
+                "satisfied_by_evidence_ids": _satisfied_evidence_ids(section, evidence),
+                "source_candidates": candidate_preview,
             }
         )
     return {
@@ -360,6 +413,7 @@ class TicketPassportService:
             created_by=actor_id,
         )
         evidence = await self.repo.list_evidence(ticket_id)
+        source_candidates = await TicketEvidenceService(self.session).collect_candidates(ticket_id)
         approvals = await self.repo.list_approvals(ticket_id)
         related_objects = self._related_objects_from_ticket(ticket)
 
@@ -380,6 +434,7 @@ class TicketPassportService:
             approvals=approvals,
             operations=operations,
             worklogs=worklogs,
+            source_candidates=source_candidates,
         )
         sections = _apply_reporting_policy_to_sections(raw_sections, reporting_policy)
         source_payload = {
@@ -595,6 +650,7 @@ class TicketPassportService:
             if isinstance(source_payload, dict):
                 requirements = source_payload.get("passport_requirements") or {}
         elif ticket is not None:
+            source_candidates = await TicketEvidenceService(self.session).collect_candidates(ticket_id)
             requirements = _build_passport_requirements(
                 ticket=ticket,
                 sections={},
@@ -603,6 +659,7 @@ class TicketPassportService:
                 approvals=approvals,
                 operations=[],
                 worklogs=[],
+                source_candidates=source_candidates,
             )
         passport_stale = False
         passport_stale_reasons: list[str] = []
