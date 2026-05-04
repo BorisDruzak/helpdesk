@@ -3472,13 +3472,13 @@ function TemplateConstructorPanel({
           </div>
           <Badge tone="neutral">{TEMPLATE_WIZARD_SCREENS.length} экранов</Badge>
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
           {TEMPLATE_WIZARD_SCREENS.map((screen, index) => {
             const isActive = activeStep === screen.stepKey;
             return (
               <button
                 className={cn(
-                  "rounded-[0.8rem] border px-3 py-2 text-left transition-colors",
+                  "min-w-0 rounded-[0.8rem] border px-3 py-2 text-left transition-colors",
                   isActive
                     ? "border-brand-300 bg-white text-brand-900"
                     : "border-border bg-white text-slate-700 hover:border-brand-200"
@@ -3487,10 +3487,10 @@ function TemplateConstructorPanel({
                 onClick={() => onStepChange(screen.stepKey)}
                 type="button"
               >
-                <p className="text-xs font-semibold text-slate-950">
+                <p className="break-words text-xs font-semibold text-slate-950">
                   {index + 1}. {screen.title}
                 </p>
-                <p className="mt-1 text-[11px] leading-4 text-slate-500">{screen.description}</p>
+                <p className="mt-1 break-words text-[11px] leading-4 text-slate-500">{screen.description}</p>
               </button>
             );
           })}
@@ -4624,8 +4624,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                   />
                 </label>
 
-                <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-                  <div className="space-y-4">
+                <div className="grid min-w-0 gap-6 2xl:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="min-w-0 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">Формы каталога</p>
@@ -4688,7 +4688,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                     </div>
                   </div>
 
-                  <div className="space-y-5">
+                  <div className="min-w-0 space-y-5">
                     {selectedForm ? (
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4819,7 +4819,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                             </div>
                             <Badge tone="info">{selectedForm.ticket_type}</Badge>
                           </div>
-                          <div className="mt-4 grid gap-4 md:grid-cols-3">
+                          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
                               <span>Тип процесса</span>
                               <Select
@@ -4871,7 +4871,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               </label>
                             ))}
                           </div>
-                          <div className="mt-4 grid gap-4 md:grid-cols-3">
+                          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
                             <label className="space-y-2 text-sm font-medium text-slate-800">
                               <span>Поле влияния</span>
                               <input
@@ -5021,7 +5021,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                           </div>
                           <div className="mt-4 rounded-[0.9rem] border border-border bg-white px-3 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Цепочка запуска</p>
-                            <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
+                            <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2 text-sm text-slate-700">
                               <div className="rounded-[0.8rem] bg-surface-subtle px-3 py-3">
                                 <p className="font-semibold text-slate-950">Форма</p>
                                 <p className="mt-1 text-xs text-slate-500">{selectedForm.title || selectedForm.key}</p>
@@ -5129,8 +5129,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                             </div>
                           </div>
 
-                          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-                            <div className="max-h-[calc(100vh-32rem)] space-y-3 overflow-y-auto pr-1">
+                          <div className="grid min-w-0 gap-4 2xl:grid-cols-[260px_minmax(0,1fr)]">
+                            <div className="min-w-0 max-h-[calc(100vh-32rem)] space-y-3 overflow-y-auto pr-1">
                               {selectedForm.fields.map((field) => (
                                 <button
                                   key={field.key}
@@ -5157,7 +5157,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                               ))}
                             </div>
 
-                            <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
+                            <div className="min-w-0 rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
                               {selectedField ? (
                                 <div className="space-y-4">
                                   <div className="flex items-center justify-between gap-3">
@@ -5186,7 +5186,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                     </Button>
                                   </div>
 
-                                  <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
                                     <label className="space-y-2 text-sm font-medium text-slate-800">
                                       <span>Название поля</span>
                                       <input
@@ -5268,7 +5268,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                       </Select>
                                     </label>
 
-                                    <label className="flex h-11 items-center gap-3 rounded-pill border border-border bg-white px-4">
+                                    <label className="flex min-h-11 items-center gap-3 rounded-[0.9rem] border border-border bg-white px-4 py-2">
                                       <input
                                         checked={selectedField.required}
                                         onChange={(event) => {
@@ -5300,12 +5300,12 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                         Роли определяют, участвует ли поле в приоритете, маршрутизации, сроках ответа, согласовании, диагностике или закрытии.
                                       </p>
                                     </div>
-                                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
                                       {FIELD_ROLE_OPTIONS.map((role) => {
                                         const roles = getFieldRoles(selectedForm, selectedField.key);
                                         return (
                                           <label
-                                            className="flex items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
+                                            className="flex min-w-0 items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
                                             key={role.value}
                                           >
                                             <input
@@ -5322,7 +5322,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                               }}
                                               type="checkbox"
                                             />
-                                            <span>{role.label}</span>
+                                            <span className="min-w-0 break-words">{role.label}</span>
                                           </label>
                                         );
                                       })}
@@ -5408,7 +5408,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                       <div className="space-y-2">
                                         {selectedField.options.map((option, optionIndex) => (
                                           <div
-                                            className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                                            className="grid gap-2 rounded-[0.9rem] bg-surface-subtle px-3 py-3 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                                             key={`${option.value}-${optionIndex}`}
                                           >
                                             <label className="space-y-1 text-xs font-semibold text-slate-500">
@@ -5485,7 +5485,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                         Ограничьте поле ответом в другом поле формы. Пустое условие значит, что поле показывается всегда.
                                       </p>
                                     </div>
-                                    <div className="grid gap-4 md:grid-cols-3">
+                                    <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
                                       <label className="space-y-2 text-sm font-medium text-slate-800">
                                         <span>Зависит от поля</span>
                                         <Select
@@ -5630,11 +5630,11 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                       ) : null}
                                     </div>
                                     {visibilityMode === "values" ? (
-                                      <div className="grid gap-2 sm:grid-cols-2">
+                                      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
                                         {dependencyValueOptions.length ? (
                                           dependencyValueOptions.map((option) => (
                                             <label
-                                              className="flex items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
+                                              className="flex min-w-0 items-center gap-3 rounded-[0.9rem] bg-surface-subtle px-3 py-2 text-sm"
                                               key={option.value}
                                             >
                                               <input
