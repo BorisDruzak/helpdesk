@@ -1640,6 +1640,7 @@ export function TicketDetailPage() {
         ...(detail.ticket.resolution_summary ? [detail.ticket.resolution_summary] : []),
       ].filter(Boolean)
     : [];
+  const latestTimelineEntry = detail?.timeline.length ? detail.timeline[detail.timeline.length - 1] : null;
   const operationalRows = detail
     ? [
         {
@@ -2320,7 +2321,7 @@ export function TicketDetailPage() {
 
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm text-slate-500">
-                      Последнее событие: {formatDateTime(detail?.timeline[0]?.ts)}
+                      Последнее событие: {formatDateTime(latestTimelineEntry?.ts)}
                     </p>
                     <Button
                       disabled={!messageAccess.allowed || !messageDraft.trim() || sendMessageMutation.isPending}

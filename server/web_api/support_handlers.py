@@ -1081,14 +1081,9 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=80)
     timeline = [
         _build_timeline_entry(event, ticket=ticket)
-        for event in reversed(
-            [
-                item
-                for item in events
-                if getattr(item, "event_type", None)
-                in {"chat_message", "tool_call_started", "tool_call_result", "playbook_started"}
-            ]
-        )
+        for event in events
+        if getattr(event, "event_type", None)
+        in {"chat_message", "tool_call_started", "tool_call_result", "playbook_started"}
     ]
 
     queue_name = None

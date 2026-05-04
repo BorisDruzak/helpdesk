@@ -1,122 +1,149 @@
 # Service Desk Live Acceptance Test Plan
 
-> For agentic workers: use `superpowers:executing-plans` for each slice and keep this file current after every verified checkpoint. This is the active long-horizon plan for live testing the full configurable service desk model in `pc_client`.
+> For agentic workers: use `superpowers:executing-plans` for each stage and keep this file current after every verified checkpoint. This is the active long-horizon plan for live testing the full configurable service desk model in `pc_client`.
 
 ## Status
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-03, initial live acceptance plan.
+Last updated: 2026-05-04, Stage 32 local bugfix implementation completed for requester confirmation, diagnostic consent guard, support timeline ordering and agent resolved prompt layout; remote deploy/live re-check and new compiled agent rollout are next.
 
-Current plan completion: 0.0%.
+Current plan completion: 97.2%.
 
-This plan replaces the completed service-desk hardening plan. The previous implementation and hardening work is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation and final confidence scoring across the whole ticket system.
+Current execution mode: Stage 32 bugfix gate, deploy/live-recheck slice. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, agent runtime/GUI live acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 fixes are implemented locally and must now be deployed, rebuilt for the agent, and live rechecked before cleanup/final score.
+
+This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
 ## Goal
 
-Verify in live conditions that the full service desk model works end to end on real tickets and real settings: request templates, dynamic forms, workflow, priority, SLA, OLA, routing, approvals, diagnostics, notifications, visibility, smart views, closure rules, passport/reporting, agent GUI create flow, observer traces and RBAC.
+Verify in live conditions that the full configurable service desk model works end to end on real tickets and real settings: request templates, dynamic forms, workflow, priority, SLA, OLA, routing, approvals, diagnostics, notifications, visibility, smart views, closure rules, passport/reporting, agent GUI create flow, observer traces and RBAC.
 
-## Success Criteria
+## Acceptance Strategy
 
-The live test campaign is complete only when all of these are true:
+- Live evidence is the primary acceptance source.
+- Autotests are used for baseline readiness, regression isolation after a found bug, and verification of code fixes.
+- A stage is not marked complete until its evidence is recorded and any limits are explicitly listed.
+- If a test requires user attention or cannot be made reliable through automation, it must be recorded in `User Attention Checks` with exact steps and expected result.
+- The observer layer is part of the acceptance surface. Missing trace roots, missing operation spans, missing agent action correlation, or silent dangerous-flow gaps are defects.
+- If observer behavior itself is defective, modify observer code or docs as needed, then verify the same live scenario again.
+- Every defect fix follows: capture live evidence, add or update focused regression test where realistic, fix smallest ownership zone, run focused tests, redeploy if needed, repeat the live scenario.
 
-- A disposable but realistic set of request templates and policies is created on the remote stand.
-- Tickets are created through server UI/API and agent GUI paths.
-- Each ticket keeps the expected template, schema and policy snapshot.
-- Workflow transitions enforce required fields, comments, evidence and role gates.
-- Priority, routing, SLA and OLA decisions are visible, deterministic and auditable.
-- SLA/OLA timers, warning/risk/breach views and pause/resume/stop behavior are verified on live tickets.
-- Approvals work through approve, reject and timeout/escalation-visible paths.
-- Diagnostics run as operations separate from ticket status and attach results to timeline/passport/observer.
-- Closure policy blocks incomplete important tickets and allows closure when required facts are present.
-- Requester-visible projections hide internal fields, OLA internals, raw diagnostics and internal notes.
-- Notification recipient/action previews and audit records match the configured policies.
-- Smart views show the right slices and do not behave like ownership queues.
-- Agent GUI can create a ticket from current published templates and display a requester-safe result.
-- Observer layer shows trace roots, spans and operation lifecycle without trace-visible gaps.
-- Browser checks on `http://192.168.100.17:8666/admin` and relevant `/app/*` routes show no active-tab console errors.
-- Generated artifacts are stored under ignored `artifacts/*` folders and not committed.
-- Remote server is stopped at the end unless the user explicitly asks to leave it running.
+## Progress Accounting
 
-## Scope
+Progress is tracked by weighted stage points. Update `Current plan completion` after every verified stage.
 
-### In Scope
+- Total: 100 points.
+- Stages 0-7: readiness and fixture setup, 18 points.
+- Stages 8-22: live process behavior, 48 points.
+- Stages 23-29: cross-cutting acceptance, 20 points.
+- Stages 30-33: final browser signoff, cleanup and scoring, 14 points.
 
-- Remote live stand:
-  - `http://192.168.100.17:8666/admin`
-  - `/app/admin/forms`
-  - `/app/settings`
-  - `/app/tickets`
-  - `/app/tickets/:ticketId`
-  - `/app/admin/observer`
-  - `/help` if requester portal behavior is involved
+A stage can be:
 
-- Server domains:
-  - `server/tickets/*`
-  - `server/web_api/settings_handlers.py`
-  - `server/web_api/support_handlers.py`
-  - `server/web_api/admin_handlers.py`
-  - `server/observer/*`
-  - `server/tools/*`
-  - `server/app/repos/*`
+- `[ ]` not started
+- `[~]` in progress or partially blocked
+- `[x]` complete with evidence
+- `[!]` failed, defect captured and not yet rechecked
+- `[U]` requires user attention before final confidence
 
-- Agent domains:
-  - `pc_agent/ui_gui/*`
-  - `pc_agent/ui_bridge/*`
-  - `pc_agent/ws_agent.py`
-  - `pc_agent/core/orchestrator.py`
-  - `pc_agent/core/action_trace.py`
-
-- Webapp:
-  - `webapp/src/pages/settings/index.tsx`
-  - `webapp/src/pages/tickets/list-page.tsx`
-  - `webapp/src/pages/tickets/detail-page.tsx`
-  - `webapp/src/features/forms-builder/*`
-  - relevant typed API clients under `webapp/src/features/*`
-
-- Scripts and artifacts:
-  - `scripts/verify_workspace.py`
-  - `scripts/bootstrap_web_toolchain.py`
-  - `scripts/release_server_to_remote.py`
-  - `scripts/manage_remote_stack.py`
-  - `scripts/run_observer_canary_suite.py`
-  - `scripts/helpdesk_data_cleanup.py`
-  - `artifacts/live_checks/`
-  - `artifacts/browser_checks/`
-  - `artifacts/observer_canaries/`
-  - `artifacts/diagnostics/`
-
-### Out Of Scope
-
-- New product features unless a live test exposes a blocking defect.
-- Manual DB edits outside project scripts or controlled API calls.
-- Permanent production-like seed data.
-- Changing historical tickets except through an explicit cleanup slice.
-- Publishing generated artifacts to Git.
-
-## Constraints
+## Source Of Truth And Constraints
 
 - Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
 - Do not edit `\\192.168.100.17\NTFS_Share\pc_client` directly.
 - Use remote Linux copy `/var/chat_bot/pc_client` only as deploy/live stand.
 - Use project scripts for deploy and lifecycle.
-- Use Browser Canon: browser checks only against `http://192.168.100.17:8666/admin` and linked `/app/*` routes.
+- Browser checks use only `http://192.168.100.17:8666/admin` and linked `/app/*` routes.
 - For webapp commands, first run `python scripts/bootstrap_web_toolchain.py`.
-- Do not expose raw tokens or secrets in artifacts.
-- Prefix all disposable live entities with `codex-live-acceptance-20260503`.
-- Every created ticket/template/policy must be listed in the live evidence summary for cleanup.
-- Do not commit generated artifacts.
-- If defects are found, isolate them with focused tests before code changes where realistic.
+- Do not expose raw tokens or secrets in logs, screenshots or artifacts.
+- Prefix disposable live entities with `codex-live-acceptance-20260503`.
+- Every created ticket/template/policy/smart view must be listed in the final evidence summary for cleanup.
+- Generated artifacts stay under ignored `artifacts/*` folders and are not committed.
+- Remote server is stopped at the end unless the user explicitly asks to leave it running.
 
-## Decisions
+## Canonical Documents
 
-- The campaign tests the whole system as a process engine, not individual isolated widgets.
-- Disposable live settings are preferred over mutating existing operator templates.
-- Every live ticket must be tied to an explicit scenario id.
-- Evidence is more important than volume. A smaller number of carefully traced tickets is better than many weak smoke checks.
-- API checks verify data contracts; browser checks verify operator/requester usability; observer checks verify traceability.
-- Agent GUI live checks are required for at least one current preferred template and one schema-backed disposable template.
-- Cleanup is a planned final slice, but test artifacts may remain until evidence is summarized.
+Read or refresh these before changing code or executing a related stage:
+
+- `AGENTS.md`
+- `docs/CODEX_WORKFLOW.md`
+- `docs/ARCHITECTURE_BOUNDARIES.md`
+- `docs/CONTEXT_INDEX.md`
+- `docs/QUICK_LOOKUP.md`
+- `docs/LOCAL_WORKFLOW.md`
+- `server/docs/CODEMAP.md`
+- `pc_agent/docs/CODEMAP.md`
+- `server/docs/TICKET_SYSTEM.md`
+- `server/docs/OBSERVER_LAYER.md`
+- `server/docs/OBSERVER_AUTHORING_RULES.md`
+- `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`
+
+## Scope
+
+### Remote Live Stand
+
+- `http://192.168.100.17:8666/admin`
+- `/app/admin/forms`
+- `/app/settings`
+- `/app/tickets`
+- `/app/tickets/:ticketId`
+- `/app/admin/observer`
+- `/app/admin/access`
+- `/app/admin/inventory`
+- `/app/admin/playbooks`
+- `/app/ticket` and `/app/ticket/:ticketId` when requester behavior is involved
+- `/help` only if the legacy requester path remains involved in the live flow
+
+### Server Domains
+
+- `server/tickets/*`
+- `server/web_api/settings_handlers.py`
+- `server/web_api/support_handlers.py`
+- `server/web_api/admin_handlers.py`
+- `server/web_api/access_handlers.py`
+- `server/observer/*`
+- `server/tools/*`
+- `server/playbooks/*`
+- `server/app/repos/*`
+- `server/websocket/*`
+
+### Agent Domains
+
+- `pc_agent/ui_gui/*`
+- `pc_agent/ui_bridge/*`
+- `pc_agent/ws_agent.py`
+- `pc_agent/ws_agent_runtime_helpers.py`
+- `pc_agent/core/orchestrator.py`
+- `pc_agent/core/action_trace.py`
+- `pc_agent/ui_gui/server_api.py`
+
+### Webapp Domains
+
+- `webapp/src/pages/settings/index.tsx`
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/pages/tickets/detail-page.tsx`
+- `webapp/src/pages/admin/*`
+- `webapp/src/features/forms-builder/*`
+- `webapp/src/features/playbooks/*`
+- `webapp/src/features/access-control/*`
+- relevant typed API clients under `webapp/src/features/*`
+
+### Scripts And Artifacts
+
+- `scripts/task_intake.py`
+- `scripts/build_context_pack.py`
+- `scripts/search_context_index.py`
+- `scripts/verify_workspace.py`
+- `scripts/docs_inventory.py`
+- `scripts/bootstrap_web_toolchain.py`
+- `scripts/release_server_to_remote.py`
+- `scripts/manage_remote_stack.py`
+- `scripts/manage_local_agent.py`
+- `scripts/run_observer_canary_suite.py`
+- `scripts/helpdesk_data_cleanup.py`
+- `artifacts/live_checks/`
+- `artifacts/browser_checks/live-acceptance/`
+- `artifacts/observer_canaries/live-acceptance/`
+- `artifacts/diagnostics/`
 
 ## Test Data Model
 
@@ -124,27 +151,27 @@ Use these scenario ids and names:
 
 - `codex-live-acceptance-incident-website`
   - Ticket type: `incident`
-  - Request template: "Live: Не открывается сайт"
+  - Request template: `Live: Не открывается сайт`
   - Diagnostics: website/DNS style playbook, consent required
   - Expected policy chain: form, workflow, priority, routing, SLA, OLA, diagnostics, closure, visibility, notification
 
 - `codex-live-acceptance-access`
   - Ticket type: `access_request`
-  - Request template: "Live: Нужен доступ к системе"
+  - Request template: `Live: Нужен доступ к системе`
   - Approval required
   - Diagnostics disabled
   - Expected policy chain: form, workflow, priority, routing, SLA, approval, closure, visibility, notification
 
 - `codex-live-acceptance-consultation`
   - Ticket type: `consultation`
-  - Request template: "Live: Консультация по рабочему месту"
+  - Request template: `Live: Консультация по рабочему месту`
   - Simple workflow
-  - No OLA escalation requirement
+  - Requester reply path required
   - Expected policy chain: form, workflow, routing, SLA, closure, visibility
 
 - `codex-live-acceptance-change`
   - Ticket type: `change_request`
-  - Request template: "Live: Изменение конфигурации"
+  - Request template: `Live: Изменение конфигурации`
   - Approval and scheduled state required
   - Expected policy chain: form, workflow, priority, routing, SLA/OLA, approval, closure, reporting
 
@@ -154,14 +181,16 @@ Minimum live ticket set:
 - `T-LIVE-02`: incident website, high impact/urgency path with P0/P1 SLA/OLA risk.
 - `T-LIVE-03`: access request, approve path.
 - `T-LIVE-04`: access request, reject path with required rejection comment.
-- `T-LIVE-05`: consultation, requester reply and waiting_user pause/resume path.
-- `T-LIVE-06`: change request, scheduled/waiting_approval path.
-- `T-LIVE-07`: invalid/negative ticket create or transition attempt for validation/RBAC evidence.
+- `T-LIVE-05`: consultation, requester reply and `waiting_user` pause/resume path.
+- `T-LIVE-06`: change request, scheduled and `waiting_approval` path.
+- `T-LIVE-07`: negative create/transition/RBAC ticket.
 - `T-LIVE-08`: agent GUI-created ticket using current published template.
+- `T-LIVE-09`: diagnostic failure or consent-denied ticket.
+- `T-LIVE-10`: requester-safe visibility/passport export ticket.
 
 ## Evidence Artifacts
 
-Write only generated evidence into ignored artifact folders:
+Write generated evidence only into ignored artifact folders:
 
 - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`
 - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`
@@ -172,543 +201,676 @@ Write only generated evidence into ignored artifact folders:
 Evidence summary must include:
 
 - branch and commit hash
+- local git status before and after
 - deploy command and result
 - remote health result
-- created templates/policies ids and versions
-- created ticket ids
+- created template/policy/smart-view ids and versions
+- created ticket ids and access codes where safe
 - scenario id per ticket
 - expected vs actual policy chain
 - SLA/OLA timer facts
 - workflow transition facts
 - approval facts
 - diagnostic operation ids and trace ids
+- observer root ids, span counts and agent action correlation
 - closure/passport facts
 - browser paths checked
 - console errors count
-- defects found, with severity and reproduction command
+- agent instance name, ui port and log safety result
+- defects found, severity and reproduction command
+- user-attention checks still open
 - cleanup status
 
-## Slice 0: Baseline, Context And Live Stand Readiness
+## User Attention Checks
 
-- [ ] Run intake and context retrieval:
-  - `python scripts/task_intake.py --task "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`
-  - `python scripts/build_context_pack.py --topic "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`
-  - `python scripts/search_context_index.py "request_template workflow_profile sla_policy ola_policy approval_policy diagnostic_policy closure_policy observer"`
-- [ ] Read canonical docs:
-  - `AGENTS.md`
-  - `docs/CODEX_WORKFLOW.md`
-  - `docs/ARCHITECTURE_BOUNDARIES.md`
-  - `docs/CONTEXT_INDEX.md`
-  - `docs/QUICK_LOOKUP.md`
-  - `server/docs/CODEMAP.md`
-  - `pc_agent/docs/CODEMAP.md`
-  - `server/docs/TICKET_SYSTEM.md`
-  - `server/docs/OBSERVER_LAYER.md`
-  - `server/docs/OBSERVER_AUTHORING_RULES.md`
-- [ ] Confirm git state is suitable:
-  - `git status --short`
-  - Expected: clean or only intentional plan changes.
-- [ ] Run local baseline:
-  - `python scripts/verify_workspace.py`
-  - `python scripts/docs_inventory.py --check-links`
-- [ ] Bootstrap web toolchain:
-  - `python scripts/bootstrap_web_toolchain.py`
-- [ ] Run focused local test baseline:
-  - `python -m pytest server\tests\test_web_settings_api.py server\tests\test_web_support_api.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_approval_policy.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short`
-  - `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short`
-  - `pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx`
-- [ ] Deploy verified state to remote:
-  - `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3`
-- [ ] Confirm remote health:
-  - `python scripts\manage_remote_stack.py status control`
-  - `python scripts\manage_remote_stack.py smoke server`
-- [ ] Open browser baseline:
-  - `/admin`
-  - `/app/admin/forms`
-  - `/app/settings`
-  - `/app/tickets`
-  - `/app/admin/observer`
-- [ ] Record baseline evidence and any existing operational noise.
+This section must be updated during execution. Do not mark final completion until each item is either completed by the user or explicitly accepted as residual risk.
 
-## Slice 1: Live Settings Fixture Creation
+- [~] Agent GUI visual flow: Stage 29 exercised the live GUI-owned automation surface for profile selection, form-pack refresh, create, attachment, add-message and post-create state; user live QA confirms multiple GUI fields still shift/overflow. Treat as current bugfix work, not residual risk.
+- [x] Tray/minimize behavior: Stage 29 verified runtime behavior and user live QA confirmed tray works.
+- [ ] External notification channels: user may need to confirm real email/Telegram/VK Teams delivery if providers are unavailable or disabled on the stand.
+- [ ] Long calendar boundary behavior: user may need to accept simulated clock/API evidence instead of waiting real business hours.
+- [!] Real requester-device consent prompt: Stage 23 verified server-side support consent gating and deny path live, but user live QA on `T-000509` saw `diagnostic autorun skipped` and no consent prompt. This is now a blocking Stage 32 defect.
+- [x] Ticket requester messages: user live QA confirms messages are visible.
+- [ ] External notifications: user explicitly deferred notification checks for now; do not block the current bugfix gate on provider delivery.
 
-- [ ] Inventory existing published request templates and policy registry through API/UI.
-- [ ] Confirm disposable ids do not already exist.
-- [ ] Create or publish `codex-live-acceptance-incident-website` request template:
-  - classification: `incident`, category `network`, subcategory `website_unavailable`
-  - form fields: URL, affected scope, started at, error text, screenshot/file, workaround available, consent
-  - workflow: incident default with waiting_user, waiting_internal, resolved, closed
-  - priority: impact/urgency matrix and manual override reason required
-  - SLA: first response and resolution targets by P0-P3
-  - OLA: queue ack and processing targets
-  - routing: L1 fallback, networks for DNS/connectivity, systems for HTTP 500, security/servers for TLS
-  - diagnostics: suggested website/DNS playbook, consent required
-  - closure: resolution code, public summary and evidence for P0/P1
-  - visibility: requester-safe status mapping, hide OLA/raw diagnostics/internal notes
-- [ ] Create or publish `codex-live-acceptance-access` request template:
-  - classification: `access_request`
-  - form fields: system, role, business reason, manager, desired date
-  - approval: service owner or manager, reject comment required
-  - diagnostics disabled
-  - closure requires approval and action log
-- [ ] Create or publish `codex-live-acceptance-consultation` request template:
-  - classification: `consultation`
-  - simpler form and workflow
-  - requester reply path required
-- [ ] Create or publish `codex-live-acceptance-change` request template:
-  - classification: `change_request`
-  - scheduled status and approval step
-  - closure/reporting requires change outcome summary
-- [ ] Validate settings reload:
-  - refresh `/app/admin/forms`
-  - refresh `/app/settings`
-  - confirm every disposable template remains active or draft according to scenario
-- [ ] Negative settings validation:
-  - invalid form field mapping fails
-  - invalid workflow transition fails
-  - invalid SLA/OLA target/calendar shape fails
-  - invalid approval approver source fails
-  - invalid routing loop or unsupported path fails
-- [ ] Record policy ids, versions, active flags and screenshots.
+## Current Bugfix Gate
 
-## Slice 2: Request Form And Ticket Creation Acceptance
+Opened: 2026-05-04 after user live QA.
 
-- [ ] Create `T-LIVE-01` through server/API using incident website template.
-- [ ] Create `T-LIVE-02` through server/API using high impact/urgency incident values.
-- [ ] Create `T-LIVE-03` through server/API using access request approve path.
-- [ ] Create `T-LIVE-04` through server/API using access request reject path.
-- [ ] Create `T-LIVE-05` through requester/server path using consultation template.
-- [ ] Create `T-LIVE-06` through server/API using change request template.
-- [ ] Verify each created ticket stores:
-  - request template id and version
-  - form schema id and version
-  - workflow profile id
-  - priority policy id
-  - routing policy id
-  - SLA policy id
-  - OLA policy id if applicable
-  - approval policy id if applicable
-  - diagnostic policy id if applicable
-  - closure policy id
-  - visibility/notification policy ids
-- [ ] Verify dynamic form behavior:
-  - hidden conditional fields are not required
-  - visible conditional fields become required
-  - file fields and picker fields preserve values
-  - process_mapping feeds impact/urgency/routing/diagnostic params
-- [ ] Verify requester-safe response:
-  - access code visible
-  - next action visible
-  - expected response/resolution due dates visible
-  - no raw SLA/OLA/internal policy ids in requester text
-- [ ] Negative create tests:
-  - missing required field rejected
-  - invalid select option rejected
-  - inactive template unavailable
-  - old `form_key` compatibility still works if applicable
-- [ ] Record ticket ids and raw API snippets in evidence.
+Do these before final cleanup, scoring, or any broad visual redesign:
 
-## Slice 3: Workflow Transition And Status Acceptance
+1. `BUG-508-REQUESTER-CLOSE`: `#T-000508` / requester confirmation UX.
+   - Symptom: requester sees resolved ticket and support instruction, but the close/confirm action is visually unclear; screenshot shows `Подтвердить` looking disabled while `Отклонить` is visible.
+   - Expected: resolved requester view has an obvious primary action, e.g. `Подтвердить и закрыть обращение`, with enabled styling and clear disabled/loading states.
+   - Scope: requester browser path (`/help` legacy and `/app/ticket` React path if both are reachable) plus agent GUI resolved-ticket prompt if the same visual pattern applies.
+   - 2026-05-04 local fix: legacy `/help` and React requester page render `confirmation_request` as primary `Подтвердить и закрыть` plus `Отклонить решение` and submit structured `confirmation_response`; agent GUI resolved prompt now uses clearer labels/min widths. Remote live re-check pending.
 
-- [ ] For `T-LIVE-01`, run happy-path incident workflow:
-  - `new -> queued`
-  - `queued -> assigned`
-  - `assigned -> in_progress`
-  - `in_progress -> waiting_user`
-  - requester reply triggers or allows `waiting_user -> in_progress`
-  - `in_progress -> resolved`
-  - requester confirmation or autoclose path to `closed`
-- [ ] Verify transition gates:
-  - `queued -> assigned` requires queue/assignee
-  - `in_progress -> waiting_user` requires public question
-  - `in_progress -> resolved` requires resolution code and public summary
-  - `resolved -> closed` follows closure policy
-- [ ] For `T-LIVE-06`, verify change workflow:
-  - scheduled state is reachable only through allowed transition
-  - waiting approval state uses approval policy
-  - rejected approval cannot move to resolved without correction
-- [ ] Verify status projection:
-  - internal status can differ from public status
-  - requester sees "Заявка в работе" style public mapping, not internal queue details
-- [ ] Verify audit/timeline:
-  - old status
-  - new status
-  - actor
-  - reason/comment
-  - required fields snapshot
-  - configured action markers
-- [ ] Negative transition tests:
-  - wrong role denied
-  - missing required comment denied
-  - missing evidence denied for priority where required
-  - invalid transition denied
-- [ ] Record transition matrix evidence.
+2. `BUG-509-DIAGNOSTIC-CONSENT`: `#T-000509` / diagnostic consent auto-run.
+   - Symptom: incident with user consent produces `diagnostic autorun skipped`; repeated run does not produce consent prompt.
+   - Expected: if policy requires requester/device consent, the requester sees a clear consent request and support sees `waiting_consent`; if the policy intentionally blocks auto-run, UI must explain the exact reason and provide the correct next action.
+   - Scope: `server/tickets/diagnostic_policy.py`, support playbook launch/consent routes, requester/agent consent prompt path, observer trace for skipped vs waiting consent.
+   - 2026-05-04 evidence/fix: `#T-000509` stored `diagnostic_consent.granted=false`, so the server correctly emitted `diagnostic_autorun_skipped(reason=consent_required)` before operation creation. Agent create dialog/wizard now blocks silent submit when a template requires requester-device diagnostic consent but the checkbox is not checked; compiled agent `3.1.28` rollout and new-ticket live re-check pending.
 
-## Slice 4: Priority, Routing And Queue Acceptance
+3. `BUG-AGENT-CHAT-ORDER`: agent GUI ticket chat order.
+   - Symptom: support chat messages are displayed in reverse chronological order.
+   - Expected: oldest messages above, newest below, scroll sticks to latest only when user is near the bottom; history prepend must not invert current messages.
+   - Scope: `pc_agent/ui_gui/chat_panel.py` timeline merge/render helpers and focused GUI helper tests.
+   - 2026-05-04 local fix: support detail API no longer reverses the already chronological event page; React support detail now treats the last timeline item as the latest event. Agent GUI timeline code was inspected and keeps append chronological; live GUI re-check still pending.
 
-- [ ] Verify `T-LIVE-01` computed priority from impact/urgency.
-- [ ] Verify `T-LIVE-02` escalates to P0/P1 according to configured high impact/urgency and modifiers.
-- [ ] Verify stored priority fields:
-  - impact
-  - urgency
-  - importance if present
-  - computed_priority
-  - manual_priority
-  - effective_priority
-  - priority_source
-  - priority_reason
-- [ ] Test manual priority override:
-  - allowed support/lead/admin role can override with reason
-  - override without reason rejected
-  - requester role cannot override
-  - audit contains previous and new priority
-- [ ] Verify initial routing:
-  - default queue applied when no rule matches
-  - incident website high impact routes to expected queue
-  - access request routes to access/service-owner queue
-- [ ] Verify rerouting by diagnostic result:
-  - DNS failure moves/suggests networks
-  - HTTP 500 moves/suggests information systems
-  - TLS error moves/suggests security/servers
-- [ ] Verify anti-loop constraints:
-  - max auto reroutes honored
-  - manually locked assignee prevents automatic reroute
-  - reroute after manual assignment requires reason or is skipped/audited
-- [ ] Verify support list and ticket detail show queue/assignee/routing reason.
-- [ ] Record queue state and routing decision facts.
+4. `BUG-AGENT-GUI-LAYOUT`: agent GUI layout overflow.
+   - Symptom: fields and controls shift/overflow in the user agent GUI.
+   - Expected: request wizard, chat/detail pane and action rows remain readable at common Windows window sizes; long Russian labels wrap without covering adjacent controls.
+   - Scope: `pc_agent/ui_gui/chat_panel.py`, theme/QSS helpers, any small widget layout helpers; avoid broad visual redesign in this bugfix gate.
+   - 2026-05-04 local fix: resolved confirmation row wraps prompt text and gives action buttons stable minimum widths; diagnostic consent label is clearer. Broader GUI overflow remains a user-attention visual check after `3.1.28` rollout.
 
-## Slice 5: SLA And OLA Timer Acceptance
+5. `BUG-SUPPORT-WORKSPACE-DISCOVERY`: support workspace lacks intuitive process visibility.
+   - Symptom: many panels exist, but the operator cannot easily see where the active process state, SLA, OLA, playbooks, consent, evidence and closure action live.
+   - Expected for current bugfix gate: do not redesign yet; only document the element inventory and preserve it for the future redesign plan.
+   - Scope: plan/design inventory only until the explicit redesign stage begins.
 
-- [ ] Verify SLA starts at ticket creation for each scenario where enabled.
-- [ ] Verify first response SLA stops at first public support reply.
-- [ ] Verify resolution SLA stops at resolved/closed.
-- [ ] Verify waiting statuses pause/resume:
-  - `waiting_user` pauses SLA/OLA where configured
-  - requester reply resumes
-  - `waiting_approval` pauses where configured
-  - approval resumes
-  - `waiting_vendor` behavior follows configured external wait flag
-- [ ] Verify calendar behavior:
-  - 5x8 calendar excludes non-working time
-  - 24x7 calendar behaves continuously if configured
-  - calendar JSON warning from previous cleanup does not reappear as a live blocker
-- [ ] Verify OLA starts on queue assignment and queue change.
-- [ ] Verify OLA ack stops on assignee set or in_progress.
-- [ ] Verify OLA processing stops on queue change, resolved, closed or handoff.
-- [ ] Verify warning and breach actions:
-  - warning timestamps are computed
-  - warning recipients are resolved
-  - breach event/audit created
-  - escalation action is outside event payload
-- [ ] Verify UI:
-  - SLA risk smart view includes near-breach ticket
-  - OLA risk smart view includes queue-risk ticket
-  - ticket detail shows internal support timer details
-  - requester view shows only safe due information
-- [ ] Record timer snapshots before and after transitions.
+## Live Fixture Manifest
 
-## Slice 6: Approval Policy Acceptance
+Locked on 2026-05-03 after Stage 6 collision check.
 
-- [ ] For `T-LIVE-03`, verify access approval creation:
-  - approver source resolved
-  - current approver visible to support
-  - requester-safe waiting approval status visible
-  - due/reminder/escalation timestamps visible
-- [ ] Approve `T-LIVE-03`:
-  - approval audit recorded
-  - transition moves to configured status
-  - notification action generated
-  - passport includes approval evidence
-- [ ] For `T-LIVE-04`, reject approval:
-  - reject without comment rejected
-  - reject with comment accepted
-  - ticket moves to configured reject transition
-  - requester-safe rejection text does not expose internal policy internals
-- [ ] Verify approval modes where available:
-  - any_one
-  - all
-  - sequential if configured
-- [ ] Verify timeout/escalation visibility:
-  - reminder event/audit visible
-  - escalation recipient/action visible
-  - no hidden silent failure for unavailable external channel
-- [ ] Verify RBAC:
-  - non-approver cannot approve
-  - support/admin visibility differs from requester visibility
-- [ ] Record approval lifecycle facts.
+Entity prefix: `codex-live-acceptance-20260503`.
 
-## Slice 7: Diagnostics, Modules And Observer Acceptance
+Form/template/policy code prefix: `codex_live_acceptance_20260503`. The web form-pack validator requires latin `snake_case` keys, so live form schemas and request templates use this underscore prefix even though the human artifact prefix remains hyphenated.
 
-- [ ] For `T-LIVE-01`, run suggested diagnostic playbook with consent.
-- [ ] Verify consent:
-  - required before requester-device/high-risk tool
-  - consent decision stored
-  - denied consent blocks auto-run or high-risk step
-- [ ] Verify operation model:
-  - ticket status remains `in_progress` or configured workflow status
-  - operation status moves through queued/running/succeeded/failed
-  - operation id is stable and visible
-- [ ] Verify observer trace:
-  - root trace exists
-  - operation spans exist
-  - module/tool entry breadcrumb exists
-  - command/result correlation exists
-  - dangerous flow, if any, is visible in observer
-- [ ] Verify diagnostic result attachment:
-  - timeline event created
-  - passport evidence created when configured
-  - raw diagnostic hidden from requester if visibility policy says so
-  - support can inspect raw/internal diagnostic facts
-- [ ] Verify reroute by diagnostic result.
-- [ ] Run observer canary suite if relevant:
-  - `python scripts\run_observer_canary_suite.py`
-- [ ] Browser check `/app/admin/observer`:
-  - runtime status ok
-  - trace visible
-  - no active-tab console errors
-- [ ] Record trace ids, operation ids and screenshots.
+Ticket types:
 
-## Slice 8: Notification, Recipient Actions And Visibility Acceptance
+- `codex-live-acceptance-20260503-incident`
+- `codex-live-acceptance-20260503-access`
+- `codex-live-acceptance-20260503-consultation`
+- `codex-live-acceptance-20260503-change`
 
-- [ ] Verify notification policy events:
-  - created
-  - assigned
-  - waiting_user
-  - requester_replied
-  - SLA warning
-  - SLA breach
-  - OLA warning/breach if configured
-  - approval created/approved/rejected
-  - diagnostic completed/failed
-  - resolved
-  - closed
-- [ ] Verify recipient resolution:
-  - requester
-  - assignee
-  - queue
-  - queue lead
-  - admin if configured
-  - watchers if configured
-  - external groups or provider channels if configured
-- [ ] Verify external delivery action model:
-  - escalation/recipient actions are represented outside event payload
-  - disabled/unavailable channels leave audit evidence
-  - per-recipient preferences remain final filter
-- [ ] Verify visibility policy:
-  - public status mapping
-  - requester cannot see internal_notes
-  - requester cannot see OLA details
-  - requester cannot see raw diagnostics
-  - requester cannot see internal queue comments
-  - support can see support-safe internal detail
-  - passport export obeys visibility rules
-- [ ] Browser check previews:
-  - settings/form builder requester/support preview
-  - ticket detail requester-safe vs support-safe fields where available
-- [ ] Record recipient/action and visibility evidence.
+Form schemas:
 
-## Slice 9: Smart Views And Support Queue Acceptance
+- `codex_live_acceptance_20260503_incident_schema`
+- `codex_live_acceptance_20260503_access_schema`
+- `codex_live_acceptance_20260503_consultation_schema`
+- `codex_live_acceptance_20260503_change_schema`
 
-- [ ] Verify built-in smart views:
-  - SLA risk
-  - OLA risk
-  - unassigned
-  - requester replied
-  - stale waiting
-  - waiting approval
-  - diagnostics failed
-  - mass incident candidates
-- [ ] Verify smart views are saved filters, not ownership queues.
-- [ ] Verify custom smart view publication:
-  - valid filter accepted
-  - invalid filter rejected with actionable message
-  - sort order applied
-  - counts match list results
-- [ ] Verify support ticket list:
-  - filter by status
-  - filter by queue
-  - filter by priority
-  - filter by due/risk
-  - search by access code/title/requester where supported
-- [ ] Verify queue counters do not include closed/canceled unless configured.
-- [ ] Browser check `/app/tickets`:
-  - switch views
-  - open ticket from smart view
-  - back navigation keeps context where expected
-  - console errors 0
-- [ ] Record list screenshots and API count facts.
+Request templates:
 
-## Slice 10: Closure, Passport And Reporting Acceptance
+- `codex_live_acceptance_20260503_incident_website` -> `Live: Не открывается сайт`
+- `codex_live_acceptance_20260503_access` -> `Live: Нужен доступ к системе`
+- `codex_live_acceptance_20260503_consultation` -> `Live: Консультация по рабочему месту`
+- `codex_live_acceptance_20260503_change` -> `Live: Изменение конфигурации`
 
-- [ ] Attempt to close `T-LIVE-02` without required P0/P1 evidence:
-  - expected: blocked
-  - missing facts report visible
-  - requester-safe label available
-  - blocking severity clear
-- [ ] Add required facts:
-  - resolution code
-  - public summary
-  - internal summary if required
-  - diagnostic evidence
-  - approval evidence if used
-  - operation log if module used
-  - worklog if required
-- [ ] Resolve and close:
-  - transition succeeds
-  - SLA/OLA stop correctly
-  - closure audit recorded
-  - passport includes solution summary and evidence
-- [ ] Verify requester confirmation:
-  - required confirmation path
-  - negative feedback reopens if configured
-  - autoclose after days represented if configured
-- [ ] Verify allowed resolution codes:
-  - valid code accepted
-  - invalid code rejected
-- [ ] Verify reporting/passport export preview:
-  - public sections visible
-  - internal-only sections hidden from requester
-  - long Russian text does not break UI
-  - attachments/evidence are represented
-- [ ] Record passport/export evidence.
+Policy codes:
 
-## Slice 11: Agent GUI Live Acceptance
+- workflow: `codex_live_acceptance_20260503_workflow_incident`, `codex_live_acceptance_20260503_workflow_approval`, `codex_live_acceptance_20260503_workflow_simple`, `codex_live_acceptance_20260503_workflow_change`
+- priority: `codex_live_acceptance_20260503_priority`
+- routing: `codex_live_acceptance_20260503_routing`
+- SLA: `codex_live_acceptance_20260503_sla`
+- OLA: `codex_live_acceptance_20260503_ola`
+- approval: `codex_live_acceptance_20260503_approval_access`, `codex_live_acceptance_20260503_approval_change`
+- diagnostic: `codex_live_acceptance_20260503_diagnostic_website`
+- closure: `codex_live_acceptance_20260503_closure`
+- visibility: `codex_live_acceptance_20260503_visibility`
+- notification: `codex_live_acceptance_20260503_notification`
+- reporting: `codex_live_acceptance_20260503_reporting`
 
-- [ ] Start or connect a live agent path according to project runtime rules.
-- [ ] Verify agent can fetch current form pack/templates.
-- [ ] Create `T-LIVE-08` from agent GUI using a current published template.
-- [ ] Create or preview a schema-backed disposable template from agent path if supported.
-- [ ] Verify GUI form behavior:
-  - required fields
-  - conditional fields
-  - picker fields
-  - file attachment path
-  - diagnostic consent wording
-  - server-preview fallback
-- [ ] Verify post-create result panel:
-  - access code
-  - next action
-  - expected due dates
-  - open ticket action
-  - add message action
-  - create another action
-  - no raw SLA/OLA/internal policy jargon
-- [ ] Verify server receives correct context:
-  - request template snapshot
-  - form schema snapshot
-  - priority/routing decision
-  - requester/device identity
-  - attachment message reference if used
-- [ ] Verify agent logs do not leak token and do not show unexpected tracebacks.
-- [ ] Record GUI screenshots or text evidence and created ticket id.
+Smart views:
 
-## Slice 12: RBAC, Security And Negative Live Acceptance
+- `codex_live_acceptance_20260503_smart_view_active`
+- `codex_live_acceptance_20260503_smart_view_risk`
 
-- [ ] Verify settings/admin permissions:
-  - non-admin cannot publish policies/templates
-  - admin can publish
-  - invalid payload rejected with safe error
-- [ ] Verify support permissions:
-  - requester cannot assign queue
-  - requester cannot override priority
-  - requester cannot view OLA/raw diagnostics/internal notes
-  - support can perform allowed workflow transitions
-  - queue lead/admin can perform configured elevated actions
-- [ ] Verify approval permissions:
-  - only approver or admin path can approve, according to policy
-  - reject comment required when configured
-- [ ] Verify diagnostics permissions:
-  - high-risk tool requires consent/role
-  - operation cannot be run against unauthorized device/ticket context
-- [ ] Verify token/log safety:
-  - no raw token in server logs
-  - no raw token in agent logs
-  - artifacts redact sensitive values
-- [ ] Verify API negative cases:
-  - unknown template
-  - inactive template
-  - stale policy version if relevant
-  - invalid workflow transition
-  - invalid queue id
-  - invalid approval actor
-- [ ] Record negative test evidence.
+Tickets:
 
-## Slice 13: Browser UX And Console Signoff
+- `T-LIVE-01` incident website normal diagnostics closure path.
+- `T-LIVE-02` incident website P0/P1 SLA/OLA risk and closure evidence block.
+- `T-LIVE-03` access approval approve path.
+- `T-LIVE-04` access approval reject path with required comment.
+- `T-LIVE-05` consultation requester reply and `waiting_user` pause/resume.
+- `T-LIVE-06` change request scheduled and `waiting_on_approval`.
+- `T-LIVE-07` negative create/transition/RBAC evidence.
+- `T-LIVE-08` agent GUI-created ticket.
+- `T-LIVE-09` diagnostic failure or consent-denied path.
+- `T-LIVE-10` requester-safe visibility/passport export path.
 
-- [ ] Browser check `/admin`.
-- [ ] Browser check `/app/admin/forms`.
-- [ ] Browser check `/app/settings`.
-- [ ] Browser check `/app/tickets`.
-- [ ] Browser check each representative ticket detail:
-  - incident
-  - access request
-  - consultation
-  - change request
-- [ ] Browser check `/app/admin/observer`.
-- [ ] Browser check requester/public path if used.
-- [ ] Verify UI quality:
-  - no overlapping text
-  - long Russian labels fit
-  - buttons and controls are understandable
-  - compact panels do not use hero-scale text
-  - no raw internal policy ids leak to requester-facing UI
-  - empty/error/loading states are coherent
-- [ ] Capture screenshots into `artifacts/browser_checks/live-acceptance/`.
-- [ ] Capture browser console and network summary.
-- [ ] Record all active-tab console errors and decide blocker/non-blocker.
+Cleanup strategy:
 
-## Slice 14: Cleanup, Evidence Review And Final Score
+- Keep created tickets as evidence until final summary is generated.
+- Deactivate disposable request templates, policies and smart views through supported API paths during Stage 33.
+- Do not delete historical evidence artifacts.
+- Do not mutate pre-existing non-prefixed live records as part of this campaign.
 
-- [ ] Generate live acceptance summary:
-  - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`
-  - `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`
-- [ ] List all created disposable templates, policies, tickets and artifacts.
-- [ ] Decide cleanup strategy:
-  - keep tickets as evidence with clear prefix
-  - deactivate disposable templates
-  - remove temporary preferred pack entries if created
-  - do not delete evidence before summary is complete
+## Stage Plan
+
+### Stage 0: Workspace And Plan Readiness (2 points)
+
+- [x] Run `.\scripts\bootstrap_shell_utf8.ps1`.
+- [x] Confirm local workspace path is `C:\Users\admin-2\CodexProjects\pc_client`.
+- [x] Run `git status --short`.
+- [x] Confirm generated artifact folders are ignored.
+- [x] Record baseline commit and dirty state.
+- Evidence: branch `codex/helpdesk-process-model`, HEAD `9cb5ea6`, dirty state only `M PLANS.md`; `.gitignore` covers `artifacts/live_checks/`, `artifacts/browser_checks/`, `artifacts/diagnostics/`, `artifacts/observer_canaries/`.
+- User attention: none.
+
+### Stage 1: Context Retrieval And Routing (2 points)
+
+- [x] Run `python scripts/task_intake.py --task "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`.
+- [x] Run `python scripts/build_context_pack.py --topic "live acceptance test full service desk tickets settings SLA OLA approvals diagnostics observer agent GUI"`.
+- [x] Run `python scripts/search_context_index.py "request_template workflow_profile sla_policy ola_policy approval_policy diagnostic_policy closure_policy observer"`.
+- [x] Read canonical docs listed above for touched domains.
+- Evidence: context index rebuilt with `python scripts/build_context_index.py --force` because `PLANS.md` made it stale; context pack matched `agent_runtime`, `web_platform`, `observer`, `tickets`, `ui_agent`; `python scripts/diff_context.py` confirmed only `PLANS.md` is changed.
+- User attention: none.
+
+### Stage 2: Local Baseline Verification (4 points)
+
+- [x] Run `python scripts/verify_workspace.py`.
+- [x] Run `python scripts/docs_inventory.py --check-links`.
+- [x] Run focused server pytest:
+  `python -m pytest server\tests\test_web_settings_api.py server\tests\test_web_support_api.py server\tests\test_ticket_workflow_profiles.py server\tests\test_ticket_approval_policy.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_visibility_policy.py server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_helpdesk_policy_registry.py -q --tb=short`
+- [x] Run focused agent pytest:
+  `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short`
+- [x] Run webapp focused tests after bootstrap:
+  `pnpm --dir webapp test src\pages\settings\index.test.tsx src\features\forms-builder\forms-builder-panel.test.tsx src\pages\tickets\detail-page.test.tsx src\pages\tickets\list-page.test.tsx`
+- Evidence: `verify_workspace.py` passed; `docs_inventory.py --check-links` passed; focused server pytest `121 passed in 543.60s`; focused agent pytest `67 passed in 0.68s`; webapp vitest first run `3 files / 45 tests passed`, then corrected missing `src\pages\tickets\list-page.test.tsx` run `1 file / 1 test passed`.
+- User attention: none.
+
+### Stage 3: Remote Deploy And Health (3 points)
+
+- [x] Run `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3`.
+- [x] Run `python scripts\manage_remote_stack.py status control`.
+- [x] Run `python scripts\manage_remote_stack.py smoke server`.
+- [x] Record remote build/commit and service status.
+- Evidence: release flow deployed commit `9cb5ea6`, built webapp bundle successfully, remote fast-forwarded branch `codex/helpdesk-process-model`, control running pid `3052501`, server running pid `3052545`, smoke `/api/health -> 200` after retry during startup and again as an explicit Stage 3 command.
+- User attention: none.
+
+### Stage 4: Browser Session And Console Baseline (2 points)
+
+- [x] Open `http://192.168.100.17:8666/admin`.
+- [x] Check `/app/admin/forms`.
+- [x] Check `/app/settings`.
+- [x] Check `/app/tickets`.
+- [x] Check `/app/admin/observer`.
+- [x] Capture active-tab console and network errors before test data creation.
+- Evidence: admin login succeeded with the documented admin dev credential from project runbooks; fresh route pass found `0` new console errors and `0` HTTP errors for `/admin`, `/app/admin/forms`, `/app/settings`, `/app/tickets`, `/app/admin/observer`; screenshots saved under `artifacts/browser_checks/live-acceptance/stage4-*.png`.
+- Defect handled: P2 live mismatch found because the login page hinted obsolete fixture credentials for admin/support. Root cause was static text in `webapp/src/features/auth/login-page.tsx`; regression added in `webapp/src/app/router.test.tsx`; `pnpm --dir webapp test src\app\router.test.tsx` passed `5 passed`; `python scripts\verify_workspace.py` passed after each fix; commits `155cf46` and `3ea676c` were deployed, and the live login page now shows the working fixture accounts.
+- User attention: none.
+
+### Stage 5: Auth, RBAC Actor Matrix And Safe Test Users (3 points)
+
+- [x] Inventory available admin/support/requester identities without exposing secrets.
+- [x] Confirm admin can publish settings.
+- [x] Confirm support can operate tickets.
+- [x] Confirm requester path can create or view requester-safe tickets.
+- [x] Confirm negative actor paths can be tested without damaging existing users.
+- Evidence: admin session login returned role `admin`, workspaces `admin/support`, `31` permissions and `200` for admin forms/settings/support queue/observer quick; live support account `op1` returned role `support`, workspace `support`, `17` permissions, `200` for support queue/settings and `403` for admin forms/observer quick; obsolete `support` login is not valid on the stand and was removed from the UI hint; requester/public surface returned `200` for `/app/help` and `/public_api/ticket_forms/current`, while protected `/api/ticket_forms/current` returned `401` without auth.
+- User attention: none.
+
+### Stage 6: Existing Data Inventory And Collision Check (2 points)
+
+- [x] Inventory existing published request templates and policy registry.
+- [x] Confirm no disposable id collision for `codex-live-acceptance-20260503`.
+- [x] Run read-only cleanup scan if needed:
+  `python scripts/helpdesk_data_cleanup.py`
+- [x] Record existing operational noise that should not be counted as new defect.
+- Evidence: admin API inventory returned `200` for `/api/web/admin/forms/current`, `/api/web/admin/helpdesk-model/policies`, `/api/web/settings`, `/api/web/support/queue`; `codex-live-acceptance-20260503` prefix occurrences were `0` in all four payloads. Local cleanup scan could not connect to Postgres from Windows (`ConnectionRefused` to local `127.0.0.1:5432`), so the same read-only script was run on remote host; remote dry-run succeeded with `73` findings, report paths `/var/chat_bot/pc_client/artifacts/diagnostics/helpdesk_data_cleanup_20260503_054510.json` and `.md`, by issue `mojibake=20`, `placeholder=33`, `sensitive_token_like=20`. These are baseline historical noise before live data creation.
+- User attention: none.
+
+### Stage 7: Fixture Design Lock (2 points)
+
+- [x] Lock exact disposable ticket types, templates, form fields, policy codes and smart view ids.
+- [x] Lock scenario-to-ticket mapping `T-LIVE-01` through `T-LIVE-10`.
+- [x] Confirm cleanup/deactivation strategy before publishing.
+- Evidence: `Live Fixture Manifest` section in this plan; Stage 6 collision check showed `0` prefix occurrences before publication.
+- User attention: none.
+
+### Stage 8: Publish Ticket Types And Form Schemas (3 points)
+
+- [x] Publish or update disposable ticket types for incident, access request, consultation and change request.
+- [x] Publish form schemas with required, conditional, picker, date/datetime, multi-select and file fields.
+- [x] Verify schema versions and field metadata.
+- [x] Verify invalid field mapping is rejected.
+- Evidence: active ticket types `codex-live-acceptance-20260503-incident`, `codex-live-acceptance-20260503-access`, `codex-live-acceptance-20260503-consultation`, `codex-live-acceptance-20260503-change` are version `1.0.1`; active form schemas are `codex_live_acceptance_20260503_access_schema` `1.0.1`, `codex_live_acceptance_20260503_consultation_schema` `1.0.1`, `codex_live_acceptance_20260503_change_schema` `1.0.1`, and `codex_live_acceptance_20260503_incident_schema` `1.0.3`. Incident schema covers `url`, `multi_select`, `department_picker`, conditional required department, `file`, diagnostic/priority/routing/closure/display process mappings and UTF-8 Russian labels. Negative invalid condition field returned `400` with `form condition references unknown field 'missing_field'`. Evidence artifacts: `artifacts/live_checks/stage8_form_schemas_20260503.json`, `artifacts/live_checks/stage8_form_schemas_incident_retry_20260503.json`, `artifacts/live_checks/stage8_incident_schema_v3_utf8_20260503.json`, `artifacts/live_checks/stage8_registry_verify_final_20260503.json`, `artifacts/live_checks/stage8_utf8_final_assert_20260503.json`.
+- Test harness note: PowerShell here-string publication corrupted Russian literals into `?` for one intermediate incident version; active version `1.0.3` was republished from a UTF-8 file and verified clean. Future live payloads with Russian text should come from UTF-8 files or use escaped JSON, not ad-hoc PowerShell here-strings.
+- User attention: none.
+
+### Stage 9: Publish Request Templates (3 points)
+
+- [x] Publish `Live: Не открывается сайт`.
+- [x] Publish `Live: Нужен доступ к системе`.
+- [x] Publish `Live: Консультация по рабочему месту`.
+- [x] Publish `Live: Изменение конфигурации`.
+- [x] Verify active/draft flags and template version reload in `/app/admin/forms`.
+- [x] Verify inactive template is unavailable for creation.
+- Evidence: live API publication succeeded for `codex_live_acceptance_20260503_incident_website` version `1.0.1` with schema `codex_live_acceptance_20260503_incident_website_form` `1.0.1`, policies `priority/routing/sla/ola/diagnostic/closure/visibility/notification/reporting`; `codex_live_acceptance_20260503_access` version `1.0.2`, schema `1.0.2`, policies `priority/routing/sla/approval/closure/visibility/notification/reporting`; `codex_live_acceptance_20260503_consultation` version `1.0.2`, schema `1.0.2`, policies `priority/routing/sla/closure/visibility/notification/reporting`; `codex_live_acceptance_20260503_change` version `1.0.2`, schema `1.0.2`, policies `priority/routing/sla/ola/approval/closure/visibility/notification/reporting`. Registry verification found exactly 4 active live templates and 3 inactive superseded live versions (`access/change/consultation` `1.0.1`), so active catalog excludes stale versions. `/app/admin/forms` loaded after publication with `0` console errors and all captured non-static network requests returned `200`; screenshot saved to `artifacts/browser_checks/live-acceptance/stage9-admin-forms.png`. Evidence artifacts: `artifacts/live_checks/stage9_request_templates_20260503.json`, `artifacts/live_checks/stage9_registry_verify_final_20260503.json`.
+- Defects handled: P2 contract bug fixed because `AdminFormsSaveFormRequest` rejected structured `sla_policy`/`reporting_policy` even though the handler and UI expected them; regression extended in `server/tests/test_helpdesk_policy_registry.py`, DTO/serializer/docs fixed in commit `03cead0`. P2 extended-field bug fixed because publish-from-form dropped `multi_select` options before form validation; regression extended and serializer/docs fixed in commit `d0c10f7`. Both commits were deployed to the Linux stand and smoke passed.
+- User attention: none.
+
+### Stage 10: Publish Workflow, Priority And Routing Policies (4 points)
+
+- [x] Publish workflow profiles with allowed transitions and required fields/comments/evidence.
+- [x] Publish priority matrix with impact/urgency and manual override reason requirement.
+- [x] Publish routing policy with default queue, first-match rules, diagnostic reroute rules and anti-loop guard.
+- [x] Verify invalid workflow transition config fails.
+- [x] Verify invalid routing loop or unsupported target fails.
+- Evidence: live workflow profiles saved for `codex-live-acceptance-20260503-incident`, `codex-live-acceptance-20260503-access`, `codex-live-acceptance-20260503-consultation`, `codex-live-acceptance-20260503-change`, including required create/resolve fields, public/internal comment gates, evidence gates, SLA pause/resume/stop action markers, approval action markers and requester-replied auto transitions. Invalid workflow transition to `definitely_not_a_status` returned `400` with `VALIDATION_ERROR`. Published `codex_live_acceptance_20260503_stage10_priority_policy` through version `1.0.4`, active matrix maps impact/urgency to P0-P3 and requires manual override reason for `admin/queue_lead`. Published `codex_live_acceptance_20260503_stage10_routing_policy` through active rollback version `1.0.6`; diff between live versions reported `config.max_auto_reroutes` change, deactivate set v2 inactive, rollback published a new active version. Evidence artifacts: `artifacts/live_checks/stage10_policy_workflow_20260503.json`, `artifacts/live_checks/stage10_registry_verify_20260503.json`.
+- Defect handled: P2 live validation gap fixed because direct routing policy publication accepted impossible targets (`default_queue_id=-999`, `then.queue_id=-999`) and negative `max_auto_reroutes`. Focused regression added in `server/tests/test_helpdesk_policy_registry.py`; repo-level routing policy validation added in `server/app/repos/helpdesk_policy_repo.py`; `python -m pytest server\tests\test_helpdesk_policy_registry.py::test_web_admin_publish_routing_policy_rejects_invalid_targets server\tests\test_helpdesk_policy_registry.py::test_web_admin_helpdesk_policy_lifecycle_endpoints -q --tb=short` passed `2 passed`; `python scripts\verify_workspace.py` passed; commit `bbfa79e` deployed to Linux and smoke passed. Re-run live invalid routing now returns `400` (`routing policy default_queue_id must be positive integer`), and the previously accepted invalid policy version was deactivated.
+- User attention: none.
+
+### Stage 11: Publish SLA, OLA And Calendar Policies (4 points)
+
+- [x] Publish SLA first-response and resolution targets for P0-P3.
+- [x] Publish OLA queue ack and processing targets.
+- [x] Configure warning and breach actions.
+- [x] Verify 5x8 and 24x7 calendar behavior through deterministic API facts where possible.
+- [x] Verify invalid target/calendar shape fails.
+- Evidence: `artifacts/live_checks/stage11_sla_ola_calendar_20260503.json`; calendar SLA policy `codex_live_acceptance_20260503_stage11_calendar_sla_policy` published as 24x7 version `1.0.5` and 5x8 version `1.0.6`; preview template `site_system` returned 24x7 first response due `2026-05-03T10:37:09.176895+00:00` and 5x8 first response due `2026-05-04T13:00:00+00:00`; 5x8 first response delta `94970` seconds and resolution delta `728570` seconds; live incident SLA `codex_live_acceptance_20260503_incident_website_sla_policy` active version `1.0.10`; live incident OLA `codex_live_acceptance_20260503_incident_website_ola_policy` active version `1.0.7`; invalid SLA now returns `400` (`sla policy targets.first_response.P1 must be duration`); invalid OLA now returns `400` (`ola policy targets.ack.P1 must be duration`).
+- Defect handled: P2 live settings validation gap found because standalone policy publish accepted malformed SLA/OLA targets and calendar shape; regression tests added in `server/tests/test_helpdesk_policy_registry.py`, validator fixed in `server/app/repos/helpdesk_policy_repo.py`, focused registry suite `22 passed`, `python scripts\verify_workspace.py` passed, commit `70fd283` deployed and live re-check passed.
+- User attention: none for this stage; long calendar boundary is covered by deterministic preview evidence rather than waiting real business hours.
+
+### Stage 12: Publish Approval, Closure, Visibility, Notification And Reporting Policies (4 points)
+
+- [x] Publish approval policies for approve, reject and timeout/escalation-visible paths.
+- [x] Publish closure policy requiring resolution facts, evidence, worklog and requester confirmation where applicable.
+- [x] Publish visibility policy hiding OLA internals, raw diagnostics and internal notes from requester.
+- [x] Publish notification policy with recipient/action previews.
+- [x] Publish reporting/passport policy with public/internal export rules.
+- [x] Verify invalid approver source and invalid visibility path fail safely.
+- Evidence: `artifacts/live_checks/stage12_governance_policies_20260503.json`; approval policies `codex_live_acceptance_20260503_access_approval_policy` and `codex_live_acceptance_20260503_change_approval_policy` active version `1.0.4`; closure, visibility, notification and reporting policies for `codex_live_acceptance_20260503_incident_website` active version `1.0.3`; invalid approval source now returns `400` (`approval policy approver_source.type is unsupported`); invalid requester visibility path now returns `400` (`visibility policy hide_from_requester[0] contains empty path`); previously accepted invalid versions were deactivated.
+- Defect handled: P2 live settings validation gap found because standalone policy publish accepted an unsupported approval source and malformed visibility paths; regression tests added in `server/tests/test_helpdesk_policy_registry.py`, validator fixed in `server/app/repos/helpdesk_policy_repo.py`, focused registry suite `24 passed`, `python scripts\verify_workspace.py` passed, commit `68b4958` deployed and live re-check passed.
+- User attention: external notification delivery is not verified in this stage because providers are unavailable/disabled; delivery itself remains in the existing User Attention Checks item for external notification channels.
+
+### Stage 13: Publish Smart Views And Queue Slices (3 points)
+
+- [x] Publish or verify built-in smart views: SLA risk, OLA risk, unassigned, requester replied, stale waiting, waiting approval, diagnostics failed, mass incident candidates.
+- [x] Publish one custom disposable smart view.
+- [x] Verify invalid custom smart view is rejected.
+- [x] Verify smart views are filters, not ownership queues.
+- Evidence: `artifacts/live_checks/stage13_smart_views_20260503.json`; required built-ins present in `filters.smart_view_options` and `summary.smart_view_counts`; custom `codex_live_acceptance_20260503_stage13_open_operational_smart_view` published as version `1.0.1`, count `275` with API `limit=300`; invalid `raw_sql` custom view rejected with HTTP 400; `scope=all` and `scope=mine` both combine with the custom smart view, proving smart views remain filters rather than ownership queues; browser verified `/app/tickets` with custom slice visible and selected, network queue calls 200, console warnings/errors 0, screenshot `artifacts/browser_checks/live-acceptance/stage13-tickets-smart-views.png`.
+- User attention: none expected.
+
+### Stage 14: Server/API Ticket Creation Matrix (4 points)
+
+- [x] Create `T-LIVE-01` through server/API using incident website template.
+- [x] Create `T-LIVE-02` through server/API using high impact/urgency incident values.
+- [x] Create `T-LIVE-03` through server/API using access request approve path.
+- [x] Create `T-LIVE-04` through server/API using access request reject path.
+- [x] Create `T-LIVE-05` through requester/server path using consultation template.
+- [x] Create `T-LIVE-06` through server/API using change request template.
+- [x] Create `T-LIVE-07` negative/invalid attempt.
+- Evidence: `artifacts/live_checks/stage14_ticket_creation_matrix_20260503.json`; created ticket ids `T-LIVE-01=838d4fe4-e116-4e11-89e0-1a2ab1179f0c`, `T-LIVE-02=650e5ee8-a73d-4138-9efc-998b0fde0b19`, `T-LIVE-03=428f44e5-dda1-45a4-9f99-387e30eaba2a`, `T-LIVE-04=c93e7ecc-146c-4444-9ead-d5a34690e9d4`, `T-LIVE-05=df6a853c-26c0-41e8-bdd2-7ca78470c45b`, `T-LIVE-06=241f3d63-e571-41e2-8f2b-e8a1cb64502d`; negative `T-LIVE-07` returned HTTP 400 `validation_error`.
+- User attention: none expected.
+
+### Stage 15: Dynamic Form Behavior And Requester-Safe Create Results (3 points)
+
+- [x] Verify hidden conditional fields are not required.
+- [x] Verify visible conditional fields become required.
+- [x] Verify file fields preserve attachment metadata.
+- [x] Verify picker fields preserve selected registry values.
+- [x] Verify `process_mapping` feeds impact, urgency, routing and diagnostic params.
+- [x] Verify requester-safe response exposes access code, next action and safe due dates.
+- [x] Verify raw SLA/OLA/internal policy ids do not appear in requester-facing text.
+- Evidence: live API harness `artifacts/live_checks/stage15_dynamic_form_requester_safe_20260503.json`; requester browser screenshot `artifacts/browser_checks/live-acceptance/stage15-requester-safe.png`; final live ticket `a3a865d7-e2af-4dbd-8661-ff46ef073397` / `T-000381`; hidden conditional accepted with ticket `fdaaa47d-0c23-4f52-ac82-d9af0e99cd33`; visible conditional missing returned 400 with `stage15_conditional_detail: Укажите детализацию`; file metadata preserved as `stage15/live-proof.txt` / `live-proof.txt`; picker value preserved as `network`; priority computed `P0`; support queue `servicedesk_l1`; routing source `request_template.routing_policy`; diagnostic playbook mapping `diagnose.website`; requester leak scan `policy_leaks: []`; browser meta shows public label, next action and first-response/resolution due dates.
+- Defects fixed during stage: legacy requester `/help` showed raw `status` instead of public requester-safe status/deadlines; fixed in commit `34863f9 server: show requester-safe ticket meta`. Full CI later exposed notification channel audit noise for event-local disabled channels; fixed in commit `0c9482a server: ignore unconfigured disabled notification channels`.
+- Verification: `node --check server/help.js`; `python scripts/verify_workspace.py`; focused pytest for static pages, visibility/workflow, Stage8 notification and notification-policy tests; full `python scripts/run_ci_suite.py` green for commit `0c9482aea3175f157048703c4feb69a8d93b6927`; `python scripts/release_server_to_remote.py --allow-local-dirty --leave-running` completed remote smoke; Stage 15 live harness re-run after deploy passed.
+- User attention: none.
+
+### Stage 16: Ticket Snapshot And Policy Chain Integrity (3 points)
+
+- [x] For each post-fix created ticket, verify stored request template id/version.
+- [x] Verify form schema id/version.
+- [x] Verify workflow, priority, routing, SLA, OLA, approval, diagnostic, closure, visibility, notification and reporting refs where applicable.
+- [x] Verify historical snapshots stay stable after active policy reload.
+- Evidence: `artifacts/live_checks/stage16_ticket_policy_chain.py`, `artifacts/live_checks/stage16_policy_chain_integrity_20260503.json`.
+- Live ticket: `bb0c2d18-6c3d-4124-968a-0cfa9478ca06` / template `codex_live_acceptance_20260503_stage16_snapshot`, request template version `1.0.1`, form schema version `1.0.1`, policy refs for approval, closure, diagnostic, notification, OLA, priority, reporting, routing, SLA and visibility.
+- Historical reload check: after publishing active template/policy version `1.0.2`, the created ticket request-template snapshot hash stayed unchanged.
+- Defect fixed: registry-backed semver versions such as `1.0.x` were previously dropped by `server/tickets/form_catalog.py` / `server/tickets/request_template_submission.py`; fixed in commit `488b5c5 server: snapshot registry template versions`, covered by `server/tests/test_helpdesk_policy_registry.py::test_web_admin_publish_from_form_creates_form_schema_reference` and `server/tests/test_ticket_form_packs.py`.
+- Limitation: Stage 14/15 tickets created before the fix still have missing `request_template_version` / `form_schema_version` in their historical snapshots and were intentionally not backfilled; the live evidence records 8 such pre-fix rows under `legacy_pre_fix_version_gaps_not_backfilled`.
+- User attention: none expected.
+
+### Stage 17: Workflow Happy Paths (4 points)
+
+- [x] Run `T-LIVE-01` through `new -> queued -> assigned -> in_progress -> waiting_user -> in_progress -> resolved -> closed`.
+- [x] Exercise `T-LIVE-06` scheduled attempt from the waiting approval path; live API returned `400` because approvals had already timed out and no support approval decision endpoint exists.
+- [x] Verify audit/timeline records old status, new status, actor, reason/comment, required fields snapshot and configured action markers.
+- [x] Verify internal status can differ from public status.
+- Evidence: `artifacts/live_checks/stage17_workflow_happy_paths.py`, `artifacts/live_checks/stage17_workflow_happy_paths_20260503.json`.
+- Live result: `T-LIVE-01` / `T-000366` final status `closed`; observed expected transitions `queued -> assigned`, `assigned -> in_progress`, `in_progress -> waiting_on_user`, `waiting_on_user -> in_progress`, `in_progress -> resolved`, `resolved -> closed`; status timeline count `7`; internal/public status difference verified.
+- Defect fixed during stage: official-passport closure gate blocked `resolved` because passport `user_result` was only persisted by the same transition and reporting-only `automated_checks` / `approvals` sections were treated as blocking facts even when not applicable. Fixed in commit `90d7e8b server: relax passport closure gate for live workflow`.
+- T-LIVE-06 limitation: scheduled transition remains blocked by approval policy after timed-out approvals; carry this evidence into Stage 18 negative gates and a later approval-action/API follow-up if a full positive approval path is required.
+- User attention: none expected for Stage 17; no manual action needed.
+
+### Stage 18: Workflow Negative Gates And RBAC (4 points)
+
+- [x] Verify `queued -> assigned` requires queue/assignee.
+- [x] Verify `in_progress -> waiting_user` requires public question.
+- [x] Verify `in_progress -> resolved` requires resolution code and public summary.
+- [x] Verify missing evidence blocks governed priority where configured.
+- [x] Verify wrong role is denied.
+- [x] Verify invalid transition is denied.
+- Evidence: `artifacts/live_checks/stage18_workflow_negative_gates.py`, `artifacts/live_checks/stage18_workflow_negative_gates_20260503.json`, `artifacts/browser_checks/live-acceptance/stage18-workflow-negative-gates-support-hints.png`.
+- Live result: 8 negative checks passed on real tickets. `queued -> assigned` without assignee returned `400 WORKFLOW_POLICY_BLOCKED`; `in_progress -> waiting_on_user` without public question returned `400 WORKFLOW_POLICY_BLOCKED`; `in_progress -> resolved` without `resolution_code` / `public_summary` returned `400 WORKFLOW_POLICY_BLOCKED`; high-priority resolved without evidence returned `400`; invalid `queued -> closed` returned `400`; temporary auditor status change returned `403 ticket.status.change`; `T-LIVE-06` scheduled attempt remains safely blocked at workflow `planned_at` before the later approval path.
+- Browser/support UI hint: real ticket `T-000399` showed the resolved transition preview with closure checklist `Не хватает: 4`, including `Код решения`, `Публичный итог для заявителя`, internal summary, worklog, and server-side guard reminder; browser console errors: `0`.
+- Defect fixed during stage: live workflow allowed `queued -> assigned` when `assignee_id` was missing because the incident profile had an assigned transition but no invariant. Added regression `test_workflow_blocks_assigned_status_without_assignee`, enforced the built-in assigned status invariant in `server/tickets/workflow_service.py`, updated docs/CODEMAP/navigation, verified focused suite `18 passed`, full CI green, and deployed commit `96fb3aa server: enforce assigned ticket invariant`.
+- User attention: none expected.
+
+### Stage 19: Priority And Routing Acceptance (4 points)
+
+- [x] Verify `T-LIVE-01` computed priority from impact/urgency.
+- [x] Verify `T-LIVE-02` escalates to P0/P1.
+- [x] Verify manual priority override requires reason.
+- [x] Verify requester cannot override priority.
+- [x] Verify default queue applies when no rule matches.
+- [x] Verify high-impact website incident routes to expected queue.
+- [x] Verify access request routes to expected access/service-owner queue.
+- Evidence: `artifacts/live_checks/stage19_priority_routing_acceptance.py`, `artifacts/live_checks/stage19_priority_routing_acceptance_20260503.json`.
+- Live result: 8 priority/routing checks passed. `T-LIVE-01` (`T-000366`) computed `P3` from impact/urgency; `T-LIVE-02` (`T-000367`) escalated to `P0` / legacy `P1`; manual priority without reason returned `400`; public requester manual override returned `400`; admin manual override with explicit reason created `T-000410` as effective `P1` with `priority_source=support_override` and a `priority_overridden` audit event. Default route, high-impact website incident and access request all routed to `servicedesk_l1` with routing source `request_template.routing_policy.default_queue`.
+- Defects fixed during stage: `/api/tickets/create` and `/api/tickets/create/preview` did not pass manual override fields into the priority policy fallback, so override gates were not enforced from the create API; fixed in commit `834cebd server: enforce manual priority override gates`. Legacy/public policies without explicit `manual_override.allowed_roles` allowed public/requester override; fixed in commit `bc29431 server: block requester priority overrides`.
+- Verification: focused regression `python -m pytest server/tests/test_ticket_form_packs.py::test_create_ticket_manual_priority_override_requires_reason server/tests/test_ticket_form_packs.py::test_create_ticket_manual_priority_override_rejects_requester_role server/tests/test_ticket_form_packs.py::test_public_create_ticket_manual_priority_override_rejects_legacy_policy_without_role_list server/tests/test_ticket_form_packs.py::test_public_create_ticket_manual_priority_override_rejects_requester -q --tb=short` passed; `python scripts/verify_workspace.py` passed before each deploy; both fixes were deployed to Linux with remote smoke. Full CI artifact was intentionally skipped for these two commits (`--skip-ci-check`) and remains a later broad verification item.
+- User attention: none expected.
+
+### Stage 20: SLA Timer Acceptance (4 points)
+
+- [x] Verify SLA starts at ticket creation.
+- [x] Verify first response SLA stops at first public support reply.
+- [x] Verify resolution SLA stops at resolved/closed.
+- [x] Verify `waiting_user` pause/resume.
+- [x] Verify `waiting_approval` pause/resume where configured.
+- [x] Verify warning/risk/breach timestamps and events.
+- [x] Verify SLA risk smart view includes near-breach ticket.
+- Evidence: `artifacts/live_checks/stage20_sla_timer_acceptance.py`, `artifacts/live_checks/stage20_sla_timer_acceptance_20260503.json`; live tickets `cd50469a-7ae2-473e-946c-75da5246bb1b` (lifecycle) and `11d7585e-744f-4c9e-9b3c-1355641224cd` (risk); 7/7 live checks passed: start, first response stop, waiting-user pause/resume, waiting-approval pause/resume, resolution stop, warning/risk smart view, breach timestamps/events.
+- Defects fixed during stage: `2ee098d server: honor live SLA policy triggers` normalized standalone SLA aliases and workflow resume triggers; `391c6d8 server: honor SLA pause target status` made workflow pass transition target status into SLA pause/resume and added `sla_paused_at` / `sla_paused_seconds` to `GET /api/tickets/{ticket_id}/sla`.
+- Verification: focused pytest `server/tests/test_ticket_sla_calendar.py::test_sla_policy_accepts_live_status_and_resolution_aliases`, `server/tests/test_ticket_workflow_profiles.py::test_workflow_passes_transition_trigger_to_sla_resume`, `server/tests/test_ticket_workflow_profiles.py::test_workflow_passes_target_status_to_sla_pause`, `server/tests/test_ticket_sla_calendar.py::test_sla_stop_conditions_control_frt_and_resolution_stop` passed; `python scripts/verify_workspace.py` passed; remote release smoke passed after deploy. Full CI artifact was intentionally skipped in release with `--skip-ci-check`.
+- User attention: no manual action required for this stage. Limitation: warning/breach timing was compressed by deterministic due-date manipulation on the live stand, then processed by the real `TicketSlaWatchdog.force_check` path; this is not an hours-long wall-clock proof.
+
+### Stage 21: OLA Timer Acceptance (4 points)
+
+- [x] Verify OLA starts on queue assignment and queue change.
+- [x] Verify OLA ack stops on assignee set or `in_progress`.
+- [x] Verify OLA processing stops on queue change, resolved, closed or handoff.
+- [x] Verify warning recipients and breach action dispatch.
+- [x] Verify OLA risk smart view includes queue-risk ticket.
+- [x] Verify requester view does not expose OLA internals.
+- Evidence: `artifacts/live_checks/stage21_ola_timer_acceptance.py`, `artifacts/live_checks/stage21_ola_timer_acceptance_20260503.json`; live tickets `9c933039-2d97-4d7f-9d80-ce9a9ccb94a3` (lifecycle), `f0d98a1b-c855-4d0b-88d0-b183586ac47f` (risk/breach) and `4f80beed-1b43-4d51-a18f-a19531edc485` (requester visibility); 8/8 live checks passed: OLA start, ack stop, pause/resume on vendor wait, processing stop/restart on queue handoff, processing stop on resolved, OLA-risk smart view, breach timestamps/events/policy actions and requester redaction.
+- Defects fixed during stage: `b25ee75 server: honor OLA workflow pause triggers` makes workflow OLA hooks pass target status into pause checks and configured transition trigger such as `vendor_replied` into resume checks before the final `ticket.status` write. Regression tests cover target-status pause and transition-trigger resume.
+- Verification: RED tests first failed for OLA pause/resume; focused pytest `python -m pytest server/tests/test_ticket_ola_policy.py server/tests/test_ticket_workflow_profiles.py -q --tb=short` passed with 27/27; `python scripts/verify_workspace.py` passed; remote release smoke passed after deploy; repeated live harness passed. Full CI artifact was intentionally skipped in release with `--skip-ci-check`.
+- User attention: no manual action required for this stage. Limitations: OLA risk and breach timing was compressed by deterministic due-date manipulation on the live stand, then processed by the real `check_ola_breaches` path; current OLA runtime has breach-action dispatch but no separate warning-before timer, so the warning-recipient item is covered by breach policy-action notification evidence rather than an independent OLA warning event.
+
+### Stage 22: Approval Policy Acceptance (4 points)
+
+- [x] Verify `T-LIVE-03` creates approval with expected approver source.
+- [x] Approve `T-LIVE-03` and verify audit, transition, notification and passport evidence.
+- [x] Verify `T-LIVE-04` rejects without comment is denied.
+- [x] Reject `T-LIVE-04` with comment and verify safe requester text.
+- [x] Verify `any_one`, `all` and `sequential` modes where configured.
+- [x] Verify non-approver cannot approve.
+- Evidence: `artifacts/live_checks/stage22_approval_policy_acceptance.py`, `artifacts/live_checks/stage22_approval_policy_acceptance_20260503.json`; live tickets `3c5217d5-00f7-4e24-942a-8fc3e8ca8728` (`any_one` approve), `92b0a010-1486-46a6-85a5-0ec4c80e67e9` (reject/comment/requester-safe), `bd27ff59-9f31-4529-9387-564c13b1fae4` (`all`), `c13f928c-3c68-4658-a73c-a2c1d30433d2` (`sequential`) and `81c17803-0e8c-45ab-b5f0-1701a56a7b07` (non-approver negative). 7/7 live checks passed: approver source, approve audit/event/notification/passport, reject comment gate, requester-safe reject projection, `all` blocking until every approval, `sequential` current-approver advancement and non-approver denial.
+- Defects fixed during stage: `21a15af server: add support approval decisions` added typed support approval decision route, approver/current-approval enforcement, reject-comment validation, sequential advancement, `approval_approved` / `approval_rejected` events and notification-policy aliases. The first live harness run also corrected its requester-safe assertion to inspect actual payload fields rather than visibility metadata.
+- Verification: RED route tests first failed with `404`; focused regression `python -m pytest server/tests/test_web_support_api.py::test_web_support_approval_decision_approves_and_notifies server/tests/test_web_support_api.py::test_web_support_approval_decision_reject_requires_comment server/tests/test_web_support_api.py::test_web_support_approval_decision_rejects_non_approver -q --tb=short` passed; broader focused approval check passed 17/17; `python scripts/verify_workspace.py` passed before deploy; remote release smoke passed; repeated live harness passed. Full CI artifact was intentionally skipped in release with `--skip-ci-check`.
+- User attention: no manual action required for this stage. Limitation: this stage verified the approval decision API and support/passport/requester projections; browser UX screenshots for approval controls remain part of the later final browser signoff stage.
+
+### Stage 23: Diagnostics, Consent And Module Operations (5 points)
+
+- [x] For `T-LIVE-01`, run suggested diagnostic playbook with consent.
+- [x] For `T-LIVE-09`, verify consent denied or diagnostic failure path.
+- [x] Verify consent is required before requester-device/high-risk tool where configured.
+- [x] Verify ticket status remains workflow-owned while operation status changes independently.
+- [x] Verify operation id is stable and visible.
+- [x] Verify diagnostic result attaches to timeline and passport evidence when configured.
+- [x] Verify reroute by diagnostic result.
+- Evidence: `artifacts/live_checks/stage23_diagnostics_consent_acceptance.py`, `artifacts/live_checks/stage23_diagnostics_consent_acceptance_20260503.json`; final live safe ticket `8f003709-cfc3-4064-9f46-ad1ee8dc9c08`, high-risk autorun-skip ticket `021f3f75-6118-46e9-b443-3e93bc7515f4`; safe playbook operation `71caf280-a6cf-414f-818f-b961cd0d703a` reached `succeeded`; DNS diagnostic operation `e4375eea-374a-4664-860e-565c8e3fddf8` returned `DNS_RESOLUTION_FAILED`, left ticket status `in_progress`, rerouted queue `7 -> 8`, emitted `diagnostic_result_classified` / `routing_applied` / `queue_changed`, and materialized passport evidence `source_ref=operation:e4375eea-374a-4664-860e-565c8e3fddf8`; consent-required tool operation `f54ec3c9-683c-417b-80a0-4effee16e78d` stayed `waiting_consent` and then moved to `denied` after live deny API call; high-risk diagnostic autorun emitted `diagnostic_autorun_skipped` with reason `high_risk_consent_required`.
+- Defects fixed during stage: `587022f server: enforce support tool consent gate` made typed support tool actions evaluate tool metadata through `PolicyEngine`, create `waiting_consent` operations without dispatch and return `dispatch_status=waiting_consent`. Live reproduction before the fix showed `observer_canary_0167a492.consent_probe` advertised `requires_consent=true` but dispatching as `accepted`; deny then failed with `INVALID_STATUS`.
+- Verification: RED regression first failed because `run_tool` was dispatched before consent; focused tests passed (`test_web_support_tool_action_keeps_consent_required_tool_waiting`, adjacent support tool tests and `server/tests/test_tools_async_response_contract.py`, 7/7); `python scripts/verify_workspace.py` passed; `python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 8 --smoke-delay 3` completed and remote smoke passed; repeated Stage 23 live harness passed. Full CI artifact was intentionally skipped in release with `--skip-ci-check`.
+- User attention: real requester-device prompt UX was not clicked in a local GUI/browser prompt; server-side consent gate, support deny path and high-risk autorun skip are verified live. Passport generation was performed as admin because the disposable support user lacked passport manage permission; this does not affect diagnostic evidence materialization but is recorded as a test-role limitation.
+
+### Stage 24: Observer Trace Acceptance (5 points)
+
+- [x] Verify ticket root trace exists for created tickets.
+- [x] Verify operation spans exist for diagnostics and tool runs.
+- [x] Verify module/tool entry breadcrumb exists.
+- [x] Verify command/result correlation exists.
+- [x] Verify compact agent action rows are visible with `include_agent_actions=1`.
+- [x] Verify dangerous-flow gaps are not present.
+- [x] Run `python scripts\run_observer_canary_suite.py` if relevant to changed or suspicious observer behavior.
+- [x] Browser check `/app/admin/observer` for runtime status, trace visibility and console errors.
+- Evidence: `python artifacts\live_checks\stage24_observer_trace_acceptance.py` passed 13/13 checks and wrote `artifacts/live_checks/stage24_observer_trace_acceptance_20260504.json`; ticket root trace `37450ccd-8034-4dc7-a36e-8368f9a9943a` for ticket `8f003709-cfc3-4064-9f46-ad1ee8dc9c08`; DNS operation `e4375eea-374a-4664-860e-565c8e3fddf8`; DNS bundle has 27 spans and 8 compact agent action rows; denied consent operation `f54ec3c9-683c-417b-80a0-4effee16e78d` has `operation.stage.denied` without sent/accepted/succeeded dispatch stages; high-risk autorun skip ticket `021f3f75-6118-46e9-b443-3e93bc7515f4` has trace-visible `ticket.diagnostic_autorun_skipped`.
+- Observer canary: first full run `artifacts/observer_canaries/stage24_observer_canary_20260504_rerun.json` exposed a real registry gap: local/current agent version `3.1.26` was present for `windows_amd64` but missing for `linux_alt_x86_64`. Fixed operationally by building Linux PyInstaller artifacts on `/var/chat_bot/pc_client`, verifying the isolated binary with `--verify`, packaging `pc_agent-linux_alt_x86_64-3.1.26.tar.gz` and uploading it to `/api/agent_builds/upload` as `linux_alt_x86_64/stable/3.1.26` (`sha256=c3a1ca79b5ea9858425f89635bd91dd1319f5c272c6b37d8972ad3f8fe882281`, size `109329129`). Re-run `artifacts/observer_canaries/stage24_observer_canary_20260504_after_linux_build.json` passed 19/19 scenarios.
+- Browser evidence: `/app/admin/observer` opened in browser fallback after Browser Use runtime navigation failed with local app-server path error; Playwright MCP verified runtime `ok`, search by trace `37450ccd-8034-4dc7-a36e-8368f9a9943a` narrowed traces to 1, detail showed 27 spans, evidence sources `ticket_events=18` / `operations=2`, bundle coverage `agent_actions=8`, `runtime_audit=30`, `recent_logs=15`, related traces `1`, command/result spans and agent action rows. Console check reported 0 warnings and 0 errors; screenshot saved as `stage24-admin-observer-trace.png` by the browser tool.
+- User attention: none expected.
+
+### Stage 25: Notification And Recipient Action Acceptance (3 points)
+
+- [x] Verify notification policy events: created, assigned, waiting_user, requester_replied, SLA warning, SLA breach, OLA warning/breach, approval created/approved/rejected, diagnostic completed/failed, resolved, closed.
+- [x] Verify recipients: requester, assignee, queue, queue lead, admin, watchers and external group/provider where configured.
+- [x] Verify disabled/unavailable external channels leave audit evidence.
+- [x] Verify per-recipient preferences remain final filter.
+- Evidence: `python artifacts\live_checks\stage25_notification_acceptance.py` passed 7/7 checks and wrote `artifacts/live_checks/stage25_notification_acceptance_20260504.json`; live ticket `005354eb-b289-45b1-8e3a-0c45c86d3516`, muted-ticket preferences check, queue `codex_live_acceptance_stage25_1777870773`, actors `stage25_requester_1777870773`, `stage25_assignee_1777870773`, `stage25_queue_member_1777870773`, `stage25_queue_lead_1777870773`, `stage25_watcher_1777870773`, `stage25_muted_1777870773`.
+- Bug fixed during stage: live `POST /api/web/notifications/preferences` returned 500 after persisting because `handle_notification_preferences_post` returned raw `TicketNotificationPref` ORM object. Added regression `test_notification_preferences_post_returns_serialized_payload`, changed the handler to return plain JSON fields, updated docs/navigation, committed `9efd433 server: serialize notification preferences response`, deployed that commit to `/var/chat_bot/pc_client`, restarted the server and re-ran smoke successfully.
+- Verification: RED regression failed with HTTP 500 before the fix; after fix `python -m pytest server\tests\test_stage8.py::test_notification_preferences_post_returns_serialized_payload -q --tb=short` passed; focused notification suite `python -m pytest server\tests\test_stage8.py server\tests\test_ticket_notification_policy.py server\tests\test_ticket_ola_policy.py -q --tb=short` passed 30/30; `python scripts\verify_workspace.py` passed; remote smoke passed; repeated Stage 25 live harness passed.
+- User attention: real delivery through production external providers (email/Telegram/VK Teams/SMS) still needs manual/provider-side confirmation; this stage verified provider preview calls and DB audit rows with an injectable live harness provider, plus disabled/unavailable channel evidence.
+
+### Stage 26: Visibility And Requester Projection Acceptance (3 points)
+
+- [x] Verify requester cannot see internal notes.
+- [x] Verify requester cannot see OLA details.
+- [x] Verify requester cannot see raw diagnostics.
+- [x] Verify requester cannot see internal queue comments.
+- [x] Verify support can inspect support-safe internal details.
+- [x] Verify public status mapping is requester-safe.
+- [x] Verify `T-LIVE-10` requester/passport export hides internal sections.
+- Evidence: `python artifacts\live_checks\stage26_visibility_requester_projection.py` passed 6/6 checks after redeploy and wrote `artifacts/live_checks/stage26_visibility_requester_projection_20260504.json`; final live ticket `ac4f6b84-b200-4e9b-9320-8fee605b6b67`, access code `MW6CGMHM`, support actor `stage26_support_1777872238`.
+- Browser evidence: requester `/app/ticket/ac4f6b84-b200-4e9b-9320-8fee605b6b67?code=MW6CGMHM` rendered public label `Заявка в работе`, contained no raw `waiting_on_internal_team` and no stage secret markers; screenshot saved as `artifacts/live_checks/stage26_requester_ticket_20260504.png`. Support `/app/tickets/ac4f6b84-b200-4e9b-9320-8fee605b6b67` opened after support web-session login, showed the live ticket and support-only internal markers, and browser console reported 0 warnings/errors; screenshot saved as `artifacts/live_checks/stage26_support_ticket_20260504.png`. Browser Use runtime could not attach due local app-server path failure, so browser verification used Playwright MCP against the same remote URL.
+- Bug fixed during stage: support `GET /api/tickets/{ticket_id}/snapshot` returned 500 when relation collections contained `TicketWatcher` ORM rows. Added regression `test_support_snapshot_serializes_ticket_relation_collections`, serialized `watchers`, `links`, `kb_links` and `worklogs` as JSON-safe DTOs before visibility projection, updated docs/navigation, committed `9aa0084 server: serialize ticket snapshot relations`, deployed and smoke-checked the server.
+- Bug fixed during stage: requester React page rendered raw internal `ticket.status` (`waiting_on_internal_team`) in badge/sidebar instead of requester-safe public status. Added `index.status.test.tsx`, extended requester ticket type fields, rendered `public_status_label -> requester_status_label -> status_label -> status`, committed `c6d8efe webapp: show requester-safe ticket status`, released rebuilt webapp bundle to the remote stand and re-ran live/browser checks.
+- Verification: RED server regression failed with `TypeError: Object of type TicketWatcher is not JSON serializable`; after fix `pytest server/tests/test_ticket_queue_routing_contracts.py::test_support_snapshot_serializes_ticket_relation_collections -q` passed and full `server/tests/test_ticket_queue_routing_contracts.py` passed 12/12. RED requester UI test first failed because DOM showed `waiting_on_internal_team`; after fix `pnpm --dir webapp exec vitest run src/pages/requester-ticket/index.status.test.tsx` passed and `pnpm --dir webapp exec vitest run src/pages/requester-ticket` passed 3/3. `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running` and remote smoke passed. Full CI artifact was intentionally skipped in release with `--skip-ci-check`.
+- User attention: none expected.
+
+### Stage 27: Smart Views And Support Queue Acceptance (3 points)
+
+- [x] Verify each built-in smart view count matches list results.
+- [x] Verify custom smart view count and sorting.
+- [x] Verify support list filters by status, queue, priority, due/risk and search where supported.
+- [x] Verify queue counters do not include closed/canceled unless configured.
+- [x] Browser check `/app/tickets`, open ticket from smart view, use back navigation.
+- Evidence: `python artifacts\live_checks\stage27_smart_views_support_queue.py` passed 33/33 checks and wrote `artifacts/live_checks/stage27_smart_views_support_queue_20260504.json`; support actor `stage27_support_1777875791`; queue `codex_live_acceptance_stage27_1777875791`; custom smart view `codex_stage27_custom_deadline_1777875791`. The harness verified built-in and custom `summary.smart_view_counts` match selected list `visible_count`, expected target tickets appear in each smart view, closed/canceled signal tickets are excluded from open-only smart views, support actor queue access is scoped, status/scope/search filters work, and custom smart-view due/risk sorting returns `Stage27 custom due early` before `Stage27 custom due late`.
+- Browser evidence: `/app/tickets` loaded as `stage27_support_1777875791`; custom smart view `Stage27 custom deadline 1777875791` showed count `2` and rendered `Stage27 custom due early` before `Stage27 custom due late`; clicking the early row opened `/app/tickets/9879f236-b50e-4e51-9dba-0f7b10da7419`; `Назад` returned to `/app/tickets`. Screenshots: `artifacts/live_checks/stage27_support_custom_view_20260504.png`, `artifacts/live_checks/stage27_support_ticket_detail_20260504.png`, `artifacts/live_checks/stage27_support_back_navigation_20260504.png`; browser evidence JSON: `artifacts/live_checks/stage27_browser_evidence_20260504.json`. Browser Use runtime could initialize but failed to navigate through the in-app app-server path, so browser verification used Playwright MCP against the same remote URL.
+- Bug fixed during stage: published custom smart-view `sort_json` was validated and stored but ignored by `GET /api/web/support/queue`, leaving results in base `updated_at desc` order. Live harness reproduced `late -> early`; RED regression in `server/tests/test_web_support_api.py::test_web_support_queue_applies_published_custom_smart_view` failed on that order. `server/web_api/support_handlers.py` now applies selected custom view sort after smart-view filtering and before scope/status/query slicing; docs/navigation updated; commit `83324aa server: apply custom smart view sorting`; full CI artifact `artifacts/ci/83324aa70597b605f54cbbedef1b3b82df9777ac/summary.json` is green and remote deployed at `83324aa`.
+- Limitation: `GET /api/web/support/queue` exposes `scope`, `status`, `smart_view` and `query`; there are no dedicated `queue` or `priority` query params. Queue behavior was verified through support-actor access isolation and custom smart-view queue/filter capability; priority was covered as setup/response context, not as a direct support queue query filter.
+- User attention: none expected.
+
+### Stage 28: Closure, Passport And Reporting Acceptance (4 points)
+
+- [x] Attempt to close `T-LIVE-02` without required P0/P1 evidence and verify block.
+- [x] Add required facts: resolution code, public summary, internal summary if required, diagnostic evidence, approval evidence if used, operation log and worklog.
+- [x] Resolve and close.
+- [x] Verify SLA/OLA stop.
+- [x] Verify closure audit.
+- [x] Verify passport includes solution summary, evidence and export preview.
+- [x] Verify invalid resolution code is rejected.
+- Evidence: `python artifacts\live_checks\stage28_closure_passport_reporting.py` produced raw first-pass evidence `artifacts/live_checks/stage28_closure_passport_reporting_20260504.json`; after the OLA fix and live recheck the final combined artifact is `artifacts/live_checks/stage28_closure_passport_reporting_final_20260504.json`. Live ticket `T-LIVE-02` is `650e5ee8-a73d-4138-9efc-998b0fde0b19` / `T-000367`, final status `closed`, resolution code `fixed`, requester summary and internal summary present, diagnostic operation evidence and worklog present, approved approval fact attached for reporting/passport coverage, and passport export preview includes required sections.
+- Gate results: pre-evidence resolve/close was blocked by the workflow evidence guard before the closure policy whitelist was reached; the same closure requirements payload exposed missing P0 evidence. After required evidence was added, invalid resolution code was rejected by closure policy with `CLOSURE_POLICY_BLOCKED`, and resolving without official passport was blocked until the passport was generated.
+- Bug fixed during stage: live closure stopped SLA but did not stop OLA processing for a legacy published policy with list-style `stop_conditions=["ticket_resolved","ticket_closed"]`. Root cause was `server/tickets/ola_service.py` assuming dict-shaped stop conditions and missing the `ticket_resolved` / `ticket_closed` aliases. Added RED regression `test_ola_processing_stop_accepts_legacy_alias_list_conditions`, fixed alias/list handling, updated docs/navigation, committed `8fa665f server: support legacy OLA stop aliases`, deployed, and rechecked the same live ticket. Recheck artifact: `artifacts/live_checks/stage28_ola_stop_recheck_after_fix_20260504.json`, with `ola_processing_at` set and `ola_processing_stopped` event present.
+- Browser evidence: support detail `/app/tickets/650e5ee8-a73d-4138-9efc-998b0fde0b19` opened as the Stage 28 support actor, showed `Закрыта`, terminal transitions disabled, `Passport 7/7`, `P0`, and `Stage28 diagnostic evidence` / `stage28.diagnostic.confirm_fix` in the operational card. Screenshots: `artifacts/live_checks/stage28_support_passport_20260504.png`, `artifacts/live_checks/stage28_support_closed_ticket_20260504.png`; browser evidence JSON: `artifacts/live_checks/stage28_browser_evidence_20260504.json`. Browser Use runtime failed to navigate because the local app-server path was missing, so browser verification used Playwright MCP against the same remote URL; fresh console check after re-login reported 0 errors.
+- Verification: RED OLA regression failed with `AttributeError: 'list' object has no attribute 'get'`; after the fix `python -m pytest server\tests\test_ticket_ola_policy.py -q --tb=short` passed 8/8, `python scripts\verify_workspace.py` passed, remote release deployed commit `8fa665f` and smoke passed, live OLA recheck passed, and the final combined Stage 28 artifact reports 10/10 checks passed.
+- User attention: none expected.
+
+### Stage 29: Agent Runtime And GUI Live Acceptance (8 points)
+
+- [x] Start or connect a live isolated agent path:
+  `python scripts/manage_local_agent.py start codex-live-acceptance-agent --gui --ui-port 8786 --ws-url ws://192.168.100.17:8666/ws --api-url http://192.168.100.17:8666/api`
+- [x] Verify `GET http://127.0.0.1:8786/ui/agent/status`.
+- [x] Verify agent can fetch current form pack/templates.
+- [x] Create `T-LIVE-08` from agent GUI using a current published template.
+- [x] Create or preview a schema-backed disposable template from agent path if supported.
+- [x] Verify GUI form behavior: required fields, conditional fields, picker fields, file attachment path, diagnostic consent wording and server-preview fallback.
+- [x] Verify post-create result panel: access code, next action, expected due dates, open ticket action, add message action, create another action and no raw SLA/OLA/internal policy jargon.
+- [x] Verify server receives request template snapshot, form schema snapshot, priority/routing decision, requester/device identity and attachment message reference if used.
+- [x] Verify agent logs do not leak token and do not show unexpected tracebacks.
+- [x] Verify controlled shutdown through `POST /ui/agent/shutdown` unless leaving the agent running is explicitly needed for a later stage.
+- Evidence: isolated source-mode GUI agent `codex-live-acceptance-agent` started on UI port `8786` with issued machine/device id `043a94bf-0077-5ffe-a1b4-419964d69df9`, version `3.1.26`, `connection_state=connected`, `ui_bridge_running=true`, and recommended stable build `3.1.26` / `same_version`. The check intentionally used the source runtime, not the compiled launcher build, so no compiled agent refresh was required for this stage.
+- Evidence artifacts: `artifacts/live_checks/stage29_agent_form_pack_20260504.json`, `artifacts/live_checks/stage29_agent_ticket_create_result_20260504.json`, `artifacts/live_checks/stage29_agent_ticket_snapshot_20260504.json`, `artifacts/live_checks/stage29_agent_add_message_20260504.json`, `artifacts/live_checks/stage29_agent_window_close_runtime_20260504.json`, `artifacts/live_checks/stage29_agent_logs_collect_20260504.json`, `artifacts/live_checks/stage29_agent_shutdown_20260504.json`, final checker `artifacts/live_checks/stage29_agent_runtime_gui_final_20260504.json`.
+- Live result: created `T-LIVE-08` as `046398cc-8414-44c4-bc7c-dbb826ce4bc3` / `T-000507` through the GUI automation surface from current template `site_system` (`Сайт / система`, form-pack version `1.0.14`). Server snapshot contains request template/form data, dynamic field summary including conditional `url`/`pc_name`/`affected_scope`, priority decision `priority_class=P0`, routing decision to queue `servicedesk_l1`, requester profile, device identity, public access code, requester-safe status, attachment message with `attachment_count=1`, and a post-create follow-up message from the agent.
+- Runtime result: `window.close` hid the main window but did not stop the runtime; `GET /ui/agent/status` still returned `connected` and `ui_bridge_running=true`, then `window.show` restored the GUI state. Controlled shutdown through `POST /ui/agent/shutdown` returned `accepted=true`, and `python scripts\manage_local_agent.py status codex-live-acceptance-agent` reported stopped.
+- Verification: `python -m pytest pc_agent\tests\test_ui_api_server_shutdown.py pc_agent\tests\test_runtime_logging.py -v --tb=short` passed 8/8; remote smoke passed before shutdown; final checker reports 16/16 Stage 29 checks passed, no raw token hits in local agent logs/action trace, and no unexpected tracebacks. No product bug fix was needed in this stage.
+- User attention: exact native Qt wizard pixel/keyboard usability and visible tray menu clicks remain in `User Attention Checks`. The live automation surface verified the functional GUI-owned path, not every manual click target. Diagnostic consent wording was not expected for selected current template `site_system` because its live template has no diagnostic consent policy.
+
+### Stage 30: Security, Token And Log Safety Acceptance (4 points)
+
+- [x] Verify no raw token in server logs.
+- [x] Verify no raw token in agent logs.
+- [x] Verify artifacts redact token-like values.
+- [x] Verify unknown template, inactive template, stale policy version if relevant, invalid queue id and invalid approval actor are rejected safely.
+- [x] Verify diagnostics cannot run against unauthorized device/ticket context.
+- Evidence: `artifacts/live_checks/stage30_security_token_log_safety_20260504.json` and redacted server log excerpt `artifacts/live_checks/stage30_server_logs_redacted_20260504.txt`.
+- Live result: Stage 30 initially found a real security defect: an agent token for a different device could reach `/api/tools/run` dispatch for `screen.collect` on T-LIVE-08's device and failed only because the target agent was offline. Fixed in commit `6bb2059 server: reject agent tool runs for other devices`, adding a pre-dispatch `AuthContext.actor_id` vs `device_id` guard for `actor_role=agent` and regression coverage in `server/tests/test_tools_async_response_contract.py`.
+- Re-check result: after remote release to Linux and smoke, the same live negative scenario returned 403 `DEVICE_CONTEXT_MISMATCH`; no raw Stage 29 or Stage 30 agent token was found in server logs, local agent logs, action trace or generated artifacts. Other negative checks passed: no-token protected API 401 `AUTH_REQUIRED`, unknown/inactive template 400 validation, invalid routing rule 400 `VALIDATION_ERROR`, stale policy rollback 400 `VALIDATION_ERROR`, invalid approval actor 403 `APPROVAL_ACTOR_MISMATCH`.
+- Verification: `python -m pytest server\tests\test_tools_async_response_contract.py -q` passed 5/5; `python -m pytest server\tests\test_tools_async_response_contract.py server\tests\test_tool_dispatch_failure.py -q` passed 7/7; `python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -q` passed; `python scripts\verify_workspace.py` passed; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` completed and remote smoke passed.
+- User attention: none.
+
+### Stage 31: Browser UX And Console Signoff (5 points)
+
+- [x] Browser check `/admin`.
+- [x] Browser check `/app/admin/forms`.
+- [x] Browser check `/app/settings`.
+- [x] Browser check `/app/tickets`.
+- [x] Browser check representative ticket details: incident, access request, consultation and change request.
+- [x] Browser check `/app/admin/observer`.
+- [x] Browser check requester/public path if used.
+- [x] Verify no overlapping text.
+- [x] Verify long Russian labels fit.
+- [x] Verify buttons and controls are understandable.
+- [x] Verify compact panels do not use hero-scale text.
+- [x] Verify no raw internal policy ids leak to requester-facing UI.
+- [x] Capture screenshots, console and network summary.
+- Evidence: `artifacts/live_checks/stage31_browser_20260504/stage31_browser_ux_console_20260504.json` and screenshots in the same folder. Final live harness checked 13 canonical browser pages against `http://192.168.100.17:8666`: 0 console errors, 0 console warnings, 0 page errors, 0 network errors, 0 pages with horizontal overflow, 0 missing expected text entries, and no requester-facing internal policy term hits. Full-page forms-builder recheck captured `desktop_admin_forms_full_after2.png`; remaining DOM clipped candidates are expected `<select>` scrollWidth noise from long option labels, not visible overlap.
+- Defects fixed and rechecked live: `088cff1 webapp: contain workspace layout overflow`, `fa9b888 webapp: prevent ticket detail mobile overflow`, `ee5341a webapp: stabilize forms builder responsive grids`.
+- Verification: `pnpm --dir webapp run build` passed after each UI fix; focused webapp tests passed (`src\features\forms-builder\forms-builder-panel.test.tsx`, 27 tests) after the final forms-builder fix; `python scripts\release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running --smoke-attempts 5 --smoke-delay 3` completed after each deployed fix and remote smoke passed. Final Stage 31 browser harness passed after committed release at `ee5341a`.
+- Tooling note: the in-app Browser Use runtime could not start from the UNC cwd, so Stage 31 live browser automation used Playwright Chromium from the project webapp toolchain against the same canonical remote URL.
+- User attention: none required for automated acceptance; only subjective visual preference review remains optional.
+
+### Stage 32: Current Live Bugfix Gate (5 points)
+
+Priority order is strict. Do not start broad visual redesign until this gate is complete.
+
+- [x] Register user live QA findings as defects:
+  - `BUG-508-REQUESTER-CLOSE`, ticket `#T-000508`.
+  - `BUG-509-DIAGNOSTIC-CONSENT`, ticket `#T-000509`.
+  - `BUG-AGENT-CHAT-ORDER`.
+  - `BUG-AGENT-GUI-LAYOUT`.
+  - `BUG-SUPPORT-WORKSPACE-DISCOVERY` as redesign input only.
+- [x] Reproduce `BUG-508-REQUESTER-CLOSE` live:
+  - Open requester/public path for `#T-000508`.
+  - Confirm whether the affected surface is legacy `/help`, React `/app/ticket`, agent GUI, or more than one.
+  - Capture screenshot and DOM/widget state.
+  - Expected: primary confirm action is visible, enabled and named as closure action.
+- [x] Add focused regression for `BUG-508-REQUESTER-CLOSE`:
+  - React requester path: `webapp/src/pages/requester-ticket/index.test.tsx` if `/app/ticket` is affected.
+  - Legacy path: browser/live check or JS-level coverage for `server/help.js` if `/help` is affected.
+  - Agent GUI path: `pc_agent/tests/test_chat_panel_helpers.py` or a small helper-level test if Qt full UI is not practical.
+- [~] Fix `BUG-508-REQUESTER-CLOSE` in the smallest ownership zone and live re-check `#T-000508`.
+  - Local fix and focused regression pass; remote live browser re-check pending after deploy.
+- [x] Reproduce `BUG-509-DIAGNOSTIC-CONSENT` live:
+  - Inspect `#T-000509` ticket snapshot, `custom_fields.diagnostic_consent`, request template diagnostic policy and created events.
+  - Query operations/playbook runs for the ticket and identify whether the server created `waiting_consent`, skipped before operation creation, or support launch skipped dispatch.
+  - Capture observer trace or absence of trace for `diagnostic_policy_auto_run`.
+- [x] Add focused regression for `BUG-509-DIAGNOSTIC-CONSENT`:
+  - Use or extend `server/tests/test_ticket_diagnostic_policy.py` for auto-run consent gates.
+  - Use or extend `server/tests/test_web_support_api.py` for support-initiated consent-required diagnostic run.
+  - If agent/requester prompt path is affected, add agent GUI/server API helper coverage.
+- [~] Fix `BUG-509-DIAGNOSTIC-CONSENT`:
+  - If consent was not granted at create time, surface a clear requester/support next action instead of opaque `diagnostic autorun skipped`.
+  - If the policy should request consent, create a `waiting_consent` operation and make the prompt reachable.
+  - Preserve observer trace visibility for both skipped and waiting-consent branches.
+- [ ] Live re-check `#T-000509`:
+  - Verify the user sees a consent prompt or a clear reason why consent cannot be requested.
+  - Verify support sees the same state in ticket detail/playbook panel.
+  - Verify operation status and observer trace are consistent.
+- [~] Reproduce `BUG-AGENT-CHAT-ORDER` in the local/live agent GUI:
+  - Use a ticket with at least three public/support messages in known chronological order.
+  - Capture visible order and scroll behavior.
+- [x] Add focused regression for `BUG-AGENT-CHAT-ORDER` around support/detail timeline ordering in `server/tests/test_web_support_api.py`.
+- [~] Fix `BUG-AGENT-CHAT-ORDER` and re-check in GUI.
+  - Support API/web order fixed and tested; agent GUI live re-check pending.
+- [~] Reproduce `BUG-AGENT-GUI-LAYOUT` at common Windows sizes:
+  - Request wizard with long Russian labels and picker/file/date fields.
+  - Ticket detail/chat with resolved confirmation row.
+  - Attachment row and screenshot/video controls.
+- [~] Add focused helper/screenshot checks where practical for `BUG-AGENT-GUI-LAYOUT`; otherwise record exact manual viewport sizes and screenshots.
+- [~] Fix `BUG-AGENT-GUI-LAYOUT` with scoped layout/QSS changes only; avoid redesigning the whole GUI in this gate.
+  - Scoped resolved prompt/consent-label fixes are local; broader visual overflow remains user-attention after compiled agent rollout.
+- [~] Run verification:
+  - `python scripts\verify_workspace.py`
+  - focused server tests for diagnostic consent fix
+  - focused webapp/requester tests for closure UX fix
+  - focused pc_agent tests for chat ordering/layout helpers
+  - rebuild agent if compiled agent behavior changed
+  - deploy/release and live re-check affected tickets
+- [ ] Commit each defect fix separately when practical.
+- [ ] Update docs/CODEMAP only if contracts, routes, protocol, observer behavior or file ownership changed.
+- Evidence: defect table, screenshots, test commands, live re-check for `#T-000508` and `#T-000509`, agent GUI re-check, commit hashes.
+- User attention: user should re-open `#T-000508` and `#T-000509` after fixes to confirm the real visual/consent experience matches expectation.
+
+### Stage 33: Cleanup, Final Evidence And Score (4 points)
+
+- [ ] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`.
+- [ ] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`.
+- [ ] List all created disposable templates, policies, smart views, tickets and artifacts.
+- [ ] Decide cleanup strategy: keep tickets as evidence, deactivate disposable templates, remove temporary preferred pack entries if created.
 - [ ] Run cleanup or deactivation through supported API/scripted path only.
-- [ ] Re-run targeted smoke:
-  - `python scripts\manage_remote_stack.py smoke server`
-  - browser `/app/tickets`
-  - browser `/app/admin/forms`
-- [ ] Stop remote server:
-  - `python scripts\manage_remote_stack.py stop server`
-  - confirm stopped through status
-- [ ] Final local status:
-  - `git status --short`
-  - generated artifacts ignored
-  - only intentional plan/docs/code fixes staged or committed
-- [ ] Update this plan:
-  - completion percentage
-  - passed slices
-  - defects found
-  - blocked items
-  - final system maturity estimate
-- [ ] Commit plan/evidence references and any code fixes separately from generated artifacts.
+- [ ] Re-run `python scripts\manage_remote_stack.py smoke server`.
+- [ ] Browser re-check `/app/tickets` and `/app/admin/forms`.
+- [ ] Stop remote server with `python scripts\manage_remote_stack.py stop server` unless user asked to leave it running.
+- [ ] Confirm stopped through status.
+- [ ] Run final `git status --short`.
+- [ ] Update this plan with completion percentage, passed stages, defects found, blocked items, user-attention checks and final system maturity estimate.
+- Evidence: final summary files, cleanup result, stopped status.
+- User attention: user must review any remaining `[U]` item before final confidence can be called complete.
 
-## Defect Handling Rules
+### Deferred Stage 34: Support Workspace Visual Redesign Plan (not part of current bugfix gate)
 
-If a live slice finds a defect:
+Start only after Stage 32 is fixed and rechecked.
 
-- [ ] Capture scenario id, ticket id, request payload, expected result and actual result.
-- [ ] Capture UI screenshot or API response.
-- [ ] Capture relevant server/agent/observer log lines with tokens redacted.
-- [ ] Classify severity:
-  - P0: data loss, security leak, impossible core ticket flow, raw token leak
-  - P1: wrong workflow/SLA/approval/closure decision, requester sees internal data, diagnostic trace missing
-  - P2: UI inconsistency, missing preview, non-blocking notification/action issue
-  - P3: cosmetic, wording, non-critical artifact cleanup
-- [ ] Add or update focused regression test before code fix where realistic.
-- [ ] Fix in the smallest ownership zone.
-- [ ] Run focused tests plus relevant live re-check.
-- [ ] Update docs/CODEMAP if contract, route, structure or workflow changed.
-- [ ] Commit defect fix separately from plan-only updates when practical.
+- [ ] Inventory all existing support workspace elements that must survive redesign:
+  - queue/list, filters, smart views and unread counters;
+  - ticket identity, requester, device, queue, assignee, status and priority;
+  - public chat, internal notes, worklog and attachments;
+  - workflow transitions, blocked transition reasons and closure requirements;
+  - SLA, OLA, risk/breach/paused/stopped facts;
+  - approvals and current approver state;
+  - diagnostics/playbooks, required tools, consent state and operations;
+  - observer trace, audit/history/timeline and passport/reporting;
+  - requester-safe/public projection and close/confirm state.
+- [ ] Write a separate redesign spec before implementation:
+  - target layout: sticky ticket header, central chat, right process sidebar, action bar;
+  - operator task model: triage, diagnose, ask user, wait, resolve, close;
+  - responsive behavior for desktop and narrow screens;
+  - permission/RBAC disabled states and dangerous action confirmations.
+- [ ] Build mock-first or behind a feature branch; do not mix this with live bug fixes.
+- [ ] Verify with Playwright screenshots and real live tickets after implementation.
+
+### Deferred Stage 35: Low-Code Form Constructor Redesign Plan (not part of current bugfix gate)
+
+Start only after Stage 32 is fixed and after the support workspace redesign direction is accepted.
+
+- [ ] Inventory existing forms-builder capabilities that must survive redesign:
+  - fields, field types, required rules, conditional visibility and process mapping;
+  - request template publication and form schema versions;
+  - workflow, priority, routing, SLA, OLA, approval, diagnostic, closure, visibility, notification and reporting policies;
+  - policy diff, rollback, deactivate and publish impact preview;
+  - smart views and requester-safe visibility settings.
+- [ ] Redesign as low-code blocks:
+  - `Form Fields` block;
+  - `Visibility Conditions` block;
+  - `Workflow` block;
+  - `Priority And Routing` block;
+  - `SLA/OLA` block;
+  - `Approval` block;
+  - `Diagnostics And Playbooks` block;
+  - `Closure And Passport` block;
+  - `Requester Visibility` block;
+  - `Publish And Validate` block.
+- [ ] Reuse the existing playbook-builder mental model where useful: palette, canvas, selected block inspector, validation summary and preview.
+- [ ] Keep JSON advanced mode as an escape hatch, not as the primary UI.
+- [ ] Verify with live publish/edit/rollback on disposable templates only.
 
 ## Verification Matrix
 
-Minimum command set before final completion claim:
+Minimum local command set before final completion claim:
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
@@ -731,6 +893,8 @@ http://192.168.100.17:8666/app/settings
 http://192.168.100.17:8666/app/tickets
 http://192.168.100.17:8666/app/tickets/:ticketId
 http://192.168.100.17:8666/app/admin/observer
+http://192.168.100.17:8666/app/admin/access
+http://192.168.100.17:8666/app/admin/playbooks
 ```
 
 Minimum live scenario coverage before final completion claim:
@@ -738,38 +902,46 @@ Minimum live scenario coverage before final completion claim:
 - request template settings create/edit/reload
 - form conditional fields and process mapping
 - ticket create from server/API
+- ticket create from browser/requester path
 - ticket create from agent GUI
 - workflow happy path
 - workflow negative gates
 - priority compute and manual override
-- routing and rerouting
+- routing and diagnostic rerouting
 - SLA start/pause/resume/stop/warning/breach
 - OLA start/pause/stop/risk
-- approval approve/reject
+- approval approve/reject/timeout-visible path where practical
 - diagnostics with consent
-- observer trace
+- observer trace and agent action correlation
 - notification recipient/action audit
 - visibility/requester-safe projection
-- smart views
+- smart views and queue counts
 - closure blocking and successful passport
 - RBAC negative cases
+- browser UX/console signoff
 - cleanup/deactivation
 
 ## Current State
 
 - Implementation/hardening plan is complete and committed.
-- Latest plan/tooling commit before this live plan: `30e1db8 scripts: add local context index workflow`.
+- Latest known plan/tooling commit before the live plan: `30e1db8 scripts: add local context index workflow`.
 - Generated live/browser/diagnostic/release artifacts are ignored through `.gitignore`.
-- This plan has not yet executed any live acceptance slice.
+- Stages 0-31 are verified, but user live QA reopened the active gate with concrete defects in requester closure UX, diagnostic consent, agent chat ordering and agent GUI layout.
+- Stage 32 is now the current execution stage and must be completed before Stage 33 cleanup/final score.
+- Support workspace visual redesign and low-code form constructor redesign are explicitly deferred to Stages 34-35 and must not be mixed with the current bugfix gate.
+- Current open user-attention risks and confirmed user checks are listed in `User Attention Checks`.
 
 ## Handoff
 
 Recommended execution order is strict:
 
-1. Slice 0 proves the stand and local workspace are ready.
-2. Slice 1 creates controlled disposable settings.
-3. Slices 2-12 exercise the service desk process from creation to closure across server, web UI, agent GUI, observer and security boundaries.
-4. Slice 13 performs browser UX signoff across the real operator pages.
-5. Slice 14 summarizes evidence, cleans/deactivates disposable entities, stops the server and updates the final score.
+1. Stages 0-7 prove the workspace, context, remote stand, browser baseline, actor model and fixture design.
+2. Stages 8-13 publish the disposable service desk model and negative settings validation.
+3. Stages 14-22 exercise ticket creation, policy snapshots, workflow, priority/routing, SLA/OLA and approvals.
+4. Stages 23-30 exercise diagnostics, observer, notifications, visibility, smart views, closure/passport, agent GUI and security.
+5. Stage 31 performs final browser UX and console signoff.
+6. Stage 32 fixes current user-reported live defects: `#T-000508`, `#T-000509`, agent chat ordering and agent GUI layout.
+7. Stage 33 summarizes evidence, cleans/deactivates disposable entities, stops the server and updates the final score.
+8. Stages 34-35 are deferred redesign planning tracks for support workspace and low-code form constructor; start them only after the current bugfix gate is closed.
 
 Do not skip cleanup/evidence summary. Without a clear created-entity list, the live test campaign is not complete.

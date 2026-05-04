@@ -11,9 +11,10 @@ import {
   authorizePublicTicket,
   closePublicTicket,
   fetchPublicTicket,
+  sendPublicTicketConfirmation,
   sendPublicTicketMessage,
 } from "../../features/requester/api";
-import type { PublicTicketMessage } from "../../features/requester/types";
+import type { PublicTicketConfirmationRequest, PublicTicketMessage } from "../../features/requester/types";
 
 function tokenStorageKey(ticketId: string): string {
   return `public_ticket_token:${ticketId}`;
@@ -39,6 +40,14 @@ function messageAuthor(message: PublicTicketMessage): string {
     return "Поддержка";
   }
   return "Вы";
+}
+
+function confirmationRequest(message: PublicTicketMessage): PublicTicketConfirmationRequest | null {
+  const request = message.metadata?.confirmation_request;
+  if (!request?.request_id) {
+    return null;
+  }
+  return request;
 }
 
 export function RequesterTicketPage() {
@@ -114,8 +123,32 @@ export function RequesterTicketPage() {
     },
   });
 
+  const confirmationMutation = useMutation({
+    mutationFn: ({ requestId, optionId }: { requestId: string; optionId: "confirm" | "reject" }) =>
+      sendPublicTicketConfirmation(ticketId, token, requestId, optionId),
+    onSuccess: async (_result, variables) => {
+      setFeedback({
+        tone: "success",
+        text: variables.optionId === "confirm" ? "Решение подтверждено." : "Решение отклонено.",
+      });
+      await ticketQuery.refetch();
+    },
+    onError: (error) => {
+      setFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось отправить подтверждение.",
+      });
+    },
+  });
+
   const ticket = ticketQuery.data?.ticket;
   const messages = useMemo(() => ticketQuery.data?.messages ?? [], [ticketQuery.data?.messages]);
+  const activeConfirmationRequest = useMemo(
+    () => messages.map(confirmationRequest).find(Boolean) ?? null,
+    [messages],
+  );
+  const showResolutionConfirmation =
+    ticket?.status === "resolved" && Boolean(ticket?.resolution_confirmation_pending) && Boolean(activeConfirmationRequest?.request_id);
   const requesterStatusLabel =
     ticket?.public_status_label?.trim() ||
     ticket?.requester_status_label?.trim() ||
@@ -213,15 +246,50 @@ export function RequesterTicketPage() {
 
             <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-2">
               {messages.length ? (
-                messages.map((item, index) => (
-                  <article key={item.message_id ?? item.event_id ?? index} className="rounded-[1rem] border border-border bg-white px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-slate-950">{messageAuthor(item)}</p>
-                      <p className="text-xs text-slate-400">{formatDateTime(item.ts ?? item.created_at)}</p>
-                    </div>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{item.text}</p>
-                  </article>
-                ))
+                messages.map((item, index) => {
+                  const request = confirmationRequest(item);
+                  const canAnswerConfirmation =
+                    showResolutionConfirmation && request?.request_id === activeConfirmationRequest?.request_id;
+                  return (
+                    <article key={item.message_id ?? item.event_id ?? index} className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-semibold text-slate-950">{messageAuthor(item)}</p>
+                        <p className="text-xs text-slate-400">{formatDateTime(item.ts ?? item.created_at)}</p>
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{item.text}</p>
+                      {canAnswerConfirmation && request?.request_id ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button
+                            disabled={confirmationMutation.isPending}
+                            leadingIcon={<CheckCircle2 className="h-4 w-4" />}
+                            onClick={() =>
+                              confirmationMutation.mutate({
+                                requestId: request.request_id ?? "",
+                                optionId: "confirm",
+                              })
+                            }
+                            type="button"
+                          >
+                            Подтвердить и закрыть
+                          </Button>
+                          <Button
+                            disabled={confirmationMutation.isPending}
+                            onClick={() =>
+                              confirmationMutation.mutate({
+                                requestId: request.request_id ?? "",
+                                optionId: "reject",
+                              })
+                            }
+                            type="button"
+                            variant="outline"
+                          >
+                            Отклонить решение
+                          </Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })
               ) : (
                 <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
                   Сообщений пока нет.
@@ -274,14 +342,13 @@ export function RequesterTicketPage() {
             <CardContent className="space-y-3 text-sm text-slate-600">
               <p>Тикет: {ticket?.ticket_code || ticketId}</p>
               <p>Статус: {requesterStatusLabel}</p>
-              {ticket?.status === "resolved" ? (
+              {ticket?.status === "resolved" && !showResolutionConfirmation ? (
                 <Button
                   disabled={closeMutation.isPending}
                   leadingIcon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={() => closeMutation.mutate()}
-                  variant="outline"
                 >
-                  Подтвердить решение
+                  Подтвердить и закрыть
                 </Button>
               ) : null}
               <Link className="text-sm font-semibold text-brand-700 hover:text-brand-900" to="/app/help">

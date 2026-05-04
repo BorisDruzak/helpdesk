@@ -120,7 +120,31 @@
         return parts.join(" · ");
     }
 
-    function renderMessages(messages) {
+    function confirmationRequestFromMessage(message) {
+        const metadata = message && typeof message.metadata === "object" ? message.metadata : {};
+        const request = metadata && typeof metadata.confirmation_request === "object"
+            ? metadata.confirmation_request
+            : null;
+        if (!request || !request.request_id) return null;
+        return request;
+    }
+
+    function renderConfirmationActions(request, ticket) {
+        const pending = ticket && ticket.status === "resolved" && ticket.resolution_confirmation_pending;
+        if (!pending || !request || !request.request_id) return "";
+        return `
+            <div class="confirmation-actions" data-confirmation-request="${escapeHtml(request.request_id)}">
+                <button type="button" class="confirmation-btn confirmation-btn-primary" data-confirmation-option="confirm">
+                    Подтвердить и закрыть
+                </button>
+                <button type="button" class="confirmation-btn confirmation-btn-secondary" data-confirmation-option="reject">
+                    Отклонить решение
+                </button>
+            </div>
+        `;
+    }
+
+    function renderMessages(messages, ticket) {
         const history = el("chatHistory");
         if (!history) return;
         const items = Array.isArray(messages) ? messages : [];
@@ -130,6 +154,7 @@
         }
         history.innerHTML = items.map((msg) => {
             const role = msg.from_role || "user";
+            const confirmationActions = renderConfirmationActions(confirmationRequestFromMessage(msg), ticket);
             return `
                 <article class="chat-message" data-role="${escapeHtml(role)}">
                     <div class="chat-message-head">
@@ -137,6 +162,7 @@
                         <span>${escapeHtml(formatTs(msg.ts))}</span>
                     </div>
                     <div class="chat-message-body">${escapeHtml(msg.text || "")}</div>
+                    ${confirmationActions}
                 </article>
             `;
         }).join("");
@@ -364,7 +390,7 @@
         const ticket = data.ticket || {};
         el("chatTitle").textContent = ticket.ticket_code || ticket.ticket_id || "Тикет";
         el("chatMeta").textContent = renderTicketMeta(ticket);
-        renderMessages(data.messages || []);
+        renderMessages(data.messages || [], ticket);
         showChatMode();
         setStatus("Тикет загружен");
     }
@@ -494,6 +520,31 @@
         }
     }
 
+    async function sendConfirmationResponse(requestId, optionId) {
+        const text = optionId === "confirm" ? "Подтверждаю решение" : "Решение не принято";
+        setStatus("Отправляем решение...");
+        const response = await fetch("/api/tickets/" + encodeURIComponent(ticketId) + "/message", {
+            method: "POST",
+            headers: authHeaders(true),
+            body: JSON.stringify({
+                text,
+                visibility: "public",
+                metadata: {
+                    confirmation_response: {
+                        request_id: requestId,
+                        option_id: optionId,
+                    },
+                },
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== "ok") {
+            throw new Error(data.error || "Не удалось отправить решение");
+        }
+        await loadTicket();
+        setStatus(optionId === "confirm" ? "Решение подтверждено" : "Решение отклонено");
+    }
+
     function startPolling() {
         stopPolling();
         pollTimer = setInterval(() => {
@@ -562,6 +613,22 @@
     el("createForm")?.addEventListener("submit", createTicket);
     el("authForm")?.addEventListener("submit", submitAuth);
     el("chatForm")?.addEventListener("submit", sendMessage);
+    el("chatHistory")?.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-confirmation-option]");
+        if (!button) return;
+        const root = button.closest("[data-confirmation-request]");
+        const requestId = String(root?.getAttribute("data-confirmation-request") || "").trim();
+        const optionId = String(button.getAttribute("data-confirmation-option") || "").trim();
+        if (!requestId || !["confirm", "reject"].includes(optionId)) return;
+        const buttons = root.querySelectorAll("[data-confirmation-option]");
+        buttons.forEach((item) => { item.disabled = true; });
+        try {
+            await sendConfirmationResponse(requestId, optionId);
+        } catch (err) {
+            buttons.forEach((item) => { item.disabled = false; });
+            setStatus(err.message || "Ошибка отправки решения", true);
+        }
+    });
     window.addEventListener("beforeunload", stopPolling);
     init().catch((err) => setStatus(err.message || "Ошибка инициализации", true));
 })();

@@ -20,6 +20,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     build_request_template_card_summary,
     build_diagnostic_consent_payload,
     build_default_ticket_form_pack,
+    diagnostic_consent_submission_error,
     format_attachment_item_label,
     build_priority_facts_payload,
     build_priority_facts_payload_from_form,
@@ -876,6 +877,22 @@ def test_diagnostic_consent_payload_marks_requester_device_decision():
         "request_template_key": "website_unavailable",
     }
     assert build_diagnostic_consent_payload({}, granted=True) is None
+
+
+def test_diagnostic_consent_submission_error_blocks_silent_skip():
+    form = {
+        "request_template_key": "website_unavailable",
+        "diagnostic_policy": {
+            "consent": {"required_for_requester_device": True},
+        },
+    }
+
+    assert diagnostic_consent_submission_error(form, granted=False) == (
+        "Для этого шаблона требуется согласие на диагностику. "
+        "Отметьте согласие или выберите шаблон без автодиагностики."
+    )
+    assert diagnostic_consent_submission_error(form, granted=True) == ""
+    assert diagnostic_consent_submission_error({}, granted=False) == ""
 
 
 def test_build_priority_facts_payload_keeps_legacy_booleans_and_structured_facts():

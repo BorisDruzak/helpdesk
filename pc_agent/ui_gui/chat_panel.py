@@ -611,6 +611,15 @@ def diagnostic_consent_required(form_def: Optional[dict[str, Any]]) -> bool:
     return bool(diagnostic_policy.get("requires_user_consent") or consent.get("required_for_requester_device"))
 
 
+def diagnostic_consent_submission_error(form_def: Optional[dict[str, Any]], *, granted: bool) -> str:
+    if diagnostic_consent_required(form_def) and not granted:
+        return (
+            "Для этого шаблона требуется согласие на диагностику. "
+            "Отметьте согласие или выберите шаблон без автодиагностики."
+        )
+    return ""
+
+
 def build_diagnostic_consent_payload(form_def: Optional[dict[str, Any]], *, granted: bool) -> Optional[dict[str, Any]]:
     if not diagnostic_consent_required(form_def):
         return None
@@ -2036,7 +2045,7 @@ class TicketCreateDialog(QDialog):
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
         self.diagnostic_consent_checkbox = QCheckBox(
-            "Разрешаю выполнить диагностику моего устройства для этого обращения"
+            "Разрешаю автодиагностику моего устройства сразу после создания обращения"
         )
         self.diagnostic_consent_checkbox.setVisible(False)
         layout.addWidget(self.diagnostic_consent_checkbox)
@@ -2143,6 +2152,13 @@ class TicketCreateDialog(QDialog):
                 "Не хватает данных",
                 "Заполните обязательные поля: " + ", ".join(missing_fields),
             )
+            return
+        consent_error = diagnostic_consent_submission_error(
+            self._selected_form(),
+            granted=self.diagnostic_consent_checkbox.isChecked(),
+        )
+        if consent_error:
+            QMessageBox.warning(self, "Требуется согласие", consent_error)
             return
         self.accept()
 
@@ -2474,7 +2490,7 @@ class TicketCreateWizardWidget(QFrame):
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(self.priority_dynamic_fields_widget)
         self.diagnostic_consent_checkbox = QCheckBox(
-            "Разрешаю выполнить диагностику моего устройства для этого обращения"
+            "Разрешаю автодиагностику моего устройства сразу после создания обращения"
         )
         self.diagnostic_consent_checkbox.stateChanged.connect(self._update_navigation_state)
         layout.addWidget(self.diagnostic_consent_checkbox)
@@ -2923,7 +2939,11 @@ class TicketCreateWizardWidget(QFrame):
         if step == 2:
             return bool(self.description_input.toPlainText().strip())
         if step == 3:
-            return not self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
+            consent_error = diagnostic_consent_submission_error(
+                self._selected_form(),
+                granted=self.diagnostic_consent_checkbox.isChecked(),
+            )
+            return not self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False) and not consent_error
         return True
 
     def _all_required_steps_ready(self) -> bool:
@@ -2973,6 +2993,12 @@ class TicketCreateWizardWidget(QFrame):
             missing_fields = self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=True)
             if missing_fields:
                 return "Заполните поля для расчета приоритета: " + ", ".join(missing_fields)
+            consent_error = diagnostic_consent_submission_error(
+                self._selected_form(),
+                granted=self.diagnostic_consent_checkbox.isChecked(),
+            )
+            if consent_error:
+                return consent_error
         return ""
 
     def _on_back_clicked(self) -> None:
@@ -3682,17 +3708,21 @@ class ChatPanel(QWidget):
         self.resolution_message_widget = QWidget()
         resolution_layout = QHBoxLayout(self.resolution_message_widget)
         resolution_layout.setContentsMargins(10, 8, 10, 8)
+        resolution_layout.setSpacing(10)
         self.resolution_prompt_label = QLabel(
-            "Поддержка перевела обращение в статус 'Решён'. Подтвердить закрытие?"
+            "Поддержка отметила обращение как решённое. Подтвердите закрытие или верните обращение в работу."
         )
+        self.resolution_prompt_label.setWordWrap(True)
         self.resolution_prompt_label.setStyleSheet(
             f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_PRIMARY}; background: transparent;"
         )
-        self.resolution_confirm_btn = QPushButton("Подтвердить")
+        self.resolution_confirm_btn = QPushButton("Подтвердить и закрыть")
         self.resolution_confirm_btn.setObjectName("PrimaryButton")
+        self.resolution_confirm_btn.setMinimumWidth(170)
         self.resolution_confirm_btn.clicked.connect(lambda: self._spawn_task(self._async_close_ticket()))
-        self.resolution_reject_btn = QPushButton("Отклонить")
+        self.resolution_reject_btn = QPushButton("Отклонить решение")
         self.resolution_reject_btn.setObjectName("SecondaryButton")
+        self.resolution_reject_btn.setMinimumWidth(150)
         self.resolution_reject_btn.clicked.connect(self._on_reject_resolution)
         resolution_layout.addWidget(self.resolution_prompt_label, 1)
         resolution_layout.addWidget(self.resolution_confirm_btn)
@@ -5640,9 +5670,48 @@ class ChatPanel(QWidget):
             self.tool_status_label.setText(f"Ошибка {tool_name}")
             QMessageBox.warning(self, "Инструмент", str(exc))
 
+    def _resolution_confirmation_request_id(self) -> str:
+        for message in reversed(self._active_ticket_messages):
+            metadata = message.get("metadata") if isinstance(message, dict) else {}
+            request = metadata.get("confirmation_request") if isinstance(metadata, dict) else None
+            if isinstance(request, dict):
+                request_id = str(request.get("request_id") or "").strip()
+                if request_id:
+                    return request_id
+        return ""
+
     def _on_reject_resolution(self) -> None:
-        self.resolution_message_widget.hide()
-        QMessageBox.information(self, "Решение отклонено", "Вы можете продолжить переписку в обращении.")
+        self._spawn_task(self._async_reject_resolution())
+
+    async def _async_reject_resolution(self) -> None:
+        try:
+            request_id = self._resolution_confirmation_request_id()
+            if not request_id:
+                raise RuntimeError("Не найден активный запрос подтверждения решения.")
+            action_id = get_action_trace_recorder().context(
+                source="gui_user",
+                action="ticket.reject_resolution",
+                category="ticket",
+                ticket_id=self.active_ticket_id,
+            ).action_id
+            await self.ticket_client.send_message(
+                self.active_ticket_id,
+                "Решение не принято",
+                from_role="user",
+                metadata={
+                    "confirmation_response": {
+                        "request_id": request_id,
+                        "option_id": "reject",
+                    }
+                },
+                trace_parent_action_id=action_id,
+            )
+            self.resolution_message_widget.hide()
+            await self._async_refresh_ticket_list()
+            await self._async_refresh_ticket_detail()
+        except Exception as exc:
+            logger.error(f"Ошибка отклонения решения тикета: {exc}")
+            QMessageBox.critical(self, "Ошибка", str(exc))
 
     async def _async_close_ticket(self) -> None:
         try:

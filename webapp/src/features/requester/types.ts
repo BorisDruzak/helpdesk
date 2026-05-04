@@ -43,6 +43,15 @@ export type PublicTicket = {
   requester_status_label?: string | null;
   public_status?: string | null;
   public_status_label?: string | null;
+  resolution_confirmation_pending?: boolean | null;
+};
+
+export type PublicTicketConfirmationRequest = {
+  request_id?: string | null;
+  options?: Array<{
+    id?: string | null;
+    label?: string | null;
+  }>;
 };
 
 export type PublicTicketMessage = {
@@ -53,6 +62,9 @@ export type PublicTicketMessage = {
   text?: string | null;
   ts?: string | null;
   created_at?: string | null;
+  metadata?: {
+    confirmation_request?: PublicTicketConfirmationRequest;
+  } | null;
 };
 
 export type PublicTicketCreatePayload = {

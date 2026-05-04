@@ -925,6 +925,21 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
             trace_id=str(uuid.uuid4()),
             event_id="msg-support-1",
         )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id="device-detail",
+            agent_seq=None,
+            event_type="chat_message",
+            payload={
+                "message_id": "msg-user-2",
+                "sender_role": "user",
+                "from": "user",
+                "text": "Спасибо, жду результат.",
+                "visibility": "public",
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id="msg-user-2",
+        )
         session.add(
             Operation(
                 operation_id=str(uuid.uuid4()),
@@ -958,6 +973,8 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["request_form"]["rows"][0] == {"key": "room", "label": "Кабинет", "value": "214"}
     assert payload["data"]["timeline"][0]["message_id"] == "msg-support-1"
     assert payload["data"]["timeline"][0]["text"] == "Проверяю логи и канал связи."
+    assert payload["data"]["timeline"][1]["message_id"] == "msg-user-2"
+    assert payload["data"]["timeline"][1]["text"] == "Спасибо, жду результат."
     assert payload["data"]["snapshot"]["device"]["hostname"] == "ws-detail-host"
     assert payload["data"]["snapshot"]["device"]["agent_version"] == "1.2.3"
     assert payload["data"]["snapshot"]["registry"]["person_display_name"] == "Иванов Иван"

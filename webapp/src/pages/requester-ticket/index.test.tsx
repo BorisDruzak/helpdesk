@@ -91,4 +91,72 @@ describe("RequesterTicketPage", () => {
     expect(await screen.findByRole("heading", { name: "Вход в тикет" })).toBeInTheDocument();
     expect(screen.getByLabelText("Код доступа")).toBeInTheDocument();
   });
+
+  it("renders requester resolution actions from confirmation metadata", async () => {
+    sessionStorage.setItem("public_ticket_token:T-3", "token-3");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/tickets/T-3") {
+        return jsonResponse({
+          status: "ok",
+          ticket: {
+            ticket_id: "T-3",
+            ticket_code: "HD-3",
+            status: "resolved",
+            resolution_confirmation_pending: true,
+          },
+          messages: [
+            {
+              message_id: "m-confirm",
+              text: "Проблема решена. Для подтверждения используйте одну из кнопок ниже.",
+              from_role: "support",
+              metadata: {
+                confirmation_request: {
+                  request_id: "request-3",
+                  options: [
+                    { id: "confirm", label: "Подтверждаю" },
+                    { id: "reject", label: "Не принято" },
+                  ],
+                },
+              },
+            },
+          ],
+        });
+      }
+      if (url === "/api/tickets/T-3/message") {
+        expect(init?.body).toBe(
+          JSON.stringify({
+            text: "Подтверждаю решение",
+            visibility: "public",
+            metadata: {
+              confirmation_response: {
+                request_id: "request-3",
+                option_id: "confirm",
+              },
+            },
+          }),
+        );
+        return jsonResponse({ status: "ok", message_id: "m-confirm-response" });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderRequesterTicket("/app/ticket/T-3");
+
+    expect(await screen.findByRole("button", { name: "Подтвердить и закрыть" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Отклонить решение" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить и закрыть" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/tickets/T-3/message",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({ Authorization: "Bearer token-3" }),
+        }),
+      );
+    });
+  });
 });

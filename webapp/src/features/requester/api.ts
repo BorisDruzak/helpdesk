@@ -110,6 +110,30 @@ export async function sendPublicTicketMessage(
   await readOk<unknown>(response, "Не удалось отправить сообщение");
 }
 
+export async function sendPublicTicketConfirmation(
+  ticketId: string,
+  token: string,
+  requestId: string,
+  optionId: "confirm" | "reject",
+): Promise<void> {
+  const text = optionId === "confirm" ? "Подтверждаю решение" : "Решение не принято";
+  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/message`, {
+    method: "POST",
+    headers: publicHeaders(token, true),
+    body: JSON.stringify({
+      text,
+      visibility: "public",
+      metadata: {
+        confirmation_response: {
+          request_id: requestId,
+          option_id: optionId,
+        },
+      },
+    }),
+  });
+  await readOk<unknown>(response, "Не удалось отправить подтверждение");
+}
+
 export async function closePublicTicket(ticketId: string, token: string): Promise<void> {
   const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/close`, {
     method: "POST",
