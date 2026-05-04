@@ -6,7 +6,7 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 33A backend slice started: structured evidence contract, ticket-scoped passport operations, evidence candidates/link API and closure evidence verification are implemented locally.
+Last updated: 2026-05-04, Stage 33A backend slice deployed and live-checked on `#T-000512` and `#T-000513`: structured evidence contract, ticket-scoped passport operations, evidence candidates/link API and closure evidence verification are active on the Linux stand.
 
 Current plan completion: 99.3%; passport/evidence remains an open product-quality track before final acceptance.
 
@@ -901,11 +901,17 @@ Backend execution status, 2026-05-04:
   - `TicketEvidenceService` collects ticket-scoped operation/artifact candidates and links candidates into accepted evidence;
   - typed backend API now exposes `GET /api/web/support/tickets/{ticket_id}/passport/evidence-candidates` and `POST /api/web/support/tickets/{ticket_id}/passport/evidence/link`;
   - closure policy ignores rejected/archived/superseded evidence.
+- Verified on Linux stand:
+  - release `cd5271d` deployed with migration `069`;
+  - smoke passed on `http://192.168.100.17:8666/api/health`;
+  - `#T-000513` before refresh had polluted passport `source_operation_ids=10`; after refresh with the new backend it had `source_operation_ids=1` and only ticket-scoped evidence candidate `operation:8bcdf81d-167e-42d9-8c9d-2be3d0da505e`;
+  - `#T-000513` evidence candidate link endpoint created accepted structured evidence `id=16` with `source_kind=operation`, `required_fact=automated_checks`, and repeated link stayed idempotent with `evidence_count=1`;
+  - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
 - Still backend-open:
   - worklog, approval, chat-message and observer-trace candidates;
   - stale passport detection after new source/evidence changes;
   - verify/reject/archive update endpoint;
-  - live remote migration/deploy/browser/API re-check.
+  - browser UI re-check after the later visual workspace work.
 
 Current context and confirmed gaps:
 
