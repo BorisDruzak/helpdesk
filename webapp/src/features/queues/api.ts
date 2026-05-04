@@ -232,6 +232,8 @@ export type SupportTicketDetailPayload = {
       recommended_actions?: string[];
       candidate_count?: number;
       source_candidates?: Array<Record<string, unknown>>;
+      stale_reasons?: string[];
+      current_source_counts?: Record<string, number>;
     }>;
     approval?: {
       waiting_status?: string | null;

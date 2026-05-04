@@ -249,6 +249,10 @@ def _reporting_export_preview(policy: dict[str, Any], sections: dict[str, str]) 
     }
 
 
+def _countable_events(events: list[TicketEvent]) -> list[TicketEvent]:
+    return [event for event in events if not str(event.event_type or "").startswith("passport_")]
+
+
 def _section_has_required_fact(
     section: str,
     *,
@@ -447,7 +451,7 @@ class TicketPassportService:
             "source_event_ids": [event.id for event in events if event.id is not None],
             "source_operation_ids": [op.operation_id for op in operations],
             "source_counts": {
-                "events": len(events),
+                "events": len(_countable_events(events)),
                 "operations": len(operations),
                 "worklogs": len(worklogs),
                 "evidence": len(evidence),
@@ -644,6 +648,14 @@ class TicketPassportService:
         actions = await self.repo.list_actions(ticket_id)
         approvals = await self.repo.list_approvals(ticket_id)
         related_objects = await self.repo.list_related_objects(ticket_id)
+        current_source_counts: dict[str, int] | None = None
+        if passport is not None and ticket is not None:
+            current_source_counts = await self._current_source_counts(
+                ticket=ticket,
+                evidence=evidence,
+                approvals=approvals,
+                related_objects=related_objects,
+            )
         requirements: dict[str, Any] = {}
         if passport is not None:
             source_payload = passport.source_payload or {}
@@ -666,12 +678,17 @@ class TicketPassportService:
         if passport is not None:
             passport_stale, passport_stale_reasons = self._passport_stale_state(
                 passport,
-                ticket=ticket,
                 evidence=evidence,
+                current_source_counts=current_source_counts,
             )
         return {
             "ticket_id": ticket_id,
-            "passport": self._passport_to_dict(passport, passport_stale, passport_stale_reasons) if passport else None,
+            "passport": self._passport_to_dict(
+                passport,
+                passport_stale,
+                passport_stale_reasons,
+                current_source_counts=current_source_counts,
+            ) if passport else None,
             "status": "draft" if passport else "missing",
             "requirements": requirements,
             "evidence": [self._evidence_to_dict(item) for item in evidence],
@@ -714,6 +731,30 @@ class TicketPassportService:
         )
         return list(result.scalars().all())
 
+    async def _current_source_counts(
+        self,
+        *,
+        ticket: Ticket,
+        evidence: list[TicketEvidenceItem] | None = None,
+        approvals: list[TicketApproval] | None = None,
+        related_objects: list[TicketRelatedObject] | None = None,
+    ) -> dict[str, int]:
+        ticket_id = ticket.ticket_id
+        events = await self._load_events(ticket_id)
+        operations = await self._load_operations(ticket_id, ticket.device_id)
+        worklogs = await self._load_worklogs(ticket_id)
+        evidence_items = evidence if evidence is not None else await self.repo.list_evidence(ticket_id)
+        approval_items = approvals if approvals is not None else await self.repo.list_approvals(ticket_id)
+        related_items = related_objects if related_objects is not None else await self.repo.list_related_objects(ticket_id)
+        return {
+            "events": len(_countable_events(events)),
+            "operations": len(operations),
+            "worklogs": len(worklogs),
+            "evidence": len(evidence_items),
+            "approvals": len(approval_items),
+            "related_objects": len(related_items),
+        }
+
     async def _record_passport_event(
         self,
         ticket: Ticket,
@@ -734,12 +775,29 @@ class TicketPassportService:
             event_id=f"passport-generated-{passport.id}",
         )
 
-    def _passport_stale_state(
+    async def get_passport_stale_state(
         self,
         passport: TicketResolutionPassport | None,
         *,
         ticket: Ticket | None,
+    ) -> tuple[bool, list[str], dict[str, int]]:
+        if passport is None or ticket is None:
+            return False, [], {}
+        evidence = await self.repo.list_evidence(ticket.ticket_id)
+        current_source_counts = await self._current_source_counts(ticket=ticket, evidence=evidence)
+        stale, reasons = self._passport_stale_state(
+            passport,
+            evidence=evidence,
+            current_source_counts=current_source_counts,
+        )
+        return stale, reasons, current_source_counts
+
+    def _passport_stale_state(
+        self,
+        passport: TicketResolutionPassport | None,
+        *,
         evidence: list[TicketEvidenceItem],
+        current_source_counts: dict[str, int] | None = None,
     ) -> tuple[bool, list[str]]:
         if passport is None:
             return False, []
@@ -747,6 +805,18 @@ class TicketPassportService:
         reasons: list[str] = []
         if any(item.created_at and item.created_at > generated_at for item in evidence):
             reasons.append("evidence_changed")
+        source_payload = passport.source_payload if isinstance(passport.source_payload, dict) else {}
+        stored_counts = source_payload.get("source_counts") if isinstance(source_payload, dict) else {}
+        if isinstance(stored_counts, dict) and current_source_counts:
+            for key, current_count in current_source_counts.items():
+                if key == "evidence":
+                    continue
+                try:
+                    stored_count = int(stored_counts.get(key, 0))
+                except (TypeError, ValueError):
+                    stored_count = 0
+                if stored_count != int(current_count):
+                    reasons.append(f"{key}_changed")
         return bool(reasons), reasons
 
     def _passport_to_dict(
@@ -754,9 +824,12 @@ class TicketPassportService:
         passport: TicketResolutionPassport,
         stale: bool = False,
         stale_reasons: list[str] | None = None,
+        current_source_counts: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         sections = {key: getattr(passport, attr) or "" for key, attr in SECTION_KEYS.items()}
         source_payload = dict(passport.source_payload or {})
+        if current_source_counts:
+            source_payload["current_source_counts"] = current_source_counts
         if stale_reasons:
             source_payload["stale_reasons"] = stale_reasons
         reporting_policy = source_payload.get("reporting_policy") if isinstance(source_payload, dict) else {}

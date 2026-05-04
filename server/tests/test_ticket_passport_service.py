@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport
+from app.db.models import Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport, TicketWorklog
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.passport_service import TicketPassportService
 
@@ -464,6 +464,44 @@ async def test_passport_payload_marks_stale_after_new_evidence(test_engine):
         assert first["passport"]["stale"] is False
         assert payload["passport"]["stale"] is True
         assert payload["passport"]["source_payload"]["stale_reasons"] == ["evidence_changed"]
+
+
+@pytest.mark.asyncio
+async def test_passport_payload_marks_stale_after_new_worklog_source(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Stale passport source",
+                description="Initial passport",
+                status="in_progress",
+                requester_id="user-stale-source",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        first = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        session.add(
+            TicketWorklog(
+                ticket_id=ticket_id,
+                actor_id="op1",
+                spent_minutes=5,
+                note="Checked source after passport generation.",
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).get_payload(ticket_id)
+
+        assert first["passport"]["stale"] is False
+        assert payload["passport"]["stale"] is True
+        assert "worklogs_changed" in payload["passport"]["source_payload"]["stale_reasons"]
+        assert payload["passport"]["source_payload"]["current_source_counts"]["worklogs"] == 1
 
 
 @pytest.mark.asyncio

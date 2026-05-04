@@ -15,6 +15,7 @@ from app.db.models import (
     TicketActionLog,
     TicketApproval,
     TicketEvidenceItem,
+    TicketWorklog,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
@@ -710,6 +711,56 @@ async def test_closure_requirements_include_official_passport_missing_facts(test
     assert by_key["passport_missing:evidence"]["recommended_actions"]
     assert by_key["passport_missing:user_result"]["met"] is False
     assert by_key["passport_missing:user_result"]["fact_key"] == "user_result"
+
+
+@pytest.mark.asyncio
+async def test_closure_requirements_block_stale_official_passport(test_engine) -> None:
+    await _clear_reporting_registry(test_engine)
+    await _publish_reporting_policy(
+        test_engine,
+        {
+            "required_sections": ["problem"],
+            "require_official_passport": True,
+        },
+    )
+    ticket_id = await _seed_ticket(
+        test_engine,
+        closure_policy={
+            "before_resolved": {
+                "require_resolution_code": True,
+                "require_public_summary": True,
+            },
+        },
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+        session.add(
+            TicketWorklog(
+                ticket_id=ticket_id,
+                actor_id="op1",
+                spent_minutes=5,
+                note="Fresh source after passport generation.",
+            )
+        )
+        await session.flush()
+
+        requirements = await build_closure_requirements(session, ticket)
+        await session.commit()
+
+    by_key = {item["key"]: item for item in requirements}
+    assert by_key["official_passport_stale"]["met"] is False
+    assert "worklogs_changed" in by_key["official_passport_stale"]["stale_reasons"]
+
+    with pytest.raises(ValueError, match="fresh official passport"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            requester_resolution_summary="Сайт снова открывается.",
+        )
 
 
 @pytest.mark.asyncio

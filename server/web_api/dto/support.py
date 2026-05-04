@@ -346,6 +346,8 @@ class SupportClosureRequirement(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
     candidate_count: int = 0
     source_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    stale_reasons: list[str] = Field(default_factory=list)
+    current_source_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class SupportTicketActions(BaseModel):

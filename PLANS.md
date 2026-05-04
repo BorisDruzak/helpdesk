@@ -893,7 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-05:
 
-- Progress: 76% of Stage 33A backend scope verified live/tested; UI evidence workspace remains explicitly out of this backend slice.
+- Progress: 82% of Stage 33A backend scope verified locally and partly live; UI evidence workspace remains explicitly out of this backend slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -904,10 +904,11 @@ Backend execution status, 2026-05-05:
   - closure policy ignores rejected/archived/superseded evidence.
   - evidence candidates now also include worklogs, approvals, support/requester/internal chat messages and ticket observer traces;
   - `PATCH /api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}` verifies/rejects/archives evidence with actor, reason and metadata;
-  - passport payloads mark `stale=true` with `stale_reasons=["evidence_changed"]` when accepted/new evidence appears after generation.
+  - passport payloads mark `stale=true` with `stale_reasons` and `current_source_counts` when accepted/new evidence or countable sources appear after generation.
   - missing facts now include source candidate previews/counts from the same candidate collector used by evidence-linking;
   - accepted evidence can satisfy matching passport facts by `required_fact`, `section_key` or accepted `evidence_type`, while rejected/archived/superseded evidence stays excluded;
-  - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure.
+  - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure;
+  - official-passport closure gates now reject stale passports and expose `official_passport_stale` with stale reasons/current source counts in support detail.
 - Verified on Linux stand:
   - release `3ed5de1` deployed after migration check and webapp rebuild; smoke passed on `http://192.168.100.17:8666/api/health`;
   - `#T-000513` passport refresh completed as version 3 with no missing facts after existing accepted evidence/summary coverage;
@@ -923,8 +924,11 @@ Backend execution status, 2026-05-05:
   - `#T-000513` before refresh had polluted passport `source_operation_ids=10`; after refresh with the new backend it had `source_operation_ids=1` and only ticket-scoped evidence candidate `operation:8bcdf81d-167e-42d9-8c9d-2be3d0da505e`;
   - `#T-000513` evidence candidate link endpoint created accepted structured evidence `id=16` with `source_kind=operation`, `required_fact=automated_checks`, and repeated link stayed idempotent with `evidence_count=1`;
   - `#T-000512` refresh exposed 4 ticket-scoped operation candidates and did not require device-wide fallback.
+- Local verification pending deploy:
+  - `python -m pytest server\tests\test_ticket_passport_service.py::test_passport_payload_marks_stale_after_new_worklog_source server\tests\test_ticket_closure_policy.py::test_closure_requirements_block_stale_official_passport -q --tb=short` -> 2 passed;
+  - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_web_api.py server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 36 passed after a transient first-run harness miss was not reproduced.
 - Still backend-open:
-  - stale detection beyond evidence changes, e.g. new worklog/approval/chat/observer source after generation;
+  - live browser/UI treatment for stale passport and source preview actions;
   - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
@@ -1064,7 +1068,7 @@ Implementation plan:
     - refresh creates new version and previous manual edits are either carried forward or explicitly marked superseded;
     - stale flag changes after new evidence/action;
     - generated evidence section lists evidence titles/source refs, not just a count.
-  - 2026-05-04 backend slice complete for stale after evidence changes. Broader stale source coverage remains open.
+  - 2026-05-05 backend slice complete locally: source-count stale detection covers non-passport events, operations, worklogs, approvals and related objects; evidence still uses timestamp detection to preserve exact `evidence_changed` reasons. Passport payloads include `source_payload.current_source_counts` and `source_payload.stale_reasons`.
 
 - [ ] Stage 33A.6 - Closure policy integration.
   - Update `server/tickets/closure_policy.py` so closure checks use the same fact coverage/evidence service as the UI.
@@ -1079,7 +1083,7 @@ Implementation plan:
     - closure block message includes the exact missing fact keys;
     - accepted evidence unblocks closure;
     - rejected/archived evidence does not unblock closure.
-  - 2026-05-05 backend slice complete for rejected/archived/superseded evidence exclusion and support-detail `closure_requirements` passport missing fact keys. Stale-passport closure guard remains open for Stage 33A.5/33A.6 follow-up.
+  - 2026-05-05 backend slice complete for rejected/archived/superseded evidence exclusion, support-detail `closure_requirements` passport missing fact keys, and stale official-passport guard via `official_passport_stale`.
 
 - [ ] Stage 33A.7 - Support UI passport redesign inside current workspace.
   - Modify `webapp/src/pages/tickets/detail-page.tsx` and focused tests.

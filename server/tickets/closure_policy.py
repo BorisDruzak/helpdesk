@@ -15,6 +15,7 @@ from app.db.models import (
     TicketWorklog,
 )
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
+from tickets.passport_service import TicketPassportService
 from tickets.statuses import extract_priority_class
 
 
@@ -193,6 +194,12 @@ async def _official_passport_requirement(
     requirements = source_payload.get("passport_requirements") if isinstance(source_payload, dict) else {}
     if not isinstance(requirements, dict):
         raise ValueError("closure_policy requires official passport")
+    stale, stale_reasons, current_source_counts = await TicketPassportService(session).get_passport_stale_state(
+        passport,
+        ticket=ticket,
+    )
+    if stale:
+        raise ValueError("closure_policy requires fresh official passport")
     blocking_missing = await _passport_blocking_missing_facts_for_closure(
         session,
         ticket,
@@ -207,6 +214,9 @@ async def _official_passport_requirement(
         "passport_id": passport.id,
         "version": passport.version,
         "blocking_missing_count": len(blocking_missing),
+        "stale": False,
+        "stale_reasons": stale_reasons,
+        "current_source_counts": current_source_counts,
     }
 
 
@@ -347,6 +357,17 @@ def _passport_missing_fact_requirement(item: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _passport_stale_requirement(stale_reasons: list[str], current_source_counts: dict[str, int]) -> dict[str, Any]:
+    return _requirement(
+        "official_passport_stale",
+        "Официальный паспорт устарел",
+        False,
+        "После сборки паспорта появились новые источники. Обновите паспорт перед закрытием.",
+        stale_reasons=stale_reasons,
+        current_source_counts=current_source_counts,
+    )
+
+
 async def _official_passport_missing_fact_requirements(session: Any, ticket: Any) -> list[dict[str, Any]]:
     reporting_policy = await resolve_effective_ticket_policy(
         session,
@@ -384,6 +405,10 @@ async def _official_passport_missing_fact_requirements(session: Any, ticket: Any
                 "Пересоберите паспорт решения: требования паспорта отсутствуют.",
             )
         ]
+    stale, stale_reasons, current_source_counts = await TicketPassportService(session).get_passport_stale_state(
+        passport,
+        ticket=ticket,
+    )
     missing = await _passport_blocking_missing_facts_for_closure(
         session,
         ticket,
@@ -391,7 +416,10 @@ async def _official_passport_missing_fact_requirements(session: Any, ticket: Any
         public_summary=getattr(ticket, "requester_resolution_summary", None) or getattr(ticket, "resolution_summary", None),
         internal_summary=getattr(ticket, "resolution_summary", None),
     )
-    return [_passport_missing_fact_requirement(item) for item in missing]
+    requirements_payload = [_passport_missing_fact_requirement(item) for item in missing]
+    if stale:
+        requirements_payload.insert(0, _passport_stale_requirement(stale_reasons, current_source_counts))
+    return requirements_payload
 
 
 async def build_closure_requirements(session: Any, ticket: Any) -> list[dict[str, Any]]:
