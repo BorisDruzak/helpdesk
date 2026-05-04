@@ -2587,7 +2587,14 @@ async def handle_notification_preferences_post(request: web.Request) -> web.Resp
             suppress_self=data.get("suppress_self"),
         )
         await session.commit()
-        return _json_ok(preferences=serialize_datetime_recursive(pref))
+        return _json_ok(
+            preferences={
+                "actor_id": pref.actor_id,
+                "mute_internal": bool(pref.mute_internal),
+                "muted_event_types": pref.muted_event_types if isinstance(pref.muted_event_types, list) else [],
+                "suppress_self": bool(pref.suppress_self),
+            }
+        )
 
 
 async def handle_notification_mark_read(request: web.Request) -> web.Response:

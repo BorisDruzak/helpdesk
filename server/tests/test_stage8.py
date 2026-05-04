@@ -3,6 +3,7 @@ Stage 8: Notification Preferences, Problem/Change Hardening — unit and integra
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from tests.conftest import TEST_UI_USER_PREFIX
 
 from tickets.problems_statuses import (
     PROBLEM_STATUSES,
@@ -63,6 +64,29 @@ async def test_notification_prefs_repo_get_or_default():
     assert mute is False
     assert muted_types == []
     assert suppress is True
+
+
+@pytest.mark.asyncio
+async def test_notification_preferences_post_returns_serialized_payload(test_client):
+    response = await test_client.post(
+        "/api/web/notifications/preferences",
+        json={
+            "mute_internal": False,
+            "muted_event_types": ["status_changed"],
+            "suppress_self": False,
+        },
+        headers={"Authorization": f"Bearer {TEST_UI_USER_PREFIX}notification-prefs"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["preferences"] == {
+        "actor_id": "notification-prefs",
+        "mute_internal": False,
+        "muted_event_types": ["status_changed"],
+        "suppress_self": False,
+    }
 
 
 @pytest.mark.asyncio
