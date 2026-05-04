@@ -5,10 +5,12 @@ from typing import Any
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Operation,
+    PlaybookRun,
     Ticket,
     TicketActionLog,
     TicketApproval,
@@ -67,6 +69,43 @@ PASSPORT_REQUIREMENT_SOURCES = {
     "repeat_guidance": "passport.repeat_guidance",
 }
 
+PASSPORT_ACCEPTED_EVIDENCE_TYPES = {
+    "requester": ["ticket_field", "chat_message"],
+    "problem": ["ticket_field", "chat_message"],
+    "affected_object": ["ticket_field", "asset", "device", "service"],
+    "automated_checks": ["diagnostic_result", "operation_log", "playbook_run"],
+    "operator_checks": ["worklog", "operation_log", "manual_note"],
+    "changes_made": ["worklog", "chat_message", "manual_note"],
+    "approvals": ["approval"],
+    "evidence": ["diagnostic_result", "screenshot", "video", "file_attachment", "operation_log", "manual_note"],
+    "user_result": ["resolution_summary", "requester_confirmation", "chat_message"],
+    "internal_result": ["resolution_summary", "worklog", "manual_note"],
+    "repeat_guidance": ["resolution_summary", "manual_note"],
+}
+
+PASSPORT_RECOMMENDED_ACTIONS = {
+    "requester": ["Заполнить профиль заявителя или связать обращение с пользователем."],
+    "problem": ["Уточнить описание проблемы в обращении или публичном сообщении."],
+    "affected_object": ["Связать обращение с устройством, активом или сервисом."],
+    "automated_checks": ["Запустить доступный диагностический плейбук или привязать завершённую операцию."],
+    "operator_checks": ["Добавить worklog/internal note или привязать результат проверки."],
+    "changes_made": ["Зафиксировать выполненное действие в worklog или сообщении поддержки."],
+    "approvals": ["Получить требуемое согласование или привязать существующее решение."],
+    "evidence": ["Привязать диагностический результат, скриншот, файл, лог операции или добавить ручное доказательство."],
+    "user_result": ["Заполнить публичный итог для заявителя в переходе статуса или паспорте."],
+    "internal_result": ["Заполнить внутренний итог, код решения или причину."],
+    "repeat_guidance": ["Добавить инструкцию, что делать при повторении проблемы."],
+}
+
+PASSPORT_FACT_BLOCKING_BY_DEFAULT = {
+    "requester",
+    "problem",
+    "affected_object",
+    "evidence",
+    "user_result",
+    "internal_result",
+}
+
 
 def _iso(value: Any) -> str | None:
     if value is None:
@@ -97,6 +136,35 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _usable_evidence(evidence: list[TicketEvidenceItem]) -> list[TicketEvidenceItem]:
+    rejected = {"rejected", "archived", "superseded"}
+    return [
+        item
+        for item in evidence
+        if str(getattr(item, "verification_status", "") or "unverified").lower() not in rejected
+    ]
+
+
+def _evidence_candidate_count(section: str, evidence: list[TicketEvidenceItem]) -> int:
+    accepted = set(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
+    if not accepted:
+        return 0
+    count = 0
+    for item in evidence:
+        if item.required_fact == section or item.section_key == section or item.evidence_type in accepted:
+            count += 1
+    return count
+
+
+def _is_blocking_required_fact(section: str, reporting_policy: dict[str, Any]) -> bool:
+    required_fact_policy = reporting_policy.get("required_facts") if isinstance(reporting_policy, dict) else None
+    if isinstance(required_fact_policy, dict):
+        item = required_fact_policy.get(section)
+        if isinstance(item, dict) and "blocking_for_closure" in item:
+            return bool(item.get("blocking_for_closure"))
+    return section in PASSPORT_FACT_BLOCKING_BY_DEFAULT
 
 
 def _reporting_policy_bool(policy: dict[str, Any], section: str, key: str, default: bool) -> bool:
@@ -168,7 +236,7 @@ def _section_has_required_fact(
         return bool(approvals), value if approvals and value else None
     if section == "evidence":
         value = _clean(sections.get(section))
-        has_evidence = bool(evidence) or bool(_clean(getattr(ticket, "evidence_ref", None)))
+        has_evidence = bool(_usable_evidence(evidence)) or bool(_clean(getattr(ticket, "evidence_ref", None)))
         return has_evidence, value if has_evidence and value else None
     if section == "user_result":
         value = _clean(getattr(ticket, "requester_resolution_summary", None))
@@ -213,13 +281,21 @@ def _build_passport_requirements(
         )
         if met:
             continue
+        blocking_for_closure = _is_blocking_required_fact(section, reporting_policy)
         missing_facts.append(
             {
                 "required_fact": section,
+                "section_key": section,
                 "source": PASSPORT_REQUIREMENT_SOURCES.get(section, f"passport.sections.{section}"),
                 "current_value": current_value,
                 "requester_visible_label": PASSPORT_REQUIREMENT_LABELS.get(section, section),
-                "severity": "blocking",
+                "severity": "blocking" if blocking_for_closure else "warning",
+                "accepted_evidence_types": PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []),
+                "candidate_count": _evidence_candidate_count(section, evidence),
+                "recommended_actions": PASSPORT_RECOMMENDED_ACTIONS.get(section, []),
+                "blocking_for_closure": blocking_for_closure,
+                "satisfied_by_evidence_ids": [],
+                "source_candidates": [],
             }
         )
     return {
@@ -315,6 +391,14 @@ class TicketPassportService:
             "passport_requirements": passport_requirements,
             "source_event_ids": [event.id for event in events if event.id is not None],
             "source_operation_ids": [op.operation_id for op in operations],
+            "source_counts": {
+                "events": len(events),
+                "operations": len(operations),
+                "worklogs": len(worklogs),
+                "evidence": len(evidence),
+                "approvals": len(approvals),
+                "related_objects": len(related_objects),
+            },
             "generated_from": {
                 "ticket_updated_at": _iso(ticket.updated_at),
                 "status": ticket.status,
@@ -538,22 +622,26 @@ class TicketPassportService:
         return list(result.scalars().all())
 
     async def _load_operations(self, ticket_id: str, device_id: str) -> list[Operation]:
+        playbook_run_ids = (
+            select(PlaybookRun.id)
+            .where(
+                PlaybookRun.device_id == device_id,
+                PlaybookRun.context_json["ticket_id"].astext == ticket_id,
+            )
+            .subquery()
+        )
         result = await self.session.execute(
             select(Operation)
-            .where(Operation.ticket_id == ticket_id)
+            .where(
+                or_(
+                    Operation.ticket_id == ticket_id,
+                    Operation.playbook_run_id.in_(select(playbook_run_ids.c.id)),
+                )
+            )
             .order_by(Operation.queued_at.asc())
             .limit(50)
         )
-        operations = list(result.scalars().all())
-        if operations:
-            return operations
-        result = await self.session.execute(
-            select(Operation)
-            .where(Operation.device_id == device_id)
-            .order_by(Operation.queued_at.desc())
-            .limit(10)
-        )
-        return list(reversed(result.scalars().all()))
+        return list(result.scalars().all())
 
     async def _load_worklogs(self, ticket_id: str) -> list[TicketWorklog]:
         result = await self.session.execute(
@@ -611,9 +699,22 @@ class TicketPassportService:
             "passport_id": item.passport_id,
             "evidence_type": item.evidence_type,
             "source_ref": item.source_ref,
+            "source_kind": item.source_kind,
+            "source_id": item.source_id,
+            "required_fact": item.required_fact,
+            "section_key": item.section_key,
+            "artifact_id": item.artifact_id,
             "title": item.title,
             "summary": item.summary,
             "visibility": item.visibility,
+            "verification_status": item.verification_status,
+            "verified_by": item.verified_by,
+            "verified_at": _iso(item.verified_at),
+            "captured_at": _iso(item.captured_at),
+            "public_summary": item.public_summary,
+            "internal_summary": item.internal_summary,
+            "metadata_json": item.metadata_json or {},
+            "export_visibility": item.export_visibility,
             "created_by": item.created_by,
             "created_at": _iso(item.created_at),
         }

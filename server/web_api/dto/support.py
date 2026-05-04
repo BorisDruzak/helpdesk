@@ -508,9 +508,22 @@ class SupportTicketEvidenceItemPayload(BaseModel):
     passport_id: int | None = None
     evidence_type: str
     source_ref: str | None = None
+    source_kind: str | None = None
+    source_id: str | None = None
+    required_fact: str | None = None
+    section_key: str | None = None
+    artifact_id: str | None = None
     title: str
     summary: str | None = None
     visibility: str
+    verification_status: str = "unverified"
+    verified_by: str | None = None
+    verified_at: str | None = None
+    captured_at: str | None = None
+    public_summary: str | None = None
+    internal_summary: str | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    export_visibility: str = "internal"
     created_by: str | None = None
     created_at: str | None = None
 
@@ -565,10 +578,17 @@ class SupportTicketPassportMissingFactPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     required_fact: str
+    section_key: str | None = None
     source: str
     current_value: str | None = None
     requester_visible_label: str
     severity: str
+    accepted_evidence_types: list[str] = Field(default_factory=list)
+    candidate_count: int = 0
+    recommended_actions: list[str] = Field(default_factory=list)
+    blocking_for_closure: bool = False
+    satisfied_by_evidence_ids: list[int] = Field(default_factory=list)
+    source_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SupportTicketPassportRequirementsPayload(BaseModel):
@@ -618,8 +638,55 @@ class SupportTicketPassportEvidenceRequest(BaseModel):
 
     evidence_type: str
     source_ref: str | None = None
+    source_kind: str | None = None
+    source_id: str | None = None
+    required_fact: str | None = None
+    section_key: str | None = None
+    artifact_id: str | None = None
     title: str
     summary: str | None = None
+    visibility: str = "internal"
+    verification_status: str = "unverified"
+    captured_at: str | None = None
+    public_summary: str | None = None
+    internal_summary: str | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    export_visibility: str = "internal"
+
+
+class SupportTicketEvidenceCandidatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    source_kind: str
+    source_id: str
+    source_ref: str
+    source_quality: str
+    evidence_type: str
+    required_fact: str
+    section_key: str
+    artifact_id: str | None = None
+    title: str
+    summary: str | None = None
+    visibility: str = "internal"
+    captured_at: str | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    existing_evidence_id: int | None = None
+
+
+class SupportTicketEvidenceCandidatesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    candidates: list[SupportTicketEvidenceCandidatePayload] = Field(default_factory=list)
+
+
+class SupportTicketPassportEvidenceLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_kind: str
+    source_id: str
+    required_fact: str | None = None
     visibility: str = "internal"
 
 

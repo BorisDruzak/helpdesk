@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
 from app.db.models import Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport
+from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.passport_service import TicketPassportService
 
 
@@ -172,10 +173,22 @@ async def test_passport_service_materializes_diagnostic_operation_evidence_from_
         evidence = evidence_rows[0]
         assert evidence.evidence_type == "diagnostic_result"
         assert evidence.source_ref == f"operation:{operation_id}"
+        assert evidence.source_kind == "operation"
+        assert evidence.source_id == operation_id
+        assert evidence.required_fact == "evidence"
+        assert evidence.section_key == "evidence"
+        assert evidence.verification_status == "accepted"
+        assert evidence.export_visibility == "internal"
+        assert evidence.metadata_json["operation_status"] == "succeeded"
+        assert evidence.metadata_json["tool_name"] == "diagnose.website"
         assert evidence.title == "diagnose.website"
         assert evidence.summary == "HTTP 200 OK, DNS resolved"
         assert evidence.created_by == "op1"
         assert first_payload["evidence"][0]["source_ref"] == f"operation:{operation_id}"
+        assert first_payload["evidence"][0]["source_kind"] == "operation"
+        assert first_payload["evidence"][0]["source_id"] == operation_id
+        assert first_payload["evidence"][0]["required_fact"] == "evidence"
+        assert first_payload["evidence"][0]["verification_status"] == "accepted"
         assert "HTTP 200 OK" in first_payload["passport"]["sections"]["evidence"]
         assert len(second_payload["evidence"]) == 1
 
@@ -301,6 +314,73 @@ async def test_passport_service_does_not_materialize_foreign_ticket_device_opera
         )
         assert evidence_count == 0
         assert payload["evidence"] == []
+        assert payload["passport"]["source_operation_ids"] == []
+        assert "HTTP 200 OK for another ticket" not in payload["passport"]["sections"].get("automated_checks", "")
+
+
+@pytest.mark.asyncio
+async def test_passport_repo_add_evidence_is_idempotent_by_source_and_fact(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    operation_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=str(uuid.uuid4()),
+                title="Need evidence",
+                description="Manual backend evidence test",
+                status="in_progress",
+                requester_id="user-evidence",
+                requester_status="in_work",
+                next_action_owner="support",
+            )
+        )
+        repo = TicketPassportRepo(session)
+        first = await repo.add_evidence(
+            ticket_id=ticket_id,
+            passport_id=None,
+            evidence_type="operation_log",
+            source_ref=f"operation:{operation_id}",
+            source_kind="operation",
+            source_id=operation_id,
+            required_fact="operator_checks",
+            section_key="operator_checks",
+            title="Operation log",
+            summary="Collected log",
+            visibility="internal",
+            verification_status="accepted",
+            export_visibility="internal",
+            metadata_json={"operation_status": "succeeded"},
+            created_by="op1",
+        )
+        second = await repo.add_evidence(
+            ticket_id=ticket_id,
+            passport_id=None,
+            evidence_type="operation_log",
+            source_ref=f"operation:{operation_id}",
+            source_kind="operation",
+            source_id=operation_id,
+            required_fact="operator_checks",
+            section_key="operator_checks",
+            title="Operation log duplicate",
+            summary="Collected log duplicate",
+            visibility="internal",
+            verification_status="accepted",
+            export_visibility="internal",
+            metadata_json={"operation_status": "succeeded"},
+            created_by="op1",
+        )
+        await session.flush()
+
+        count = await session.scalar(
+            select(func.count(TicketEvidenceItem.id)).where(TicketEvidenceItem.ticket_id == ticket_id)
+        )
+
+        assert first.id == second.id
+        assert count == 1
+        assert second.title == "Operation log"
 
 
 @pytest.mark.asyncio
@@ -475,8 +555,14 @@ async def test_passport_service_reports_missing_required_facts_and_export_previe
     missing_by_key = {item["required_fact"]: item for item in requirements["missing_facts"]}
     assert missing_by_key["evidence"]["source"] == "ticket_evidence_items"
     assert missing_by_key["evidence"]["current_value"] is None
+    assert missing_by_key["evidence"]["section_key"] == "evidence"
+    assert missing_by_key["evidence"]["blocking_for_closure"] is True
+    assert "diagnostic_result" in missing_by_key["evidence"]["accepted_evidence_types"]
+    assert missing_by_key["evidence"]["candidate_count"] == 0
+    assert missing_by_key["evidence"]["recommended_actions"]
     assert missing_by_key["evidence"]["requester_visible_label"] == "Доказательство решения"
     assert missing_by_key["user_result"]["source"] == "ticket.requester_resolution_summary"
+    assert "resolution_summary" in missing_by_key["user_result"]["accepted_evidence_types"]
     assert missing_by_key["internal_result"]["source"] == "ticket.resolution_summary"
     assert requirements["export_preview"]["visible_sections"] == ["problem", "evidence", "user_result"]
     assert requirements["export_preview"]["hidden_sections"] == ["internal_result", "operator_checks"]

@@ -197,6 +197,42 @@ async def test_closure_policy_requires_evidence_for_priority(test_engine) -> Non
 
 
 @pytest.mark.asyncio
+async def test_closure_policy_rejects_rejected_evidence_for_priority(test_engine) -> None:
+    ticket_id = await _seed_ticket(
+        test_engine,
+        priority_class="P0",
+        closure_policy={
+            "require_resolution_code": True,
+            "require_public_summary": True,
+            "require_evidence_for_priorities": ["P0", "P1"],
+        },
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="diagnostic_result",
+                title="Rejected check",
+                summary="Operator rejected this proof.",
+                source_ref="operation:rejected",
+                visibility="internal",
+                verification_status="rejected",
+                created_by="support-test",
+            )
+        )
+        await session.commit()
+
+    with pytest.raises(ValueError, match="evidence"):
+        await _resolve_ticket(
+            test_engine,
+            ticket_id,
+            resolution_code="fixed_remote",
+            resolution_summary="DNS switched to reserve resolver.",
+        )
+
+
+@pytest.mark.asyncio
 async def test_closure_policy_allows_resolution_when_requirements_are_met(test_engine) -> None:
     ticket_id = await _seed_ticket(
         test_engine,

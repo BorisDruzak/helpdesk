@@ -573,6 +573,23 @@ async def materialize_diagnostic_operation_evidence(
             .limit(1)
         )
         if existing is not None:
+            if not existing.source_kind:
+                existing.source_kind = "operation"
+                existing.source_id = operation.operation_id
+                existing.required_fact = existing.required_fact or "evidence"
+                existing.section_key = existing.section_key or "evidence"
+                existing.verification_status = existing.verification_status or "accepted"
+                existing.captured_at = existing.captured_at or operation.finished_at or operation.started_at or operation.queued_at
+                existing.metadata_json = {
+                    **(existing.metadata_json or {}),
+                    "operation_status": operation.status,
+                    "tool_name": operation.tool_name,
+                    "command_name": operation.command_name,
+                    "error_code": operation.error_code,
+                    "trace_id": operation.trace_id,
+                }
+                existing.export_visibility = existing.export_visibility or "internal"
+                await session.flush()
             materialized.append(existing)
             continue
 
@@ -580,9 +597,23 @@ async def materialize_diagnostic_operation_evidence(
             ticket_id=ticket.ticket_id,
             evidence_type="diagnostic_result",
             source_ref=source_ref,
+            source_kind="operation",
+            source_id=operation.operation_id,
+            required_fact="evidence",
+            section_key="evidence",
             title=_operation_title(operation),
             summary=_operation_summary(operation),
             visibility="internal",
+            verification_status="accepted",
+            captured_at=operation.finished_at or operation.started_at or operation.queued_at,
+            metadata_json={
+                "operation_status": operation.status,
+                "tool_name": operation.tool_name,
+                "command_name": operation.command_name,
+                "error_code": operation.error_code,
+                "trace_id": operation.trace_id,
+            },
+            export_visibility="internal",
             created_by=created_by,
         )
         session.add(item)

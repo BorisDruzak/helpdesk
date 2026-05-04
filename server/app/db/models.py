@@ -283,9 +283,26 @@ class TicketEvidenceItem(Base):
     )
     evidence_type: Mapped[str] = mapped_column(String(30), nullable=False)
     source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_kind: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    source_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    required_fact: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    section_key: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    artifact_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("artifacts.artifact_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, server_default="internal")
+    verification_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="unverified")
+    verified_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    captured_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    public_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    internal_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    export_visibility: Mapped[str] = mapped_column(String(30), nullable=False, server_default="internal")
     created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -296,6 +313,19 @@ class TicketEvidenceItem(Base):
     __table_args__ = (
         Index("ix_ticket_evidence_items_ticket_created", "ticket_id", "created_at"),
         Index("ix_ticket_evidence_items_passport", "passport_id"),
+        Index("ix_ticket_evidence_items_source", "source_kind", "source_id"),
+        Index("ix_ticket_evidence_items_required_fact", "ticket_id", "required_fact"),
+        Index("ix_ticket_evidence_items_artifact", "artifact_id"),
+        Index(
+            "uq_ticket_evidence_items_source_fact",
+            "ticket_id",
+            "evidence_type",
+            "source_kind",
+            "source_id",
+            "required_fact",
+            unique=True,
+            postgresql_where=sa.text("source_kind IS NOT NULL AND source_id IS NOT NULL"),
+        ),
     )
 
 

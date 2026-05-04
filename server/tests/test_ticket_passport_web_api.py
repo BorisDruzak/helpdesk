@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Ticket, UiUser
+from app.db.models import Operation, Ticket, UiUser
 from tests.conftest import TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
@@ -103,6 +104,56 @@ async def test_add_evidence_updates_passport_payload(test_client, test_engine):
     payload = await response.json()
     assert payload["data"]["evidence"][0]["title"] == "Диагностика устройства"
     assert payload["data"]["evidence"][0]["source_ref"] == "operation-123"
+
+
+@pytest.mark.asyncio
+async def test_evidence_candidates_and_link_endpoint(test_client, test_engine):
+    ticket_id = await _seed_visible_ticket(test_engine)
+    session_maker = async_sessionmaker(test_engine)
+    operation_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=ticket.device_id,
+                ticket_id=ticket_id,
+                kind="tool",
+                tool_name="system.collect",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+                result_summary="System facts collected",
+            )
+        )
+        await session.commit()
+
+    candidates_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/passport/evidence-candidates",
+        headers=_support_headers(),
+    )
+    assert candidates_response.status == 200, await candidates_response.text()
+    candidates_payload = await candidates_response.json()
+    candidates = candidates_payload["data"]["candidates"]
+    assert any(item["source_kind"] == "operation" and item["source_id"] == operation_id for item in candidates)
+
+    link_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/passport/evidence/link",
+        headers=_support_headers(),
+        json={
+            "source_kind": "operation",
+            "source_id": operation_id,
+            "required_fact": "automated_checks",
+        },
+    )
+    assert link_response.status == 200, await link_response.text()
+    link_payload = await link_response.json()
+    evidence = link_payload["data"]["evidence"][0]
+    assert evidence["source_kind"] == "operation"
+    assert evidence["source_id"] == operation_id
+    assert evidence["required_fact"] == "automated_checks"
 
 
 @pytest.mark.asyncio

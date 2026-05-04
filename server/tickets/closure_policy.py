@@ -26,6 +26,8 @@ MODULE_EVENT_TYPES = {
     "playbook_failed",
 }
 
+REJECTED_EVIDENCE_STATUSES = {"archived", "rejected", "superseded"}
+
 
 def get_template_closure_policy(ticket: Any) -> dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
@@ -213,7 +215,10 @@ async def _ticket_has_evidence(session: Any, ticket: Any) -> bool:
         return True
     evidence_id = await session.scalar(
         select(TicketEvidenceItem.id)
-        .where(TicketEvidenceItem.ticket_id == ticket.ticket_id)
+        .where(
+            TicketEvidenceItem.ticket_id == ticket.ticket_id,
+            TicketEvidenceItem.verification_status.notin_(sorted(REJECTED_EVIDENCE_STATUSES)),
+        )
         .limit(1)
     )
     return evidence_id is not None
@@ -266,6 +271,7 @@ async def _ticket_has_operation_log(session: Any, ticket: Any) -> bool:
         .where(
             TicketEvidenceItem.ticket_id == ticket.ticket_id,
             TicketEvidenceItem.evidence_type.in_(["operation_log", "diagnostic_result"]),
+            TicketEvidenceItem.verification_status.notin_(sorted(REJECTED_EVIDENCE_STATUSES)),
         )
         .limit(1)
     )

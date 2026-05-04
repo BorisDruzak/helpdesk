@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 33A passport/evidence build-out plan added after live analysis of `T-000512` and `T-000513`.
+Last updated: 2026-05-04, Stage 33A backend slice started: structured evidence contract, ticket-scoped passport operations, evidence candidates/link API and closure evidence verification are implemented locally.
 
 Current plan completion: 99.3%; passport/evidence remains an open product-quality track before final acceptance.
 
-Current execution mode: Stage 33A planning. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. The next implementation gate is not visual redesign; it is making passport/evidence usable, traceable and closure-grade.
+Current execution mode: Stage 33A backend implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current backend work deliberately excludes visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -891,6 +891,22 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
 
 Purpose: turn the current generated passport into an operator-usable official resolution dossier. The passport must show which facts are missing, where each fact can come from, how to create/link evidence, which evidence satisfies closure/reporting policy, and which parts are safe for requester/export.
 
+Backend execution status, 2026-05-04:
+
+- Implemented locally:
+  - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
+  - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
+  - passport generation no longer falls back to unrelated device-wide operations and can include operations linked through playbook context;
+  - diagnostic-policy evidence materialization writes structured operation evidence;
+  - `TicketEvidenceService` collects ticket-scoped operation/artifact candidates and links candidates into accepted evidence;
+  - typed backend API now exposes `GET /api/web/support/tickets/{ticket_id}/passport/evidence-candidates` and `POST /api/web/support/tickets/{ticket_id}/passport/evidence/link`;
+  - closure policy ignores rejected/archived/superseded evidence.
+- Still backend-open:
+  - worklog, approval, chat-message and observer-trace candidates;
+  - stale passport detection after new source/evidence changes;
+  - verify/reject/archive update endpoint;
+  - live remote migration/deploy/browser/API re-check.
+
 Current context and confirmed gaps:
 
 - Data model exists but is thin:
@@ -944,7 +960,7 @@ Target functional model:
 
 Implementation plan:
 
-- [ ] Stage 33A.1 - Contract and schema decision.
+- [x] Stage 33A.1 - Contract and schema decision.
   - Files to inspect/update: `server/app/db/models.py`, migration after `068`, `server/app/repos/ticket_passport_repo.py`, `server/web_api/dto/support.py`, `webapp/src/features/queues/api.ts`.
   - Decide whether to extend `ticket_evidence_items` in place or add `metadata_json` + indexed columns.
   - Required minimum fields:
@@ -954,6 +970,7 @@ Implementation plan:
     - evidence can be inserted idempotently by source;
     - artifact metadata is retained;
     - old rows without new fields still serialize.
+  - 2026-05-04 backend result: migration `069`, ORM model, repo, DTO and API contract fields are in place.
 
 - [ ] Stage 33A.2 - Evidence candidate collector.
   - Create or split into `server/tickets/evidence_service.py` instead of expanding `passport_service.py`.
@@ -971,6 +988,7 @@ Implementation plan:
     - `#T-000513`-style ticket with no ticket-bound operation does not import unrelated device operations;
     - playbook run operations linked by context are collected;
     - uploaded artifacts are offered as candidates.
+  - 2026-05-04 backend slice complete for ticket-scoped operations, playbook-context operations and artifacts. Worklog, approval, chat-message and observer-trace candidates remain open.
 
 - [ ] Stage 33A.3 - Missing fact engine.
   - Extend `_build_passport_requirements()` into a policy-aware fact coverage engine.
@@ -1010,6 +1028,7 @@ Implementation plan:
     - requester-safe projection must never expose internal evidence unless policy says so.
   - Events:
     - write `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`.
+  - 2026-05-04 backend slice complete for create manual evidence, candidate listing and source linking. Verify/reject/archive update endpoints remain open.
 
 - [ ] Stage 33A.5 - Passport generation and stale detection.
   - `TicketPassportService.generate()` must:
@@ -1037,6 +1056,7 @@ Implementation plan:
     - closure block message includes the exact missing fact keys;
     - accepted evidence unblocks closure;
     - rejected/archived evidence does not unblock closure.
+  - 2026-05-04 backend slice complete for rejected/archived/superseded evidence exclusion. Exact support-panel message wiring remains open.
 
 - [ ] Stage 33A.7 - Support UI passport redesign inside current workspace.
   - Modify `webapp/src/pages/tickets/detail-page.tsx` and focused tests.

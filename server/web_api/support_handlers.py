@@ -60,6 +60,7 @@ from tickets.statuses import (
 from tickets.sla_service import TicketSlaService
 from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
+from tickets.evidence_service import TicketEvidenceService
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
@@ -84,10 +85,12 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketMessage,
+    SupportTicketEvidenceCandidatesPayload,
     SupportTicketObserverPayload,
     SupportTicketObserverSummary,
     SupportTicketOperationSnapshot,
     SupportTicketPassportDetailPayload,
+    SupportTicketPassportEvidenceLinkRequest,
     SupportTicketPassportEvidenceRequest,
     SupportTicketPassportGenerateRequest,
     SupportTicketPassportPatchRequest,
@@ -832,6 +835,16 @@ def _iso(value: object) -> str | None:
     if callable(isoformat):
         return str(isoformat())
     return str(value)
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _required_tools_from_manifest(manifest_json: object) -> list[str]:
@@ -1815,6 +1828,104 @@ async def handle_web_support_ticket_passport_patch(request: web.Request):
 
 
 @require_auth("admin", "support", "auditor")
+async def handle_web_support_ticket_passport_evidence_candidates(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            candidates = await TicketEvidenceService(session).collect_candidates(ticket.ticket_id)
+            payload = SupportTicketEvidenceCandidatesPayload(ticket_id=ticket.ticket_id, candidates=candidates)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_evidence_candidates] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить кандидаты доказательств",
+                "error_code": "PASSPORT_EVIDENCE_CANDIDATES_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketEvidenceCandidatesPayload](data=payload))
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_ticket_passport_evidence_link(request: web.Request):
+    try:
+        raw = await request.json()
+    except Exception:
+        return web.json_response({"status": "error", "error": "Некорректный JSON"}, status=400)
+    if not isinstance(raw, dict):
+        return web.json_response({"status": "error", "error": "Тело запроса должно быть объектом"}, status=400)
+    data = SupportTicketPassportEvidenceLinkRequest.model_validate(raw)
+    visibility = data.visibility if data.visibility in {"public", "internal"} else "internal"
+
+    try:
+        async with get_session() as session:
+            ticket, error, ticket_repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
+            if denied:
+                return denied
+            item = await TicketEvidenceService(session).link_source(
+                ticket.ticket_id,
+                source_kind=data.source_kind,
+                source_id=data.source_id,
+                required_fact=data.required_fact,
+                actor_id=auth_context.actor_id,
+                visibility=visibility,
+            )
+            if not ticket.evidence_ref:
+                await ticket_repo.update_ticket(ticket.ticket_id, evidence_ref=item.source_ref or f"evidence:{item.id}")
+            await ticket_repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type="passport_evidence_linked",
+                payload={
+                    "event_id": f"passport-evidence-linked-{item.id}",
+                    "actor_id": auth_context.actor_id,
+                    "evidence_id": item.id,
+                    "evidence_type": item.evidence_type,
+                    "source_kind": item.source_kind,
+                    "source_id": item.source_id,
+                    "required_fact": item.required_fact,
+                    "title": item.title,
+                },
+                event_id=f"passport-evidence-linked-{item.id}",
+            )
+            await session.commit()
+            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Источник доказательства не найден для этого обращения",
+                "error_code": str(exc) or "EVIDENCE_SOURCE_NOT_FOUND",
+            },
+            status=404,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_passport_evidence_link] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось привязать доказательство",
+                "error_code": "PASSPORT_EVIDENCE_LINK_FAILED",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
+
+
+@require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_evidence(request: web.Request):
     try:
         raw = await request.json()
@@ -1840,9 +1951,20 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
                 passport_id=passport.id if passport else None,
                 evidence_type=data.evidence_type,
                 source_ref=data.source_ref,
+                source_kind=data.source_kind,
+                source_id=data.source_id,
+                required_fact=data.required_fact,
+                section_key=data.section_key or data.required_fact,
+                artifact_id=data.artifact_id,
                 title=data.title,
                 summary=data.summary,
                 visibility=visibility,
+                verification_status=data.verification_status,
+                captured_at=_parse_optional_datetime(data.captured_at),
+                public_summary=data.public_summary,
+                internal_summary=data.internal_summary,
+                metadata_json=data.metadata_json,
+                export_visibility=data.export_visibility,
                 created_by=auth_context.actor_id,
             )
             if not ticket.evidence_ref:

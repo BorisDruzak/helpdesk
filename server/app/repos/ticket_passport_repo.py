@@ -108,19 +108,60 @@ class TicketPassportRepo:
         passport_id: int | None,
         evidence_type: str,
         source_ref: str | None,
+        source_kind: str | None = None,
+        source_id: str | None = None,
+        required_fact: str | None = None,
+        section_key: str | None = None,
+        artifact_id: str | None = None,
         title: str,
         summary: str | None,
         visibility: str,
+        verification_status: str = "unverified",
+        verified_by: str | None = None,
+        verified_at: datetime | None = None,
+        captured_at: datetime | None = None,
+        public_summary: str | None = None,
+        internal_summary: str | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        export_visibility: str = "internal",
         created_by: str | None,
     ) -> TicketEvidenceItem:
+        if source_kind and source_id:
+            existing = await self.session.scalar(
+                select(TicketEvidenceItem)
+                .where(
+                    TicketEvidenceItem.ticket_id == ticket_id,
+                    TicketEvidenceItem.evidence_type == evidence_type,
+                    TicketEvidenceItem.source_kind == source_kind,
+                    TicketEvidenceItem.source_id == source_id,
+                    TicketEvidenceItem.required_fact == required_fact,
+                )
+                .limit(1)
+            )
+            if existing is not None:
+                return existing
+
         item = TicketEvidenceItem(
             ticket_id=ticket_id,
             passport_id=passport_id,
             evidence_type=evidence_type,
             source_ref=source_ref,
+            source_kind=source_kind,
+            source_id=source_id,
+            required_fact=required_fact,
+            section_key=section_key,
+            artifact_id=artifact_id,
             title=title,
             summary=summary,
             visibility=visibility,
+            verification_status=verification_status,
+            verified_by=verified_by,
+            verified_at=verified_at,
+            captured_at=captured_at,
+            public_summary=public_summary,
+            internal_summary=internal_summary,
+            metadata_json=metadata_json or {},
+            export_visibility=export_visibility,
             created_by=created_by,
             created_at=datetime.now(timezone.utc),
         )
