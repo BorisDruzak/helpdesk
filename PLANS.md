@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 32 follow-up agent GUI bugfix implementation is in progress after user live QA on agent `3.1.28` and ticket `#T-000511`: consent hint, assignment/work status, SLA/deadline summary, diagnostics visibility, confirmation emphasis and Russian event text.
+Last updated: 2026-05-04, Stage 32B follow-up agent GUI fixes are implemented, tested, built as Windows agent `3.1.29`, uploaded, assigned in rollout policy and applied to live Windows device `AD-MAIN`.
 
-Current plan completion: 97.8%.
+Current plan completion: 98.9%.
 
-Current execution mode: Stage 32 follow-up agent GUI bugfix gate. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` local fixes must be verified, built, uploaded and assigned before the next user live re-check.
+Current execution mode: Stage 32B user live re-check slice. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` is live on `AD-MAIN`; final confidence now depends on user visual confirmation in the real GUI.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -225,7 +225,7 @@ Evidence summary must include:
 
 This section must be updated during execution. Do not mark final completion until each item is either completed by the user or explicitly accepted as residual risk.
 
-- [~] Agent GUI visual flow: Stage 29 exercised the live GUI-owned automation surface for profile selection, form-pack refresh, create, attachment, add-message and post-create state; user live QA on `3.1.28` confirms consent hint, confirmation emphasis, assignment/SLA/diagnostics visibility and system event localization still need a follow-up agent build. Local `3.1.29` fixes are in progress.
+- [U] Agent GUI visual flow: Stage 29 exercised the live GUI-owned automation surface for profile selection, form-pack refresh, create, attachment, add-message and post-create state; user live QA on `3.1.28` confirmed consent hint, confirmation emphasis, assignment/SLA/diagnostics visibility and system event localization needed follow-up. Agent `3.1.29` is live on `AD-MAIN`; needs user visual confirmation.
 - [x] Tray/minimize behavior: Stage 29 verified runtime behavior and user live QA confirmed tray works.
 - [ ] External notification channels: user may need to confirm real email/Telegram/VK Teams delivery if providers are unavailable or disabled on the stand.
 - [ ] Long calendar boundary behavior: user may need to accept simulated clock/API evidence instead of waiting real business hours.
@@ -838,9 +838,15 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Assignment: personal `assignee_id` is empty; support actor `op1` moved the ticket into work.
   - SLA/deadline data exists and stopped without breach, but agent detail did not explain it.
 - [x] Add focused agent GUI helper regressions for consent hint, assignment fallback, deadline summary, diagnostics summary and Russian event text.
-- [~] Implement scoped agent GUI fixes in `pc_agent/ui_gui/chat_panel.py`.
-- [ ] Run focused and relevant agent tests.
-- [ ] Build Windows agent `3.1.29`, run compiled `--verify`, upload and assign rollout.
+- [x] Implement scoped agent GUI fixes in `pc_agent/ui_gui/chat_panel.py`.
+- [x] Run focused and relevant agent tests.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py::test_create_ticket_sends_diagnostic_consent -q --tb=short` passed: 63 tests.
+  - `python -m py_compile pc_agent/ui_gui/chat_panel.py` passed.
+  - `python scripts/verify_workspace.py` passed.
+- [x] Build Windows agent `3.1.29`, run compiled `--verify`, upload and assign rollout.
+  - ZIP `pc_agent-windows_amd64-3.1.29.zip`, size `98282431`, sha256 `1c761b854f4fd6e43e8afcecdb5fa8b22c3c89db12e815fe4ac5564a74e58550`.
+  - Rollout policy `windows_amd64/stable` assigned to `3.1.29`.
+  - Live update operation `3696e17a-dc0e-4ad7-aac7-ba884d3f4d31` succeeded; `AD-MAIN` handshake now reports `agent_version=3.1.29`.
 - [U] User live re-check after `3.1.29`:
   - Create a new diagnostic-consent ticket and confirm the consent hint is obvious.
   - Open `#T-000511` or a similar ticket and confirm executor/work owner, deadlines and diagnostics are readable.
