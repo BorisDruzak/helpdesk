@@ -1940,11 +1940,14 @@ async def test_web_support_ticket_playbooks_returns_published_playbooks_for_tick
             "status": "published",
             "blocks_count": 1,
             "required_tools": ["system.collect"],
+            "missing_tools": [],
+            "missing_params": [],
             "can_run": True,
             "readiness_label": "Готов к запуску",
             "updated_at": published_at.isoformat(),
         }
     ]
+    assert payload["data"]["recent_runs"] == []
 
 
 @pytest.mark.asyncio

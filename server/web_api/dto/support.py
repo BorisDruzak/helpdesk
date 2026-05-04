@@ -305,6 +305,9 @@ class SupportTicketOperationSnapshot(BaseModel):
     operation_id: str
     kind: str
     status: str
+    display_status: str | None = None
+    display_label: str | None = None
+    scope: str = "ticket"
     tool_name: str | None = None
     command_name: str | None = None
     queued_at: str | None = None
@@ -421,9 +424,37 @@ class SupportPlaybookItem(BaseModel):
     status: str
     blocks_count: int = 0
     required_tools: list[str] = Field(default_factory=list)
+    missing_tools: list[str] = Field(default_factory=list)
+    missing_params: list[str] = Field(default_factory=list)
     can_run: bool = False
     readiness_label: str
     updated_at: str | None = None
+
+
+class SupportPlaybookRecentRunStepError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_key: str | None = None
+    tool_name: str | None = None
+    error_code: str | None = None
+    error_message: str
+    stage: str | None = None
+
+
+class SupportPlaybookRecentRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playbook_run_id: int
+    playbook_version_id: int
+    playbook_key: str | None = None
+    playbook_name: str | None = None
+    status: str
+    error_code: str | None = None
+    error_message: str | None = None
+    trigger_type: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    step_errors: list[SupportPlaybookRecentRunStepError] = Field(default_factory=list)
 
 
 class SupportDiagnosticPolicyPayload(BaseModel):
@@ -447,6 +478,7 @@ class SupportTicketPlaybooksPayload(BaseModel):
     device_id: str | None = None
     diagnostic_policy: SupportDiagnosticPolicyPayload | None = None
     playbooks: list[SupportPlaybookItem] = Field(default_factory=list)
+    recent_runs: list[SupportPlaybookRecentRun] = Field(default_factory=list)
 
 
 class SupportTicketPassportPayload(BaseModel):

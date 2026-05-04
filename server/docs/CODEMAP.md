@@ -357,5 +357,5 @@
 ## 2026-04-28 Ticket-bound playbook launch
 
 - Typed support playbook launch starts from `server/web_api/support_handlers.py`, `server/web_api/dto/support.py`, `server/routes.py`, and `server/app/services/playbook_engine.py`.
-- `GET /api/web/support/tickets/{ticket_id}/playbooks` lists published playbook versions with version id, required tools, block count and readiness for the ticket device.
-- `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version with `trigger_type=support_ticket` and a ticket-bound context for observer correlation.
+- `GET /api/web/support/tickets/{ticket_id}/playbooks` lists published playbook versions with version id, required tools, missing tools, missing required params, block count and readiness for the ticket device, plus recent ticket playbook runs and step errors.
+- `POST /api/web/support/tickets/{ticket_id}/playbooks/run` starts the selected version with `trigger_type=support_ticket` and a ticket-bound context for observer correlation, but first blocks `PLAYBOOK_PREFLIGHT_BLOCKED` if the playbook references tools absent from builtin/device/server-module sources or has unresolved required params.

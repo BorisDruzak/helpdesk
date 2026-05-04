@@ -564,6 +564,7 @@ describe("TicketAutomationPanel", () => {
         ]}
         playbooksErrorMessage={null}
         playbooksLoading={false}
+        recentRuns={[]}
         selectedPlaybookVersionId={7}
         setSelectedPlaybookVersionId={() => undefined}
       />,
@@ -574,7 +575,7 @@ describe("TicketAutomationPanel", () => {
     expect(screen.getAllByText("Быстрая диагностика принтера").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Готов к запуску").length).toBeGreaterThan(0);
     expect(screen.getAllByText("system.collect").length).toBeGreaterThan(0);
-    expect(screen.getByText("Последние запуски")).toBeInTheDocument();
+    expect(screen.getByText("Операции этого тикета")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить плейбук" }));
     expect(screen.getByText("Политика диагностики")).toBeInTheDocument();
@@ -618,6 +619,7 @@ describe("TicketAutomationPanel", () => {
         playbooks={[]}
         playbooksErrorMessage={null}
         playbooksLoading={false}
+        recentRuns={[]}
         selectedPlaybookVersionId={null}
         setSelectedPlaybookVersionId={() => undefined}
       />,
@@ -657,6 +659,7 @@ describe("TicketAutomationPanel", () => {
         ]}
         playbooksErrorMessage={null}
         playbooksLoading={false}
+        recentRuns={[]}
         selectedPlaybookVersionId={7}
         setSelectedPlaybookVersionId={() => undefined}
       />,

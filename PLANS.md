@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-04, Stage 32B follow-up agent GUI fixes are implemented, tested, built as Windows agent `3.1.29`, uploaded, assigned in rollout policy and applied to live Windows device `AD-MAIN`.
+Last updated: 2026-05-04, Stage 32C support/playbook diagnostics fixes are implemented locally after live findings on `T-000512` and `T-000513`; remote deploy and browser re-check are next.
 
-Current plan completion: 98.9%.
+Current plan completion: 99.1%.
 
-Current execution mode: Stage 32B user live re-check slice. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` is live on `AD-MAIN`; final confidence now depends on user visual confirmation in the real GUI.
+Current execution mode: Stage 32C live-defect fix slice. Local readiness, focused baseline, remote deploy, browser baseline, actor/RBAC inventory, live schema publication, request-template publication, workflow/priority/routing policy publication, SLA/OLA/calendar publication, approval/closure/visibility/notification/reporting policy publication, smart-view queue slicing, server/API ticket creation matrix, dynamic/requester-safe create checks, ticket snapshot policy-chain integrity checks, workflow happy path checks, workflow negative gate/RBAC checks, priority/routing acceptance checks, SLA timer acceptance checks, OLA timer acceptance checks, approval policy acceptance checks, diagnostics/consent/module operation checks, observer trace acceptance, notification recipient/action acceptance, visibility/requester projection acceptance, smart-view/support queue acceptance, closure/passport/reporting acceptance, security/token/log safety acceptance and automated browser UX/console signoff are complete. Stage 32 server/web fixes are deployed; agent `3.1.29` is live on `AD-MAIN`. Stage 32C addresses the newly confirmed live defects: playbook preflight must block missing tools/required params, support UI must surface playbook run failures and ticket-scoped operations, requester chat must not expose internal SLA/OLA pause/resume noise, and taking a ticket into work should assign the support actor when possible.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -852,6 +852,35 @@ Priority order is strict. Do not start broad visual redesign until this gate is 
   - Open `#T-000511` or a similar ticket and confirm executor/work owner, deadlines and diagnostics are readable.
   - Resolve a ticket and confirm the confirmation card is visually obvious.
   - Confirm system timeline events are Russian and explain the actual change.
+
+### Stage 32C: Support Playbook/Diagnostics Live Bugfix Gate (2 points)
+
+- [x] Reproduce root cause from `#T-000512` and `#T-000513` live data:
+  - Manual support playbook runs `26-29` failed quickly with `STEP_FAILED` and step errors `MODULE_NOT_ON_SERVER` for `ip_address.get_ip` / `diag.logs.collect`.
+  - `network.ping` also returned `ok=false`, `MISSING_TARGET`, but operation status still displayed as `succeeded`.
+  - Support UI mixed device-wide recent operations with ticket-scoped operations, making old runs look like they belonged to a new ticket.
+  - Diagnostic policy auto-run for `#T-000512` referenced `diagnose.website`, but the published playbook key was not present; the skip was not recorded.
+  - Requester/agent event feed exposed internal `sla_paused` / `ola_paused` noise.
+- [x] Add focused regressions for playbook readiness and logical operation result display.
+  - `server/tests/test_support_playbook_readiness.py` covers missing tools, missing required params and `ok=false` display.
+- [x] Implement scoped fixes:
+  - Support playbook payload now includes missing tools, missing required params and recent ticket playbook runs with step errors.
+  - Support playbook run route blocks `PLAYBOOK_PREFLIGHT_BLOCKED` before enqueue when required tools/params are not available.
+  - Ticket automation panel shows ticket playbook failures and ticket-scoped operations instead of raw device-wide history.
+  - Requester/agent visibility hides SLA/OLA pause/resume internals.
+  - Moving a ticket to `in_progress` from support assigns the support actor when queue rules allow it.
+  - Diagnostic auto-run records `diagnostic_autorun_skipped(reason=playbook_not_published)` when a policy references a missing published playbook key.
+- [x] Local verification:
+  - `python -m pytest server\tests\test_support_playbook_readiness.py server\tests\test_web_support_api.py -q --tb=short` passed: 38 tests.
+  - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx` passed: 14 tests.
+  - `pnpm --dir webapp exec tsc --noEmit` passed.
+  - `python -m py_compile server\web_api\support_handlers.py server\playbooks\form_triggers.py server\tickets\handlers.py pc_agent\ui_gui\chat_panel.py` passed.
+- [ ] Deploy Stage 32C server/web changes to remote and live-check `/app/tickets/:ticketId`.
+- [U] User live re-check after deploy:
+  - Open `#T-000512` / `#T-000513` or create a fresh diagnostic ticket.
+  - Confirm the selected playbook is disabled with explicit missing tools/params instead of only saying “Плейбук поставлен в очередь выполнения”.
+  - Confirm “Операции этого тикета” no longer shows unrelated device operations.
+  - Confirm SLA/OLA pause/resume no longer appears in requester/agent chat.
 
 ### Stage 33: Cleanup, Final Evidence And Score (4 points)
 

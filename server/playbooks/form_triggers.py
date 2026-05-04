@@ -188,6 +188,19 @@ async def start_ticket_created_playbooks(
         version = await _latest_published_playbook_version(session, playbook_key)
         if version is None:
             logger.warning(f"[playbook_form_trigger] published playbook not found key={playbook_key}")
+            await ticket_repo.add_event(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="diagnostic_autorun_skipped",
+                payload={
+                    "trigger": trigger.get("trigger_type") or trigger.get("event") or "ticket_created",
+                    "playbook_key": playbook_key,
+                    "reason": "playbook_not_published",
+                    "source": trigger.get("source") or "request_form",
+                },
+                trace_id=str(uuid.uuid4()),
+            )
             continue
         high_risk_tools = _required_high_risk_tools(version.manifest_json)
         if (

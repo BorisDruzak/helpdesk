@@ -205,6 +205,9 @@ export type SupportTicketDetailPayload = {
       operation_id: string;
       kind: string;
       status: string;
+      display_status?: string | null;
+      display_label?: string | null;
+      scope?: "ticket" | "playbook" | "device" | string;
       tool_name: string | null;
       command_name: string | null;
       queued_at: string | null;
@@ -298,9 +301,30 @@ export type SupportTicketPlaybooksPayload = {
     status: string;
     blocks_count: number;
     required_tools: string[];
+    missing_tools?: string[];
+    missing_params?: string[];
     can_run: boolean;
     readiness_label: string;
     updated_at: string | null;
+  }>;
+  recent_runs?: Array<{
+    playbook_run_id: number;
+    playbook_version_id: number;
+    playbook_key: string | null;
+    playbook_name: string | null;
+    status: string;
+    error_code: string | null;
+    error_message: string | null;
+    trigger_type: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    step_errors: Array<{
+      step_key: string | null;
+      tool_name: string | null;
+      error_code: string | null;
+      error_message: string;
+      stage: string | null;
+    }>;
   }>;
 };
 

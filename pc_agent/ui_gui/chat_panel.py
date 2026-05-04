@@ -4912,7 +4912,7 @@ class ChatPanel(QWidget):
             "chat_message", "job_started", "job_running", "job_succeeded", "job_completed",
             "chat_session", "chat_ended", "event_delivered", "tool_response", "routing_applied",
             "initial_message_sent_to_agent", "initial_message_pending_delivery", "initial_message_send_failed",
-            "no_active_job", "message_read",
+            "no_active_job", "message_read", "sla_paused", "sla_resumed", "ola_paused", "ola_resumed",
         })
         merged_events = list(events) + self.local_action_buffer.get(self.active_ticket_id, [])
         for event in merged_events:

@@ -392,8 +392,21 @@ def _serialize_message(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     }
 
 
+REQUESTER_HIDDEN_EVENT_TYPES = frozenset(
+    {
+        "sla_paused",
+        "sla_resumed",
+        "ola_paused",
+        "ola_resumed",
+    }
+)
+
+
 def _event_visible_to_requester(event: Any) -> bool:
-    if getattr(event, "event_type", None) != "chat_message":
+    event_type = getattr(event, "event_type", None)
+    if event_type in REQUESTER_HIDDEN_EVENT_TYPES:
+        return False
+    if event_type != "chat_message":
         return True
     payload = getattr(event, "payload", None) or {}
     return (payload.get("visibility") or "public") != "internal"

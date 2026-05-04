@@ -1,3 +1,5 @@
+import ast
+from dataclasses import dataclass
 import json
 import uuid
 from datetime import datetime, timezone
@@ -5,13 +7,22 @@ from functools import cmp_to_key
 
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from access_control.service import can
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.db.models import Playbook, PlaybookStep, PlaybookVersion, TicketApproval, TicketResolutionPassport
-from app.repos import DevicesRepo, NotificationRepo, OperationsRepo
+from app.db.models import (
+    Operation,
+    Playbook,
+    PlaybookRun,
+    PlaybookStep,
+    PlaybookStepRun,
+    PlaybookVersion,
+    TicketApproval,
+    TicketResolutionPassport,
+)
+from app.repos import DevicesRepo, NotificationRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
@@ -38,6 +49,7 @@ from tickets.handlers import (
     _ticket_payload,
     _ticket_presence_payload,
 )
+from tickets.assignment_service import TicketAssignmentError, TicketAssignmentService
 from tickets.statuses import (
     CANONICAL_STATUSES,
     enrich_chat_payload_with_requester_name,
@@ -81,6 +93,8 @@ from web_api.dto.support import (
     SupportTicketPassportPatchRequest,
     SupportTicketPlaybooksPayload,
     SupportTicketPresence,
+    SupportPlaybookRecentRun,
+    SupportPlaybookRecentRunStepError,
     SupportTicketQueueInfo,
     SupportTicketQueueMember,
     SupportTicketRegistrySnapshot,
@@ -97,7 +111,7 @@ from web_api.dto.support import (
     SupportToolParameter,
     SupportToolPreset,
 )
-from config import ALLOW_REMOTE_CODE
+from config import AGENT_BUILTIN_MODULES, ALLOW_REMOTE_CODE
 
 
 SCOPE_OPTIONS = [
@@ -830,7 +844,169 @@ def _required_tools_from_manifest(manifest_json: object) -> list[str]:
         tool_name = str(raw_item.get("tool") or raw_item.get("tool_name") or "").strip()
         if tool_name and tool_name not in tools:
             tools.append(tool_name)
+    for raw_block in manifest_json.get("blocks") or []:
+        if not isinstance(raw_block, dict):
+            continue
+        tool_name = str(raw_block.get("tool") or raw_block.get("tool_name") or "").strip()
+        if tool_name and tool_name not in tools:
+            tools.append(tool_name)
     return tools
+
+
+@dataclass(frozen=True)
+class PlaybookLaunchReadiness:
+    can_run: bool
+    label: str
+    missing_tools: list[str]
+    missing_params: list[str]
+
+
+def _tool_names_from_raw_entries(raw_items: list[object] | None) -> set[str]:
+    names: set[str] = set()
+    for raw_item in raw_items or []:
+        if not isinstance(raw_item, dict):
+            continue
+        for value in (raw_item.get("tool"), raw_item.get("name")):
+            text = str(value or "").strip()
+            if text:
+                names.add(text)
+        aliases = raw_item.get("aliases")
+        if isinstance(aliases, list):
+            for alias in aliases:
+                text = str(alias or "").strip()
+                if text:
+                    names.add(text)
+    return names
+
+
+def _schema_required_param_names(schema: object) -> list[str]:
+    if not isinstance(schema, dict):
+        return []
+    raw_required = schema.get("required")
+    if not isinstance(raw_required, list):
+        return []
+    names: list[str] = []
+    for raw_name in raw_required:
+        name = str(raw_name or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _schema_param_has_default(schema: object, param_name: str) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return False
+    param_schema = properties.get(param_name)
+    return isinstance(param_schema, dict) and "default" in param_schema
+
+
+def _block_required_param_gaps(block: dict) -> list[str]:
+    tool_name = str(block.get("tool") or block.get("tool_name") or "").strip()
+    if not tool_name:
+        return []
+    params = block.get("params") if isinstance(block.get("params"), dict) else {}
+    default_params = block.get("default_params") if isinstance(block.get("default_params"), dict) else {}
+    tool_manifest = block.get("tool_manifest") if isinstance(block.get("tool_manifest"), dict) else {}
+    schema = tool_manifest.get("params_schema") or block.get("params_schema")
+    missing: list[str] = []
+    for param_name in _schema_required_param_names(schema):
+        if param_name in params or param_name in default_params or _schema_param_has_default(schema, param_name):
+            continue
+        missing.append(f"{tool_name}.{param_name}")
+    return missing
+
+
+def _required_param_gaps_from_manifest(manifest_json: object) -> list[str]:
+    if not isinstance(manifest_json, dict):
+        return []
+    missing: list[str] = []
+    for raw_block in manifest_json.get("blocks") or []:
+        if not isinstance(raw_block, dict):
+            continue
+        for item in _block_required_param_gaps(raw_block):
+            if item not in missing:
+                missing.append(item)
+    return missing
+
+
+def _build_playbook_launch_readiness(
+    manifest_json: object,
+    *,
+    device_id: str | None,
+    available_tool_names: set[str],
+) -> PlaybookLaunchReadiness:
+    if not device_id:
+        return PlaybookLaunchReadiness(
+            can_run=False,
+            label="Нужна привязка к устройству",
+            missing_tools=[],
+            missing_params=[],
+        )
+
+    required_tools = _required_tools_from_manifest(manifest_json)
+    missing_tools = []
+    for tool in required_tools:
+        builtin_prefix = tool.split(".", 1)[0].lower() if "." in tool else ""
+        if tool in available_tool_names or builtin_prefix in AGENT_BUILTIN_MODULES:
+            continue
+        missing_tools.append(tool)
+    missing_params = _required_param_gaps_from_manifest(manifest_json)
+    label_parts: list[str] = []
+    if missing_tools:
+        label_parts.append("Недоступны инструменты: " + ", ".join(missing_tools[:3]))
+    if missing_params:
+        label_parts.append("Не заполнены параметры: " + ", ".join(missing_params[:3]))
+    if label_parts:
+        return PlaybookLaunchReadiness(
+            can_run=False,
+            label="; ".join(label_parts),
+            missing_tools=missing_tools,
+            missing_params=missing_params,
+        )
+    return PlaybookLaunchReadiness(
+        can_run=True,
+        label="Готов к запуску",
+        missing_tools=[],
+        missing_params=[],
+    )
+
+
+def _operation_result_payload(operation: object) -> dict:
+    raw = getattr(operation, "result_summary", None)
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+    text = raw.strip()
+    if not text:
+        return {}
+    for loader in (json.loads, ast.literal_eval):
+        try:
+            parsed = loader(text)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _build_operation_display(operation: object) -> tuple[str, str]:
+    status = str(getattr(operation, "status", None) or "unknown")
+    if status == "succeeded":
+        payload = _operation_result_payload(operation)
+        ok_value = payload.get("ok")
+        error_code = str(payload.get("error_code") or "").strip()
+        if ok_value is False or error_code:
+            return ("failed", f"Ошибка результата: {error_code or 'ok=false'}")
+    if status in {"failed", "timed_out", "canceled"}:
+        message = str(getattr(operation, "error_message", None) or status).strip()
+        return (status, message)
+    return (status, status)
 
 
 def _string_list(value: object) -> list[str]:
@@ -884,8 +1060,93 @@ def _support_diagnostic_policy_payload(ticket: object) -> SupportDiagnosticPolic
     )
 
 
-async def _build_support_playbooks_payload(session, ticket: object) -> SupportTicketPlaybooksPayload:
+def _playbook_step_error_payload(error_json: object) -> tuple[str | None, str, str | None]:
+    if not isinstance(error_json, dict):
+        return (None, "Шаг завершился ошибкой", None)
+    code = str(error_json.get("code") or error_json.get("error_code") or "").strip() or None
+    message = str(error_json.get("message") or error_json.get("error") or code or "Шаг завершился ошибкой").strip()
+    stage = str(error_json.get("stage") or "").strip() or None
+    return (code, message, stage)
+
+
+async def _build_support_recent_playbook_runs(session, ticket: object, *, limit: int = 5) -> list[SupportPlaybookRecentRun]:
+    ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+    if not ticket_id:
+        return []
+    rows = await session.execute(
+        select(PlaybookRun, PlaybookVersion, Playbook)
+        .join(PlaybookVersion, PlaybookRun.playbook_version_id == PlaybookVersion.id)
+        .join(Playbook, PlaybookVersion.playbook_id == Playbook.id)
+        .where(PlaybookRun.context_json["ticket_id"].as_string() == ticket_id)
+        .order_by(PlaybookRun.scheduled_at.desc(), PlaybookRun.id.desc())
+        .limit(limit)
+    )
+    runs = list(rows.all())
+    if not runs:
+        return []
+
+    run_ids = [int(run.id) for run, _version, _playbook in runs]
+    step_rows = await session.execute(
+        select(PlaybookStepRun, PlaybookStep)
+        .join(PlaybookStep, PlaybookStepRun.playbook_step_id == PlaybookStep.id)
+        .where(PlaybookStepRun.playbook_run_id.in_(run_ids), PlaybookStepRun.status == "failed")
+        .order_by(PlaybookStepRun.id.asc())
+    )
+    errors_by_run: dict[int, list[SupportPlaybookRecentRunStepError]] = {}
+    for step_run, step in step_rows.all():
+        error_code, error_message, stage = _playbook_step_error_payload(step_run.error_json)
+        errors_by_run.setdefault(int(step_run.playbook_run_id), []).append(
+            SupportPlaybookRecentRunStepError(
+                step_key=str(getattr(step, "step_key", "") or "") or None,
+                tool_name=str(getattr(step, "tool", "") or "") or None,
+                error_code=error_code,
+                error_message=error_message,
+                stage=stage,
+            )
+        )
+
+    return [
+        SupportPlaybookRecentRun(
+            playbook_run_id=int(run.id),
+            playbook_version_id=int(run.playbook_version_id),
+            playbook_key=str(playbook.key) if getattr(playbook, "key", None) is not None else None,
+            playbook_name=str(playbook.name) if getattr(playbook, "name", None) is not None else None,
+            status=str(run.status),
+            error_code=run.error_code,
+            error_message=run.error_message,
+            trigger_type=run.trigger_type,
+            started_at=_iso(run.started_at),
+            finished_at=_iso(run.finished_at),
+            step_errors=errors_by_run.get(int(run.id), []),
+        )
+        for run, _version, playbook in runs
+    ]
+
+
+async def _playbook_available_tool_names(device_id: str | None, state: object | None = None) -> set[str]:
+    if not device_id:
+        return set()
+    tool_service = ToolExecutionService(state)
+    try:
+        device_tools_raw = await tool_service.get_tools_list(device_id) or []
+    except Exception as exc:
+        logger.debug(f"[support_playbooks] device tool preflight failed: device_id={device_id} error={exc}")
+        device_tools_raw = []
+    try:
+        server_tools_raw = await tool_service.get_tools_from_server(device_id) or []
+    except Exception as exc:
+        logger.debug(f"[support_playbooks] server tool preflight failed: device_id={device_id} error={exc}")
+        server_tools_raw = []
+    return _tool_names_from_raw_entries(device_tools_raw) | _tool_names_from_raw_entries(server_tools_raw)
+
+
+async def _build_support_playbooks_payload(
+    session,
+    ticket: object,
+    state: object | None = None,
+) -> SupportTicketPlaybooksPayload:
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
+    available_tool_names = await _playbook_available_tool_names(device_id, state)
     rows = await session.execute(
         select(Playbook, PlaybookVersion, func.count(PlaybookStep.id))
         .join(PlaybookVersion, PlaybookVersion.playbook_id == Playbook.id)
@@ -901,7 +1162,11 @@ async def _build_support_playbooks_payload(session, ticket: object) -> SupportTi
         if playbook_id in seen_playbook_ids:
             continue
         seen_playbook_ids.add(playbook_id)
-        can_run = bool(device_id)
+        readiness = _build_playbook_launch_readiness(
+            version.manifest_json,
+            device_id=device_id,
+            available_tool_names=available_tool_names,
+        )
         playbooks.append(
             SupportPlaybookItem(
                 playbook_version_id=int(version.id),
@@ -912,16 +1177,20 @@ async def _build_support_playbooks_payload(session, ticket: object) -> SupportTi
                 status=str(version.status),
                 blocks_count=int(steps_count or 0),
                 required_tools=_required_tools_from_manifest(version.manifest_json),
-                can_run=can_run,
-                readiness_label="Готов к запуску" if can_run else "Нужна привязка к устройству",
+                missing_tools=readiness.missing_tools,
+                missing_params=readiness.missing_params,
+                can_run=readiness.can_run,
+                readiness_label=readiness.label,
                 updated_at=_iso(version.published_at or version.created_at),
             )
         )
+    recent_runs = await _build_support_recent_playbook_runs(session, ticket)
     return SupportTicketPlaybooksPayload(
         ticket_id=str(getattr(ticket, "ticket_id")),
         device_id=device_id,
         diagnostic_policy=_support_diagnostic_policy_payload(ticket),
         playbooks=playbooks,
+        recent_runs=recent_runs,
     )
 
 
@@ -997,6 +1266,32 @@ async def _build_tool_params_for_dispatch(
     return dispatch_params
 
 
+async def _recent_ticket_operations(session, ticket: object, *, limit: int = 5) -> list[tuple[Operation, str]]:
+    ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+    if not ticket_id:
+        return []
+    run_rows = await session.execute(
+        select(PlaybookRun.id).where(PlaybookRun.context_json["ticket_id"].as_string() == ticket_id)
+    )
+    playbook_run_ids = [int(item) for item in run_rows.scalars().all()]
+    predicates = [Operation.ticket_id == ticket_id]
+    if playbook_run_ids:
+        predicates.append(Operation.playbook_run_id.in_(playbook_run_ids))
+    rows = await session.execute(
+        select(Operation)
+        .where(or_(*predicates))
+        .order_by(Operation.queued_at.desc())
+        .limit(limit)
+    )
+    scoped: list[tuple[Operation, str]] = []
+    for operation in rows.scalars().all():
+        scope = "ticket"
+        if getattr(operation, "playbook_run_id", None) in playbook_run_ids:
+            scope = "playbook"
+        scoped.append((operation, scope))
+    return scoped
+
+
 async def _build_support_snapshot(request: web.Request, session, ticket, auth_context) -> SupportTicketSnapshot:
     presence = SupportTicketPresence.model_validate(_ticket_presence_payload(request, ticket))
     notification_unread = await NotificationRepo(session).unread_count(auth_context.actor_id)
@@ -1037,25 +1332,24 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
     )
 
     latest_operations: list[SupportTicketOperationSnapshot] = []
-    if getattr(ticket, "device_id", None):
-        recent_operations = await OperationsRepo(session).get_recent_operations(
-            device_id=ticket.device_id,
-            limit=5,
-        )
-        for operation in recent_operations:
-            latest_operations.append(
-                SupportTicketOperationSnapshot(
-                    operation_id=operation.operation_id,
-                    kind=operation.kind,
-                    status=operation.status,
-                    tool_name=operation.tool_name,
-                    command_name=operation.command_name,
-                    queued_at=operation.queued_at.isoformat() if operation.queued_at else None,
-                    finished_at=operation.finished_at.isoformat() if operation.finished_at else None,
-                    result_summary=operation.result_summary,
-                    error_message=operation.error_message,
-                )
+    for operation, scope in await _recent_ticket_operations(session, ticket, limit=5):
+        display_status, display_label = _build_operation_display(operation)
+        latest_operations.append(
+            SupportTicketOperationSnapshot(
+                operation_id=operation.operation_id,
+                kind=operation.kind,
+                status=operation.status,
+                display_status=display_status,
+                display_label=display_label,
+                scope=scope,
+                tool_name=operation.tool_name,
+                command_name=operation.command_name,
+                queued_at=operation.queued_at.isoformat() if operation.queued_at else None,
+                finished_at=operation.finished_at.isoformat() if operation.finished_at else None,
+                result_summary=operation.result_summary,
+                error_message=operation.error_message,
             )
+        )
 
     events = await TicketEventsRepo(session).get_events(ticket.ticket_id, since_agent_seq=None, limit=200)
     last_event_id = int(getattr(events[-1], "id", 0) or 0) if events else 0
@@ -1380,7 +1674,7 @@ async def handle_web_support_ticket_playbooks(request: web.Request):
             ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
                 return error
-            payload = await _build_support_playbooks_payload(session, ticket)
+            payload = await _build_support_playbooks_payload(session, ticket, request.app["state"])
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_playbooks] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
@@ -1804,6 +2098,34 @@ async def handle_web_support_change_status(request: web.Request):
                     {"status": "error", "error": "Тикет не найден после обновления"},
                     status=404,
                 )
+
+            if (
+                to_status == "in_progress"
+                and is_staff
+                and auth_context.actor_id
+                and not getattr(ticket, "assignee_id", None)
+            ):
+                try:
+                    assignment_service = TicketAssignmentService(repo)
+                    await assignment_service.assign_ticket(
+                        ticket.ticket_id,
+                        ticket.device_id,
+                        auth_context.actor_id,
+                        actor_id=auth_context.actor_id,
+                        actor_role=auth_context.actor_role,
+                        reason="take_in_work",
+                        comment="",
+                        old_assignee=None,
+                        auto_assigned=False,
+                        db_session=session,
+                        close_ola=True,
+                    )
+                    ticket = await repo.get_ticket(ticket.ticket_id) or ticket
+                except TicketAssignmentError as exc:
+                    logger.info(
+                        f"[web_support_status] take_in_work assignment skipped: "
+                        f"ticket_id={ticket.ticket_id} actor_id={auth_context.actor_id} error={exc}"
+                    )
 
             closure_policy_payload = (result.get("event_payload") or {}).get("closure_policy")
             requester_confirmation_policy = (
@@ -2293,6 +2615,22 @@ async def handle_web_support_run_playbook(request: web.Request):
                         "error_code": "PLAYBOOK_NOT_PUBLISHED",
                     },
                     status=400,
+                )
+            readiness = _build_playbook_launch_readiness(
+                version.manifest_json,
+                device_id=device_id,
+                available_tool_names=await _playbook_available_tool_names(device_id, request.app["state"]),
+            )
+            if not readiness.can_run:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": readiness.label,
+                        "error_code": "PLAYBOOK_PREFLIGHT_BLOCKED",
+                        "missing_tools": readiness.missing_tools,
+                        "missing_params": readiness.missing_params,
+                    },
+                    status=409,
                 )
             context_json = {
                 "ticket_id": str(getattr(ticket, "ticket_id")),
