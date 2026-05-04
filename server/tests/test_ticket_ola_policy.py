@@ -198,6 +198,44 @@ async def test_ola_stop_conditions_control_ack_and_processing_events(test_engine
 
 
 @pytest.mark.asyncio
+async def test_ola_processing_stop_accepts_legacy_alias_list_conditions(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(ola_service, "TICKET_OLA_ENABLED", True)
+    monkeypatch.setattr(ola_service, "datetime", FrozenDateTime)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        queue = await _queue(session)
+        ticket = _ticket(
+            ticket_id,
+            queue.id,
+            status="in_progress",
+            ola_policy=_policy(stop_conditions=["ticket_resolved", "ticket_closed"]),
+        )
+        ticket.ola_queue_id = queue.id
+        ticket.ola_started_at = datetime(2026, 5, 4, 16, 0, tzinfo=timezone.utc)
+        ticket.ola_processing_due_at = datetime(2026, 5, 4, 18, 0, tzinfo=timezone.utc)
+        session.add(ticket)
+        await session.commit()
+
+    async with session_maker() as session:
+        assert await ola_service.close_ola_processing(session, ticket_id, status="waiting_on_user") is False
+        assert await ola_service.close_ola_processing(session, ticket_id, status="resolved") is True
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        event_type = await session.scalar(
+            select(TicketEvent.event_type)
+            .where(TicketEvent.ticket_id == ticket_id)
+            .where(TicketEvent.event_type == "ola_processing_stopped")
+        )
+
+    assert ticket.ola_processing_at == datetime(2026, 5, 4, 16, 30, tzinfo=timezone.utc)
+    assert event_type == "ola_processing_stopped"
+
+
+@pytest.mark.asyncio
 async def test_ola_pause_resume_uses_policy_conditions(test_engine, monkeypatch) -> None:
     monkeypatch.setattr(ola_service, "TICKET_OLA_ENABLED", True)
     monkeypatch.setattr(ola_service, "datetime", FrozenDateTime)

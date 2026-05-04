@@ -47,6 +47,22 @@ def _normalized_status(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+_STATUS_ALIASES = {
+    "waiting_user": "waiting_on_user",
+    "wait_user": "waiting_on_user",
+    "waiting_approval": "waiting_on_approval",
+    "waiting_internal": "waiting_on_internal_team",
+    "waiting_internal_team": "waiting_on_internal_team",
+    "waiting_vendor": "waiting_on_vendor",
+}
+
+_EVENT_STATUS_ALIASES = {
+    "ticket_resolved": {"resolved"},
+    "ticket_closed": {"closed"},
+    "ticket_terminal": set(TERMINAL_STATUSES) | {"resolved", "closed"},
+}
+
+
 def _ticket_custom_value(ticket: Ticket, key: str) -> Any:
     if hasattr(ticket, key):
         value = getattr(ticket, key)
@@ -73,6 +89,14 @@ def _condition_matches(
         raw = condition.strip()
         lowered = raw.lower()
         if trigger_value and lowered == trigger_value.lower():
+            return True
+        if lowered == current_status:
+            return True
+        status_alias = _STATUS_ALIASES.get(lowered)
+        if status_alias and current_status == status_alias:
+            return True
+        event_statuses = _EVENT_STATUS_ALIASES.get(lowered)
+        if event_statuses and current_status in event_statuses:
             return True
         if lowered.startswith("status in"):
             _, _, tail = lowered.partition("in")
@@ -118,6 +142,17 @@ def _conditions_allow(
     if not isinstance(conditions, list):
         conditions = [conditions]
     return any(_condition_matches(item, ticket=ticket, trigger=trigger, status=status) for item in conditions)
+
+
+def _stop_conditions_for(policy: dict | None, kind: str) -> Any:
+    if not isinstance(policy, dict):
+        return None
+    raw = policy.get("stop_conditions")
+    if isinstance(raw, dict):
+        return raw.get(kind)
+    if kind == "processing":
+        return raw
+    return None
 
 
 def _duration_to_minutes(value: object) -> int | None:
@@ -330,7 +365,7 @@ async def close_ola_ack(
     if not ticket or ticket.ola_ack_at is not None:
         return False
     policy = await _get_ola_policy(session, ticket)
-    stop_conditions = (policy.get("stop_conditions") or {}).get("ack") if isinstance(policy, dict) else None
+    stop_conditions = _stop_conditions_for(policy, "ack")
     if not _conditions_allow(stop_conditions, ticket=ticket, trigger=trigger, default=True):
         return False
     now = at or datetime.now(timezone.utc)
@@ -367,7 +402,7 @@ async def close_ola_processing(
     if not ticket or ticket.ola_processing_at is not None:
         return False
     policy = await _get_ola_policy(session, ticket)
-    stop_conditions = (policy.get("stop_conditions") or {}).get("processing") if isinstance(policy, dict) else None
+    stop_conditions = _stop_conditions_for(policy, "processing")
     effective_status = status or ticket.status
     if not _conditions_allow(
         stop_conditions,
