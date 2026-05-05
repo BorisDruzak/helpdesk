@@ -233,6 +233,8 @@ P1 third-slice evidence:
 - Frontend typed client `fetchSupportWorkspaceSummary(limit)` added for the lightweight endpoint.
 - Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows server\tests\test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts`.
 - Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (43 tests), `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
+- Linux release completed for commit `0a69b51fe1b49b7c00312facbf5d9a16ffce304e` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; release verification, local webapp build, remote migrations, bundle upload and remote smoke passed.
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, and `GET /api/web/support/workspace/summary` returned 200 with row-free `views`, `queues`, `smart_view_counts` and no `tickets` key.
 
 P2 - valuable, but can follow after core operator flows:
 
