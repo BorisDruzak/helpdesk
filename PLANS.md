@@ -6,9 +6,9 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-05, Stage 33A passport/evidence action UI slice is local-green and partially live-checked: candidate linking and manual evidence worked on `#T-000516`; support-visible internal/operator passport sections are fixed locally and pending Linux redeploy re-check.
+Last updated: 2026-05-05, Stage 33A passport/evidence action UI slice is deployed and live-checked on `#T-000516`: candidate linking, manual evidence, editable user/internal/operator sections and export-hidden print filtering work on Linux.
 
-Current plan completion: 99.50%; passport/evidence remains an open product-quality track before final acceptance.
+Current plan completion: 99.60%; passport/evidence remains an open product-quality track before final acceptance.
 
 Current execution mode: Stage 33A passport/evidence functional implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
@@ -1120,7 +1120,8 @@ Implementation plan:
     - print page includes evidence appendix.
   - 2026-05-05 functional UI slice complete and live-checked for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix.
   - 2026-05-05 live check on `#T-000516`: candidate list rendered, chat-message candidate linked into accepted evidence, manual evidence was created through UI, and `user_result` section patched successfully.
-  - 2026-05-05 bug isolated during live check: support payload was applying export visibility too early, hiding `internal_result` / `operator_checks` from the support workspace after save. Local fix now keeps full support-visible sections in `GET/PATCH /passport` and filters print/PDF by `requirements.export_preview`; pending Linux redeploy re-check before this sub-stage can be marked complete.
+  - 2026-05-05 bug isolated during live check: support payload was applying export visibility too early, hiding `internal_result` / `operator_checks` from the support workspace after save. Fixed and deployed in `2c7e253`: `GET/PATCH /passport` returns full support-visible sections, while print/PDF filters by `requirements.export_preview`.
+  - 2026-05-05 Linux live re-check on `#T-000516`: saved `Stage33A internal visible live 2026-05-05T05-02-43-689Z` and `Stage33A operator visible live 2026-05-05T05-02-43-689Z`; both are visible in support passport after reload, absent from print/PDF, and public `user_result` remains printed.
 
 - [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
   - Keep current low-code redesign deferred, but make existing policy controls honest.
