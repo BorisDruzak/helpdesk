@@ -470,6 +470,89 @@ async def test_web_support_queue_returns_typed_scope_and_filter_payload(test_cli
 
 
 @pytest.mark.asyncio
+async def test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add_all([
+            UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True),
+            UiUser(user_login="op_b", password_hash="test", actor_role="support", is_active=True),
+        ])
+        queue_l1 = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        queue_network = await _seed_queue(session, code="networks", name="Сети", members=["support-test", "op_b"])
+        queue_other = await _seed_queue(session, code="other_team", name="Other team", members=["op_b"])
+        requester_reply_ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-summary-reply",
+            title="Summary requester replied",
+            description="Unread user reply should be counted",
+            status="in_progress",
+            requester_id="summary-user-reply",
+            queue_id=queue_l1.id,
+            assignee_id="support-test",
+            first_response_due_at=now + timedelta(minutes=10),
+        )
+        session.add_all([
+            requester_reply_ticket,
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-summary-unassigned",
+                title="Summary unassigned",
+                description="Unassigned queue row should be counted",
+                status="queued",
+                requester_id="summary-user-unassigned",
+                queue_id=queue_network.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-summary-hidden",
+                title="Summary hidden",
+                description="Different queue member should stay hidden",
+                status="new",
+                requester_id="summary-user-hidden",
+                queue_id=queue_other.id,
+                assignee_id="op_b",
+            ),
+        ])
+        await session.flush()
+        await TicketEventsRepo(session).add_event(
+            ticket_id=requester_reply_ticket.ticket_id,
+            device_id=requester_reply_ticket.device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload={
+                "message_id": "msg-summary-user-1",
+                "sender_role": "user",
+                "from": "user",
+                "text": "Пользователь ответил.",
+                "visibility": "public",
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id="msg-summary-user-1",
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/support/workspace/summary", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert "tickets" not in data
+    assert data["views"]["needs_action"] >= 1
+    assert data["views"]["sla_risk"] == 1
+    assert data["views"]["unassigned"] == 1
+    assert data["views"]["requester_replied"] == 1
+    queues = {item["id"]: item for item in data["queues"]}
+    assert queues["servicedesk_l1"]["name"] == "ServiceDesk L1"
+    assert queues["servicedesk_l1"]["count"] == 1
+    assert queues["networks"]["name"] == "Сети"
+    assert queues["networks"]["count"] == 1
+    assert {item["value"] for item in data["smart_view_counts"]} >= {"my_action", "sla_risk", "unassigned", "requester_reply"}
+
+
+@pytest.mark.asyncio
 async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc)

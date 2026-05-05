@@ -122,6 +122,8 @@ from web_api.dto.support import (
     SupportTicketTimerPayload,
     SupportTicketToolsPayload,
     SupportTicketWorkspacePayload,
+    SupportWorkspaceSummaryPayload,
+    SupportWorkspaceSummaryQueueItem,
     SupportTicketKnowledgeDraftPayload,
     SupportPlaybookItem,
     SupportPlaybookRunActionResult,
@@ -152,6 +154,20 @@ QUICK_STATUS_ACTIONS = [
 ]
 
 HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
+WORKSPACE_SUMMARY_VIEW_ALIASES = {
+    "needs_action": "my_action",
+    "sla_risk": "sla_risk",
+    "unassigned": "unassigned",
+    "requester_replied": "requester_reply",
+}
+
+
+@dataclass
+class SupportQueueState:
+    active_queues: list[object]
+    smart_options: list[dict[str, str]]
+    custom_smart_view_map: dict[str, dict[str, object]]
+    accessible_entries: list[tuple[dict, SupportQueueTicketItem]]
 
 
 def _normalize_scope(raw_scope: str | None) -> str:
@@ -680,6 +696,90 @@ def _build_smart_view_counts(
             )
         )
     return counts
+
+
+async def _load_support_queue_state(
+    session,
+    auth_context,
+    *,
+    limit: int,
+) -> SupportQueueState:
+    filters: dict[str, object] = {"exclude_archived": True}
+    if auth_context.actor_role == "support":
+        filters["support_actor_id"] = auth_context.actor_id
+
+    helpdesk_policy_repo = HelpdeskPolicyRepo(session)
+    admin_config_repo = TicketAdminConfigRepo(session)
+    custom_smart_views = await helpdesk_policy_repo.list_smart_views(include_inactive=False)
+    active_queues = await admin_config_repo.list_queues(include_inactive=False)
+    custom_smart_view_map = {
+        str(view.get("code") or "").strip(): view
+        for view in custom_smart_views
+        if str(view.get("code") or "").strip()
+    }
+
+    repo = TicketEventsRepo(session)
+    tickets = await repo.list_tickets(
+        order_by="updated_at",
+        order_direction="desc",
+        limit=limit,
+        filters=filters,
+    )
+    queue_map = await _queue_code_map(
+        session,
+        [getattr(ticket, "queue_id", None) for ticket in tickets],
+    )
+    counters_map = await _chat_counters_by_ticket_ids(
+        repo,
+        [getattr(ticket, "ticket_id", None) for ticket in tickets],
+    )
+
+    accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
+    for ticket in tickets:
+        ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+        ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
+        ticket_data.update(
+            {
+                "ola_ack_due_at": _iso_attr(ticket, "ola_ack_due_at"),
+                "ola_ack_breached_at": _iso_attr(ticket, "ola_ack_breached_at"),
+                "ola_processing_due_at": _iso_attr(ticket, "ola_processing_due_at"),
+                "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
+            }
+        )
+        accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
+
+    return SupportQueueState(
+        active_queues=active_queues,
+        smart_options=smart_view_options(custom_smart_views),
+        custom_smart_view_map=custom_smart_view_map,
+        accessible_entries=accessible_entries,
+    )
+
+
+def _workspace_summary_view_counts(smart_view_counts: list[SupportCountItem]) -> dict[str, int]:
+    counts_by_view = {item.value: item.count for item in smart_view_counts}
+    return {
+        alias: int(counts_by_view.get(source_view, 0))
+        for alias, source_view in WORKSPACE_SUMMARY_VIEW_ALIASES.items()
+    }
+
+
+def _workspace_summary_queues(queue_counts: list[SupportQueueCountItem]) -> list[SupportWorkspaceSummaryQueueItem]:
+    result: list[SupportWorkspaceSummaryQueueItem] = []
+    for item in queue_counts:
+        code = str(item.code or "").strip()
+        item_id = code or (str(item.id) if item.id is not None else "")
+        if not item_id:
+            continue
+        result.append(
+            SupportWorkspaceSummaryQueueItem(
+                id=item_id,
+                code=code or None,
+                name=str(item.name or code or item_id),
+                count=item.count,
+            )
+        )
+    return result
 
 
 def _get_ticket_data_path(ticket_data: dict[str, object], path: str) -> object:
@@ -1964,78 +2064,36 @@ async def handle_web_support_queue(request: web.Request):
     query = str(request.query.get("query", "") or "").strip()
     limit = min(max(int(request.query.get("limit", "200")), 1), 300)
 
-    filters: dict[str, object] = {"exclude_archived": True}
-    if auth_context.actor_role == "support":
-        filters["support_actor_id"] = auth_context.actor_id
-
     try:
         async with get_session() as session:
-            helpdesk_policy_repo = HelpdeskPolicyRepo(session)
-            admin_config_repo = TicketAdminConfigRepo(session)
-            custom_smart_views = await helpdesk_policy_repo.list_smart_views(include_inactive=False)
-            active_queues = await admin_config_repo.list_queues(include_inactive=False)
-            custom_smart_view_map = {
-                str(view.get("code") or "").strip(): view
-                for view in custom_smart_views
-                if str(view.get("code") or "").strip()
-            }
+            state = await _load_support_queue_state(session, auth_context, limit=limit)
             smart_view = normalize_smart_view_id(
                 requested_smart_view,
-                custom_view_ids=set(custom_smart_view_map),
+                custom_view_ids=set(state.custom_smart_view_map),
             )
-            repo = TicketEventsRepo(session)
-            tickets = await repo.list_tickets(
-                order_by="updated_at",
-                order_direction="desc",
-                limit=limit,
-                filters=filters,
-            )
-            queue_map = await _queue_code_map(
-                session,
-                [getattr(ticket, "queue_id", None) for ticket in tickets],
-            )
-            counters_map = await _chat_counters_by_ticket_ids(
-                repo,
-                [getattr(ticket, "ticket_id", None) for ticket in tickets],
-            )
-
-            smart_options = smart_view_options(custom_smart_views)
-            accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
-            for ticket in tickets:
-                ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
-                ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
-                ticket_data.update(
-                    {
-                        "ola_ack_due_at": _iso_attr(ticket, "ola_ack_due_at"),
-                        "ola_ack_breached_at": _iso_attr(ticket, "ola_ack_breached_at"),
-                        "ola_processing_due_at": _iso_attr(ticket, "ola_processing_due_at"),
-                        "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
-                    }
-                )
-                accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
 
         smart_view_counts = _build_smart_view_counts(
-            accessible_entries,
-            smart_options,
+            state.accessible_entries,
+            state.smart_options,
             actor_id=auth_context.actor_id,
-            custom_smart_view_map=custom_smart_view_map,
+            custom_smart_view_map=state.custom_smart_view_map,
         )
         matching_entries = [
             (ticket_data, item)
-            for ticket_data, item in accessible_entries
+            for ticket_data, item in state.accessible_entries
             if matches_smart_view(
                 ticket_data,
                 smart_view,
                 actor_id=auth_context.actor_id,
-                custom_views=custom_smart_view_map,
+                custom_views=state.custom_smart_view_map,
             )
         ]
         matching_entries = _apply_custom_smart_view_sort(
             matching_entries,
             smart_view=smart_view,
-            custom_smart_view_map=custom_smart_view_map,
+            custom_smart_view_map=state.custom_smart_view_map,
         )
-        queue_counts = _build_queue_counts(active_queues, matching_entries)
+        queue_counts = _build_queue_counts(state.active_queues, matching_entries)
         accessible_items = [item for _ticket_data, item in matching_entries]
         scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
         status_counts = _build_status_counts(accessible_items)
@@ -2073,7 +2131,7 @@ async def handle_web_support_queue(request: web.Request):
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,
                 status_options=_build_status_options(status_values),
-                smart_view_options=[SupportFilterOption(**option) for option in smart_options],
+                smart_view_options=[SupportFilterOption(**option) for option in state.smart_options],
             ),
             tickets=typed_items,
         )
@@ -2089,6 +2147,47 @@ async def handle_web_support_queue(request: web.Request):
             smart_view=smart_view,
         )
     return json_model_response(SuccessResponse[SupportQueuePayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_workspace_summary(request: web.Request):
+    auth_context = request["auth_context"]
+    limit = min(max(int(request.query.get("limit", "1000")), 1), 2000)
+    try:
+        async with get_session() as session:
+            state = await _load_support_queue_state(session, auth_context, limit=limit)
+
+        smart_view_counts = _build_smart_view_counts(
+            state.accessible_entries,
+            state.smart_options,
+            actor_id=auth_context.actor_id,
+            custom_smart_view_map=state.custom_smart_view_map,
+        )
+        queue_counts = _build_queue_counts(state.active_queues, state.accessible_entries)
+        payload = SupportWorkspaceSummaryPayload(
+            views=_workspace_summary_view_counts(smart_view_counts),
+            queues=_workspace_summary_queues(queue_counts),
+            smart_view_counts=smart_view_counts,
+            smart_view_options=[SupportFilterOption(**option) for option in state.smart_options],
+        )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_workspace_summary] DB unavailable, returning empty summary: "
+            f"actor_id={auth_context.actor_id}, error={exc}"
+        )
+        empty_smart_options = smart_view_options()
+        empty_smart_counts = [
+            SupportCountItem(value=str(option.get("value") or ""), label=str(option.get("label") or ""), count=0)
+            for option in empty_smart_options
+            if str(option.get("value") or "").strip()
+        ]
+        payload = SupportWorkspaceSummaryPayload(
+            views=_workspace_summary_view_counts(empty_smart_counts),
+            queues=[],
+            smart_view_counts=empty_smart_counts,
+            smart_view_options=[SupportFilterOption(**option) for option in empty_smart_options],
+        )
+    return json_model_response(SuccessResponse[SupportWorkspaceSummaryPayload](data=payload))
 
 
 @require_auth("admin", "support")

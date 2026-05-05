@@ -70,6 +70,24 @@ export type SupportQueuePayload = {
   }>;
 };
 
+export type SupportWorkspaceSummaryPayload = {
+  views: {
+    needs_action: number;
+    sla_risk: number;
+    unassigned: number;
+    requester_replied: number;
+    [key: string]: number;
+  };
+  queues: Array<{
+    id: string;
+    code: string | null;
+    name: string;
+    count: number;
+  }>;
+  smart_view_counts: SupportCountItem[];
+  smart_view_options: SupportFilterOption[];
+};
+
 export type SupportTicketDetailPayload = {
   ticket: {
     ticket_id: string;
@@ -710,6 +728,29 @@ export async function fetchSupportQueue(params: SupportQueueParams): Promise<Sup
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить очередь поддержки",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportWorkspaceSummary(limit?: number): Promise<SupportWorkspaceSummaryPayload> {
+  const searchParams = new URLSearchParams();
+  if (limit && Number.isFinite(limit)) {
+    searchParams.set("limit", String(Math.max(1, Math.floor(limit))));
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`/api/web/support/workspace/summary${suffix}`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportWorkspaceSummaryPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить сводку рабочего пространства поддержки",
       response.status,
       errorPayload?.error_code
     );

@@ -101,6 +101,24 @@ class SupportQueuePayload(BaseModel):
     tickets: list[SupportQueueTicketItem]
 
 
+class SupportWorkspaceSummaryQueueItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    code: str | None = None
+    name: str
+    count: int
+
+
+class SupportWorkspaceSummaryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    views: dict[str, int] = Field(default_factory=dict)
+    queues: list[SupportWorkspaceSummaryQueueItem] = Field(default_factory=list)
+    smart_view_counts: list[SupportCountItem] = Field(default_factory=list)
+    smart_view_options: list[SupportFilterOption] = Field(default_factory=list)
+
+
 class SupportTicketQueueInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 85% for P1.
+Current completion: 100% for P0, 94% for P1.
 
-Current execution mode: P1 compact DTO slice is locally green. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, and visible "More" controls wired to the tested mutation aliases; remaining P1 work is workspace summary optimization and optional release/browser signoff for the compact DTO slice.
+Current execution mode: P1 workspace summary slice is locally green. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, and visible "More" controls wired to the tested mutation aliases; remaining P1 work is release/browser signoff for the summary slice and optional knowledge-suggestions refinement.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -84,12 +84,12 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 
 ## Backend Functionality Gap Estimate
 
-Estimated missing backend functionality for the requested target: **22-26%** at the typed web contract layer.
+Estimated missing backend functionality for the requested target: **18-22%** at the typed web contract layer.
 
 Important distinction:
 
 - Domain/business functionality missing: **10-15%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence and observer data.
-- Typed workspace/API functionality missing: **22-26%**. The current React workspace now uses a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, but the target SaaS workspace still needs a lightweight workspace summary/list contract and first-class knowledge suggestions.
+- Typed workspace/API functionality missing: **18-22%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs plus a lightweight workspace summary contract; remaining typed gaps are mostly first-class knowledge suggestions and optional row-free/list optimization refinements.
 
 Already present:
 
@@ -104,7 +104,7 @@ Already present:
 
 Missing or incomplete for target:
 
-- Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics. Current equivalent is mostly `GET /api/web/support/queue`, but that route returns ticket rows and computes queue slices from the selected ticket sample.
+- Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics is now available as `GET /api/web/support/workspace/summary`.
 - Aggregated ticket workspace endpoint returning all center/right-panel data in one payload. Current UI calls detail, tools, playbooks and passport separately.
 - First-class queue list/count DTO separate from smart views. Current left queues are derived on the frontend from returned tickets, not from authoritative queue inventory/counts.
 - Ticket list priority/assignee display DTO fields. Current detail has priority, but queue items do not; the UI currently falls back to `P3` in the left worklist.
@@ -202,7 +202,7 @@ P1 - important for performance and the target architecture:
   - knowledge;
   - passport readiness;
   - permissions/actions.
-- [ ] Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
+- [x] Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
 - [x] Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
 - [x] Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
 - [x] Wire visible "More" menu controls to the typed `assign`, `queue`, `priority` and `reroute` aliases.
@@ -224,6 +224,15 @@ P1 second-slice evidence:
 - Frontend mapper now prefers compact `sla_ola` and `passport_readiness` when present, while keeping the previous detail/passport derivation as fallback.
 - Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts`.
 - Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (42 tests), `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
+
+P1 third-slice evidence:
+
+- RED verified: `server\tests\test_web_support_api.py::test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows` failed with 404 before the endpoint existed.
+- GREEN verified: `GET /api/web/support/workspace/summary` now returns row-free `views`, `queues`, `smart_view_counts` and `smart_view_options`.
+- The summary `views` object exposes target aliases `needs_action`, `sla_risk`, `unassigned` and `requester_replied` while preserving existing backend smart-view ids in `smart_view_counts`.
+- Frontend typed client `fetchSupportWorkspaceSummary(limit)` added for the lightweight endpoint.
+- Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows server\tests\test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts`.
+- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (43 tests), `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
 
 P2 - valuable, but can follow after core operator flows:
 
@@ -329,7 +338,7 @@ Use current typed `/api/web/support/*` routes as canonical React API. Add compat
 Preferred final API shape:
 
 - Keep `GET /api/web/support/queue`.
-- Add `GET /api/web/support/workspace/summary` if list page needs summary without ticket rows, or add an explicit `include_rows=0` mode to `GET /api/web/support/queue`.
+- `GET /api/web/support/workspace/summary` now provides summary without ticket rows; keep `GET /api/web/support/queue` as the row/list contract.
 - Add `GET /api/web/support/tickets/{ticket_id}/workspace` to aggregate:
   - selected ticket;
   - timeline;
