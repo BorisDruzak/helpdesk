@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 implementation.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff.
 
-Current execution mode: P1 final knowledge-suggestions slice is locally focused green and awaiting full release/browser verification. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, and visible "More" controls wired to the tested mutation aliases.
+Current execution mode: P1 is complete. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -244,6 +244,9 @@ P1 fourth-slice evidence:
 - Aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` now embeds the same knowledge payload, so the right sidebar does not need a separate waterfall.
 - Frontend typed client `fetchSupportTicketKnowledgeSuggestions(ticketId)` added; `/app/tickets` maps aggregate `knowledge` into articles, similar tickets and the AI beta block instead of the old placeholder text.
 - Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`.
+- Local release verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (44 tests), focused Vitest (13 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Linux release completed for commit `7a5fad89b5a551f82c62b34538423cfeb04346ae` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; release verification, local webapp build, remote migrations, bundle upload and remote smoke passed.
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab showed the source-safe empty state for a ticket without KB links, `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200 with `knowledge`, and standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` returned 200.
 
 P2 - valuable, but can follow after core operator flows:
 
@@ -776,8 +779,8 @@ Stage 8 evidence:
 - P0 and P1 implementation for `/app/tickets` support workspace are complete.
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
 - Backend/API residual gap after P1 is estimated at 8-12%, mostly optional richer knowledge search/catalog, standalone timeline filtering and app-shell/theme refinements.
-- This plan remains the active long-horizon artifact until final release/browser verification is recorded.
-- Current pending step: full local verification, commit, deploy to Linux, browser signoff, then mark release complete.
+- This plan remains the active long-horizon artifact for any P2 follow-up.
+- Current pending step: none for P1; move to P2 only on explicit product request.
 
 ## Handoff
 
