@@ -728,19 +728,32 @@ export function TicketListPage() {
                           </div>
                           <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-200">{item.body}</p>
                           {item.operation ? (
-                            <div className="mt-3 grid gap-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm md:grid-cols-3">
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
-                                <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
+                            <div className="mt-3 rounded-lg border border-white/10 bg-[#111f33] p-3 text-sm">
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Операция</p>
+                                  <p className="mt-1 font-semibold text-white">{item.operation.name}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
+                                  <p className="mt-1 font-semibold text-amber-200">{item.operation.status}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
+                                  <p className="mt-1 font-semibold text-red-200">{item.operation.summary ?? item.operation.preview ?? "Нет результата"}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
-                                <p className="mt-1 font-semibold text-amber-200">{item.operation.status}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
-                                <p className="mt-1 font-semibold text-red-200">{item.operation.summary ?? item.operation.preview ?? "Нет результата"}</p>
-                              </div>
+                              {item.operation.steps?.length ? (
+                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
+                                  {item.operation.steps.map((step) => (
+                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
+                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
+                                      <p className={step.status === "ok" || step.status === "succeeded" ? "mt-1 font-semibold text-emerald-200" : step.status === "error" || step.status === "failed" ? "mt-1 font-semibold text-red-200" : "mt-1 font-semibold text-amber-200"}>{step.status}</p>
+                                      <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
                           {item.attachments.length ? (

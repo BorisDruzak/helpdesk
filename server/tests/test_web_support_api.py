@@ -1003,6 +1003,129 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-timeline-contract",
+            title="Timeline contract ticket",
+            description="System lifecycle events must be visible in support workspace timeline.",
+            status="in_progress",
+            requester_id="requester-timeline",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.flush()
+
+        repo = TicketEventsRepo(session)
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="status_changed",
+            payload={"from_status": "new", "to_status": "in_progress", "actor_id": "support-test", "actor_role": "support"},
+            event_id="timeline-status-changed",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="assignee_changed",
+            payload={"old_value": None, "new_value": "support-test", "actor_id": "lead-test", "actor_role": "support"},
+            event_id="timeline-assignee-changed",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="queue_changed",
+            payload={"from_queue_id": None, "to_queue_id": queue.id, "new_queue_code": "servicedesk_l1"},
+            event_id="timeline-queue-changed",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="priority_changed",
+            payload={"old_priority": "P3", "new_priority": "P1", "reason": "impact_update"},
+            event_id="timeline-priority-changed",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="sla_breached",
+            payload={"timer_type": "resolution", "status": "breached"},
+            event_id="timeline-sla-breached",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="ola_breached",
+            payload={"breached_fields": ["ola_ack"], "status": "breached"},
+            event_id="timeline-ola-breached",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="passport_evidence_added",
+            payload={"evidence_id": 42, "evidence_type": "diagnostic_result", "summary": "DNS check attached"},
+            event_id="timeline-passport-evidence",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_result",
+            payload={
+                "tool_name": "diagnose.website",
+                "status": "succeeded",
+                "summary": "HTTP 502 Bad Gateway",
+                "steps": [
+                    {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10"},
+                    {"name": "HTTP", "status": "error", "value": "502 Bad Gateway"},
+                ],
+            },
+            event_id="timeline-tool-result",
+        )
+        await session.commit()
+
+    response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    timeline_by_type = {entry["event_type"]: entry for entry in payload["data"]["timeline"]}
+    assert {
+        "status_changed",
+        "assignee_changed",
+        "queue_changed",
+        "priority_changed",
+        "sla_breached",
+        "ola_breached",
+        "passport_evidence_added",
+        "tool_call_result",
+    } <= set(timeline_by_type)
+    assert timeline_by_type["status_changed"]["event_category"] == "history"
+    assert timeline_by_type["status_changed"]["event_details"]["to_status"] == "in_progress"
+    assert timeline_by_type["sla_breached"]["event_category"] == "sla"
+    assert timeline_by_type["ola_breached"]["event_category"] == "ola"
+    assert timeline_by_type["passport_evidence_added"]["event_category"] == "passport"
+    assert timeline_by_type["tool_call_result"]["event_category"] == "diagnostics"
+    assert timeline_by_type["tool_call_result"]["operation_steps"] == [
+        {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10"},
+        {"name": "HTTP", "status": "error", "value": "502 Bad Gateway"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_exposes_template_visibility_policy(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

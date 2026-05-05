@@ -292,6 +292,64 @@ describe("support workspace mappers", () => {
     });
   });
 
+  it("maps normalized backend timeline categories and operation steps", () => {
+    const detail = detailPayload();
+    detail.timeline = [
+      {
+        message_id: null,
+        event_id: 4,
+        event_type: "sla_breached",
+        event_category: "sla",
+        event_label: "SLA breached",
+        event_details: { timer_type: "resolution" },
+        from_role: "system",
+        sender_display_name: "System",
+        text: "SLA breached",
+        ts: "2026-05-05T09:20:00+05:00",
+        visibility: "system",
+        direction: "system",
+        attachments: [],
+        reply_to: null,
+      },
+      {
+        message_id: null,
+        event_id: 5,
+        event_type: "tool_call_result",
+        event_category: "diagnostics",
+        event_label: "Tool result",
+        event_details: {},
+        from_role: "system",
+        sender_display_name: "System",
+        text: "Diagnostic result",
+        ts: "2026-05-05T09:21:00+05:00",
+        visibility: "system",
+        direction: "system",
+        attachments: [],
+        reply_to: null,
+        tool_name: "diagnose.website",
+        tool_status: "succeeded",
+        result_summary: "HTTP 502 Bad Gateway",
+        result_preview: null,
+        operation_steps: [
+          { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
+          { name: "HTTP", status: "error", value: "502 Bad Gateway" },
+        ],
+      },
+    ];
+
+    const timeline = mapWorkspaceTimeline(detail);
+
+    expect(timeline[0]).toMatchObject({
+      kind: "history",
+      title: "SLA breached",
+      tone: "danger",
+    });
+    expect(timeline[1].operation?.steps).toEqual([
+      { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
+      { name: "HTTP", status: "error", value: "502 Bad Gateway" },
+    ]);
+  });
+
   it("builds passport readiness from missing facts", () => {
     const viewModel = mapSupportWorkspaceViewModel({
       activeQueueId: null,

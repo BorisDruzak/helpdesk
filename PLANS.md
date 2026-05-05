@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 97%.
+Current completion: 98%.
 
-Current execution mode: backend contract hardening is in progress. First P0 slice is implemented and locally verified: support queue rows now expose real priority/assignee fields and queue counts through the typed web boundary.
+Current execution mode: backend contract hardening is in progress. First two P0 slices are implemented and locally verified: support queue rows now expose real priority/assignee fields and queue counts through the typed web boundary, and support ticket detail timeline now includes normalized lifecycle/SLA/OLA/passport events plus structured operation steps.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -153,7 +153,7 @@ P0 - required before calling the backend contract production-complete:
 
 - [x] Add priority and assignee display fields to `SupportQueueTicketItem` and `webapp/src/features/queues/api.ts`.
 - [x] Add authoritative queue counts/list to the support queue payload or a new summary payload.
-- Expand typed detail timeline to include status, assignment, queue, priority, SLA/OLA, passport/evidence and operation events with normalized event kinds.
+- [x] Expand typed detail timeline to include status, assignment, queue, priority, SLA/OLA, passport/evidence and operation events with normalized event kinds.
 - Add typed `/api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` aliases over the existing legacy handlers/services.
 
 P0 first-slice evidence:
@@ -164,6 +164,15 @@ P0 first-slice evidence:
 - `server/tests/test_web_support_api.py` passed: 35 tests.
 - `pnpm --dir webapp run build` passed.
 - `python scripts/verify_workspace.py` passed after updating `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py` for the typed support/registry DTO drift rule.
+
+P0 second-slice evidence:
+
+- RED verified: `server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events` failed because lifecycle events were filtered out of the typed detail timeline.
+- GREEN verified: the same backend test passes after adding `event_category`, `event_label`, `event_details`, `operation_steps` and expanding support timeline event filtering.
+- `server/tests/test_web_support_api.py` passed: 36 tests.
+- Frontend mapper RED/GREEN verified for normalized timeline categories and operation steps.
+- Focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`: 12 tests.
+- `pnpm --dir webapp run build` passed.
 
 P1 - important for performance and the target architecture:
 
@@ -397,7 +406,7 @@ Files:
 
 Tasks:
 
-- [ ] Add summary/queues DTO if existing queue payload is not enough.
+- [x] Add summary/queues DTO if existing queue payload is not enough.
 - [ ] Add SLA/OLA card DTO serializer:
   - first response;
   - resolution;
@@ -418,6 +427,7 @@ Tasks:
 - [ ] Add knowledge suggestions endpoint as honest empty/KB-link-backed payload if no full knowledge catalog exists.
 - [ ] Add aggregated workspace endpoint if frontend complexity or round-trips justify it.
 - [ ] Add typed aliases for assign/queue/priority/reroute only if used in visible action menu.
+- [x] Expand typed detail timeline with normalized lifecycle/SLA/OLA/passport event categories and structured operation steps.
 - [ ] Extend tests for DTO shape and RBAC denial payloads.
 
 Expected completion after Stage 2: 38%.
@@ -715,7 +725,7 @@ Stage 8 evidence:
 
 ## Handoff
 
-Recommended next step: start backend contract hardening with the P0 items from "Backend Contract Analysis 2026-05-05".
+Recommended next step: continue backend contract hardening with the remaining P0 typed mutation aliases from "Backend Contract Analysis 2026-05-05".
 
 Concrete first slice:
 
@@ -725,4 +735,4 @@ Concrete first slice:
 4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
 5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
 
-Next slice after verification: expand typed detail timeline with normalized status/assignment/queue/priority/SLA/OLA/passport event kinds.
+Next slice after verification: add typed `/api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` aliases over existing ticket services and wire visible "More" actions only after those aliases are tested.

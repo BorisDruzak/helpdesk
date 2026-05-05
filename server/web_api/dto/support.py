@@ -257,6 +257,9 @@ class SupportTicketMessage(BaseModel):
     message_id: str | None
     event_id: int | None
     event_type: str = "chat_message"
+    event_category: str = "message"
+    event_label: str | None = None
+    event_details: dict[str, Any] = Field(default_factory=dict)
     from_role: str
     sender_display_name: str | None = None
     text: str
@@ -269,6 +272,7 @@ class SupportTicketMessage(BaseModel):
     tool_status: str | None = None
     result_summary: str | None = None
     result_preview: str | None = None
+    operation_steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SupportTicketPresence(BaseModel):

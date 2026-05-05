@@ -618,6 +618,187 @@ def _tool_result_preview(payload: dict) -> str | None:
     return str(raw_preview)[:300]
 
 
+SUPPORT_TIMELINE_DIRECT_EVENT_TYPES = {
+    "chat_message",
+    "tool_call_started",
+    "tool_call_result",
+    "playbook_started",
+    "diagnostic_result_classified",
+    "routing_applied",
+    "status_changed",
+    "assignee_changed",
+    "queue_changed",
+    "queue_order_changed",
+    "priority_changed",
+    "classification_changed",
+    "requester_profile_changed",
+    "device_changed",
+    "worklog_added",
+}
+
+SUPPORT_TIMELINE_EVENT_PREFIXES = (
+    "sla_",
+    "ola_",
+    "passport_",
+    "approval_",
+)
+
+SUPPORT_TIMELINE_DETAIL_KEYS = {
+    "action",
+    "actor_id",
+    "actor_role",
+    "approval_id",
+    "approval_type",
+    "assignee_id",
+    "breached_at",
+    "breached_fields",
+    "comment",
+    "decision",
+    "due_at",
+    "evidence_id",
+    "evidence_type",
+    "field_name",
+    "from_queue_id",
+    "from_status",
+    "new_priority",
+    "new_queue_code",
+    "new_value",
+    "old_priority",
+    "old_queue_code",
+    "old_value",
+    "operation_id",
+    "passport_id",
+    "playbook_key",
+    "previous_assignee_id",
+    "reason",
+    "run_id",
+    "source_ref",
+    "status",
+    "summary",
+    "timer",
+    "timer_type",
+    "to_queue_id",
+    "to_status",
+    "tool_name",
+    "trigger",
+    "verification_status",
+    "warning_type",
+}
+
+
+def _is_support_timeline_event(event_type: str) -> bool:
+    return event_type in SUPPORT_TIMELINE_DIRECT_EVENT_TYPES or event_type.startswith(SUPPORT_TIMELINE_EVENT_PREFIXES)
+
+
+def _timeline_event_category(event_type: str, payload: dict) -> str:
+    if event_type == "chat_message":
+        return "internal" if str(payload.get("visibility") or "public") == "internal" else "message"
+    if event_type in {"tool_call_started", "tool_call_result", "playbook_started", "diagnostic_result_classified", "routing_applied"}:
+        return "diagnostics"
+    if event_type.startswith("sla_"):
+        return "sla"
+    if event_type.startswith("ola_"):
+        return "ola"
+    if event_type.startswith("passport_"):
+        return "passport"
+    if event_type.startswith("approval_"):
+        return "approval"
+    return "history"
+
+
+def _timeline_event_label(event_type: str) -> str:
+    labels = {
+        "status_changed": "Status changed",
+        "assignee_changed": "Assignee changed",
+        "queue_changed": "Queue changed",
+        "queue_order_changed": "Queue order changed",
+        "priority_changed": "Priority changed",
+        "classification_changed": "Classification changed",
+        "requester_profile_changed": "Requester changed",
+        "device_changed": "Device changed",
+        "worklog_added": "Worklog added",
+        "diagnostic_result_classified": "Diagnostic result classified",
+        "routing_applied": "Routing applied",
+        "passport_generated": "Resolution passport generated",
+        "passport_evidence_added": "Resolution evidence added",
+        "passport_evidence_linked": "Resolution evidence linked",
+        "passport_evidence_verified": "Resolution evidence verified",
+        "passport_evidence_rejected": "Resolution evidence rejected",
+        "approval_approved": "Approval approved",
+        "approval_rejected": "Approval rejected",
+        "approval_reminder_due": "Approval reminder due",
+        "approval_escalated": "Approval escalated",
+        "approval_timed_out": "Approval timed out",
+        "sla_started": "SLA started",
+        "sla_first_response_stopped": "SLA first response stopped",
+        "sla_resolution_stopped": "SLA resolution stopped",
+        "sla_paused": "SLA paused",
+        "sla_resumed": "SLA resumed",
+        "sla_warning": "SLA warning",
+        "sla_breached": "SLA breached",
+        "sla_reminder_sent": "SLA reminder sent",
+        "ola_started": "OLA started",
+        "ola_ack_stopped": "OLA acknowledgement stopped",
+        "ola_processing_stopped": "OLA processing stopped",
+        "ola_paused": "OLA paused",
+        "ola_resumed": "OLA resumed",
+        "ola_breached": "OLA breached",
+    }
+    return labels.get(event_type, event_type.replace("_", " ").strip().title() or "System event")
+
+
+def _timeline_event_details(payload: dict) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if key in SUPPORT_TIMELINE_DETAIL_KEYS and value is not None
+    }
+
+
+def _timeline_event_text(event_type: str, payload: dict) -> str:
+    summary = str(payload.get("summary") or "").strip()
+    if summary:
+        return summary
+    if event_type == "status_changed":
+        return " -> ".join(str(payload.get(key) or "").strip() for key in ("from_status", "to_status") if str(payload.get(key) or "").strip()) or "Status changed"
+    if event_type == "assignee_changed":
+        assignee = str(payload.get("new_value") or payload.get("assignee_id") or "").strip()
+        return f"Assigned to {assignee}" if assignee else "Assignee changed"
+    if event_type == "queue_changed":
+        queue = str(payload.get("new_queue_code") or payload.get("to_queue_id") or "").strip()
+        return f"Moved to queue {queue}" if queue else "Queue changed"
+    if event_type == "priority_changed":
+        old_priority = str(payload.get("old_priority") or payload.get("old_value") or "").strip()
+        new_priority = str(payload.get("new_priority") or payload.get("new_value") or payload.get("priority") or "").strip()
+        if old_priority or new_priority:
+            return f"Priority {old_priority or '?'} -> {new_priority or '?'}"
+        return "Priority changed"
+    return _timeline_event_label(event_type)
+
+
+def _timeline_operation_steps(payload: dict) -> list[dict[str, Any]]:
+    raw_steps = payload.get("steps")
+    if not isinstance(raw_steps, list):
+        return []
+    steps: list[dict[str, Any]] = []
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        name = str(raw_step.get("name") or raw_step.get("title") or "").strip()
+        status = str(raw_step.get("status") or "").strip()
+        value = raw_step.get("value")
+        if not name and not status and value is None:
+            continue
+        steps.append(
+            {
+                "name": name or "step",
+                "status": status or "unknown",
+                "value": "" if value is None else str(value),
+            }
+        )
+    return steps[:20]
+
+
 def _event_timestamp_iso(event: object, payload: dict) -> str | None:
     created_at = getattr(event, "created_at", None)
     if created_at is not None:
@@ -662,6 +843,9 @@ def _build_timeline_message(event: object, ticket: object | None = None) -> Supp
         message_id=raw_message.get("message_id"),
         event_id=raw_message.get("event_id"),
         event_type="chat_message",
+        event_category=_timeline_event_category("chat_message", payload if isinstance(payload, dict) else {}),
+        event_label="Message",
+        event_details=_timeline_event_details(payload) if isinstance(payload, dict) else {},
         from_role=str(raw_message.get("from_role") or "user"),
         sender_display_name=sender_display_name,
         text=str(raw_message.get("text") or ""),
@@ -674,6 +858,7 @@ def _build_timeline_message(event: object, ticket: object | None = None) -> Supp
         tool_status=None,
         result_summary=None,
         result_preview=None,
+        operation_steps=[],
     )
 
 
@@ -700,6 +885,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             message_id=None,
             event_id=getattr(event, "id", None),
             event_type=event_type,
+            event_category=_timeline_event_category(event_type, payload),
+            event_label=_timeline_event_label(event_type),
+            event_details=_timeline_event_details(payload),
             from_role="system",
             sender_display_name="Автодиагностика",
             text=f"Автодиагностика запущена: {playbook_key}",
@@ -720,6 +908,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             message_id=None,
             event_id=getattr(event, "id", None),
             event_type=event_type,
+            event_category=_timeline_event_category(event_type, payload),
+            event_label=_timeline_event_label(event_type),
+            event_details=_timeline_event_details(payload),
             from_role="system",
             sender_display_name="Система",
             text=f"Запуск инструмента: {tool_name}",
@@ -740,6 +931,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             message_id=None,
             event_id=getattr(event, "id", None),
             event_type=event_type,
+            event_category=_timeline_event_category(event_type, payload),
+            event_label=_timeline_event_label(event_type),
+            event_details=_timeline_event_details(payload),
             from_role="system",
             sender_display_name="Система",
             text=f"Результат инструмента: {tool_name}",
@@ -752,15 +946,19 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             tool_status=str(payload.get("status") or "unknown"),
             result_summary=str(payload.get("summary") or payload.get("error") or "Без краткого результата"),
             result_preview=_tool_result_preview(payload),
+            operation_steps=_timeline_operation_steps(payload),
         )
 
     return SupportTicketMessage(
         message_id=None,
         event_id=getattr(event, "id", None),
         event_type=event_type or "system",
+        event_category=_timeline_event_category(event_type, payload),
+        event_label=_timeline_event_label(event_type),
+        event_details=_timeline_event_details(payload),
         from_role="system",
         sender_display_name="Система",
-        text=event_type or "Системное событие",
+        text=_timeline_event_text(event_type, payload),
         ts=_event_timestamp_iso(event, payload),
         visibility="system",
         direction="system",
@@ -1430,8 +1628,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     timeline = [
         _build_timeline_entry(event, ticket=ticket)
         for event in events
-        if getattr(event, "event_type", None)
-        in {"chat_message", "tool_call_started", "tool_call_result", "playbook_started"}
+        if _is_support_timeline_event(str(getattr(event, "event_type", None) or ""))
     ]
 
     queue_name = None

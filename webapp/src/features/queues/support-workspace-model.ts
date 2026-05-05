@@ -92,6 +92,11 @@ export type SupportWorkspaceTimelineItem = {
     status: string;
     summary: string | null;
     preview: string | null;
+    steps?: Array<{
+      name: string;
+      status: string;
+      value: string;
+    }>;
   };
   attachments: Array<Record<string, unknown>>;
 };

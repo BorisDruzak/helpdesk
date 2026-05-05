@@ -177,6 +177,9 @@ export type SupportTicketDetailPayload = {
     message_id: string | null;
     event_id: number | null;
     event_type: string;
+    event_category?: string | null;
+    event_label?: string | null;
+    event_details?: Record<string, unknown>;
     from_role: string;
     sender_display_name?: string | null;
     text: string;
@@ -195,6 +198,11 @@ export type SupportTicketDetailPayload = {
     tool_status?: string | null;
     result_summary?: string | null;
     result_preview?: string | null;
+    operation_steps?: Array<{
+      name: string;
+      status: string;
+      value: string;
+    }>;
   }>;
   snapshot: {
     last_event_id: number;

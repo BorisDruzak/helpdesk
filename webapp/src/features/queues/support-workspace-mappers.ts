@@ -302,26 +302,36 @@ export function mapNextAction(
 
 export function mapWorkspaceTimeline(detail: SupportTicketDetailPayload | undefined): SupportWorkspaceTimelineItem[] {
   return (detail?.timeline ?? []).map((entry, index) => {
-    const isInternal = entry.visibility === "internal";
-    const isDiagnostic = entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
+    const category = entry.event_category ?? null;
+    const isInternal = category === "internal" || entry.visibility === "internal";
+    const isDiagnostic = category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
     const kind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
     const operationStatus = entry.tool_status ?? "";
     const operationTone = operationStatus === "success" || operationStatus === "succeeded" ? "success" : operationStatus ? "warning" : "neutral";
+    const historyTone =
+      entry.event_type.includes("breached") || entry.event_type.includes("rejected")
+        ? "danger"
+        : entry.event_type.includes("warning") || category === "sla" || category === "ola"
+          ? "warning"
+          : category === "passport" || entry.event_type.includes("approved")
+            ? "success"
+            : "info";
     return {
       id: entry.message_id ?? String(entry.event_id ?? index),
       kind,
-      title: isDiagnostic ? entry.tool_name ?? "Диагностика" : isInternal ? "Внутренняя заметка" : entry.visibility === "system" ? "Системное событие" : "Сообщение",
+      title: entry.event_label ?? (isDiagnostic ? entry.tool_name ?? "Диагностика" : isInternal ? "Внутренняя заметка" : entry.visibility === "system" ? "Системное событие" : "Сообщение"),
       actor: entry.sender_display_name ?? entry.from_role,
       timestampLabel: formatDateTime(entry.ts),
       body: entry.text,
       visibility: entry.visibility,
-      tone: isDiagnostic ? operationTone : isInternal ? "warning" : entry.visibility === "system" ? "info" : "brand",
+      tone: isDiagnostic ? operationTone : isInternal ? "warning" : entry.visibility === "system" ? historyTone : "brand",
       operation: isDiagnostic
         ? {
             name: entry.tool_name ?? "operation",
             status: entry.tool_status ?? "unknown",
             summary: entry.result_summary ?? null,
             preview: entry.result_preview ?? null,
+            steps: entry.operation_steps ?? [],
           }
         : undefined,
       attachments: entry.attachments,
