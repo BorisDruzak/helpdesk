@@ -33,6 +33,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   fetchSupportQueue,
+  fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
   postSupportTicketAssign,
   postSupportTicketMessage,
@@ -43,8 +44,10 @@ import {
   postSupportTicketStatus,
   postSupportTicketToolRun,
   type SupportQueueScope,
+  type SupportTicketTimelineFilter,
 } from "../../features/queues/api";
 import {
+  mapSupportTimelineEntries,
   mapSupportWorkspaceViewModel,
 } from "../../features/queues/support-workspace-mappers";
 import type {
@@ -282,6 +285,16 @@ export function TicketListPage() {
     retry: false,
   });
 
+  const timelineApiFilter: SupportTicketTimelineFilter =
+    timelineFilter === "message" ? "messages" : timelineFilter;
+
+  const timelineQuery = useQuery({
+    queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
+    queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, timelineApiFilter),
+    enabled: Boolean(selectedTicketId) && timelineFilter !== "all",
+    retry: false,
+  });
+
   const viewModel = useMemo(
     () =>
       mapSupportWorkspaceViewModel({
@@ -304,10 +317,12 @@ export function TicketListPage() {
     ? viewModel.left.tickets.filter((ticket) => ticket.queueLabel === activeQueueId)
     : viewModel.left.tickets;
 
+  const aggregateTimeline = viewModel.selectedTicket?.timeline ?? [];
+  const endpointTimeline = timelineQuery.data ? mapSupportTimelineEntries(timelineQuery.data.items) : null;
   const visibleTimeline =
     timelineFilter === "all"
-      ? viewModel.selectedTicket?.timeline ?? []
-      : (viewModel.selectedTicket?.timeline ?? []).filter((item) => item.kind === timelineFilter);
+      ? aggregateTimeline
+      : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
 
   const messageMutation = useMutation({
     mutationFn: async () => {
@@ -320,6 +335,7 @@ export function TicketListPage() {
       setComposerText("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
@@ -335,6 +351,7 @@ export function TicketListPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
@@ -356,6 +373,7 @@ export function TicketListPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
       ]);
     },
   });
@@ -371,6 +389,7 @@ export function TicketListPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
       ]);
     },
   });
@@ -410,6 +429,7 @@ export function TicketListPage() {
       setMoreOpen(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },

@@ -346,7 +346,13 @@ export function mapNextAction(
 }
 
 export function mapWorkspaceTimeline(detail: SupportTicketDetailPayload | undefined): SupportWorkspaceTimelineItem[] {
-  return (detail?.timeline ?? []).map((entry, index) => {
+  return mapSupportTimelineEntries(detail?.timeline);
+}
+
+export function mapSupportTimelineEntries(
+  entries: SupportTicketDetailPayload["timeline"] | undefined,
+): SupportWorkspaceTimelineItem[] {
+  return (entries ?? []).map((entry, index) => {
     const category = entry.event_category ?? null;
     const isInternal = category === "internal" || entry.visibility === "internal";
     const isDiagnostic = category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";

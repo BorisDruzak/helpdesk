@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, P2.2 standalone timeline filtering implemented locally and awaiting release/browser signoff.
 
-Current execution mode: P2.1 complete. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand.
+Current execution mode: P2.2 verification. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -85,12 +85,12 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 
 ## Backend Functionality Gap Estimate
 
-Estimated remaining backend functionality for the requested target after P1: **8-12%** at the typed web contract layer.
+Estimated remaining backend functionality for the requested target after P2.2 implementation: **6-10%** at the typed web contract layer.
 
 Important distinction:
 
 - Domain/business functionality missing: **8-12%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence, observer data and KB links.
-- Typed workspace/API functionality missing: **6-10%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases and first-class knowledge suggestions. P2.1 is closing the richer knowledge catalog/search gap with a conservative built-in fallback; remaining backend gaps are mostly optional standalone timeline filtering and theme/app-shell refinements.
+- Typed workspace/API functionality missing: **4-8%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases, first-class knowledge suggestions and standalone typed timeline filtering. Remaining backend gaps are mostly richer operation payload extraction and optional context/profile enrichment.
 
 Already present:
 
@@ -111,7 +111,7 @@ Missing or incomplete for target:
 - Ticket list priority/assignee display DTO fields. Current detail has priority, but queue items do not; the UI currently falls back to `P3` in the left worklist.
 - SLA/OLA progress DTO with remaining/target/status/progress is now available in the aggregate selected-ticket workspace payload; a standalone summary/list contract is still not implemented.
 - Typed support aliases for assign, queue change, priority change and reroute. Legacy `/api/tickets/{id}/assign|queue|priority|reroute` already exist; typed `/api/web/support/*` aliases are missing.
-- Filterable unified timeline endpoint or richer detail timeline. Current typed detail filters timeline to `chat_message`, `tool_call_started`, `tool_call_result` and `playbook_started`; status, assignment, queue, priority, SLA/OLA and passport/evidence events are not yet first-class timeline items.
+- Filterable unified timeline endpoint now exists as `GET /api/web/support/tickets/{ticket_id}/timeline`; remaining timeline work is mostly richer structured payload extraction for diagnostic result cards.
 - Structured operation result mapper with step cards. Current detail has `result_summary` and `result_preview`; target wants structured DNS/TCP/HTTP-like steps when payload contains them.
 - Knowledge suggestions endpoint with KB-linked articles, similar tickets, built-in catalog fallback and conservative AI beta summary is implemented as `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and included in the aggregate workspace payload.
 - Compact resolution passport readiness DTO for sidebar is now available in the aggregate selected-ticket workspace payload; a standalone endpoint remains optional.
@@ -251,6 +251,7 @@ P1 fourth-slice evidence:
 P2 - valuable, but can follow after core operator flows:
 
 - [x] Add richer knowledge catalog/search integration behind the existing `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` contract.
+- [x] Add standalone typed timeline filtering endpoint behind existing support timeline normalization.
 - Add structured operation step extraction for diagnostic payloads.
 - Add frontend theme toggle/state integration for `/app/tickets`.
 - Add richer assignee/user profile display names and requester phone/email where registry data exists.
@@ -264,6 +265,21 @@ P2.1 knowledge catalog/search evidence:
 - Full CI passed for commit `2cb35928754f17825e8863f6465766d1e39c9f69`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
 - Linux release completed for commit `2cb35928754f17825e8863f6465766d1e39c9f69` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
 - Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab opened, `GET /api/web/support/tickets/{ticket_id}/workspace`, standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and `GET /api/web/support/workspace/summary` returned 200, and aggregate `/workspace` embedded `knowledge`.
+
+P2.2 standalone timeline filtering scope:
+
+- Add `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all|messages|internal|diagnostics|history&limit=...`.
+- Reuse existing support timeline event allow-list and normalized `SupportTicketMessage` serializer.
+- Keep aggregate `/workspace` behavior unchanged; the standalone endpoint is an optimization/contract for tab-specific refreshes.
+- Map `history` to lifecycle/governance categories: history, SLA, OLA, passport and approval.
+
+P2.2 standalone timeline filtering evidence:
+
+- RED verified: `server\tests\test_web_support_api.py::test_web_support_ticket_timeline_endpoint_filters_normalized_events` failed with 404 before the typed endpoint existed.
+- GREEN verified: `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics|internal|history|all` returns normalized timeline rows using the same support serializer and lifecycle allow-list as aggregate/detail timeline.
+- RED/GREEN frontend verified: `webapp/src/features/queues/api.test.ts` first failed on missing `fetchSupportTicketTimeline()`, then passed after adding the typed client; `webapp/src/pages/tickets/list-page.test.tsx` proves the "Диагностика" tab calls `fetchSupportTicketTimeline(ticketId, "diagnostics")` and renders filtered operation results.
+- `/app/tickets` keeps aggregate `/workspace` timeline behavior for `all` and uses the standalone endpoint only for tab-specific refreshes, with local aggregate filtering as fallback.
+- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (46 tests), focused Vitest for queue API/mappers/list page (15 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
 
 ### Recommended Next Implementation Order
 
@@ -788,13 +804,13 @@ Stage 8 evidence:
 
 - P0 and P1 implementation for `/app/tickets` support workspace are complete.
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
-- Backend/API residual gap after P2.1 is estimated at 6-10%, mostly optional standalone timeline filtering, deeper external KB search and app-shell/theme refinements.
+- Backend/API residual gap after P2.1 is estimated at 6-10%, mostly optional standalone timeline filtering, deeper external KB search and app-shell/theme refinements. P2.2 is currently reducing the standalone timeline filtering part of this gap.
 - This plan remains the active long-horizon artifact for any P2 follow-up.
 - Current pending step: choose the next P2 slice.
 
 ## Handoff
 
-Recommended next step: choose standalone timeline filtering or theme/app-shell controls as the next P2 slice.
+Recommended next step: finish P2.2 standalone timeline filtering, then choose theme/app-shell controls or deeper external KB search as the next P2 slice.
 
 Concrete first slice:
 
@@ -804,4 +820,4 @@ Concrete first slice:
 4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
 5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
 
-Next slice after P2.1: standalone timeline filtering behind the typed endpoints, or frontend theme/app-shell controls for `/app/tickets`.
+Next slice after P2.2: frontend theme/app-shell controls for `/app/tickets`, or deeper external KB search behind `knowledge-suggestions`.

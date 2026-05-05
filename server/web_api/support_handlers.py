@@ -125,6 +125,7 @@ from web_api.dto.support import (
     SupportTicketSnapshot,
     SupportTicketSlaOlaPayload,
     SupportTicketTimerPayload,
+    SupportTicketTimelinePayload,
     SupportTicketToolsPayload,
     SupportTicketWorkspacePayload,
     SupportWorkspaceSummaryPayload,
@@ -1038,6 +1039,8 @@ SUPPORT_TIMELINE_EVENT_PREFIXES = (
     "passport_",
     "approval_",
 )
+SUPPORT_TIMELINE_FILTERS = {"all", "messages", "message", "internal", "diagnostics", "history"}
+SUPPORT_TIMELINE_HISTORY_CATEGORIES = {"history", "sla", "ola", "passport", "approval"}
 
 SUPPORT_TIMELINE_DETAIL_KEYS = {
     "action",
@@ -1364,6 +1367,56 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
         tool_status=None,
         result_summary=None,
         result_preview=None,
+    )
+
+
+def _normalize_support_timeline_filter(raw_filter: str | None) -> str:
+    value = str(raw_filter or "all").strip().lower()
+    if value not in SUPPORT_TIMELINE_FILTERS:
+        return "all"
+    return "messages" if value == "message" else value
+
+
+def _support_timeline_entry_matches_filter(entry: SupportTicketMessage, timeline_filter: str) -> bool:
+    if timeline_filter == "all":
+        return True
+    if timeline_filter == "messages":
+        return entry.event_category == "message"
+    if timeline_filter == "internal":
+        return entry.event_category == "internal" or entry.visibility == "internal"
+    if timeline_filter == "diagnostics":
+        return entry.event_category == "diagnostics"
+    if timeline_filter == "history":
+        return entry.event_category in SUPPORT_TIMELINE_HISTORY_CATEGORIES
+    return True
+
+
+async def _build_support_timeline_payload(
+    repo: TicketEventsRepo,
+    ticket: Ticket,
+    *,
+    timeline_filter: str = "all",
+    limit: int = 80,
+) -> SupportTicketTimelinePayload:
+    normalized_filter = _normalize_support_timeline_filter(timeline_filter)
+    event_limit = min(max(limit * 3, limit), 1000) if normalized_filter != "all" else limit
+    events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=event_limit)
+    items = [
+        _build_timeline_entry(event, ticket=ticket)
+        for event in events
+        if _is_support_timeline_event(str(getattr(event, "event_type", None) or ""))
+    ]
+    filtered_items = [
+        item
+        for item in items
+        if _support_timeline_entry_matches_filter(item, normalized_filter)
+    ][:limit]
+    return SupportTicketTimelinePayload(
+        ticket_id=str(ticket.ticket_id),
+        filter=normalized_filter,
+        items=filtered_items,
+        total=len(filtered_items),
+        limit=limit,
     )
 
 
@@ -2020,12 +2073,8 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         include_assignment_context=True,
     )
     observer_data = await ObserverOverlayService(session).get_ticket_observer_summary(ticket.ticket_id)
-    events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=80)
-    timeline = [
-        _build_timeline_entry(event, ticket=ticket)
-        for event in events
-        if _is_support_timeline_event(str(getattr(event, "event_type", None) or ""))
-    ]
+    timeline_payload = await _build_support_timeline_payload(repo, ticket, timeline_filter="all", limit=80)
+    timeline = timeline_payload.items
 
     queue_name = None
     ticket_queue_id = ticket_data.get("queue_id")
@@ -2338,6 +2387,41 @@ async def handle_web_support_bootstrap(_request):
         ),
     )
     return json_model_response(SuccessResponse[SupportBootstrapPayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_timeline(request: web.Request):
+    timeline_filter = _normalize_support_timeline_filter(request.query.get("filter"))
+    try:
+        limit = min(max(int(request.query.get("limit", "80")), 1), 300)
+    except ValueError:
+        limit = 80
+    try:
+        async with get_session() as session:
+            ticket, error, repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            payload = await _build_support_timeline_payload(
+                repo,
+                ticket,
+                timeline_filter=timeline_filter,
+                limit=limit,
+            )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_timeline] failed: "
+            f"ticket_id={request.match_info.get('ticket_id')}, filter={timeline_filter}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Timeline временно недоступен",
+                "error_code": "SUPPORT_TIMELINE_UNAVAILABLE",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketTimelinePayload](data=payload))
 
 
 @require_auth("admin", "support")

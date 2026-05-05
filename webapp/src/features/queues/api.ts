@@ -298,6 +298,16 @@ export type SupportTicketDetailPayload = {
   };
 };
 
+export type SupportTicketTimelineFilter = "all" | "messages" | "internal" | "diagnostics" | "history";
+
+export type SupportTicketTimelinePayload = {
+  ticket_id: string;
+  filter: SupportTicketTimelineFilter;
+  items: SupportTicketDetailPayload["timeline"];
+  total: number;
+  limit: number;
+};
+
 export type SupportMessageActionResult = {
   ticket_id: string;
   message: SupportTicketDetailPayload["timeline"][number];
@@ -805,6 +815,29 @@ export async function fetchSupportTicketKnowledgeSuggestions(ticketId: string): 
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить подсказки базы знаний",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportTicketTimeline(
+  ticketId: string,
+  filter: SupportTicketTimelineFilter = "all"
+): Promise<SupportTicketTimelinePayload> {
+  const searchParams = new URLSearchParams();
+  searchParams.set("filter", filter);
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/timeline?${searchParams.toString()}`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketTimelinePayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ timeline С‚РёРєРµС‚Р°",
       response.status,
       errorPayload?.error_code
     );

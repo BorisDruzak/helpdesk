@@ -1416,6 +1416,106 @@ async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_timeline_endpoint_filters_normalized_events(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="timeline_filter", name="Timeline filter", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-timeline-filter",
+            title="Timeline filter contract ticket",
+            description="Standalone timeline endpoint should filter normalized support events.",
+            status="in_progress",
+            requester_id="requester-timeline-filter",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.flush()
+
+        repo = TicketEventsRepo(session)
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload={"from": "user", "text": "Public requester message", "visibility": "public"},
+            event_id="timeline-filter-public-message",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload={"from": "support", "text": "Internal support note", "visibility": "internal"},
+            event_id="timeline-filter-internal-note",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_result",
+            payload={
+                "tool_name": "dns.resolve",
+                "status": "succeeded",
+                "summary": "DNS resolved",
+                "steps": [{"name": "DNS", "status": "ok", "value": "example.test -> 192.0.2.10"}],
+            },
+            event_id="timeline-filter-tool-result",
+        )
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="status_changed",
+            payload={"from_status": "new", "to_status": "in_progress", "actor_id": "support-test"},
+            event_id="timeline-filter-status-changed",
+        )
+        await session.commit()
+
+    diagnostics_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics",
+        headers=_support_headers(),
+    )
+    assert diagnostics_response.status == 200, await diagnostics_response.text()
+    diagnostics_data = (await diagnostics_response.json())["data"]
+    assert diagnostics_data["ticket_id"] == ticket_id
+    assert diagnostics_data["filter"] == "diagnostics"
+    assert diagnostics_data["total"] == 1
+    assert [item["event_category"] for item in diagnostics_data["items"]] == ["diagnostics"]
+    assert diagnostics_data["items"][0]["operation_steps"][0]["name"] == "DNS"
+
+    internal_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=internal",
+        headers=_support_headers(),
+    )
+    assert internal_response.status == 200, await internal_response.text()
+    internal_data = (await internal_response.json())["data"]
+    assert internal_data["total"] == 1
+    assert internal_data["items"][0]["visibility"] == "internal"
+
+    history_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=history",
+        headers=_support_headers(),
+    )
+    assert history_response.status == 200, await history_response.text()
+    history_data = (await history_response.json())["data"]
+    assert history_data["total"] == 1
+    assert history_data["items"][0]["event_type"] == "status_changed"
+
+    all_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=all",
+        headers=_support_headers(),
+    )
+    assert all_response.status == 200, await all_response.text()
+    all_data = (await all_response.json())["data"]
+    assert all_data["total"] == 4
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_exposes_template_visibility_policy(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

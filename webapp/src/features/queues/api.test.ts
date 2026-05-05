@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchSupportTicketKnowledgeSuggestions, fetchSupportWorkspaceSummary } from "./api";
+import { fetchSupportTicketKnowledgeSuggestions, fetchSupportTicketTimeline, fetchSupportWorkspaceSummary } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -74,5 +74,56 @@ describe("support queue API", () => {
     });
     expect(knowledge.articles[0].id).toBe("KB-502");
     expect(knowledge.ai_summary.sources).toContain("T-001011");
+  });
+
+  it("loads filtered ticket timeline from the typed support endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "success",
+          data: {
+            ticket_id: "ticket-1",
+            filter: "diagnostics",
+            total: 1,
+            limit: 80,
+            items: [
+              {
+                message_id: null,
+                event_id: 7,
+                event_type: "tool_call_result",
+                event_category: "diagnostics",
+                event_label: "Tool Call Result",
+                event_details: {},
+                from_role: "system",
+                sender_display_name: "Система",
+                text: "Результат инструмента: dns.resolve",
+                ts: "2026-05-05T09:18:00+05:00",
+                visibility: "system",
+                direction: "system",
+                attachments: [],
+                reply_to: null,
+                tool_name: "dns.resolve",
+                tool_status: "succeeded",
+                result_summary: "DNS resolved",
+                result_preview: null,
+                operation_steps: [{ name: "DNS", status: "ok", value: "example.test -> 192.0.2.10" }],
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const timeline = await fetchSupportTicketTimeline("ticket-1", "diagnostics");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/timeline?filter=diagnostics", {
+      credentials: "same-origin",
+    });
+    expect(timeline.items).toHaveLength(1);
+    const item = timeline.items.at(0);
+    expect(item?.event_category).toBe("diagnostics");
+    expect(item?.operation_steps?.at(0)?.name).toBe("DNS");
   });
 });

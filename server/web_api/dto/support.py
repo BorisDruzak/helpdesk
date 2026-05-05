@@ -874,6 +874,16 @@ class SupportTicketDetailPayload(BaseModel):
     actions: SupportTicketActions
 
 
+class SupportTicketTimelinePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    filter: str = "all"
+    items: list[SupportTicketMessage] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 80
+
+
 class SupportTicketWorkspacePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

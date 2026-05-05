@@ -245,6 +245,7 @@ from web_api.support_handlers import (
     handle_web_support_send_message,
     handle_web_support_ticket_detail,
     handle_web_support_ticket_playbooks,
+    handle_web_support_ticket_timeline,
     handle_web_support_ticket_tools,
     handle_web_support_ticket_workspace,
 )
@@ -448,6 +449,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/support/queue', handle_web_support_queue),
         web.get('/api/web/support/tickets/{ticket_id}/workspace', handle_web_support_ticket_workspace),
         web.get('/api/web/support/tickets/{ticket_id}/knowledge-suggestions', handle_web_support_ticket_knowledge_suggestions),
+        web.get('/api/web/support/tickets/{ticket_id}/timeline', handle_web_support_ticket_timeline),
         web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail),
         web.get('/api/web/support/tickets/{ticket_id}/passport', handle_web_support_ticket_passport),
         web.post('/api/web/support/tickets/{ticket_id}/passport/generate', handle_web_support_ticket_passport_generate),

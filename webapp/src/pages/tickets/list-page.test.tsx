@@ -5,9 +5,11 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import {
   fetchSupportQueue,
+  fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
   postSupportTicketReroute,
   type SupportQueuePayload,
+  type SupportTicketTimelinePayload,
   type SupportQueueScope,
   type SupportTicketWorkspacePayload,
 } from "../../features/queues/api";
@@ -18,6 +20,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   return {
     ...actual,
     fetchSupportQueue: vi.fn(),
+    fetchSupportTicketTimeline: vi.fn(),
     fetchSupportTicketWorkspace: vi.fn(),
     postSupportTicketReroute: vi.fn(),
   };
@@ -33,6 +36,7 @@ vi.mock("../../features/auth/session-provider", () => ({
 }));
 
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
+const fetchSupportTicketTimelineMock = vi.mocked(fetchSupportTicketTimeline);
 const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
 const postSupportTicketRerouteMock = vi.mocked(postSupportTicketReroute);
 
@@ -205,6 +209,39 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
   };
 }
 
+function timelinePayload(overrides: Partial<SupportTicketTimelinePayload> = {}): SupportTicketTimelinePayload {
+  return {
+    ticket_id: "ticket-1",
+    filter: "diagnostics",
+    total: 1,
+    limit: 80,
+    items: [
+      {
+        message_id: null,
+        event_id: 99,
+        event_type: "tool_call_result",
+        event_category: "diagnostics",
+        event_label: "Tool Call Result",
+        event_details: {},
+        from_role: "system",
+        sender_display_name: "Система",
+        text: "Результат инструмента: dns.resolve",
+        ts: "2026-05-03T09:20:00+05:00",
+        visibility: "system",
+        direction: "system",
+        attachments: [],
+        reply_to: null,
+        tool_name: "dns.resolve",
+        tool_status: "succeeded",
+        result_summary: "Filtered DNS result",
+        result_preview: null,
+        operation_steps: [{ name: "DNS", status: "ok", value: "example.test -> 192.0.2.10" }],
+      },
+    ],
+    ...overrides,
+  };
+}
+
 function renderTicketListPage(initialEntry = "/app/tickets") {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -315,6 +352,26 @@ describe("TicketListPage", () => {
     await waitFor(() => {
       expect(postSupportTicketRerouteMock).toHaveBeenCalledWith("ticket-1", { reason: "manual_recalculate" });
     });
+  });
+
+  it("loads filtered timeline tab through the typed timeline endpoint", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+    });
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Диагностика" }));
+
+    await waitFor(() => {
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+    });
+    expect(await screen.findByText("Filtered DNS result")).toBeInTheDocument();
   });
 
   it("renders knowledge suggestions from the aggregate workspace payload", async () => {
