@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-05, Stage 33A backend/functional slice 33A.8-33A.10 is implemented locally and verified: reporting-policy mapping, agent/requester evidence path and observer/audit provenance are covered by regression tests and ready for Linux deploy/live re-check.
+Last updated: 2026-05-05, Stage 33A backend/functional slice 33A.8-33A.10 is implemented, regression-tested, deployed to Linux and live-checked: reporting-policy mapping, agent/requester evidence path and observer/audit provenance are active on the stand.
 
-Current plan completion: 99.72%; passport/evidence remains an open product-quality track before final acceptance.
+Current plan completion: 99.78%; passport/evidence backend-functional track is green, with broad visual redesign still deferred.
 
-Current execution mode: Stage 33A passport/evidence backend-functional implementation. Stage 33A.8-33A.10 are local-green pending Linux deploy/live re-check. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
+Current execution mode: Stage 33A passport/evidence backend-functional implementation. Stage 33A.8-33A.10 are deployed and live-green on `#T-000517` plus disposable reporting policies `codex_reporting_ok_*`; Stage 32C remains deployed and re-checked. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -1135,6 +1135,7 @@ Implementation plan:
     - requester-visible evidence policy.
   - Add validation so policy cannot require unsupported evidence types without warning.
   - 2026-05-05 local result: policy publish validates sections/evidence types, `/app/admin/forms` saves `required_evidence_types.evidence`, and passport missing-fact satisfaction respects policy-specific evidence types.
+  - 2026-05-05 Linux live result: `/api/web/admin/helpdesk-model/policies/publish` rejects unsupported reporting evidence types with `VALIDATION_ERROR`; valid `required_evidence_types.evidence=["screenshot","operation_log"]` publishes as `codex_reporting_ok_*`. `/app/admin/forms` under admin session shows `Типы доказательств для evidence` in the passport/reporting policy editor.
 
 - [x] Stage 33A.9 - Agent/requester evidence path.
   - Agent-created ticket attachments already upload artifacts; plan must link those artifacts as evidence candidates.
@@ -1142,6 +1143,7 @@ Implementation plan:
   - Agent GUI should not need full passport management now, but ticket detail should show whether evidence is needed and which uploaded files may satisfy it.
   - Tests: `pc_agent/tests/test_chat_panel_helpers.py` for evidence-needed copy and attachment refs.
   - 2026-05-05 local result: unbound chat attachments are claimed to the ticket and appear as artifact evidence candidates; agent post-create summary tells the requester when evidence may be required and that uploaded files are support candidates.
+  - 2026-05-05 Linux live result: public requester path created `#T-000517`; support API generated a passport and added manual evidence through deployed `/passport/evidence`, then verified update through `/passport/evidence/{evidence_id}`.
 
 - [x] Stage 33A.10 - Observer and audit.
   - Update observer docs if evidence uses observer traces as proof.
@@ -1151,6 +1153,7 @@ Implementation plan:
     - `docs/QUICK_LOOKUP.md`;
     - `server/docs/CODEMAP.md`;
   - 2026-05-05 local result: passport evidence add/link/update events include `trace_id`, source/fact/verification/export metadata and `observer_provenance`; observer docs and navigation catalog are updated.
+  - 2026-05-05 Linux live result: event replay for `#T-000517` returned `passport_evidence_added` and `passport_evidence_rejected` with non-empty `trace_id`, `source_ref=manual:codex-live-33a`, `section_key=evidence`, verification status and `observer_provenance` actions `add`/`update`.
     - `server/docs/DIAGNOSTIC_PLAYBOOKS.md`;
     - `server/docs/OBSERVER_LAYER.md` if observer traces become evidence sources;
     - `scripts/navigation_catalog.py`.
