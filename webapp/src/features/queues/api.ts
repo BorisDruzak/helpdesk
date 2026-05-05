@@ -291,6 +291,22 @@ export type SupportStatusActionResult = {
   status_label: string;
 };
 
+export type SupportTicketMutationActionResult = {
+  ticket_id: string;
+  action: "assign" | "queue" | "priority" | "reroute";
+  status: string;
+  status_label: string;
+  queue: {
+    id: number | null;
+    code: string | null;
+    name: string | null;
+  };
+  assignee_id: string | null;
+  priority: string | null;
+  priority_class: string | null;
+  auto_assigned: boolean;
+};
+
 export type SupportTicketToolsPayload = {
   ticket_id: string;
   device_id: string | null;
@@ -718,6 +734,82 @@ export async function postSupportTicketStatus(ticketId: string, toStatus: string
   }
 
   return payload.data;
+}
+
+async function postSupportTicketMutationAlias(
+  ticketId: string,
+  action: SupportTicketMutationActionResult["action"],
+  body: Record<string, unknown>
+): Promise<SupportTicketMutationActionResult> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/${action}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketMutationActionResult> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось выполнить действие с тикетом",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export function postSupportTicketAssign(
+  ticketId: string,
+  payload: {
+    assigneeId?: string | null;
+    autoAssign?: boolean;
+    reason?: string;
+    comment?: string;
+  }
+): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "assign", {
+    assignee_id: payload.assigneeId,
+    auto_assign: payload.autoAssign,
+    reason: payload.reason,
+    comment: payload.comment
+  });
+}
+
+export function postSupportTicketQueue(
+  ticketId: string,
+  payload: {
+    queueId: number;
+    reason?: string;
+  }
+): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "queue", {
+    queue_id: payload.queueId,
+    reason: payload.reason
+  });
+}
+
+export function postSupportTicketPriority(
+  ticketId: string,
+  payload: {
+    priority: "P0" | "P1" | "P2" | "P3";
+    reason?: string;
+  }
+): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "priority", payload);
+}
+
+export function postSupportTicketReroute(
+  ticketId: string,
+  payload: {
+    reason?: string;
+  } = {}
+): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "reroute", payload);
 }
 
 export async function fetchSupportTicketTools(ticketId: string): Promise<SupportTicketToolsPayload> {

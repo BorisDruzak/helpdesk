@@ -193,6 +193,34 @@ async def test_web_support_status_action_requires_status_permission(test_client,
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("endpoint", "body", "permission"),
+    [
+        ("assign", {"assignee_id": "support-test"}, "ticket.assign"),
+        ("queue", {"queue_id": 1, "reason": "permission_probe"}, "ticket.queue.change"),
+        ("priority", {"priority": "P1", "reason": "permission_probe"}, "ticket.status.change"),
+        ("reroute", {"reason": "manual_recalculate"}, "ticket.queue.change"),
+    ],
+)
+async def test_web_support_ticket_mutation_aliases_require_permissions(
+    test_client,
+    test_engine,
+    endpoint,
+    body,
+    permission,
+):
+    ticket_id = await _seed_support_ticket(test_engine, status="new")
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/{endpoint}",
+        headers=_auditor_headers(),
+        json=body,
+    )
+
+    await _assert_forbidden_permission(response, permission)
+
+
+@pytest.mark.asyncio
 async def test_web_support_passport_mutations_require_manage_permission(test_client, test_engine):
     ticket_id = await _seed_support_ticket(test_engine)
 
@@ -1316,6 +1344,84 @@ async def test_web_support_status_action_returns_typed_result_and_updates_ticket
     detail_payload = await detail_response.json()
     assert detail_response.status == 200, await detail_response.text()
     assert detail_payload["data"]["ticket"]["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_web_support_ticket_mutation_aliases_update_ticket_through_typed_boundary(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        source_queue = await _seed_queue(session, code="alias_l1", name="Alias L1", members=["support-test"])
+        target_queue = await _seed_queue(session, code="alias_network", name="Alias Network", members=["support-test"])
+        target_queue_id = target_queue.id
+        target_queue_code = target_queue.code
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-alias-actions",
+            title="Typed alias mutation ticket",
+            description="Support workspace action menu must use typed mutation aliases.",
+            status="new",
+            requester_id="user-alias",
+            queue_id=source_queue.id,
+            priority="P4",
+            custom_fields={"priority_class": "P3"},
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    assign_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/assign",
+        headers=_support_headers(),
+        json={"assignee_id": "support-test", "reason": "manual_assign"},
+    )
+    assert assign_response.status == 200, await assign_response.text()
+    assign_payload = await assign_response.json()
+    assert assign_payload["status"] == "success"
+    assert assign_payload["data"]["action"] == "assign"
+    assert assign_payload["data"]["ticket_id"] == ticket_id
+    assert assign_payload["data"]["assignee_id"] == "support-test"
+
+    queue_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/queue",
+        headers=_support_headers(),
+        json={"queue_id": target_queue_id, "reason": "manual_queue_change"},
+    )
+    assert queue_response.status == 200, await queue_response.text()
+    queue_payload = await queue_response.json()
+    assert queue_payload["data"]["action"] == "queue"
+    assert queue_payload["data"]["queue"]["id"] == target_queue_id
+    assert queue_payload["data"]["queue"]["code"] == target_queue_code
+    assert queue_payload["data"]["assignee_id"] == "support-test"
+
+    priority_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/priority",
+        headers=_support_headers(),
+        json={"priority": "P0", "reason": "major_incident"},
+    )
+    assert priority_response.status == 200, await priority_response.text()
+    priority_payload = await priority_response.json()
+    assert priority_payload["data"]["action"] == "priority"
+    assert priority_payload["data"]["priority"] == "P1"
+    assert priority_payload["data"]["priority_class"] == "P0"
+
+    reroute_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/reroute",
+        headers=_support_headers(),
+        json={"reason": "manual_recalculate"},
+    )
+    assert reroute_response.status == 200, await reroute_response.text()
+    reroute_payload = await reroute_response.json()
+    assert reroute_payload["data"]["action"] == "reroute"
+    assert reroute_payload["data"]["ticket_id"] == ticket_id
+    assert "queue" in reroute_payload["data"]
+
+    detail_response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert detail_response.status == 200, await detail_response.text()
+    detail_payload = await detail_response.json()
+    assert detail_payload["data"]["ticket"]["assignee_id"] == "support-test"
+    assert detail_payload["data"]["ticket"]["priority_class"] == "P0"
 
 
 @pytest.mark.asyncio

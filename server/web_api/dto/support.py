@@ -762,6 +762,20 @@ class SupportPlaybookRunActionResult(BaseModel):
     message: str
 
 
+class SupportTicketMutationActionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    action: str
+    status: str
+    status_label: str
+    queue: SupportTicketQueueInfo
+    assignee_id: str | None = None
+    priority: str | None = None
+    priority_class: str | None = None
+    auto_assigned: bool = False
+
+
 class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

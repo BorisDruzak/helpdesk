@@ -45,17 +45,22 @@ from tickets.handlers import (
     _message_role_from_auth,
     _push_ticket_event,
     _queue_code_map,
+    _reconcile_queue_scope_state,
     _resolution_confirmation_pending,
     _serialize_message,
     _store_resolution_confirmation_state,
     _ticket_payload,
     _ticket_presence_payload,
 )
-from tickets.assignment_service import TicketAssignmentError, TicketAssignmentService
+from tickets.assignment_service import MAX_ACTIVE_TICKETS_PER_OPERATOR, TicketAssignmentError, TicketAssignmentService
+from tickets.ola_service import close_ola_processing, start_ola_for_ticket
+from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.statuses import (
     CANONICAL_STATUSES,
     enrich_chat_payload_with_requester_name,
+    merge_requester_custom_fields,
     normalize_status,
+    normalize_ticket_priority_inputs,
     resolve_status,
     status_label_ru,
 )
@@ -88,6 +93,7 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketMessage,
+    SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
     SupportTicketObserverPayload,
     SupportTicketObserverSummary,
@@ -203,6 +209,67 @@ async def _require_permission(session, auth_context, permission_code: str) -> we
     if await can(session, auth_context, permission_code):
         return None
     return _permission_denied(permission_code)
+
+
+def _support_json_error(error: str, *, status: int = 400, error_code: str | None = None, **payload: Any) -> web.Response:
+    body = {"status": "error", "error": error}
+    if error_code:
+        body["error_code"] = error_code
+    body.update(payload)
+    return web.json_response(body, status=status)
+
+
+async def _read_support_json(request: web.Request) -> dict[str, Any] | web.Response:
+    try:
+        data = await request.json()
+    except Exception:
+        return _support_json_error("Некорректный JSON", status=400, error_code="VALIDATION_ERROR")
+    if not isinstance(data, dict):
+        return _support_json_error("Тело запроса должно быть объектом", status=400, error_code="VALIDATION_ERROR")
+    return data
+
+
+async def _support_mutation_result(session, ticket: object, *, action: str, auto_assigned: bool = False) -> SupportTicketMutationActionResult:
+    ticket_data = await _ticket_payload(session, ticket, include_assignment_context=True)
+    return SupportTicketMutationActionResult(
+        ticket_id=str(ticket_data.get("ticket_id") or getattr(ticket, "ticket_id", "")),
+        action=action,
+        status=str(ticket_data.get("status") or getattr(ticket, "status", "unknown")),
+        status_label=str(ticket_data.get("status_label") or status_label_ru(getattr(ticket, "status", None))),
+        queue=SupportTicketQueueInfo(
+            id=ticket_data.get("queue_id"),
+            code=ticket_data.get("queue_code"),
+            name=next(
+                (
+                    queue.get("name")
+                    for queue in ticket_data.get("available_queues", [])
+                    if queue.get("id") == ticket_data.get("queue_id")
+                ),
+                None,
+            ),
+        ),
+        assignee_id=ticket_data.get("assignee_id"),
+        priority=ticket_data.get("priority"),
+        priority_class=ticket_data.get("priority_class"),
+        auto_assigned=auto_assigned,
+    )
+
+
+def _priority_request_to_inputs(data: dict[str, Any]) -> tuple[Any, Any, Any, Any]:
+    priority = str(data.get("priority") or "").strip().upper()
+    if priority:
+        flags = {
+            "P0": (True, True),
+            "P1": (True, False),
+            "P2": (False, True),
+            "P3": (False, False),
+        }
+        if priority not in flags:
+            raise ValueError("priority must be one of P0, P1, P2, P3")
+        reason = str(data.get("reason") or data.get("priority_reason") or "manual_priority_change").strip()
+        urgency, importance = flags[priority]
+        return urgency, importance, data.get("urgency_reason") or reason, data.get("importance_reason") or reason
+    return data.get("urgency"), data.get("importance"), data.get("urgency_reason"), data.get("importance_reason")
 
 
 def _tool_risk_permission(risk_level: str | None) -> str:
@@ -2694,6 +2761,179 @@ async def handle_web_support_change_status(request: web.Request):
             },
             status=503,
         )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_assign_ticket(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.assign")
+            if denied:
+                return denied
+            assignment_service = TicketAssignmentService(repo)
+            try:
+                selection = await assignment_service.resolve_assignee(
+                    ticket,
+                    requested_assignee_id=data.get("assignee_id"),
+                    auto_assign=bool(data.get("auto_assign")),
+                )
+            except TicketAssignmentError as exc:
+                return _support_json_error(str(exc), status=400, error_code="ASSIGNMENT_ERROR")
+            assignee_id = selection["assignee_id"]
+            result = await assignment_service.assign_ticket(
+                ticket.ticket_id,
+                ticket.device_id,
+                assignee_id,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason=str(data.get("reason") or "").strip() or None,
+                comment=str(data.get("comment") or "").strip() or None,
+                old_assignee=getattr(ticket, "assignee_id", None),
+                auto_assigned=selection["auto_assigned"],
+                active_count=selection["active_count"],
+                limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                db_session=session,
+                close_ola=True,
+            )
+            await session.commit()
+            payload = {
+                "field_name": "assignee_id",
+                "old_value": getattr(ticket, "assignee_id", None),
+                "new_value": assignee_id,
+                "assignee_id": assignee_id,
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "auto_assigned": selection["auto_assigned"],
+                "target_active_count": selection["active_count"],
+                "limit": MAX_ACTIVE_TICKETS_PER_OPERATOR,
+            }
+            await _push_ticket_event(request, ticket.ticket_id, result, "assignee_changed", payload)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            return json_model_response(SuccessResponse[SupportTicketMutationActionResult](data=await _support_mutation_result(session, ticket, action="assign", auto_assigned=bool(selection["auto_assigned"]))))
+    except Exception as exc:
+        logger.warning(f"[web_support_assign_ticket] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}")
+        return _support_json_error("Не удалось назначить исполнителя", status=503, error_code="ASSIGN_ACTION_FAILED")
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_change_queue(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        queue_id = int(data.get("queue_id"))
+    except Exception:
+        return _support_json_error("queue_id must be integer", status=400, error_code="VALIDATION_ERROR")
+    reason = str(data.get("reason") or "manual").strip() or "manual"
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.queue.change")
+            if denied:
+                return denied
+            old_queue_id = ticket.queue_id
+            await repo.update_ticket(ticket.ticket_id, queue_id=queue_id, custom_fields=set_routing_lock(getattr(ticket, "custom_fields", None), reason), manual_rank=None, manual_rank_updated_at=None, manual_rank_updated_by=None)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            try:
+                await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
+                await start_ola_for_ticket(session, ticket, trigger="queue_changed")
+            except Exception as exc:
+                logger.warning(f"[web_support_queue_change] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            captured = []
+            if queue_id != old_queue_id:
+                ticket, captured = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="manual_queue_change")
+            payload = {"queue_id": queue_id, "previous_queue_id": old_queue_id, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "reason": reason}
+            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=payload, trace_id=str(uuid.uuid4()))
+            await session.commit()
+            await _push_ticket_event(request, ticket.ticket_id, result, "queue_changed", payload)
+            for event_type, event_payload, event_result in captured:
+                await _push_ticket_event(request, ticket.ticket_id, event_result, event_type, event_payload)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            return json_model_response(SuccessResponse[SupportTicketMutationActionResult](data=await _support_mutation_result(session, ticket, action="queue")))
+    except Exception as exc:
+        logger.warning(f"[web_support_change_queue] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}")
+        return _support_json_error("Не удалось сменить очередь", status=503, error_code="QUEUE_ACTION_FAILED")
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_change_priority(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        normalized = normalize_ticket_priority_inputs(*_priority_request_to_inputs(data))
+    except ValueError as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.status.change")
+            if denied:
+                return denied
+            custom_fields = merge_requester_custom_fields(getattr(ticket, "custom_fields", None), priority_class=normalized["priority_class"])
+            await repo.update_ticket(ticket.ticket_id, urgency=normalized["urgency"], importance=normalized["importance"], urgency_reason=normalized["urgency_reason"], importance_reason=normalized["importance_reason"], priority=normalized["legacy_priority"], custom_fields=custom_fields)
+            await TicketSlaService(session, repo).recalc_due_for_priority(ticket.ticket_id, normalized["legacy_priority"])
+            payload = {"priority_class": normalized["priority_class"], "priority": normalized["legacy_priority"], "urgency": normalized["urgency"], "importance": normalized["importance"], "urgency_reason": normalized["urgency_reason"], "importance_reason": normalized["importance_reason"], "reason": str(data.get("reason") or "").strip() or None, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role}
+            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="priority_changed", payload=payload, trace_id=str(uuid.uuid4()))
+            await session.commit()
+            await _push_ticket_event(request, ticket.ticket_id, result, "priority_changed", payload)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            return json_model_response(SuccessResponse[SupportTicketMutationActionResult](data=await _support_mutation_result(session, ticket, action="priority")))
+    except Exception as exc:
+        logger.warning(f"[web_support_change_priority] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}")
+        return _support_json_error("Не удалось изменить приоритет", status=503, error_code="PRIORITY_ACTION_FAILED")
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_support_reroute_ticket(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            denied = await _require_permission(session, auth_context, "ticket.queue.change")
+            if denied:
+                return denied
+            routing = TicketRoutingService(session, repo, DevicesRepo(session))
+            captured: list[tuple[str, dict[str, Any], Any]] = []
+            previous_queue_id = getattr(ticket, "queue_id", None)
+
+            async def capture(ticket_id: str, device_id: str, event_type: str, payload: dict[str, Any]) -> None:
+                payload = {**payload, "manual_reason": str(data.get("reason") or "manual_recalculate")}
+                result = await repo.add_event(ticket_id=ticket_id, device_id=device_id, agent_seq=None, event_type=event_type, payload=payload, trace_id=str(uuid.uuid4()))
+                captured.append((event_type, payload, result))
+
+            await routing.apply_routing(ticket.ticket_id, ticket.device_id, force_clear_lock=True, add_events_fn=capture)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            try:
+                await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
+                await start_ola_for_ticket(session, ticket, trigger="queue_changed")
+            except Exception as exc:
+                logger.warning(f"[web_support_reroute] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+            if getattr(ticket, "queue_id", None) != previous_queue_id:
+                ticket, queue_events = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="reroute")
+                captured.extend(queue_events)
+            await session.commit()
+            for event_type, payload, result in captured:
+                await _push_ticket_event(request, ticket.ticket_id, result, event_type, payload)
+            ticket = await repo.get_ticket(ticket.ticket_id)
+            return json_model_response(SuccessResponse[SupportTicketMutationActionResult](data=await _support_mutation_result(session, ticket, action="reroute")))
+    except Exception as exc:
+        logger.warning(f"[web_support_reroute_ticket] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}")
+        return _support_json_error("Не удалось пересчитать маршрут", status=503, error_code="REROUTE_ACTION_FAILED")
 
 
 @require_auth("admin", "support", "auditor")
