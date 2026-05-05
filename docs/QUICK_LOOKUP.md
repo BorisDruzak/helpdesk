@@ -15,6 +15,7 @@
 - Runtime/UI status now surfaces both `pending_update_*` and `update_request_*` through `GET /ui/agent/status`, so the local GUI can show `requesting -> requested -> pending_restart` instead of looking hung after `POST /ui/agent/update`.
 - Launcher publish now uses staging + backup/restore, verify returns diagnostic output, `tar.gz` extraction restores POSIX mode bits and rejects links, and both launcher entrypoints roll back after repeated immediate crash of the newly switched version.
 - 2026-05-04 agent release check: Windows stable `3.1.29` supersedes `3.1.28` for the follow-up agent GUI fixes: mandatory diagnostic-consent hint, clearer resolution confirmation card, visible diagnostics/SLA summaries, support-in-work fallback when no personal assignee is set, and Russian system event text. Upload and rollout must target a new `3.1.29` build, not overwrite existing artifacts.
+- 2026-05-05 support workspace P2.1: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` still prefers manual KB links, but now falls back to a small built-in knowledge catalog for common incidents such as HTTP 502, DNS, printer offline, account access and offline agent when no manual KB links exist; the same payload is embedded in aggregate `/workspace`.
 
 ## 2026-04-28 local agent Qt GUI redesign
 

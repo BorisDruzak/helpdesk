@@ -1249,6 +1249,50 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(
+            session,
+            code=f"knowledge_catalog_{uuid.uuid4().hex[:8]}",
+            name="Knowledge catalog queue",
+            members=["support-test"],
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-knowledge-catalog",
+            title="Portal returns HTTP 502 Bad Gateway",
+            description="The website is unavailable after deploy; browser shows 502 and upstream gateway error.",
+            status="in_progress",
+            requester_id="requester-catalog",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/knowledge-suggestions",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    data = payload["data"]
+    articles_by_id = {article["id"]: article for article in data["articles"]}
+    assert articles_by_id["KB-HTTP-502"] == {
+        "id": "KB-HTTP-502",
+        "title": "Ошибка 502 Bad Gateway",
+        "url": "/app/knowledge/KB-HTTP-502",
+    }
+    assert "KB-HTTP-502" in data["ai_summary"]["sources"]
+    assert data["ai_summary"]["text"].startswith("AI-")
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

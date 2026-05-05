@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 85% for P2.1 knowledge catalog/search slice pending release/browser signoff.
 
-Current execution mode: P1 is complete. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`.
+Current execution mode: P2.1 execution. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -81,7 +81,7 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 - Playbook/tool launch exists in `server/web_api/support_handlers.py` and `server/app/services/playbook_engine.py`.
 - Passport/evidence exists in `server/tickets/passport_service.py`, `server/tickets/evidence_service.py`, and `server/app/repos/ticket_passport_repo.py`.
 - Registry/device context exists in `server/registry/*`, `RegistryRepo`, `DevicesRepo`.
-- KB links exist at legacy ticket handler level and are now exposed through a first-class support workspace knowledge-suggestions endpoint.
+- KB links exist at legacy ticket handler level and are now exposed through a first-class support workspace knowledge-suggestions endpoint; P2.1 adds a small built-in catalog fallback for common incidents when no manual KB links are present.
 
 ## Backend Functionality Gap Estimate
 
@@ -90,7 +90,7 @@ Estimated remaining backend functionality for the requested target after P1: **8
 Important distinction:
 
 - Domain/business functionality missing: **8-12%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence, observer data and KB links.
-- Typed workspace/API functionality missing: **8-12%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases and first-class knowledge suggestions. Remaining backend gaps are mostly optional richer knowledge catalog/search, standalone timeline filtering and theme/app-shell refinements.
+- Typed workspace/API functionality missing: **6-10%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases and first-class knowledge suggestions. P2.1 is closing the richer knowledge catalog/search gap with a conservative built-in fallback; remaining backend gaps are mostly optional standalone timeline filtering and theme/app-shell refinements.
 
 Already present:
 
@@ -113,7 +113,7 @@ Missing or incomplete for target:
 - Typed support aliases for assign, queue change, priority change and reroute. Legacy `/api/tickets/{id}/assign|queue|priority|reroute` already exist; typed `/api/web/support/*` aliases are missing.
 - Filterable unified timeline endpoint or richer detail timeline. Current typed detail filters timeline to `chat_message`, `tool_call_started`, `tool_call_result` and `playbook_started`; status, assignment, queue, priority, SLA/OLA and passport/evidence events are not yet first-class timeline items.
 - Structured operation result mapper with step cards. Current detail has `result_summary` and `result_preview`; target wants structured DNS/TCP/HTTP-like steps when payload contains them.
-- Knowledge suggestions endpoint with KB-linked articles, similar tickets and conservative AI beta summary is implemented as `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and included in the aggregate workspace payload.
+- Knowledge suggestions endpoint with KB-linked articles, similar tickets, built-in catalog fallback and conservative AI beta summary is implemented as `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and included in the aggregate workspace payload.
 - Compact resolution passport readiness DTO for sidebar is now available in the aggregate selected-ticket workspace payload; a standalone endpoint remains optional.
 - Theme toggle/light-dark workspace shell state. This is mostly frontend/app-shell scope, not backend.
 
@@ -250,10 +250,17 @@ P1 fourth-slice evidence:
 
 P2 - valuable, but can follow after core operator flows:
 
-- Add richer knowledge catalog/search integration behind the existing `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` contract.
+- [x] Add richer knowledge catalog/search integration behind the existing `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` contract.
 - Add structured operation step extraction for diagnostic payloads.
 - Add frontend theme toggle/state integration for `/app/tickets`.
 - Add richer assignee/user profile display names and requester phone/email where registry data exists.
+
+P2.1 knowledge catalog/search evidence:
+
+- RED verified: `server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links` failed because `KB-HTTP-502` was absent without manual KB links.
+- GREEN verified: the same test passes after adding a built-in knowledge catalog fallback in `server/web_api/support_handlers.py`.
+- Compatibility verified: existing manual-KB/workspace aggregate test still passes, and catalog fallback is suppressed when manual KB links are already attached to avoid duplicate right-sidebar suggestions.
+- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (45 tests), focused Vitest for queues/list page (13 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
 
 ### Recommended Next Implementation Order
 
@@ -373,7 +380,7 @@ Preferred final API shape:
 - Keep `POST /api/web/support/tickets/{ticket_id}/tools/run`.
 - Keep `GET /api/web/support/tickets/{ticket_id}/playbooks`.
 - Keep `POST /api/web/support/tickets/{ticket_id}/playbooks/run`.
-- Keep `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` as the first-class KB-link-backed knowledge contract; richer catalog/search can extend it later without changing the UI boundary.
+- Keep `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` as the first-class knowledge contract; it now prefers manual KB links and falls back to built-in catalog search when no links exist, without changing the UI boundary.
 
 Do not add public `/api/support/*` duplicates unless an external consumer requires them. Inside the React app, typed `/api/web/support/*` is the canonical boundary.
 
@@ -778,13 +785,13 @@ Stage 8 evidence:
 
 - P0 and P1 implementation for `/app/tickets` support workspace are complete.
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
-- Backend/API residual gap after P1 is estimated at 8-12%, mostly optional richer knowledge search/catalog, standalone timeline filtering and app-shell/theme refinements.
+- Backend/API residual gap after P2.1 is estimated at 6-10%, mostly optional standalone timeline filtering, deeper external KB search and app-shell/theme refinements.
 - This plan remains the active long-horizon artifact for any P2 follow-up.
-- Current pending step: none for P1; move to P2 only on explicit product request.
+- Current pending step: finish P2.1 verification/release, then choose the next P2 slice.
 
 ## Handoff
 
-Recommended next step: finish release/browser signoff for P1, then move to P2 only if product wants richer knowledge catalog/search, standalone timeline filtering or theme/app-shell controls.
+Recommended next step: finish P2.1 verification and release/browser signoff, then choose standalone timeline filtering or theme/app-shell controls as the next P2 slice.
 
 Concrete first slice:
 
@@ -794,4 +801,4 @@ Concrete first slice:
 4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
 5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
 
-Next slice after P1: either stop at the current production-ready workspace contract, or implement P2 richer knowledge catalog/search and standalone timeline filtering behind the typed endpoints.
+Next slice after P2.1: standalone timeline filtering behind the typed endpoints, or frontend theme/app-shell controls for `/app/tickets`.

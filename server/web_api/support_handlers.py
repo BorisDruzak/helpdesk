@@ -165,6 +165,80 @@ WORKSPACE_SUMMARY_VIEW_ALIASES = {
     "unassigned": "unassigned",
     "requester_replied": "requester_reply",
 }
+SUPPORT_KNOWLEDGE_CATALOG = [
+    {
+        "id": "KB-HTTP-502",
+        "title": "Ошибка 502 Bad Gateway",
+        "keywords": (
+            "502",
+            "bad gateway",
+            "gateway error",
+            "upstream",
+            "nginx",
+            "http 502",
+            "website",
+            "portal",
+            "web",
+            "сайт",
+            "портал",
+            "шлюз",
+        ),
+    },
+    {
+        "id": "KB-DNS-RESOLVE",
+        "title": "Проверка DNS и доступности сайта",
+        "keywords": (
+            "dns",
+            "resolve",
+            "domain",
+            "name resolution",
+            "host not found",
+            "не открывается сайт",
+            "домен",
+            "днс",
+        ),
+    },
+    {
+        "id": "KB-PRINTER-OFFLINE",
+        "title": "Принтер недоступен или не печатает",
+        "keywords": (
+            "printer",
+            "print",
+            "offline",
+            "spooler",
+            "принтер",
+            "печать",
+            "не печатает",
+            "очередь печати",
+        ),
+    },
+    {
+        "id": "KB-ACCOUNT-ACCESS",
+        "title": "Проверка доступа к учетной записи",
+        "keywords": (
+            "access denied",
+            "login",
+            "password",
+            "account",
+            "учетная запись",
+            "доступ",
+            "пароль",
+            "вход",
+        ),
+    },
+    {
+        "id": "KB-AGENT-OFFLINE",
+        "title": "Агент устройства offline",
+        "keywords": (
+            "agent offline",
+            "last seen",
+            "device offline",
+            "агент offline",
+            "агент недоступен",
+            "устройство offline",
+        ),
+    },
+]
 
 
 @dataclass
@@ -2052,6 +2126,78 @@ def _article_url(article_ref: str) -> str:
     return f"/app/knowledge/{quote(article_ref, safe='')}"
 
 
+def _knowledge_text_fragments(value: Any, *, limit: int = 32) -> list[str]:
+    if limit <= 0 or value is None:
+        return []
+    if isinstance(value, dict):
+        fragments: list[str] = []
+        for key, nested in value.items():
+            fragments.extend(_knowledge_text_fragments(key, limit=limit - len(fragments)))
+            fragments.extend(_knowledge_text_fragments(nested, limit=limit - len(fragments)))
+            if len(fragments) >= limit:
+                break
+        return fragments[:limit]
+    if isinstance(value, (list, tuple, set)):
+        fragments = []
+        for item in value:
+            fragments.extend(_knowledge_text_fragments(item, limit=limit - len(fragments)))
+            if len(fragments) >= limit:
+                break
+        return fragments[:limit]
+    text = _clean_knowledge_text(value)
+    return [text] if text else []
+
+
+def _ticket_knowledge_search_text(ticket: Ticket) -> str:
+    fields: list[Any] = [
+        getattr(ticket, "title", None),
+        getattr(ticket, "description", None),
+        getattr(ticket, "requester_resolution_summary", None),
+        getattr(ticket, "resolution_summary", None),
+        getattr(ticket, "ticket_type", None),
+        getattr(ticket, "source", None),
+        getattr(ticket, "custom_fields", None),
+    ]
+    fragments: list[str] = []
+    for field in fields:
+        fragments.extend(_knowledge_text_fragments(field))
+    return " ".join(fragments).casefold()
+
+
+def _catalog_articles_for_ticket(
+    ticket: Ticket,
+    existing_article_ids: set[str],
+    *,
+    limit: int = 3,
+) -> list[SupportKnowledgeArticle]:
+    search_text = _ticket_knowledge_search_text(ticket)
+    if not search_text:
+        return []
+
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for index, entry in enumerate(SUPPORT_KNOWLEDGE_CATALOG):
+        article_id = str(entry["id"])
+        if article_id in existing_article_ids:
+            continue
+        score = 0
+        for keyword in entry["keywords"]:
+            normalized_keyword = str(keyword).casefold()
+            if normalized_keyword and normalized_keyword in search_text:
+                score += 2 if " " in normalized_keyword else 1
+        if score > 0:
+            scored.append((score, -index, entry))
+
+    scored.sort(reverse=True)
+    return [
+        SupportKnowledgeArticle(
+            id=str(entry["id"]),
+            title=str(entry["title"]),
+            url=_article_url(str(entry["id"])),
+        )
+        for _score, _index, entry in scored[:limit]
+    ]
+
+
 def _knowledge_source_summary(articles: list[SupportKnowledgeArticle], tickets: list[SupportKnowledgeSimilarTicket]) -> SupportKnowledgeAiSummary:
     sources: list[str] = []
     for article in articles:
@@ -2157,6 +2303,16 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
         for link in kb_links
         if _clean_knowledge_text(getattr(link, "article_ref", None))
     ]
+    existing_article_ids = {article.id for article in articles}
+    remaining_catalog_limit = 5 if not articles else 0
+    if remaining_catalog_limit:
+        articles.extend(
+            _catalog_articles_for_ticket(
+                ticket,
+                existing_article_ids,
+                limit=remaining_catalog_limit,
+            )
+        )
     similar_tickets = await _load_similar_knowledge_tickets(session, ticket)
     return SupportTicketKnowledgeSuggestionsPayload(
         ticket_id=ticket_id,
