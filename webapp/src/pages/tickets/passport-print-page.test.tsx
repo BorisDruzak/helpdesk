@@ -104,4 +104,66 @@ describe("TicketPassportPrintPage", () => {
     expect(screen.getByText("artifact:screen-1")).toBeInTheDocument();
     expect(screen.getByText("Печать / PDF")).toBeInTheDocument();
   });
+
+  it("uses export preview sections for the printable dossier", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: "success",
+            data: {
+              ticket_id: "ticket-1",
+              status: "draft",
+              passport: {
+                passport_id: 1,
+                ticket_id: "ticket-1",
+                version: 1,
+                status: "draft",
+                summary_source: "deterministic",
+                generated_at: "2026-05-05T04:00:00Z",
+                generated_by: "op1",
+                updated_at: "2026-05-05T04:00:00Z",
+                updated_by: "op1",
+                sections: {
+                  problem: "Public problem",
+                  user_result: "Public result",
+                  internal_result: "INTERNAL ONLY",
+                  operator_checks: "OPERATOR ONLY",
+                },
+                source_event_ids: [],
+                source_operation_ids: [],
+                source_payload: {},
+                stale: false,
+              },
+              requirements: {
+                required_sections: ["problem", "user_result"],
+                require_official_passport: true,
+                missing_facts: [],
+                missing_count: 0,
+                blocking_missing_count: 0,
+                export_preview: {
+                  visible_sections: ["problem", "user_result"],
+                  hidden_sections: ["internal_result", "operator_checks"],
+                },
+                knowledge_draft_hints: {},
+              },
+              evidence: [],
+              actions: [],
+              approvals: [],
+              related_objects: [],
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    renderPrintPage();
+
+    expect(await screen.findByText("Public problem")).toBeInTheDocument();
+    expect(screen.getByText("Public result")).toBeInTheDocument();
+    expect(screen.queryByText("INTERNAL ONLY")).not.toBeInTheDocument();
+    expect(screen.queryByText("OPERATOR ONLY")).not.toBeInTheDocument();
+  });
 });

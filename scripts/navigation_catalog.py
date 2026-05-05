@@ -402,6 +402,8 @@ TOPICS: tuple[Topic, ...] = (
             "manual evidence",
             "passport section editor",
             "candidate linking",
+            "support-visible passport sections",
+            "export-preview-filtered passport print",
             "observer_trace evidence",
             "worklog evidence",
             "verification_status",

@@ -440,7 +440,7 @@ class TicketPassportService:
             worklogs=worklogs,
             source_candidates=source_candidates,
         )
-        sections = _apply_reporting_policy_to_sections(raw_sections, reporting_policy)
+        sections = dict(raw_sections)
         source_payload = {
             "summary_source": "deterministic",
             "mode": mode,
@@ -832,9 +832,6 @@ class TicketPassportService:
             source_payload["current_source_counts"] = current_source_counts
         if stale_reasons:
             source_payload["stale_reasons"] = stale_reasons
-        reporting_policy = source_payload.get("reporting_policy") if isinstance(source_payload, dict) else {}
-        if isinstance(reporting_policy, dict) and reporting_policy:
-            sections = _apply_reporting_policy_to_sections(sections, reporting_policy)
         return {
             "passport_id": passport.id,
             "ticket_id": passport.ticket_id,

@@ -157,6 +157,33 @@ async def test_evidence_candidates_and_link_endpoint(test_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_patch_passport_keeps_internal_sections_visible_to_support(test_client, test_engine):
+    ticket_id = await _seed_visible_ticket(test_engine)
+    await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/passport/generate",
+        headers=_support_headers(),
+        json={"mode": "create"},
+    )
+
+    response = await test_client.patch(
+        f"/api/web/support/tickets/{ticket_id}/passport",
+        headers=_support_headers(),
+        json={
+            "user_result_summary": "User-facing result from support",
+            "internal_result_summary": "Internal root cause from support",
+            "operator_check_summary": "Operator checked queue and logs",
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    sections = payload["data"]["passport"]["sections"]
+    assert sections["user_result"] == "User-facing result from support"
+    assert sections["internal_result"] == "Internal root cause from support"
+    assert sections["operator_checks"] == "Operator checked queue and logs"
+
+
+@pytest.mark.asyncio
 async def test_update_evidence_status_endpoint(test_client, test_engine):
     ticket_id = await _seed_visible_ticket(test_engine)
     response = await test_client.post(

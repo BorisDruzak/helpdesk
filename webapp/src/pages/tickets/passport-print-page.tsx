@@ -43,6 +43,12 @@ export function TicketPassportPrintPage() {
 
   const payload = passportQuery.data;
   const passport = payload?.passport ?? null;
+  const exportPreview = payload?.requirements?.export_preview;
+  const visibleExportSections = exportPreview?.visible_sections ?? [];
+  const hiddenExportSections = new Set(exportPreview?.hidden_sections ?? []);
+  const printableSections = PASSPORT_SECTION_LABELS.filter(([key]) =>
+    visibleExportSections.length > 0 ? visibleExportSections.includes(key) : !hiddenExportSections.has(key)
+  );
 
   return (
     <section className="mx-auto max-w-5xl space-y-6 px-2 py-2 print:max-w-none print:px-0 print:py-0">
@@ -90,7 +96,7 @@ export function TicketPassportPrintPage() {
 
         {passport ? (
           <div className="mt-8 space-y-6">
-            {PASSPORT_SECTION_LABELS.map(([key, label]) => (
+            {printableSections.map(([key, label]) => (
               <section key={key} className="break-inside-avoid rounded-[0.75rem] border border-slate-200 px-5 py-5 print:border-slate-300">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</h2>
                 <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-800">

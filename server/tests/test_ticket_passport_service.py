@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.engine import async_sessionmaker
-from app.db.models import Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport, TicketWorklog
+from app.db.models import Artifact, Operation, Ticket, TicketEvent, TicketEvidenceItem, TicketResolutionPassport, TicketWorklog
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.passport_service import TicketPassportService
 
@@ -582,10 +582,12 @@ async def test_passport_service_applies_reporting_policy_sections_and_evidence_p
         payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
 
     passport = payload["passport"]
-    assert set(passport["sections"]) == {"problem", "evidence", "user_result"}
+    assert {"problem", "evidence", "user_result", "internal_result", "operator_checks"}.issubset(set(passport["sections"]))
     assert "HTTP 200 OK" in passport["sections"]["evidence"]
     assert passport["source_payload"]["report_tags"] == ["critical_service", "diagnostics"]
     assert passport["source_payload"]["reporting_policy"]["required_sections"] == ["problem", "evidence", "user_result"]
+    assert payload["requirements"]["export_preview"]["visible_sections"] == ["problem", "evidence", "user_result"]
+    assert payload["requirements"]["export_preview"]["hidden_sections"] == ["internal_result", "operator_checks"]
     assert payload["actions"] == []
     assert payload["related_objects"] == []
 
@@ -654,11 +656,54 @@ async def test_passport_service_reports_missing_required_facts_and_export_previe
 
 
 @pytest.mark.asyncio
+async def test_passport_support_payload_keeps_sections_hidden_only_from_export(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Support-visible passport",
+                description="Internal result must stay visible to support.",
+                status="in_progress",
+                requester_id="user-net",
+                requester_status="in_work",
+                next_action_owner="support",
+                resolution_summary="Root cause fixed internally",
+                requester_resolution_summary="Issue is fixed for user",
+                custom_fields={
+                    "request_template": {
+                        "key": "support_visible_passport",
+                        "ticket_type": "incident",
+                        "reporting_policy": {
+                            "required_sections": ["problem", "evidence", "user_result"],
+                            "export_visibility": {"hide_sections": ["internal_result", "operator_checks"]},
+                            "require_official_passport": True,
+                        },
+                    },
+                },
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+    sections = payload["passport"]["sections"]
+    assert sections["internal_result"] == "Root cause fixed internally"
+    assert "operator_checks" in sections
+    assert payload["requirements"]["export_preview"]["visible_sections"] == ["problem", "evidence", "user_result"]
+    assert payload["requirements"]["export_preview"]["hidden_sections"] == ["internal_result", "operator_checks"]
+
+
+@pytest.mark.asyncio
 async def test_passport_missing_facts_include_source_candidates(test_engine):
     session_maker = async_sessionmaker(test_engine)
     ticket_id = str(uuid.uuid4())
     device_id = str(uuid.uuid4())
-    operation_id = str(uuid.uuid4())
+    artifact_id = str(uuid.uuid4())
 
     async with session_maker() as session:
         session.add(
@@ -673,7 +718,7 @@ async def test_passport_missing_facts_include_source_candidates(test_engine):
                 next_action_owner="support",
                 custom_fields={
                     "request_template": {
-                        "key": "website_unavailable",
+                        "key": "source_candidates_passport",
                         "ticket_type": "incident",
                         "reporting_policy": {
                             "required_sections": ["problem", "evidence", "user_result"],
@@ -684,18 +729,16 @@ async def test_passport_missing_facts_include_source_candidates(test_engine):
             )
         )
         session.add(
-            Operation(
-                operation_id=operation_id,
+            Artifact(
+                artifact_id=artifact_id,
+                storage_path=f"tickets/{ticket_id}/screen.png",
+                original_name="screen.png",
+                mime_type="image/png",
+                size_bytes=128,
+                sha256="a" * 64,
+                kind="screenshot",
                 device_id=device_id,
                 ticket_id=ticket_id,
-                kind="tool",
-                tool_name="network.ping",
-                actor_role="support",
-                trace_id=str(uuid.uuid4()),
-                status="succeeded",
-                queued_at=datetime.now(timezone.utc),
-                finished_at=datetime.now(timezone.utc),
-                result_summary="Host reachable",
             )
         )
         session.add(
@@ -717,8 +760,8 @@ async def test_passport_missing_facts_include_source_candidates(test_engine):
 
     missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
     assert missing_by_key["evidence"]["candidate_count"] == 1
-    assert missing_by_key["evidence"]["source_candidates"][0]["candidate_id"] == f"operation:{operation_id}"
-    assert missing_by_key["evidence"]["source_candidates"][0]["source_kind"] == "operation"
+    assert missing_by_key["evidence"]["source_candidates"][0]["candidate_id"] == f"artifact:{artifact_id}"
+    assert missing_by_key["evidence"]["source_candidates"][0]["source_kind"] == "artifact"
     assert missing_by_key["user_result"]["candidate_count"] == 1
     assert missing_by_key["user_result"]["source_candidates"][0]["source_kind"] == "chat_message"
     assert missing_by_key["user_result"]["source_candidates"][0]["required_fact"] == "user_result"
