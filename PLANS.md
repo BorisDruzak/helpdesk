@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, P2.2 standalone timeline filtering implemented locally and awaiting release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff.
 
-Current execution mode: P2.2 verification. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback.
+Current execution mode: P2.2 complete; next candidate is P2.3. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -280,6 +280,9 @@ P2.2 standalone timeline filtering evidence:
 - RED/GREEN frontend verified: `webapp/src/features/queues/api.test.ts` first failed on missing `fetchSupportTicketTimeline()`, then passed after adding the typed client; `webapp/src/pages/tickets/list-page.test.tsx` proves the "Диагностика" tab calls `fetchSupportTicketTimeline(ticketId, "diagnostics")` and renders filtered operation results.
 - `/app/tickets` keeps aggregate `/workspace` timeline behavior for `all` and uses the standalone endpoint only for tab-specific refreshes, with local aggregate filtering as fallback.
 - Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (46 tests), focused Vitest for queue API/mappers/list page (15 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Full CI passed for commit `3bff79a65bf08b127430d4936a95095093fa58ee`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
+- Linux release completed for commit `3bff79a65bf08b127430d4936a95095093fa58ee` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200, standalone `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics` returned 200, and clicking the exact "Диагностика" timeline tab waited for the same 200 response.
 
 ### Recommended Next Implementation Order
 
