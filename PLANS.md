@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 45% for P1.
+Current completion: 100% for P0, 70% for P1.
 
-Current execution mode: P1 aggregate workspace/actions slice is in progress. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint and visible "More" controls wired to the tested mutation aliases; remaining P1 work is full verification/signoff and optional compact SLA/OLA/passport DTO refinement.
+Current execution mode: P1 aggregate workspace/actions slice is released and browser-verified. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint and visible "More" controls wired to the tested mutation aliases; remaining P1 work is optional compact SLA/OLA/passport DTO refinement and workspace summary optimization.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -212,6 +212,10 @@ P1 first-slice evidence:
 - RED verified: `server/tests/test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge` failed with 404 before the aggregate route existed.
 - GREEN verified: the same backend test passes after adding `SupportTicketWorkspacePayload` and `GET /api/web/support/tickets/{ticket_id}/workspace`.
 - RED/GREEN frontend verified: `webapp/src/pages/tickets/list-page.test.tsx` now proves `/app/tickets/:ticketId` calls `fetchSupportTicketWorkspace()` and the "Ещё" menu exposes typed actions; reroute calls `postSupportTicketReroute(ticketId, { reason: "manual_recalculate" })`.
+- Local verification passed: `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest, `pnpm --dir webapp run build`, and `python scripts/verify_workspace.py`.
+- Green CI artifact created for commit `368328b8a92f4d8fcc0ca965f0420da27117552a`; `python scripts/run_ci_suite.py` passed workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
+- Linux release completed: `python scripts/release_server_to_remote.py` deployed branch `codex/helpdesk-process-model`, applied migrations, uploaded the webapp bundle and passed remote smoke (`/api/health -> 200`).
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` loaded the selected ticket through `GET /api/web/support/tickets/{ticket_id}/workspace -> 200`, and the visible "Ещё" menu rendered `Назначить на себя`, `Сменить очередь`, `Изменить приоритет`, `Пересчитать маршрут`.
 
 P2 - valuable, but can follow after core operator flows:
 
