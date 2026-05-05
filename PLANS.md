@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 99%.
+Current completion: 100% for P0.
 
-Current execution mode: backend contract hardening is in progress. P0 backend contract hardening is implemented and locally verified: support queue rows expose real priority/assignee fields and queue counts, support ticket detail timeline includes normalized lifecycle/SLA/OLA/passport events plus structured operation steps, and typed support mutation aliases now cover assign, queue, priority and reroute.
+Current execution mode: P0 backend contract hardening and release/browser signoff are complete. Support queue rows expose real priority/assignee fields and queue counts, support ticket detail timeline includes normalized lifecycle/SLA/OLA/passport events plus structured operation steps, typed support mutation aliases cover assign, queue, priority and reroute, and the accumulated `/app/tickets` workspace changes were released to the Linux stand.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -182,6 +182,14 @@ P0 third-slice evidence:
 - `server/tests/test_web_support_api.py` passed: 41 tests.
 - Focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`: 12 tests.
 - `pnpm --dir webapp run build` passed.
+
+P0 release/browser signoff evidence:
+
+- Green CI artifact created for commit `055f20b88286446e6ad739ecf9d75840cc2c4189`: `python scripts/run_ci_suite.py` wrote `artifacts/ci/055f20b88286446e6ad739ecf9d75840cc2c4189/summary.json` with status `green`.
+- Linux release completed: `python scripts/release_server_to_remote.py` deployed branch `codex/helpdesk-process-model`, applied remote migrations, uploaded the webapp bundle and passed remote smoke (`/api/health -> 200`).
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: React shell redirected to `/app/tickets/:ticketId`, and the 3-column support workspace rendered with topbar, smart views, queue list, selected ticket, next-action panel, timeline/composer and right context tabs.
+- Browser network verified support APIs returned 200 for queue, ticket detail, tools, playbooks and passport.
+- Non-blocking browser observation: the support-role shell still logs one 403 for admin-only `GET /api/web/admin/connection_requests`; this does not block `/app/tickets` and remains a separate access UX cleanup item.
 
 P1 - important for performance and the target architecture:
 
@@ -734,7 +742,7 @@ Stage 8 evidence:
 
 ## Handoff
 
-Recommended next step: do final full verification/deploy/browser signoff, then decide whether to spend another slice on P1 aggregate workspace payload or stop at the current production-ready typed adapter.
+Recommended next step: move to P1 only if product wants fewer round trips and visible advanced controls: aggregate `/workspace` payload, first-class SLA/OLA/knowledge DTOs, and wiring the visible "More" controls to the tested typed aliases.
 
 Concrete first slice:
 
@@ -744,4 +752,4 @@ Concrete first slice:
 4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
 5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
 
-Next slice after verification: run full CI/release/browser signoff for the accumulated `/app/tickets` workspace changes, then optionally wire visible "More" controls to the tested typed aliases.
+Next slice after P0: either stop at the current production-ready typed adapter, or implement P1 aggregate workspace payload and visible "More" controls backed by the tested typed aliases.
