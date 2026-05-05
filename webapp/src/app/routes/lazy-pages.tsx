@@ -5,7 +5,7 @@ export const TicketListPage = lazy(() =>
 );
 
 export const TicketDetailPage = lazy(() =>
-  import("../../pages/tickets/detail-page").then((module) => ({ default: module.TicketDetailPage })),
+  import("../../pages/tickets/list-page").then((module) => ({ default: module.TicketListPage })),
 );
 
 export const TicketPassportPrintPage = lazy(() =>

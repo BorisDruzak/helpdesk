@@ -34,6 +34,11 @@ export function AppShell({ children }: AppShellProps) {
   const { logout, session } = useSession();
   const hasSupport = hasWorkspaceAccess(session, "support");
   const hasAdmin = hasWorkspaceAccess(session, "admin");
+  const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
+
+  if (isTicketWorkspaceRoute) {
+    return <div className="min-h-screen bg-[#07111f] text-slate-100">{children}</div>;
+  }
 
   const workspaceOptions = [
     hasSupport ? { label: "Поддержка", value: SUPPORT_HOME_PATH } : null,

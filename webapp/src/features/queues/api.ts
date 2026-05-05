@@ -201,6 +201,21 @@ export type SupportTicketDetailPayload = {
       last_seen_at: string | null;
       online: boolean;
     };
+    registry?: {
+      person_id: string | null;
+      person_display_name: string | null;
+      department_id: string | null;
+      department_name: string | null;
+      location_id: string | null;
+      location_display_name: string | null;
+      building: string | null;
+      room: string | null;
+      asset_id: string | null;
+      asset_name: string | null;
+      asset_type: string | null;
+      service_id: string | null;
+      service_name: string | null;
+    } | null;
     latest_operations: Array<{
       operation_id: string;
       kind: string;

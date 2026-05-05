@@ -14,6 +14,15 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   };
 });
 
+vi.mock("../../features/auth/session-provider", () => ({
+  useSession: () => ({
+    session: {
+      actor_role: "support",
+      user_login: "support-test",
+    },
+  }),
+}));
+
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
@@ -142,7 +151,7 @@ describe("TicketListPage", () => {
 
     expect(await screen.findByText("Рабочие срезы")).toBeInTheDocument();
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
-    expect(screen.getByText("OLA риск")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /SLA риск\s*1/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Риск внутренней очереди\s*2/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Региональный VIP риск\s*4/ })).toBeInTheDocument();
     expect(screen.getByText("networks")).toBeInTheDocument();
