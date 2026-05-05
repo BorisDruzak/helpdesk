@@ -16,7 +16,7 @@ Created: 2026-05-05.
 
 Current completion: 96%.
 
-Current execution mode: `/app/tickets` support workspace implementation is complete and browser-verified against the deployed remote server. Remaining work is product/backlog scope: first-class aggregate backend endpoints, full theme switching, OLA-specific DTOs, knowledge suggestions API and deeper admin actions from the "More" menu.
+Current execution mode: `/app/tickets` support workspace implementation is complete and browser-verified against the deployed remote server. The current checkpoint is backend contract hardening: reduce frontend round trips, expose missing operator DTO fields, and connect deeper action menu mutations without changing ticket business logic.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -84,7 +84,12 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 
 ## Backend Functionality Gap Estimate
 
-Estimated missing backend functionality for the requested target: **35-40%**.
+Estimated missing backend functionality for the requested target: **28-32%** at the typed web contract layer.
+
+Important distinction:
+
+- Domain/business functionality missing: **10-15%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence and observer data.
+- Typed workspace/API functionality missing: **28-32%**. The current React workspace works through an adapter over several existing `/api/web/support/*` calls, but the target SaaS workspace still needs fewer round trips and more first-class DTOs.
 
 Already present:
 
@@ -99,17 +104,89 @@ Already present:
 
 Missing or incomplete for target:
 
-- Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics.
-- Aggregated ticket workspace endpoint returning all center/right-panel data in one payload.
-- First-class queue list/count DTO separate from smart views.
-- SLA/OLA progress DTO with remaining/target/status/progress.
-- Frontend view model matching `SupportWorkspaceViewModel`.
-- Typed support aliases for assign, queue change, priority change and reroute.
-- Filterable unified timeline endpoint or client mapper over all event types.
-- Structured operation result mapper with steps, not raw preview text.
-- Knowledge suggestions endpoint with similar tickets/articles/AI beta summary.
-- Compact resolution passport readiness DTO for sidebar.
-- Theme toggle/dark-mode workspace shell state.
+- Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics. Current equivalent is mostly `GET /api/web/support/queue`, but that route returns ticket rows and computes queue slices from the selected ticket sample.
+- Aggregated ticket workspace endpoint returning all center/right-panel data in one payload. Current UI calls detail, tools, playbooks and passport separately.
+- First-class queue list/count DTO separate from smart views. Current left queues are derived on the frontend from returned tickets, not from authoritative queue inventory/counts.
+- Ticket list priority/assignee display DTO fields. Current detail has priority, but queue items do not; the UI currently falls back to `P3` in the left worklist.
+- SLA/OLA progress DTO with remaining/target/status/progress. Current detail exposes first response/resolution due dates; OLA exists in services and queue matching, but not as a clean sidebar DTO.
+- Typed support aliases for assign, queue change, priority change and reroute. Legacy `/api/tickets/{id}/assign|queue|priority|reroute` already exist; typed `/api/web/support/*` aliases are missing.
+- Filterable unified timeline endpoint or richer detail timeline. Current typed detail filters timeline to `chat_message`, `tool_call_started`, `tool_call_result` and `playbook_started`; status, assignment, queue, priority, SLA/OLA and passport/evidence events are not yet first-class timeline items.
+- Structured operation result mapper with step cards. Current detail has `result_summary` and `result_preview`; target wants structured DNS/TCP/HTTP-like steps when payload contains them.
+- Knowledge suggestions endpoint with similar tickets/articles/AI beta summary. Current backend has passport knowledge-draft generation, not workspace suggestions.
+- Compact resolution passport readiness DTO for sidebar. Current UI derives readiness from full passport payload; acceptable short-term, but not ideal for the aggregate workspace endpoint.
+- Theme toggle/light-dark workspace shell state. This is mostly frontend/app-shell scope, not backend.
+
+## Backend Contract Analysis 2026-05-05
+
+### Routes Already Available
+
+- `GET /api/web/support/bootstrap`
+  - Current typed bootstrap for support capabilities and observer endpoint hints.
+- `GET /api/web/support/queue`
+  - Current queue/list route. Supports `scope`, `status`, `smart_view`, `query`, `limit`.
+  - Returns `summary.smart_view_counts`, status counts, smart-view options and ticket rows.
+  - Built-in and custom smart views are evaluated through `server/tickets/smart_views.py`.
+- `GET /api/web/support/tickets/{ticket_id}`
+  - Current typed detail route. Returns ticket header data, request form summary, observer summary, filtered timeline, snapshot, status actions and closure requirements.
+- `POST /api/web/support/tickets/{ticket_id}/messages`
+  - Current public/internal message route used by composer.
+- `POST /api/web/support/tickets/{ticket_id}/status`
+  - Current status transition route. Uses workflow/approval/closure guards and can auto-assign on `in_progress`.
+- `GET /api/web/support/tickets/{ticket_id}/tools`
+  - Current typed tool availability route.
+- `POST /api/web/support/tickets/{ticket_id}/tools/run`
+  - Current ticket-scoped tool run route with consent handling.
+- `GET /api/web/support/tickets/{ticket_id}/playbooks`
+  - Current typed playbook availability/readiness route.
+- `POST /api/web/support/tickets/{ticket_id}/playbooks/run`
+  - Current ticket-scoped playbook run route.
+- `GET/POST/PATCH /api/web/support/tickets/{ticket_id}/passport*`
+  - Current passport, evidence and knowledge-draft routes.
+- `POST /api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision`
+  - Current approval decision route.
+- Legacy but available: `POST /api/tickets/{ticket_id}/assign`, `/queue`, `/priority`, `/reroute`.
+  - These use the existing assignment, queue, priority and routing services, but are not yet exposed through the typed `/api/web/support/*` boundary.
+
+### Gaps By Priority
+
+P0 - required before calling the backend contract production-complete:
+
+- Add priority and assignee display fields to `SupportQueueTicketItem` and `webapp/src/features/queues/api.ts`.
+- Add authoritative queue counts/list to the support queue payload or a new summary payload.
+- Expand typed detail timeline to include status, assignment, queue, priority, SLA/OLA, passport/evidence and operation events with normalized event kinds.
+- Add typed `/api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` aliases over the existing legacy handlers/services.
+
+P1 - important for performance and the target architecture:
+
+- Add `GET /api/web/support/tickets/{ticket_id}/workspace` aggregate payload:
+  - ticket detail;
+  - full timeline;
+  - context;
+  - SLA/OLA;
+  - tools/playbooks;
+  - knowledge;
+  - passport readiness;
+  - permissions/actions.
+- Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
+- Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
+- Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
+
+P2 - valuable, but can follow after core operator flows:
+
+- Add `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`.
+- Add structured operation step extraction for diagnostic payloads.
+- Add frontend theme toggle/state integration for `/app/tickets`.
+- Add richer assignee/user profile display names and requester phone/email where registry data exists.
+
+### Recommended Next Implementation Order
+
+1. Backend DTO tests first in `server/tests/test_web_support_api.py`.
+2. Extend `server/web_api/dto/support.py` with queue item priority/assignee fields, queue-count DTO and normalized timeline event DTO.
+3. Extend serializers in `server/web_api/support_handlers.py` without changing domain services.
+4. Add typed aliases for assign/queue/priority/reroute by delegating to existing services or extracting shared helpers from `server/tickets/handlers.py`.
+5. Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts`.
+6. Wire "More" menu actions in `webapp/src/pages/tickets/list-page.tsx`.
+7. Run focused server tests, focused Vitest, production build and browser signoff.
 
 ## Design System Target
 
@@ -198,7 +275,7 @@ Use current typed `/api/web/support/*` routes as canonical React API. Add compat
 Preferred final API shape:
 
 - Keep `GET /api/web/support/queue`.
-- Add `GET /api/web/support/workspace/summary` if list page needs summary without ticket rows.
+- Add `GET /api/web/support/workspace/summary` if list page needs summary without ticket rows, or add an explicit `include_rows=0` mode to `GET /api/web/support/queue`.
 - Add `GET /api/web/support/tickets/{ticket_id}/workspace` to aggregate:
   - selected ticket;
   - timeline;
@@ -220,6 +297,8 @@ Preferred final API shape:
 - Keep `GET /api/web/support/tickets/{ticket_id}/playbooks`.
 - Keep `POST /api/web/support/tickets/{ticket_id}/playbooks/run`.
 - Add `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` as an honest low-risk stub if full KB backend is not ready.
+
+Do not add public `/api/support/*` duplicates unless an external consumer requires them. Inside the React app, typed `/api/web/support/*` is the canonical boundary.
 
 ## Execution Stages And Progress
 
@@ -627,4 +706,12 @@ Stage 8 evidence:
 
 ## Handoff
 
-Recommended next step: Stage 1, create the frontend view model and mappers. This lets the UI be redesigned around existing backend payloads before adding backend fields. Add backend DTOs only for data the mapper cannot derive safely.
+Recommended next step: start backend contract hardening with the P0 items from "Backend Contract Analysis 2026-05-05".
+
+Concrete first slice:
+
+1. Add failing server tests for `GET /api/web/support/queue` proving ticket rows expose priority/priority_class, assignee display, and authoritative queue counts.
+2. Extend `SupportQueueTicketItem` and queue summary DTOs.
+3. Update `_build_ticket_item()` / `handle_web_support_queue()` serializers.
+4. Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
+5. Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
