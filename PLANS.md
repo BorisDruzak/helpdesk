@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 66%.
+Current completion: 96%.
 
-Current execution mode: Frontend workspace implementation is build-green against existing support APIs; Stage 2 backend expansion is deferred unless browser/live data proves a contract gap. Next checkpoint is workspace verification/browser signoff.
+Current execution mode: `/app/tickets` support workspace implementation is complete and browser-verified against the deployed remote server. Remaining work is product/backlog scope: first-class aggregate backend endpoints, full theme switching, OLA-specific DTOs, knowledge suggestions API and deeper admin actions from the "More" menu.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -568,6 +568,14 @@ Browser paths:
 - `http://192.168.100.17:8666/app/tickets/:ticketId`
 
 Expected completion after Stage 8: 100%.
+
+Stage 8 evidence:
+
+- Full CI passed for commit `fb7dc58`: workspace verification, webapp bundle, server no-db tests, server db/api tests, agent websocket tests and pc_agent tests.
+- Focused follow-up verification passed for commit `63e3e58`: Vitest mapper/page/router tests, production webapp build and `python scripts/verify_workspace.py`.
+- Remote release succeeded for `63e3e58` with server smoke passing after deploy.
+- Browser verification completed at `http://192.168.100.17:8666/admin` for `/app/tickets/:ticketId`: 3-column layout, topbar, work slices, queues, ticket list, selected ticket, next action, actions, timeline tabs, composer and right context tabs render correctly.
+- Final browser console check after the right-tab layout fix reported 0 errors and 0 warnings.
 
 ## Verification Matrix
 
