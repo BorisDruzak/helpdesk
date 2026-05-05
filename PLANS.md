@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 85% for P2.1 knowledge catalog/search slice pending release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff.
 
-Current execution mode: P2.1 execution. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links.
+Current execution mode: P2.1 complete. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -261,6 +261,9 @@ P2.1 knowledge catalog/search evidence:
 - GREEN verified: the same test passes after adding a built-in knowledge catalog fallback in `server/web_api/support_handlers.py`.
 - Compatibility verified: existing manual-KB/workspace aggregate test still passes, and catalog fallback is suppressed when manual KB links are already attached to avoid duplicate right-sidebar suggestions.
 - Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (45 tests), focused Vitest for queues/list page (13 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Full CI passed for commit `2cb35928754f17825e8863f6465766d1e39c9f69`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
+- Linux release completed for commit `2cb35928754f17825e8863f6465766d1e39c9f69` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab opened, `GET /api/web/support/tickets/{ticket_id}/workspace`, standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and `GET /api/web/support/workspace/summary` returned 200, and aggregate `/workspace` embedded `knowledge`.
 
 ### Recommended Next Implementation Order
 
@@ -787,11 +790,11 @@ Stage 8 evidence:
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
 - Backend/API residual gap after P2.1 is estimated at 6-10%, mostly optional standalone timeline filtering, deeper external KB search and app-shell/theme refinements.
 - This plan remains the active long-horizon artifact for any P2 follow-up.
-- Current pending step: finish P2.1 verification/release, then choose the next P2 slice.
+- Current pending step: choose the next P2 slice.
 
 ## Handoff
 
-Recommended next step: finish P2.1 verification and release/browser signoff, then choose standalone timeline filtering or theme/app-shell controls as the next P2 slice.
+Recommended next step: choose standalone timeline filtering or theme/app-shell controls as the next P2 slice.
 
 Concrete first slice:
 
