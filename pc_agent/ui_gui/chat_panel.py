@@ -1299,6 +1299,24 @@ def build_post_create_process_summary(ticket: dict, *, public_access_code: str =
     reporting_policy = template.get("reporting_policy") if isinstance(template.get("reporting_policy"), dict) else {}
     closure_policy = template.get("closure_policy") if isinstance(template.get("closure_policy"), dict) else {}
     passport_status = _first_text(passport.get("status"), passport.get("state"))
+    passport_missing = passport.get("missing_facts") if isinstance(passport.get("missing_facts"), list) else []
+    required_evidence_types = (
+        reporting_policy.get("required_evidence_types")
+        if isinstance(reporting_policy.get("required_evidence_types"), dict)
+        else {}
+    )
+    closure_evidence = closure_policy.get("evidence") if isinstance(closure_policy.get("evidence"), dict) else {}
+    evidence_required = bool(
+        ticket.get("evidence_required")
+        or "evidence" in (reporting_policy.get("required_sections") or [])
+        or required_evidence_types.get("evidence")
+        or closure_evidence.get("required")
+        or any(
+            isinstance(item, dict)
+            and str(item.get("required_fact") or item.get("section_key") or "").strip() == "evidence"
+            for item in passport_missing
+        )
+    )
     if (
         reporting_policy.get("enabled")
         or reporting_policy.get("required_sections")
@@ -1307,6 +1325,15 @@ def build_post_create_process_summary(ticket: dict, *, public_access_code: str =
         or passport.get("required_sections")
     ):
         lines.append("Паспорт решения будет заполнен по итогам работ.")
+    if evidence_required:
+        lines.append("Для закрытия может потребоваться доказательство решения.")
+    attachments = []
+    for source in (requester_view, public_view, ticket):
+        value = source.get("attachments") if isinstance(source, dict) else None
+        if isinstance(value, list):
+            attachments.extend(item for item in value if isinstance(item, dict))
+    if evidence_required and attachments:
+        lines.append("Приложенные файлы доступны поддержке как кандидаты доказательств.")
     result_summary = _first_text(
         requester_view.get("requester_resolution_summary"),
         requester_view.get("user_result_summary"),

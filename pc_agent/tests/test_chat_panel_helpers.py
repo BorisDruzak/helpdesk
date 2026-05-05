@@ -763,6 +763,43 @@ def test_build_post_create_process_summary_uses_requester_safe_nested_payload():
     assert "SLA" not in summary
 
 
+def test_build_post_create_process_summary_mentions_evidence_need_and_uploaded_files():
+    summary = build_post_create_process_summary(
+        {
+            "ticket_id": "T-102",
+            "public_status_label": "Заявка в работе",
+            "custom_fields": {
+                "request_template": {
+                    "reporting_policy": {
+                        "enabled": True,
+                        "required_sections": ["evidence", "user_result"],
+                        "required_evidence_types": {"evidence": ["screenshot", "file_attachment"]},
+                    },
+                    "closure_policy": {"evidence": {"required": True}},
+                }
+            },
+            "requester_view": {
+                "passport": {
+                    "missing_facts": [
+                        {
+                            "required_fact": "evidence",
+                            "accepted_evidence_types": ["screenshot", "file_attachment"],
+                        }
+                    ]
+                }
+            },
+            "attachments": [
+                {"artifact_id": "artifact-1", "name": "screen.png", "type": "screenshot"},
+            ],
+        },
+        public_access_code="PUB-102",
+    )
+
+    assert "Для закрытия может потребоваться доказательство решения" in summary
+    assert "Приложенные файлы доступны поддержке как кандидаты доказательств" in summary
+    assert "screen.png" not in summary
+
+
 def test_build_post_create_result_labels_use_requester_view():
     labels = build_post_create_result_labels(
         {

@@ -100,6 +100,38 @@ _APPROVAL_SOURCE_TYPES = {
 }
 _APPROVAL_MODES = {"any_one", "all", "sequential"}
 
+_REPORTING_SECTION_KEYS = {
+    "requester",
+    "problem",
+    "affected_object",
+    "automated_checks",
+    "operator_checks",
+    "changes_made",
+    "approvals",
+    "evidence",
+    "user_result",
+    "internal_result",
+    "repeat_guidance",
+}
+_REPORTING_EVIDENCE_TYPES = {
+    "approval",
+    "asset",
+    "chat_message",
+    "device",
+    "diagnostic_result",
+    "file_attachment",
+    "manual_note",
+    "operation_log",
+    "playbook_run",
+    "requester_confirmation",
+    "resolution_summary",
+    "screenshot",
+    "service",
+    "ticket_field",
+    "video",
+    "worklog",
+}
+
 
 def normalize_policy_kind(raw_kind: Any) -> str:
     kind = str(raw_kind or "").strip().lower()
@@ -409,6 +441,44 @@ def _validate_visibility_policy_config(config: dict[str, Any]) -> None:
     _validate_visibility_mapping(config.get("public_statuses"), field_name="public_statuses")
 
 
+def _validate_reporting_section_list(value: Any, *, field_name: str) -> None:
+    if value in (None, ""):
+        return
+    if not isinstance(value, list):
+        raise ValueError(f"reporting policy {field_name} must be an array")
+    unknown = [str(item) for item in value if str(item or "").strip() not in _REPORTING_SECTION_KEYS]
+    if unknown:
+        raise ValueError(f"reporting policy {field_name} contains unsupported sections: {', '.join(unknown)}")
+
+
+def _validate_reporting_evidence_types(value: Any) -> None:
+    if value in (None, ""):
+        return
+    if not isinstance(value, dict):
+        raise ValueError("reporting policy required_evidence_types must be an object")
+    for section, raw_types in value.items():
+        section_key = str(section or "").strip()
+        if section_key not in _REPORTING_SECTION_KEYS:
+            raise ValueError(f"reporting policy required_evidence_types contains unsupported section: {section_key}")
+        if not isinstance(raw_types, list):
+            raise ValueError(f"reporting policy required_evidence_types.{section_key} must be an array")
+        unknown = [str(item) for item in raw_types if str(item or "").strip() not in _REPORTING_EVIDENCE_TYPES]
+        if unknown:
+            raise ValueError(
+                f"reporting policy required_evidence_types.{section_key} contains unsupported evidence types: {', '.join(unknown)}"
+            )
+
+
+def _validate_reporting_policy_config(config: dict[str, Any]) -> None:
+    _validate_reporting_section_list(config.get("required_sections"), field_name="required_sections")
+    export_visibility = config.get("export_visibility")
+    if export_visibility not in (None, "") and not isinstance(export_visibility, dict):
+        raise ValueError("reporting policy export_visibility must be an object")
+    if isinstance(export_visibility, dict):
+        _validate_reporting_section_list(export_visibility.get("hide_sections"), field_name="export_visibility.hide_sections")
+    _validate_reporting_evidence_types(config.get("required_evidence_types"))
+
+
 def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
     if kind == "routing":
         _validate_routing_policy_config(config)
@@ -420,6 +490,8 @@ def _validate_policy_config(kind: str, config: dict[str, Any]) -> None:
         _validate_approval_policy_config(config)
     elif kind == "visibility":
         _validate_visibility_policy_config(config)
+    elif kind == "reporting":
+        _validate_reporting_policy_config(config)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

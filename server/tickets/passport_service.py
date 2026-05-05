@@ -148,8 +148,24 @@ def _usable_evidence(evidence: list[TicketEvidenceItem]) -> list[TicketEvidenceI
     ]
 
 
-def _evidence_matches_section(section: str, item: TicketEvidenceItem) -> bool:
-    accepted = set(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
+def _policy_evidence_types(reporting_policy: dict[str, Any], section: str) -> list[str]:
+    raw = reporting_policy.get("required_evidence_types") if isinstance(reporting_policy, dict) else None
+    if isinstance(raw, dict):
+        selected = _string_list(raw.get(section))
+        if selected:
+            return selected
+    return list(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
+
+
+def _policy_restricts_evidence_types(reporting_policy: dict[str, Any], section: str) -> bool:
+    raw = reporting_policy.get("required_evidence_types") if isinstance(reporting_policy, dict) else None
+    return isinstance(raw, dict) and bool(_string_list(raw.get(section)))
+
+
+def _evidence_matches_section(section: str, item: TicketEvidenceItem, reporting_policy: dict[str, Any]) -> bool:
+    accepted = set(_policy_evidence_types(reporting_policy, section))
+    if _policy_restricts_evidence_types(reporting_policy, section):
+        return bool(accepted and item.evidence_type in accepted)
     return bool(
         item.required_fact == section
         or item.section_key == section
@@ -157,8 +173,10 @@ def _evidence_matches_section(section: str, item: TicketEvidenceItem) -> bool:
     )
 
 
-def _candidate_matches_section(section: str, candidate: dict[str, Any]) -> bool:
-    accepted = set(PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []))
+def _candidate_matches_section(section: str, candidate: dict[str, Any], reporting_policy: dict[str, Any]) -> bool:
+    accepted = set(_policy_evidence_types(reporting_policy, section))
+    if _policy_restricts_evidence_types(reporting_policy, section):
+        return bool(accepted and candidate.get("evidence_type") in accepted)
     return bool(
         candidate.get("required_fact") == section
         or candidate.get("section_key") == section
@@ -166,11 +184,15 @@ def _candidate_matches_section(section: str, candidate: dict[str, Any]) -> bool:
     )
 
 
-def _source_candidate_preview(candidates: list[dict[str, Any]], section: str) -> list[dict[str, Any]]:
+def _source_candidate_preview(
+    candidates: list[dict[str, Any]],
+    section: str,
+    reporting_policy: dict[str, Any],
+) -> list[dict[str, Any]]:
     preview: list[dict[str, Any]] = []
     seen: set[str] = set()
     for candidate in candidates:
-        if not _candidate_matches_section(section, candidate):
+        if not _candidate_matches_section(section, candidate, reporting_policy):
             continue
         candidate_id = str(candidate.get("candidate_id") or f"{candidate.get('source_kind')}:{candidate.get('source_id')}")
         if candidate_id in seen:
@@ -196,10 +218,14 @@ def _source_candidate_preview(candidates: list[dict[str, Any]], section: str) ->
     return preview
 
 
-def _satisfied_evidence_ids(section: str, evidence: list[TicketEvidenceItem]) -> list[int]:
+def _satisfied_evidence_ids(
+    section: str,
+    evidence: list[TicketEvidenceItem],
+    reporting_policy: dict[str, Any],
+) -> list[int]:
     ids: list[int] = []
     for item in _usable_evidence(evidence):
-        if item.id is not None and _evidence_matches_section(section, item):
+        if item.id is not None and _evidence_matches_section(section, item, reporting_policy):
             ids.append(item.id)
     return ids
 
@@ -262,8 +288,9 @@ def _section_has_required_fact(
     approvals: list[TicketApproval],
     operations: list[Operation],
     worklogs: list[TicketWorklog],
+    reporting_policy: dict[str, Any],
 ) -> tuple[bool, str | None]:
-    evidence_ids = _satisfied_evidence_ids(section, evidence)
+    evidence_ids = _satisfied_evidence_ids(section, evidence, reporting_policy)
     if evidence_ids:
         titles = [item.title for item in _usable_evidence(evidence) if item.id in set(evidence_ids) and item.title]
         return True, _join_lines(titles, fallback=f"evidence:{evidence_ids[0]}")
@@ -290,6 +317,8 @@ def _section_has_required_fact(
         return bool(approvals), value if approvals and value else None
     if section == "evidence":
         value = _clean(sections.get(section))
+        if _policy_restricts_evidence_types(reporting_policy, section):
+            return False, None
         has_evidence = bool(_clean(getattr(ticket, "evidence_ref", None)))
         return has_evidence, value if has_evidence and value else None
     if section == "user_result":
@@ -334,11 +363,12 @@ def _build_passport_requirements(
             approvals=approvals,
             operations=operations,
             worklogs=worklogs,
+            reporting_policy=reporting_policy,
         )
         if met:
             continue
         blocking_for_closure = _is_blocking_required_fact(section, reporting_policy)
-        candidate_preview = _source_candidate_preview(candidates, section)
+        candidate_preview = _source_candidate_preview(candidates, section, reporting_policy)
         missing_facts.append(
             {
                 "required_fact": section,
@@ -347,11 +377,11 @@ def _build_passport_requirements(
                 "current_value": current_value,
                 "requester_visible_label": PASSPORT_REQUIREMENT_LABELS.get(section, section),
                 "severity": "blocking" if blocking_for_closure else "warning",
-                "accepted_evidence_types": PASSPORT_ACCEPTED_EVIDENCE_TYPES.get(section, []),
+                "accepted_evidence_types": _policy_evidence_types(reporting_policy, section),
                 "candidate_count": len(candidate_preview),
                 "recommended_actions": PASSPORT_RECOMMENDED_ACTIONS.get(section, []),
                 "blocking_for_closure": blocking_for_closure,
-                "satisfied_by_evidence_ids": _satisfied_evidence_ids(section, evidence),
+                "satisfied_by_evidence_ids": _satisfied_evidence_ids(section, evidence, reporting_policy),
                 "source_candidates": candidate_preview,
             }
         )

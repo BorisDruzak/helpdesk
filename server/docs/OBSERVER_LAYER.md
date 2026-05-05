@@ -66,6 +66,7 @@ Ticket-root anchor:
 | Agent uploaded local telemetry | `agent_observer_events` | `agent_runtime`, `agent_update`, `tool_call`, `module_install` | yes | warning/error only | `device_id`, `trace_id`, `operation_id`, `q=agent.update` |
 | Module reconcile pre-operation failure | `agent_runtime_audit` with `source=module_reconcile` | `module_reconcile` | yes | yes | `q=reconcile`, `root_kind=module_reconcile` |
 | Playbook local/skipped/preflight step | `playbook_run`, `playbook_step_run` | `playbook_run` | yes | failed steps only | `playbook_run_id`, `step_run_id`, `q=MODULE_PRECHECK_FAILED` |
+| Passport evidence add/link/verify/reject/archive | `ticket_events` (`passport_evidence_*`) | ticket-root trace | yes | no | `ticket_id`, `q=passport_evidence`, `source_ref`, `evidence_id` |
 | Web auth/API boundary failure | rate-limited `agent_runtime_audit` with `source=web_auth` | `web_auth` | yes | yes | `route=/api/...`, `q=AUTH_REQUIRED`, `q=FORBIDDEN` |
 | Observer projector degraded health | bounded `agent_runtime_audit` with `source=observer_runtime` | `observer_runtime` | yes | yes | `root_kind=observer_runtime`, runtime endpoint |
 
@@ -144,6 +145,8 @@ Codex/live debugging entrypoints:
 - Auth/provisioning debugging should start with `q=connection_request`, `q=invalid_token`, `root_kind=device_provisioning`, or `root_kind=agent_auth`. These queries must find operation-less `agent_runtime_audit` traces and signatures for warning/error events such as `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, and `invalid_token`.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
+
+Passport/evidence audit is trace-visible through ticket events. Evidence write handlers must include `trace_id`, `source_ref`, `section_key`, verification/export metadata and `observer_provenance` in `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`, `passport_evidence_superseded` and `passport_evidence_unverified` events, so support can reconstruct why a fact satisfied or failed closure without reading raw DB rows.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
 
 ## 8. Live canary coverage

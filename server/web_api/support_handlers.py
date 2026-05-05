@@ -4,6 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from functools import cmp_to_key
+from typing import Any
 
 from aiohttp import web
 from loguru import logger
@@ -1853,6 +1854,51 @@ async def handle_web_support_ticket_passport_evidence_candidates(request: web.Re
     return json_model_response(SuccessResponse[SupportTicketEvidenceCandidatesPayload](data=payload))
 
 
+def _passport_evidence_event_payload(
+    *,
+    action: str,
+    event_id: str,
+    actor_id: str | None,
+    item: Any,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    source_ref = getattr(item, "source_ref", None) or (
+        f"{getattr(item, 'source_kind', None)}:{getattr(item, 'source_id', None)}"
+        if getattr(item, "source_kind", None) and getattr(item, "source_id", None)
+        else None
+    )
+    provenance = {
+        "domain": "passport_evidence",
+        "action": action,
+        "source_ref": source_ref,
+        "required_fact": getattr(item, "required_fact", None),
+    }
+    verification_status = getattr(item, "verification_status", None)
+    if action == "update" and verification_status:
+        provenance["verification_status"] = verification_status
+    payload = {
+        "event_id": event_id,
+        "actor_id": actor_id,
+        "evidence_id": getattr(item, "id", None),
+        "passport_id": getattr(item, "passport_id", None),
+        "evidence_type": getattr(item, "evidence_type", None),
+        "source_ref": source_ref,
+        "source_kind": getattr(item, "source_kind", None),
+        "source_id": getattr(item, "source_id", None),
+        "artifact_id": getattr(item, "artifact_id", None),
+        "required_fact": getattr(item, "required_fact", None),
+        "section_key": getattr(item, "section_key", None),
+        "verification_status": verification_status,
+        "visibility": getattr(item, "visibility", None),
+        "export_visibility": getattr(item, "export_visibility", None),
+        "title": getattr(item, "title", None),
+        "observer_provenance": provenance,
+    }
+    if reason:
+        payload["reason"] = reason
+    return payload
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_evidence_link(request: web.Request):
     try:
@@ -1887,16 +1933,13 @@ async def handle_web_support_ticket_passport_evidence_link(request: web.Request)
                 device_id=ticket.device_id,
                 agent_seq=None,
                 event_type="passport_evidence_linked",
-                payload={
-                    "event_id": f"passport-evidence-linked-{item.id}",
-                    "actor_id": auth_context.actor_id,
-                    "evidence_id": item.id,
-                    "evidence_type": item.evidence_type,
-                    "source_kind": item.source_kind,
-                    "source_id": item.source_id,
-                    "required_fact": item.required_fact,
-                    "title": item.title,
-                },
+                payload=_passport_evidence_event_payload(
+                    action="link",
+                    event_id=f"passport-evidence-linked-{item.id}",
+                    actor_id=auth_context.actor_id,
+                    item=item,
+                ),
+                trace_id=str(uuid.uuid4()),
                 event_id=f"passport-evidence-linked-{item.id}",
             )
             await session.commit()
@@ -1973,17 +2016,14 @@ async def handle_web_support_ticket_passport_evidence_update(request: web.Reques
                 device_id=ticket.device_id,
                 agent_seq=None,
                 event_type=event_type,
-                payload={
-                    "event_id": f"{event_type}-{item.id}",
-                    "actor_id": auth_context.actor_id,
-                    "evidence_id": item.id,
-                    "evidence_type": item.evidence_type,
-                    "source_kind": item.source_kind,
-                    "source_id": item.source_id,
-                    "required_fact": item.required_fact,
-                    "verification_status": item.verification_status,
-                    "reason": data.reason,
-                },
+                payload=_passport_evidence_event_payload(
+                    action="update",
+                    event_id=f"{event_type}-{item.id}",
+                    actor_id=auth_context.actor_id,
+                    item=item,
+                    reason=data.reason,
+                ),
+                trace_id=str(uuid.uuid4()),
                 event_id=f"{event_type}-{item.id}-{uuid.uuid4().hex[:8]}",
             )
             await session.commit()
@@ -2062,13 +2102,13 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
                 device_id=ticket.device_id,
                 agent_seq=None,
                 event_type="passport_evidence_added",
-                payload={
-                    "event_id": f"passport-evidence-{item.id}",
-                    "actor_id": auth_context.actor_id,
-                    "evidence_id": item.id,
-                    "evidence_type": item.evidence_type,
-                    "title": item.title,
-                },
+                payload=_passport_evidence_event_payload(
+                    action="add",
+                    event_id=f"passport-evidence-{item.id}",
+                    actor_id=auth_context.actor_id,
+                    item=item,
+                ),
+                trace_id=str(uuid.uuid4()),
                 event_id=f"passport-evidence-{item.id}",
             )
             await session.commit()

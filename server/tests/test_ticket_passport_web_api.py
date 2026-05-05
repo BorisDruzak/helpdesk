@@ -4,9 +4,10 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Operation, Ticket, UiUser
+from app.db.models import Operation, Ticket, TicketEvent, UiUser
 from tests.conftest import TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
@@ -155,6 +156,25 @@ async def test_evidence_candidates_and_link_endpoint(test_client, test_engine):
     assert evidence["source_id"] == operation_id
     assert evidence["required_fact"] == "automated_checks"
 
+    async with session_maker() as session:
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "passport_evidence_linked")
+            )
+        ).scalars().one()
+
+    assert event.trace_id
+    assert event.payload["source_ref"] == f"operation:{operation_id}"
+    assert event.payload["section_key"] == "automated_checks"
+    assert event.payload["observer_provenance"] == {
+        "domain": "passport_evidence",
+        "action": "link",
+        "source_ref": f"operation:{operation_id}",
+        "required_fact": "automated_checks",
+    }
+
 
 @pytest.mark.asyncio
 async def test_patch_passport_keeps_internal_sections_visible_to_support(test_client, test_engine):
@@ -223,6 +243,23 @@ async def test_update_evidence_status_endpoint(test_client, test_engine):
     assert evidence["verified_by"] == "support-test"
     assert evidence["metadata_json"]["verification_reason"] == "Not enough detail"
     assert evidence["export_visibility"] == "hidden"
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "passport_evidence_rejected")
+            )
+        ).scalars().one()
+
+    assert event.trace_id
+    assert event.payload["evidence_id"] == evidence_id
+    assert event.payload["source_ref"] == "manual:status"
+    assert event.payload["observer_provenance"]["domain"] == "passport_evidence"
+    assert event.payload["observer_provenance"]["action"] == "update"
+    assert event.payload["observer_provenance"]["verification_status"] == "rejected"
 
 
 @pytest.mark.asyncio

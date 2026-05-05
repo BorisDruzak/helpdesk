@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-05, Stage 33A passport/evidence action UI slice is deployed and live-checked on `#T-000516`: candidate linking, manual evidence, editable user/internal/operator sections and export-hidden print filtering work on Linux.
+Last updated: 2026-05-05, Stage 33A backend/functional slice 33A.8-33A.10 is implemented locally and verified: reporting-policy mapping, agent/requester evidence path and observer/audit provenance are covered by regression tests and ready for Linux deploy/live re-check.
 
-Current plan completion: 99.60%; passport/evidence remains an open product-quality track before final acceptance.
+Current plan completion: 99.72%; passport/evidence remains an open product-quality track before final acceptance.
 
-Current execution mode: Stage 33A passport/evidence functional implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
+Current execution mode: Stage 33A passport/evidence backend-functional implementation. Stage 33A.8-33A.10 are local-green pending Linux deploy/live re-check. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -1123,7 +1123,7 @@ Implementation plan:
   - 2026-05-05 bug isolated during live check: support payload was applying export visibility too early, hiding `internal_result` / `operator_checks` from the support workspace after save. Fixed and deployed in `2c7e253`: `GET/PATCH /passport` returns full support-visible sections, while print/PDF filters by `requirements.export_preview`.
   - 2026-05-05 Linux live re-check on `#T-000516`: saved `Stage33A internal visible live 2026-05-05T05-02-43-689Z` and `Stage33A operator visible live 2026-05-05T05-02-43-689Z`; both are visible in support passport after reload, absent from print/PDF, and public `user_result` remains printed.
 
-- [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
+- [x] Stage 33A.8 - Forms builder/reporting policy mapping.
   - Keep current low-code redesign deferred, but make existing policy controls honest.
   - Files: `webapp/src/features/forms-builder/forms-builder-panel.tsx`, `server/web_api/admin_handlers.py`, `server/tickets/helpdesk_policy_runtime.py`.
   - Ensure reporting policy can define:
@@ -1134,20 +1134,23 @@ Implementation plan:
     - knowledge draft hints;
     - requester-visible evidence policy.
   - Add validation so policy cannot require unsupported evidence types without warning.
+  - 2026-05-05 local result: policy publish validates sections/evidence types, `/app/admin/forms` saves `required_evidence_types.evidence`, and passport missing-fact satisfaction respects policy-specific evidence types.
 
-- [ ] Stage 33A.9 - Agent/requester evidence path.
+- [x] Stage 33A.9 - Agent/requester evidence path.
   - Agent-created ticket attachments already upload artifacts; plan must link those artifacts as evidence candidates.
   - Public/requester chat attachments should also become candidates, but not accepted evidence automatically unless policy allows requester-provided evidence.
   - Agent GUI should not need full passport management now, but ticket detail should show whether evidence is needed and which uploaded files may satisfy it.
   - Tests: `pc_agent/tests/test_chat_panel_helpers.py` for evidence-needed copy and attachment refs.
+  - 2026-05-05 local result: unbound chat attachments are claimed to the ticket and appear as artifact evidence candidates; agent post-create summary tells the requester when evidence may be required and that uploaded files are support candidates.
 
-- [ ] Stage 33A.10 - Observer and audit.
+- [x] Stage 33A.10 - Observer and audit.
   - Update observer docs if evidence uses observer traces as proof.
   - Add trace correlation for evidence link/verify events where possible.
   - Evidence source provenance must be inspectable from support UI and API.
   - Docs to update:
     - `docs/QUICK_LOOKUP.md`;
     - `server/docs/CODEMAP.md`;
+  - 2026-05-05 local result: passport evidence add/link/update events include `trace_id`, source/fact/verification/export metadata and `observer_provenance`; observer docs and navigation catalog are updated.
     - `server/docs/DIAGNOSTIC_PLAYBOOKS.md`;
     - `server/docs/OBSERVER_LAYER.md` if observer traces become evidence sources;
     - `scripts/navigation_catalog.py`.

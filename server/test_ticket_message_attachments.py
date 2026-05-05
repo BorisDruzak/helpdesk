@@ -7,13 +7,14 @@ from app.db.engine import async_sessionmaker
 from app.db.models import Artifact, TicketEvent
 from tests.conftest import *  # noqa: F401,F403
 from tests.test_helpers import create_test_ticket
+from tickets.evidence_service import TicketEvidenceService
 
 
 async def _create_artifact(
     test_engine,
     *,
     device_id: str,
-    ticket_id: str,
+    ticket_id: str | None,
     original_name: str,
     mime_type: str = "application/octet-stream",
     size_bytes: int = 128,
@@ -216,3 +217,40 @@ async def test_get_ticket_and_messages_include_attachments(test_client, test_eng
     assert api_message is not None
     assert len(api_message.get("attachments", [])) == 1
     assert api_message["attachments"][0]["artifact_id"] == artifact_id
+
+
+@pytest.mark.asyncio
+async def test_send_message_claims_unbound_attachment_as_evidence_candidate(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+    artifact_id = await _create_artifact(
+        test_engine,
+        device_id=device_id,
+        ticket_id=None,
+        original_name="requester-screen.png",
+        mime_type="image/png",
+        kind="screenshot",
+    )
+    message_id = str(uuid.uuid4())
+
+    resp = await test_client.post(
+        f"/api/tickets/{ticket_id}/message",
+        json={
+            "message_id": message_id,
+            "from_role": "user",
+            "text": "Скриншот ошибки",
+            "attachment_refs": [artifact_id],
+        },
+    )
+
+    assert resp.status == 200, await resp.text()
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        artifact = await session.get(Artifact, artifact_id)
+        candidates = await TicketEvidenceService(session).collect_candidates(ticket_id)
+
+    assert artifact.ticket_id == ticket_id
+    assert any(
+        candidate["candidate_id"] == f"artifact:{artifact_id}" and candidate["evidence_type"] == "screenshot"
+        for candidate in candidates
+    )

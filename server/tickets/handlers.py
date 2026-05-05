@@ -509,6 +509,7 @@ async def _normalize_reply_to_for_ticket(
 async def _resolve_attachment_descriptors(
     artifacts_repo: ArtifactsRepo,
     ticket_id: str,
+    device_id: str | None,
     attachment_refs: List[str],
 ) -> List[Dict[str, Any]]:
     descriptors: List[Dict[str, Any]] = []
@@ -518,6 +519,10 @@ async def _resolve_attachment_descriptors(
             raise ValueError(f"artifact {artifact_id} not found")
         if artifact.ticket_id and artifact.ticket_id != ticket_id:
             raise ValueError(f"artifact {artifact_id} belongs to another ticket")
+        if device_id and artifact.device_id and artifact.device_id != device_id:
+            raise ValueError(f"artifact {artifact_id} device mismatch")
+        if not artifact.ticket_id:
+            artifact.ticket_id = ticket_id
         descriptors.append(
             {
                 "artifact_id": artifact.artifact_id,
@@ -1452,10 +1457,11 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
                 attachments = await _resolve_attachment_descriptors(
                     artifacts_repo,
                     ticket.ticket_id,
+                    ticket.device_id,
                     attachment_refs,
                 )
             except ValueError as exc:
-                return _validation_error({"attachment_refs": str(exc)})
+                return _validation_error({"attachment_refs": [str(exc)]})
         visibility = str(data.get("visibility") or "public").strip() or "public"
         if visibility == "internal" and not _is_staff(auth_context):
             visibility = "public"
@@ -1573,7 +1579,11 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
         await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
         if status_result:
             await _push_ticket_event(request, ticket.ticket_id, status_result, "status_changed", status_payload or {})
-        return _json_ok(event_id=result[0] if result else None, message_id=message_id)
+        return _json_ok(
+            event_id=result[0] if result else None,
+            message_id=message_id,
+            attachments_count=len(attachments),
+        )
 
 
 async def handle_ticket_close(request: web.Request) -> web.Response:

@@ -1847,6 +1847,9 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(templateControl("Скрыть из экспорта"), {
       target: { value: "internal_result, raw_diagnostics" }
     });
+    fireEvent.change(templateControl("Типы доказательств для evidence"), {
+      target: { value: "screenshot, file_attachment, diagnostic_result" }
+    });
     fireEvent.click(templateControl("Включать журнал действий"));
     fireEvent.click(templateControl("Включать связанные объекты"));
     fireEvent.click(templateControl("Включать внутренние заметки"));
@@ -1876,6 +1879,9 @@ describe("FormsBuilderPanel", () => {
       },
       export_visibility: {
         hide_sections: ["internal_result", "raw_diagnostics"],
+      },
+      required_evidence_types: {
+        evidence: ["screenshot", "file_attachment", "diagnostic_result"],
       },
       report_tags: ["standard_passport", "knowledge_candidate"],
       include_internal_notes: true,

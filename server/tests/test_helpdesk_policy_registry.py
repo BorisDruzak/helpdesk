@@ -1093,6 +1093,7 @@ async def test_helpdesk_policy_repo_publishes_reporting_policy(test_engine):
             scope_ref="website_unavailable",
             config={
                 "required_sections": ["problem", "evidence", "user_result"],
+                "required_evidence_types": {"evidence": ["screenshot", "diagnostic_result"]},
                 "evidence_package": {"include_action_log": False, "include_related_objects": False},
                 "export_visibility": {"hide_sections": ["internal_result", "operator_checks"]},
                 "report_tags": ["critical_service", "diagnostics"],
@@ -1105,6 +1106,7 @@ async def test_helpdesk_policy_repo_publishes_reporting_policy(test_engine):
     assert item["kind"] == "reporting"
     assert item["table"] == "reporting_policies"
     assert item["config"]["report_tags"] == ["critical_service", "diagnostics"]
+    assert item["config"]["required_evidence_types"] == {"evidence": ["screenshot", "diagnostic_result"]}
 
     async with session_maker() as session:
         rows = list((await session.execute(select(ReportingPolicy))).scalars().all())
@@ -1121,6 +1123,33 @@ async def test_helpdesk_policy_repo_publishes_reporting_policy(test_engine):
     assert len(rows) == 1
     assert rows[0].code == "website_passport_reporting"
     assert audit[-1].entity_type == "reporting_policies"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_publish_reporting_policy_rejects_unsupported_sections_and_evidence_types(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/policies/publish",
+        headers=_admin_headers(),
+        json={
+            "kind": "reporting",
+            "code": f"bad_reporting_{uuid.uuid4().hex[:8]}",
+            "title": "Bad reporting policy",
+            "scope_level": "system",
+            "config": {
+                "required_sections": ["problem", "unknown_section"],
+                "required_evidence_types": {"evidence": ["screenshot", "unknown_evidence_type"]},
+                "export_visibility": {"hide_sections": ["internal_result"]},
+            },
+        },
+    )
+
+    assert response.status == 400, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "reporting policy" in payload["error"]
+    assert "unknown_section" in payload["error"]
 
 
 @pytest.mark.asyncio

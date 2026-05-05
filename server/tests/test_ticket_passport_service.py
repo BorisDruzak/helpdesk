@@ -765,3 +765,72 @@ async def test_passport_missing_facts_include_source_candidates(test_engine):
     assert missing_by_key["user_result"]["candidate_count"] == 1
     assert missing_by_key["user_result"]["source_candidates"][0]["source_kind"] == "chat_message"
     assert missing_by_key["user_result"]["source_candidates"][0]["required_fact"] == "user_result"
+
+
+@pytest.mark.asyncio
+async def test_passport_requirements_use_reporting_policy_evidence_types(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    artifact_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Need screenshot evidence",
+                description="Manual note must not satisfy screenshot-only policy",
+                status="in_progress",
+                requester_id="user-evidence-policy",
+                requester_status="in_work",
+                next_action_owner="support",
+                custom_fields={
+                    "request_template": {
+                        "key": "screenshot_only_reporting",
+                        "ticket_type": "incident",
+                        "reporting_policy": {
+                            "required_sections": ["evidence"],
+                            "required_evidence_types": {"evidence": ["screenshot"]},
+                        },
+                    },
+                },
+            )
+        )
+        session.add(
+            TicketEvidenceItem(
+                ticket_id=ticket_id,
+                evidence_type="manual_note",
+                source_kind="manual",
+                source_id="note-1",
+                required_fact="evidence",
+                section_key="evidence",
+                source_ref="manual:note-1",
+                title="Manual note",
+                summary="Operator says a screenshot exists",
+                visibility="internal",
+                verification_status="accepted",
+                created_by="support-1",
+            )
+        )
+        session.add(
+            Artifact(
+                artifact_id=artifact_id,
+                storage_path=f"tickets/{ticket_id}/requester-screen.png",
+                original_name="requester-screen.png",
+                mime_type="image/png",
+                size_bytes=128,
+                sha256="b" * 64,
+                kind="screenshot",
+                device_id=device_id,
+                ticket_id=ticket_id,
+            )
+        )
+        await session.flush()
+
+        payload = await TicketPassportService(session).generate(ticket_id, actor_id="op1", mode="create")
+
+    missing_by_key = {item["required_fact"]: item for item in payload["requirements"]["missing_facts"]}
+    assert missing_by_key["evidence"]["accepted_evidence_types"] == ["screenshot"]
+    assert missing_by_key["evidence"]["candidate_count"] == 1
+    assert missing_by_key["evidence"]["source_candidates"][0]["candidate_id"] == f"artifact:{artifact_id}"

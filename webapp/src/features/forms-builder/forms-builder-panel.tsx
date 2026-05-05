@@ -2497,6 +2497,7 @@ function ReportingPolicyControls({
   const actionPackage = nestedObject(config.action_package);
   const exportVisibility = nestedObject(config.export_visibility);
   const knowledgeDraftHints = nestedObject(config.knowledge_draft_hints);
+  const requiredEvidenceTypes = nestedObject(config.required_evidence_types);
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
@@ -2530,6 +2531,23 @@ function ReportingPolicyControls({
             })
           }
           value={csvList(exportVisibility.hide_sections)}
+        />
+      </label>
+      <label className="space-y-2 text-sm font-medium text-slate-800 lg:col-span-2">
+        <span>Типы доказательств для evidence</span>
+        <input
+          className="field-base h-11 w-full px-4 text-sm"
+          onChange={(event) =>
+            onChange({
+              ...config,
+              required_evidence_types: {
+                ...requiredEvidenceTypes,
+                evidence: csvToList(event.currentTarget.value),
+              },
+            })
+          }
+          placeholder="screenshot, file_attachment, diagnostic_result"
+          value={csvList(requiredEvidenceTypes.evidence)}
         />
       </label>
       <JsonLinkedCheckbox
