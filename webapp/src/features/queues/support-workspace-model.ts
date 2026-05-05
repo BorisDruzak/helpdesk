@@ -1,8 +1,10 @@
 import type {
   SupportQueuePayload,
   SupportTicketDetailPayload,
+  SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
   SupportTicketPlaybooksPayload,
+  SupportTicketSlaOlaPayload,
   SupportTicketToolsPayload,
 } from "./api";
 import type { TicketBadgeTone } from "../tickets/status-presentation";
@@ -197,5 +199,7 @@ export type SupportWorkspaceViewModel = {
     tools?: SupportTicketToolsPayload;
     playbooks?: SupportTicketPlaybooksPayload;
     passport?: SupportTicketPassportPayload;
+    slaOla?: SupportTicketSlaOlaPayload;
+    passportReadiness?: SupportTicketPassportReadinessPayload;
   };
 };

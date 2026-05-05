@@ -809,6 +809,42 @@ class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
     ai_summary: SupportKnowledgeAiSummary = Field(default_factory=SupportKnowledgeAiSummary)
 
 
+class SupportTicketTimerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    due_at: str | None = None
+    remaining_seconds: int | None = None
+    target_seconds: int | None = None
+    status: str = "unknown"
+
+
+class SupportTicketSlaOlaPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_response: SupportTicketTimerPayload = Field(default_factory=SupportTicketTimerPayload)
+    resolution: SupportTicketTimerPayload = Field(default_factory=SupportTicketTimerPayload)
+    ola_ack: SupportTicketTimerPayload = Field(default_factory=SupportTicketTimerPayload)
+    ola_processing: SupportTicketTimerPayload = Field(default_factory=SupportTicketTimerPayload)
+
+
+class SupportTicketPassportReadinessItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    status: str = "pending"
+
+
+class SupportTicketPassportReadinessPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    status: str
+    done: int
+    total: int
+    items: list[SupportTicketPassportReadinessItem] = Field(default_factory=list)
+
+
 class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -828,3 +864,5 @@ class SupportTicketWorkspacePayload(BaseModel):
     playbooks: SupportTicketPlaybooksPayload
     passport: SupportTicketPassportDetailPayload
     knowledge: SupportTicketKnowledgeSuggestionsPayload
+    sla_ola: SupportTicketSlaOlaPayload
+    passport_readiness: SupportTicketPassportReadinessPayload

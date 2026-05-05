@@ -183,6 +183,24 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
       articles: [],
       ai_summary: { text: null, sources: [] },
     },
+    sla_ola: {
+      first_response: { due_at: null, remaining_seconds: null, target_seconds: null, status: "unknown" },
+      resolution: { due_at: null, remaining_seconds: null, target_seconds: null, status: "unknown" },
+      ola_ack: { due_at: null, remaining_seconds: null, target_seconds: null, status: "unknown" },
+      ola_processing: { due_at: null, remaining_seconds: null, target_seconds: null, status: "unknown" },
+    },
+    passport_readiness: {
+      ticket_id: "ticket-1",
+      status: "missing",
+      done: 0,
+      total: 4,
+      items: [
+        { key: "problem_identified", label: "Проблема идентифицирована", status: "pending" },
+        { key: "cause_found", label: "Причина установлена", status: "pending" },
+        { key: "solution_applied", label: "Решение применено", status: "pending" },
+        { key: "verified_and_closed", label: "Проверка и закрытие", status: "pending" },
+      ],
+    },
     ...overrides,
   };
 }

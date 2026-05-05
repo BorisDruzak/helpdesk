@@ -1,8 +1,11 @@
 import type {
   SupportQueuePayload,
   SupportTicketDetailPayload,
+  SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
   SupportTicketPlaybooksPayload,
+  SupportTicketSlaOlaPayload,
+  SupportTicketSlaOlaTimerPayload,
   SupportTicketToolsPayload,
 } from "./api";
 import type {
@@ -269,6 +272,47 @@ function buildTimer(
   };
 }
 
+function normalizeTimerPayloadStatus(status: string): SupportWorkspaceTimer["status"] {
+  if (status === "ok" || status === "at_risk" || status === "breached" || status === "paused" || status === "unknown") {
+    return status;
+  }
+  return "unknown";
+}
+
+function buildCompactTimer(
+  key: SupportWorkspaceTimer["key"],
+  label: string,
+  timer: SupportTicketSlaOlaTimerPayload,
+): SupportWorkspaceTimer {
+  const targetSeconds = timer.target_seconds ?? null;
+  const remainingSeconds = timer.remaining_seconds ?? null;
+  const progress =
+    targetSeconds && remainingSeconds !== null
+      ? Math.max(0, Math.min(100, 100 - (remainingSeconds / targetSeconds) * 100))
+      : 0;
+  return {
+    key,
+    label,
+    dueAt: timer.due_at ?? null,
+    remainingSeconds,
+    remainingLabel: formatRemainingSeconds(remainingSeconds),
+    status: normalizeTimerPayloadStatus(timer.status),
+    progress,
+  };
+}
+
+function mapCompactTimers(slaOla: SupportTicketSlaOlaPayload | undefined): SupportWorkspaceTimer[] | null {
+  if (!slaOla) {
+    return null;
+  }
+  return [
+    buildCompactTimer("first_response", "Первый ответ", slaOla.first_response),
+    buildCompactTimer("resolution", "Решение", slaOla.resolution),
+    buildCompactTimer("ola_ack", "OLA подтверждение", slaOla.ola_ack),
+    buildCompactTimer("ola_processing", "OLA обработка", slaOla.ola_processing),
+  ];
+}
+
 export function mapNextAction(
   ticket: SupportTicketDetailPayload["ticket"],
   timers: SupportWorkspaceTimer[],
@@ -403,7 +447,21 @@ export function mapWorkspaceKnowledge(): SupportWorkspaceKnowledge {
 export function mapWorkspacePassport(
   passport: SupportTicketPassportPayload | undefined,
   ticketId: string | null,
+  readiness?: SupportTicketPassportReadinessPayload,
 ): SupportWorkspacePassport {
+  if (readiness) {
+    return {
+      status: readiness.status,
+      done: readiness.done,
+      total: readiness.total,
+      items: readiness.items.map((item) => ({
+        key: item.key,
+        label: item.label,
+        done: item.status === "done",
+      })),
+      openUrl: ticketId ? `/app/tickets/${ticketId}/passport/print` : null,
+    };
+  }
   const missingFacts = passport?.requirements?.missing_facts ?? [];
   const total = Math.max((passport?.requirements?.required_sections ?? []).length || 4, missingFacts.length || 4);
   const done = Math.max(0, total - missingFacts.length);
@@ -426,9 +484,11 @@ export function mapSupportWorkspaceViewModel({
   activeSmartView,
   detail,
   passport,
+  passportReadiness,
   playbooks,
   queue,
   selectedTicketId,
+  slaOla,
   tools,
   now = new Date(),
 }: {
@@ -436,18 +496,20 @@ export function mapSupportWorkspaceViewModel({
   activeSmartView: string;
   detail?: SupportTicketDetailPayload;
   passport?: SupportTicketPassportPayload;
+  passportReadiness?: SupportTicketPassportReadinessPayload;
   playbooks?: SupportTicketPlaybooksPayload;
   queue?: SupportQueuePayload;
   selectedTicketId: string | null;
+  slaOla?: SupportTicketSlaOlaPayload;
   tools?: SupportTicketToolsPayload;
   now?: Date;
 }): SupportWorkspaceViewModel {
-  const timers = detail
+  const timers = mapCompactTimers(slaOla) ?? (detail
     ? [
         buildTimer("first_response", "Первый ответ", detail.ticket.first_response_due_at, now),
         buildTimer("resolution", "Решение", detail.ticket.resolution_due_at, now),
       ]
-    : [];
+    : []);
   const selectedTicket = detail
     ? (() => {
         const presentation = getTicketStatusPresentation({
@@ -496,7 +558,7 @@ export function mapSupportWorkspaceViewModel({
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
       knowledge: mapWorkspaceKnowledge(),
-      passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId),
+      passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId, passportReadiness),
     },
     raw: {
       queue,
@@ -504,6 +566,8 @@ export function mapSupportWorkspaceViewModel({
       tools,
       playbooks,
       passport,
+      slaOla,
+      passportReadiness,
     },
   };
 }

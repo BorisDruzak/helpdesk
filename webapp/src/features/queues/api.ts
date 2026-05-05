@@ -570,12 +570,40 @@ export type SupportTicketKnowledgeSuggestionsPayload = {
   };
 };
 
+export type SupportTicketSlaOlaTimerPayload = {
+  due_at: string | null;
+  remaining_seconds: number | null;
+  target_seconds: number | null;
+  status: "ok" | "at_risk" | "breached" | "paused" | "unknown" | string;
+};
+
+export type SupportTicketSlaOlaPayload = {
+  first_response: SupportTicketSlaOlaTimerPayload;
+  resolution: SupportTicketSlaOlaTimerPayload;
+  ola_ack: SupportTicketSlaOlaTimerPayload;
+  ola_processing: SupportTicketSlaOlaTimerPayload;
+};
+
+export type SupportTicketPassportReadinessPayload = {
+  ticket_id: string;
+  status: string;
+  done: number;
+  total: number;
+  items: Array<{
+    key: string;
+    label: string;
+    status: "done" | "pending" | string;
+  }>;
+};
+
 export type SupportTicketWorkspacePayload = {
   detail: SupportTicketDetailPayload;
   tools: SupportTicketToolsPayload;
   playbooks: SupportTicketPlaybooksPayload;
   passport: SupportTicketPassportPayload;
   knowledge: SupportTicketKnowledgeSuggestionsPayload;
+  sla_ola: SupportTicketSlaOlaPayload;
+  passport_readiness: SupportTicketPassportReadinessPayload;
 };
 
 export type SupportToolActionResult = {

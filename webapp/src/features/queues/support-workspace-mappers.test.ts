@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type {
   SupportQueuePayload,
+  SupportTicketPassportReadinessPayload,
   SupportTicketDetailPayload,
   SupportTicketPassportPayload,
+  SupportTicketSlaOlaPayload,
 } from "./api";
 import {
   formatRemainingSeconds,
@@ -253,6 +255,50 @@ function passportPayload(): SupportTicketPassportPayload {
   };
 }
 
+function slaOlaPayload(): SupportTicketSlaOlaPayload {
+  return {
+    first_response: {
+      due_at: "2026-05-05T10:20:00+05:00",
+      remaining_seconds: 1200,
+      target_seconds: 1800,
+      status: "at_risk",
+    },
+    resolution: {
+      due_at: "2026-05-05T14:00:00+05:00",
+      remaining_seconds: 14400,
+      target_seconds: 18000,
+      status: "ok",
+    },
+    ola_ack: {
+      due_at: "2026-05-05T09:55:00+05:00",
+      remaining_seconds: -300,
+      target_seconds: 900,
+      status: "breached",
+    },
+    ola_processing: {
+      due_at: "2026-05-05T10:45:00+05:00",
+      remaining_seconds: 2700,
+      target_seconds: 3600,
+      status: "ok",
+    },
+  };
+}
+
+function passportReadinessPayload(): SupportTicketPassportReadinessPayload {
+  return {
+    ticket_id: "ticket-1",
+    status: "draft",
+    done: 1,
+    total: 4,
+    items: [
+      { key: "problem_identified", label: "Проблема идентифицирована", status: "done" },
+      { key: "cause_found", label: "Причина установлена", status: "pending" },
+      { key: "solution_applied", label: "Решение применено", status: "pending" },
+      { key: "verified_and_closed", label: "Проверка и закрытие", status: "pending" },
+    ],
+  };
+}
+
 describe("support workspace mappers", () => {
   it("maps canonical work slices from support queue counts", () => {
     const slices = mapWorkspaceSlices(queuePayload(), "sla_risk");
@@ -364,6 +410,35 @@ describe("support workspace mappers", () => {
     expect(viewModel.right.passport.done).toBe(3);
     expect(viewModel.right.passport.total).toBe(4);
     expect(viewModel.right.passport.items.find((item) => item.key === "cause_found")?.done).toBe(false);
+  });
+
+  it("prefers compact SLA/OLA and passport readiness DTOs when present", () => {
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail: detailPayload(),
+      passport: passportPayload(),
+      passportReadiness: passportReadinessPayload(),
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      slaOla: slaOlaPayload(),
+      now: NOW,
+    });
+
+    expect(viewModel.selectedTicket?.timers.map((timer) => [timer.key, timer.status, timer.remainingSeconds])).toEqual([
+      ["first_response", "at_risk", 1200],
+      ["resolution", "ok", 14400],
+      ["ola_ack", "breached", -300],
+      ["ola_processing", "ok", 2700],
+    ]);
+    expect(viewModel.right.passport.done).toBe(1);
+    expect(viewModel.right.passport.total).toBe(4);
+    expect(viewModel.right.passport.items.map((item) => [item.key, item.done])).toEqual([
+      ["problem_identified", true],
+      ["cause_found", false],
+      ["solution_applied", false],
+      ["verified_and_closed", false],
+    ]);
   });
 
   it("formats overdue timers explicitly", () => {

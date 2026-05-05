@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 70% for P1.
+Current completion: 100% for P0, 85% for P1.
 
-Current execution mode: P1 aggregate workspace/actions slice is released and browser-verified. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint and visible "More" controls wired to the tested mutation aliases; remaining P1 work is optional compact SLA/OLA/passport DTO refinement and workspace summary optimization.
+Current execution mode: P1 compact DTO slice is locally green. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, and visible "More" controls wired to the tested mutation aliases; remaining P1 work is workspace summary optimization and optional release/browser signoff for the compact DTO slice.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -84,12 +84,12 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 
 ## Backend Functionality Gap Estimate
 
-Estimated missing backend functionality for the requested target: **28-32%** at the typed web contract layer.
+Estimated missing backend functionality for the requested target: **22-26%** at the typed web contract layer.
 
 Important distinction:
 
 - Domain/business functionality missing: **10-15%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence and observer data.
-- Typed workspace/API functionality missing: **28-32%**. The current React workspace works through an adapter over several existing `/api/web/support/*` calls, but the target SaaS workspace still needs fewer round trips and more first-class DTOs.
+- Typed workspace/API functionality missing: **22-26%**. The current React workspace now uses a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, but the target SaaS workspace still needs a lightweight workspace summary/list contract and first-class knowledge suggestions.
 
 Already present:
 
@@ -108,12 +108,12 @@ Missing or incomplete for target:
 - Aggregated ticket workspace endpoint returning all center/right-panel data in one payload. Current UI calls detail, tools, playbooks and passport separately.
 - First-class queue list/count DTO separate from smart views. Current left queues are derived on the frontend from returned tickets, not from authoritative queue inventory/counts.
 - Ticket list priority/assignee display DTO fields. Current detail has priority, but queue items do not; the UI currently falls back to `P3` in the left worklist.
-- SLA/OLA progress DTO with remaining/target/status/progress. Current detail exposes first response/resolution due dates; OLA exists in services and queue matching, but not as a clean sidebar DTO.
+- SLA/OLA progress DTO with remaining/target/status/progress is now available in the aggregate selected-ticket workspace payload; a standalone summary/list contract is still not implemented.
 - Typed support aliases for assign, queue change, priority change and reroute. Legacy `/api/tickets/{id}/assign|queue|priority|reroute` already exist; typed `/api/web/support/*` aliases are missing.
 - Filterable unified timeline endpoint or richer detail timeline. Current typed detail filters timeline to `chat_message`, `tool_call_started`, `tool_call_result` and `playbook_started`; status, assignment, queue, priority, SLA/OLA and passport/evidence events are not yet first-class timeline items.
 - Structured operation result mapper with step cards. Current detail has `result_summary` and `result_preview`; target wants structured DNS/TCP/HTTP-like steps when payload contains them.
 - Knowledge suggestions endpoint with similar tickets/articles/AI beta summary. Current backend has passport knowledge-draft generation, not workspace suggestions.
-- Compact resolution passport readiness DTO for sidebar. Current UI derives readiness from full passport payload; acceptable short-term, but not ideal for the aggregate workspace endpoint.
+- Compact resolution passport readiness DTO for sidebar is now available in the aggregate selected-ticket workspace payload; a standalone endpoint remains optional.
 - Theme toggle/light-dark workspace shell state. This is mostly frontend/app-shell scope, not backend.
 
 ## Backend Contract Analysis 2026-05-05
@@ -203,8 +203,8 @@ P1 - important for performance and the target architecture:
   - passport readiness;
   - permissions/actions.
 - [ ] Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
-- [ ] Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
-- [ ] Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
+- [x] Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
+- [x] Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
 - [x] Wire visible "More" menu controls to the typed `assign`, `queue`, `priority` and `reroute` aliases.
 
 P1 first-slice evidence:
@@ -216,6 +216,14 @@ P1 first-slice evidence:
 - Green CI artifact created for commit `368328b8a92f4d8fcc0ca965f0420da27117552a`; `python scripts/run_ci_suite.py` passed workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
 - Linux release completed: `python scripts/release_server_to_remote.py` deployed branch `codex/helpdesk-process-model`, applied migrations, uploaded the webapp bundle and passed remote smoke (`/api/health -> 200`).
 - Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` loaded the selected ticket through `GET /api/web/support/tickets/{ticket_id}/workspace -> 200`, and the visible "Ещё" menu rendered `Назначить на себя`, `Сменить очередь`, `Изменить приоритет`, `Пересчитать маршрут`.
+
+P1 second-slice evidence:
+
+- RED verified: backend aggregate test failed with missing `sla_ola`, and frontend mapper test failed because it still derived two timers from detail instead of preferring compact workspace DTOs.
+- GREEN verified: `GET /api/web/support/tickets/{ticket_id}/workspace` now returns compact `sla_ola` timers for first response, resolution, OLA ack and OLA processing, plus `passport_readiness` with the four sidebar checklist items.
+- Frontend mapper now prefers compact `sla_ola` and `passport_readiness` when present, while keeping the previous detail/passport derivation as fallback.
+- Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts`.
+- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (42 tests), `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
 
 P2 - valuable, but can follow after core operator flows:
 

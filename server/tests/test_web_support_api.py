@@ -1033,6 +1033,21 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 @pytest.mark.asyncio
 async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge(test_client, test_engine):
     ticket_id = await _seed_support_ticket(test_engine, device_id="device-workspace-aggregate", status="in_progress")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    first_response_due_at = now + timedelta(minutes=20)
+    resolution_due_at = now + timedelta(hours=3)
+    ola_ack_due_at = now - timedelta(minutes=5)
+    ola_processing_due_at = now + timedelta(minutes=45)
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.created_at = now - timedelta(minutes=10)
+        ticket.first_response_due_at = first_response_due_at
+        ticket.resolution_due_at = resolution_due_at
+        ticket.ola_ack_due_at = ola_ack_due_at
+        ticket.ola_ack_breached_at = now - timedelta(minutes=1)
+        ticket.ola_processing_due_at = ola_processing_due_at
+        await session.commit()
 
     response = await test_client.get(
         f"/api/web/support/tickets/{ticket_id}/workspace",
@@ -1052,6 +1067,21 @@ async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and
     assert data["knowledge"]["similar_tickets"] == []
     assert data["knowledge"]["articles"] == []
     assert data["knowledge"]["ai_summary"]["text"] is None
+    assert data["sla_ola"]["first_response"]["due_at"] == first_response_due_at.isoformat()
+    assert data["sla_ola"]["first_response"]["status"] == "at_risk"
+    assert data["sla_ola"]["first_response"]["remaining_seconds"] > 0
+    assert data["sla_ola"]["resolution"]["status"] == "ok"
+    assert data["sla_ola"]["ola_ack"]["status"] == "breached"
+    assert data["sla_ola"]["ola_processing"]["status"] == "ok"
+    assert data["sla_ola"]["ola_processing"]["target_seconds"] is not None
+    assert data["passport_readiness"]["ticket_id"] == ticket_id
+    assert data["passport_readiness"]["done"] <= data["passport_readiness"]["total"]
+    assert {item["key"] for item in data["passport_readiness"]["items"]} == {
+        "problem_identified",
+        "cause_found",
+        "solution_applied",
+        "verified_and_closed",
+    }
 
 
 @pytest.mark.asyncio
