@@ -244,6 +244,7 @@ from web_api.support_handlers import (
     handle_web_support_ticket_detail,
     handle_web_support_ticket_playbooks,
     handle_web_support_ticket_tools,
+    handle_web_support_ticket_workspace,
 )
 from web_api.admin_handlers import (
     handle_web_admin_bootstrap,
@@ -442,6 +443,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/session/me', handle_web_session_me),
         web.get('/api/web/support/bootstrap', handle_web_support_bootstrap),
         web.get('/api/web/support/queue', handle_web_support_queue),
+        web.get('/api/web/support/tickets/{ticket_id}/workspace', handle_web_support_ticket_workspace),
         web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail),
         web.get('/api/web/support/tickets/{ticket_id}/passport', handle_web_support_ticket_passport),
         web.post('/api/web/support/tickets/{ticket_id}/passport/generate', handle_web_support_ticket_passport_generate),

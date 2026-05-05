@@ -551,6 +551,33 @@ export type SupportTicketKnowledgeDraftPayload = {
   source_passport_id: number;
 };
 
+export type SupportTicketKnowledgeSuggestionsPayload = {
+  ticket_id: string;
+  similar_tickets: Array<{
+    id: string;
+    number: string | null;
+    subject: string;
+    resolution_summary: string | null;
+  }>;
+  articles: Array<{
+    id: string;
+    title: string;
+    url: string | null;
+  }>;
+  ai_summary: {
+    text: string | null;
+    sources: string[];
+  };
+};
+
+export type SupportTicketWorkspacePayload = {
+  detail: SupportTicketDetailPayload;
+  tools: SupportTicketToolsPayload;
+  playbooks: SupportTicketPlaybooksPayload;
+  passport: SupportTicketPassportPayload;
+  knowledge: SupportTicketKnowledgeSuggestionsPayload;
+};
+
 export type SupportToolActionResult = {
   ticket_id: string;
   device_id: string;
@@ -673,6 +700,24 @@ export async function fetchSupportTicketDetail(ticketId: string): Promise<Suppor
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить карточку тикета",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportTicketWorkspace(ticketId: string): Promise<SupportTicketWorkspacePayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/workspace`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketWorkspacePayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить рабочее пространство тикета",
       response.status,
       errorPayload?.error_code
     );

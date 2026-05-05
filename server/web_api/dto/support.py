@@ -776,6 +776,39 @@ class SupportTicketMutationActionResult(BaseModel):
     auto_assigned: bool = False
 
 
+class SupportKnowledgeSimilarTicket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    number: str | None = None
+    subject: str
+    resolution_summary: str | None = None
+
+
+class SupportKnowledgeArticle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    url: str | None = None
+
+
+class SupportKnowledgeAiSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str | None = None
+    sources: list[str] = Field(default_factory=list)
+
+
+class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    similar_tickets: list[SupportKnowledgeSimilarTicket] = Field(default_factory=list)
+    articles: list[SupportKnowledgeArticle] = Field(default_factory=list)
+    ai_summary: SupportKnowledgeAiSummary = Field(default_factory=SupportKnowledgeAiSummary)
+
+
 class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -785,3 +818,13 @@ class SupportTicketDetailPayload(BaseModel):
     timeline: list[SupportTicketMessage]
     snapshot: SupportTicketSnapshot
     actions: SupportTicketActions
+
+
+class SupportTicketWorkspacePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    detail: SupportTicketDetailPayload
+    tools: SupportTicketToolsPayload
+    playbooks: SupportTicketPlaybooksPayload
+    passport: SupportTicketPassportDetailPayload
+    knowledge: SupportTicketKnowledgeSuggestionsPayload

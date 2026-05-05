@@ -1,9 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { fetchSupportQueue, type SupportQueuePayload, type SupportQueueScope } from "../../features/queues/api";
+import {
+  fetchSupportQueue,
+  fetchSupportTicketWorkspace,
+  postSupportTicketReroute,
+  type SupportQueuePayload,
+  type SupportQueueScope,
+  type SupportTicketWorkspacePayload,
+} from "../../features/queues/api";
 import { TicketListPage } from "./list-page";
 
 vi.mock("../../features/queues/api", async (importOriginal) => {
@@ -11,6 +18,8 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   return {
     ...actual,
     fetchSupportQueue: vi.fn(),
+    fetchSupportTicketWorkspace: vi.fn(),
+    postSupportTicketReroute: vi.fn(),
   };
 });
 
@@ -24,6 +33,8 @@ vi.mock("../../features/auth/session-provider", () => ({
 }));
 
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
+const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
+const postSupportTicketRerouteMock = vi.mocked(postSupportTicketReroute);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
   return {
@@ -98,7 +109,85 @@ function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueu
   };
 }
 
-function renderTicketListPage() {
+function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}): SupportTicketWorkspacePayload {
+  return {
+    detail: {
+      ticket: {
+        ticket_id: "ticket-1",
+        ticket_code: "T-000001",
+        title: "Проверить OLA очередь",
+        description: "Описание",
+        status: "in_progress",
+        status_label: "В работе",
+        requester_display_name: "Иван Петров",
+        device_id: "device-1",
+        priority: "P1",
+        priority_class: "P1",
+        first_response_due_at: null,
+        resolution_due_at: null,
+        queue: { id: 1, code: "networks", name: "networks" },
+        assignee_id: "support-test",
+        updated_at: "2026-05-03T09:00:00+05:00",
+        created_at: "2026-05-03T08:30:00+05:00",
+        queue_members: [],
+      },
+      request_form: null,
+      observer: {
+        ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
+        summary: {
+          ticket_id: "ticket-1",
+          trace_count: 0,
+          active_trace_count: 0,
+          error_trace_count: 0,
+          signature_count: 0,
+        },
+      },
+      timeline: [],
+      snapshot: {
+        last_event_id: 0,
+        notification_unread: 0,
+        presence: {
+          requester_online: false,
+          support_online: true,
+          agent_online: false,
+        },
+        device: {
+          device_id: "device-1",
+          hostname: "PC-1",
+          os: "Windows",
+          agent_version: null,
+          last_seen_at: null,
+          online: false,
+        },
+        latest_operations: [],
+      },
+      actions: {
+        status_options: [{ value: "waiting_on_user", label: "Ждёт пользователя" }],
+        can_send_internal_note: true,
+      },
+    },
+    tools: { ticket_id: "ticket-1", device_id: "device-1", tools: [] },
+    playbooks: { ticket_id: "ticket-1", device_id: "device-1", playbooks: [] },
+    passport: {
+      ticket_id: "ticket-1",
+      status: "missing",
+      passport: null,
+      evidence: [],
+      actions: [],
+      approvals: [],
+      related_objects: [],
+    },
+    knowledge: {
+      ticket_id: "ticket-1",
+      similar_tickets: [],
+      articles: [],
+      ai_summary: { text: null, sources: [] },
+    },
+    ...overrides,
+  };
+}
+
+function renderTicketListPage(initialEntry = "/app/tickets") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -110,8 +199,11 @@ function renderTicketListPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <TicketListPage />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/app/tickets" element={<TicketListPage />} />
+          <Route path="/app/tickets/:ticketId" element={<TicketListPage />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -123,6 +215,7 @@ afterEach(() => {
 
 describe("TicketListPage", () => {
   it("renders built-in and custom smart-view counts and sends selected smart view to the queue API", async () => {
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportQueueMock.mockImplementation(async ({ scope, statusFilter, smartView, query }) =>
       queuePayload({
         scope: scope as SupportQueueScope,
@@ -169,6 +262,40 @@ describe("TicketListPage", () => {
           smartView: "regional_vip_risk",
         }),
       );
+    });
+  });
+
+  it("loads selected ticket through the aggregate workspace endpoint and exposes tested More actions", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    postSupportTicketRerouteMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      action: "reroute",
+      status: "in_progress",
+      status_label: "В работе",
+      queue: { id: 1, code: "networks", name: "networks" },
+      assignee_id: "support-test",
+      priority: "P1",
+      priority_class: "P1",
+      auto_assigned: false,
+    });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+
+    expect(screen.getByRole("button", { name: "Назначить на себя" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сменить очередь" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Изменить приоритет" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Пересчитать маршрут" }));
+
+    await waitFor(() => {
+      expect(postSupportTicketRerouteMock).toHaveBeenCalledWith("ticket-1", { reason: "manual_recalculate" });
     });
   });
 });

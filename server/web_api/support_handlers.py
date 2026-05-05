@@ -92,6 +92,7 @@ from web_api.dto.support import (
     SupportTicketDetail,
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
+    SupportTicketKnowledgeSuggestionsPayload,
     SupportTicketMessage,
     SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
@@ -116,6 +117,7 @@ from web_api.dto.support import (
     SupportTicketReplyTo,
     SupportTicketSnapshot,
     SupportTicketToolsPayload,
+    SupportTicketWorkspacePayload,
     SupportTicketKnowledgeDraftPayload,
     SupportPlaybookItem,
     SupportPlaybookRunActionResult,
@@ -1782,6 +1784,10 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
 
 
+def _build_support_knowledge_suggestions_payload(ticket) -> SupportTicketKnowledgeSuggestionsPayload:
+    return SupportTicketKnowledgeSuggestionsPayload(ticket_id=str(getattr(ticket, "ticket_id", "") or ""))
+
+
 @require_auth("admin", "support")
 async def handle_web_support_bootstrap(_request):
     payload = SupportBootstrapPayload(
@@ -1960,6 +1966,44 @@ async def handle_web_support_ticket_detail(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[SupportTicketDetailPayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_workspace(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            detail = await _build_support_detail_payload(request, session, ticket, repo, auth_context)
+            tools = await _build_support_tools_payload(
+                ticket,
+                ToolExecutionService(request.app["state"]),
+            )
+            playbooks = await _build_support_playbooks_payload(session, ticket, request.app["state"])
+            passport = _passport_payload_model(await TicketPassportService(session).get_payload(ticket.ticket_id))
+            knowledge = _build_support_knowledge_suggestions_payload(ticket)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_workspace] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Рабочее пространство тикета временно недоступно",
+                "error_code": "SUPPORT_WORKSPACE_UNAVAILABLE",
+            },
+            status=503,
+        )
+
+    payload = SupportTicketWorkspacePayload(
+        detail=detail,
+        tools=tools,
+        playbooks=playbooks,
+        passport=passport,
+        knowledge=knowledge,
+    )
+    return json_model_response(SuccessResponse[SupportTicketWorkspacePayload](data=payload))
 
 
 @require_auth("admin", "support")

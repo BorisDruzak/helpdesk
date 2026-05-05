@@ -1031,6 +1031,30 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-workspace-aggregate", status="in_progress")
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    data = payload["data"]
+    assert data["detail"]["ticket"]["ticket_id"] == ticket_id
+    assert data["tools"]["ticket_id"] == ticket_id
+    assert data["playbooks"]["ticket_id"] == ticket_id
+    assert data["passport"]["ticket_id"] == ticket_id
+    assert data["knowledge"]["ticket_id"] == ticket_id
+    assert data["knowledge"]["similar_tickets"] == []
+    assert data["knowledge"]["articles"] == []
+    assert data["knowledge"]["ai_summary"]["text"] is None
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

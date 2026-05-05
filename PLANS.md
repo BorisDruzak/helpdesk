@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0.
+Current completion: 100% for P0, 45% for P1.
 
-Current execution mode: P0 backend contract hardening and release/browser signoff are complete. Support queue rows expose real priority/assignee fields and queue counts, support ticket detail timeline includes normalized lifecycle/SLA/OLA/passport events plus structured operation steps, typed support mutation aliases cover assign, queue, priority and reroute, and the accumulated `/app/tickets` workspace changes were released to the Linux stand.
+Current execution mode: P1 aggregate workspace/actions slice is in progress. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint and visible "More" controls wired to the tested mutation aliases; remaining P1 work is full verification/signoff and optional compact SLA/OLA/passport DTO refinement.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -193,7 +193,7 @@ P0 release/browser signoff evidence:
 
 P1 - important for performance and the target architecture:
 
-- Add `GET /api/web/support/tickets/{ticket_id}/workspace` aggregate payload:
+- [x] Add `GET /api/web/support/tickets/{ticket_id}/workspace` aggregate payload:
   - ticket detail;
   - full timeline;
   - context;
@@ -202,9 +202,16 @@ P1 - important for performance and the target architecture:
   - knowledge;
   - passport readiness;
   - permissions/actions.
-- Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
-- Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
-- Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
+- [ ] Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
+- [ ] Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
+- [ ] Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
+- [x] Wire visible "More" menu controls to the typed `assign`, `queue`, `priority` and `reroute` aliases.
+
+P1 first-slice evidence:
+
+- RED verified: `server/tests/test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge` failed with 404 before the aggregate route existed.
+- GREEN verified: the same backend test passes after adding `SupportTicketWorkspacePayload` and `GET /api/web/support/tickets/{ticket_id}/workspace`.
+- RED/GREEN frontend verified: `webapp/src/pages/tickets/list-page.test.tsx` now proves `/app/tickets/:ticketId` calls `fetchSupportTicketWorkspace()` and the "Ещё" menu exposes typed actions; reroute calls `postSupportTicketReroute(ticketId, { reason: "manual_recalculate" })`.
 
 P2 - valuable, but can follow after core operator flows:
 

@@ -33,12 +33,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   fetchSupportQueue,
-  fetchSupportTicketDetail,
-  fetchSupportTicketPassport,
-  fetchSupportTicketPlaybooks,
-  fetchSupportTicketTools,
+  fetchSupportTicketWorkspace,
+  postSupportTicketAssign,
   postSupportTicketMessage,
   postSupportTicketPlaybookRun,
+  postSupportTicketPriority,
+  postSupportTicketQueue,
+  postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportTicketToolRun,
   type SupportQueueScope,
@@ -242,6 +243,7 @@ export function TicketListPage() {
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
   const [statusDraft, setStatusDraft] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -273,30 +275,9 @@ export function TicketListPage() {
     }
   }, [navigate, queueQuery.data, selectedTicketId]);
 
-  const detailQuery = useQuery({
-    queryKey: ["tickets-workspace-detail", selectedTicketId],
-    queryFn: () => fetchSupportTicketDetail(selectedTicketId!),
-    enabled: Boolean(selectedTicketId),
-    retry: false,
-  });
-
-  const toolsQuery = useQuery({
-    queryKey: ["tickets-workspace-tools", selectedTicketId],
-    queryFn: () => fetchSupportTicketTools(selectedTicketId!),
-    enabled: Boolean(selectedTicketId),
-    retry: false,
-  });
-
-  const playbooksQuery = useQuery({
-    queryKey: ["tickets-workspace-playbooks", selectedTicketId],
-    queryFn: () => fetchSupportTicketPlaybooks(selectedTicketId!),
-    enabled: Boolean(selectedTicketId),
-    retry: false,
-  });
-
-  const passportQuery = useQuery({
-    queryKey: ["tickets-workspace-passport", selectedTicketId],
-    queryFn: () => fetchSupportTicketPassport(selectedTicketId!),
+  const workspaceQuery = useQuery({
+    queryKey: ["tickets-workspace", selectedTicketId],
+    queryFn: () => fetchSupportTicketWorkspace(selectedTicketId!),
     enabled: Boolean(selectedTicketId),
     retry: false,
   });
@@ -306,14 +287,14 @@ export function TicketListPage() {
       mapSupportWorkspaceViewModel({
         activeQueueId,
         activeSmartView: smartView,
-        detail: detailQuery.data,
-        passport: passportQuery.data,
-        playbooks: playbooksQuery.data,
+        detail: workspaceQuery.data?.detail,
+        passport: workspaceQuery.data?.passport,
+        playbooks: workspaceQuery.data?.playbooks,
         queue: queueQuery.data,
         selectedTicketId,
-        tools: toolsQuery.data,
+        tools: workspaceQuery.data?.tools,
       }),
-    [activeQueueId, detailQuery.data, passportQuery.data, playbooksQuery.data, queueQuery.data, selectedTicketId, smartView, toolsQuery.data],
+    [activeQueueId, queueQuery.data, selectedTicketId, smartView, workspaceQuery.data],
   );
 
   const visibleTickets = activeQueueId
@@ -335,7 +316,7 @@ export function TicketListPage() {
     onSuccess: async () => {
       setComposerText("");
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-detail", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
@@ -350,7 +331,7 @@ export function TicketListPage() {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-detail", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
@@ -358,7 +339,7 @@ export function TicketListPage() {
 
   const toolRunMutation = useMutation({
     mutationFn: async () => {
-      const tool = toolsQuery.data?.tools.find((item) => !item.install_required);
+      const tool = workspaceQuery.data?.tools.tools.find((item) => !item.install_required);
       if (!selectedTicketId || !tool) {
         return null;
       }
@@ -371,15 +352,14 @@ export function TicketListPage() {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-detail", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-tools", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
       ]);
     },
   });
 
   const playbookRunMutation = useMutation({
     mutationFn: async () => {
-      const playbook = playbooksQuery.data?.playbooks.find((item) => item.can_run);
+      const playbook = workspaceQuery.data?.playbooks.playbooks.find((item) => item.can_run);
       if (!selectedTicketId || !playbook) {
         return null;
       }
@@ -387,8 +367,47 @@ export function TicketListPage() {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-detail", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-playbooks", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+      ]);
+    },
+  });
+
+  const moreActionMutation = useMutation({
+    mutationFn: async (action: "assign_self" | "queue" | "priority" | "reroute") => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      if (action === "assign_self") {
+        return postSupportTicketAssign(selectedTicketId, {
+          assigneeId: session?.user_login ?? undefined,
+          reason: "operator_self_assign",
+        });
+      }
+      if (action === "queue") {
+        const targetQueue = queueQuery.data?.summary.queue_counts.find(
+          (queue) => queue.id !== null && String(queue.code ?? queue.name ?? queue.id) !== viewModel.selectedTicket?.queueLabel,
+        );
+        if (!targetQueue?.id) {
+          return null;
+        }
+        return postSupportTicketQueue(selectedTicketId, {
+          queueId: targetQueue.id,
+          reason: "operator_queue_change",
+        });
+      }
+      if (action === "priority") {
+        return postSupportTicketPriority(selectedTicketId, {
+          priority: viewModel.selectedTicket?.priority === "P0" ? "P1" : "P0",
+          reason: "operator_priority_change",
+        });
+      }
+      return postSupportTicketReroute(selectedTicketId, { reason: "manual_recalculate" });
+    },
+    onSuccess: async () => {
+      setMoreOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
       ]);
     },
   });
@@ -402,17 +421,14 @@ export function TicketListPage() {
   function refreshAll() {
     void Promise.all([
       queueQuery.refetch(),
-      detailQuery.refetch(),
-      toolsQuery.refetch(),
-      playbooksQuery.refetch(),
-      passportQuery.refetch(),
+      workspaceQuery.refetch(),
     ]);
   }
 
   const selectedTicket = viewModel.selectedTicket;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const actionError =
-    messageMutation.error || statusMutation.error || toolRunMutation.error || playbookRunMutation.error;
+    messageMutation.error || statusMutation.error || toolRunMutation.error || playbookRunMutation.error || moreActionMutation.error;
 
   useEffect(() => {
     if (composerMode === "internal" && selectedTicket && !selectedTicket.canSendInternalNote) {
@@ -424,9 +440,9 @@ export function TicketListPage() {
     <section className="flex h-screen min-h-screen flex-col overflow-hidden bg-[#07111f] text-slate-100">
       <h1 className="sr-only">Тикеты</h1>
       <SupportWorkspaceTopbar
-        notificationCount={detailQuery.data?.snapshot.notification_unread ?? 0}
+        notificationCount={workspaceQuery.data?.detail.snapshot.notification_unread ?? 0}
         onRefresh={refreshAll}
-        refreshing={queueQuery.isFetching || detailQuery.isFetching}
+        refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
         search={search}
         setSearch={setSearch}
         userLogin={session?.user_login ?? "operator"}
@@ -574,13 +590,13 @@ export function TicketListPage() {
             </div>
           ) : null}
 
-          {selectedTicketId && detailQuery.isLoading ? (
+          {selectedTicketId && workspaceQuery.isLoading ? (
             <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Загружаем тикет...</div>
           ) : null}
 
-          {selectedTicketId && detailQuery.isError ? (
+          {selectedTicketId && workspaceQuery.isError ? (
             <div className="m-6 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-              {detailQuery.error instanceof Error ? detailQuery.error.message : "Не удалось загрузить тикет"}
+              {workspaceQuery.error instanceof Error ? workspaceQuery.error.message : "Не удалось загрузить тикет"}
             </div>
           ) : null}
 
@@ -667,7 +683,7 @@ export function TicketListPage() {
                       value={statusDraft}
                     >
                       <option value="">Сменить статус</option>
-                      {(detailQuery.data?.actions.status_options ?? []).map((option) => (
+                      {(workspaceQuery.data?.detail.actions.status_options ?? []).map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
@@ -677,8 +693,52 @@ export function TicketListPage() {
                       onClick={() => statusMutation.mutate()}
                       type="button"
                     >
-                      Ещё
+                      Применить
                     </button>
+                    <div className="relative">
+                      <button
+                        aria-expanded={moreOpen}
+                        className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
+                        disabled={moreActionMutation.isPending}
+                        onClick={() => setMoreOpen((open) => !open)}
+                        type="button"
+                      >
+                        Ещё
+                      </button>
+                      {moreOpen ? (
+                        <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                          <button
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                            onClick={() => moreActionMutation.mutate("assign_self")}
+                            type="button"
+                          >
+                            Назначить на себя
+                          </button>
+                          <button
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!queueQuery.data?.summary.queue_counts.some((queue) => queue.id !== null)}
+                            onClick={() => moreActionMutation.mutate("queue")}
+                            type="button"
+                          >
+                            Сменить очередь
+                          </button>
+                          <button
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                            onClick={() => moreActionMutation.mutate("priority")}
+                            type="button"
+                          >
+                            Изменить приоритет
+                          </button>
+                          <button
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                            onClick={() => moreActionMutation.mutate("reroute")}
+                            type="button"
+                          >
+                            Пересчитать маршрут
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 {actionError ? (
@@ -914,7 +974,7 @@ export function TicketListPage() {
                     <p className="font-semibold text-white">Инструменты / Playbook</p>
                     <button
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                      disabled={playbookRunMutation.isPending || !playbooksQuery.data?.playbooks.some((item) => item.can_run)}
+                      disabled={playbookRunMutation.isPending || !workspaceQuery.data?.playbooks.playbooks.some((item) => item.can_run)}
                       onClick={() => playbookRunMutation.mutate()}
                       type="button"
                     >
