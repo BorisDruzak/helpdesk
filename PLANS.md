@@ -6,11 +6,11 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-05, Stage 33A backend/functional slice 33A.8-33A.10 is implemented, regression-tested, deployed to Linux and live-checked: reporting-policy mapping, agent/requester evidence path and observer/audit provenance are active on the stand.
+Last updated: 2026-05-05, Stage 33 cleanup/live summary is complete for the current 33A disposable slice: temporary reporting policy was deactivated, `#T-000517` was canceled, browser/API re-checks passed, and remaining product/design/backend debt is recorded.
 
-Current plan completion: 99.78%; passport/evidence backend-functional track is green, with broad visual redesign still deferred.
+Current plan completion: 99.82%; backend-functional live acceptance is green for the tested flows, with user-attention checks and deferred redesign tracks still preventing final product signoff.
 
-Current execution mode: Stage 33A passport/evidence backend-functional implementation. Stage 33A.8-33A.10 are deployed and live-green on `#T-000517` plus disposable reporting policies `codex_reporting_ok_*`; Stage 32C remains deployed and re-checked. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
+Current execution mode: Stage 33 cleanup/final evidence. Stage 33A.8-33A.10 are deployed and live-green; current-slice cleanup is done. Older disposable acceptance model entries remain active until the product has an atomic cleanup/archive endpoint for request templates, form schemas, ticket types, policies and smart views together.
 
 This plan replaces the first live acceptance outline with a smaller-stage, wider-coverage campaign. The implementation and hardening work before this plan is treated as complete. This plan is only for live acceptance testing, evidence gathering, defect isolation, focused fixes, re-checks and final confidence scoring across the whole ticket system.
 
@@ -1183,19 +1183,23 @@ User attention checks for this stage:
 
 ### Stage 33: Cleanup, Final Evidence And Score (4 points)
 
-- [ ] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`.
-- [ ] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`.
-- [ ] List all created disposable templates, policies, smart views, tickets and artifacts.
-- [ ] Decide cleanup strategy: keep tickets as evidence, deactivate disposable templates, remove temporary preferred pack entries if created.
-- [ ] Run cleanup or deactivation through supported API/scripted path only.
-- [ ] Re-run `python scripts\manage_remote_stack.py smoke server`.
-- [ ] Browser re-check `/app/tickets` and `/app/admin/forms`.
+- [x] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.md`.
+- [x] Generate `artifacts/live_checks/service_desk_live_acceptance_YYYYMMDD.json`.
+- [x] List all created disposable templates, policies, smart views, tickets and artifacts.
+- [x] Decide cleanup strategy: keep older acceptance model as evidence until atomic cleanup exists; clean current 33A disposable slice through supported APIs.
+- [x] Run cleanup or deactivation through supported API/scripted path only.
+- [x] Re-run `python scripts\manage_remote_stack.py smoke server`.
+- [x] Browser re-check `/app/tickets` and `/app/admin/forms`.
 - [ ] Stop remote server with `python scripts\manage_remote_stack.py stop server` unless user asked to leave it running.
 - [ ] Confirm stopped through status.
 - [ ] Run final `git status --short`.
-- [ ] Update this plan with completion percentage, passed stages, defects found, blocked items, user-attention checks and final system maturity estimate.
-- Evidence: final summary files, cleanup result, stopped status.
-- User attention: user must review any remaining `[U]` item before final confidence can be called complete.
+- [x] Update this plan with completion percentage, passed stages, defects found, blocked items, user-attention checks and final system maturity estimate.
+- Evidence: `artifacts/live_checks/service_desk_live_acceptance_20260505.md`, `artifacts/live_checks/service_desk_live_acceptance_20260505.json`; current-slice cleanup deactivated `codex_reporting_ok_1777961057`, canceled `#T-000517`, smoke passed, `/app/tickets` showed the canceled ticket, `/app/admin/forms` showed passport evidence-type mapping, and non-static browser network requests returned 200.
+- Broader cleanup inventory: older disposable acceptance model still has active entries: 15 request templates, 19 form schemas, 4 ticket types, 3 smart views and active policy versions across priority/SLA/OLA/routing/approval/closure/diagnostic/notification/visibility/reporting. These were not partially deactivated because the server lacks atomic request-template/form-schema/smart-view cleanup endpoints; partial policy/ticket-type deactivation would leave an inconsistent registry.
+- Remaining backend/product debt: add an atomic cleanup/archive endpoint for a whole disposable acceptance pack, including request templates, form schemas, ticket types, policies and smart views, with preview/dry-run and rollback.
+- Remaining design debt: support workspace redesign is deferred to Stage 34; low-code form constructor redesign is deferred to Stage 35.
+- User attention: user must review remaining `[U]` items before final confidence can be called complete.
+- Maturity estimate: backend-functional flows are high confidence for the tested surface; operator/requester/agent product confidence is about 90% until user-attention checks and redesign tracks close.
 
 ### Deferred Stage 34: Support Workspace Visual Redesign Plan (not part of current bugfix gate)
 
