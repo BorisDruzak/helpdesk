@@ -226,6 +226,95 @@ describe("TicketPassportPanel", () => {
     expect(screen.getByText("accepted")).toBeInTheDocument();
     expect(screen.getByText("Источник: operation:operation-1")).toBeInTheDocument();
   });
+
+  it("links evidence candidates and submits manual evidence", () => {
+    const onCreateEvidence = vi.fn();
+    const onLinkCandidate = vi.fn();
+
+    render(
+      <TicketPassportPanel
+        candidates={{
+          ticket_id: "ticket-1",
+          candidates: [
+            {
+              candidate_id: "worklog:7",
+              source_kind: "worklog",
+              source_id: "7",
+              source_ref: "worklog:7",
+              source_quality: "strong",
+              evidence_type: "worklog",
+              required_fact: "operator_checks",
+              section_key: "operator_checks",
+              title: "Проверка очереди печати",
+              summary: "Оператор проверил очередь и службу печати.",
+              visibility: "internal",
+              existing_evidence_id: null,
+            },
+          ],
+        }}
+        isGenerating={false}
+        onCreateEvidence={onCreateEvidence}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onLinkCandidate={onLinkCandidate}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={passportPayload}
+      />,
+    );
+
+    expect(screen.getByText("Кандидаты доказательств")).toBeInTheDocument();
+    expect(screen.getByText("Проверка очереди печати")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Привязать" }));
+    expect(onLinkCandidate).toHaveBeenCalledWith({
+      source_kind: "worklog",
+      source_id: "7",
+      required_fact: "operator_checks",
+      visibility: "internal",
+    });
+
+    fireEvent.change(screen.getByLabelText("Название доказательства"), { target: { value: "Ручная проверка" } });
+    fireEvent.change(screen.getByLabelText("Краткое описание"), { target: { value: "Проверено вручную." } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить доказательство" }));
+    expect(onCreateEvidence).toHaveBeenCalledWith({
+      evidence_type: "manual_note",
+      required_fact: "evidence",
+      section_key: "evidence",
+      title: "Ручная проверка",
+      summary: "Проверено вручную.",
+      visibility: "internal",
+      verification_status: "accepted",
+      export_visibility: "internal",
+    });
+  });
+
+  it("saves editable passport sections", () => {
+    const onPatchSections = vi.fn();
+
+    render(
+      <TicketPassportPanel
+        isGenerating={false}
+        onGenerate={() => undefined}
+        onKnowledgeDraft={() => undefined}
+        onPatchSections={onPatchSections}
+        onPrint={() => undefined}
+        onRefresh={() => undefined}
+        payload={passportPayload}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Итог для пользователя"), { target: { value: "Печать восстановлена." } });
+    fireEvent.change(screen.getByLabelText("Внутренний тех. итог"), { target: { value: "Сброс службы печати." } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить разделы" }));
+
+    expect(onPatchSections).toHaveBeenCalledWith({
+      operator_check_summary: passportPayload.passport.sections.operator_checks,
+      changes_made_summary: passportPayload.passport.sections.changes_made,
+      repeat_guidance: passportPayload.passport.sections.repeat_guidance,
+      user_result_summary: "Печать восстановлена.",
+      internal_result_summary: "Сброс службы печати.",
+    });
+  });
 });
 
 describe("TicketWorkVisibilityCard", () => {

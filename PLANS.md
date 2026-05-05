@@ -6,9 +6,9 @@
 
 Created: 2026-05-03.
 
-Last updated: 2026-05-05, Stage 33A passport/evidence UI contract deployed and live-checked on disposable `#T-000516`: stale passport state, missing fact actions, evidence dossier rows and print evidence appendix are active on the Linux stand.
+Last updated: 2026-05-05, Stage 33A passport/evidence action UI slice is local-green: candidate linking, manual evidence creation and editable result/operator sections are implemented over the existing backend endpoints and pending Linux live re-check.
 
-Current plan completion: 99.4%; passport/evidence remains an open product-quality track before final acceptance.
+Current plan completion: 99.45%; passport/evidence remains an open product-quality track before final acceptance.
 
 Current execution mode: Stage 33A passport/evidence functional implementation. Stage 32C is deployed and re-checked: playbooks with missing tools/params are blocked before enqueue, ticket playbook failures are visible, operations are ticket-scoped in support UI, internal SLA/OLA pause/resume noise is hidden from requester chat, and taking work auto-assigns support actor where allowed. Current work deliberately excludes broad visual redesign and focuses on making passport/evidence usable, traceable and closure-grade.
 
@@ -893,7 +893,7 @@ Purpose: turn the current generated passport into an operator-usable official re
 
 Backend execution status, 2026-05-05:
 
-- Progress: 92% of Stage 33A backend + first functional UI scope verified on the Linux stand; broad visual workspace redesign remains explicitly out of this slice.
+- Progress: 94% of Stage 33A backend + functional UI scope; stale/evidence-row UI is verified on the Linux stand, and candidate/manual/section actions are local-green pending Linux live re-check; broad visual workspace redesign remains explicitly out of this slice.
 - Implemented locally:
   - migration `069` extends `ticket_evidence_items` with source/fact/artifact/verification/export metadata;
   - `TicketPassportRepo.add_evidence()` is idempotent by ticket/source/fact;
@@ -910,6 +910,7 @@ Backend execution status, 2026-05-05:
   - support closure checklist now includes precise `passport_missing:<fact>` requirements with fact key, recommended actions and candidate metadata when official passport policy blocks closure;
   - official-passport closure gates now reject stale passports and expose `official_passport_stale` with stale reasons/current source counts in support detail.
   - React passport tab now shows stale passport warnings, readable missing-fact sources, recommended actions, candidate previews and evidence dossier rows; print/PDF page includes an evidence appendix.
+  - React passport tab now also fetches the full candidate list, links candidates through `POST /passport/evidence/link`, creates manual evidence through `POST /passport/evidence`, and saves operator/result passport sections through `PATCH /passport`.
 - Verified on Linux stand:
   - release `abf8190` deployed after webapp rebuild and smoke passed on `http://192.168.100.17:8666/api/health`;
   - disposable live ticket `#T-000516` (`8cfb760e-f4cd-4a14-a109-3b63aed9262c`) confirmed the React passport tab shows `Паспорт устарел`, translated stale reasons `Новые доказательства` / `Новые сообщения или события`, current source counts, readable missing fact source `Источник: публичный итог для пользователя`, and evidence dossier rows;
@@ -937,7 +938,10 @@ Backend execution status, 2026-05-05:
   - `python -m pytest server\tests\test_ticket_passport_service.py server\tests\test_ticket_closure_policy.py server\tests\test_ticket_passport_web_api.py server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short` -> 36 passed after a transient first-run harness miss was not reproduced.
   - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/tickets/passport-print-page.test.tsx` -> 16 passed;
   - `pnpm --dir webapp exec tsc --noEmit`, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and focused passport/support pytest -> passed.
+  - `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/pages/tickets/passport-print-page.test.tsx` -> 18 passed after candidate/manual/section action tests;
+  - `pnpm --dir webapp exec tsc --noEmit` -> passed after candidate/manual/section action API wiring.
 - Still backend-open:
+  - live Linux re-check for candidate link/manual evidence/section patch actions;
   - richer visual source previews/actions for worklog/approval/chat/observer candidates in the later UI slice;
   - browser UI re-check after the later visual workspace work.
 
@@ -1114,7 +1118,8 @@ Implementation plan:
     - links candidate evidence;
     - shows stale passport warning;
     - print page includes evidence appendix.
-  - 2026-05-05 functional UI slice complete and live-checked for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix. Full candidate drawer, manual evidence form and section editor remain open for the later visual/workflow slice.
+  - 2026-05-05 functional UI slice complete and live-checked for stale warning, readable missing-fact source/action/candidate previews, evidence dossier rows and print evidence appendix.
+  - 2026-05-05 local action slice complete for full candidate list/link action, manual evidence form and section editor; pending Linux live re-check before this sub-stage can be marked complete.
 
 - [ ] Stage 33A.8 - Forms builder/reporting policy mapping.
   - Keep current low-code redesign deferred, but make existing policy controls honest.

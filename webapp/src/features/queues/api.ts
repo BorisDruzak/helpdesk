@@ -443,6 +443,56 @@ export type SupportTicketPassportPayload = {
   }>;
 };
 
+export type SupportTicketEvidenceCandidatePayload = {
+  candidate_id: string;
+  source_kind: string;
+  source_id: string;
+  source_ref: string;
+  source_quality: string;
+  evidence_type: string;
+  required_fact: string;
+  section_key: string;
+  artifact_id?: string | null;
+  title: string;
+  summary: string | null;
+  visibility: string;
+  captured_at?: string | null;
+  metadata_json?: Record<string, unknown>;
+  existing_evidence_id?: number | null;
+};
+
+export type SupportTicketEvidenceCandidatesPayload = {
+  ticket_id: string;
+  candidates: SupportTicketEvidenceCandidatePayload[];
+};
+
+export type SupportTicketPassportEvidenceCreatePayload = {
+  evidence_type: string;
+  source_ref?: string | null;
+  source_kind?: string | null;
+  source_id?: string | null;
+  required_fact?: string | null;
+  section_key?: string | null;
+  artifact_id?: string | null;
+  title: string;
+  summary?: string | null;
+  visibility?: string;
+  verification_status?: string;
+  captured_at?: string | null;
+  public_summary?: string | null;
+  internal_summary?: string | null;
+  metadata_json?: Record<string, unknown>;
+  export_visibility?: string;
+};
+
+export type SupportTicketPassportSectionPatchPayload = {
+  operator_check_summary?: string | null;
+  changes_made_summary?: string | null;
+  repeat_guidance?: string | null;
+  user_result_summary?: string | null;
+  internal_result_summary?: string | null;
+};
+
 export type SupportTicketKnowledgeDraftPayload = {
   title: string;
   problem: string;
@@ -708,6 +758,109 @@ export async function generateSupportTicketPassport(
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось собрать паспорт решения",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function patchSupportTicketPassport(
+  ticketId: string,
+  patch: SupportTicketPassportSectionPatchPayload
+): Promise<SupportTicketPassportPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(patch)
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPassportPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось обновить разделы паспорта",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportTicketPassportEvidenceCandidates(
+  ticketId: string
+): Promise<SupportTicketEvidenceCandidatesPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/evidence-candidates`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketEvidenceCandidatesPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить кандидатов доказательств",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function linkSupportTicketPassportEvidence(
+  ticketId: string,
+  link: {
+    source_kind: string;
+    source_id: string;
+    required_fact?: string | null;
+    visibility?: string;
+  }
+): Promise<SupportTicketPassportPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/evidence/link`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(link)
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPassportPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось привязать кандидата как доказательство",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function createSupportTicketPassportEvidence(
+  ticketId: string,
+  evidence: SupportTicketPassportEvidenceCreatePayload
+): Promise<SupportTicketPassportPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/evidence`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(evidence)
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketPassportPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось добавить доказательство",
       response.status,
       errorPayload?.error_code
     );
