@@ -26,6 +26,7 @@ from app.db.models import (
 from app.repos import DevicesRepo, NotificationRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
+from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from app.services.operation_service import OperationService
@@ -76,6 +77,7 @@ from web_api.dto.support import (
     SupportMessageActionResult,
     SupportObserverCapabilities,
     SupportQueueFilters,
+    SupportQueueCountItem,
     SupportQueuePayload,
     SupportQueueSummary,
     SupportQueueTicketItem,
@@ -325,8 +327,11 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         next_action_owner=ticket_data.get("next_action_owner"),
         next_action_due_at=ticket_data.get("next_action_due_at"),
         status_reason=ticket_data.get("status_reason"),
+        priority=ticket_data.get("priority"),
+        priority_class=ticket_data.get("priority_class"),
         queue_code=ticket_data.get("queue_code"),
         assignee_id=ticket_data.get("assignee_id"),
+        assignee_display_name=ticket_data.get("assignee_display_name") or ticket_data.get("assignee_id"),
         requester_display_name=ticket_data.get("requester_display_name"),
         device_id=ticket_data.get("device_id"),
         updated_at=ticket_data.get("updated_at"),
@@ -391,6 +396,40 @@ def _build_status_counts(items: list[SupportQueueTicketItem]) -> list[SupportCou
                 count=counts[status],
             )
         )
+    return result
+
+
+def _build_queue_counts(
+    queues: list[object],
+    entries: list[tuple[dict, SupportQueueTicketItem]],
+) -> list[SupportQueueCountItem]:
+    counts_by_code: dict[str, int] = {}
+    for ticket_data, item in entries:
+        code = str(ticket_data.get("queue_code") or item.queue_code or "").strip()
+        if not code:
+            continue
+        counts_by_code[code] = counts_by_code.get(code, 0) + 1
+
+    result: list[SupportQueueCountItem] = []
+    known_codes: set[str] = set()
+    for queue in queues:
+        code = str(getattr(queue, "code", "") or "").strip()
+        if not code:
+            continue
+        known_codes.add(code)
+        result.append(
+            SupportQueueCountItem(
+                id=getattr(queue, "id", None),
+                code=code,
+                name=getattr(queue, "name", None) or code,
+                count=counts_by_code.get(code, 0),
+            )
+        )
+
+    for code, count in sorted(counts_by_code.items()):
+        if code in known_codes:
+            continue
+        result.append(SupportQueueCountItem(id=None, code=code, name=code, count=count))
     return result
 
 
@@ -1514,7 +1553,9 @@ async def handle_web_support_queue(request: web.Request):
     try:
         async with get_session() as session:
             helpdesk_policy_repo = HelpdeskPolicyRepo(session)
+            admin_config_repo = TicketAdminConfigRepo(session)
             custom_smart_views = await helpdesk_policy_repo.list_smart_views(include_inactive=False)
+            active_queues = await admin_config_repo.list_queues(include_inactive=False)
             custom_smart_view_map = {
                 str(view.get("code") or "").strip(): view
                 for view in custom_smart_views
@@ -1576,6 +1617,7 @@ async def handle_web_support_queue(request: web.Request):
             smart_view=smart_view,
             custom_smart_view_map=custom_smart_view_map,
         )
+        queue_counts = _build_queue_counts(active_queues, matching_entries)
         accessible_items = [item for _ticket_data, item in matching_entries]
         scope_counts = _build_scope_counts(accessible_items, auth_context.actor_id)
         status_counts = _build_status_counts(accessible_items)
@@ -1608,6 +1650,7 @@ async def handle_web_support_queue(request: web.Request):
                 scope_counts=scope_counts,
                 status_counts=status_counts,
                 smart_view_counts=smart_view_counts,
+                queue_counts=queue_counts,
             ),
             filters=SupportQueueFilters(
                 scope_options=SCOPE_OPTIONS,

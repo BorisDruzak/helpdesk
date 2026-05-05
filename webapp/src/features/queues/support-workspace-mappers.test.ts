@@ -34,6 +34,7 @@ function queuePayload(): SupportQueuePayload {
         { value: "unassigned", label: "Без исполнителя", count: 7 },
         { value: "requester_reply", label: "Ответил пользователь", count: 15 },
       ],
+      queue_counts: [{ id: 1, code: "servicedesk_l1", name: "ServiceDesk L1", count: 1 }],
     },
     filters: {
       scope_options: [
@@ -60,8 +61,11 @@ function queuePayload(): SupportQueuePayload {
         next_action_owner: "support",
         next_action_due_at: "2026-05-05T10:28:00+05:00",
         status_reason: null,
+        priority: "P1",
+        priority_class: "P1",
         queue_code: "ServiceDesk L1",
         assignee_id: "op1",
+        assignee_display_name: "op1",
         requester_display_name: "Александр Смирнов",
         device_id: "device-1",
         updated_at: "2026-05-05T09:16:00+05:00",

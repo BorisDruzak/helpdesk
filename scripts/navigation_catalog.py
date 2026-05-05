@@ -612,7 +612,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, typed support queue rows expose priority/assignee display data plus authoritative queue counts for the SaaS workspace, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
         aliases=(
             "registry",
             "registries",

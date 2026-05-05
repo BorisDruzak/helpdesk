@@ -49,6 +49,7 @@ function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueu
         { value: "sla_risk", label: "Риск по сроку ответа", count: 1 },
         { value: "regional_vip_risk", label: "Региональный VIP риск", count: 4 },
       ],
+      queue_counts: [{ id: 1, code: "networks", name: "networks", count: 2 }],
       ...overrides.summary,
     },
     filters: {
@@ -81,8 +82,11 @@ function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueu
           next_action_owner: "support",
           next_action_due_at: null,
           status_reason: null,
+          priority: "P1",
+          priority_class: "P1",
           queue_code: "networks",
           assignee_id: "support-test",
+          assignee_display_name: "support-test",
           requester_display_name: "Иван Петров",
           device_id: "device-1",
           updated_at: "2026-05-03T09:00:00+05:00",
@@ -143,6 +147,7 @@ describe("TicketListPage", () => {
             { value: "sla_risk", label: "Риск по сроку ответа", count: 1 },
             { value: "regional_vip_risk", label: "Региональный VIP риск", count: 4 },
           ],
+          queue_counts: [{ id: 1, code: "networks", name: "networks", count: 2 }],
         },
       }),
     );

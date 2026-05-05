@@ -170,6 +170,19 @@ export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activ
 }
 
 export function mapWorkspaceQueues(queue: SupportQueuePayload | undefined, activeQueueId: string | null): SupportWorkspaceQueue[] {
+  if ((queue?.summary.queue_counts ?? []).length > 0) {
+    return (queue?.summary.queue_counts ?? []).map((item) => {
+      const label = item.name ?? item.code ?? "Без очереди";
+      const id = item.code ?? String(item.id ?? label);
+      return {
+        id,
+        label,
+        count: item.count,
+        icon: queueIcon(label),
+        active: activeQueueId === id || activeQueueId === label,
+      };
+    });
+  }
   const counts = new Map<string, number>();
   for (const ticket of queue?.tickets ?? []) {
     const key = ticket.queue_code || "Без очереди";
@@ -215,7 +228,7 @@ export function mapWorkspaceTicketItems(
     });
     const remainingSeconds = secondsUntil(ticket.next_action_due_at, now);
     const status = timerStatus(remainingSeconds);
-    const priority = "P3";
+    const priority = normalizePriority(ticket.priority_class ?? ticket.priority);
     return {
       id: ticket.ticket_id,
       code: ticket.ticket_code ?? ticket.ticket_id,
@@ -226,7 +239,7 @@ export function mapWorkspaceTicketItems(
       statusLabel: presentation.statusLabel,
       statusTone: presentation.tone,
       queueLabel: ticket.queue_code ?? "Без очереди",
-      assigneeLabel: ticket.assignee_id ?? "Не назначен",
+      assigneeLabel: ticket.assignee_display_name ?? ticket.assignee_id ?? "Не назначен",
       updatedLabel: formatDateTime(ticket.updated_at ?? ticket.created_at),
       unread: ticket.unread_user_messages > 0,
       nextDueLabel: formatRemainingSeconds(remainingSeconds),

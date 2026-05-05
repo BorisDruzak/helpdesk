@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 96%.
+Current completion: 97%.
 
-Current execution mode: `/app/tickets` support workspace implementation is complete and browser-verified against the deployed remote server. The current checkpoint is backend contract hardening: reduce frontend round trips, expose missing operator DTO fields, and connect deeper action menu mutations without changing ticket business logic.
+Current execution mode: backend contract hardening is in progress. First P0 slice is implemented and locally verified: support queue rows now expose real priority/assignee fields and queue counts through the typed web boundary.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -151,10 +151,19 @@ Missing or incomplete for target:
 
 P0 - required before calling the backend contract production-complete:
 
-- Add priority and assignee display fields to `SupportQueueTicketItem` and `webapp/src/features/queues/api.ts`.
-- Add authoritative queue counts/list to the support queue payload or a new summary payload.
+- [x] Add priority and assignee display fields to `SupportQueueTicketItem` and `webapp/src/features/queues/api.ts`.
+- [x] Add authoritative queue counts/list to the support queue payload or a new summary payload.
 - Expand typed detail timeline to include status, assignment, queue, priority, SLA/OLA, passport/evidence and operation events with normalized event kinds.
 - Add typed `/api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` aliases over the existing legacy handlers/services.
+
+P0 first-slice evidence:
+
+- RED verified: `server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload` failed on missing `priority`.
+- GREEN verified: the same backend test passes after adding queue item priority/assignee fields and `summary.queue_counts`.
+- Frontend focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`.
+- `server/tests/test_web_support_api.py` passed: 35 tests.
+- `pnpm --dir webapp run build` passed.
+- `python scripts/verify_workspace.py` passed after updating `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py` for the typed support/registry DTO drift rule.
 
 P1 - important for performance and the target architecture:
 
@@ -710,8 +719,10 @@ Recommended next step: start backend contract hardening with the P0 items from "
 
 Concrete first slice:
 
-1. Add failing server tests for `GET /api/web/support/queue` proving ticket rows expose priority/priority_class, assignee display, and authoritative queue counts.
-2. Extend `SupportQueueTicketItem` and queue summary DTOs.
-3. Update `_build_ticket_item()` / `handle_web_support_queue()` serializers.
-4. Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
-5. Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
+1. [x] Add failing server tests for `GET /api/web/support/queue` proving ticket rows expose priority/priority_class, assignee display, and authoritative queue counts.
+2. [x] Extend `SupportQueueTicketItem` and queue summary DTOs.
+3. [x] Update `_build_ticket_item()` / `handle_web_support_queue()` serializers.
+4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
+5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
+
+Next slice after verification: expand typed detail timeline with normalized status/assignment/queue/priority/SLA/OLA/passport event kinds.

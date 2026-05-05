@@ -41,6 +41,15 @@ class SupportCountItem(BaseModel):
     count: int
 
 
+class SupportQueueCountItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int | None
+    code: str | None
+    name: str | None
+    count: int
+
+
 class SupportQueueSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -49,6 +58,7 @@ class SupportQueueSummary(BaseModel):
     scope_counts: list[SupportCountItem] = Field(default_factory=list)
     status_counts: list[SupportCountItem] = Field(default_factory=list)
     smart_view_counts: list[SupportCountItem] = Field(default_factory=list)
+    queue_counts: list[SupportQueueCountItem] = Field(default_factory=list)
 
 
 class SupportQueueTicketItem(BaseModel):
@@ -66,8 +76,11 @@ class SupportQueueTicketItem(BaseModel):
     next_action_owner: str | None
     next_action_due_at: str | None
     status_reason: str | None
+    priority: str | None = None
+    priority_class: str | None = None
     queue_code: str | None
     assignee_id: str | None
+    assignee_display_name: str | None = None
     requester_display_name: str | None
     device_id: str | None
     updated_at: str | None

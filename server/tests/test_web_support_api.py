@@ -382,6 +382,8 @@ async def test_web_support_queue_returns_typed_scope_and_filter_payload(test_cli
                 status="new",
                 requester_id="user-a",
                 queue_id=queue_a.id,
+                priority="P2",
+                custom_fields={"priority_class": "P2"},
             ),
             Ticket(
                 ticket_id=str(uuid.uuid4()),
@@ -392,6 +394,8 @@ async def test_web_support_queue_returns_typed_scope_and_filter_payload(test_cli
                 requester_id="user-b",
                 queue_id=queue_b.id,
                 assignee_id="support-test",
+                priority="P1",
+                custom_fields={"priority_class": "P1"},
             ),
             Ticket(
                 ticket_id=str(uuid.uuid4()),
@@ -415,6 +419,18 @@ async def test_web_support_queue_returns_typed_scope_and_filter_payload(test_cli
     assert payload["data"]["summary"]["selected_ticket_id"] is not None
     ticket_titles = [item["title"] for item in payload["data"]["tickets"]]
     assert ticket_titles == ["Visible by assignee", "Visible by queue"]
+    tickets_by_title = {item["title"]: item for item in payload["data"]["tickets"]}
+    assert tickets_by_title["Visible by assignee"]["priority"] == "P1"
+    assert tickets_by_title["Visible by assignee"]["priority_class"] == "P1"
+    assert tickets_by_title["Visible by assignee"]["assignee_display_name"] == "support-test"
+    assert tickets_by_title["Visible by queue"]["priority"] == "P2"
+    assert tickets_by_title["Visible by queue"]["priority_class"] == "P2"
+    assert tickets_by_title["Visible by queue"]["assignee_display_name"] is None
+    queue_counts = {item["code"]: item for item in payload["data"]["summary"]["queue_counts"]}
+    assert queue_counts["servicedesk_l1"]["name"] == "ServiceDesk L1"
+    assert queue_counts["servicedesk_l1"]["count"] == 1
+    assert queue_counts["network"]["name"] == "Network"
+    assert queue_counts["network"]["count"] == 1
     assert {item["value"] for item in payload["data"]["filters"]["status_options"]} >= {"all", "in_progress", "new"}
 
     mine_response = await test_client.get("/api/web/support/queue?scope=mine", headers=_support_headers())

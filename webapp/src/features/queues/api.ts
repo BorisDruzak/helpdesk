@@ -20,6 +20,13 @@ export type SupportCountItem = {
   count: number;
 };
 
+export type SupportQueueCountItem = {
+  id: number | null;
+  code: string | null;
+  name: string | null;
+  count: number;
+};
+
 export type SupportQueuePayload = {
   scope: SupportQueueScope;
   query: string;
@@ -31,6 +38,7 @@ export type SupportQueuePayload = {
     scope_counts: SupportCountItem[];
     status_counts: SupportCountItem[];
     smart_view_counts: SupportCountItem[];
+    queue_counts: SupportQueueCountItem[];
   };
   filters: {
     scope_options: SupportFilterOption[];
@@ -48,8 +56,11 @@ export type SupportQueuePayload = {
     next_action_owner?: string | null;
     next_action_due_at?: string | null;
     status_reason?: string | null;
+    priority?: string | null;
+    priority_class?: string | null;
     queue_code: string | null;
     assignee_id: string | null;
+    assignee_display_name?: string | null;
     requester_display_name: string | null;
     device_id: string | null;
     updated_at: string | null;
