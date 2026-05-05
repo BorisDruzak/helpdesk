@@ -288,6 +288,7 @@ export function TicketListPage() {
         activeQueueId,
         activeSmartView: smartView,
         detail: workspaceQuery.data?.detail,
+        knowledge: workspaceQuery.data?.knowledge,
         passport: workspaceQuery.data?.passport,
         passportReadiness: workspaceQuery.data?.passport_readiness,
         playbooks: workspaceQuery.data?.playbooks,
@@ -1011,19 +1012,74 @@ export function TicketListPage() {
             ) : null}
 
             {selectedTicket && sidebarTab === "knowledge" ? (
+              <div className="space-y-3">
+                {viewModel.right.knowledge.aiSummary ? (
+                  <section className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-300" />
+                      <p className="font-semibold text-white">AI-рекомендация / Бета</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-300">{viewModel.right.knowledge.aiSummary.text}</p>
+                    {viewModel.right.knowledge.aiSummary.sources.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {viewModel.right.knowledge.aiSummary.sources.map((source) => (
+                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs text-slate-300" key={source}>
+                            {source}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
+
+                {(viewModel.right.knowledge.articles.length || viewModel.right.knowledge.similarTickets.length) ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-blue-300" />
+                      <p className="font-semibold text-white">Связанные знания</p>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {viewModel.right.knowledge.articles.map((article) => (
+                        <Link
+                          className="block rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition hover:border-blue-400/40 hover:text-white"
+                          key={article.id}
+                          to={article.url}
+                        >
+                          <span className="block font-medium">{article.title}</span>
+                          <span className="mt-1 block text-xs text-slate-500">{article.id}</span>
+                        </Link>
+                      ))}
+                      {viewModel.right.knowledge.similarTickets.map((ticket) => (
+                        <Link
+                          className="block rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition hover:border-blue-400/40 hover:text-white"
+                          key={ticket.id}
+                          to={`/app/tickets/${ticket.id}`}
+                        >
+                          <span className="block font-medium">{ticket.subject}</span>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            {ticket.code}
+                            {ticket.summary ? ` · ${ticket.summary}` : ""}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : (
               <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-violet-300" />
                   <p className="font-semibold text-white">AI-рекомендация / Бета</p>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-slate-400">
-                  Knowledge suggestions пока не имеют отдельного typed endpoint. Блок оставлен вторичным и не запускает действий без подтверждения оператора.
+                  AI-рекомендация появится только при наличии связанных источников. Действия не запускаются без подтверждения оператора.
                 </p>
                 <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-400">
                   <BookOpen className="mr-2 inline h-4 w-4" />
-                  Связанные статьи и похожие тикеты появятся после подключения knowledge API.
+                  Похожие тикеты и статьи не найдены.
                 </div>
               </section>
+                )}
+              </div>
             ) : null}
 
             {selectedTicket && sidebarTab === "passport" ? (

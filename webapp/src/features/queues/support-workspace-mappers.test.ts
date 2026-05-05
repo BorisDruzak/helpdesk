@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   SupportQueuePayload,
+  SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
   SupportTicketDetailPayload,
   SupportTicketPassportPayload,
@@ -299,6 +300,25 @@ function passportReadinessPayload(): SupportTicketPassportReadinessPayload {
   };
 }
 
+function knowledgePayload(): SupportTicketKnowledgeSuggestionsPayload {
+  return {
+    ticket_id: "ticket-1",
+    similar_tickets: [
+      {
+        id: "ticket-1011",
+        number: "T-001011",
+        subject: "РћС€РёР±РєР° 502",
+        resolution_summary: "РџРµСЂРµР·Р°РїСѓСЃРє upstream.",
+      },
+    ],
+    articles: [{ id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
+    ai_summary: {
+      text: "AI-рекомендация / Бета: проверьте источники перед применением.",
+      sources: ["KB-502", "T-001011"],
+    },
+  };
+}
+
 describe("support workspace mappers", () => {
   it("maps canonical work slices from support queue counts", () => {
     const slices = mapWorkspaceSlices(queuePayload(), "sla_risk");
@@ -439,6 +459,29 @@ describe("support workspace mappers", () => {
       ["solution_applied", false],
       ["verified_and_closed", false],
     ]);
+  });
+
+  it("maps typed knowledge suggestions into the right sidebar model", () => {
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail: detailPayload(),
+      knowledge: knowledgePayload(),
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      now: NOW,
+    });
+
+    expect(viewModel.right.knowledge.articles).toEqual([
+      { id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" },
+    ]);
+    expect(viewModel.right.knowledge.similarTickets[0]).toEqual({
+      id: "ticket-1011",
+      code: "T-001011",
+      subject: "РћС€РёР±РєР° 502",
+      summary: "РџРµСЂРµР·Р°РїСѓСЃРє upstream.",
+    });
+    expect(viewModel.right.knowledge.aiSummary?.sources).toEqual(["KB-502", "T-001011"]);
   });
 
   it("formats overdue timers explicitly", () => {

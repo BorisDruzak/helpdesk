@@ -1,6 +1,7 @@
 import type {
   SupportQueuePayload,
   SupportTicketDetailPayload,
+  SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
   SupportTicketPlaybooksPayload,
@@ -436,11 +437,25 @@ export function mapWorkspacePlaybooks(playbooks: SupportTicketPlaybooksPayload |
   }));
 }
 
-export function mapWorkspaceKnowledge(): SupportWorkspaceKnowledge {
+export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestionsPayload | undefined): SupportWorkspaceKnowledge {
   return {
-    similarTickets: [],
-    articles: [],
-    aiSummary: null,
+    similarTickets: (knowledge?.similar_tickets ?? []).map((ticket) => ({
+      id: ticket.id,
+      code: ticket.number ?? ticket.id,
+      subject: ticket.subject,
+      summary: ticket.resolution_summary ?? "Р РµР·СЋРјРµ СЂРµС€РµРЅРёСЏ РЅРµ Р·Р°РїРѕР»РЅРµРЅРѕ",
+    })),
+    articles: (knowledge?.articles ?? []).map((article) => ({
+      id: article.id,
+      title: article.title,
+      url: article.url ?? "#",
+    })),
+    aiSummary: knowledge?.ai_summary.text
+      ? {
+          text: knowledge.ai_summary.text,
+          sources: knowledge.ai_summary.sources,
+        }
+      : null,
   };
 }
 
@@ -483,6 +498,7 @@ export function mapSupportWorkspaceViewModel({
   activeQueueId,
   activeSmartView,
   detail,
+  knowledge,
   passport,
   passportReadiness,
   playbooks,
@@ -495,6 +511,7 @@ export function mapSupportWorkspaceViewModel({
   activeQueueId: string | null;
   activeSmartView: string;
   detail?: SupportTicketDetailPayload;
+  knowledge?: SupportTicketKnowledgeSuggestionsPayload;
   passport?: SupportTicketPassportPayload;
   passportReadiness?: SupportTicketPassportReadinessPayload;
   playbooks?: SupportTicketPlaybooksPayload;
@@ -557,12 +574,13 @@ export function mapSupportWorkspaceViewModel({
       context,
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
-      knowledge: mapWorkspaceKnowledge(),
+      knowledge: mapWorkspaceKnowledge(knowledge),
       passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId, passportReadiness),
     },
     raw: {
       queue,
       detail,
+      knowledge,
       tools,
       playbooks,
       passport,

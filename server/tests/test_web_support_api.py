@@ -1168,6 +1168,87 @@ async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code=f"knowledge_{uuid.uuid4().hex[:8]}", name="Knowledge queue", members=["support-test"])
+        similar_ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-knowledge-related",
+            title="Ошибка 502 Bad Gateway на портале",
+            description="Resolved similar incident.",
+            status="resolved",
+            requester_id="requester-related",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P2",
+            resolution_summary="Перезапуск nginx и очистка upstream cache.",
+            requester_resolution_summary="Портал снова доступен.",
+        )
+        session.add(similar_ticket)
+        await session.flush()
+        await session.refresh(similar_ticket)
+        similar_ticket_id = similar_ticket.ticket_id
+        similar_ticket_code = similar_ticket.ticket_code
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-knowledge-selected",
+            title="Пользователь видит 502 на портале",
+            description="Нужна рекомендация по известной ошибке 502.",
+            status="in_progress",
+            requester_id="requester-selected",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+            custom_fields={"similar_tickets": [similar_ticket.ticket_id]},
+        )
+        session.add(ticket)
+        await session.flush()
+        await TicketEventsRepo(session).add_kb_link(
+            ticket.ticket_id,
+            "KB-502",
+            title="Ошибка 502 Bad Gateway",
+            source="manual",
+            created_by="support-test",
+        )
+        ticket_id = ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/knowledge-suggestions",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    data = payload["data"]
+    assert data["ticket_id"] == ticket_id
+    assert data["articles"] == [
+        {
+            "id": "KB-502",
+            "title": "Ошибка 502 Bad Gateway",
+            "url": "/app/knowledge/KB-502",
+        }
+    ]
+    assert data["similar_tickets"][0]["id"] == similar_ticket_id
+    assert data["similar_tickets"][0]["number"] == similar_ticket_code
+    assert data["similar_tickets"][0]["subject"] == "Ошибка 502 Bad Gateway на портале"
+    assert data["similar_tickets"][0]["resolution_summary"] == "Портал снова доступен."
+    assert data["ai_summary"]["text"].startswith("AI-рекомендация / Бета:")
+    assert "KB-502" in data["ai_summary"]["sources"]
+    assert similar_ticket_code in data["ai_summary"]["sources"]
+
+    workspace_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+    assert workspace_response.status == 200, await workspace_response.text()
+    workspace_payload = await workspace_response.json()
+    assert workspace_payload["data"]["knowledge"] == data
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

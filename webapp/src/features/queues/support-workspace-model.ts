@@ -1,6 +1,7 @@
 import type {
   SupportQueuePayload,
   SupportTicketDetailPayload,
+  SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
   SupportTicketPlaybooksPayload,
@@ -199,6 +200,7 @@ export type SupportWorkspaceViewModel = {
     tools?: SupportTicketToolsPayload;
     playbooks?: SupportTicketPlaybooksPayload;
     passport?: SupportTicketPassportPayload;
+    knowledge?: SupportTicketKnowledgeSuggestionsPayload;
     slaOla?: SupportTicketSlaOlaPayload;
     passportReadiness?: SupportTicketPassportReadinessPayload;
   };

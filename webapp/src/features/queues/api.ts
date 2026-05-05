@@ -795,6 +795,24 @@ export async function fetchSupportTicketWorkspace(ticketId: string): Promise<Sup
   return payload.data;
 }
 
+export async function fetchSupportTicketKnowledgeSuggestions(ticketId: string): Promise<SupportTicketKnowledgeSuggestionsPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/knowledge-suggestions`, {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportTicketKnowledgeSuggestionsPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось загрузить подсказки базы знаний",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
 export async function postSupportTicketMessage(
   ticketId: string,
   text: string,

@@ -316,4 +316,40 @@ describe("TicketListPage", () => {
       expect(postSupportTicketRerouteMock).toHaveBeenCalledWith("ticket-1", { reason: "manual_recalculate" });
     });
   });
+
+  it("renders knowledge suggestions from the aggregate workspace payload", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        knowledge: {
+          ticket_id: "ticket-1",
+          similar_tickets: [
+            {
+              id: "ticket-1011",
+              number: "T-001011",
+              subject: "Ошибка 502 на портале",
+              resolution_summary: "Перезапуск upstream устранил ошибку.",
+            },
+          ],
+          articles: [{ id: "KB-502", title: "Ошибка 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
+          ai_summary: {
+            text: "AI-рекомендация / Бета: проверьте связанные источники перед применением.",
+            sources: ["KB-502", "T-001011"],
+          },
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Знания" }));
+
+    expect(await screen.findByText("Ошибка 502 Bad Gateway")).toBeInTheDocument();
+    expect(screen.getByText("Ошибка 502 на портале")).toBeInTheDocument();
+    expect(screen.getAllByText(/AI-рекомендация \/ Бета/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Knowledge suggestions/)).not.toBeInTheDocument();
+  });
 });

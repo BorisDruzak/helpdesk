@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
 from typing import Any
+from urllib.parse import quote
 
 from aiohttp import web
 from loguru import logger
@@ -20,6 +21,7 @@ from app.db.models import (
     PlaybookStep,
     PlaybookStepRun,
     PlaybookVersion,
+    Ticket,
     TicketApproval,
     TicketResolutionPassport,
 )
@@ -93,6 +95,9 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketKnowledgeSuggestionsPayload,
+    SupportKnowledgeAiSummary,
+    SupportKnowledgeArticle,
+    SupportKnowledgeSimilarTicket,
     SupportTicketMessage,
     SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
@@ -2032,8 +2037,133 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
 
 
-def _build_support_knowledge_suggestions_payload(ticket) -> SupportTicketKnowledgeSuggestionsPayload:
-    return SupportTicketKnowledgeSuggestionsPayload(ticket_id=str(getattr(ticket, "ticket_id", "") or ""))
+def _clean_knowledge_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _ticket_knowledge_number(ticket: Ticket) -> str | None:
+    return _clean_knowledge_text(getattr(ticket, "ticket_code", None)) or _clean_knowledge_text(
+        getattr(ticket, "ticket_id", None)
+    )
+
+
+def _article_url(article_ref: str) -> str:
+    return f"/app/knowledge/{quote(article_ref, safe='')}"
+
+
+def _knowledge_source_summary(articles: list[SupportKnowledgeArticle], tickets: list[SupportKnowledgeSimilarTicket]) -> SupportKnowledgeAiSummary:
+    sources: list[str] = []
+    for article in articles:
+        if article.id not in sources:
+            sources.append(article.id)
+    for similar_ticket in tickets:
+        source = similar_ticket.number or similar_ticket.id
+        if source and source not in sources:
+            sources.append(source)
+    if not sources:
+        return SupportKnowledgeAiSummary()
+    visible_sources = ", ".join(sources[:5])
+    extra = len(sources) - 5
+    if extra > 0:
+        visible_sources = f"{visible_sources} и ещё {extra}"
+    return SupportKnowledgeAiSummary(
+        text=(
+            "AI-рекомендация / Бета: найдены связанные источники "
+            f"({visible_sources}). Проверьте статьи и похожие тикеты перед применением решения; "
+            "действия не запускаются автоматически."
+        ),
+        sources=sources,
+    )
+
+
+async def _load_similar_knowledge_tickets(session, ticket: Ticket, limit: int = 3) -> list[SupportKnowledgeSimilarTicket]:
+    ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+    custom_fields = getattr(ticket, "custom_fields", None)
+    raw_similar = custom_fields.get("similar_tickets") if isinstance(custom_fields, dict) else None
+    identifiers: list[str] = []
+    if isinstance(raw_similar, list):
+        for item in raw_similar:
+            if isinstance(item, dict):
+                value = item.get("ticket_id") or item.get("id") or item.get("ticket_code") or item.get("number")
+            else:
+                value = item
+            text = _clean_knowledge_text(value)
+            if text and text not in identifiers and text != ticket_id:
+                identifiers.append(text)
+
+    similar_rows: list[Ticket] = []
+    if identifiers:
+        result = await session.execute(
+            select(Ticket).where(
+                Ticket.ticket_id != ticket_id,
+                or_(Ticket.ticket_id.in_(identifiers), Ticket.ticket_code.in_(identifiers)),
+            )
+        )
+        by_key: dict[str, Ticket] = {}
+        for row in result.scalars().all():
+            by_key[str(row.ticket_id)] = row
+            by_key[str(row.ticket_code)] = row
+        for identifier in identifiers:
+            row = by_key.get(identifier)
+            if row is not None and row not in similar_rows:
+                similar_rows.append(row)
+            if len(similar_rows) >= limit:
+                break
+
+    if len(similar_rows) < limit:
+        filters = [Ticket.ticket_id != ticket_id, Ticket.status.in_(["resolved", "closed"])]
+        category_id = getattr(ticket, "category_id", None)
+        service_id = getattr(ticket, "service_id", None)
+        if category_id is not None:
+            filters.append(Ticket.category_id == category_id)
+        elif service_id is not None:
+            filters.append(Ticket.service_id == service_id)
+        else:
+            filters.append(Ticket.title.ilike(f"%{(getattr(ticket, 'title', '') or '')[:24]}%"))
+        result = await session.execute(
+            select(Ticket)
+            .where(*filters)
+            .order_by(Ticket.updated_at.desc())
+            .limit(limit * 2)
+        )
+        for row in result.scalars().all():
+            if row not in similar_rows:
+                similar_rows.append(row)
+            if len(similar_rows) >= limit:
+                break
+
+    return [
+        SupportKnowledgeSimilarTicket(
+            id=str(row.ticket_id),
+            number=_ticket_knowledge_number(row),
+            subject=str(getattr(row, "title", "") or "Без темы"),
+            resolution_summary=_clean_knowledge_text(getattr(row, "requester_resolution_summary", None))
+            or _clean_knowledge_text(getattr(row, "resolution_summary", None)),
+        )
+        for row in similar_rows[:limit]
+    ]
+
+
+async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) -> SupportTicketKnowledgeSuggestionsPayload:
+    ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+    kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
+    articles = [
+        SupportKnowledgeArticle(
+            id=str(link.article_ref),
+            title=_clean_knowledge_text(link.title) or str(link.article_ref),
+            url=_article_url(str(link.article_ref)),
+        )
+        for link in kb_links
+        if _clean_knowledge_text(getattr(link, "article_ref", None))
+    ]
+    similar_tickets = await _load_similar_knowledge_tickets(session, ticket)
+    return SupportTicketKnowledgeSuggestionsPayload(
+        ticket_id=ticket_id,
+        similar_tickets=similar_tickets,
+        articles=articles,
+        ai_summary=_knowledge_source_summary(articles, similar_tickets),
+    )
 
 
 @require_auth("admin", "support")
@@ -2229,7 +2359,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
             )
             playbooks = await _build_support_playbooks_payload(session, ticket, request.app["state"])
             passport = _passport_payload_model(await TicketPassportService(session).get_payload(ticket.ticket_id))
-            knowledge = _build_support_knowledge_suggestions_payload(ticket)
+            knowledge = await _build_support_knowledge_suggestions_payload(session, ticket)
             sla_ola = _build_support_sla_ola_payload(ticket)
             passport_readiness = _build_support_passport_readiness_payload(ticket.ticket_id, passport)
     except Exception as exc:
@@ -2255,6 +2385,31 @@ async def handle_web_support_ticket_workspace(request: web.Request):
         passport_readiness=passport_readiness,
     )
     return json_model_response(SuccessResponse[SupportTicketWorkspacePayload](data=payload))
+
+
+@require_auth("admin", "support")
+async def handle_web_support_ticket_knowledge_suggestions(request: web.Request):
+    try:
+        async with get_session() as session:
+            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            payload = await _build_support_knowledge_suggestions_payload(session, ticket)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_knowledge_suggestions] failed: "
+            f"ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Knowledge suggestions временно недоступны",
+                "error_code": "SUPPORT_KNOWLEDGE_UNAVAILABLE",
+            },
+            status=503,
+        )
+
+    return json_model_response(SuccessResponse[SupportTicketKnowledgeSuggestionsPayload](data=payload))
 
 
 @require_auth("admin", "support")
