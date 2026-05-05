@@ -806,7 +806,7 @@ export function TicketListPage() {
 
         <aside className="flex min-h-0 flex-col bg-[#0b1624]">
           <div className="border-b border-white/10 p-3">
-            <div className="grid grid-cols-5 gap-1 rounded-xl bg-white/[0.04] p-1">
+            <div className="grid grid-cols-[1.05fr_0.55fr_1.35fr_0.8fr_0.85fr] gap-1 rounded-xl bg-white/[0.04] p-1">
               {sidebarTabs.map((tab) => (
                 <button
                   className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${
