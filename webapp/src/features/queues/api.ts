@@ -881,7 +881,15 @@ export async function postSupportTicketMessage(
   return payload.data;
 }
 
-export async function postSupportTicketStatus(ticketId: string, toStatus: string): Promise<SupportStatusActionResult> {
+export async function postSupportTicketStatus(
+  ticketId: string,
+  toStatus: string,
+  options: {
+    reason?: string;
+    publicComment?: string;
+    internalComment?: string;
+  } = {}
+): Promise<SupportStatusActionResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/status`, {
     method: "POST",
     credentials: "same-origin",
@@ -889,7 +897,10 @@ export async function postSupportTicketStatus(ticketId: string, toStatus: string
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      to_status: toStatus
+      to_status: toStatus,
+      reason: options.reason,
+      public_comment: options.publicComment,
+      internal_comment: options.internalComment
     })
   });
   const payload = await readJson<SuccessResponse<SupportStatusActionResult> | ErrorResponse>(response);

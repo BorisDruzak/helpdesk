@@ -7,7 +7,11 @@ import {
   fetchSupportQueue,
   fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
+  postSupportTicketAssign,
+  postSupportTicketPriority,
+  postSupportTicketQueue,
   postSupportTicketReroute,
+  postSupportTicketStatus,
   type SupportQueuePayload,
   type SupportTicketTimelinePayload,
   type SupportQueueScope,
@@ -22,7 +26,11 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     fetchSupportQueue: vi.fn(),
     fetchSupportTicketTimeline: vi.fn(),
     fetchSupportTicketWorkspace: vi.fn(),
+    postSupportTicketAssign: vi.fn(),
+    postSupportTicketPriority: vi.fn(),
+    postSupportTicketQueue: vi.fn(),
     postSupportTicketReroute: vi.fn(),
+    postSupportTicketStatus: vi.fn(),
   };
 });
 
@@ -38,7 +46,11 @@ vi.mock("../../features/auth/session-provider", () => ({
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
 const fetchSupportTicketTimelineMock = vi.mocked(fetchSupportTicketTimeline);
 const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
+const postSupportTicketAssignMock = vi.mocked(postSupportTicketAssign);
+const postSupportTicketPriorityMock = vi.mocked(postSupportTicketPriority);
+const postSupportTicketQueueMock = vi.mocked(postSupportTicketQueue);
 const postSupportTicketRerouteMock = vi.mocked(postSupportTicketReroute);
+const postSupportTicketStatusMock = vi.mocked(postSupportTicketStatus);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
   return {
@@ -343,7 +355,7 @@ describe("TicketListPage", () => {
     });
   });
 
-  it("loads selected ticket through the aggregate workspace endpoint and exposes tested More actions", async () => {
+  it("loads selected ticket through the aggregate workspace endpoint and captures a reason before reroute", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     postSupportTicketRerouteMock.mockResolvedValue({
@@ -368,12 +380,128 @@ describe("TicketListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
 
     expect(screen.getByRole("button", { name: "Назначить на себя" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сменить статус" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сменить очередь" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Изменить приоритет" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Пересчитать маршрут" }));
 
+    expect(screen.getByRole("dialog", { name: "Пересчитать маршрут" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Пересчитать" })).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
+      target: { value: "manual_recalculate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Пересчитать" }));
+
     await waitFor(() => {
       expect(postSupportTicketRerouteMock).toHaveBeenCalledWith("ticket-1", { reason: "manual_recalculate" });
+    });
+  });
+
+  it("sends selected status, queue, priority and assign targets through reason-capturing controls", async () => {
+    const baseQueuePayload = queuePayload();
+    fetchSupportQueueMock.mockResolvedValue(
+      queuePayload({
+        summary: {
+          ...baseQueuePayload.summary,
+          queue_counts: [
+            { id: 1, code: "networks", name: "networks", count: 2 },
+            { id: 2, code: "servers", name: "Серверы", count: 4 },
+          ],
+        },
+      }),
+    );
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: "waiting_on_user", status_label: "Ждёт пользователя" });
+    postSupportTicketQueueMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      action: "queue",
+      status: "in_progress",
+      status_label: "В работе",
+      queue: { id: 2, code: "servers", name: "Серверы" },
+      assignee_id: "support-test",
+      priority: "P1",
+      priority_class: "P1",
+      auto_assigned: false,
+    });
+    postSupportTicketPriorityMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      action: "priority",
+      status: "in_progress",
+      status_label: "В работе",
+      queue: { id: 1, code: "networks", name: "networks" },
+      assignee_id: "support-test",
+      priority: "P1",
+      priority_class: "P0",
+      auto_assigned: false,
+    });
+    postSupportTicketAssignMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      action: "assign",
+      status: "in_progress",
+      status_label: "В работе",
+      queue: { id: 1, code: "networks", name: "networks" },
+      assignee_id: "support-test",
+      priority: "P1",
+      priority_class: "P1",
+      auto_assigned: false,
+    });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сменить статус" }));
+    fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
+      target: { value: "status reason" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Применить статус" }));
+    await waitFor(() => {
+      expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "waiting_on_user", {
+        reason: "status reason",
+        internalComment: undefined,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сменить очередь" }));
+    fireEvent.change(screen.getByLabelText("Целевая очередь"), { target: { value: "2" } });
+    fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
+      target: { value: "queue reason" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Переместить" }));
+    await waitFor(() => {
+      expect(postSupportTicketQueueMock).toHaveBeenCalledWith("ticket-1", {
+        queueId: 2,
+        reason: "queue reason",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Изменить приоритет" }));
+    fireEvent.click(screen.getByRole("button", { name: /P2/ }));
+    fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
+      target: { value: "priority reason" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Изменить" }));
+    await waitFor(() => {
+      expect(postSupportTicketPriorityMock).toHaveBeenCalledWith("ticket-1", {
+        priority: "P2",
+        reason: "priority reason",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Назначить на себя" }));
+    fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
+      target: { value: "assign reason" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Назначить" }));
+    await waitFor(() => {
+      expect(postSupportTicketAssignMock).toHaveBeenCalledWith("ticket-1", {
+        assigneeId: "support-test",
+        reason: "assign reason",
+        comment: undefined,
+      });
     });
   });
 

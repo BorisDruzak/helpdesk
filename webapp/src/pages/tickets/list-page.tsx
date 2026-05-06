@@ -78,6 +78,16 @@ type ComposerMode = "public" | "internal";
 type SidebarTab = "context" | "sla" | "tools" | "knowledge" | "passport";
 type TimelineFilter = "all" | SupportWorkspaceTimelineKind;
 type SupportWorkspaceTheme = "dark" | "light";
+type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
+
+type OperatorActionDraft = {
+  kind: OperatorActionKind;
+  targetStatus: string;
+  queueId: number | null;
+  priority: "P0" | "P1" | "P2" | "P3";
+  reason: string;
+  comment: string;
+};
 
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 
@@ -120,6 +130,62 @@ const timelineTabs: Array<{ value: TimelineFilter; label: string }> = [
   { value: "diagnostics", label: "Диагностика" },
   { value: "history", label: "История" },
 ];
+
+const priorityActionOptions: Array<{ value: "P0" | "P1" | "P2" | "P3"; label: string; hint: string }> = [
+  { value: "P0", label: "P0", hint: "Критичный инцидент" },
+  { value: "P1", label: "P1", hint: "Высокий приоритет" },
+  { value: "P2", label: "P2", hint: "Обычный приоритет" },
+  { value: "P3", label: "P3", hint: "Низкий приоритет" },
+];
+
+const operatorActionLabels: Record<OperatorActionKind, { title: string; submit: string; description: string }> = {
+  assign_self: {
+    title: "Назначить на себя",
+    submit: "Назначить",
+    description: "Тикет будет назначен на текущего оператора. Укажите причину для истории действий.",
+  },
+  priority: {
+    title: "Изменить приоритет",
+    submit: "Изменить",
+    description: "Выберите новый приоритет и укажите причину ручного изменения.",
+  },
+  queue: {
+    title: "Сменить очередь",
+    submit: "Переместить",
+    description: "Выберите целевую очередь. Backend сохранит routing lock и пересчитает состояние очереди штатным сервисом.",
+  },
+  reroute: {
+    title: "Пересчитать маршрут",
+    submit: "Пересчитать",
+    description: "Маршрут будет пересчитан текущими правилами routing. Причина попадёт в audit/timeline payload.",
+  },
+  status: {
+    title: "Сменить статус",
+    submit: "Применить статус",
+    description: "Переход пройдёт через workflow, approval и closure guards. Для оператора сохранится причина.",
+  },
+};
+
+function makeOperatorActionDraft(
+  kind: OperatorActionKind,
+  options: {
+    currentPriority?: string | null;
+    firstQueueId?: number | null;
+    firstStatus?: string | null;
+  },
+): OperatorActionDraft {
+  const normalizedPriority = priorityActionOptions.some((item) => item.value === options.currentPriority)
+    ? (options.currentPriority as "P0" | "P1" | "P2" | "P3")
+    : "P1";
+  return {
+    kind,
+    targetStatus: options.firstStatus ?? "",
+    queueId: options.firstQueueId ?? null,
+    priority: normalizedPriority === "P0" ? "P1" : "P0",
+    reason: "",
+    comment: "",
+  };
+}
 
 type ContextInfoRowProps = {
   icon: LucideIcon;
@@ -437,8 +503,8 @@ export function TicketListPage() {
   const [composerText, setComposerText] = useState("");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
-  const [statusDraft, setStatusDraft] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
@@ -519,6 +585,10 @@ export function TicketListPage() {
   const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
   const firstRunnablePlaybook = viewModel.right.playbooks.find((item) => item.enabled);
   const activeOperations = viewModel.right.operations.filter((operation) => operation.active);
+  const statusActionOptions = workspaceQuery.data?.detail.actions.status_options ?? [];
+  const queueActionOptions = (queueQuery.data?.summary.queue_counts ?? []).filter((queue) => queue.id !== null);
+  const firstQueueActionId = queueActionOptions[0]?.id ?? null;
+  const firstStatusActionValue = statusActionOptions[0]?.value ?? null;
 
   const messageMutation = useMutation({
     mutationFn: async () => {
@@ -529,22 +599,6 @@ export function TicketListPage() {
     },
     onSuccess: async () => {
       setComposerText("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
-      ]);
-    },
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedTicketId || !statusDraft) {
-        return null;
-      }
-      return postSupportTicketStatus(selectedTicketId, statusDraft);
-    },
-    onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
@@ -590,39 +644,46 @@ export function TicketListPage() {
     },
   });
 
-  const moreActionMutation = useMutation({
-    mutationFn: async (action: "assign_self" | "queue" | "priority" | "reroute") => {
+  const operatorActionMutation = useMutation({
+    mutationFn: async (draft: OperatorActionDraft) => {
       if (!selectedTicketId) {
         return null;
       }
-      if (action === "assign_self") {
-        return postSupportTicketAssign(selectedTicketId, {
-          assigneeId: session?.user_login ?? undefined,
-          reason: "operator_self_assign",
+      const reason = draft.reason.trim();
+      const comment = draft.comment.trim();
+      if (draft.kind === "status") {
+        return postSupportTicketStatus(selectedTicketId, draft.targetStatus, {
+          reason,
+          internalComment: comment || undefined,
         });
       }
-      if (action === "queue") {
-        const targetQueue = queueQuery.data?.summary.queue_counts.find(
-          (queue) => queue.id !== null && String(queue.code ?? queue.name ?? queue.id) !== viewModel.selectedTicket?.queueLabel,
-        );
-        if (!targetQueue?.id) {
+      if (draft.kind === "assign_self") {
+        return postSupportTicketAssign(selectedTicketId, {
+          assigneeId: session?.user_login ?? undefined,
+          reason,
+          comment: comment || undefined,
+        });
+      }
+      if (draft.kind === "queue") {
+        if (!draft.queueId) {
           return null;
         }
         return postSupportTicketQueue(selectedTicketId, {
-          queueId: targetQueue.id,
-          reason: "operator_queue_change",
+          queueId: draft.queueId,
+          reason,
         });
       }
-      if (action === "priority") {
+      if (draft.kind === "priority") {
         return postSupportTicketPriority(selectedTicketId, {
-          priority: viewModel.selectedTicket?.priority === "P0" ? "P1" : "P0",
-          reason: "operator_priority_change",
+          priority: draft.priority,
+          reason,
         });
       }
-      return postSupportTicketReroute(selectedTicketId, { reason: "manual_recalculate" });
+      return postSupportTicketReroute(selectedTicketId, { reason });
     },
     onSuccess: async () => {
       setMoreOpen(false);
+      setOperatorActionDraft(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
         queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
@@ -657,7 +718,28 @@ export function TicketListPage() {
   const selectedTicket = viewModel.selectedTicket;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const actionError =
-    messageMutation.error || statusMutation.error || toolRunMutation.error || playbookRunMutation.error || moreActionMutation.error;
+    messageMutation.error || operatorActionMutation.error || toolRunMutation.error || playbookRunMutation.error;
+  const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
+  const operatorReasonReady = (operatorActionDraft?.reason.trim().length ?? 0) >= 3;
+  const operatorTargetReady =
+    !operatorActionDraft ||
+    operatorActionDraft.kind === "assign_self" ||
+    operatorActionDraft.kind === "reroute" ||
+    (operatorActionDraft.kind === "status" && Boolean(operatorActionDraft.targetStatus)) ||
+    (operatorActionDraft.kind === "queue" && Boolean(operatorActionDraft.queueId)) ||
+    (operatorActionDraft.kind === "priority" && Boolean(operatorActionDraft.priority));
+  const operatorSubmitDisabled = !operatorActionDraft || !operatorReasonReady || !operatorTargetReady || operatorActionMutation.isPending;
+
+  function openOperatorAction(kind: OperatorActionKind) {
+    setMoreOpen(false);
+    setOperatorActionDraft(
+      makeOperatorActionDraft(kind, {
+        currentPriority: selectedTicket?.priority,
+        firstQueueId: firstQueueActionId,
+        firstStatus: firstStatusActionValue,
+      }),
+    );
+  }
 
   useEffect(() => {
     if (composerMode === "internal" && selectedTicket && !selectedTicket.canSendInternalNote) {
@@ -914,29 +996,11 @@ export function TicketListPage() {
                     Запустить диагностику
                   </button>
                   <div className="ml-auto flex items-center gap-2">
-                    <select
-                      className="h-10 rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-200 outline-none"
-                      onChange={(event) => setStatusDraft(event.currentTarget.value)}
-                      value={statusDraft}
-                    >
-                      <option value="">Сменить статус</option>
-                      {(workspaceQuery.data?.detail.actions.status_options ?? []).map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 disabled:opacity-50"
-                      disabled={!statusDraft || statusMutation.isPending}
-                      onClick={() => statusMutation.mutate()}
-                      type="button"
-                    >
-                      Применить
-                    </button>
                     <div className="relative">
                       <button
                         aria-expanded={moreOpen}
                         className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                        disabled={moreActionMutation.isPending}
+                        disabled={operatorActionMutation.isPending}
                         onClick={() => setMoreOpen((open) => !open)}
                         type="button"
                       >
@@ -945,30 +1009,39 @@ export function TicketListPage() {
                       {moreOpen ? (
                         <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
                           <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => moreActionMutation.mutate("assign_self")}
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!session?.user_login}
+                            onClick={() => openOperatorAction("assign_self")}
                             type="button"
                           >
                             Назначить на себя
                           </button>
                           <button
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!queueQuery.data?.summary.queue_counts.some((queue) => queue.id !== null)}
-                            onClick={() => moreActionMutation.mutate("queue")}
+                            disabled={statusActionOptions.length === 0}
+                            onClick={() => openOperatorAction("status")}
+                            type="button"
+                          >
+                            Сменить статус
+                          </button>
+                          <button
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={queueActionOptions.length === 0}
+                            onClick={() => openOperatorAction("queue")}
                             type="button"
                           >
                             Сменить очередь
                           </button>
                           <button
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => moreActionMutation.mutate("priority")}
+                            onClick={() => openOperatorAction("priority")}
                             type="button"
                           >
                             Изменить приоритет
                           </button>
                           <button
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => moreActionMutation.mutate("reroute")}
+                            onClick={() => openOperatorAction("reroute")}
                             type="button"
                           >
                             Пересчитать маршрут
@@ -978,6 +1051,150 @@ export function TicketListPage() {
                     </div>
                   </div>
                 </div>
+                {operatorActionDraft && operatorActionMeta ? (
+                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
+                    <section
+                      aria-labelledby="operator-action-title"
+                      aria-modal="true"
+                      className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
+                      role="dialog"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h2 className="text-lg font-semibold" id="operator-action-title">{operatorActionMeta.title}</h2>
+                          <p className="mt-1 text-sm leading-6 text-slate-400">{operatorActionMeta.description}</p>
+                        </div>
+                        <button
+                          aria-label="Закрыть действие"
+                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
+                          onClick={() => setOperatorActionDraft(null)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        {operatorActionDraft.kind === "status" ? (
+                          <label className="block text-sm font-medium text-slate-300">
+                            Новый статус
+                            <select
+                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                              onChange={(event) => {
+                                const targetStatus = event.currentTarget.value;
+                                setOperatorActionDraft((draft) => draft ? { ...draft, targetStatus } : draft);
+                              }}
+                              value={operatorActionDraft.targetStatus}
+                            >
+                              {statusActionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "queue" ? (
+                          <label className="block text-sm font-medium text-slate-300">
+                            Целевая очередь
+                            <select
+                              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                              onChange={(event) => {
+                                const queueId = Number(event.currentTarget.value) || null;
+                                setOperatorActionDraft((draft) => draft ? { ...draft, queueId } : draft);
+                              }}
+                              value={operatorActionDraft.queueId ?? ""}
+                            >
+                              {queueActionOptions.map((queue) => (
+                                <option key={queue.id} value={queue.id ?? ""}>
+                                  {queue.name || queue.code || `Очередь ${queue.id}`} · {queue.count}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "priority" ? (
+                          <fieldset className="space-y-2">
+                            <legend className="text-sm font-medium text-slate-300">Новый приоритет</legend>
+                            <div className="grid grid-cols-4 gap-2">
+                              {priorityActionOptions.map((option) => (
+                                <button
+                                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                                    operatorActionDraft.priority === option.value
+                                      ? "border-blue-400 bg-blue-600/25 text-white"
+                                      : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                                  }`}
+                                  key={option.value}
+                                  onClick={() =>
+                                    setOperatorActionDraft((draft) => draft ? { ...draft, priority: option.value } : draft)
+                                  }
+                                  type="button"
+                                >
+                                  <span className="block text-sm font-bold">{option.label}</span>
+                                  <span className="mt-1 block text-[11px] leading-4 text-slate-400">{option.hint}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </fieldset>
+                        ) : null}
+
+                        {operatorActionDraft.kind === "assign_self" ? (
+                          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+                            Исполнитель: <span className="font-semibold text-slate-100">{session?.user_login ?? "текущий оператор"}</span>
+                          </div>
+                        ) : null}
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Причина
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const reason = event.currentTarget.value;
+                              setOperatorActionDraft((draft) => draft ? { ...draft, reason } : draft);
+                            }}
+                            placeholder="Например: ручная корректировка по диагностике"
+                            value={operatorActionDraft.reason}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Комментарий для внутренней истории
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const comment = event.currentTarget.value;
+                              setOperatorActionDraft((draft) => draft ? { ...draft, comment } : draft);
+                            }}
+                            placeholder="Необязательно. Добавьте контекст для следующего оператора."
+                            value={operatorActionDraft.comment}
+                          />
+                        </label>
+
+                        {!operatorReasonReady ? (
+                          <p className="text-xs text-amber-200">Укажите причину минимум из 3 символов, чтобы действие попало в историю осмысленно.</p>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
+                          onClick={() => setOperatorActionDraft(null)}
+                          type="button"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={operatorSubmitDisabled}
+                          onClick={() => operatorActionDraft && operatorActionMutation.mutate(operatorActionDraft)}
+                          type="button"
+                        >
+                          {operatorActionMutation.isPending ? "Выполняем..." : operatorActionMeta.submit}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
                 {actionError ? (
                   <p className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
                     {actionError instanceof Error ? actionError.message : "Действие не выполнено"}
