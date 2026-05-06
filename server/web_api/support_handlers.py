@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
 from typing import Any
-from urllib.parse import quote
 
 from aiohttp import web
 from loguru import logger
@@ -70,6 +69,7 @@ from tickets.sla_service import TicketSlaService
 from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
 from tickets.evidence_service import TicketEvidenceService
+from tickets.knowledge_provider import build_knowledge_suggestions
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
@@ -166,82 +166,6 @@ WORKSPACE_SUMMARY_VIEW_ALIASES = {
     "unassigned": "unassigned",
     "requester_replied": "requester_reply",
 }
-SUPPORT_KNOWLEDGE_CATALOG = [
-    {
-        "id": "KB-HTTP-502",
-        "title": "Ошибка 502 Bad Gateway",
-        "keywords": (
-            "502",
-            "bad gateway",
-            "gateway error",
-            "upstream",
-            "nginx",
-            "http 502",
-            "website",
-            "portal",
-            "web",
-            "сайт",
-            "портал",
-            "шлюз",
-        ),
-    },
-    {
-        "id": "KB-DNS-RESOLVE",
-        "title": "Проверка DNS и доступности сайта",
-        "keywords": (
-            "dns",
-            "resolve",
-            "domain",
-            "name resolution",
-            "host not found",
-            "не открывается сайт",
-            "домен",
-            "днс",
-        ),
-    },
-    {
-        "id": "KB-PRINTER-OFFLINE",
-        "title": "Принтер недоступен или не печатает",
-        "keywords": (
-            "printer",
-            "print",
-            "offline",
-            "spooler",
-            "принтер",
-            "печать",
-            "не печатает",
-            "очередь печати",
-        ),
-    },
-    {
-        "id": "KB-ACCOUNT-ACCESS",
-        "title": "Проверка доступа к учетной записи",
-        "keywords": (
-            "access denied",
-            "login",
-            "password",
-            "account",
-            "учетная запись",
-            "доступ",
-            "пароль",
-            "вход",
-        ),
-    },
-    {
-        "id": "KB-AGENT-OFFLINE",
-        "title": "Агент устройства offline",
-        "keywords": (
-            "agent offline",
-            "last seen",
-            "device offline",
-            "агент offline",
-            "агент недоступен",
-            "устройство offline",
-        ),
-    },
-]
-
-
 @dataclass
 class SupportQueueState:
     active_queues: list[object]
@@ -2226,214 +2150,29 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
 
 
-def _clean_knowledge_text(value: Any) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
-def _ticket_knowledge_number(ticket: Ticket) -> str | None:
-    return _clean_knowledge_text(getattr(ticket, "ticket_code", None)) or _clean_knowledge_text(
-        getattr(ticket, "ticket_id", None)
-    )
-
-
-def _article_url(article_ref: str) -> str:
-    return f"/app/knowledge/{quote(article_ref, safe='')}"
-
-
-def _knowledge_text_fragments(value: Any, *, limit: int = 32) -> list[str]:
-    if limit <= 0 or value is None:
-        return []
-    if isinstance(value, dict):
-        fragments: list[str] = []
-        for key, nested in value.items():
-            fragments.extend(_knowledge_text_fragments(key, limit=limit - len(fragments)))
-            fragments.extend(_knowledge_text_fragments(nested, limit=limit - len(fragments)))
-            if len(fragments) >= limit:
-                break
-        return fragments[:limit]
-    if isinstance(value, (list, tuple, set)):
-        fragments = []
-        for item in value:
-            fragments.extend(_knowledge_text_fragments(item, limit=limit - len(fragments)))
-            if len(fragments) >= limit:
-                break
-        return fragments[:limit]
-    text = _clean_knowledge_text(value)
-    return [text] if text else []
-
-
-def _ticket_knowledge_search_text(ticket: Ticket) -> str:
-    fields: list[Any] = [
-        getattr(ticket, "title", None),
-        getattr(ticket, "description", None),
-        getattr(ticket, "requester_resolution_summary", None),
-        getattr(ticket, "resolution_summary", None),
-        getattr(ticket, "ticket_type", None),
-        getattr(ticket, "source", None),
-        getattr(ticket, "custom_fields", None),
-    ]
-    fragments: list[str] = []
-    for field in fields:
-        fragments.extend(_knowledge_text_fragments(field))
-    return " ".join(fragments).casefold()
-
-
-def _catalog_articles_for_ticket(
-    ticket: Ticket,
-    existing_article_ids: set[str],
-    *,
-    limit: int = 3,
-) -> list[SupportKnowledgeArticle]:
-    search_text = _ticket_knowledge_search_text(ticket)
-    if not search_text:
-        return []
-
-    scored: list[tuple[int, int, dict[str, Any]]] = []
-    for index, entry in enumerate(SUPPORT_KNOWLEDGE_CATALOG):
-        article_id = str(entry["id"])
-        if article_id in existing_article_ids:
-            continue
-        score = 0
-        for keyword in entry["keywords"]:
-            normalized_keyword = str(keyword).casefold()
-            if normalized_keyword and normalized_keyword in search_text:
-                score += 2 if " " in normalized_keyword else 1
-        if score > 0:
-            scored.append((score, -index, entry))
-
-    scored.sort(reverse=True)
-    return [
-        SupportKnowledgeArticle(
-            id=str(entry["id"]),
-            title=str(entry["title"]),
-            url=_article_url(str(entry["id"])),
-        )
-        for _score, _index, entry in scored[:limit]
-    ]
-
-
-def _knowledge_source_summary(articles: list[SupportKnowledgeArticle], tickets: list[SupportKnowledgeSimilarTicket]) -> SupportKnowledgeAiSummary:
-    sources: list[str] = []
-    for article in articles:
-        if article.id not in sources:
-            sources.append(article.id)
-    for similar_ticket in tickets:
-        source = similar_ticket.number or similar_ticket.id
-        if source and source not in sources:
-            sources.append(source)
-    if not sources:
-        return SupportKnowledgeAiSummary()
-    visible_sources = ", ".join(sources[:5])
-    extra = len(sources) - 5
-    if extra > 0:
-        visible_sources = f"{visible_sources} и ещё {extra}"
-    return SupportKnowledgeAiSummary(
-        text=(
-            "AI-рекомендация / Бета: найдены связанные источники "
-            f"({visible_sources}). Проверьте статьи и похожие тикеты перед применением решения; "
-            "действия не запускаются автоматически."
-        ),
-        sources=sources,
-    )
-
-
-async def _load_similar_knowledge_tickets(session, ticket: Ticket, limit: int = 3) -> list[SupportKnowledgeSimilarTicket]:
-    ticket_id = str(getattr(ticket, "ticket_id", "") or "")
-    custom_fields = getattr(ticket, "custom_fields", None)
-    raw_similar = custom_fields.get("similar_tickets") if isinstance(custom_fields, dict) else None
-    identifiers: list[str] = []
-    if isinstance(raw_similar, list):
-        for item in raw_similar:
-            if isinstance(item, dict):
-                value = item.get("ticket_id") or item.get("id") or item.get("ticket_code") or item.get("number")
-            else:
-                value = item
-            text = _clean_knowledge_text(value)
-            if text and text not in identifiers and text != ticket_id:
-                identifiers.append(text)
-
-    similar_rows: list[Ticket] = []
-    if identifiers:
-        result = await session.execute(
-            select(Ticket).where(
-                Ticket.ticket_id != ticket_id,
-                or_(Ticket.ticket_id.in_(identifiers), Ticket.ticket_code.in_(identifiers)),
-            )
-        )
-        by_key: dict[str, Ticket] = {}
-        for row in result.scalars().all():
-            by_key[str(row.ticket_id)] = row
-            by_key[str(row.ticket_code)] = row
-        for identifier in identifiers:
-            row = by_key.get(identifier)
-            if row is not None and row not in similar_rows:
-                similar_rows.append(row)
-            if len(similar_rows) >= limit:
-                break
-
-    if len(similar_rows) < limit:
-        filters = [Ticket.ticket_id != ticket_id, Ticket.status.in_(["resolved", "closed"])]
-        category_id = getattr(ticket, "category_id", None)
-        service_id = getattr(ticket, "service_id", None)
-        if category_id is not None:
-            filters.append(Ticket.category_id == category_id)
-        elif service_id is not None:
-            filters.append(Ticket.service_id == service_id)
-        else:
-            filters.append(Ticket.title.ilike(f"%{(getattr(ticket, 'title', '') or '')[:24]}%"))
-        result = await session.execute(
-            select(Ticket)
-            .where(*filters)
-            .order_by(Ticket.updated_at.desc())
-            .limit(limit * 2)
-        )
-        for row in result.scalars().all():
-            if row not in similar_rows:
-                similar_rows.append(row)
-            if len(similar_rows) >= limit:
-                break
-
-    return [
-        SupportKnowledgeSimilarTicket(
-            id=str(row.ticket_id),
-            number=_ticket_knowledge_number(row),
-            subject=str(getattr(row, "title", "") or "Без темы"),
-            resolution_summary=_clean_knowledge_text(getattr(row, "requester_resolution_summary", None))
-            or _clean_knowledge_text(getattr(row, "resolution_summary", None)),
-        )
-        for row in similar_rows[:limit]
-    ]
-
-
 async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) -> SupportTicketKnowledgeSuggestionsPayload:
     ticket_id = str(getattr(ticket, "ticket_id", "") or "")
     kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
-    articles = [
-        SupportKnowledgeArticle(
-            id=str(link.article_ref),
-            title=_clean_knowledge_text(link.title) or str(link.article_ref),
-            url=_article_url(str(link.article_ref)),
-        )
-        for link in kb_links
-        if _clean_knowledge_text(getattr(link, "article_ref", None))
-    ]
-    existing_article_ids = {article.id for article in articles}
-    remaining_catalog_limit = 5 if not articles else 0
-    if remaining_catalog_limit:
-        articles.extend(
-            _catalog_articles_for_ticket(
-                ticket,
-                existing_article_ids,
-                limit=remaining_catalog_limit,
-            )
-        )
-    similar_tickets = await _load_similar_knowledge_tickets(session, ticket)
+    suggestions = await build_knowledge_suggestions(session, ticket, kb_links)
     return SupportTicketKnowledgeSuggestionsPayload(
         ticket_id=ticket_id,
-        similar_tickets=similar_tickets,
-        articles=articles,
-        ai_summary=_knowledge_source_summary(articles, similar_tickets),
+        similar_tickets=[
+            SupportKnowledgeSimilarTicket(
+                id=item.id,
+                number=item.number,
+                subject=item.subject,
+                resolution_summary=item.resolution_summary,
+            )
+            for item in suggestions.similar_tickets
+        ],
+        articles=[
+            SupportKnowledgeArticle(id=item.id, title=item.title, url=item.url)
+            for item in suggestions.articles
+        ],
+        ai_summary=SupportKnowledgeAiSummary(
+            text=suggestions.ai_summary.text,
+            sources=suggestions.ai_summary.sources,
+        ),
     )
 
 

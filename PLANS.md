@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, P2.9 externalized knowledge provider in progress.
 
-Current execution mode: P2.8 complete; next candidate is P2.9 externalized knowledge provider. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely.
+Current execution mode: P2.9 externalized knowledge provider. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 is moving support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -340,6 +340,20 @@ P2.9 - externalized knowledge provider:
 - Keep the existing `knowledge-suggestions` contract stable.
 - Move beyond the built-in catalog fallback toward a first-class searchable KB provider/index if a project source exists.
 - Keep AI beta copy source-visible and conservative; no automatic action execution.
+- Concrete P2.9 slice in progress:
+  1. [x] Move the hardcoded support knowledge catalog/search out of `server/web_api/support_handlers.py` into a `server/tickets` provider module with a small JSON-backed catalog source.
+  2. [x] Preserve the existing typed `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and aggregate `/workspace` payload shape.
+  3. [x] Keep manual ticket KB links preferred, then catalog search, then similar tickets; no fake AI/action execution.
+  4. [x] Add focused provider/API tests for catalog search, manual-link precedence, dedupe and source summary behavior.
+  5. [x] Update CODEMAP/quick lookup for the new provider location, then run focused server tests, webapp build/type checks and workspace verification.
+
+P2.9 local evidence:
+
+- Implemented `server/tickets/knowledge_provider.py` and `server/tickets/knowledge_catalog.json` as the support knowledge provider/catalog boundary.
+- `server/web_api/support_handlers.py` now keeps only the typed route/DTO mapping and calls `build_knowledge_suggestions(...)`; the public `knowledge-suggestions` and aggregate `/workspace` payload shapes stay unchanged.
+- Manual KB links remain preferred; catalog suggestions are added only when no manual articles are attached, and similar tickets plus AI beta summary remain source-visible and non-acting.
+- Added `server/tests/test_support_knowledge_provider.py` for JSON catalog loading, dedupe, scoring and conservative source summary behavior.
+- Local verification passed: focused support knowledge pytest (6 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
 
 P2.10 - "More" controls hardening:
 

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "KB-HTTP-502",
+    "title": "Ошибка 502 Bad Gateway",
+    "url": "/app/knowledge/KB-HTTP-502",
+    "keywords": [
+      "502",
+      "bad gateway",
+      "gateway error",
+      "upstream",
+      "nginx",
+      "http 502",
+      "website",
+      "portal",
+      "web",
+      "сайт",
+      "портал",
+      "шлюз"
+    ]
+  },
+  {
+    "id": "KB-DNS-RESOLVE",
+    "title": "Проверка DNS и доступности сайта",
+    "url": "/app/knowledge/KB-DNS-RESOLVE",
+    "keywords": [
+      "dns",
+      "resolve",
+      "domain",
+      "name resolution",
+      "host not found",
+      "не открывается сайт",
+      "домен",
+      "днс"
+    ]
+  },
+  {
+    "id": "KB-PRINTER-OFFLINE",
+    "title": "Принтер недоступен или не печатает",
+    "url": "/app/knowledge/KB-PRINTER-OFFLINE",
+    "keywords": [
+      "printer",
+      "print",
+      "offline",
+      "spooler",
+      "принтер",
+      "печать",
+      "не печатает",
+      "очередь печати"
+    ]
+  },
+  {
+    "id": "KB-ACCOUNT-ACCESS",
+    "title": "Проверка доступа к учетной записи",
+    "url": "/app/knowledge/KB-ACCOUNT-ACCESS",
+    "keywords": [
+      "access denied",
+      "login",
+      "password",
+      "account",
+      "учетная запись",
+      "доступ",
+      "пароль",
+      "вход"
+    ]
+  },
+  {
+    "id": "KB-AGENT-OFFLINE",
+    "title": "Агент устройства offline",
+    "url": "/app/knowledge/KB-AGENT-OFFLINE",
+    "keywords": [
+      "agent offline",
+      "last seen",
+      "device offline",
+      "агент offline",
+      "агент недоступен",
+      "устройство offline"
+    ]
+  }
+]
