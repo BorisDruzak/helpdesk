@@ -93,6 +93,8 @@ export type SupportWorkspaceTimelineItem = {
   operation?: {
     name: string;
     status: string;
+    statusLabel: string;
+    statusTone: TicketBadgeTone;
     summary: string | null;
     preview: string | null;
     steps?: Array<{
@@ -155,11 +157,26 @@ export type SupportWorkspaceContext = {
 
 export type SupportWorkspaceToolItem = {
   id: string;
+  kind: "playbook" | "tool";
   title: string;
   subtitle: string;
   riskLabel: string;
   enabled: boolean;
+  disabledReason: string | null;
   requiresConsent: boolean;
+  metaLabels: string[];
+};
+
+export type SupportWorkspaceOperationSummary = {
+  id: string;
+  title: string;
+  status: string;
+  statusLabel: string;
+  statusTone: TicketBadgeTone;
+  active: boolean;
+  summary: string | null;
+  queuedOrStartedLabel: string;
+  finishedLabel: string | null;
 };
 
 export type SupportWorkspaceKnowledge = {
@@ -196,6 +213,7 @@ export type SupportWorkspaceViewModel = {
     context: SupportWorkspaceContext | null;
     tools: SupportWorkspaceToolItem[];
     playbooks: SupportWorkspaceToolItem[];
+    operations: SupportWorkspaceOperationSummary[];
     knowledge: SupportWorkspaceKnowledge;
     passport: SupportWorkspacePassport;
   };

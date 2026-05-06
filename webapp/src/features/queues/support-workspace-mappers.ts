@@ -13,6 +13,7 @@ import type {
   SupportWorkspaceContext,
   SupportWorkspaceKnowledge,
   SupportWorkspaceNextAction,
+  SupportWorkspaceOperationSummary,
   SupportWorkspacePassport,
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
@@ -116,6 +117,55 @@ function timerTone(status: SupportWorkspaceTimer["status"]): TicketBadgeTone {
   }
   if (status === "ok") {
     return "success";
+  }
+  return "neutral";
+}
+
+const activeOperationStatuses = new Set(["accepted", "in_progress", "queued", "running", "sent", "waiting_consent"]);
+
+function operationStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "accepted":
+      return "Принята";
+    case "canceled":
+    case "cancelled":
+      return "Отменена";
+    case "failed":
+      return "Ошибка";
+    case "in_progress":
+    case "running":
+      return "Выполняется";
+    case "partial":
+      return "Частично";
+    case "queued":
+      return "В очереди";
+    case "sent":
+      return "Отправлена агенту";
+    case "succeeded":
+    case "success":
+      return "Успешно";
+    case "timeout":
+    case "timed_out":
+      return "Таймаут";
+    case "waiting_consent":
+      return "Ждёт согласия";
+    default:
+      return status || "Неизвестно";
+  }
+}
+
+function operationStatusTone(status: string | null | undefined): TicketBadgeTone {
+  if (status === "succeeded" || status === "success") {
+    return "success";
+  }
+  if (status === "failed" || status === "timeout" || status === "timed_out" || status === "canceled" || status === "cancelled") {
+    return "danger";
+  }
+  if (status === "waiting_consent" || status === "partial") {
+    return "warning";
+  }
+  if (status && activeOperationStatuses.has(status)) {
+    return "info";
   }
   return "neutral";
 }
@@ -358,7 +408,7 @@ export function mapSupportTimelineEntries(
     const isDiagnostic = category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
     const kind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
     const operationStatus = entry.tool_status ?? "";
-    const operationTone = operationStatus === "success" || operationStatus === "succeeded" ? "success" : operationStatus ? "warning" : "neutral";
+    const operationTone = operationStatusTone(operationStatus);
     const historyTone =
       entry.event_type.includes("breached") || entry.event_type.includes("rejected")
         ? "danger"
@@ -380,6 +430,8 @@ export function mapSupportTimelineEntries(
         ? {
             name: entry.tool_name ?? "operation",
             status: entry.tool_status ?? "unknown",
+            statusLabel: operationStatusLabel(entry.tool_status),
+            statusTone: operationStatusTone(entry.tool_status),
             summary: entry.result_summary ?? null,
             preview: entry.result_preview ?? null,
             steps: entry.operation_steps ?? [],
@@ -467,25 +519,73 @@ export function mapWorkspaceContext(
 }
 
 export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, deviceOnline = true): SupportWorkspaceToolItem[] {
-  return (tools?.tools ?? []).map((tool) => ({
-    id: tool.tool_name,
-    title: tool.tool_name,
-    subtitle: tool.description ?? tool.module_name ?? tool.source,
-    riskLabel: tool.risk_level,
-    enabled: deviceOnline && !tool.install_required,
-    requiresConsent: tool.requires_consent,
-  }));
+  return (tools?.tools ?? []).map((tool) => {
+    const disabledReason = !deviceOnline
+      ? "Агент устройства offline"
+      : tool.install_required
+        ? "Требуется установка модуля"
+        : null;
+    return {
+      id: tool.tool_name,
+      kind: "tool",
+      title: tool.tool_name,
+      subtitle: tool.description ?? tool.module_name ?? tool.source,
+      riskLabel: tool.risk_level,
+      enabled: !disabledReason,
+      disabledReason,
+      requiresConsent: tool.requires_consent,
+      metaLabels: [
+        `Риск: ${tool.risk_level}`,
+        tool.requires_consent ? "Нужно согласие" : "Без согласия",
+        tool.source ? `Источник: ${tool.source}` : null,
+      ].filter((label): label is string => Boolean(label)),
+    };
+  });
 }
 
 export function mapWorkspacePlaybooks(playbooks: SupportTicketPlaybooksPayload | undefined): SupportWorkspaceToolItem[] {
-  return (playbooks?.playbooks ?? []).map((playbook) => ({
-    id: String(playbook.playbook_version_id),
-    title: playbook.key,
-    subtitle: playbook.name,
-    riskLabel: playbook.readiness_label,
-    enabled: playbook.can_run,
-    requiresConsent: Boolean(playbooks?.diagnostic_policy?.requester_consent_required),
-  }));
+  return (playbooks?.playbooks ?? []).map((playbook) => {
+    const blockers = [
+      ...(playbook.missing_tools ?? []).map((tool) => `Нет tool: ${tool}`),
+      ...(playbook.missing_params ?? []).map((param) => `Нужен параметр: ${param}`),
+    ];
+    const disabledReason = playbook.can_run ? null : blockers[0] ?? playbook.readiness_label ?? "Playbook недоступен";
+    return {
+      id: String(playbook.playbook_version_id),
+      kind: "playbook",
+      title: playbook.key,
+      subtitle: playbook.name,
+      riskLabel: playbook.readiness_label,
+      enabled: playbook.can_run,
+      disabledReason,
+      requiresConsent: Boolean(playbooks?.diagnostic_policy?.requester_consent_required),
+      metaLabels: [
+        playbook.domain ? `Домен: ${playbook.domain}` : null,
+        playbook.version ? `Версия: ${playbook.version}` : null,
+        `${playbook.blocks_count} шагов`,
+        playbooks?.diagnostic_policy?.requester_consent_required ? "Нужно согласие" : null,
+        ...blockers.slice(0, 2),
+      ].filter((label): label is string => Boolean(label)),
+    };
+  });
+}
+
+export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | undefined): SupportWorkspaceOperationSummary[] {
+  return (detail?.snapshot.latest_operations ?? []).slice(0, 5).map((operation) => {
+    const status = operation.display_status ?? operation.status;
+    const displayLabel = operation.display_label?.trim();
+    return {
+      id: operation.operation_id,
+      title: operation.tool_name ?? operation.command_name ?? displayLabel ?? operation.kind,
+      status,
+      statusLabel: operationStatusLabel(status),
+      statusTone: operationStatusTone(status),
+      active: activeOperationStatuses.has(status),
+      summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
+      queuedOrStartedLabel: formatDateTime(operation.queued_at),
+      finishedLabel: operation.finished_at ? formatDateTime(operation.finished_at) : null,
+    };
+  });
 }
 
 export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestionsPayload | undefined): SupportWorkspaceKnowledge {
@@ -626,6 +726,7 @@ export function mapSupportWorkspaceViewModel({
       context,
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
+      operations: mapWorkspaceOperations(detail),
       knowledge: knowledgeModel,
       passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId, passportReadiness),
     },

@@ -63,6 +63,7 @@ import {
 } from "../../features/queues/support-workspace-mappers";
 import type {
   SupportWorkspacePassport,
+  SupportWorkspaceOperationSummary,
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
   SupportWorkspaceTimer,
@@ -251,6 +252,67 @@ function toolIcon(item: SupportWorkspaceToolItem) {
     return Sparkles;
   }
   return Wrench;
+}
+
+function operationResultTextClass(operation: { statusTone: string }) {
+  if (operation.statusTone === "success") {
+    return "text-emerald-200";
+  }
+  if (operation.statusTone === "danger") {
+    return "text-red-200";
+  }
+  if (operation.statusTone === "warning") {
+    return "text-amber-200";
+  }
+  return "text-slate-200";
+}
+
+function diagnosticStepStatusLabel(status: string) {
+  switch (status) {
+    case "ok":
+    case "success":
+    case "succeeded":
+      return "OK";
+    case "error":
+    case "failed":
+      return "Ошибка";
+    case "partial":
+      return "Частично";
+    case "skipped":
+      return "Пропущено";
+    default:
+      return status || "Неизвестно";
+  }
+}
+
+function diagnosticStepTextClass(status: string) {
+  if (status === "ok" || status === "success" || status === "succeeded") {
+    return "text-emerald-200";
+  }
+  if (status === "error" || status === "failed") {
+    return "text-red-200";
+  }
+  return "text-amber-200";
+}
+
+function OperationSummaryCard({ operation }: { operation: SupportWorkspaceOperationSummary }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-white">{operation.title}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Старт: {operation.queuedOrStartedLabel}
+            {operation.finishedLabel ? ` · Завершение: ${operation.finishedLabel}` : ""}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(operation.statusTone)}`}>
+          {operation.statusLabel}
+        </span>
+      </div>
+      {operation.summary ? <p className="mt-2 break-words text-xs leading-5 text-slate-400">{operation.summary}</p> : null}
+    </div>
+  );
 }
 
 function SupportWorkspaceTopbar({
@@ -454,6 +516,9 @@ export function TicketListPage() {
     timelineFilter === "all"
       ? aggregateTimeline
       : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
+  const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
+  const firstRunnablePlaybook = viewModel.right.playbooks.find((item) => item.enabled);
+  const activeOperations = viewModel.right.operations.filter((operation) => operation.active);
 
   const messageMutation = useMutation({
     mutationFn: async () => {
@@ -490,7 +555,7 @@ export function TicketListPage() {
 
   const toolRunMutation = useMutation({
     mutationFn: async () => {
-      const tool = workspaceQuery.data?.tools.tools.find((item) => !item.install_required);
+      const tool = workspaceQuery.data?.tools.tools.find((item) => item.tool_name === firstRunnableTool?.id);
       if (!selectedTicketId || !tool) {
         return null;
       }
@@ -511,7 +576,7 @@ export function TicketListPage() {
 
   const playbookRunMutation = useMutation({
     mutationFn: async () => {
-      const playbook = workspaceQuery.data?.playbooks.playbooks.find((item) => item.can_run);
+      const playbook = workspaceQuery.data?.playbooks.playbooks.find((item) => String(item.playbook_version_id) === firstRunnablePlaybook?.id);
       if (!selectedTicketId || !playbook) {
         return null;
       }
@@ -841,7 +906,7 @@ export function TicketListPage() {
                   </button>
                   <button
                     className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                    disabled={toolRunMutation.isPending || viewModel.right.tools.length === 0}
+                    disabled={toolRunMutation.isPending || !firstRunnableTool}
                     onClick={() => toolRunMutation.mutate()}
                     type="button"
                   >
@@ -968,19 +1033,30 @@ export function TicketListPage() {
                                 </div>
                                 <div>
                                   <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Статус</p>
-                                  <p className="mt-1 font-semibold text-amber-200">{item.operation.status}</p>
+                                  <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(item.operation.statusTone)}`}>
+                                    {item.operation.statusLabel}
+                                  </span>
                                 </div>
                                 <div>
                                   <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
-                                  <p className="mt-1 font-semibold text-red-200">{item.operation.summary ?? item.operation.preview ?? "Нет результата"}</p>
+                                  <p className={`mt-1 font-semibold ${operationResultTextClass(item.operation)}`}>
+                                    {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
+                                  </p>
                                 </div>
                               </div>
+                              {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
+                                <p className="mt-3 break-words rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
+                                  {item.operation.preview}
+                                </p>
+                              ) : null}
                               {item.operation.steps?.length ? (
                                 <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">
                                   {item.operation.steps.map((step) => (
                                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`${item.id}:${step.name}:${step.status}`}>
                                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
-                                      <p className={step.status === "ok" || step.status === "succeeded" ? "mt-1 font-semibold text-emerald-200" : step.status === "error" || step.status === "failed" ? "mt-1 font-semibold text-red-200" : "mt-1 font-semibold text-amber-200"}>{step.status}</p>
+                                      <p className={`mt-1 font-semibold ${diagnosticStepTextClass(step.status)}`}>
+                                        {diagnosticStepStatusLabel(step.status)}
+                                      </p>
                                       <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
                                       {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
                                     </div>
@@ -1171,12 +1247,27 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
+                {viewModel.right.operations.length ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-white">{activeOperations.length ? "Операции выполняются" : "Последние операции"}</p>
+                      <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs font-semibold text-slate-300">
+                        {activeOperations.length ? `${activeOperations.length} активн.` : `${viewModel.right.operations.length} записей`}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2">
+                      {viewModel.right.operations.slice(0, 4).map((operation) => (
+                        <OperationSummaryCard key={operation.id} operation={operation} />
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-semibold text-white">Инструменты / Playbook</p>
                     <button
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                      disabled={playbookRunMutation.isPending || !workspaceQuery.data?.playbooks.playbooks.some((item) => item.can_run)}
+                      disabled={playbookRunMutation.isPending || !firstRunnablePlaybook}
                       onClick={() => playbookRunMutation.mutate()}
                       type="button"
                     >
@@ -1188,15 +1279,34 @@ export function TicketListPage() {
                       const Icon = toolIcon(item);
                       return (
                         <div className={`rounded-xl border p-3 ${item.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-white/[0.02] opacity-55"}`} key={`${item.id}:${item.title}`}>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3">
                             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15 text-blue-200">
                               <Icon className="h-4 w-4" />
                             </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-white">{item.title}</p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <p className="truncate text-sm font-semibold text-white">{item.title}</p>
+                                <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-400">
+                                  {item.kind === "playbook" ? "Playbook" : "Tool"}
+                                </span>
+                              </div>
                               <p className="truncate text-xs text-slate-400">{item.subtitle}</p>
                             </div>
                           </div>
+                          {item.metaLabels.length ? (
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {item.metaLabels.slice(0, 4).map((label) => (
+                                <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                          {!item.enabled && item.disabledReason ? (
+                            <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">
+                              {item.disabledReason}
+                            </p>
+                          ) : null}
                         </div>
                       );
                     })}

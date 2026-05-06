@@ -357,6 +357,8 @@ describe("support workspace mappers", () => {
     expect(timeline.map((item) => item.kind)).toEqual(["message", "internal", "diagnostics"]);
     expect(timeline[2].operation).toMatchObject({
       name: "diagnose.website",
+      statusLabel: "Ошибка",
+      statusTone: "danger",
       summary: "HTTP 502 Bad Gateway",
       preview: "HTTP: 502",
     });
@@ -418,6 +420,117 @@ describe("support workspace mappers", () => {
       { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
       { name: "HTTP", status: "error", value: "502 Bad Gateway", details: "Upstream returned an invalid gateway response." },
     ]);
+    expect(timeline[1].operation).toMatchObject({
+      statusLabel: "Успешно",
+      statusTone: "success",
+    });
+  });
+
+  it("maps operation summaries and unavailable tool/playbook reasons", () => {
+    const detail = detailPayload();
+    detail.snapshot.device.online = false;
+    detail.snapshot.latest_operations = [
+      {
+        operation_id: "op-running",
+        kind: "tool",
+        status: "running",
+        display_status: null,
+        display_label: null,
+        scope: "ticket",
+        tool_name: "dns.resolve",
+        command_name: null,
+        queued_at: "2026-05-05T09:59:00+05:00",
+        finished_at: null,
+        result_summary: null,
+        error_message: null,
+      },
+      {
+        operation_id: "op-failed",
+        kind: "tool",
+        status: "failed",
+        display_status: null,
+        display_label: "HTTP check",
+        scope: "ticket",
+        tool_name: "diagnose.website",
+        command_name: null,
+        queued_at: "2026-05-05T09:40:00+05:00",
+        finished_at: "2026-05-05T09:41:00+05:00",
+        result_summary: null,
+        error_message: "HTTP 502",
+      },
+    ];
+
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail,
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      tools: {
+        ticket_id: "ticket-1",
+        device_id: "device-1",
+        tools: [
+          {
+            tool_name: "dns.resolve",
+            module_name: "network",
+            description: "Проверка DNS",
+            risk_level: "low",
+            requires_consent: false,
+            install_required: false,
+            source: "agent",
+            params_schema: [],
+            presets: [],
+          },
+        ],
+      },
+      playbooks: {
+        ticket_id: "ticket-1",
+        device_id: "device-1",
+        playbooks: [
+          {
+            playbook_version_id: 1,
+            key: "diagnose.website",
+            name: "Диагностика сайта",
+            domain: "network",
+            version: "1.0",
+            status: "published",
+            blocks_count: 3,
+            required_tools: ["dns.resolve", "http.check"],
+            missing_tools: ["http.check"],
+            missing_params: [],
+            can_run: false,
+            readiness_label: "Нет инструментов",
+            updated_at: null,
+          },
+        ],
+      },
+      now: NOW,
+    });
+
+    expect(viewModel.right.tools[0]).toMatchObject({
+      kind: "tool",
+      enabled: false,
+      disabledReason: "Агент устройства offline",
+      metaLabels: expect.arrayContaining(["Риск: low", "Без согласия", "Источник: agent"]),
+    });
+    expect(viewModel.right.playbooks[0]).toMatchObject({
+      kind: "playbook",
+      enabled: false,
+      disabledReason: "Нет tool: http.check",
+    });
+    expect(viewModel.right.operations[0]).toMatchObject({
+      title: "dns.resolve",
+      statusLabel: "Выполняется",
+      statusTone: "info",
+      active: true,
+    });
+    expect(viewModel.right.operations[1]).toMatchObject({
+      title: "diagnose.website",
+      statusLabel: "Ошибка",
+      statusTone: "danger",
+      active: false,
+      summary: "HTTP 502",
+    });
   });
 
   it("maps requester contact fields from registry snapshot", () => {

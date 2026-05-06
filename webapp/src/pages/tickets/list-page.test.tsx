@@ -398,6 +398,81 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("Upstream returned an invalid gateway response.")).toBeInTheDocument();
   });
 
+  it("renders running operations and disabled tool/playbook reasons in the tools sidebar", async () => {
+    const payload = workspacePayload();
+    payload.detail.snapshot.latest_operations = [
+      {
+        operation_id: "op-running",
+        kind: "tool",
+        status: "running",
+        display_status: null,
+        display_label: null,
+        scope: "ticket",
+        tool_name: "dns.resolve",
+        command_name: null,
+        queued_at: "2026-05-03T09:19:00+05:00",
+        finished_at: null,
+        result_summary: null,
+        error_message: null,
+      },
+    ];
+    payload.tools = {
+      ticket_id: "ticket-1",
+      device_id: "device-1",
+      tools: [
+        {
+          tool_name: "dns.resolve",
+          module_name: "network",
+          description: "Проверка DNS",
+          risk_level: "low",
+          requires_consent: false,
+          install_required: true,
+          source: "agent",
+          params_schema: [],
+          presets: [],
+        },
+      ],
+    };
+    payload.playbooks = {
+      ticket_id: "ticket-1",
+      device_id: "device-1",
+      playbooks: [
+        {
+          playbook_version_id: 1,
+          key: "diagnose.website",
+          name: "Диагностика сайта",
+          domain: "network",
+          version: "1.0",
+          status: "published",
+          blocks_count: 3,
+          required_tools: ["dns.resolve", "http.check"],
+          missing_tools: ["http.check"],
+          missing_params: [],
+          can_run: false,
+          readiness_label: "Нет инструментов",
+          updated_at: null,
+        },
+      ],
+    };
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Запустить диагностику" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
+
+    expect(await screen.findByText("Операции выполняются")).toBeInTheDocument();
+    expect(screen.getByText("Выполняется")).toBeInTheDocument();
+    expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
+    expect(screen.getByText("Диагностика сайта")).toBeInTheDocument();
+    expect(screen.getAllByText("Нет tool: http.check").length).toBeGreaterThan(0);
+    expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Запустить" })).toBeDisabled();
+  });
+
   it("persists the support workspace theme toggle", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
