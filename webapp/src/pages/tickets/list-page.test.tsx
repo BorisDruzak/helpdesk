@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -757,6 +757,48 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Перед закрытием")).toBeInTheDocument();
     expect(screen.getByText("Доказательство для P0")).toBeInTheDocument();
     expect(screen.getByText("Добавить evidence")).toBeInTheDocument();
+  });
+
+  it("opens passport focus guidance from a closure blocker action", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 1,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 1,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
+
+    const focusCard = await screen.findByTestId("closure-focus-card");
+    expect(focusCard).toBeInTheDocument();
+    expect(screen.getByText("Фокус паспорта")).toBeInTheDocument();
+    expect(screen.getAllByText("Доказательство для P0").length).toBeGreaterThan(1);
+    expect(within(focusCard).getByText("Нужно приложить evidence.")).toBeInTheDocument();
   });
 
   it("renders requester contact enrichment in the context sidebar", async () => {

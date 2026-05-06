@@ -63,6 +63,7 @@ import {
 } from "../../features/queues/support-workspace-mappers";
 import type {
   SupportWorkspacePassport,
+  SupportWorkspaceClosurePlan,
   SupportWorkspaceOperationSummary,
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
@@ -88,6 +89,8 @@ type OperatorActionDraft = {
   reason: string;
   comment: string;
 };
+
+type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 
@@ -514,6 +517,7 @@ export function TicketListPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
   const [moreOpen, setMoreOpen] = useState(false);
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
+  const [closureFocus, setClosureFocus] = useState<ClosurePlanBlocker | null>(null);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
@@ -755,11 +759,20 @@ export function TicketListPage() {
     );
   }
 
+  function openClosureBlocker(blocker: ClosurePlanBlocker) {
+    setClosureFocus(blocker);
+    setSidebarTab("passport");
+  }
+
   useEffect(() => {
     if (composerMode === "internal" && selectedTicket && !selectedTicket.canSendInternalNote) {
       setComposerMode("public");
     }
   }, [composerMode, selectedTicket]);
+
+  useEffect(() => {
+    setClosureFocus(null);
+  }, [selectedTicket?.id]);
 
   const isLightTheme = workspaceTheme === "light";
 
@@ -1247,9 +1260,13 @@ export function TicketListPage() {
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={blocker.key}>
                           <div className="flex items-start justify-between gap-2">
                             <p className="min-w-0 break-words text-sm font-semibold text-white">{blocker.label}</p>
-                            <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                            <button
+                              className="shrink-0 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.1]"
+                              onClick={() => openClosureBlocker(blocker)}
+                              type="button"
+                            >
                               {blocker.actionLabel}
-                            </span>
+                            </button>
                           </div>
                           {blocker.detail ? <p className="mt-1 break-words text-xs leading-5 text-amber-100/75">{blocker.detail}</p> : null}
                         </div>
@@ -1707,6 +1724,23 @@ export function TicketListPage() {
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400" style={{ width: `${passportProgress(viewModel.right.passport)}%` }} />
                 </div>
+                {closureFocus ? (
+                  <div className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-3" data-testid="closure-focus-card">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100/80">Фокус паспорта</p>
+                        <p className="mt-1 break-words text-sm font-semibold text-white">{closureFocus.label}</p>
+                      </div>
+                      <span className="shrink-0 rounded-md border border-amber-300/25 bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-amber-50">
+                        {closureFocus.actionLabel}
+                      </span>
+                    </div>
+                    {closureFocus.detail ? <p className="mt-2 break-words text-xs leading-5 text-amber-100/80">{closureFocus.detail}</p> : null}
+                    {closureFocus.candidateCount > 0 ? (
+                      <p className="mt-2 text-xs text-amber-100/70">Evidence candidates: {closureFocus.candidateCount}</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-4 space-y-2">
                   {viewModel.right.passport.items.map((item) => (
                     <div className="flex items-center gap-3 text-sm" key={item.key}>
