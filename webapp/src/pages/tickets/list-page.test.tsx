@@ -801,6 +801,48 @@ describe("TicketListPage", () => {
     expect(within(focusCard).getByText("Нужно приложить evidence.")).toBeInTheDocument();
   });
 
+  it("shows action-specific passport guidance for resolution blockers", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 0,
+          recommended_next_action: "Заполнить решение",
+          blockers: [
+            {
+              key: "resolution_code",
+              label: "Код решения",
+              met: false,
+              detail: "Укажите код решения из списка.",
+              source: "closure_requirement",
+              action_kind: "edit_resolution",
+              action_label: "Заполнить решение",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Заполнить решение" }));
+
+    const focusCard = await screen.findByTestId("closure-focus-card");
+    expect(within(focusCard).getByText("Секция: Решение")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Следующий шаг")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Заполните код решения и итог для заявителя перед переводом тикета в решение.")).toBeInTheDocument();
+    expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Решение применено")).toBeInTheDocument();
+  });
+
   it("renders requester contact enrichment in the context sidebar", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
