@@ -1,5 +1,6 @@
 import type {
   SupportQueuePayload,
+  SupportTicketClosurePlanPayload,
   SupportTicketDetailPayload,
   SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
@@ -108,6 +109,25 @@ export type SupportWorkspaceTimelineItem = {
   attachments: Array<Record<string, unknown>>;
 };
 
+export type SupportWorkspaceClosurePlan = {
+  readyForResolution: boolean;
+  missingCount: number;
+  total: number;
+  evidenceCandidateCount: number;
+  recommendedNextAction: string | null;
+  blockers: Array<{
+    key: string;
+    label: string;
+    detail: string;
+    actionKind: string;
+    actionLabel: string;
+    severity: string | null;
+    candidateCount: number;
+    factKey: string | null;
+    blockingForClosure: boolean;
+  }>;
+};
+
 export type SupportWorkspaceSelectedTicket = {
   id: string;
   code: string;
@@ -126,6 +146,7 @@ export type SupportWorkspaceSelectedTicket = {
   timers: SupportWorkspaceTimer[];
   timeline: SupportWorkspaceTimelineItem[];
   canSendInternalNote: boolean;
+  closurePlan: SupportWorkspaceClosurePlan;
 };
 
 export type SupportWorkspaceContext = {
@@ -246,5 +267,6 @@ export type SupportWorkspaceViewModel = {
     knowledge?: SupportTicketKnowledgeSuggestionsPayload;
     slaOla?: SupportTicketSlaOlaPayload;
     passportReadiness?: SupportTicketPassportReadinessPayload;
+    closurePlan?: SupportTicketClosurePlanPayload;
   };
 };

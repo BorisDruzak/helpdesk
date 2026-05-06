@@ -497,6 +497,19 @@ P3.4 - closure/passport action depth:
 
 - Goal: make closure blockers and passport/evidence candidates more actionable from the central workspace while preserving current closure guards.
 - Non-goal: no weakening of closure policy or evidence requirements.
+- Checklist:
+  1. [x] Add compact aggregate `closure_plan` DTO derived from existing `actions.closure_requirements`.
+  2. [x] Keep workflow/closure policy services authoritative; no new close/resolve bypass.
+  3. [x] Map closure plan into the `/app/tickets` selected-ticket view model.
+  4. [x] Render a central "Перед закрытием" blocker panel with recommended action labels, evidence candidate counts and passport navigation.
+  5. [ ] Run focused tests/build/workspace verification, then release/browser signoff.
+
+P3.4 local evidence:
+
+- `GET /api/web/support/tickets/{ticket_id}/workspace` now embeds `closure_plan` with `ready_for_resolution`, `missing_count`, `total`, `evidence_candidate_count`, `recommended_next_action` and blocker action hints.
+- The closure plan is derived from existing `actions.closure_requirements`; backend workflow and closure guards remain unchanged and authoritative.
+- `/app/tickets` now renders a central closure blocker panel when requirements are missing, with an "Открыть паспорт" action and per-blocker labels such as `Добавить evidence`.
+- RED/GREEN focused tests passed for backend aggregate payload and frontend mapper/page rendering: `test_web_support_ticket_workspace_exposes_actionable_closure_plan`, `support-workspace-mappers.test.ts`, and `list-page.test.tsx`.
 
 P3.5 - final P3 release/browser signoff:
 

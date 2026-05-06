@@ -1,5 +1,6 @@
 import type {
   SupportQueuePayload,
+  SupportTicketClosurePlanPayload,
   SupportTicketDetailPayload,
   SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
@@ -11,6 +12,7 @@ import type {
 } from "./api";
 import type {
   SupportWorkspaceContext,
+  SupportWorkspaceClosurePlan,
   SupportWorkspaceKnowledge,
   SupportWorkspaceNextAction,
   SupportWorkspaceOperationSummary,
@@ -758,9 +760,83 @@ export function mapWorkspacePassport(
   };
 }
 
+function closureActionForRequirement(requirement: {
+  key: string;
+  fact_key?: string | null;
+  candidate_count?: number;
+}): { actionKind: string; actionLabel: string } {
+  const key = requirement.key.toLowerCase();
+  if ((requirement.candidate_count ?? 0) > 0 || key.includes("evidence") || requirement.fact_key) {
+    return { actionKind: "attach_evidence", actionLabel: "Добавить evidence" };
+  }
+  if (key.includes("passport")) {
+    return { actionKind: "open_passport", actionLabel: "Открыть паспорт" };
+  }
+  if (key.includes("resolution") || key.includes("summary")) {
+    return { actionKind: "edit_resolution", actionLabel: "Заполнить решение" };
+  }
+  if (key.includes("approval")) {
+    return { actionKind: "check_approval", actionLabel: "Проверить согласование" };
+  }
+  if (key.includes("worklog")) {
+    return { actionKind: "add_worklog", actionLabel: "Добавить worklog" };
+  }
+  return { actionKind: "review_requirement", actionLabel: "Проверить требование" };
+}
+
+export function mapWorkspaceClosurePlan(
+  detail: SupportTicketDetailPayload | undefined,
+  closurePlan?: SupportTicketClosurePlanPayload,
+): SupportWorkspaceClosurePlan {
+  if (closurePlan) {
+    return {
+      readyForResolution: closurePlan.ready_for_resolution,
+      missingCount: closurePlan.missing_count,
+      total: closurePlan.total,
+      evidenceCandidateCount: closurePlan.evidence_candidate_count,
+      recommendedNextAction: closurePlan.recommended_next_action,
+      blockers: closurePlan.blockers.map((item) => ({
+        key: item.key,
+        label: item.label,
+        detail: item.detail,
+        actionKind: item.action_kind,
+        actionLabel: item.action_label,
+        severity: item.severity,
+        candidateCount: item.candidate_count,
+        factKey: item.fact_key,
+        blockingForClosure: item.blocking_for_closure,
+      })),
+    };
+  }
+  const requirements = detail?.actions.closure_requirements ?? [];
+  const blockers = requirements.filter((item) => !item.met).map((item) => {
+    const action = closureActionForRequirement(item);
+    return {
+      key: item.key,
+      label: item.label,
+      detail: item.detail,
+      actionKind: action.actionKind,
+      actionLabel: action.actionLabel,
+      severity: item.severity ?? "blocking",
+      candidateCount: item.candidate_count ?? 0,
+      factKey: item.fact_key ?? null,
+      blockingForClosure: true,
+    };
+  });
+  return {
+    readyForResolution: blockers.length === 0,
+    missingCount: blockers.length,
+    total: requirements.length,
+    evidenceCandidateCount: blockers.reduce((sum, item) => sum + (item.actionKind === "attach_evidence" ? item.candidateCount : 0), 0),
+    recommendedNextAction: blockers[0]?.actionLabel ?? null,
+    blockers,
+  };
+}
+
 export function mapSupportWorkspaceViewModel({
   activeQueueId,
   activeSmartView,
+  closurePlan,
   detail,
   knowledge,
   passport,
@@ -774,6 +850,7 @@ export function mapSupportWorkspaceViewModel({
 }: {
   activeQueueId: string | null;
   activeSmartView: string;
+  closurePlan?: SupportTicketClosurePlanPayload;
   detail?: SupportTicketDetailPayload;
   knowledge?: SupportTicketKnowledgeSuggestionsPayload;
   passport?: SupportTicketPassportPayload;
@@ -821,6 +898,7 @@ export function mapSupportWorkspaceViewModel({
           timers,
           timeline: mapWorkspaceTimeline(detail),
           canSendInternalNote: detail.actions.can_send_internal_note,
+          closurePlan: mapWorkspaceClosurePlan(detail, closurePlan),
         };
       })()
     : null;
@@ -852,6 +930,7 @@ export function mapSupportWorkspaceViewModel({
       passport,
       slaOla,
       passportReadiness,
+      closurePlan,
     },
   };
 }

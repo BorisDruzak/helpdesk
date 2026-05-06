@@ -1188,6 +1188,54 @@ async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_workspace_exposes_actionable_closure_plan(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-closure-plan-{uuid.uuid4().hex[:6]}",
+        status="in_progress",
+    )
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.priority = "P1"
+        ticket.custom_fields = {
+            "priority_class": "P0",
+            "request_template": {
+                "key": "website_unavailable",
+                "ticket_type": "incident",
+                "closure_policy": {
+                    "before_resolved": {
+                        "require_resolution_code": True,
+                        "require_public_summary": True,
+                    },
+                    "evidence": {
+                        "require_evidence_for_priorities": ["P0"],
+                    },
+                },
+            },
+        }
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    plan = payload["data"]["closure_plan"]
+    blockers = {item["key"]: item for item in plan["blockers"]}
+
+    assert plan["ticket_id"] == ticket_id
+    assert plan["ready_for_resolution"] is False
+    assert plan["missing_count"] >= 3
+    assert plan["evidence_candidate_count"] == 0
+    assert blockers["resolution_code"]["action_kind"] == "edit_resolution"
+    assert blockers["priority_evidence"]["action_kind"] == "attach_evidence"
+    assert blockers["priority_evidence"]["action_label"] == "Добавить evidence"
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

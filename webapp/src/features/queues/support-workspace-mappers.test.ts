@@ -662,6 +662,74 @@ describe("support workspace mappers", () => {
     ]);
   });
 
+  it("maps actionable closure plan from the aggregate workspace payload", () => {
+    const detail = detailPayload();
+    detail.actions.closure_requirements = [
+      {
+        key: "resolution_code",
+        label: "Код решения",
+        met: false,
+        detail: "Укажите код решения.",
+        candidate_count: 0,
+      },
+      {
+        key: "priority_evidence",
+        label: "Доказательство для P0",
+        met: false,
+        detail: "Нужно приложить evidence.",
+        candidate_count: 2,
+      },
+    ];
+
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail,
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      closurePlan: {
+        ticket_id: "ticket-1",
+        ready_for_resolution: false,
+        missing_count: 2,
+        total: 2,
+        evidence_candidate_count: 2,
+        recommended_next_action: "Добавить evidence",
+        blockers: [
+          {
+            key: "priority_evidence",
+            label: "Доказательство для P0",
+            met: false,
+            detail: "Нужно приложить evidence.",
+            source: "closure_requirement",
+            action_kind: "attach_evidence",
+            action_label: "Добавить evidence",
+            severity: "blocking",
+            candidate_count: 2,
+            fact_key: null,
+            blocking_for_closure: true,
+          },
+        ],
+      },
+      now: NOW,
+    });
+
+    expect(viewModel.selectedTicket?.closurePlan).toMatchObject({
+      readyForResolution: false,
+      missingCount: 2,
+      total: 2,
+      evidenceCandidateCount: 2,
+      recommendedNextAction: "Добавить evidence",
+      blockers: [
+        {
+          key: "priority_evidence",
+          actionKind: "attach_evidence",
+          actionLabel: "Добавить evidence",
+          candidateCount: 2,
+        },
+      ],
+    });
+  });
+
   it("maps typed knowledge suggestions into the right sidebar model", () => {
     const viewModel = mapSupportWorkspaceViewModel({
       activeQueueId: null,

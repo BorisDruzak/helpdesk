@@ -670,6 +670,28 @@ export type SupportTicketPassportReadinessPayload = {
   }>;
 };
 
+export type SupportTicketClosurePlanPayload = {
+  ticket_id: string;
+  ready_for_resolution: boolean;
+  missing_count: number;
+  total: number;
+  evidence_candidate_count: number;
+  recommended_next_action: string | null;
+  blockers: Array<{
+    key: string;
+    label: string;
+    met: boolean;
+    detail: string;
+    source: string;
+    action_kind: string;
+    action_label: string;
+    severity: string | null;
+    candidate_count: number;
+    fact_key: string | null;
+    blocking_for_closure: boolean;
+  }>;
+};
+
 export type SupportTicketWorkspacePayload = {
   detail: SupportTicketDetailPayload;
   tools: SupportTicketToolsPayload;
@@ -678,6 +700,7 @@ export type SupportTicketWorkspacePayload = {
   knowledge: SupportTicketKnowledgeSuggestionsPayload;
   sla_ola: SupportTicketSlaOlaPayload;
   passport_readiness: SupportTicketPassportReadinessPayload;
+  closure_plan: SupportTicketClosurePlanPayload;
 };
 
 export type SupportToolActionResult = {

@@ -236,6 +236,15 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
         { key: "verified_and_closed", label: "Проверка и закрытие", status: "pending" },
       ],
     },
+    closure_plan: {
+      ticket_id: "ticket-1",
+      ready_for_resolution: true,
+      missing_count: 0,
+      total: 0,
+      evidence_candidate_count: 0,
+      recommended_next_action: null,
+      blockers: [],
+    },
     ...overrides,
   };
 }
@@ -710,6 +719,44 @@ describe("TicketListPage", () => {
 
     expect(await screen.findByText("Готов")).toBeInTheDocument();
     expect(screen.getByText("Готовность 4/4")).toBeInTheDocument();
+  });
+
+  it("renders central closure blockers with actionable passport guidance", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 2,
+          total: 3,
+          evidence_candidate_count: 1,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 1,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByTestId("closure-plan-panel")).toBeInTheDocument();
+    expect(screen.getByText("Перед закрытием")).toBeInTheDocument();
+    expect(screen.getByText("Доказательство для P0")).toBeInTheDocument();
+    expect(screen.getByText("Добавить evidence")).toBeInTheDocument();
   });
 
   it("renders requester contact enrichment in the context sidebar", async () => {

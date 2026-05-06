@@ -572,6 +572,7 @@ export function TicketListPage() {
         knowledge: workspaceQuery.data?.knowledge,
         passport: workspaceQuery.data?.passport,
         passportReadiness: workspaceQuery.data?.passport_readiness,
+        closurePlan: workspaceQuery.data?.closure_plan,
         playbooks: workspaceQuery.data?.playbooks,
         queue: queueQuery.data,
         selectedTicketId,
@@ -1212,6 +1213,49 @@ export function TicketListPage() {
                   <p className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
                     {actionError instanceof Error ? actionError.message : "Действие не выполнено"}
                   </p>
+                ) : null}
+
+                {selectedTicket.closurePlan.missingCount > 0 ? (
+                  <section
+                    className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4"
+                    data-testid="closure-plan-panel"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-200" />
+                          <p className="font-semibold text-white">Перед закрытием</p>
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-amber-100/90">
+                          Осталось требований: {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}.
+                          {selectedTicket.closurePlan.evidenceCandidateCount
+                            ? ` Доступно кандидатов evidence: ${selectedTicket.closurePlan.evidenceCandidateCount}.`
+                            : " Evidence-кандидаты не найдены."}
+                        </p>
+                      </div>
+                      <button
+                        className="shrink-0 rounded-xl border border-amber-300/30 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-amber-50 hover:bg-white/[0.1]"
+                        onClick={() => setSidebarTab("passport")}
+                        type="button"
+                      >
+                        <FileCheck2 className="mr-2 inline h-4 w-4" />
+                        Открыть паспорт
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {selectedTicket.closurePlan.blockers.slice(0, 4).map((blocker) => (
+                        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={blocker.key}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="min-w-0 break-words text-sm font-semibold text-white">{blocker.label}</p>
+                            <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                              {blocker.actionLabel}
+                            </span>
+                          </div>
+                          {blocker.detail ? <p className="mt-1 break-words text-xs leading-5 text-amber-100/75">{blocker.detail}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 ) : null}
               </div>
 

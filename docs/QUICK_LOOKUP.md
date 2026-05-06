@@ -21,6 +21,7 @@
 - 2026-05-06 support workspace P3.1: `GET /api/web/support/tickets/{ticket_id}/tools` now returns manifest-derived `domain`, `tool_kind`, derived `required_permission`, `allowed_roles` and compact `policy_labels` on `SupportToolItem`; `/app/tickets` shows permission/role labels in the tools panel without changing tool run behavior.
 - 2026-05-06 support workspace P3.2: latest operation snapshots and diagnostic timeline rows now carry read-only lifecycle hints (`duration_ms`, retry counters, `retryable`, error code/category, trace id and details URL) from existing operation columns/event payloads; `/app/tickets` renders them as compact chips without adding retry actions.
 - 2026-05-06 support workspace P3.3: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` now includes source diagnostics for manual KB links, catalog matches and similar tickets (`ai_summary.confidence/source_count`, provider/version, source counts, query signals and per-source match reasons); `/app/tickets` renders provider/confidence/signal chips in the knowledge tab while keeping AI beta source-visible and non-authoritative.
+- 2026-05-06 support workspace P3.4: aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` now embeds compact `closure_plan` derived from existing `actions.closure_requirements`; `/app/tickets` shows a central "Перед закрытием" panel with closure blockers, evidence candidate counts and passport navigation while backend workflow/closure guards remain authoritative.
 
 ## 2026-04-28 local agent Qt GUI redesign
 

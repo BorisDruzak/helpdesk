@@ -91,6 +91,8 @@ from web_api.dto.support import (
     SupportStatusAction,
     SupportStatusActionResult,
     SupportTicketActions,
+    SupportTicketClosurePlanItem,
+    SupportTicketClosurePlanPayload,
     SupportTicketDetail,
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
@@ -588,6 +590,60 @@ def _build_support_passport_readiness_payload(
         done=done,
         total=len(items),
         items=items,
+    )
+
+
+def _closure_action_for_requirement(requirement: object) -> tuple[str, str]:
+    key = str(getattr(requirement, "key", "") or "").strip().lower()
+    fact_key = str(getattr(requirement, "fact_key", "") or "").strip().lower()
+    candidate_count = int(getattr(requirement, "candidate_count", 0) or 0)
+    if candidate_count > 0 or "evidence" in key or fact_key:
+        return "attach_evidence", "Добавить evidence"
+    if "passport" in key:
+        return "open_passport", "Открыть паспорт"
+    if "resolution" in key or "summary" in key:
+        return "edit_resolution", "Заполнить решение"
+    if "approval" in key:
+        return "check_approval", "Проверить согласование"
+    if "worklog" in key:
+        return "add_worklog", "Добавить worklog"
+    return "review_requirement", "Проверить требование"
+
+
+def _build_support_closure_plan_payload(
+    ticket_id: str,
+    detail: SupportTicketDetailPayload,
+) -> SupportTicketClosurePlanPayload:
+    requirements = list(detail.actions.closure_requirements or [])
+    blockers: list[SupportTicketClosurePlanItem] = []
+    for requirement in requirements:
+        if requirement.met:
+            continue
+        action_kind, action_label = _closure_action_for_requirement(requirement)
+        blockers.append(
+            SupportTicketClosurePlanItem(
+                key=requirement.key,
+                label=requirement.label,
+                met=False,
+                detail=requirement.detail,
+                source="closure_requirement",
+                action_kind=action_kind,
+                action_label=action_label,
+                severity=requirement.severity or "blocking",
+                candidate_count=requirement.candidate_count,
+                fact_key=requirement.fact_key,
+                blocking_for_closure=True,
+            )
+        )
+    evidence_candidate_count = sum(item.candidate_count for item in blockers if item.action_kind == "attach_evidence")
+    return SupportTicketClosurePlanPayload(
+        ticket_id=str(ticket_id),
+        ready_for_resolution=len(blockers) == 0,
+        missing_count=len(blockers),
+        total=len(requirements),
+        evidence_candidate_count=evidence_candidate_count,
+        recommended_next_action=blockers[0].action_label if blockers else None,
+        blockers=blockers,
     )
 
 
@@ -2584,6 +2640,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
             knowledge = await _build_support_knowledge_suggestions_payload(session, ticket)
             sla_ola = _build_support_sla_ola_payload(ticket)
             passport_readiness = _build_support_passport_readiness_payload(ticket.ticket_id, passport)
+            closure_plan = _build_support_closure_plan_payload(ticket.ticket_id, detail)
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_workspace] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
@@ -2605,6 +2662,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
         knowledge=knowledge,
         sla_ola=sla_ola,
         passport_readiness=passport_readiness,
+        closure_plan=closure_plan,
     )
     return json_model_response(SuccessResponse[SupportTicketWorkspacePayload](data=payload))
 

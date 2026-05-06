@@ -904,6 +904,34 @@ class SupportTicketPassportReadinessPayload(BaseModel):
     items: list[SupportTicketPassportReadinessItem] = Field(default_factory=list)
 
 
+class SupportTicketClosurePlanItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    met: bool = False
+    detail: str = ""
+    source: str = "closure_requirement"
+    action_kind: str = "review_requirement"
+    action_label: str = "Проверить требование"
+    severity: str | None = None
+    candidate_count: int = 0
+    fact_key: str | None = None
+    blocking_for_closure: bool = True
+
+
+class SupportTicketClosurePlanPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    ready_for_resolution: bool = True
+    missing_count: int = 0
+    total: int = 0
+    evidence_candidate_count: int = 0
+    recommended_next_action: str | None = None
+    blockers: list[SupportTicketClosurePlanItem] = Field(default_factory=list)
+
+
 class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -935,3 +963,4 @@ class SupportTicketWorkspacePayload(BaseModel):
     knowledge: SupportTicketKnowledgeSuggestionsPayload
     sla_ola: SupportTicketSlaOlaPayload
     passport_readiness: SupportTicketPassportReadinessPayload
+    closure_plan: SupportTicketClosurePlanPayload
