@@ -16,7 +16,7 @@ Created: 2026-05-05.
 
 Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff.
 
-Current execution mode: P2.3-P2.5 complete; next candidate is P2.6/external knowledge search or broader light-theme polish. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`.
+Current execution mode: P2.6 planning for the current `/app/tickets` page. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. The next recommended slice is P2.6 visual/light-theme/responsive hardening of the already working page.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -85,12 +85,12 @@ Design reference: user-provided `image.png`. Treat it as the accepted visual tar
 
 ## Backend Functionality Gap Estimate
 
-Estimated remaining backend functionality for the requested target after P2.2 implementation: **6-10%** at the typed web contract layer.
+Estimated remaining backend functionality for the requested target after P2.5 implementation: **4-7%** at the typed web contract layer.
 
 Important distinction:
 
-- Domain/business functionality missing: **8-12%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence, observer data and KB links.
-- Typed workspace/API functionality missing: **4-8%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases, first-class knowledge suggestions and standalone typed timeline filtering. Remaining backend gaps are mostly richer operation payload extraction and optional context/profile enrichment.
+- Domain/business functionality missing: **8-12%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence, observer data and KB links. The remaining domain gap is mostly external/searchable KB depth, richer tool policy metadata, and richer operation state semantics.
+- Typed workspace/API functionality missing: **4-7%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases, first-class knowledge suggestions, standalone typed timeline filtering, nested diagnostic step extraction and registry requester enrichment. Remaining typed gaps are optional: external KB provider/index, richer operation-running/retry metadata, and deeper requester/account/service context.
 
 Already present:
 
@@ -106,16 +106,16 @@ Already present:
 Missing or incomplete for target:
 
 - Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics is now available as `GET /api/web/support/workspace/summary`.
-- Aggregated ticket workspace endpoint returning all center/right-panel data in one payload. Current UI calls detail, tools, playbooks and passport separately.
-- First-class queue list/count DTO separate from smart views. Current left queues are derived on the frontend from returned tickets, not from authoritative queue inventory/counts.
-- Ticket list priority/assignee display DTO fields. Current detail has priority, but queue items do not; the UI currently falls back to `P3` in the left worklist.
+- Aggregated ticket workspace endpoint returning all center/right-panel data in one payload is implemented as `GET /api/web/support/tickets/{ticket_id}/workspace`.
+- First-class queue list/count DTO separate from smart views is implemented in the workspace summary/queue payloads; remaining queue work is optional inventory polish for missing/empty queues.
+- Ticket list priority/assignee display DTO fields are implemented; remaining left-worklist work is visual density and selected-state polish.
 - SLA/OLA progress DTO with remaining/target/status/progress is now available in the aggregate selected-ticket workspace payload; a standalone summary/list contract is still not implemented.
-- Typed support aliases for assign, queue change, priority change and reroute. Legacy `/api/tickets/{id}/assign|queue|priority|reroute` already exist; typed `/api/web/support/*` aliases are missing.
-- Filterable unified timeline endpoint now exists as `GET /api/web/support/tickets/{ticket_id}/timeline`; remaining timeline work is mostly richer structured payload extraction for diagnostic result cards.
-- Structured operation result mapper with step cards. Current detail has `result_summary` and `result_preview`; target wants structured DNS/TCP/HTTP-like steps when payload contains them.
+- Typed support aliases for assign, queue change, priority change and reroute are implemented and wired from visible "More" controls.
+- Filterable unified timeline endpoint exists as `GET /api/web/support/tickets/{ticket_id}/timeline`; remaining timeline work is mostly operation-running, retry and details UX.
+- Structured operation result mapper with step cards is implemented for common top-level and nested diagnostic payloads; remaining work is richer UI treatment for details, running state and unavailable-tool states.
 - Knowledge suggestions endpoint with KB-linked articles, similar tickets, built-in catalog fallback and conservative AI beta summary is implemented as `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and included in the aggregate workspace payload.
 - Compact resolution passport readiness DTO for sidebar is now available in the aggregate selected-ticket workspace payload; a standalone endpoint remains optional.
-- Theme toggle/light-dark workspace shell state. This is mostly frontend/app-shell scope, not backend.
+- Theme toggle/light-dark workspace shell state is implemented; remaining work is full light-theme visual polish across every panel and responsive desktop width.
 
 ## Backend Contract Analysis 2026-05-05
 
@@ -309,15 +309,53 @@ P2.3-P2.5 local evidence:
 - Linux release completed for commit `de8bf80` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, web bundle upload and remote smoke passed.
 - Browser signoff completed at `http://192.168.100.17:8666/admin` for `/app/tickets/:ticketId`: workspace root rendered with `data-theme="dark"`, aggregate `/workspace` returned 200, standalone diagnostics timeline returned 200, exact `Диагностика` tab rendered, theme toggle switched to `data-theme="light"` and `localStorage.support-workspace-theme=light`, and final browser console reported 0 errors.
 
-### Recommended Next Implementation Order
+### Recommended Next Slices For `/app/tickets`
 
-1. Backend DTO tests first in `server/tests/test_web_support_api.py`.
-2. Extend `server/web_api/dto/support.py` with queue item priority/assignee fields, queue-count DTO and normalized timeline event DTO.
-3. Extend serializers in `server/web_api/support_handlers.py` without changing domain services.
-4. Add typed aliases for assign/queue/priority/reroute by delegating to existing services or extracting shared helpers from `server/tickets/handlers.py`.
-5. Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts`.
-6. Wire "More" menu actions in `webapp/src/pages/tickets/list-page.tsx`.
-7. Run focused server tests, focused Vitest, production build and browser signoff.
+Recommended next slice: **P2.6 visual/light-theme/responsive hardening**. The page already has the target data contract and working operator flows, so the next useful work is visual production readiness on the current route rather than more backend shape work.
+
+P2.6 - visual/light-theme/responsive hardening:
+
+- Audit `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px desktop widths in dark and light themes.
+- Polish the current light theme so all major surfaces, chips, borders, timeline rows, sidebars, composer and dropdowns are readable and cohesive, not only the topbar/root shell.
+- Tighten density and overflow handling in the left ticket list, central action/timeline area and right context tabs.
+- Fix any clipped text, awkward wraps, weak contrast, non-obvious selected state or scroll containment issues found in browser screenshots.
+- Keep this frontend-only unless the audit exposes missing data that cannot be represented safely.
+
+P2.7 - right-context enrichment polish:
+
+- Improve display of requester/contact/source provenance, device/account/service/category/location fields when existing registry data provides them.
+- Keep absent data quiet and explicit; avoid fake values.
+- Add tests for mapper fallback behavior where registry fields are missing.
+
+P2.8 - diagnostics/tools UX hardening:
+
+- Improve operation-running and tool-unavailable states in the right sidebar and timeline.
+- Show structured diagnostic step details more clearly, including retry/details affordances when the payload provides them.
+- Disable agent-required tools with visible reason when the device is offline or policy denies the action.
+
+P2.9 - externalized knowledge provider:
+
+- Keep the existing `knowledge-suggestions` contract stable.
+- Move beyond the built-in catalog fallback toward a first-class searchable KB provider/index if a project source exists.
+- Keep AI beta copy source-visible and conservative; no automatic action execution.
+
+P2.10 - "More" controls hardening:
+
+- Replace primitive controls with proper reason-capturing modals/drawers for status, queue, priority, assign and reroute where the current workflow requires operator context.
+- Preserve the existing typed mutation aliases and workflow/RBAC guards.
+- Add permission/disabled states rather than hiding critical operator context.
+
+P2.11 - final current-page browser signoff:
+
+- Re-run local focused tests, production build, workspace verification and browser signoff on the Linux stand.
+- Capture dark/light desktop screenshots and verify console/network health for `/app/tickets`, selected ticket, right tabs, timeline filters and composer.
+
+P2.6 verification plan:
+
+- Frontend focused tests for theme persistence, visible theme toggle labels/states and critical page text.
+- `pnpm --dir webapp run build`.
+- `python scripts\verify_workspace.py`.
+- Browser MCP signoff at `http://192.168.100.17:8666/admin` with dark/light snapshots and console-error check.
 
 ## Design System Target
 
@@ -824,28 +862,31 @@ Stage 8 evidence:
 
 - The current active ticket detail page is large. Avoid a risky one-shot rewrite; migrate by composition and focused components.
 - Existing `support-workspace.tsx` may tempt duplication. Prefer reusing ideas/mappers, not creating a second route.
-- Knowledge backend is incomplete. Implement an honest stub or KB-link adapter rather than fake AI truth.
+- External KB/search depth is still limited. The current endpoint is source-visible and honest, but a real searchable provider/index remains P2.9 work.
+- Light theme exists, but some surfaces may still read as dark-theme-first. P2.6 must polish tokens/classes without creating a second divergent design system.
 - SLA/OLA progress can be derived, but timer semantics must not be changed without dedicated tests.
 - Deep-link behavior must not regress because operators may share ticket URLs.
+- Combined Windows `run_ci_suite.py` can hit unrelated agent_ws/test-DB lock timeouts. If it recurs, use sequential project gates plus explicit release/browser evidence and record the limitation.
 
 ## Current State
 
-- P0 and P1 implementation for `/app/tickets` support workspace are complete.
+- P0, P1 and P2.1-P2.5 implementation for `/app/tickets` support workspace are complete.
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
-- Backend/API residual gap after P2.1 is estimated at 6-10%, mostly optional standalone timeline filtering, deeper external KB search and app-shell/theme refinements. P2.2 is currently reducing the standalone timeline filtering part of this gap.
+- Backend/API residual gap after P2.5 is estimated at 4-7% for typed contracts and 8-12% for broader domain depth, mostly external KB/search, richer operation-running/tool policy metadata and optional deeper context/profile sources.
+- UI/page polish gap for the current page is estimated at 12-18%, mostly full light-theme polish, responsive desktop hardening, richer disabled/running states and reason-capturing action UX.
 - This plan remains the active long-horizon artifact for any P2 follow-up.
-- Current pending step: choose the next P2 slice.
+- Current pending step: execute P2.6 visual/light-theme/responsive hardening.
 
 ## Handoff
 
-Recommended next step: finish P2.2 standalone timeline filtering, then choose theme/app-shell controls or deeper external KB search as the next P2 slice.
+Recommended next step: execute **P2.6 visual/light-theme/responsive hardening** on the current `/app/tickets` page.
 
-Concrete first slice:
+Concrete P2.6 first slice:
 
-1. [x] Add failing server tests for `GET /api/web/support/queue` proving ticket rows expose priority/priority_class, assignee display, and authoritative queue counts.
-2. [x] Extend `SupportQueueTicketItem` and queue summary DTOs.
-3. [x] Update `_build_ticket_item()` / `handle_web_support_queue()` serializers.
-4. [x] Update `webapp/src/features/queues/api.ts` and `support-workspace-mappers.ts` to remove the `P3` fallback for real tickets.
-5. [x] Run `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest and `pnpm --dir webapp run build`.
+1. [ ] Run browser audit for `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px in dark and light themes.
+2. [ ] Record concrete visual defects: contrast, clipping, wrapping, selected states, scroll containment, dropdown/composer readability.
+3. [ ] Patch only the current page/component classes and mapper-safe UI helpers needed for those defects.
+4. [ ] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
+5. [ ] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
 
-Next slice after P2.2: frontend theme/app-shell controls for `/app/tickets`, or deeper external KB search behind `knowledge-suggestions`.
+Next slice after P2.6: choose P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening depending on what the P2.6 browser audit exposes.
