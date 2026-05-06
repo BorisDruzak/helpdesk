@@ -135,6 +135,80 @@ const timelineTabs: Array<{ value: TimelineFilter; label: string }> = [
   { value: "history", label: "История" },
 ];
 
+type WorkspaceErrorState = {
+  title: string;
+  body: string;
+  actionLabel: string;
+  action: "queue" | "retry";
+  tone: "warning" | "danger";
+};
+
+function getErrorStatus(error: unknown): number | null {
+  if (typeof error === "object" && error !== null && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === "number" ? status : null;
+  }
+  return null;
+}
+
+function classifyWorkspaceError(error: unknown): WorkspaceErrorState {
+  const status = getErrorStatus(error);
+  const message = error instanceof Error ? error.message : "Не удалось загрузить тикет";
+  const normalized = message.toLowerCase();
+
+  if (status === 404 || normalized.includes("404") || normalized.includes("not found") || normalized.includes("не найден")) {
+    return {
+      title: "Тикет не найден",
+      body: "Он мог быть закрыт, удалён или недоступен в текущей очереди.",
+      actionLabel: "Вернуться к очереди",
+      action: "queue",
+      tone: "warning",
+    };
+  }
+
+  if (
+    status === 403 ||
+    normalized.includes("403") ||
+    normalized.includes("forbidden") ||
+    normalized.includes("permission") ||
+    normalized.includes("недостаточно прав") ||
+    normalized.includes("доступ запрещ")
+  ) {
+    return {
+      title: "Недостаточно прав",
+      body: "У вашей роли нет доступа к этому тикету или внутренним данным.",
+      actionLabel: "Вернуться к очереди",
+      action: "queue",
+      tone: "danger",
+    };
+  }
+
+  return {
+    title: "Не удалось загрузить тикет",
+    body: message,
+    actionLabel: "Повторить",
+    action: "retry",
+    tone: "danger",
+  };
+}
+
+function getTimelineEmptyState(filter: TimelineFilter): { title: string; body: string; actionLabel: string | null } {
+  if (filter === "all") {
+    return {
+      title: "В таймлайне пока нет событий",
+      body: "Новые сообщения, диагностика и системные изменения появятся здесь.",
+      actionLabel: null,
+    };
+  }
+
+  const label = timelineTabs.find((tab) => tab.value === filter)?.label ?? "выбранный фильтр";
+  return {
+    title: `Нет событий: ${label}`,
+    body: "Смените фильтр или откройте все события таймлайна.",
+    actionLabel: "Показать все события",
+  };
+}
+
 const priorityActionOptions: Array<{ value: "P0" | "P1" | "P2" | "P3"; label: string; hint: string }> = [
   { value: "P0", label: "P0", hint: "Критичный инцидент" },
   { value: "P1", label: "P1", hint: "Высокий приоритет" },
@@ -682,6 +756,8 @@ export function TicketListPage() {
     timelineFilter === "all"
       ? aggregateTimeline
       : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
+  const workspaceErrorState = workspaceQuery.isError ? classifyWorkspaceError(workspaceQuery.error) : null;
+  const timelineEmptyState = visibleTimeline.length === 0 ? getTimelineEmptyState(timelineFilter) : null;
   const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
   const firstRunnablePlaybook = viewModel.right.playbooks.find((item) => item.enabled);
   const visibleAutomationItems =
@@ -1036,9 +1112,42 @@ export function TicketListPage() {
             <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Загружаем тикет...</div>
           ) : null}
 
-          {selectedTicketId && workspaceQuery.isError ? (
-            <div className="m-6 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-              {workspaceQuery.error instanceof Error ? workspaceQuery.error.message : "Не удалось загрузить тикет"}
+          {selectedTicketId && workspaceErrorState ? (
+            <div
+              className={`m-6 rounded-2xl border px-5 py-5 text-sm ${
+                workspaceErrorState.tone === "warning"
+                  ? "border-amber-400/30 bg-amber-500/10 text-amber-50"
+                  : "border-red-400/30 bg-red-500/10 text-red-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                    workspaceErrorState.tone === "warning"
+                      ? "border-amber-300/30 bg-amber-400/10 text-amber-200"
+                      : "border-red-300/30 bg-red-400/10 text-red-200"
+                  }`}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-white">{workspaceErrorState.title}</h2>
+                  <p className="mt-1 leading-6 text-slate-300">{workspaceErrorState.body}</p>
+                  <button
+                    className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white transition hover:border-blue-400/40 hover:bg-blue-500/20"
+                    onClick={() => {
+                      if (workspaceErrorState.action === "queue") {
+                        navigate("/app/tickets");
+                        return;
+                      }
+                      void workspaceQuery.refetch();
+                    }}
+                    type="button"
+                  >
+                    {workspaceErrorState.actionLabel}
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
 
@@ -1401,9 +1510,20 @@ export function TicketListPage() {
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                  {visibleTimeline.length === 0 ? (
-                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
-                      В выбранном фильтре нет событий.
+                  {timelineEmptyState ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
+                      <Inbox className="mx-auto h-9 w-9 text-slate-500" />
+                      <p className="mt-4 text-base font-semibold text-white">{timelineEmptyState.title}</p>
+                      <p className="mx-auto mt-2 max-w-md leading-6">{timelineEmptyState.body}</p>
+                      {timelineEmptyState.actionLabel ? (
+                        <button
+                          className="mt-4 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 font-semibold text-slate-100 transition hover:border-blue-400/40 hover:bg-blue-500/20"
+                          onClick={() => setTimelineFilter("all")}
+                          type="button"
+                        >
+                          {timelineEmptyState.actionLabel}
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="space-y-4">

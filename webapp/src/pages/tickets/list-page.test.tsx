@@ -406,6 +406,56 @@ describe("TicketListPage", () => {
     });
   });
 
+  it("shows a ticket-not-found workspace edge state instead of a raw error", async () => {
+    const baseQueuePayload = queuePayload();
+    fetchSupportQueueMock.mockResolvedValue(
+      queuePayload({
+        summary: { ...baseQueuePayload.summary, selected_ticket_id: null, visible_count: 0 },
+        tickets: [],
+      }),
+    );
+    fetchSupportTicketWorkspaceMock.mockRejectedValue(new Error("404 not found"));
+
+    renderTicketListPage("/app/tickets/missing-ticket");
+
+    expect(await screen.findByText("Тикет не найден")).toBeInTheDocument();
+    expect(screen.getByText("Он мог быть закрыт, удалён или недоступен в текущей очереди.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Вернуться к очереди" }));
+
+    expect(await screen.findByText("Выберите тикет из очереди")).toBeInTheDocument();
+  });
+
+  it("shows a permission-denied workspace edge state for forbidden tickets", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockRejectedValue(new Error("403 forbidden"));
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Недостаточно прав")).toBeInTheDocument();
+    expect(screen.getByText("У вашей роли нет доступа к этому тикету или внутренним данным.")).toBeInTheDocument();
+  });
+
+  it("renders actionable empty timeline states for all and filtered views", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ items: [], total: 0 }));
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("В таймлайне пока нет событий")).toBeInTheDocument();
+    expect(screen.getByText("Новые сообщения, диагностика и системные изменения появятся здесь.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Диагностика" }));
+
+    expect(await screen.findByText("Нет событий: Диагностика")).toBeInTheDocument();
+    expect(screen.getByText("Смените фильтр или откройте все события таймлайна.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Показать все события" }));
+
+    expect(await screen.findByText("В таймлайне пока нет событий")).toBeInTheDocument();
+  });
+
   it("sends selected status, queue, priority and assign targets through reason-capturing controls", async () => {
     const baseQueuePayload = queuePayload();
     fetchSupportQueueMock.mockResolvedValue(
