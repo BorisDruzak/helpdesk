@@ -619,11 +619,20 @@ P4.4 - closure blocker visibility and ordering:
   - Modify: `webapp/src/pages/tickets/list-page.tsx`.
   - Test: `webapp/src/pages/tickets/list-page.test.tsx`.
 - Checklist:
-  1. [ ] Add a focused frontend test with six closure blockers where `attach_evidence` and `add_worklog` are initially below the first four rows.
-  2. [ ] Add a deterministic local ordering helper that promotes severe actionable blockers, while preserving stable order for equal priority.
-  3. [ ] Render visible blocker rows plus a compact "Показать ещё N" / "Скрыть" control when rows overflow.
-  4. [ ] Ensure clicking newly revealed `Добавить evidence` / `Добавить worklog` still opens the passport focus card with the right section and target action.
+  1. [x] Add a focused frontend test with six closure blockers where `attach_evidence` and `add_worklog` are initially below the first four rows.
+  2. [x] Add a deterministic local ordering helper that promotes severe actionable blockers, while preserving stable order for equal priority.
+  3. [x] Render visible blocker rows plus a compact "Показать ещё N" / "Скрыть" control when rows overflow.
+  4. [x] Ensure clicking newly revealed `Добавить evidence` / `Добавить worklog` still opens the passport focus card with the right section and target action.
   5. [ ] Run focused Vitest, production build, `python scripts\verify_workspace.py`, release/browser signoff and stop the remote server.
+
+P4.4 local evidence:
+
+- RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "keeps evidence and worklog blockers discoverable"` failed because the central closure panel sliced the first four blockers and did not render `Добавить evidence`.
+- GREEN verified: the same focused test passes after adding deterministic blocker ordering, overflow state and `Показать ещё N` / `Скрыть`.
+- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (26 tests).
+- Production webapp build passed: `pnpm --dir webapp run build`.
+- Workspace verification passed: `python scripts\verify_workspace.py`.
+- Whitespace check passed with no diff errors: `git diff --check`.
 
 P2.6 verification plan:
 

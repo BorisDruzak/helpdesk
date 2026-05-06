@@ -928,6 +928,120 @@ describe("TicketListPage", () => {
     expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Проверка и закрытие")).toBeInTheDocument();
   });
 
+  it("keeps evidence and worklog blockers discoverable when closure blockers overflow", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 6,
+          total: 7,
+          evidence_candidate_count: 2,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "resolution_code",
+              label: "Код решения",
+              met: false,
+              detail: "Укажите код решения из списка.",
+              source: "closure_requirement",
+              action_kind: "edit_resolution",
+              action_label: "Заполнить решение",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+            {
+              key: "public_summary",
+              label: "Публичный итог для заявителя",
+              met: false,
+              detail: "Заполните итог, который увидит заявитель.",
+              source: "closure_requirement",
+              action_kind: "edit_resolution",
+              action_label: "Заполнить решение",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+            {
+              key: "internal_summary",
+              label: "Внутренний итог решения",
+              met: false,
+              detail: "Заполните внутреннее описание причины и действий.",
+              source: "closure_requirement",
+              action_kind: "edit_resolution",
+              action_label: "Заполнить решение",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+            {
+              key: "official_passport",
+              label: "Официальный паспорт решения",
+              met: false,
+              detail: "Откройте паспорт и проверьте обязательные поля.",
+              source: "closure_requirement",
+              action_kind: "open_passport",
+              action_label: "Открыть паспорт",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Для этого приоритета нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 2,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+            {
+              key: "worklog",
+              label: "Worklog",
+              met: false,
+              detail: "Добавьте запись о выполненной работе.",
+              source: "closure_requirement",
+              action_kind: "add_worklog",
+              action_label: "Добавить worklog",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    expect(within(closurePanel).getByRole("button", { name: "Добавить evidence" })).toBeInTheDocument();
+    expect(within(closurePanel).getByRole("button", { name: "Добавить worklog" })).toBeInTheDocument();
+    expect(within(closurePanel).getByRole("button", { name: "Показать ещё 2" })).toBeInTheDocument();
+
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Показать ещё 2" }));
+
+    expect(within(closurePanel).getByText("Официальный паспорт решения")).toBeInTheDocument();
+    expect(within(closurePanel).getByRole("button", { name: "Скрыть" })).toBeInTheDocument();
+
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
+
+    const focusCard = await screen.findByTestId("closure-focus-card");
+    expect(within(focusCard).getByText("Секция: Evidence")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Приложить evidence")).toBeInTheDocument();
+  });
+
   it("renders requester contact enrichment in the context sidebar", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());

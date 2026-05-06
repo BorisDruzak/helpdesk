@@ -92,6 +92,7 @@ type OperatorActionDraft = {
 
 type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 
+const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
@@ -311,6 +312,50 @@ function passportProgress(passport: SupportWorkspacePassport) {
     return 0;
   }
   return Math.max(0, Math.min(100, Math.round((passport.done / passport.total) * 100)));
+}
+
+function closureBlockerSeverityRank(blocker: ClosurePlanBlocker) {
+  if (blocker.severity === "blocking") {
+    return 0;
+  }
+  if (blocker.severity === "warning") {
+    return 1;
+  }
+  return 2;
+}
+
+function closureBlockerActionRank(blocker: ClosurePlanBlocker) {
+  switch (blocker.actionKind) {
+    case "attach_evidence":
+      return 0;
+    case "add_worklog":
+      return 1;
+    case "check_approval":
+      return 2;
+    case "edit_resolution":
+      return 3;
+    case "open_passport":
+      return 4;
+    default:
+      return 5;
+  }
+}
+
+function orderClosureBlockers(blockers: ClosurePlanBlocker[]) {
+  return blockers
+    .map((blocker, index) => ({ blocker, index }))
+    .sort((left, right) => {
+      const severityDelta = closureBlockerSeverityRank(left.blocker) - closureBlockerSeverityRank(right.blocker);
+      if (severityDelta !== 0) {
+        return severityDelta;
+      }
+      const actionDelta = closureBlockerActionRank(left.blocker) - closureBlockerActionRank(right.blocker);
+      if (actionDelta !== 0) {
+        return actionDelta;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.blocker);
 }
 
 function closureFocusGuide(blocker: ClosurePlanBlocker) {
@@ -558,6 +603,7 @@ export function TicketListPage() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
   const [closureFocus, setClosureFocus] = useState<ClosurePlanBlocker | null>(null);
+  const [closureBlockersExpanded, setClosureBlockersExpanded] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
@@ -774,6 +820,14 @@ export function TicketListPage() {
   }
 
   const selectedTicket = viewModel.selectedTicket;
+  const orderedClosureBlockers = useMemo(
+    () => orderClosureBlockers(selectedTicket?.closurePlan.blockers ?? []),
+    [selectedTicket?.closurePlan.blockers],
+  );
+  const hiddenClosureBlockerCount = Math.max(0, orderedClosureBlockers.length - CLOSURE_BLOCKER_VISIBLE_LIMIT);
+  const visibleClosureBlockers = closureBlockersExpanded
+    ? orderedClosureBlockers
+    : orderedClosureBlockers.slice(0, CLOSURE_BLOCKER_VISIBLE_LIMIT);
   const closureGuide = closureFocus ? closureFocusGuide(closureFocus) : null;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const actionError =
@@ -813,6 +867,7 @@ export function TicketListPage() {
 
   useEffect(() => {
     setClosureFocus(null);
+    setClosureBlockersExpanded(false);
   }, [selectedTicket?.id]);
 
   const isLightTheme = workspaceTheme === "light";
@@ -1297,7 +1352,7 @@ export function TicketListPage() {
                       </button>
                     </div>
                     <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {selectedTicket.closurePlan.blockers.slice(0, 4).map((blocker) => (
+                      {visibleClosureBlockers.map((blocker) => (
                         <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={blocker.key}>
                           <div className="flex items-start justify-between gap-2">
                             <p className="min-w-0 break-words text-sm font-semibold text-white">{blocker.label}</p>
@@ -1313,6 +1368,15 @@ export function TicketListPage() {
                         </div>
                       ))}
                     </div>
+                    {hiddenClosureBlockerCount > 0 ? (
+                      <button
+                        className="mt-3 rounded-lg border border-amber-300/25 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.08]"
+                        onClick={() => setClosureBlockersExpanded((expanded) => !expanded)}
+                        type="button"
+                      >
+                        {closureBlockersExpanded ? "Скрыть" : `Показать ещё ${hiddenClosureBlockerCount}`}
+                      </button>
+                    ) : null}
                   </section>
                 ) : null}
               </div>
