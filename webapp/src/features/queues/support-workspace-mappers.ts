@@ -543,6 +543,16 @@ function requesterSourceLabel(source: string | null | undefined): string {
   return requesterSourceLabels[source] ?? `\u041f\u0440\u043e\u0444\u0438\u043b\u044c: ${source}`;
 }
 
+function serviceSourceLabel(source: string | null | undefined): string {
+  if (!source) {
+    return "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0443\u0441\u043b\u0443\u0433\u0438: \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d";
+  }
+  if (source === "registry") {
+    return "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0443\u0441\u043b\u0443\u0433\u0438: \u0440\u0435\u0435\u0441\u0442\u0440";
+  }
+  return `\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0443\u0441\u043b\u0443\u0433\u0438: ${source}`;
+}
+
 function assetTypeLabel(assetType: string | null | undefined): string {
   if (!assetType) {
     return "\u0422\u0438\u043f \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d";
@@ -589,6 +599,8 @@ export function mapWorkspaceContext(
       ticketType: detail.ticket.ticket_type ?? detail.request_form?.request_kind ?? "Не указан",
       category: detail.ticket.category_id ? String(detail.ticket.category_id) : "Не указана",
       service: registry?.service_name ?? (detail.ticket.service_id ? String(detail.ticket.service_id) : "Не указан"),
+      serviceOwner: registry?.service_owner_queue_name ?? (registry?.service_owner_queue_id ? `Очередь #${registry.service_owner_queue_id}` : "Не указан"),
+      serviceSourceLabel: serviceSourceLabel(registry?.service_source),
       source: detail.request_form?.form_title ?? detail.request_form?.form_key ?? "Не указан",
       similarTicketsCount,
     },
@@ -665,6 +677,8 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
       statusLabel: operationStatusLabel(status),
       statusTone: operationStatusTone(status),
       active: activeOperationStatuses.has(status),
+      retryable: Boolean(operation.retryable),
+      detailsUrl: operation.details_url ?? null,
       summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
       metaLabels: operationMetaLabels(operation),
       queuedOrStartedLabel: formatDateTime(operation.started_at ?? operation.queued_at),

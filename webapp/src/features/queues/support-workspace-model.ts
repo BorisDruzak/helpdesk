@@ -172,6 +172,8 @@ export type SupportWorkspaceContext = {
     ticketType: string;
     category: string;
     service: string;
+    serviceOwner: string;
+    serviceSourceLabel: string;
     source: string;
     similarTicketsCount: number;
   };
@@ -196,6 +198,8 @@ export type SupportWorkspaceOperationSummary = {
   statusLabel: string;
   statusTone: TicketBadgeTone;
   active: boolean;
+  retryable: boolean;
+  detailsUrl: string | null;
   summary: string | null;
   metaLabels: string[];
   queuedOrStartedLabel: string;

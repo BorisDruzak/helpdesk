@@ -22,6 +22,7 @@ from app.db.models import (
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
+    RegistryService,
     ReportingPolicy,
     Ticket,
     TicketApproval,
@@ -1679,10 +1680,13 @@ async def test_web_support_workspace_enriches_requester_contact_from_registry(te
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
         queue = await _seed_queue(session, code="contact_registry", name="Contact registry", members=["support-test"])
+        queue_id = queue.id
+        queue_name = queue.name
         person_id = str(uuid.uuid4())
         department_id = str(uuid.uuid4())
         location_id = str(uuid.uuid4())
         asset_id = str(uuid.uuid4())
+        service_id = str(uuid.uuid4())
         session.add_all([
             RegistryDepartment(
                 department_id=department_id,
@@ -1706,6 +1710,13 @@ async def test_web_support_workspace_enriches_requester_contact_from_registry(te
                 location_id=location_id,
                 source="manual",
             ),
+            RegistryService(
+                service_id=service_id,
+                code="corp-site",
+                name="Корпоративный сайт",
+                owner_queue_id=queue_id,
+                source="registry",
+            ),
         ])
         await session.flush()
         session.add(
@@ -1718,6 +1729,7 @@ async def test_web_support_workspace_enriches_requester_contact_from_registry(te
                 location_id=location_id,
                 assigned_person_id=person_id,
                 department_id=department_id,
+                service_id=service_id,
             )
         )
         ticket = Ticket(
@@ -1745,6 +1757,10 @@ async def test_web_support_workspace_enriches_requester_contact_from_registry(te
     assert registry["person_email"] == "a.smirnov@example.test"
     assert registry["department_name"] == "Отдел маркетинга"
     assert registry["floor"] == "3"
+    assert registry["service_id"] == service_id
+    assert registry["service_name"] == "Корпоративный сайт"
+    assert registry["service_owner_queue_id"] == queue_id
+    assert registry["service_owner_queue_name"] == queue_name
 
 
 @pytest.mark.asyncio

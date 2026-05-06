@@ -78,6 +78,14 @@ class RegistryRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_service(self, service_id: str | None) -> RegistryService | None:
+        if not service_id:
+            return None
+        result = await self.session.execute(
+            select(RegistryService).where(RegistryService.service_id == service_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_or_create_department(
         self,
         *,

@@ -72,6 +72,34 @@ def test_catalog_search_scores_and_deduplicates_existing_articles():
     assert search_catalog_articles_for_ticket(ticket, {"KB-HTTP-502"}, catalog=catalog, limit=2) == []
 
 
+def test_catalog_search_uses_token_index_for_reordered_keyword_phrases():
+    ticket = SimpleNamespace(
+        title="Nginx proxy returns 502",
+        description="Upstream service unavailable after deploy",
+        requester_resolution_summary=None,
+        resolution_summary=None,
+        ticket_type="incident",
+        source="monitoring",
+        custom_fields={},
+    )
+    catalog = [
+        KnowledgeCatalogEntry(
+            id="KB-REVERSE-PROXY",
+            title="Reverse proxy upstream outage",
+            url="/app/knowledge/KB-REVERSE-PROXY",
+            keywords=("reverse proxy upstream", "backend service unavailable"),
+        ),
+    ]
+
+    results = search_catalog_articles_for_ticket(ticket, catalog=catalog, limit=1)
+
+    assert results
+    assert results[0].id == "KB-REVERSE-PROXY"
+    assert results[0].source_type == "catalog_index"
+    assert results[0].score >= 40
+    assert "reverse proxy upstream" in results[0].match_reasons
+
+
 def test_knowledge_summary_is_source_visible_and_conservative():
     summary = knowledge_source_summary(
         articles=[

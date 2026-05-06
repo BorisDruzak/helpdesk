@@ -22,6 +22,7 @@ from app.db.models import (
     PlaybookVersion,
     Ticket,
     TicketApproval,
+    TicketQueue,
     TicketResolutionPassport,
 )
 from app.repos import DevicesRepo, NotificationRepo
@@ -2199,6 +2200,10 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         registry_repo = RegistryRepo(session)
         asset = await registry_repo.get_asset_by_device_id(ticket.device_id)
         person = await registry_repo.get_person(getattr(asset, "assigned_person_id", None)) if asset else None
+        service = await registry_repo.get_service(getattr(asset, "service_id", None)) if asset else None
+        service_owner_queue = None
+        if getattr(service, "owner_queue_id", None):
+            service_owner_queue = await session.get(TicketQueue, service.owner_queue_id)
         location_id = getattr(asset, "location_id", None) or getattr(person, "location_id", None)
         department_id = getattr(asset, "department_id", None) or getattr(person, "department_id", None)
         location = await registry_repo.get_location(location_id) if location_id else None
@@ -2220,8 +2225,11 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                 asset_id=getattr(asset, "asset_id", None),
                 asset_name=getattr(asset, "name", None),
                 asset_type=getattr(asset, "asset_type", None),
-                service_id=getattr(asset, "service_id", None),
-                service_name=None,
+                service_id=getattr(service, "service_id", None) or getattr(asset, "service_id", None),
+                service_name=getattr(service, "name", None),
+                service_owner_queue_id=getattr(service, "owner_queue_id", None),
+                service_owner_queue_name=getattr(service_owner_queue, "name", None),
+                service_source=getattr(service, "source", None),
             )
 
     device_snapshot = SupportTicketDeviceSnapshot(

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 from functools import lru_cache
 from pathlib import Path
+import re
 from typing import Any, Iterable
 from urllib.parse import quote
 
@@ -70,9 +71,34 @@ class KnowledgeCatalogEntry:
     keywords: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class KnowledgeCatalogIndex:
+    entries: tuple[KnowledgeCatalogEntry, ...]
+    keyword_tokens: dict[str, tuple[tuple[str, frozenset[str]], ...]]
+
+    @classmethod
+    def build(cls, catalog: Iterable[KnowledgeCatalogEntry]) -> "KnowledgeCatalogIndex":
+        entries = tuple(catalog)
+        keyword_tokens: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {}
+        for entry in entries:
+            keyword_tokens[entry.id] = tuple(
+                (keyword, frozenset(_knowledge_tokens(keyword)))
+                for keyword in entry.keywords
+                if clean_knowledge_text(keyword)
+            )
+        return cls(entries=entries, keyword_tokens=keyword_tokens)
+
+
 def clean_knowledge_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _knowledge_tokens(value: Any) -> tuple[str, ...]:
+    text = clean_knowledge_text(value)
+    if not text:
+        return ()
+    return tuple(token for token in re.findall(r"[\wа-яА-ЯёЁ]+", text.casefold()) if len(token) >= 2)
 
 
 def article_url(article_ref: str) -> str:
@@ -202,19 +228,29 @@ def search_catalog_articles_for_ticket(
     if not search_text:
         return []
     existing_ids = existing_article_ids or set()
-    scored: list[tuple[int, int, KnowledgeCatalogEntry, list[str]]] = []
-    for index, entry in enumerate(catalog if catalog is not None else load_knowledge_catalog()):
+    catalog_index = KnowledgeCatalogIndex.build(catalog if catalog is not None else load_knowledge_catalog())
+    search_tokens = frozenset(_knowledge_tokens(search_text))
+    scored: list[tuple[int, int, KnowledgeCatalogEntry, list[str], str]] = []
+    for index, entry in enumerate(catalog_index.entries):
         if entry.id in existing_ids:
             continue
         score = 0
         match_reasons: list[str] = []
-        for keyword in entry.keywords:
+        source_type = "catalog"
+        for keyword, keyword_tokens in catalog_index.keyword_tokens.get(entry.id, ()):
             normalized_keyword = keyword.casefold()
             if normalized_keyword and normalized_keyword in search_text:
                 score += 2 if " " in normalized_keyword else 1
                 match_reasons.append(keyword)
+                continue
+            if len(keyword_tokens) >= 2:
+                overlap = keyword_tokens & search_tokens
+                if len(overlap) >= 2 and len(overlap) / len(keyword_tokens) >= 0.5:
+                    score += len(overlap)
+                    match_reasons.append(keyword)
+                    source_type = "catalog_index"
         if score > 0:
-            scored.append((score, -index, entry, _unique_strings(match_reasons)))
+            scored.append((score, -index, entry, _unique_strings(match_reasons), source_type))
 
     scored.sort(reverse=True)
     return [
@@ -222,11 +258,11 @@ def search_catalog_articles_for_ticket(
             id=entry.id,
             title=entry.title,
             url=entry.url,
-            source_type="catalog",
+            source_type=source_type,
             score=_catalog_score(score),
             match_reasons=match_reasons,
         )
-        for score, _index, entry, match_reasons in scored[:limit]
+        for score, _index, entry, match_reasons, source_type in scored[:limit]
     ]
 
 

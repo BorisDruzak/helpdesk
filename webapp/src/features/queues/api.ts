@@ -266,6 +266,9 @@ export type SupportTicketDetailPayload = {
       asset_type: string | null;
       service_id: string | null;
       service_name: string | null;
+      service_owner_queue_id?: number | null;
+      service_owner_queue_name?: string | null;
+      service_source?: string | null;
     } | null;
     latest_operations: Array<{
       operation_id: string;
@@ -589,6 +592,21 @@ export type SupportTicketPassportEvidenceCreatePayload = {
   internal_summary?: string | null;
   metadata_json?: Record<string, unknown>;
   export_visibility?: string;
+};
+
+export type SupportTicketWorklogPayload = {
+  worklog_id: number;
+  actor_id: string | null;
+  spent_minutes: number;
+  note: string | null;
+};
+
+export type SupportOperationCancelPayload = {
+  status: string;
+  target_operation_id: string;
+  cancel_operation_id?: string | null;
+  message?: string | null;
+  reason?: string | null;
 };
 
 export type SupportTicketPassportSectionPatchPayload = {
@@ -943,6 +961,65 @@ export async function postSupportTicketMessage(
   }
 
   return payload.data;
+}
+
+export async function postSupportTicketWorklog(
+  ticketId: string,
+  worklog: { spentMinutes: number; note?: string | null }
+): Promise<SupportTicketWorklogPayload> {
+  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/worklogs`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      spent_minutes: worklog.spentMinutes,
+      note: worklog.note ?? null
+    })
+  });
+  const payload = await readJson<({ status: "success"; worklog: SupportTicketWorklogPayload } & Record<string, unknown>) | ErrorResponse>(
+    response
+  );
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось добавить worklog",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.worklog;
+}
+
+export async function postSupportOperationCancel(
+  operationId: string,
+  options: { reason?: string | null } = {}
+): Promise<SupportOperationCancelPayload> {
+  const response = await fetch(`/api/operations/${encodeURIComponent(operationId)}/cancel`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      reason: options.reason ?? null
+    })
+  });
+  const payload = await readJson<SupportOperationCancelPayload | ErrorResponse>(response);
+
+  if (!response.ok || !payload || ("error" in payload && payload.status === "error")) {
+    const errorPayload = payload && "error" in payload ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось отменить операцию",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload as SupportOperationCancelPayload;
 }
 
 export async function postSupportTicketStatus(

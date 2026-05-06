@@ -5,8 +5,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import {
   fetchSupportQueue,
+  fetchSupportTicketPassportEvidenceCandidates,
   fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
+  linkSupportTicketPassportEvidence,
+  postSupportOperationCancel,
+  postSupportTicketWorklog,
   postSupportTicketAssign,
   postSupportTicketPriority,
   postSupportTicketQueue,
@@ -24,8 +28,12 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   return {
     ...actual,
     fetchSupportQueue: vi.fn(),
+    fetchSupportTicketPassportEvidenceCandidates: vi.fn(),
     fetchSupportTicketTimeline: vi.fn(),
     fetchSupportTicketWorkspace: vi.fn(),
+    linkSupportTicketPassportEvidence: vi.fn(),
+    postSupportOperationCancel: vi.fn(),
+    postSupportTicketWorklog: vi.fn(),
     postSupportTicketAssign: vi.fn(),
     postSupportTicketPriority: vi.fn(),
     postSupportTicketQueue: vi.fn(),
@@ -44,8 +52,12 @@ vi.mock("../../features/auth/session-provider", () => ({
 }));
 
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
+const fetchSupportTicketPassportEvidenceCandidatesMock = vi.mocked(fetchSupportTicketPassportEvidenceCandidates);
 const fetchSupportTicketTimelineMock = vi.mocked(fetchSupportTicketTimeline);
 const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
+const linkSupportTicketPassportEvidenceMock = vi.mocked(linkSupportTicketPassportEvidence);
+const postSupportOperationCancelMock = vi.mocked(postSupportOperationCancel);
+const postSupportTicketWorklogMock = vi.mocked(postSupportTicketWorklog);
 const postSupportTicketAssignMock = vi.mocked(postSupportTicketAssign);
 const postSupportTicketPriorityMock = vi.mocked(postSupportTicketPriority);
 const postSupportTicketQueueMock = vi.mocked(postSupportTicketQueue);
@@ -193,6 +205,9 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
           asset_type: "pc",
           service_id: "service-1",
           service_name: "Корпоративный сайт",
+          service_owner_queue_id: 7,
+          service_owner_queue_name: "Web L2",
+          service_source: "registry",
         },
         latest_operations: [],
       },
@@ -677,6 +692,11 @@ describe("TicketListPage", () => {
     };
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+    postSupportOperationCancelMock.mockResolvedValue({
+      status: "ok",
+      target_operation_id: "op-running",
+      cancel_operation_id: "op-cancel-1",
+    });
 
     renderTicketListPage("/app/tickets/ticket-1");
 
@@ -690,6 +710,13 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Длительность: 1 s")).toBeInTheDocument();
     expect(screen.getByText("Повторы: 0/3")).toBeInTheDocument();
     expect(screen.getByText("Trace: trace-ru...")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Детали операции" })).toHaveAttribute("href", "/api/operations/op-running");
+    fireEvent.click(screen.getByRole("button", { name: "Отменить операцию" }));
+    await waitFor(() => {
+      expect(postSupportOperationCancelMock).toHaveBeenCalledWith("op-running", {
+        reason: "operator_requested_from_support_workspace",
+      });
+    });
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
     expect(screen.getByText("Право: module.tool.run.low_risk")).toBeInTheDocument();
     expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
@@ -809,8 +836,51 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Добавить evidence")).toBeInTheDocument();
   });
 
+  it("keeps central closure blockers readable in the light theme", async () => {
+    window.localStorage.setItem("support-workspace-theme", "light");
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 3,
+          evidence_candidate_count: 0,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Для этого приоритета нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    expect(within(closurePanel).getByTestId("closure-plan-title")).toHaveClass("text-slate-950");
+    expect(within(closurePanel).getByTestId("closure-plan-summary")).toHaveClass("text-amber-900");
+    expect(within(closurePanel).getByTestId("closure-blocker-card")).toHaveClass("bg-white/80");
+    expect(within(closurePanel).getByText("Для этого приоритета нужно приложить evidence.")).toHaveClass(
+      "text-amber-900/80",
+    );
+  });
+
   it("opens passport focus guidance from a closure blocker action", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketPassportEvidenceCandidatesMock.mockResolvedValue({ ticket_id: "ticket-1", candidates: [] });
     fetchSupportTicketWorkspaceMock.mockResolvedValue(
       workspacePayload({
         closure_plan: {
@@ -848,7 +918,131 @@ describe("TicketListPage", () => {
     expect(focusCard).toBeInTheDocument();
     expect(screen.getByText("Фокус паспорта")).toBeInTheDocument();
     expect(screen.getAllByText("Доказательство для P0").length).toBeGreaterThan(1);
-    expect(within(focusCard).getByText("Нужно приложить evidence.")).toBeInTheDocument();
+    expect(within(focusCard).getAllByText("Нужно приложить evidence.").length).toBeGreaterThan(0);
+  });
+
+  it("links an evidence candidate from the workspace closure guidance", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketPassportEvidenceCandidatesMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      candidates: [
+        {
+          candidate_id: "operation:op-1",
+          source_kind: "operation",
+          source_id: "op-1",
+          source_ref: "operation:op-1",
+          source_quality: "high",
+          evidence_type: "diagnostic_result",
+          required_fact: "evidence",
+          section_key: "evidence",
+          title: "HTTP диагностика",
+          summary: "HTTP 502 Bad Gateway",
+          visibility: "internal",
+          captured_at: "2026-05-03T09:00:00+05:00",
+          existing_evidence_id: null,
+        },
+      ],
+    });
+    linkSupportTicketPassportEvidenceMock.mockResolvedValue({} as Awaited<ReturnType<typeof linkSupportTicketPassportEvidence>>);
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 1,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 1,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
+
+    expect(await screen.findByText("Кандидаты evidence")).toBeInTheDocument();
+    expect(await screen.findByText("HTTP диагностика")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Привязать evidence" }));
+
+    await waitFor(() => {
+      expect(linkSupportTicketPassportEvidenceMock).toHaveBeenCalledWith("ticket-1", {
+        source_kind: "operation",
+        source_id: "op-1",
+        required_fact: "evidence",
+        visibility: "internal",
+      });
+    });
+  });
+
+  it("posts a worklog entry from the workspace closure guidance", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    postSupportTicketWorklogMock.mockResolvedValue({
+      worklog_id: 5,
+      actor_id: "support-test",
+      spent_minutes: 20,
+      note: "Проверил DNS",
+    });
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 0,
+          recommended_next_action: "Добавить worklog",
+          blockers: [
+            {
+              key: "worklog",
+              label: "Worklog",
+              met: false,
+              detail: "Добавьте запись о выполненной работе.",
+              source: "closure_requirement",
+              action_kind: "add_worklog",
+              action_label: "Добавить worklog",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить worklog" }));
+
+    expect(await screen.findByText("Новый worklog")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Минуты"), { target: { value: "20" } });
+    fireEvent.change(screen.getByLabelText("Что сделано"), { target: { value: "Проверил DNS" } });
+    fireEvent.click(screen.getByRole("button", { name: "Записать worklog" }));
+
+    await waitFor(() => {
+      expect(postSupportTicketWorklogMock).toHaveBeenCalledWith("ticket-1", {
+        spentMinutes: 20,
+        note: "Проверил DNS",
+      });
+    });
   });
 
   it("shows action-specific passport guidance for resolution blockers", async () => {
@@ -1106,6 +1300,8 @@ describe("TicketListPage", () => {
     expect(screen.getByText("ПК")).toBeInTheDocument();
     expect(screen.getByText("asset-1")).toBeInTheDocument();
     expect(screen.getByText("Корпоративный сайт")).toBeInTheDocument();
+    expect(screen.getByText("Web L2")).toBeInTheDocument();
+    expect(screen.getByText("Источник услуги: реестр")).toBeInTheDocument();
     expect(screen.getByText("Похожие тикеты")).toBeInTheDocument();
   });
 

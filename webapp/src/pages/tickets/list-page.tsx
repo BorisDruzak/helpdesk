@@ -43,9 +43,13 @@ import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  createSupportTicketPassportEvidence,
   fetchSupportQueue,
+  fetchSupportTicketPassportEvidenceCandidates,
   fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
+  linkSupportTicketPassportEvidence,
+  postSupportOperationCancel,
   postSupportTicketAssign,
   postSupportTicketMessage,
   postSupportTicketPlaybookRun,
@@ -54,7 +58,9 @@ import {
   postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportTicketToolRun,
+  postSupportTicketWorklog,
   type SupportQueueScope,
+  type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
 } from "../../features/queues/api";
 import {
@@ -523,7 +529,15 @@ function diagnosticStepTextClass(status: string) {
   return "text-amber-200";
 }
 
-function OperationSummaryCard({ operation }: { operation: SupportWorkspaceOperationSummary }) {
+function OperationSummaryCard({
+  isCanceling = false,
+  onCancel,
+  operation,
+}: {
+  isCanceling?: boolean;
+  onCancel?: (operationId: string) => void;
+  operation: SupportWorkspaceOperationSummary;
+}) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
       <div className="flex items-start justify-between gap-3">
@@ -548,6 +562,36 @@ function OperationSummaryCard({ operation }: { operation: SupportWorkspaceOperat
           ))}
         </div>
       ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {operation.detailsUrl ? (
+          <a
+            className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-semibold text-slate-200 hover:text-white"
+            href={operation.detailsUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Детали операции
+          </a>
+        ) : null}
+        {operation.active ? (
+          <button
+            className="rounded-md border border-red-300/25 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isCanceling || !onCancel}
+            onClick={() => onCancel?.(operation.id)}
+            type="button"
+          >
+            {isCanceling ? "Отменяем..." : "Отменить операцию"}
+          </button>
+        ) : null}
+        {operation.retryable ? (
+          <span
+            className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
+            title="Backend exposes retryability metadata, but no safe retry endpoint is available in the current operation API."
+          >
+            Повтор требует API
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -678,6 +722,10 @@ export function TicketListPage() {
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
   const [closureFocus, setClosureFocus] = useState<ClosurePlanBlocker | null>(null);
   const [closureBlockersExpanded, setClosureBlockersExpanded] = useState(false);
+  const [manualEvidenceTitle, setManualEvidenceTitle] = useState("");
+  const [manualEvidenceSummary, setManualEvidenceSummary] = useState("");
+  const [worklogMinutes, setWorklogMinutes] = useState("15");
+  const [worklogNote, setWorklogNote] = useState("");
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
@@ -724,6 +772,13 @@ export function TicketListPage() {
     queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
     queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, timelineApiFilter),
     enabled: Boolean(selectedTicketId) && timelineFilter !== "all",
+    retry: false,
+  });
+
+  const evidenceCandidatesQuery = useQuery({
+    queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId],
+    queryFn: () => fetchSupportTicketPassportEvidenceCandidates(selectedTicketId!),
+    enabled: Boolean(selectedTicketId) && sidebarTab === "passport" && closureFocus?.actionKind === "attach_evidence",
     retry: false,
   });
 
@@ -872,6 +927,95 @@ export function TicketListPage() {
     },
   });
 
+  const evidenceLinkMutation = useMutation({
+    mutationFn: async (candidate: SupportTicketEvidenceCandidatePayload) => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      return linkSupportTicketPassportEvidence(selectedTicketId, {
+        source_kind: candidate.source_kind,
+        source_id: candidate.source_id,
+        required_fact: candidate.required_fact,
+        visibility: candidate.visibility || "internal",
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId] }),
+      ]);
+    },
+  });
+
+  const manualEvidenceMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      const title = manualEvidenceTitle.trim();
+      if (!title) {
+        return null;
+      }
+      return createSupportTicketPassportEvidence(selectedTicketId, {
+        evidence_type: "manual_note",
+        required_fact: closureFocus?.factKey || "evidence",
+        section_key: closureFocus?.factKey || "evidence",
+        title,
+        summary: manualEvidenceSummary.trim() || null,
+        visibility: "internal",
+        verification_status: "accepted",
+        export_visibility: "internal",
+      });
+    },
+    onSuccess: async () => {
+      setManualEvidenceTitle("");
+      setManualEvidenceSummary("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId] }),
+      ]);
+    },
+  });
+
+  const worklogMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      const spentMinutes = Number.parseInt(worklogMinutes, 10);
+      if (!Number.isFinite(spentMinutes) || spentMinutes <= 0) {
+        throw new Error("Укажите время worklog больше 0 минут.");
+      }
+      return postSupportTicketWorklog(selectedTicketId, {
+        spentMinutes,
+        note: worklogNote.trim() || null,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId] }),
+      ]);
+    },
+  });
+
+  const operationCancelMutation = useMutation({
+    mutationFn: async (operationId: string) =>
+      postSupportOperationCancel(operationId, {
+        reason: "operator_requested_from_support_workspace",
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+      ]);
+    },
+  });
+
   function openTicket(ticketId: string) {
     startTransition(() => {
       navigate(`/app/tickets/${ticketId}`);
@@ -907,7 +1051,14 @@ export function TicketListPage() {
   const closureGuide = closureFocus ? closureFocusGuide(closureFocus) : null;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const actionError =
-    messageMutation.error || operatorActionMutation.error || toolRunMutation.error || playbookRunMutation.error;
+    messageMutation.error ||
+    operatorActionMutation.error ||
+    toolRunMutation.error ||
+    playbookRunMutation.error ||
+    evidenceLinkMutation.error ||
+    manualEvidenceMutation.error ||
+    worklogMutation.error ||
+    operationCancelMutation.error;
   const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
   const operatorReasonReady = (operatorActionDraft?.reason.trim().length ?? 0) >= 3;
   const operatorTargetReady =
@@ -932,6 +1083,10 @@ export function TicketListPage() {
 
   function openClosureBlocker(blocker: ClosurePlanBlocker) {
     setClosureFocus(blocker);
+    setManualEvidenceTitle(blocker.label);
+    setManualEvidenceSummary(blocker.detail ?? "");
+    setWorklogNote(blocker.detail ?? "");
+    setWorklogMinutes("15");
     setSidebarTab("passport");
   }
 
@@ -944,6 +1099,10 @@ export function TicketListPage() {
   useEffect(() => {
     setClosureFocus(null);
     setClosureBlockersExpanded(false);
+    setManualEvidenceTitle("");
+    setManualEvidenceSummary("");
+    setWorklogNote("");
+    setWorklogMinutes("15");
   }, [selectedTicket?.id]);
 
   const isLightTheme = workspaceTheme === "light";
@@ -1435,16 +1594,28 @@ export function TicketListPage() {
 
                 {selectedTicket.closurePlan.missingCount > 0 ? (
                   <section
-                    className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4"
+                    className={`mt-4 rounded-xl p-4 ${
+                      isLightTheme
+                        ? "border border-amber-300 bg-amber-50 text-slate-950 shadow-sm"
+                        : "border border-amber-400/25 bg-amber-500/10"
+                    }`}
                     data-testid="closure-plan-panel"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-amber-200" />
-                          <p className="font-semibold text-white">Перед закрытием</p>
+                          <AlertTriangle className={`h-4 w-4 ${isLightTheme ? "text-amber-700" : "text-amber-200"}`} />
+                          <p
+                            className={`font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}
+                            data-testid="closure-plan-title"
+                          >
+                            Перед закрытием
+                          </p>
                         </div>
-                        <p className="mt-1 text-sm leading-6 text-amber-100/90">
+                        <p
+                          className={`mt-1 text-sm leading-6 ${isLightTheme ? "text-amber-900" : "text-amber-100/90"}`}
+                          data-testid="closure-plan-summary"
+                        >
                           Осталось требований: {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}.
                           {selectedTicket.closurePlan.evidenceCandidateCount
                             ? ` Доступно кандидатов evidence: ${selectedTicket.closurePlan.evidenceCandidateCount}.`
@@ -1452,7 +1623,11 @@ export function TicketListPage() {
                         </p>
                       </div>
                       <button
-                        className="shrink-0 rounded-xl border border-amber-300/30 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-amber-50 hover:bg-white/[0.1]"
+                        className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${
+                          isLightTheme
+                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
+                            : "border border-amber-300/30 bg-white/[0.06] text-amber-50 hover:bg-white/[0.1]"
+                        }`}
                         onClick={() => setSidebarTab("passport")}
                         type="button"
                       >
@@ -1462,24 +1637,44 @@ export function TicketListPage() {
                     </div>
                     <div className="mt-3 grid gap-2 md:grid-cols-2">
                       {visibleClosureBlockers.map((blocker) => (
-                        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={blocker.key}>
+                        <div
+                          className={`rounded-lg px-3 py-2 ${
+                            isLightTheme ? "border border-amber-200 bg-white/80" : "border border-white/10 bg-white/[0.04]"
+                          }`}
+                          data-testid="closure-blocker-card"
+                          key={blocker.key}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <p className="min-w-0 break-words text-sm font-semibold text-white">{blocker.label}</p>
+                            <p className={`min-w-0 break-words text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>
+                              {blocker.label}
+                            </p>
                             <button
-                              className="shrink-0 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.1]"
+                              className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                                isLightTheme
+                                  ? "border border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100"
+                                  : "border border-white/10 bg-white/[0.05] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.1]"
+                              }`}
                               onClick={() => openClosureBlocker(blocker)}
                               type="button"
                             >
                               {blocker.actionLabel}
                             </button>
                           </div>
-                          {blocker.detail ? <p className="mt-1 break-words text-xs leading-5 text-amber-100/75">{blocker.detail}</p> : null}
+                          {blocker.detail ? (
+                            <p className={`mt-1 break-words text-xs leading-5 ${isLightTheme ? "text-amber-900/80" : "text-amber-100/75"}`}>
+                              {blocker.detail}
+                            </p>
+                          ) : null}
                         </div>
                       ))}
                     </div>
                     {hiddenClosureBlockerCount > 0 ? (
                       <button
-                        className="mt-3 rounded-lg border border-amber-300/25 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.08]"
+                        className={`mt-3 rounded-lg px-3 py-2 text-xs font-semibold ${
+                          isLightTheme
+                            ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
+                            : "border border-amber-300/25 bg-white/[0.04] text-amber-100 hover:border-amber-200/50 hover:bg-white/[0.08]"
+                        }`}
                         onClick={() => setClosureBlockersExpanded((expanded) => !expanded)}
                         type="button"
                       >
@@ -1724,6 +1919,8 @@ export function TicketListPage() {
                     <ContextInfoRow icon={Tags} label="Тип" value={viewModel.right.context.classification.ticketType} />
                     <ContextInfoRow icon={ClipboardList} label="Категория" value={viewModel.right.context.classification.category} />
                     <ContextInfoRow icon={Building2} label="Сервис" value={viewModel.right.context.classification.service} />
+                    <ContextInfoRow icon={UsersRound} label="Владелец услуги" value={viewModel.right.context.classification.serviceOwner} />
+                    <ContextInfoRow icon={Fingerprint} label="Источник услуги" value={viewModel.right.context.classification.serviceSourceLabel} />
                     <ContextInfoRow icon={BookOpen} label="Источник" value={viewModel.right.context.classification.source} />
                     <ContextInfoRow icon={MessageSquare} label="Похожие тикеты" value={viewModel.right.context.classification.similarTicketsCount} />
                   </dl>
@@ -1782,7 +1979,12 @@ export function TicketListPage() {
                     </div>
                     <div className="mt-3 grid gap-2">
                       {viewModel.right.operations.slice(0, 4).map((operation) => (
-                        <OperationSummaryCard key={operation.id} operation={operation} />
+                        <OperationSummaryCard
+                          isCanceling={operationCancelMutation.isPending}
+                          key={operation.id}
+                          onCancel={(operationId) => operationCancelMutation.mutate(operationId)}
+                          operation={operation}
+                        />
                       ))}
                     </div>
                   </section>
@@ -1976,6 +2178,131 @@ export function TicketListPage() {
                     ) : null}
                     {closureFocus.candidateCount > 0 ? (
                       <p className="mt-2 text-xs text-amber-100/70">Evidence candidates: {closureFocus.candidateCount}</p>
+                    ) : null}
+                    {closureFocus.actionKind === "attach_evidence" ? (
+                      <div className="mt-3 space-y-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3" data-testid="workspace-evidence-actions">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/70">Кандидаты evidence</p>
+                            <p className="mt-1 text-xs leading-5 text-amber-50">
+                              Используются реальные источники паспорта: операции, worklog, чат, согласования и observer trace.
+                            </p>
+                          </div>
+                          <button
+                            className="shrink-0 rounded-md border border-amber-300/25 bg-white/[0.05] px-2 py-1 text-[11px] font-semibold text-amber-50 hover:bg-white/[0.1]"
+                            onClick={() => evidenceCandidatesQuery.refetch()}
+                            type="button"
+                          >
+                            Обновить
+                          </button>
+                        </div>
+                        {evidenceCandidatesQuery.isLoading ? (
+                          <p className="text-xs text-slate-400">Загружаем кандидатов...</p>
+                        ) : evidenceCandidatesQuery.data?.candidates.length ? (
+                          <div className="space-y-2">
+                            {evidenceCandidatesQuery.data.candidates.slice(0, 4).map((candidate) => (
+                              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2" key={candidate.candidate_id}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="break-words text-sm font-semibold text-white">{candidate.title}</p>
+                                    {candidate.summary ? (
+                                      <p className="mt-1 break-words text-xs leading-5 text-slate-300">{candidate.summary}</p>
+                                    ) : null}
+                                    <p className="mt-1 text-[11px] text-slate-500">
+                                      {candidate.source_kind} · {candidate.source_ref} · {candidate.required_fact}
+                                    </p>
+                                  </div>
+                                  <button
+                                    className="shrink-0 rounded-md border border-blue-300/30 bg-blue-500/15 px-2 py-1 text-[11px] font-semibold text-blue-100 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={Boolean(candidate.existing_evidence_id) || evidenceLinkMutation.isPending}
+                                    onClick={() => evidenceLinkMutation.mutate(candidate)}
+                                    type="button"
+                                  >
+                                    {candidate.existing_evidence_id ? "Привязано" : "Привязать evidence"}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="rounded-md border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs leading-5 text-amber-50">
+                            Кандидаты не найдены. Добавьте ручное evidence, если проверка выполнена вне автоматических источников.
+                          </p>
+                        )}
+                        <form
+                          className="grid gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            manualEvidenceMutation.mutate();
+                          }}
+                        >
+                          <label className="text-xs font-semibold text-amber-100">
+                            Название evidence
+                            <input
+                              className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/15 px-3 text-sm text-white outline-none placeholder:text-slate-500"
+                              onChange={(event) => setManualEvidenceTitle(event.target.value)}
+                              value={manualEvidenceTitle}
+                            />
+                          </label>
+                          <label className="text-xs font-semibold text-amber-100">
+                            Краткое описание
+                            <textarea
+                              className="mt-1 min-h-[72px] w-full resize-none rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
+                              onChange={(event) => setManualEvidenceSummary(event.target.value)}
+                              value={manualEvidenceSummary}
+                            />
+                          </label>
+                          <button
+                            className="justify-self-start rounded-md border border-amber-300/25 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-amber-50 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!manualEvidenceTitle.trim() || manualEvidenceMutation.isPending}
+                            type="submit"
+                          >
+                            {manualEvidenceMutation.isPending ? "Добавляем..." : "Добавить evidence"}
+                          </button>
+                        </form>
+                      </div>
+                    ) : null}
+                    {closureFocus.actionKind === "add_worklog" ? (
+                      <form
+                        className="mt-3 space-y-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3"
+                        data-testid="workspace-worklog-actions"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          worklogMutation.mutate();
+                        }}
+                      >
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/70">Новый worklog</p>
+                          <p className="mt-1 text-xs leading-5 text-amber-50">
+                            Запись попадёт в доменный worklog тикета и станет evidence-кандидатом для паспорта.
+                          </p>
+                        </div>
+                        <label className="block text-xs font-semibold text-amber-100">
+                          Минуты
+                          <input
+                            className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/15 px-3 text-sm text-white outline-none"
+                            min={1}
+                            onChange={(event) => setWorklogMinutes(event.target.value)}
+                            type="number"
+                            value={worklogMinutes}
+                          />
+                        </label>
+                        <label className="block text-xs font-semibold text-amber-100">
+                          Что сделано
+                          <textarea
+                            className="mt-1 min-h-[86px] w-full resize-none rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
+                            onChange={(event) => setWorklogNote(event.target.value)}
+                            value={worklogNote}
+                          />
+                        </label>
+                        <button
+                          className="rounded-md border border-blue-300/30 bg-blue-500/15 px-3 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={worklogMutation.isPending}
+                          type="submit"
+                        >
+                          {worklogMutation.isPending ? "Записываем..." : "Записать worklog"}
+                        </button>
+                      </form>
                     ) : null}
                   </div>
                 ) : null}

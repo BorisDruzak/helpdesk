@@ -345,6 +345,9 @@ class SupportTicketRegistrySnapshot(BaseModel):
     asset_type: str | None = None
     service_id: str | None = None
     service_name: str | None = None
+    service_owner_queue_id: int | None = None
+    service_owner_queue_name: str | None = None
+    service_source: str | None = None
 
 
 class SupportTicketOperationSnapshot(BaseModel):
