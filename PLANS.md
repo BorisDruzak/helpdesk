@@ -16,7 +16,7 @@ Created: 2026-05-05.
 
 Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff.
 
-Current execution mode: P2.6 planning for the current `/app/tickets` page. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. The next recommended slice is P2.6 visual/light-theme/responsive hardening of the already working page.
+Current execution mode: P2.6 visual/light-theme/responsive hardening in progress for the current `/app/tickets` page. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 starts with SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -317,6 +317,8 @@ P2.6 - visual/light-theme/responsive hardening:
 
 - Audit `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px desktop widths in dark and light themes.
 - Polish the current light theme so all major surfaces, chips, borders, timeline rows, sidebars, composer and dropdowns are readable and cohesive, not only the topbar/root shell.
+- Treat SLA/OLA and resolution passport as high-priority visual surfaces: timers must show breached/at-risk/paused/ok states clearly, progress bars must remain readable in both themes, passport readiness must not look like a passive placeholder, and "open passport" must stay obvious.
+- Add edge-case visual states for SLA/OLA/passport where the existing view model supports them: unknown timer, paused timer, breached timer, no timers, passport 0/N, passport complete N/N, and missing passport fallback.
 - Tighten density and overflow handling in the left ticket list, central action/timeline area and right context tabs.
 - Fix any clipped text, awkward wraps, weak contrast, non-obvious selected state or scroll containment issues found in browser screenshots.
 - Keep this frontend-only unless the audit exposes missing data that cannot be represented safely.
@@ -353,9 +355,18 @@ P2.11 - final current-page browser signoff:
 P2.6 verification plan:
 
 - Frontend focused tests for theme persistence, visible theme toggle labels/states and critical page text.
+- Frontend focused tests for SLA/OLA edge labels and passport readiness visual copy where practical.
 - `pnpm --dir webapp run build`.
 - `python scripts\verify_workspace.py`.
 - Browser MCP signoff at `http://192.168.100.17:8666/admin` with dark/light snapshots and console-error check.
+
+P2.6 first-slice local evidence:
+
+- Implemented scoped light-theme workspace overrides for `/app/tickets` so the existing dark-first panels, cards, timeline rows, composer, tabs and right sidebar receive readable light surfaces without changing the ticket business logic.
+- Reworked right-sidebar SLA/OLA rendering to show explicit `Нарушен`, `Риск`, `Пауза`, `В норме` and `Нет срока` states, due labels, readable progress bars and no stale OLA placeholder.
+- Reworked passport readiness rendering with a status chip, progress bar and clearer open-passport action.
+- Added focused frontend coverage for SLA/OLA edge labels and passport `4/4` readiness copy.
+- Local verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (16 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
 
 ## Design System Target
 
@@ -884,9 +895,9 @@ Recommended next step: execute **P2.6 visual/light-theme/responsive hardening** 
 Concrete P2.6 first slice:
 
 1. [ ] Run browser audit for `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px in dark and light themes.
-2. [ ] Record concrete visual defects: contrast, clipping, wrapping, selected states, scroll containment, dropdown/composer readability.
-3. [ ] Patch only the current page/component classes and mapper-safe UI helpers needed for those defects.
-4. [ ] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
+2. [x] Record concrete visual defects: contrast, clipping, wrapping, selected states, scroll containment, dropdown/composer readability, SLA/OLA timer readability and passport readiness clarity.
+3. [x] Patch only the current page/component classes and mapper-safe UI helpers needed for those defects.
+4. [x] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
 5. [ ] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
 
 Next slice after P2.6: choose P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening depending on what the P2.6 browser audit exposes.

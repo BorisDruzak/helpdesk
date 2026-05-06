@@ -414,6 +414,62 @@ describe("TicketListPage", () => {
     expect(screen.getByRole("button", { name: "Тёмная тема" })).toBeInTheDocument();
   });
 
+  it("renders SLA/OLA timer edge states and passport readiness clearly", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        sla_ola: {
+          first_response: {
+            due_at: "2026-05-03T09:30:00+05:00",
+            remaining_seconds: -120,
+            target_seconds: 900,
+            status: "breached",
+          },
+          resolution: {
+            due_at: "2026-05-03T13:30:00+05:00",
+            remaining_seconds: 1800,
+            target_seconds: 14400,
+            status: "at_risk",
+          },
+          ola_ack: { due_at: null, remaining_seconds: null, target_seconds: null, status: "unknown" },
+          ola_processing: {
+            due_at: "2026-05-03T11:30:00+05:00",
+            remaining_seconds: 2400,
+            target_seconds: 7200,
+            status: "paused",
+          },
+        },
+        passport_readiness: {
+          ticket_id: "ticket-1",
+          status: "ready",
+          done: 4,
+          total: 4,
+          items: [
+            { key: "problem_identified", label: "Проблема идентифицирована", status: "done" },
+            { key: "cause_found", label: "Причина установлена", status: "done" },
+            { key: "solution_applied", label: "Решение применено", status: "done" },
+            { key: "verified_and_closed", label: "Проверка и закрытие", status: "done" },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "SLA" }));
+
+    expect(await screen.findByText("Нарушен")).toBeInTheDocument();
+    expect(screen.getByText("Риск")).toBeInTheDocument();
+    expect(screen.getByText("Пауза")).toBeInTheDocument();
+    expect(screen.getAllByText("Нет срока").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Паспорт" }));
+
+    expect(await screen.findByText("Готов")).toBeInTheDocument();
+    expect(screen.getByText("Готовность 4/4")).toBeInTheDocument();
+  });
+
   it("renders requester contact enrichment in the context sidebar", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());

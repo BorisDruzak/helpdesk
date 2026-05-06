@@ -73,3 +73,99 @@
   @apply flex h-10 w-10 items-center justify-center rounded-pill border border-border bg-white text-slate-500 transition-colors;
   @apply hover:border-brand-200 hover:text-brand-700;
 }
+
+@layer components {
+  .support-workspace[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  .support-workspace[data-theme="light"] .bg-\[\#07111f\],
+  .support-workspace[data-theme="light"] .bg-\[\#0b1624\],
+  .support-workspace[data-theme="light"] .bg-\[\#0d1828\],
+  .support-workspace[data-theme="light"] .bg-\[\#101d30\],
+  .support-workspace[data-theme="light"] .bg-\[\#111f33\] {
+    background-color: #ffffff !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-\[\#13233a\],
+  .support-workspace[data-theme="light"] .bg-white\/\[0\.03\],
+  .support-workspace[data-theme="light"] .bg-white\/\[0\.04\] {
+    background-color: #f8fafc !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-white\/\[0\.02\],
+  .support-workspace[data-theme="light"] .bg-white\/\[0\.05\],
+  .support-workspace[data-theme="light"] .bg-white\/10 {
+    background-color: #eaf0f7 !important;
+  }
+
+  .support-workspace[data-theme="light"] .border-white\/5,
+  .support-workspace[data-theme="light"] .border-white\/10,
+  .support-workspace[data-theme="light"] .border-white\/20 {
+    border-color: #dbe4ef !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-white,
+  .support-workspace[data-theme="light"] .text-slate-100 {
+    color: #0f172a !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-slate-200,
+  .support-workspace[data-theme="light"] .text-slate-300 {
+    color: #334155 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-slate-400,
+  .support-workspace[data-theme="light"] .text-slate-500 {
+    color: #64748b !important;
+  }
+
+  .support-workspace[data-theme="light"] .placeholder\:text-slate-500::placeholder {
+    color: #94a3b8 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-blue-200,
+  .support-workspace[data-theme="light"] .text-blue-300 {
+    color: #1d4ed8 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-amber-100,
+  .support-workspace[data-theme="light"] .text-amber-200,
+  .support-workspace[data-theme="light"] .text-amber-300 {
+    color: #92400e !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-red-100,
+  .support-workspace[data-theme="light"] .text-red-200,
+  .support-workspace[data-theme="light"] .text-red-300 {
+    color: #991b1b !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-emerald-100,
+  .support-workspace[data-theme="light"] .text-emerald-200,
+  .support-workspace[data-theme="light"] .text-emerald-300 {
+    color: #047857 !important;
+  }
+
+  .support-workspace[data-theme="light"] .text-violet-300 {
+    color: #6d28d9 !important;
+  }
+
+  .support-workspace[data-theme="light"] .bg-blue-600,
+  .support-workspace[data-theme="light"] .bg-blue-600 *,
+  .support-workspace[data-theme="light"] .bg-blue-500,
+  .support-workspace[data-theme="light"] .bg-blue-500 * {
+    color: #ffffff !important;
+  }
+
+  .support-workspace[data-theme="light"] .hover\:text-white:hover {
+    color: #0f172a !important;
+  }
+
+  .support-workspace[data-theme="light"] .shadow-black\/40,
+  .support-workspace[data-theme="light"] .shadow-blue-950\/20,
+  .support-workspace[data-theme="light"] .shadow-blue-950\/30,
+  .support-workspace[data-theme="light"] .shadow-blue-950\/40 {
+    --tw-shadow-color: rgb(15 23 42 / 0.12) !important;
+  }
+}

@@ -53,8 +53,10 @@ import {
   mapSupportWorkspaceViewModel,
 } from "../../features/queues/support-workspace-mappers";
 import type {
+  SupportWorkspacePassport,
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
+  SupportWorkspaceTimer,
   SupportWorkspaceTimelineKind,
   SupportWorkspaceToolItem,
 } from "../../features/queues/support-workspace-model";
@@ -136,6 +138,79 @@ function progressTone(status: string) {
     return "bg-slate-500";
   }
   return "bg-emerald-400";
+}
+
+function timerStatusLabel(status: SupportWorkspaceTimer["status"]) {
+  switch (status) {
+    case "breached":
+      return "Нарушен";
+    case "at_risk":
+      return "Риск";
+    case "paused":
+      return "Пауза";
+    case "ok":
+      return "В норме";
+    default:
+      return "Нет срока";
+  }
+}
+
+function timerStatusRing(status: SupportWorkspaceTimer["status"]) {
+  switch (status) {
+    case "breached":
+      return "ring-1 ring-red-400/40";
+    case "at_risk":
+      return "ring-1 ring-amber-400/35";
+    case "paused":
+      return "ring-1 ring-slate-400/25";
+    case "ok":
+      return "ring-1 ring-emerald-400/25";
+    default:
+      return "";
+  }
+}
+
+function formatDueLabel(dueAt: string | null) {
+  if (!dueAt) {
+    return "Срок не задан";
+  }
+  const date = new Date(dueAt);
+  if (Number.isNaN(date.getTime())) {
+    return "Срок не задан";
+  }
+  return `Срок: ${date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  })}`;
+}
+
+function passportStatusLabel(passport: SupportWorkspacePassport) {
+  if (passport.total > 0 && passport.done >= passport.total) {
+    return "Готов";
+  }
+  if (passport.done === 0) {
+    return "Не готов";
+  }
+  return "В работе";
+}
+
+function passportStatusTone(passport: SupportWorkspacePassport) {
+  if (passport.total > 0 && passport.done >= passport.total) {
+    return "success";
+  }
+  if (passport.done === 0) {
+    return "warning";
+  }
+  return "info";
+}
+
+function passportProgress(passport: SupportWorkspacePassport) {
+  if (!passport.total) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round((passport.done / passport.total) * 100)));
 }
 
 function toolIcon(item: SupportWorkspaceToolItem) {
@@ -499,7 +574,7 @@ export function TicketListPage() {
 
   return (
     <section
-      className={`flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
+      className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
       data-testid="support-workspace-root"
       data-theme={workspaceTheme}
     >
@@ -1015,23 +1090,40 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "sla" ? (
               <div className="space-y-3">
-                {selectedTicket.timers.map((timer) => (
-                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4" key={timer.key}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-white">{timer.label}</p>
-                      <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
-                        {timer.remainingLabel}
+                {selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
+                  <section className={`rounded-xl border border-white/10 bg-[#111f33] p-4 ${timerStatusRing(timer.status)}`} key={timer.key}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white">{timer.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
+                        {timerStatusLabel(timer.status)}
                       </span>
                     </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div className={`h-full ${progressTone(timer.status)}`} style={{ width: `${timer.progress}%` }} />
+                    <div className="mt-4 flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-2xl font-semibold tracking-tight text-white">{timer.remainingLabel}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {timer.status === "paused" ? "Отсчёт приостановлен" : timer.status === "unknown" ? "Контрольный срок неизвестен" : "До контрольного срока"}
+                        </p>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500">{timer.progress}%</span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        aria-label={`${timer.label}: ${timerStatusLabel(timer.status)}`}
+                        className={`h-full rounded-full ${progressTone(timer.status)}`}
+                        style={{ width: `${timer.status === "unknown" ? 100 : Math.max(4, timer.progress)}%` }}
+                      />
                     </div>
                   </section>
-                ))}
-                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                  <p className="font-semibold text-white">OLA обработка</p>
-                  <p className="mt-2 text-sm text-slate-400">Детальные OLA timers будут подключены через backend DTO. Текущий риск уже учитывается в smart views.</p>
-                </section>
+                )) : (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <p className="font-semibold text-white">SLA / OLA</p>
+                    <p className="mt-2 text-sm text-slate-400">Контрольные сроки для этого тикета не заданы.</p>
+                  </section>
+                )}
               </div>
             ) : null}
 
@@ -1156,7 +1248,12 @@ export function TicketListPage() {
                       Готовность {viewModel.right.passport.done}/{viewModel.right.passport.total}
                     </p>
                   </div>
-                  <FileCheck2 className="h-5 w-5 text-emerald-300" />
+                  <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(passportStatusTone(viewModel.right.passport))}`}>
+                    {passportStatusLabel(viewModel.right.passport)}
+                  </span>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-emerald-400" style={{ width: `${passportProgress(viewModel.right.passport)}%` }} />
                 </div>
                 <div className="mt-4 space-y-2">
                   {viewModel.right.passport.items.map((item) => (
@@ -1170,6 +1267,7 @@ export function TicketListPage() {
                   className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-slate-200 hover:text-white"
                   to={`/app/tickets/${selectedTicket.id}/passport/print`}
                 >
+                  <FileCheck2 className="mr-2 h-4 w-4" />
                   Открыть паспорт
                 </Link>
               </section>
