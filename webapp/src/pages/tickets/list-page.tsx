@@ -310,7 +310,7 @@ function OperationSummaryCard({ operation }: { operation: SupportWorkspaceOperat
           {operation.statusLabel}
         </span>
       </div>
-      {operation.summary ? <p className="mt-2 break-words text-xs leading-5 text-slate-400">{operation.summary}</p> : null}
+      {operation.summary ? <p className="mt-2 break-all text-xs leading-5 text-slate-400">{operation.summary}</p> : null}
     </div>
   );
 }
@@ -1039,13 +1039,13 @@ export function TicketListPage() {
                                 </div>
                                 <div>
                                   <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Итог</p>
-                                  <p className={`mt-1 font-semibold ${operationResultTextClass(item.operation)}`}>
+                                  <p className={`mt-1 break-all font-semibold ${operationResultTextClass(item.operation)}`}>
                                     {item.operation.summary ?? item.operation.preview ?? "Нет результата"}
                                   </p>
                                 </div>
                               </div>
                               {item.operation.preview && item.operation.summary && item.operation.preview !== item.operation.summary ? (
-                                <p className="mt-3 break-words rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
+                                <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
                                   {item.operation.preview}
                                 </p>
                               ) : null}
@@ -1296,14 +1296,14 @@ export function TicketListPage() {
                           {item.metaLabels.length ? (
                             <div className="mt-3 flex flex-wrap gap-1.5">
                               {item.metaLabels.slice(0, 4).map((label) => (
-                                <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
                                   {label}
                                 </span>
                               ))}
                             </div>
                           ) : null}
                           {!item.enabled && item.disabledReason ? (
-                            <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">
+                            <p className="mt-2 break-all rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">
                               {item.disabledReason}
                             </p>
                           ) : null}
