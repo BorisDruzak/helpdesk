@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, P2.10 "More" controls hardening in progress.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff. Overall current-page plan completion: about 95%; remaining planned work is the final broad P2.11 browser/readiness pass and optional deeper domain polish outside the current page contract.
 
-Current execution mode: P2.10 "More" controls hardening. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards.
+Current execution mode: P2.11 final current-page browser/readiness pass. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -363,13 +363,13 @@ P2.10 - "More" controls hardening:
 - Replace primitive controls with proper reason-capturing modals/drawers for status, queue, priority, assign and reroute where the current workflow requires operator context.
 - Preserve the existing typed mutation aliases and workflow/RBAC guards.
 - Add permission/disabled states rather than hiding critical operator context.
-- Concrete P2.10 slice in progress:
+- Concrete P2.10 slice complete:
   1. [x] Move status change from the inline select/apply pair into the "Ещё" action menu.
   2. [x] Add one compact operator action dialog that captures reason/comment for status, assign-to-self, queue change, priority change and reroute.
   3. [x] Use existing typed mutations only: status, assign, queue, priority and reroute; do not add backend routes.
   4. [x] Disable submit when the required target or reason is missing, and show clear disabled states for missing queues/status options.
   5. [x] Add focused React tests for the dialog, reason payloads, and queue/priority/status target selection.
-  6. [ ] Run focused Vitest, production build, workspace verification, deploy/browser signoff and stop the remote server.
+  6. [x] Run focused Vitest, production build, workspace verification, deploy/browser signoff and stop the remote server.
 
 P2.10 local evidence:
 
@@ -378,11 +378,20 @@ P2.10 local evidence:
 - The dialog requires a human-readable reason before submit and sends optional internal comment where the existing typed client/backend support it.
 - No backend routes were added; the UI still uses existing typed status/assign/queue/priority/reroute mutations.
 - Focused verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\api.test.ts` (12 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Linux release completed for commit `7f835bf` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
+- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Ещё" menu showed `Назначить на себя`, `Сменить статус`, `Сменить очередь`, `Изменить приоритет` and `Пересчитать маршрут`; status and reroute dialogs enforced required reason before submit, and no live mutation was submitted during signoff.
+- Aggregate/current support endpoints returned 200 in browser context: `GET /api/web/support/workspace/summary`, `GET /api/web/support/tickets/{ticket_id}/workspace`, `GET /api/web/support/tickets/{ticket_id}/tools`, `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`, and `GET /api/web/support/tickets/{ticket_id}/passport`.
+- Remaining browser console/network noise: known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`; three 404 entries were created only by a manual probe against obsolete non-canonical `/api/web/tickets/...` URLs and are not emitted by the page flow.
 
 P2.11 - final current-page browser signoff:
 
-- Re-run local focused tests, production build, workspace verification and browser signoff on the Linux stand.
-- Capture dark/light desktop screenshots and verify console/network health for `/app/tickets`, selected ticket, right tabs, timeline filters and composer.
+- Concrete P2.11 slice in progress:
+  1. [ ] Re-run local focused tests, production build and workspace verification after the P2.10 plan closeout commit.
+  2. [ ] Deploy the plan closeout/docs state to the Linux stand without changing runtime code.
+  3. [ ] Capture dark/light desktop screenshots at 1366px and 1920px.
+  4. [ ] Verify `/app/tickets`, selected ticket, right tabs, timeline filters, composer and "Ещё" controls in browser.
+  5. [ ] Verify console/network health against canonical `/api/web/support/*` endpoints and record known non-blocking noise.
+  6. [ ] Stop the remote server after signoff.
 
 P2.6 verification plan:
 
