@@ -843,6 +843,19 @@ class SupportKnowledgeAiSummary(BaseModel):
 
     text: str | None = None
     sources: list[str] = Field(default_factory=list)
+    confidence: str = "none"
+    source_count: int = 0
+
+
+class SupportKnowledgeDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = "support_knowledge_provider"
+    provider_version: str = "local-v1"
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    query_signals: list[str] = Field(default_factory=list)
+    article_matches: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    similar_ticket_matches: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
@@ -852,6 +865,7 @@ class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
     similar_tickets: list[SupportKnowledgeSimilarTicket] = Field(default_factory=list)
     articles: list[SupportKnowledgeArticle] = Field(default_factory=list)
     ai_summary: SupportKnowledgeAiSummary = Field(default_factory=SupportKnowledgeAiSummary)
+    diagnostics: SupportKnowledgeDiagnostics = Field(default_factory=SupportKnowledgeDiagnostics)
 
 
 class SupportTicketTimerPayload(BaseModel):

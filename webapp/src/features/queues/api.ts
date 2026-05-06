@@ -623,6 +623,24 @@ export type SupportTicketKnowledgeSuggestionsPayload = {
   ai_summary: {
     text: string | null;
     sources: string[];
+    confidence?: string;
+    source_count?: number;
+  };
+  diagnostics?: {
+    provider: string;
+    provider_version: string;
+    source_counts: Record<string, number>;
+    query_signals: string[];
+    article_matches: Record<string, {
+      source_type: string;
+      score: number | null;
+      match_reasons: string[];
+    }>;
+    similar_ticket_matches: Record<string, {
+      source_type: string;
+      score: number | null;
+      match_reasons: string[];
+    }>;
   };
 };
 

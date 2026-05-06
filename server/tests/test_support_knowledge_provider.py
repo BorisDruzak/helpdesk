@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+﻿from types import SimpleNamespace
 
 from tickets.knowledge_provider import (
     KnowledgeArticleSuggestion,
@@ -45,7 +45,7 @@ def test_catalog_search_scores_and_deduplicates_existing_articles():
     catalog = [
         KnowledgeCatalogEntry(
             id="KB-HTTP-502",
-            title="Ошибка 502 Bad Gateway",
+            title="РћС€РёР±РєР° 502 Bad Gateway",
             url="/app/knowledge/KB-HTTP-502",
             keywords=("502", "bad gateway", "upstream"),
         ),
@@ -61,23 +61,29 @@ def test_catalog_search_scores_and_deduplicates_existing_articles():
     assert search_catalog_articles_for_ticket(ticket, catalog=catalog, limit=2) == [
         KnowledgeArticleSuggestion(
             id="KB-HTTP-502",
-            title="Ошибка 502 Bad Gateway",
+            title="РћС€РёР±РєР° 502 Bad Gateway",
             url="/app/knowledge/KB-HTTP-502",
         )
     ]
+    results = search_catalog_articles_for_ticket(ticket, catalog=catalog, limit=2)
+    assert results[0].source_type == "catalog"
+    assert results[0].score == 80
+    assert results[0].match_reasons == ["502", "bad gateway", "upstream"]
     assert search_catalog_articles_for_ticket(ticket, {"KB-HTTP-502"}, catalog=catalog, limit=2) == []
 
 
 def test_knowledge_summary_is_source_visible_and_conservative():
     summary = knowledge_source_summary(
         articles=[
-            KnowledgeArticleSuggestion(id="KB-HTTP-502", title="Ошибка 502", url="/app/knowledge/KB-HTTP-502"),
+            KnowledgeArticleSuggestion(id="KB-HTTP-502", title="РћС€РёР±РєР° 502", url="/app/knowledge/KB-HTTP-502"),
             KnowledgeArticleSuggestion(id="KB-HTTP-502", title="Duplicate", url="/app/knowledge/KB-HTTP-502"),
         ],
         tickets=[SimpleNamespace(id="ticket-1", number="T-000101")],
     )
 
     assert summary.sources == ["KB-HTTP-502", "T-000101"]
+    assert summary.confidence == "high"
+    assert summary.source_count == 2
     assert summary.text is not None
     assert summary.text.startswith("AI-рекомендация / Бета:")
     assert "действия не запускаются автоматически" in summary.text

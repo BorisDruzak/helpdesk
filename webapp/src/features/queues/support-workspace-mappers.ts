@@ -672,6 +672,26 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
 }
 
 export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestionsPayload | undefined): SupportWorkspaceKnowledge {
+  const articleMatches = Object.fromEntries(
+    Object.entries(knowledge?.diagnostics?.article_matches ?? {}).map(([key, value]) => [
+      key,
+      {
+        sourceType: value.source_type,
+        score: value.score,
+        matchReasons: value.match_reasons,
+      },
+    ]),
+  );
+  const similarTicketMatches = Object.fromEntries(
+    Object.entries(knowledge?.diagnostics?.similar_ticket_matches ?? {}).map(([key, value]) => [
+      key,
+      {
+        sourceType: value.source_type,
+        score: value.score,
+        matchReasons: value.match_reasons,
+      },
+    ]),
+  );
   return {
     similarTickets: (knowledge?.similar_tickets ?? []).map((ticket) => ({
       id: ticket.id,
@@ -688,8 +708,18 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
       ? {
           text: knowledge.ai_summary.text,
           sources: knowledge.ai_summary.sources,
+          confidence: knowledge.ai_summary.confidence ?? "none",
+          sourceCount: knowledge.ai_summary.source_count ?? knowledge.ai_summary.sources.length,
         }
       : null,
+    diagnostics: {
+      provider: knowledge?.diagnostics?.provider ?? "support_knowledge_provider",
+      providerVersion: knowledge?.diagnostics?.provider_version ?? "local-v1",
+      sourceCounts: knowledge?.diagnostics?.source_counts ?? {},
+      querySignals: knowledge?.diagnostics?.query_signals ?? [],
+      articleMatches,
+      similarTicketMatches,
+    },
   };
 }
 

@@ -475,6 +475,19 @@ P3.3 - knowledge provider depth:
 
 - Goal: add scoring/source diagnostics to the current provider and prepare a clean adapter boundary for future external KB/search indexes.
 - Non-goal: no autonomous AI action execution and no unverified answer-as-truth UX.
+- Checklist:
+  1. [x] Extend provider dataclasses and support DTOs with source diagnostics: `source_type`, `score`, `match_reasons`, provider name/version, source counts and query signals.
+  2. [x] Keep manual KB links highest confidence, catalog fallback source-visible, and similar-ticket matches explicitly separate.
+  3. [x] Render compact diagnostics in `/app/tickets` knowledge tab without making AI look authoritative.
+  4. [x] Add focused provider, backend API and frontend mapper/component tests.
+  5. [ ] Run focused tests/build/workspace verification, then release/browser signoff.
+
+P3.3 local evidence:
+
+- `server/tickets/knowledge_provider.py` now returns source diagnostics without changing the article/similar-ticket list shape: manual KB links are `manual_kb` with score `100`, catalog matches are `catalog` with keyword match reasons, and similar tickets are `similar_ticket` with linked/fallback reasons.
+- `SupportTicketKnowledgeSuggestionsPayload` now includes `ai_summary.confidence`, `ai_summary.source_count` and a `diagnostics` object with provider/version, source counts, query signals, article match diagnostics and similar-ticket match diagnostics.
+- `/app/tickets` knowledge tab renders compact provider, confidence and signal chips under the AI beta block; the UI still frames AI as a source-visible suggestion and does not trigger actions.
+- Focused checks passed: `python -m pytest server\tests\test_support_knowledge_provider.py server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links -v --tb=short`; `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`; `pnpm --dir webapp run build`; `git diff --check`.
 
 P3.4 - closure/passport action depth:
 

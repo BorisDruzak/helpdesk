@@ -97,6 +97,7 @@ from web_api.dto.support import (
     SupportTicketKnowledgeSuggestionsPayload,
     SupportKnowledgeAiSummary,
     SupportKnowledgeArticle,
+    SupportKnowledgeDiagnostics,
     SupportKnowledgeSimilarTicket,
     SupportTicketMessage,
     SupportTicketMutationActionResult,
@@ -2338,6 +2339,16 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
         ai_summary=SupportKnowledgeAiSummary(
             text=suggestions.ai_summary.text,
             sources=suggestions.ai_summary.sources,
+            confidence=suggestions.ai_summary.confidence,
+            source_count=suggestions.ai_summary.source_count,
+        ),
+        diagnostics=SupportKnowledgeDiagnostics(
+            provider=suggestions.diagnostics.provider,
+            provider_version=suggestions.diagnostics.provider_version,
+            source_counts=suggestions.diagnostics.source_counts,
+            query_signals=suggestions.diagnostics.query_signals,
+            article_matches=suggestions.diagnostics.article_matches,
+            similar_ticket_matches=suggestions.diagnostics.similar_ticket_matches,
         ),
     )
 

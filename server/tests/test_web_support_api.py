@@ -1258,6 +1258,16 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
     assert data["ai_summary"]["text"].startswith("AI-рекомендация / Бета:")
     assert "KB-502" in data["ai_summary"]["sources"]
     assert similar_ticket_code in data["ai_summary"]["sources"]
+    assert data["ai_summary"]["confidence"] == "high"
+    assert data["diagnostics"]["provider"] == "support_knowledge_provider"
+    assert data["diagnostics"]["source_counts"]["manual_kb"] == 1
+    assert data["diagnostics"]["source_counts"]["similar_ticket"] == 1
+    assert data["diagnostics"]["article_matches"]["KB-502"]["source_type"] == "manual_kb"
+    assert data["diagnostics"]["article_matches"]["KB-502"]["score"] == 100
+    assert data["diagnostics"]["article_matches"]["KB-502"]["match_reasons"] == ["manual_link"]
+    assert data["diagnostics"]["similar_ticket_matches"][similar_ticket_id]["source_type"] == "similar_ticket"
+    assert data["diagnostics"]["similar_ticket_matches"][similar_ticket_id]["score"] >= 70
+    assert "linked_ticket" in data["diagnostics"]["similar_ticket_matches"][similar_ticket_id]["match_reasons"]
 
     workspace_response = await test_client.get(
         f"/api/web/support/tickets/{ticket_id}/workspace",
@@ -1310,6 +1320,11 @@ async def test_web_support_ticket_knowledge_suggestions_uses_catalog_search_with
     }
     assert "KB-HTTP-502" in data["ai_summary"]["sources"]
     assert data["ai_summary"]["text"].startswith("AI-")
+    assert data["diagnostics"]["source_counts"]["catalog"] >= 1
+    assert "502" in data["diagnostics"]["query_signals"]
+    assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["source_type"] == "catalog"
+    assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["score"] >= 80
+    assert "502" in data["diagnostics"]["article_matches"]["KB-HTTP-502"]["match_reasons"]
 
 
 @pytest.mark.asyncio

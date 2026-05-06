@@ -187,7 +187,25 @@ export type SupportWorkspaceKnowledge = {
   aiSummary: {
     text: string;
     sources: string[];
+    confidence: string;
+    sourceCount: number;
   } | null;
+  diagnostics: {
+    provider: string;
+    providerVersion: string;
+    sourceCounts: Record<string, number>;
+    querySignals: string[];
+    articleMatches: Record<string, {
+      sourceType: string;
+      score: number | null;
+      matchReasons: string[];
+    }>;
+    similarTicketMatches: Record<string, {
+      sourceType: string;
+      score: number | null;
+      matchReasons: string[];
+    }>;
+  };
 };
 
 export type SupportWorkspacePassport = {

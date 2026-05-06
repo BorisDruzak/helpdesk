@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -20,6 +20,9 @@ class KnowledgeArticleSuggestion:
     id: str
     title: str
     url: str | None = None
+    source_type: str = field(default="unknown", compare=False)
+    score: int | None = field(default=None, compare=False)
+    match_reasons: list[str] = field(default_factory=list, compare=False)
 
 
 @dataclass(frozen=True)
@@ -28,12 +31,27 @@ class KnowledgeSimilarTicketSuggestion:
     number: str | None
     subject: str
     resolution_summary: str | None = None
+    source_type: str = field(default="similar_ticket", compare=False)
+    score: int | None = field(default=None, compare=False)
+    match_reasons: list[str] = field(default_factory=list, compare=False)
 
 
 @dataclass(frozen=True)
 class KnowledgeAiSuggestion:
     text: str | None
     sources: list[str]
+    confidence: str = "none"
+    source_count: int = 0
+
+
+@dataclass(frozen=True)
+class KnowledgeDiagnostics:
+    provider: str = "support_knowledge_provider"
+    provider_version: str = "local-v1"
+    source_counts: dict[str, int] = field(default_factory=dict)
+    query_signals: list[str] = field(default_factory=list)
+    article_matches: dict[str, dict[str, Any]] = field(default_factory=dict)
+    similar_ticket_matches: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -41,6 +59,7 @@ class KnowledgeSuggestions:
     articles: list[KnowledgeArticleSuggestion]
     similar_tickets: list[KnowledgeSimilarTicketSuggestion]
     ai_summary: KnowledgeAiSuggestion
+    diagnostics: KnowledgeDiagnostics = field(default_factory=KnowledgeDiagnostics)
 
 
 @dataclass(frozen=True)
@@ -98,6 +117,39 @@ def ticket_knowledge_search_text(ticket: Ticket) -> str:
     return " ".join(fragments).casefold()
 
 
+def _unique_strings(values: Iterable[str], *, limit: int = 8) -> list[str]:
+    items: list[str] = []
+    for value in values:
+        text = clean_knowledge_text(value)
+        if text and text not in items:
+            items.append(text)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _catalog_score(raw_score: int) -> int:
+    if raw_score <= 0:
+        return 0
+    return min(100, raw_score * 20)
+
+
+def _article_match_payload(article: KnowledgeArticleSuggestion) -> dict[str, Any]:
+    return {
+        "source_type": article.source_type,
+        "score": article.score,
+        "match_reasons": list(article.match_reasons),
+    }
+
+
+def _similar_match_payload(ticket: KnowledgeSimilarTicketSuggestion) -> dict[str, Any]:
+    return {
+        "source_type": ticket.source_type,
+        "score": ticket.score,
+        "match_reasons": list(ticket.match_reasons),
+    }
+
+
 def _coerce_catalog_entries(raw_entries: Iterable[Any]) -> tuple[KnowledgeCatalogEntry, ...]:
     entries: list[KnowledgeCatalogEntry] = []
     seen_ids: set[str] = set()
@@ -150,28 +202,53 @@ def search_catalog_articles_for_ticket(
     if not search_text:
         return []
     existing_ids = existing_article_ids or set()
-    scored: list[tuple[int, int, KnowledgeCatalogEntry]] = []
+    scored: list[tuple[int, int, KnowledgeCatalogEntry, list[str]]] = []
     for index, entry in enumerate(catalog if catalog is not None else load_knowledge_catalog()):
         if entry.id in existing_ids:
             continue
         score = 0
+        match_reasons: list[str] = []
         for keyword in entry.keywords:
             normalized_keyword = keyword.casefold()
             if normalized_keyword and normalized_keyword in search_text:
                 score += 2 if " " in normalized_keyword else 1
+                match_reasons.append(keyword)
         if score > 0:
-            scored.append((score, -index, entry))
+            scored.append((score, -index, entry, _unique_strings(match_reasons)))
 
     scored.sort(reverse=True)
     return [
-        KnowledgeArticleSuggestion(id=entry.id, title=entry.title, url=entry.url)
-        for _score, _index, entry in scored[:limit]
+        KnowledgeArticleSuggestion(
+            id=entry.id,
+            title=entry.title,
+            url=entry.url,
+            source_type="catalog",
+            score=_catalog_score(score),
+            match_reasons=match_reasons,
+        )
+        for score, _index, entry, match_reasons in scored[:limit]
     ]
 
 
 def _ticket_knowledge_number(ticket: Ticket) -> str | None:
     return clean_knowledge_text(getattr(ticket, "ticket_code", None)) or clean_knowledge_text(
         getattr(ticket, "ticket_id", None)
+    )
+
+
+def _similar_ticket_suggestion(
+    row: Ticket,
+    match_metadata: dict[str, tuple[int, list[str]]],
+) -> KnowledgeSimilarTicketSuggestion:
+    metadata = match_metadata.get(str(row.ticket_id), (60, ["similar_ticket"]))
+    return KnowledgeSimilarTicketSuggestion(
+        id=str(row.ticket_id),
+        number=_ticket_knowledge_number(row),
+        subject=clean_knowledge_text(getattr(row, "title", None)) or "Untitled",
+        resolution_summary=clean_knowledge_text(getattr(row, "requester_resolution_summary", None))
+        or clean_knowledge_text(getattr(row, "resolution_summary", None)),
+        score=metadata[0],
+        match_reasons=metadata[1],
     )
 
 
@@ -191,6 +268,7 @@ async def load_similar_knowledge_tickets(session, ticket: Ticket, limit: int = 3
                 identifiers.append(text)
 
     similar_rows: list[Ticket] = []
+    match_metadata: dict[str, tuple[int, list[str]]] = {}
     if identifiers:
         result = await session.execute(
             select(Ticket).where(
@@ -206,19 +284,24 @@ async def load_similar_knowledge_tickets(session, ticket: Ticket, limit: int = 3
             row = by_key.get(identifier)
             if row is not None and row not in similar_rows:
                 similar_rows.append(row)
+                match_metadata[str(row.ticket_id)] = (90, ["linked_ticket"])
             if len(similar_rows) >= limit:
                 break
 
     if len(similar_rows) < limit:
         filters = [Ticket.ticket_id != ticket_id, Ticket.status.in_(["resolved", "closed"])]
+        fallback_reasons: list[str] = []
         category_id = getattr(ticket, "category_id", None)
         service_id = getattr(ticket, "service_id", None)
         if category_id is not None:
             filters.append(Ticket.category_id == category_id)
+            fallback_reasons.append("same_category")
         elif service_id is not None:
             filters.append(Ticket.service_id == service_id)
+            fallback_reasons.append("same_service")
         else:
             filters.append(Ticket.title.ilike(f"%{(getattr(ticket, 'title', '') or '')[:24]}%"))
+            fallback_reasons.append("title_similarity")
         result = await session.execute(
             select(Ticket)
             .where(*filters)
@@ -228,19 +311,11 @@ async def load_similar_knowledge_tickets(session, ticket: Ticket, limit: int = 3
         for row in result.scalars().all():
             if row not in similar_rows:
                 similar_rows.append(row)
+                match_metadata.setdefault(str(row.ticket_id), (70, list(fallback_reasons)))
             if len(similar_rows) >= limit:
                 break
 
-    return [
-        KnowledgeSimilarTicketSuggestion(
-            id=str(row.ticket_id),
-            number=_ticket_knowledge_number(row),
-            subject=str(getattr(row, "title", "") or "Без темы"),
-            resolution_summary=clean_knowledge_text(getattr(row, "requester_resolution_summary", None))
-            or clean_knowledge_text(getattr(row, "resolution_summary", None)),
-        )
-        for row in similar_rows[:limit]
-    ]
+    return [_similar_ticket_suggestion(row, match_metadata) for row in similar_rows[:limit]]
 
 
 def knowledge_source_summary(
@@ -256,7 +331,8 @@ def knowledge_source_summary(
         if source and source not in sources:
             sources.append(source)
     if not sources:
-        return KnowledgeAiSuggestion(text=None, sources=[])
+        return KnowledgeAiSuggestion(text=None, sources=[], confidence="none", source_count=0)
+    confidence = "high" if len(sources) >= 2 else "medium"
     visible_sources = ", ".join(sources[:5])
     extra = len(sources) - 5
     if extra > 0:
@@ -268,6 +344,32 @@ def knowledge_source_summary(
             "действия не запускаются автоматически."
         ),
         sources=sources,
+        confidence=confidence,
+        source_count=len(sources),
+    )
+
+
+def knowledge_diagnostics(
+    articles: list[KnowledgeArticleSuggestion],
+    tickets: list[KnowledgeSimilarTicketSuggestion],
+) -> KnowledgeDiagnostics:
+    source_counts = {"manual_kb": 0, "catalog": 0, "similar_ticket": 0}
+    article_matches: dict[str, dict[str, Any]] = {}
+    similar_ticket_matches: dict[str, dict[str, Any]] = {}
+    query_signals: list[str] = []
+    for article in articles:
+        source_counts[article.source_type] = source_counts.get(article.source_type, 0) + 1
+        article_matches[article.id] = _article_match_payload(article)
+        query_signals.extend(article.match_reasons)
+    for ticket in tickets:
+        source_counts["similar_ticket"] = source_counts.get("similar_ticket", 0) + 1
+        similar_ticket_matches[ticket.id] = _similar_match_payload(ticket)
+        query_signals.extend(ticket.match_reasons)
+    return KnowledgeDiagnostics(
+        source_counts=source_counts,
+        query_signals=_unique_strings(query_signals, limit=10),
+        article_matches=article_matches,
+        similar_ticket_matches=similar_ticket_matches,
     )
 
 
@@ -284,6 +386,9 @@ async def build_knowledge_suggestions(
             id=str(link.article_ref),
             title=clean_knowledge_text(getattr(link, "title", None)) or str(link.article_ref),
             url=article_url(str(link.article_ref)),
+            source_type="manual_kb",
+            score=100,
+            match_reasons=["manual_link"],
         )
         for link in kb_links
         if clean_knowledge_text(getattr(link, "article_ref", None))
@@ -302,4 +407,5 @@ async def build_knowledge_suggestions(
         articles=articles,
         similar_tickets=similar_tickets,
         ai_summary=knowledge_source_summary(articles, similar_tickets),
+        diagnostics=knowledge_diagnostics(articles, similar_tickets),
     )

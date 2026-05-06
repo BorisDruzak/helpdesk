@@ -319,6 +319,20 @@ function knowledgePayload(): SupportTicketKnowledgeSuggestionsPayload {
     ai_summary: {
       text: "AI-рекомендация / Бета: проверьте источники перед применением.",
       sources: ["KB-502", "T-001011"],
+      confidence: "high",
+      source_count: 2,
+    },
+    diagnostics: {
+      provider: "support_knowledge_provider",
+      provider_version: "local-v1",
+      source_counts: { manual_kb: 1, catalog: 0, similar_ticket: 1 },
+      query_signals: ["manual_link", "linked_ticket"],
+      article_matches: {
+        "KB-502": { source_type: "manual_kb", score: 100, match_reasons: ["manual_link"] },
+      },
+      similar_ticket_matches: {
+        "ticket-1011": { source_type: "similar_ticket", score: 90, match_reasons: ["linked_ticket"] },
+      },
     },
   };
 }
@@ -669,6 +683,14 @@ describe("support workspace mappers", () => {
       summary: "РџРµСЂРµР·Р°РїСѓСЃРє upstream.",
     });
     expect(viewModel.right.knowledge.aiSummary?.sources).toEqual(["KB-502", "T-001011"]);
+    expect(viewModel.right.knowledge.aiSummary?.confidence).toBe("high");
+    expect(viewModel.right.knowledge.diagnostics.sourceCounts).toEqual({ manual_kb: 1, catalog: 0, similar_ticket: 1 });
+    expect(viewModel.right.knowledge.diagnostics.querySignals).toEqual(["manual_link", "linked_ticket"]);
+    expect(viewModel.right.knowledge.diagnostics.articleMatches["KB-502"]).toEqual({
+      sourceType: "manual_kb",
+      score: 100,
+      matchReasons: ["manual_link"],
+    });
   });
 
   it("formats overdue timers explicitly", () => {

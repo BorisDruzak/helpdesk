@@ -1577,6 +1577,23 @@ export function TicketListPage() {
                         ))}
                       </div>
                     ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                        Источник: {viewModel.right.knowledge.diagnostics.provider}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                        Доверие: {viewModel.right.knowledge.aiSummary.confidence}
+                      </span>
+                    </div>
+                    {viewModel.right.knowledge.diagnostics.querySignals.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {viewModel.right.knowledge.diagnostics.querySignals.slice(0, 6).map((signal) => (
+                          <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-400" key={signal}>
+                            {signal}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </section>
                 ) : null}
 

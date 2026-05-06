@@ -747,6 +747,20 @@ describe("TicketListPage", () => {
           ai_summary: {
             text: "AI-рекомендация / Бета: проверьте связанные источники перед применением.",
             sources: ["KB-502", "T-001011"],
+            confidence: "high",
+            source_count: 2,
+          },
+          diagnostics: {
+            provider: "support_knowledge_provider",
+            provider_version: "local-v1",
+            source_counts: { manual_kb: 1, catalog: 0, similar_ticket: 1 },
+            query_signals: ["manual_link", "linked_ticket"],
+            article_matches: {
+              "KB-502": { source_type: "manual_kb", score: 100, match_reasons: ["manual_link"] },
+            },
+            similar_ticket_matches: {
+              "ticket-1011": { source_type: "similar_ticket", score: 90, match_reasons: ["linked_ticket"] },
+            },
           },
         },
       }),
@@ -762,6 +776,9 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("Ошибка 502 Bad Gateway")).toBeInTheDocument();
     expect(screen.getByText("Ошибка 502 на портале")).toBeInTheDocument();
     expect(screen.getAllByText(/AI-рекомендация \/ Бета/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Источник: support_knowledge_provider")).toBeInTheDocument();
+    expect(screen.getByText("Доверие: high")).toBeInTheDocument();
+    expect(screen.getByText("manual_link")).toBeInTheDocument();
     expect(screen.queryByText(/Knowledge suggestions/)).not.toBeInTheDocument();
   });
 });
