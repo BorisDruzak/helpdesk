@@ -533,12 +533,18 @@ P4.1 - closure blocker action focus:
   2. [x] Convert blocker action chips from passive labels to buttons.
   3. [x] Store selected closure blocker focus locally and reset it on ticket change.
   4. [x] Render a compact `closure-focus-card` in the passport tab with selected blocker label, action label, details and evidence candidate count.
-  5. [ ] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
+  5. [x] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
 
 P4.1 local evidence:
 
 - RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "opens passport focus guidance"` failed because no blocker action button existed and `closure-focus-card` was absent.
 - GREEN verified: the same focused test passes after adding blocker action buttons and passport focus guidance.
+- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (22 tests).
+- Production build passed: `pnpm --dir webapp run build`.
+- Workspace verification passed: `python scripts\verify_workspace.py`; `git diff --check` returned no whitespace errors.
+- Linux release completed for commit `f61a917` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
+- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: clicking the central blocker action `Заполнить решение` switched the right sidebar to `Паспорт решения` and rendered `Фокус паспорта` for `Код решения` with the requirement details.
+- Fresh browser console check returned zero errors after the P4.1 flow.
 
 P2.6 verification plan:
 
