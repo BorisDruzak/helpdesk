@@ -349,10 +349,17 @@ def _tool_metadata_from_raw_tool(raw_tool: dict, tool_name: str) -> ToolMetadata
         metadata["requires_consent"] = False
 
     return ToolMetadata(
+        domain=str(metadata.get("domain") or "system"),
+        platforms=metadata.get("platforms", ["any"]),
         risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
         scopes=metadata.get("scopes", []),
         requires_consent=bool(metadata.get("requires_consent")),
         allow_roles=allow_roles,
+        timeout_sec=metadata.get("timeout_sec"),
+        idempotent=bool(metadata.get("idempotent")),
+        origin=str(metadata.get("origin") or "builtin"),
+        side_effects=bool(metadata.get("side_effects")),
+        tool_kind=metadata.get("tool_kind") or "diagnostic",
     )
 
 
@@ -1474,6 +1481,46 @@ def _normalize_tool_presets(raw_presets: object) -> list[SupportToolPreset]:
     return presets
 
 
+def _support_tool_metadata(raw_tool: dict, tool_name: str) -> ToolMetadata:
+    try:
+        return _tool_metadata_from_raw_tool(raw_tool, tool_name)
+    except Exception as exc:
+        logger.debug(f"[web_support_tools] metadata fallback: tool={tool_name}, error={exc}")
+        spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
+        metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
+        return ToolMetadata(
+            domain=str(metadata.get("domain") or "system"),
+            platforms=metadata.get("platforms", ["any"]),
+            risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
+            scopes=metadata.get("scopes", []),
+            requires_consent=bool(metadata.get("requires_consent")),
+            allow_roles=metadata.get("allow_roles"),
+            timeout_sec=metadata.get("timeout_sec"),
+            idempotent=bool(metadata.get("idempotent")),
+            origin=str(metadata.get("origin") or "builtin"),
+            side_effects=bool(metadata.get("side_effects")),
+            tool_kind=metadata.get("tool_kind") or "diagnostic",
+        )
+
+
+def _support_tool_policy_labels(
+    *,
+    metadata: ToolMetadata,
+    required_permission: str,
+    install_required: bool,
+    requires_consent: bool,
+) -> list[str]:
+    labels = [f"permission:{required_permission}"]
+    if metadata.allow_roles:
+        labels.append("roles:" + ",".join(str(role) for role in metadata.allow_roles))
+    labels.append("consent:required" if requires_consent else "consent:not_required")
+    if install_required:
+        labels.append("install:required")
+    if metadata.scopes:
+        labels.append("scopes:" + ",".join(str(scope) for scope in metadata.scopes[:3]))
+    return labels
+
+
 def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportToolItem | None:
     if not isinstance(raw_tool, dict):
         return None
@@ -1487,13 +1534,28 @@ def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportTo
     module_name = raw_tool.get("module")
     if not module_name and "." in tool_name:
         module_name = tool_name.split(".", 1)[0]
+    metadata_model = _support_tool_metadata(raw_tool, tool_name)
+    risk_level = str(spec.get("risk_level") or metadata_model.risk_level or "safe_read")
+    requires_consent = bool(metadata.get("requires_consent"))
+    install_required = bool(raw_tool.get("install_required"))
+    required_permission = _tool_risk_permission(risk_level)
     return SupportToolItem(
         tool_name=tool_name,
         module_name=str(module_name).strip() if module_name else None,
         description=str(raw_tool.get("description") or "").strip() or None,
-        risk_level=str(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
-        requires_consent=bool(metadata.get("requires_consent")),
-        install_required=bool(raw_tool.get("install_required")),
+        domain=metadata_model.domain,
+        tool_kind=metadata_model.tool_kind,
+        risk_level=risk_level,
+        requires_consent=requires_consent,
+        install_required=install_required,
+        required_permission=required_permission,
+        allowed_roles=[str(role) for role in (metadata_model.allow_roles or [])],
+        policy_labels=_support_tool_policy_labels(
+            metadata=metadata_model,
+            required_permission=required_permission,
+            install_required=install_required,
+            requires_consent=requires_consent,
+        ),
         source=source,
         params_schema=_normalize_tool_schema(params_schema),
         presets=_normalize_tool_presets(presets),

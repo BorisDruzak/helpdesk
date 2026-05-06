@@ -347,9 +347,14 @@ export type SupportTicketToolsPayload = {
     tool_name: string;
     module_name: string | null;
     description: string | null;
+    domain?: string | null;
+    tool_kind?: string | null;
     risk_level: string;
     requires_consent: boolean;
     install_required: boolean;
+    required_permission?: string | null;
+    allowed_roles?: string[];
+    policy_labels?: string[];
     source: string;
     params_schema: Array<{
       name: string;

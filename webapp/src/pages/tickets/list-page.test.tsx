@@ -552,9 +552,19 @@ describe("TicketListPage", () => {
           tool_name: "dns.resolve",
           module_name: "network",
           description: "Проверка DNS",
+          domain: "network",
+          tool_kind: "diagnostic",
           risk_level: "low",
           requires_consent: false,
           install_required: true,
+          required_permission: "module.tool.run.low_risk",
+          allowed_roles: ["support", "admin"],
+          policy_labels: [
+            "permission:module.tool.run.low_risk",
+            "roles:support,admin",
+            "consent:not_required",
+            "install:required",
+          ],
           source: "agent",
           params_schema: [],
           presets: [],
@@ -595,6 +605,8 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("Операции выполняются")).toBeInTheDocument();
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
+    expect(screen.getByText("Право: module.tool.run.low_risk")).toBeInTheDocument();
+    expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
     expect(screen.getByText("Диагностика сайта")).toBeInTheDocument();
     expect(screen.getAllByText("Нет tool: http.check").length).toBeGreaterThan(0);
     expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();

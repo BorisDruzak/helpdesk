@@ -2369,7 +2369,13 @@ async def test_web_support_ticket_tools_returns_typed_inventory(test_client, tes
                         },
                         "presets": [],
                     },
-                    "metadata": {"requires_consent": False},
+                    "metadata": {
+                        "requires_consent": False,
+                        "allow_roles": ["support", "admin"],
+                        "domain": "network",
+                        "tool_kind": "diagnostic",
+                        "scopes": ["dns", "http"],
+                    },
                 }
             ]
 
@@ -2417,8 +2423,20 @@ async def test_web_support_ticket_tools_returns_typed_inventory(test_client, tes
             "default": None,
         }
     ]
+    assert payload["data"]["tools"][0]["domain"] == "network"
+    assert payload["data"]["tools"][0]["tool_kind"] == "diagnostic"
+    assert payload["data"]["tools"][0]["required_permission"] == "module.tool.run.low_risk"
+    assert payload["data"]["tools"][0]["allowed_roles"] == ["support", "admin"]
+    assert payload["data"]["tools"][0]["policy_labels"] == [
+        "permission:module.tool.run.low_risk",
+        "roles:support,admin",
+        "consent:not_required",
+        "scopes:dns,http",
+    ]
     assert payload["data"]["tools"][1]["install_required"] is True
     assert payload["data"]["tools"][1]["requires_consent"] is True
+    assert payload["data"]["tools"][1]["required_permission"] == "module.tool.run.low_risk"
+    assert "install:required" in payload["data"]["tools"][1]["policy_labels"]
     assert payload["data"]["tools"][1]["presets"] == [
         {"preset_id": "full", "label": "Полный экран", "description": None, "params": {}}
     ]

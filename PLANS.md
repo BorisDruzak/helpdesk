@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff, 100% for P2.11 final current-page browser/readiness pass. Overall current-page plan completion: about 98-100%; remaining work is optional deeper domain polish outside the current page contract.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff, 100% for P2.11 final current-page browser/readiness pass. P3 domain-depth track started; P3.1 tool policy metadata is locally complete and ready for release/browser signoff. Overall current-page plan completion remains about 98-100%; P3 is optional domain depth rather than missing page readiness.
 
-Current execution mode: P2.11 complete; next optimal slice is optional P3 domain depth only if the current page needs more than production-readiness polish. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`. P2.11 completed final current-page browser/readiness validation across local checks, remote smoke, dark/light screenshots, page interactions, canonical support endpoints and server shutdown.
+Current execution mode: P3.1 release/browser signoff, then P3.2 operation lifecycle semantics. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`. P2.11 completed final current-page browser/readiness validation across local checks, remote smoke, dark/light screenshots, page interactions, canonical support endpoints and server shutdown. P3 now focuses on richer domain semantics without changing DB schema or removing existing operator flows.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -407,6 +407,63 @@ P2.11 evidence:
 - Canonical support endpoints returned 200 in browser context: `GET /api/web/support/workspace/summary`, `GET /api/web/support/tickets/{ticket_id}/workspace`, `GET /api/web/support/tickets/{ticket_id}/tools`, `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`, and `GET /api/web/support/tickets/{ticket_id}/passport`.
 - Console health: only known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`.
 - Remote server was stopped after signoff: `active=inactive`, `sub=dead`.
+
+## P3 Domain Depth Track
+
+P3 is not a rescue pass for the page. The page is production-ready for the current contract after P2.11. P3 adds deeper domain semantics where the UI currently has enough structure to work but can expose better operational truth to an L1/L2 operator.
+
+Scope:
+
+- Keep `/app/tickets` as the only active support workspace route.
+- Prefer typed DTO additions and adapter fields over new routes.
+- Avoid DB migrations unless a slice explicitly needs persistent state.
+- Keep AI/knowledge suggestions conservative and source-visible.
+- Keep tool/playbook execution confirmation under operator control.
+
+P3.1 - tool policy metadata:
+
+- Goal: make tool/playbook availability less opaque by surfacing existing manifest/policy metadata in the typed support tools payload and right sidebar.
+- Files:
+  - `server/web_api/dto/support.py`
+  - `server/web_api/support_handlers.py`
+  - `server/tests/test_web_support_api.py`
+  - `webapp/src/features/queues/api.ts`
+  - `webapp/src/features/queues/support-workspace-mappers.ts`
+  - `webapp/src/pages/tickets/list-page.test.tsx`
+  - `server/docs/CODEMAP.md`
+- Checklist:
+  1. [x] Extend `SupportToolItem` with policy fields derived from `ToolMetadata`: `domain`, `tool_kind`, `required_permission`, `allowed_roles`, `policy_labels`.
+  2. [x] Populate those fields in `_normalize_support_tool_entry()` without adding routes or changing run behavior.
+  3. [x] Extend TypeScript API types and workspace mapper to show concise policy labels in the tools sidebar.
+  4. [x] Add focused backend and frontend tests proving the metadata is returned and rendered.
+  5. [x] Update CODEMAP and run focused tests/build/workspace verification.
+
+P3.1 local evidence:
+
+- `SupportToolItem` now carries existing tool-manifest policy metadata (`domain`, `tool_kind`, `required_permission`, `allowed_roles`, `policy_labels`) through the typed support tools payload.
+- `_normalize_support_tool_entry()` keeps the existing tool run behavior intact and only enriches the DTO from `ToolMetadata`.
+- `/app/tickets` tools sidebar mapper renders concise operator-visible labels such as required permission and allowed roles.
+- Focused checks already passed: `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_tools_returns_typed_inventory -v --tb=short`; `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts src\features\queues\api.test.ts`.
+- Build/verification passed: `python scripts\bootstrap_web_toolchain.py`; `pnpm --dir webapp run build`; `python scripts\verify_workspace.py`; `git diff --check`.
+
+P3.2 - operation lifecycle semantics:
+
+- Goal: enrich latest operation cards and timeline operation results with retryability, duration, trace/detail hints and policy/error category when existing operation/event payloads provide them.
+- Non-goal: no retry button until the backend has a safe, idempotent retry contract.
+
+P3.3 - knowledge provider depth:
+
+- Goal: add scoring/source diagnostics to the current provider and prepare a clean adapter boundary for future external KB/search indexes.
+- Non-goal: no autonomous AI action execution and no unverified answer-as-truth UX.
+
+P3.4 - closure/passport action depth:
+
+- Goal: make closure blockers and passport/evidence candidates more actionable from the central workspace while preserving current closure guards.
+- Non-goal: no weakening of closure policy or evidence requirements.
+
+P3.5 - final P3 release/browser signoff:
+
+- Goal: deploy the completed P3 domain-depth slices, verify `/app/tickets` in browser, record known console/network noise, and stop the remote server.
 
 P2.6 verification plan:
 

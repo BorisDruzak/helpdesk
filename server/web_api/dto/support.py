@@ -443,9 +443,14 @@ class SupportToolItem(BaseModel):
     tool_name: str
     module_name: str | None = None
     description: str | None = None
+    domain: str | None = None
+    tool_kind: str | None = None
     risk_level: str = "safe_read"
     requires_consent: bool = False
     install_required: bool = False
+    required_permission: str | None = None
+    allowed_roles: list[str] = Field(default_factory=list)
+    policy_labels: list[str] = Field(default_factory=list)
     source: str
     params_schema: list[SupportToolParameter] = Field(default_factory=list)
     presets: list[SupportToolPreset] = Field(default_factory=list)

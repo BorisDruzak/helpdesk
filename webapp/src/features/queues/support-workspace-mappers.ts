@@ -525,6 +525,12 @@ export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, 
       : tool.install_required
         ? "Требуется установка модуля"
         : null;
+    const policyLabels = [
+      tool.required_permission ? `Право: ${tool.required_permission}` : null,
+      tool.allowed_roles?.length ? `Роли: ${tool.allowed_roles.join(", ")}` : null,
+      tool.domain ? `Домен: ${tool.domain}` : null,
+      tool.tool_kind ? `Тип: ${tool.tool_kind}` : null,
+    ];
     return {
       id: tool.tool_name,
       kind: "tool",
@@ -537,6 +543,7 @@ export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, 
       metaLabels: [
         `Риск: ${tool.risk_level}`,
         tool.requires_consent ? "Нужно согласие" : "Без согласия",
+        ...policyLabels,
         tool.source ? `Источник: ${tool.source}` : null,
       ].filter((label): label is string => Boolean(label)),
     };
