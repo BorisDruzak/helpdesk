@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, P2.3-P2.5 locally implemented and awaiting release/browser signoff.
 
-Current execution mode: P2.2 complete; next candidate is P2.3. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback.
+Current execution mode: P2.3-P2.5 verification/release. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -252,9 +252,9 @@ P2 - valuable, but can follow after core operator flows:
 
 - [x] Add richer knowledge catalog/search integration behind the existing `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` contract.
 - [x] Add standalone typed timeline filtering endpoint behind existing support timeline normalization.
-- Add structured operation step extraction for diagnostic payloads.
-- Add frontend theme toggle/state integration for `/app/tickets`.
-- Add richer assignee/user profile display names and requester phone/email where registry data exists.
+- [x] Add structured operation step extraction for diagnostic payloads.
+- [x] Add frontend theme toggle/state integration for `/app/tickets`.
+- [x] Add richer assignee/user profile display names and requester phone/email where registry data exists.
 
 P2.1 knowledge catalog/search evidence:
 
@@ -283,6 +283,28 @@ P2.2 standalone timeline filtering evidence:
 - Full CI passed for commit `3bff79a65bf08b127430d4936a95095093fa58ee`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
 - Linux release completed for commit `3bff79a65bf08b127430d4936a95095093fa58ee` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
 - Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200, standalone `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics` returned 200, and clicking the exact "Диагностика" timeline tab waited for the same 200 response.
+
+P2.3-P2.5 execution scope:
+
+- P2.3: Extract operation steps not only from top-level `payload.steps`, but also from common nested diagnostic payload shapes such as `payload.result.steps`, `payload.result.checks`, `payload.result.diagnostics`, `payload.observations.steps`, and normalize titles/status/value/details for richer operation result cards.
+- P2.4: Add a compact theme toggle to `/app/tickets` topbar, persist the workspace theme in browser storage, and keep dark mode as the default accepted visual target.
+- P2.5: Extend support registry/contact DTOs to include requester `phone`, `email`, location `floor`, and source/contact provenance when existing `registry_people` / `registry_locations` rows provide those fields. Keep safe fallbacks when data is absent.
+
+P2.3-P2.5 verification plan:
+
+- Backend RED/GREEN in `server/tests/test_web_support_api.py` for nested diagnostic step extraction and registry contact fields in aggregate workspace payload.
+- Frontend RED/GREEN in `support-workspace-mappers.test.ts` and `list-page.test.tsx` for enriched context, structured step cards and theme persistence/toggle.
+- Required local gates: focused backend test, focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, `git diff --check`.
+- Required release gates: full `python scripts\run_ci_suite.py`, standard Linux release, browser signoff at `http://192.168.100.17:8666/admin`, then stop remote server.
+
+P2.3-P2.5 local evidence:
+
+- RED verified: focused backend tests failed on missing nested diagnostic `operation_steps` and missing `person_phone` in aggregate workspace registry snapshot.
+- RED verified: focused frontend tests failed on missing step `details` rendering, missing workspace theme state and missing registry phone/email in the right context sidebar.
+- GREEN verified: `python -m pytest server\tests\test_web_support_api.py::test_web_support_timeline_extracts_nested_diagnostic_steps server\tests\test_web_support_api.py::test_web_support_workspace_enriches_requester_contact_from_registry -q --tb=short` passed.
+- GREEN verified: `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` passed.
+- Extended local verification passed so far: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (48 tests), `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` (18 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Pre-commit full CI evidence: `python scripts\run_ci_suite.py --server-pytest-timeout 5400 --idle-timeout 0` passed with green summary for current dirty workspace state; repeat required after commit so deploy artifact matches the final commit SHA.
 
 ### Recommended Next Implementation Order
 

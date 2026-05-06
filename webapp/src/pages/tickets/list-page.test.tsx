@@ -163,6 +163,25 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
           last_seen_at: null,
           online: false,
         },
+        registry: {
+          person_id: "person-1",
+          person_display_name: "Александр Смирнов",
+          person_phone: "+7 (495) 123-45-67",
+          person_email: "a.smirnov@example.test",
+          person_source: "manual",
+          department_id: "department-1",
+          department_name: "Отдел маркетинга",
+          location_id: "location-1",
+          location_display_name: "БЦ, 3 этаж, каб. 305",
+          building: "БЦ",
+          floor: "3",
+          room: "305",
+          asset_id: "asset-1",
+          asset_name: "PC-1",
+          asset_type: "pc",
+          service_id: "service-1",
+          service_name: "Корпоративный сайт",
+        },
         latest_operations: [],
       },
       actions: {
@@ -235,7 +254,10 @@ function timelinePayload(overrides: Partial<SupportTicketTimelinePayload> = {}):
         tool_status: "succeeded",
         result_summary: "Filtered DNS result",
         result_preview: null,
-        operation_steps: [{ name: "DNS", status: "ok", value: "example.test -> 192.0.2.10" }],
+        operation_steps: [
+          { name: "DNS", status: "ok", value: "example.test -> 192.0.2.10" },
+          { name: "HTTP", status: "error", value: "502 Bad Gateway", details: "Upstream returned an invalid gateway response." },
+        ],
       },
     ],
     ...overrides,
@@ -266,6 +288,7 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 describe("TicketListPage", () => {
@@ -372,6 +395,35 @@ describe("TicketListPage", () => {
       expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
     });
     expect(await screen.findByText("Filtered DNS result")).toBeInTheDocument();
+    expect(await screen.findByText("Upstream returned an invalid gateway response.")).toBeInTheDocument();
+  });
+
+  it("persists the support workspace theme toggle", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "dark");
+
+    fireEvent.click(screen.getByRole("button", { name: "Светлая тема" }));
+
+    expect(window.localStorage.getItem("support-workspace-theme")).toBe("light");
+    expect(screen.getByTestId("support-workspace-root")).toHaveAttribute("data-theme", "light");
+    expect(screen.getByRole("button", { name: "Тёмная тема" })).toBeInTheDocument();
+  });
+
+  it("renders requester contact enrichment in the context sidebar", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Александр Смирнов")).toBeInTheDocument();
+    expect(screen.getByText("+7 (495) 123-45-67")).toBeInTheDocument();
+    expect(screen.getByText("a.smirnov@example.test")).toBeInTheDocument();
+    expect(screen.getByText("БЦ, 3 этаж, каб. 305")).toBeInTheDocument();
   });
 
   it("renders knowledge suggestions from the aggregate workspace payload", async () => {

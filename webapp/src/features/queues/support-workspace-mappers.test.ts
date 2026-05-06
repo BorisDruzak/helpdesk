@@ -203,11 +203,15 @@ function detailPayload(status = "in_progress"): SupportTicketDetailPayload {
       registry: {
         person_id: "person-1",
         person_display_name: "Александр Смирнов",
+        person_phone: "+7 (495) 123-45-67",
+        person_email: "a.smirnov@example.test",
+        person_source: "manual",
         department_id: "department-1",
         department_name: "Отдел маркетинга",
         location_id: "location-1",
         location_display_name: "БЦ, 3 этаж, каб. 305",
         building: "БЦ",
+        floor: "3",
         room: "305",
         asset_id: "asset-1",
         asset_name: "PC-SMIRNOV",
@@ -398,7 +402,7 @@ describe("support workspace mappers", () => {
         result_preview: null,
         operation_steps: [
           { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
-          { name: "HTTP", status: "error", value: "502 Bad Gateway" },
+          { name: "HTTP", status: "error", value: "502 Bad Gateway", details: "Upstream returned an invalid gateway response." },
         ],
       },
     ];
@@ -412,8 +416,27 @@ describe("support workspace mappers", () => {
     });
     expect(timeline[1].operation?.steps).toEqual([
       { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
-      { name: "HTTP", status: "error", value: "502 Bad Gateway" },
+      { name: "HTTP", status: "error", value: "502 Bad Gateway", details: "Upstream returned an invalid gateway response." },
     ]);
+  });
+
+  it("maps requester contact fields from registry snapshot", () => {
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail: detailPayload(),
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      now: NOW,
+    });
+
+    expect(viewModel.right.context?.requester).toEqual({
+      name: "Александр Смирнов",
+      department: "Отдел маркетинга",
+      phone: "+7 (495) 123-45-67",
+      email: "a.smirnov@example.test",
+      location: "БЦ, 3 этаж, каб. 305",
+    });
   });
 
   it("builds passport readiness from missing facts", () => {

@@ -13,6 +13,7 @@ import {
   Lock,
   MessageSquare,
   MoreHorizontal,
+  Moon,
   Network,
   Paperclip,
   Play,
@@ -24,6 +25,7 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Sun,
   UserRound,
   UsersRound,
   Wrench,
@@ -63,6 +65,16 @@ const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 type ComposerMode = "public" | "internal";
 type SidebarTab = "context" | "sla" | "tools" | "knowledge" | "passport";
 type TimelineFilter = "all" | SupportWorkspaceTimelineKind;
+type SupportWorkspaceTheme = "dark" | "light";
+
+const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
+
+function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+  return window.localStorage.getItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
 
 const sliceIcons: Record<SupportWorkspaceSlice["icon"], typeof Inbox> = {
   alert: AlertTriangle,
@@ -137,6 +149,8 @@ function toolIcon(item: SupportWorkspaceToolItem) {
 }
 
 function SupportWorkspaceTopbar({
+  theme,
+  onToggleTheme,
   notificationCount,
   onRefresh,
   refreshing,
@@ -145,6 +159,8 @@ function SupportWorkspaceTopbar({
   userLogin,
   userRole,
 }: {
+  theme: SupportWorkspaceTheme;
+  onToggleTheme: () => void;
   notificationCount: number;
   onRefresh: () => void;
   refreshing: boolean;
@@ -153,8 +169,9 @@ function SupportWorkspaceTopbar({
   userLogin: string;
   userRole: string;
 }) {
+  const isLightTheme = theme === "light";
   return (
-    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-white/10 bg-[#081321]/95 px-4 text-slate-100 backdrop-blur-xl">
+    <header className={`flex h-16 shrink-0 items-center gap-4 border-b px-4 backdrop-blur-xl ${isLightTheme ? "border-slate-200 bg-white/95 text-slate-950" : "border-white/10 bg-[#081321]/95 text-slate-100"}`}>
       <Link className="flex min-w-[220px] items-center gap-3" to="/app/tickets">
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/40">
           <ShieldCheck className="h-5 w-5" />
@@ -190,6 +207,14 @@ function SupportWorkspaceTopbar({
           type="button"
         >
           <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </button>
+        <button
+          aria-label={isLightTheme ? "Тёмная тема" : "Светлая тема"}
+          className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-950" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"}`}
+          onClick={onToggleTheme}
+          type="button"
+        >
+          {isLightTheme ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
         </button>
         <button
           aria-label="Уведомления"
@@ -247,6 +272,7 @@ export function TicketListPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
   const [statusDraft, setStatusDraft] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
+  const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -448,6 +474,16 @@ export function TicketListPage() {
     ]);
   }
 
+  function toggleWorkspaceTheme() {
+    setWorkspaceTheme((current) => {
+      const nextTheme = current === "dark" ? "light" : "dark";
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY, nextTheme);
+      }
+      return nextTheme;
+    });
+  }
+
   const selectedTicket = viewModel.selectedTicket;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
   const actionError =
@@ -459,10 +495,18 @@ export function TicketListPage() {
     }
   }, [composerMode, selectedTicket]);
 
+  const isLightTheme = workspaceTheme === "light";
+
   return (
-    <section className="flex h-screen min-h-screen flex-col overflow-hidden bg-[#07111f] text-slate-100">
+    <section
+      className={`flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
+      data-testid="support-workspace-root"
+      data-theme={workspaceTheme}
+    >
       <h1 className="sr-only">Тикеты</h1>
       <SupportWorkspaceTopbar
+        theme={workspaceTheme}
+        onToggleTheme={toggleWorkspaceTheme}
         notificationCount={workspaceQuery.data?.detail.snapshot.notification_unread ?? 0}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
@@ -833,6 +877,7 @@ export function TicketListPage() {
                                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{step.name}</p>
                                       <p className={step.status === "ok" || step.status === "succeeded" ? "mt-1 font-semibold text-emerald-200" : step.status === "error" || step.status === "failed" ? "mt-1 font-semibold text-red-200" : "mt-1 font-semibold text-amber-200"}>{step.status}</p>
                                       <p className="mt-1 break-words text-xs leading-5 text-slate-400">{step.value}</p>
+                                      {step.details ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{step.details}</p> : null}
                                     </div>
                                   ))}
                                 </div>

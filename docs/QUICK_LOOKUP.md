@@ -17,6 +17,7 @@
 - 2026-05-04 agent release check: Windows stable `3.1.29` supersedes `3.1.28` for the follow-up agent GUI fixes: mandatory diagnostic-consent hint, clearer resolution confirmation card, visible diagnostics/SLA summaries, support-in-work fallback when no personal assignee is set, and Russian system event text. Upload and rollout must target a new `3.1.29` build, not overwrite existing artifacts.
 - 2026-05-05 support workspace P2.1: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` still prefers manual KB links, but now falls back to a small built-in knowledge catalog for common incidents such as HTTP 502, DNS, printer offline, account access and offline agent when no manual KB links exist; the same payload is embedded in aggregate `/workspace`.
 - 2026-05-06 support workspace P2.2: `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all|messages|internal|diagnostics|history` exposes standalone typed timeline filtering through the same normalized support timeline serializer used by detail/workspace payloads; `/app/tickets` uses it for tab-specific timeline refreshes with aggregate fallback.
+- 2026-05-06 support workspace P2.3-P2.5: support timeline diagnostic rows now extract structured steps from nested result/check payloads and preserve optional `details`; `SupportTicketRegistrySnapshot` includes requester phone/email/source plus location floor from registry people/locations; `/app/tickets` has a localStorage-backed light/dark theme toggle on the workspace shell.
 
 ## 2026-04-28 local agent Qt GUI redesign
 

@@ -1175,24 +1175,84 @@ def _timeline_event_text(event_type: str, payload: dict) -> str:
     return _timeline_event_label(event_type)
 
 
+def _timeline_nested_value(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = payload
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _timeline_candidate_steps(payload: dict[str, Any]) -> list[Any]:
+    for path in (
+        ("steps",),
+        ("checks",),
+        ("diagnostics",),
+        ("result", "steps"),
+        ("result", "checks"),
+        ("result", "diagnostics"),
+        ("result", "observations"),
+        ("observations", "steps"),
+        ("diagnostic", "steps"),
+    ):
+        raw_steps = _timeline_nested_value(payload, path)
+        if isinstance(raw_steps, list) and raw_steps:
+            return raw_steps
+        if isinstance(raw_steps, dict) and raw_steps:
+            return [
+                {"key": key, **value} if isinstance(value, dict) else {"key": key, "value": value}
+                for key, value in raw_steps.items()
+            ]
+    return []
+
+
 def _timeline_operation_steps(payload: dict) -> list[dict[str, Any]]:
-    raw_steps = payload.get("steps")
-    if not isinstance(raw_steps, list):
-        return []
+    raw_steps = _timeline_candidate_steps(payload)
     steps: list[dict[str, Any]] = []
     for raw_step in raw_steps:
         if not isinstance(raw_step, dict):
             continue
-        name = str(raw_step.get("name") or raw_step.get("title") or "").strip()
-        status = str(raw_step.get("status") or "").strip()
-        value = raw_step.get("value")
+        name = str(
+            raw_step.get("name")
+            or raw_step.get("title")
+            or raw_step.get("label")
+            or raw_step.get("check")
+            or raw_step.get("stage")
+            or raw_step.get("key")
+            or ""
+        ).strip()
+        status = str(
+            raw_step.get("status")
+            or raw_step.get("state")
+            or raw_step.get("result")
+            or raw_step.get("outcome")
+            or ""
+        ).strip()
+        value = (
+            raw_step.get("value")
+            if raw_step.get("value") is not None
+            else raw_step.get("summary")
+            if raw_step.get("summary") is not None
+            else raw_step.get("message")
+            if raw_step.get("message") is not None
+            else raw_step.get("output")
+        )
+        details = raw_step.get("details")
+        if details is None:
+            details = raw_step.get("detail") or raw_step.get("description") or raw_step.get("error") or raw_step.get("stderr")
         if not name and not status and value is None:
             continue
+        value_text = "" if value is None else str(value)
+        details_text = None if details is None else str(details).strip() or None
+        if details_text == value_text:
+            details_text = None
         steps.append(
             {
                 "name": name or "step",
                 "status": status or "unknown",
-                "value": "" if value is None else str(value),
+                "value": value_text,
+                "details": details_text,
             }
         )
     return steps[:20]
@@ -2004,17 +2064,23 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         registry_repo = RegistryRepo(session)
         asset = await registry_repo.get_asset_by_device_id(ticket.device_id)
         person = await registry_repo.get_person(getattr(asset, "assigned_person_id", None)) if asset else None
-        location = await registry_repo.get_location(getattr(asset, "location_id", None)) if asset else None
-        department = await registry_repo.get_department(getattr(asset, "department_id", None)) if asset else None
+        location_id = getattr(asset, "location_id", None) or getattr(person, "location_id", None)
+        department_id = getattr(asset, "department_id", None) or getattr(person, "department_id", None)
+        location = await registry_repo.get_location(location_id) if location_id else None
+        department = await registry_repo.get_department(department_id) if department_id else None
         if asset or person or location or department:
             registry_snapshot = SupportTicketRegistrySnapshot(
                 person_id=getattr(person, "person_id", None),
                 person_display_name=getattr(person, "display_name", None),
+                person_phone=getattr(person, "phone", None),
+                person_email=getattr(person, "email", None),
+                person_source=getattr(person, "source", None),
                 department_id=getattr(department, "department_id", None),
                 department_name=getattr(department, "name", None),
                 location_id=getattr(location, "location_id", None),
                 location_display_name=getattr(location, "display_name", None),
                 building=getattr(location, "building", None),
+                floor=getattr(location, "floor", None),
                 room=getattr(location, "room", None),
                 asset_id=getattr(asset, "asset_id", None),
                 asset_name=getattr(asset, "name", None),

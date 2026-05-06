@@ -220,6 +220,7 @@ export type SupportTicketDetailPayload = {
       name: string;
       status: string;
       value: string;
+      details?: string | null;
     }>;
   }>;
   snapshot: {
@@ -241,11 +242,15 @@ export type SupportTicketDetailPayload = {
     registry?: {
       person_id: string | null;
       person_display_name: string | null;
+      person_phone?: string | null;
+      person_email?: string | null;
+      person_source?: string | null;
       department_id: string | null;
       department_name: string | null;
       location_id: string | null;
       location_display_name: string | null;
       building: string | null;
+      floor?: string | null;
       room: string | null;
       asset_id: string | null;
       asset_name: string | null;

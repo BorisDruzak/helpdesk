@@ -321,11 +321,15 @@ class SupportTicketRegistrySnapshot(BaseModel):
 
     person_id: str | None = None
     person_display_name: str | None = None
+    person_phone: str | None = None
+    person_email: str | None = None
+    person_source: str | None = None
     department_id: str | None = None
     department_name: str | None = None
     location_id: str | None = None
     location_display_name: str | None = None
     building: str | None = None
+    floor: str | None = None
     room: str | None = None
     asset_id: str | None = None
     asset_name: str | None = None

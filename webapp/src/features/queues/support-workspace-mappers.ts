@@ -396,13 +396,20 @@ export function mapWorkspaceContext(detail: SupportTicketDetailPayload | undefin
   }
   const registry = detail.snapshot.registry;
   const device = detail.snapshot.device;
+  const locationFallback = [
+    registry?.building,
+    registry?.floor ? `${registry.floor} \u044d\u0442\u0430\u0436` : null,
+    registry?.room ? `\u043a\u0430\u0431. ${registry.room}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
   return {
     requester: {
-      name: detail.ticket.requester_display_name ?? registry?.person_display_name ?? "Не указан",
-      department: registry?.department_name ?? "Не указан",
-      phone: "Не указан",
-      email: "Не указан",
-      location: registry?.location_display_name ?? ([registry?.building, registry?.room].filter(Boolean).join(", ") || "Не указана"),
+      name: registry?.person_display_name ?? detail.ticket.requester_display_name ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
+      department: registry?.department_name ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
+      phone: registry?.person_phone ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
+      email: registry?.person_email ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
+      location: registry?.location_display_name ?? (locationFallback || "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"),
     },
     device: {
       id: device.device_id,

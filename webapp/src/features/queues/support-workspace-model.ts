@@ -99,6 +99,7 @@ export type SupportWorkspaceTimelineItem = {
       name: string;
       status: string;
       value: string;
+      details?: string | null;
     }>;
   };
   attachments: Array<Record<string, unknown>>;

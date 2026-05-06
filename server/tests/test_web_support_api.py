@@ -18,6 +18,10 @@ from app.db.models import (
     PlaybookStep,
     PlaybookVersion,
     HelpdeskPolicyAudit,
+    RegistryAsset,
+    RegistryDepartment,
+    RegistryLocation,
+    RegistryPerson,
     ReportingPolicy,
     Ticket,
     TicketApproval,
@@ -1410,8 +1414,8 @@ async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_
     assert timeline_by_type["passport_evidence_added"]["event_category"] == "passport"
     assert timeline_by_type["tool_call_result"]["event_category"] == "diagnostics"
     assert timeline_by_type["tool_call_result"]["operation_steps"] == [
-        {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10"},
-        {"name": "HTTP", "status": "error", "value": "502 Bad Gateway"},
+        {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10", "details": None},
+        {"name": "HTTP", "status": "error", "value": "502 Bad Gateway", "details": None},
     ]
 
 
@@ -1513,6 +1517,143 @@ async def test_web_support_ticket_timeline_endpoint_filters_normalized_events(te
     assert all_response.status == 200, await all_response.text()
     all_data = (await all_response.json())["data"]
     assert all_data["total"] == 4
+
+
+@pytest.mark.asyncio
+async def test_web_support_timeline_extracts_nested_diagnostic_steps(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        queue = await _seed_queue(session, code="timeline_nested_steps", name="Timeline nested steps", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-timeline-nested",
+            title="Nested diagnostic payload",
+            description="Diagnostic result cards should not require only top-level steps.",
+            status="in_progress",
+            requester_id="requester-timeline-nested",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+        )
+        session.add(ticket)
+        await session.flush()
+        await TicketEventsRepo(session).add_event(
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_result",
+            payload={
+                "tool_name": "diagnose.website",
+                "status": "partial",
+                "summary": "Website diagnostics completed with HTTP error",
+                "result": {
+                    "checks": [
+                        {"title": "DNS", "state": "ok", "summary": "site.example -> 192.0.2.10"},
+                        {"title": "TCP", "state": "ok", "value": "192.0.2.10:443"},
+                        {
+                            "title": "HTTP",
+                            "state": "error",
+                            "summary": "502 Bad Gateway",
+                            "details": "Upstream returned an invalid gateway response.",
+                        },
+                    ]
+                },
+            },
+            event_id="timeline-nested-tool-result",
+        )
+        ticket_id = ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    data = (await response.json())["data"]
+    steps = data["items"][0]["operation_steps"]
+    assert steps == [
+        {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10", "details": None},
+        {"name": "TCP", "status": "ok", "value": "192.0.2.10:443", "details": None},
+        {
+            "name": "HTTP",
+            "status": "error",
+            "value": "502 Bad Gateway",
+            "details": "Upstream returned an invalid gateway response.",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_web_support_workspace_enriches_requester_contact_from_registry(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        queue = await _seed_queue(session, code="contact_registry", name="Contact registry", members=["support-test"])
+        person_id = str(uuid.uuid4())
+        department_id = str(uuid.uuid4())
+        location_id = str(uuid.uuid4())
+        asset_id = str(uuid.uuid4())
+        session.add_all([
+            RegistryDepartment(
+                department_id=department_id,
+                code="marketing",
+                name="Отдел маркетинга",
+            ),
+            RegistryLocation(
+                location_id=location_id,
+                building="БЦ",
+                floor="3",
+                room="305",
+                display_name="БЦ, 3 этаж, каб. 305",
+            ),
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Александр Смирнов",
+                full_name="Смирнов Александр Петрович",
+                phone="+7 (495) 123-45-67",
+                email="a.smirnov@example.test",
+                department_id=department_id,
+                location_id=location_id,
+                source="manual",
+            ),
+        ])
+        await session.flush()
+        session.add(
+            RegistryAsset(
+                asset_id=asset_id,
+                asset_type="pc",
+                name="PC-SMIRNOV",
+                hostname="PC-SMIRNOV",
+                device_id="device-contact-registry",
+                location_id=location_id,
+                assigned_person_id=person_id,
+                department_id=department_id,
+            )
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-contact-registry",
+            title="Requester contact enrichment",
+            description="Right sidebar should show contact fields from registry.",
+            status="in_progress",
+            requester_id="requester-contact",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        session.add(ticket)
+        ticket_id = ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    registry = (await response.json())["data"]["detail"]["snapshot"]["registry"]
+    assert registry["person_display_name"] == "Александр Смирнов"
+    assert registry["person_phone"] == "+7 (495) 123-45-67"
+    assert registry["person_email"] == "a.smirnov@example.test"
+    assert registry["department_name"] == "Отдел маркетинга"
+    assert registry["floor"] == "3"
 
 
 @pytest.mark.asyncio
