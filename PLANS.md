@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff.
 
-Current execution mode: P2.6 visual/light-theme/responsive hardening in progress for the current `/app/tickets` page. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 starts with SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit.
+Current execution mode: P2.6 first slice complete; next candidate is P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -367,6 +367,11 @@ P2.6 first-slice local evidence:
 - Reworked passport readiness rendering with a status chip, progress bar and clearer open-passport action.
 - Added focused frontend coverage for SLA/OLA edge labels and passport `4/4` readiness copy.
 - Local verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (16 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
+- Linux release completed for commits `27e687f` and follow-up light-header fix `b244e7e` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed.
+- Browser plugin path failed to start with a local app-server path error, so rendered signoff used Playwright MCP against the canonical `http://192.168.100.17:8666/admin` stand.
+- Browser signoff passed: logged in as `op1`, `/app/tickets/:ticketId` rendered, `GET /api/web/support/queue?...` returned 200, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200, theme toggle switched dark/light, SLA tab showed explicit timer states, and passport tab showed `Готовность 4/4` plus open action.
+- Visual screenshots checked at 1366, 1440 and 1920px in dark/light. One light-theme defect was found (`bg-[#0b1624]/70` center header stayed dark) and fixed in `b244e7e`; final light screenshots show the center header, timeline and composer on readable light surfaces.
+- Remaining browser console/network noise: known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`; `/app/tickets` support APIs were 200.
 
 ## Design System Target
 
@@ -894,10 +899,10 @@ Recommended next step: execute **P2.6 visual/light-theme/responsive hardening** 
 
 Concrete P2.6 first slice:
 
-1. [ ] Run browser audit for `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px in dark and light themes.
+1. [x] Run browser audit for `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px in dark and light themes.
 2. [x] Record concrete visual defects: contrast, clipping, wrapping, selected states, scroll containment, dropdown/composer readability, SLA/OLA timer readability and passport readiness clarity.
 3. [x] Patch only the current page/component classes and mapper-safe UI helpers needed for those defects.
 4. [x] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
-5. [ ] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
+5. [x] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
 
 Next slice after P2.6: choose P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening depending on what the P2.6 browser audit exposes.
