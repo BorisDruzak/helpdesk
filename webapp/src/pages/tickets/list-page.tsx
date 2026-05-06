@@ -3,19 +3,26 @@ import {
   AlertTriangle,
   Bell,
   BookOpen,
+  Building2,
   CheckCircle2,
   ChevronDown,
   CircleHelp,
   ClipboardList,
   Clock3,
+  Cpu,
   FileCheck2,
+  Fingerprint,
   Inbox,
   Lock,
+  Mail,
+  MapPin,
   MessageSquare,
+  Monitor,
   MoreHorizontal,
   Moon,
   Network,
   Paperclip,
+  Phone,
   Play,
   Printer,
   RefreshCcw,
@@ -26,6 +33,8 @@ import {
   Sparkles,
   Star,
   Sun,
+  Tags,
+  type LucideIcon,
   UserRound,
   UsersRound,
   Wrench,
@@ -110,6 +119,27 @@ const timelineTabs: Array<{ value: TimelineFilter; label: string }> = [
   { value: "diagnostics", label: "Диагностика" },
   { value: "history", label: "История" },
 ];
+
+type ContextInfoRowProps = {
+  icon: LucideIcon;
+  label: string;
+  value: number | string | null | undefined;
+};
+
+function ContextInfoRow({ icon: Icon, label, value }: ContextInfoRowProps) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+      <div className="min-w-0 flex-1">
+        <dt className="text-xs text-slate-500">{label}</dt>
+        <dd className="mt-0.5 break-words text-sm text-slate-200">{value}</dd>
+      </div>
+    </div>
+  );
+}
 
 function toneClasses(tone: string) {
   switch (tone) {
@@ -1053,16 +1083,21 @@ export function TicketListPage() {
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-700">
                       <UserRound className="h-5 w-5" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-white">{viewModel.right.context.requester.name}</p>
                       <p className="text-sm text-slate-400">{viewModel.right.context.requester.department}</p>
                     </div>
                   </div>
-                  <div className="mt-4 space-y-2 text-sm text-slate-300">
-                    <p>{viewModel.right.context.requester.phone}</p>
-                    <p>{viewModel.right.context.requester.email}</p>
-                    <p>{viewModel.right.context.requester.location}</p>
+                  <div className="mt-3">
+                    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
+                      {viewModel.right.context.requester.sourceLabel}
+                    </span>
                   </div>
+                  <dl className="mt-4 grid gap-2">
+                    <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.phone} />
+                    <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.email} />
+                    <ContextInfoRow icon={MapPin} label="Локация" value={viewModel.right.context.requester.location} />
+                  </dl>
                 </section>
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
@@ -1074,15 +1109,22 @@ export function TicketListPage() {
                   </div>
                   <p className="mt-3 font-semibold text-white">{viewModel.right.context.device.hostname}</p>
                   <p className="mt-1 text-sm text-slate-400">{viewModel.right.context.device.os}</p>
-                  <p className="mt-2 text-sm text-slate-500">Последний вход: {viewModel.right.context.device.lastSeenLabel}</p>
+                  <dl className="mt-4 grid gap-2">
+                    <ContextInfoRow icon={Cpu} label="Тип актива" value={viewModel.right.context.device.assetTypeLabel} />
+                    <ContextInfoRow icon={Fingerprint} label="Asset ID" value={viewModel.right.context.device.assetId} />
+                    <ContextInfoRow icon={Monitor} label="Device ID" value={viewModel.right.context.device.id} />
+                    <ContextInfoRow icon={Clock3} label="Последний вход" value={viewModel.right.context.device.lastSeenLabel} />
+                  </dl>
                 </section>
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Категория / услуга</p>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex justify-between gap-3"><dt className="text-slate-500">Тип</dt><dd className="text-right text-slate-200">{viewModel.right.context.classification.ticketType}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-slate-500">Сервис</dt><dd className="text-right text-slate-200">{viewModel.right.context.classification.service}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-slate-500">Источник</dt><dd className="text-right text-slate-200">{viewModel.right.context.classification.source}</dd></div>
+                  <dl className="mt-3 grid gap-2">
+                    <ContextInfoRow icon={Tags} label="Тип" value={viewModel.right.context.classification.ticketType} />
+                    <ContextInfoRow icon={ClipboardList} label="Категория" value={viewModel.right.context.classification.category} />
+                    <ContextInfoRow icon={Building2} label="Сервис" value={viewModel.right.context.classification.service} />
+                    <ContextInfoRow icon={BookOpen} label="Источник" value={viewModel.right.context.classification.source} />
+                    <ContextInfoRow icon={MessageSquare} label="Похожие тикеты" value={viewModel.right.context.classification.similarTicketsCount} />
                   </dl>
                 </section>
               </div>

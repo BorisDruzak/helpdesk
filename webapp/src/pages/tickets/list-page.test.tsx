@@ -480,6 +480,11 @@ describe("TicketListPage", () => {
     expect(screen.getByText("+7 (495) 123-45-67")).toBeInTheDocument();
     expect(screen.getByText("a.smirnov@example.test")).toBeInTheDocument();
     expect(screen.getByText("БЦ, 3 этаж, каб. 305")).toBeInTheDocument();
+    expect(screen.getByText("Профиль: ручной ввод")).toBeInTheDocument();
+    expect(screen.getByText("ПК")).toBeInTheDocument();
+    expect(screen.getByText("asset-1")).toBeInTheDocument();
+    expect(screen.getByText("Корпоративный сайт")).toBeInTheDocument();
+    expect(screen.getByText("Похожие тикеты")).toBeInTheDocument();
   });
 
   it("renders knowledge suggestions from the aggregate workspace payload", async () => {

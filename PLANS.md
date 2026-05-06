@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff. P2.7 right-context enrichment polish is in progress.
 
-Current execution mode: P2.6 first slice complete; next candidate is P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit.
+Current execution mode: P2.7 right-context enrichment polish. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -891,11 +891,11 @@ Stage 8 evidence:
 - Backend/API residual gap after P2.5 is estimated at 4-7% for typed contracts and 8-12% for broader domain depth, mostly external KB/search, richer operation-running/tool policy metadata and optional deeper context/profile sources.
 - UI/page polish gap for the current page is estimated at 12-18%, mostly full light-theme polish, responsive desktop hardening, richer disabled/running states and reason-capturing action UX.
 - This plan remains the active long-horizon artifact for any P2 follow-up.
-- Current pending step: execute P2.6 visual/light-theme/responsive hardening.
+- Current pending step: execute P2.7 right-context enrichment polish.
 
 ## Handoff
 
-Recommended next step: execute **P2.6 visual/light-theme/responsive hardening** on the current `/app/tickets` page.
+Recommended next step: execute **P2.7 right-context enrichment polish** on the current `/app/tickets` page.
 
 Concrete P2.6 first slice:
 
@@ -905,4 +905,17 @@ Concrete P2.6 first slice:
 4. [x] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
 5. [x] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
 
-Next slice after P2.6: choose P2.7 right-context enrichment polish or P2.8 diagnostics/tools UX hardening depending on what the P2.6 browser audit exposes.
+Concrete P2.7 slice:
+
+1. [x] Extend the support workspace context view-model with requester provenance, asset type/id and similar-ticket count from existing aggregate data.
+2. [x] Update the context sidebar to show labeled contact fields, registry/source provenance, device identity and category/service/source metadata without decorative placeholder values.
+3. [x] Add focused mapper and page tests for enriched context rendering and fallback behavior.
+4. [ ] Run focused Vitest, production webapp build, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
+
+P2.7 local evidence:
+
+- Focused Vitest passed: `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` (16 tests).
+- Production webapp build passed: `pnpm --dir webapp run build`.
+- Workspace verification passed: `python scripts\verify_workspace.py`.
+
+Next slice after P2.7: P2.8 diagnostics/tools UX hardening, focused on operation-running, unavailable-tool reasons and diagnostic detail readability.

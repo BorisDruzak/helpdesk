@@ -436,6 +436,16 @@ describe("support workspace mappers", () => {
       phone: "+7 (495) 123-45-67",
       email: "a.smirnov@example.test",
       location: "БЦ, 3 этаж, каб. 305",
+      sourceLabel: "Профиль: ручной ввод",
+    });
+    expect(viewModel.right.context?.device).toMatchObject({
+      assetId: "asset-1",
+      assetTypeLabel: "ПК",
+    });
+    expect(viewModel.right.context?.classification).toMatchObject({
+      category: "Не указана",
+      service: "Корпоративный сайт",
+      similarTicketsCount: 0,
     });
   });
 

@@ -132,9 +132,12 @@ export type SupportWorkspaceContext = {
     phone: string;
     email: string;
     location: string;
+    sourceLabel: string;
   };
   device: {
     id: string | null;
+    assetId: string | null;
+    assetTypeLabel: string;
     hostname: string;
     os: string;
     online: boolean;
@@ -146,6 +149,7 @@ export type SupportWorkspaceContext = {
     category: string;
     service: string;
     source: string;
+    similarTicketsCount: number;
   };
 };
 

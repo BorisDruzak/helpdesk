@@ -390,7 +390,41 @@ export function mapSupportTimelineEntries(
   });
 }
 
-export function mapWorkspaceContext(detail: SupportTicketDetailPayload | undefined): SupportWorkspaceContext | null {
+const requesterSourceLabels: Record<string, string> = {
+  directory: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u043a\u0430\u0442\u0430\u043b\u043e\u0433",
+  form: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0444\u043e\u0440\u043c\u0430 \u0437\u0430\u044f\u0432\u043a\u0438",
+  import: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0438\u043c\u043f\u043e\u0440\u0442",
+  manual: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0440\u0443\u0447\u043d\u043e\u0439 \u0432\u0432\u043e\u0434",
+  registry: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u0440\u0435\u0435\u0441\u0442\u0440",
+};
+
+const assetTypeLabels: Record<string, string> = {
+  laptop: "\u041d\u043e\u0443\u0442\u0431\u0443\u043a",
+  network: "\u0421\u0435\u0442\u0435\u0432\u043e\u0435 \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u043e",
+  pc: "\u041f\u041a",
+  printer: "\u041f\u0440\u0438\u043d\u0442\u0435\u0440",
+  server: "\u0421\u0435\u0440\u0432\u0435\u0440",
+  workstation: "\u0420\u0430\u0431\u043e\u0447\u0430\u044f \u0441\u0442\u0430\u043d\u0446\u0438\u044f",
+};
+
+function requesterSourceLabel(source: string | null | undefined): string {
+  if (!source) {
+    return "\u041f\u0440\u043e\u0444\u0438\u043b\u044c: \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d";
+  }
+  return requesterSourceLabels[source] ?? `\u041f\u0440\u043e\u0444\u0438\u043b\u044c: ${source}`;
+}
+
+function assetTypeLabel(assetType: string | null | undefined): string {
+  if (!assetType) {
+    return "\u0422\u0438\u043f \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d";
+  }
+  return assetTypeLabels[assetType] ?? assetType;
+}
+
+export function mapWorkspaceContext(
+  detail: SupportTicketDetailPayload | undefined,
+  similarTicketsCount = 0,
+): SupportWorkspaceContext | null {
   if (!detail) {
     return null;
   }
@@ -410,9 +444,12 @@ export function mapWorkspaceContext(detail: SupportTicketDetailPayload | undefin
       phone: registry?.person_phone ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
       email: registry?.person_email ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
       location: registry?.location_display_name ?? (locationFallback || "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"),
+      sourceLabel: requesterSourceLabel(registry?.person_source),
     },
     device: {
       id: device.device_id,
+      assetId: registry?.asset_id ?? device.device_id,
+      assetTypeLabel: assetTypeLabel(registry?.asset_type),
       hostname: device.hostname ?? registry?.asset_name ?? "Устройство не указано",
       os: device.os ?? "ОС не определена",
       online: device.online,
@@ -424,6 +461,7 @@ export function mapWorkspaceContext(detail: SupportTicketDetailPayload | undefin
       category: detail.ticket.category_id ? String(detail.ticket.category_id) : "Не указана",
       service: registry?.service_name ?? (detail.ticket.service_id ? String(detail.ticket.service_id) : "Не указан"),
       source: detail.request_form?.form_title ?? detail.request_form?.form_key ?? "Не указан",
+      similarTicketsCount,
     },
   };
 }
@@ -573,7 +611,8 @@ export function mapSupportWorkspaceViewModel({
         };
       })()
     : null;
-  const context = mapWorkspaceContext(detail);
+  const knowledgeModel = mapWorkspaceKnowledge(knowledge);
+  const context = mapWorkspaceContext(detail, knowledgeModel.similarTickets.length);
   return {
     theme: "dark",
     left: {
@@ -587,7 +626,7 @@ export function mapSupportWorkspaceViewModel({
       context,
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
-      knowledge: mapWorkspaceKnowledge(knowledge),
+      knowledge: knowledgeModel,
       passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId, passportReadiness),
     },
     raw: {
