@@ -318,30 +318,35 @@ function closureFocusGuide(blocker: ClosurePlanBlocker) {
     case "attach_evidence":
       return {
         section: "Evidence",
+        targetAction: "Приложить evidence",
         hint: "Приложите подтверждение или выберите подходящий evidence-кандидат перед закрытием.",
         passportItemKey: "verified_and_closed",
       };
     case "add_worklog":
       return {
         section: "Worklog",
+        targetAction: "Зафиксировать worklog",
         hint: "Добавьте запись о выполненной работе, чтобы следующий оператор видел контекст.",
         passportItemKey: "verified_and_closed",
       };
     case "edit_resolution":
       return {
         section: "Решение",
+        targetAction: "Заполнить решение",
         hint: "Заполните код решения и итог для заявителя перед переводом тикета в решение.",
         passportItemKey: "solution_applied",
       };
     case "check_approval":
       return {
         section: "Согласование",
+        targetAction: "Проверить согласование",
         hint: "Проверьте решение согласующего и зафиксируйте его в истории тикета.",
         passportItemKey: "verified_and_closed",
       };
     default:
       return {
         section: "Паспорт",
+        targetAction: blocker.actionLabel,
         hint: "Проверьте требование в паспорте решения перед закрытием тикета.",
         passportItemKey: null,
       };
@@ -1777,6 +1782,12 @@ export function TicketListPage() {
                       <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-100/70">Следующий шаг</p>
                         <p className="mt-1 text-xs leading-5 text-amber-50">{closureGuide.hint}</p>
+                      </div>
+                    ) : null}
+                    {closureGuide?.targetAction ? (
+                      <div className="mt-2 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-100/70">Целевое действие</p>
+                        <p className="mt-1 text-xs font-semibold text-amber-50">{closureGuide.targetAction}</p>
                       </div>
                     ) : null}
                     {closureFocus.candidateCount > 0 ? (

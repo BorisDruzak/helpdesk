@@ -843,6 +843,91 @@ describe("TicketListPage", () => {
     expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Решение применено")).toBeInTheDocument();
   });
 
+  it("shows evidence-specific focus guidance for attachment blockers", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 2,
+          recommended_next_action: "Добавить evidence",
+          blockers: [
+            {
+              key: "priority_evidence",
+              label: "Доказательство для P0",
+              met: false,
+              detail: "Нужно приложить evidence.",
+              source: "closure_requirement",
+              action_kind: "attach_evidence",
+              action_label: "Добавить evidence",
+              severity: "blocking",
+              candidate_count: 2,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить evidence" }));
+
+    const focusCard = await screen.findByTestId("closure-focus-card");
+    expect(within(focusCard).getByText("Секция: Evidence")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Целевое действие")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Приложить evidence")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Evidence candidates: 2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Проверка и закрытие")).toBeInTheDocument();
+  });
+
+  it("shows worklog-specific focus guidance for worklog blockers", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 1,
+          total: 4,
+          evidence_candidate_count: 0,
+          recommended_next_action: "Добавить worklog",
+          blockers: [
+            {
+              key: "worklog",
+              label: "Worklog",
+              met: false,
+              detail: "Добавьте запись о выполненной работе.",
+              source: "closure_requirement",
+              action_kind: "add_worklog",
+              action_label: "Добавить worklog",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Добавить worklog" }));
+
+    const focusCard = await screen.findByTestId("closure-focus-card");
+    expect(within(focusCard).getByText("Секция: Worklog")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Целевое действие")).toBeInTheDocument();
+    expect(within(focusCard).getByText("Зафиксировать worklog")).toBeInTheDocument();
+    expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Проверка и закрытие")).toBeInTheDocument();
+  });
+
   it("renders requester contact enrichment in the context sidebar", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
