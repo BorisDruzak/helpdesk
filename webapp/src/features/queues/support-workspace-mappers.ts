@@ -73,6 +73,80 @@ function formatDateTime(value: string | null | undefined, withYear = false): str
   return (withYear ? DATE_TIME_WITH_YEAR_FORMATTER : DATE_TIME_FORMATTER).format(date);
 }
 
+function formatDurationMs(value: number | null | undefined): string | null {
+  if (value === null || typeof value === "undefined") {
+    return null;
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  if (value < 1000) {
+    return `${Math.round(value)} ms`;
+  }
+  const seconds = Math.round(value / 1000);
+  if (seconds < 60) {
+    return `${seconds} s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+}
+
+function compactId(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
+}
+
+function errorCategoryLabel(value: string | null | undefined): string | null {
+  switch (value) {
+    case "consent":
+      return "Согласие";
+    case "execution":
+      return "Выполнение";
+    case "policy":
+      return "Политика";
+    case "timeout":
+      return "Таймаут";
+    case "transport":
+      return "Связь";
+    default:
+      return value || null;
+  }
+}
+
+function operationMetaLabels(operation: {
+  operation_id?: string | null;
+  trace_id?: string | null;
+  duration_ms?: number | null;
+  retry_count?: number | null;
+  max_retries?: number | null;
+  retryable?: boolean | null;
+  error_code?: string | null;
+  error_category?: string | null;
+  details_url?: string | null;
+}): string[] {
+  const duration = formatDurationMs(operation.duration_ms);
+  const retryCount = operation.retry_count ?? null;
+  const maxRetries = operation.max_retries ?? null;
+  const retryLabel =
+    retryCount !== null && maxRetries !== null
+      ? operation.retryable
+        ? `Повтор: ${retryCount}/${maxRetries} доступен`
+        : `Повторы: ${retryCount}/${maxRetries}`
+      : null;
+  const category = errorCategoryLabel(operation.error_category);
+  return [
+    duration ? `Длительность: ${duration}` : null,
+    retryLabel,
+    operation.error_code ? `Код: ${operation.error_code}` : null,
+    category ? `Категория: ${category}` : null,
+    compactId(operation.trace_id) ? `Trace: ${compactId(operation.trace_id)}` : null,
+    operation.details_url ? "Детали API" : null,
+  ].filter((label): label is string => Boolean(label));
+}
+
 function secondsUntil(value: string | null | undefined, now = new Date()): number | null {
   if (!value) {
     return null;
@@ -434,6 +508,7 @@ export function mapSupportTimelineEntries(
             statusTone: operationStatusTone(entry.tool_status),
             summary: entry.result_summary ?? null,
             preview: entry.result_preview ?? null,
+            metaLabels: operationMetaLabels(entry),
             steps: entry.operation_steps ?? [],
           }
         : undefined,
@@ -589,7 +664,8 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
       statusTone: operationStatusTone(status),
       active: activeOperationStatuses.has(status),
       summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
-      queuedOrStartedLabel: formatDateTime(operation.queued_at),
+      metaLabels: operationMetaLabels(operation),
+      queuedOrStartedLabel: formatDateTime(operation.started_at ?? operation.queued_at),
       finishedLabel: operation.finished_at ? formatDateTime(operation.finished_at) : null,
     };
   });

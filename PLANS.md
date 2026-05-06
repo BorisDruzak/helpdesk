@@ -452,6 +452,19 @@ P3.2 - operation lifecycle semantics:
 
 - Goal: enrich latest operation cards and timeline operation results with retryability, duration, trace/detail hints and policy/error category when existing operation/event payloads provide them.
 - Non-goal: no retry button until the backend has a safe, idempotent retry contract.
+- Checklist:
+  1. [x] Extend typed support operation/timeline DTOs with read-only lifecycle metadata: duration, retry counts/retryable, error code/category, trace id and details URL.
+  2. [x] Populate metadata from existing `Operation` columns and diagnostic event payloads without changing lifecycle transitions or adding retry actions.
+  3. [x] Extend `/app/tickets` view-model and UI to show compact lifecycle chips in latest operations and diagnostic timeline cards.
+  4. [x] Add focused backend/frontend tests.
+  5. [ ] Run focused tests/build/workspace verification, then release/browser signoff.
+
+P3.2 local evidence:
+
+- `SupportTicketOperationSnapshot` and support timeline messages now carry read-only lifecycle hints: `duration_ms`, `retry_count`, `max_retries`, `retryable`, `error_code`, `error_category`, `trace_id` and `details_url`.
+- Latest operation snapshots populate those fields from existing `operations` columns; diagnostic timeline rows populate them from event payloads when present. No retry button or lifecycle mutation was added.
+- `/app/tickets` renders compact lifecycle chips in latest operation cards and diagnostic timeline operation result cards.
+- Focused checks passed: `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events -v --tb=short`; `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`; `pnpm --dir webapp run build`; `git diff --check`.
 
 P3.3 - knowledge provider depth:
 

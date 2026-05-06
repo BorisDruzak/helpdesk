@@ -539,7 +539,16 @@ describe("TicketListPage", () => {
         tool_name: "dns.resolve",
         command_name: null,
         queued_at: "2026-05-03T09:19:00+05:00",
+        started_at: "2026-05-03T09:19:01+05:00",
         finished_at: null,
+        duration_ms: 1253,
+        trace_id: "trace-running-1",
+        retry_count: 0,
+        max_retries: 3,
+        retryable: false,
+        error_code: null,
+        error_category: null,
+        details_url: "/api/operations/op-running",
         result_summary: null,
         error_message: null,
       },
@@ -619,6 +628,9 @@ describe("TicketListPage", () => {
 
     expect(await screen.findByText("Операции выполняются")).toBeInTheDocument();
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
+    expect(screen.getByText("Длительность: 1 s")).toBeInTheDocument();
+    expect(screen.getByText("Повторы: 0/3")).toBeInTheDocument();
+    expect(screen.getByText("Trace: trace-ru...")).toBeInTheDocument();
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
     expect(screen.getByText("Право: module.tool.run.low_risk")).toBeInTheDocument();
     expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();

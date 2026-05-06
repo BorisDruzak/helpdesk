@@ -377,6 +377,15 @@ function OperationSummaryCard({ operation }: { operation: SupportWorkspaceOperat
         </span>
       </div>
       {operation.summary ? <p className="mt-2 break-all text-xs leading-5 text-slate-400">{operation.summary}</p> : null}
+      {operation.metaLabels.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {operation.metaLabels.slice(0, 5).map((label) => (
+            <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${operation.id}:${label}`}>
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1269,6 +1278,15 @@ export function TicketListPage() {
                                 <p className="mt-3 break-all rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-5 text-slate-400">
                                   {item.operation.preview}
                                 </p>
+                              ) : null}
+                              {item.operation.metaLabels.length ? (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {item.operation.metaLabels.slice(0, 6).map((label) => (
+                                    <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
                               ) : null}
                               {item.operation.steps?.length ? (
                                 <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 md:grid-cols-3">

@@ -1262,6 +1262,7 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
     if event_type == "playbook_started":
         playbook_key = str(payload.get("playbook_key") or "diagnostic.playbook")
         run_id = payload.get("playbook_run_id")
+        operation_id = payload.get("operation_id") or payload.get("first_operation_id")
         trigger = str(payload.get("trigger") or "ticket_created")
         summary_parts: list[str] = []
         if run_id is not None:
@@ -1290,10 +1291,14 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             tool_status="running",
             result_summary=" • ".join(summary_parts) if summary_parts else None,
             result_preview=None,
+            operation_id=str(operation_id) if operation_id else None,
+            trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
+            details_url=_operation_details_url(operation_id),
         )
 
     if event_type == "tool_call_started":
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "Инструмент")
+        operation_id = payload.get("operation_id")
         return SupportTicketMessage(
             message_id=None,
             event_id=getattr(event, "id", None),
@@ -1313,10 +1318,21 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             tool_status="accepted",
             result_summary=None,
             result_preview=None,
+            operation_id=str(operation_id) if operation_id else None,
+            trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
+            details_url=_operation_details_url(operation_id),
         )
 
     if event_type == "tool_call_result":
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "Инструмент")
+        operation_id = payload.get("operation_id")
+        status = str(payload.get("status") or "unknown")
+        retry_count = _coerce_int(payload.get("retry_count"))
+        max_retries = _coerce_int(payload.get("max_retries"))
+        retryable = _coerce_bool(payload.get("retryable"))
+        if retryable is None:
+            retryable = _operation_retryable(status, retry_count, max_retries)
+        error_code = str(payload.get("error_code") or "").strip() or None
         return SupportTicketMessage(
             message_id=None,
             event_id=getattr(event, "id", None),
@@ -1333,10 +1349,19 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             attachments=list(payload.get("artifacts") or []),
             reply_to=None,
             tool_name=tool_name,
-            tool_status=str(payload.get("status") or "unknown"),
+            tool_status=status,
             result_summary=str(payload.get("summary") or payload.get("error") or "Без краткого результата"),
             result_preview=_tool_result_preview(payload),
             operation_steps=_timeline_operation_steps(payload),
+            operation_id=str(operation_id) if operation_id else None,
+            trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
+            duration_ms=_payload_duration_ms(payload),
+            retry_count=retry_count,
+            max_retries=max_retries,
+            retryable=retryable,
+            error_code=error_code,
+            error_category=_operation_error_category(status, error_code, str(payload.get("error") or "")),
+            details_url=_operation_details_url(operation_id),
         )
 
     return SupportTicketMessage(
@@ -1742,6 +1767,73 @@ def _operation_result_payload(operation: object) -> dict:
     return {}
 
 
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y"}:
+            return True
+        if normalized in {"0", "false", "no", "n"}:
+            return False
+    return None
+
+
+def _duration_ms(started_at: object, finished_at: object) -> int | None:
+    if started_at is None or finished_at is None:
+        return None
+    if not isinstance(started_at, datetime) or not isinstance(finished_at, datetime):
+        return None
+    try:
+        return max(0, int((finished_at - started_at).total_seconds() * 1000))
+    except Exception:
+        return None
+
+
+def _payload_duration_ms(payload: dict) -> int | None:
+    for key in ("duration_ms", "elapsed_ms"):
+        duration = _coerce_int(payload.get(key))
+        if duration is not None:
+            return max(0, duration)
+    duration_seconds = _coerce_int(payload.get("duration_seconds") or payload.get("elapsed_seconds"))
+    if duration_seconds is not None:
+        return max(0, duration_seconds * 1000)
+    return None
+
+
+def _operation_error_category(status: str | None, error_code: str | None, error_message: str | None = None) -> str | None:
+    raw = f"{error_code or ''} {error_message or ''}".lower()
+    if status in {"timed_out", "timeout"} or "timeout" in raw or "timed out" in raw:
+        return "timeout"
+    if status in {"denied"} or "consent" in raw or "denied" in raw:
+        return "consent"
+    if "policy" in raw or "permission" in raw or "forbidden" in raw or "rbac" in raw:
+        return "policy"
+    if "offline" in raw or "transport" in raw or "websocket" in raw or "connection" in raw:
+        return "transport"
+    if status in {"failed", "partial"} or error_code or error_message:
+        return "execution"
+    return None
+
+
+def _operation_retryable(status: str | None, retry_count: int | None, max_retries: int | None) -> bool:
+    return bool(status in {"failed", "timed_out", "timeout"} and max_retries is not None and (retry_count or 0) < max_retries)
+
+
+def _operation_details_url(operation_id: object) -> str | None:
+    value = str(operation_id or "").strip()
+    return f"/api/operations/{value}" if value else None
+
+
 def _build_operation_display(operation: object) -> tuple[str, str]:
     status = str(getattr(operation, "status", None) or "unknown")
     if status == "succeeded":
@@ -2087,6 +2179,9 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
     latest_operations: list[SupportTicketOperationSnapshot] = []
     for operation, scope in await _recent_ticket_operations(session, ticket, limit=5):
         display_status, display_label = _build_operation_display(operation)
+        retry_count = int(getattr(operation, "retry_count", 0) or 0)
+        max_retries = int(getattr(operation, "max_retries", 0) or 0)
+        error_code = str(getattr(operation, "error_code", None) or "").strip() or None
         latest_operations.append(
             SupportTicketOperationSnapshot(
                 operation_id=operation.operation_id,
@@ -2098,7 +2193,16 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                 tool_name=operation.tool_name,
                 command_name=operation.command_name,
                 queued_at=operation.queued_at.isoformat() if operation.queued_at else None,
+                started_at=operation.started_at.isoformat() if operation.started_at else None,
                 finished_at=operation.finished_at.isoformat() if operation.finished_at else None,
+                duration_ms=_duration_ms(operation.started_at or operation.queued_at, operation.finished_at),
+                trace_id=operation.trace_id,
+                retry_count=retry_count,
+                max_retries=max_retries,
+                retryable=_operation_retryable(display_status, retry_count, max_retries),
+                error_code=error_code,
+                error_category=_operation_error_category(display_status, error_code, operation.error_message),
+                details_url=_operation_details_url(operation.operation_id),
                 result_summary=operation.result_summary,
                 error_message=operation.error_message,
             )

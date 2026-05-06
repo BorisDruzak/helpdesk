@@ -97,6 +97,7 @@ export type SupportWorkspaceTimelineItem = {
     statusTone: TicketBadgeTone;
     summary: string | null;
     preview: string | null;
+    metaLabels: string[];
     steps?: Array<{
       name: string;
       status: string;
@@ -175,6 +176,7 @@ export type SupportWorkspaceOperationSummary = {
   statusTone: TicketBadgeTone;
   active: boolean;
   summary: string | null;
+  metaLabels: string[];
   queuedOrStartedLabel: string;
   finishedLabel: string | null;
 };

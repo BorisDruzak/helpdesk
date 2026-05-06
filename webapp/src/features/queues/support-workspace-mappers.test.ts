@@ -402,6 +402,15 @@ describe("support workspace mappers", () => {
         tool_status: "succeeded",
         result_summary: "HTTP 502 Bad Gateway",
         result_preview: null,
+        operation_id: "op-timeline-1",
+        trace_id: "trace-timeline-1",
+        duration_ms: 1253,
+        retry_count: 0,
+        max_retries: 2,
+        retryable: false,
+        error_code: null,
+        error_category: null,
+        details_url: "/api/operations/op-timeline-1",
         operation_steps: [
           { name: "DNS", status: "ok", value: "site.example -> 192.0.2.10" },
           { name: "HTTP", status: "error", value: "502 Bad Gateway", details: "Upstream returned an invalid gateway response." },
@@ -423,6 +432,7 @@ describe("support workspace mappers", () => {
     expect(timeline[1].operation).toMatchObject({
       statusLabel: "Успешно",
       statusTone: "success",
+      metaLabels: expect.arrayContaining(["Длительность: 1 s", "Повторы: 0/2", "Trace: trace-ti...", "Детали API"]),
     });
   });
 
@@ -440,7 +450,16 @@ describe("support workspace mappers", () => {
         tool_name: "dns.resolve",
         command_name: null,
         queued_at: "2026-05-05T09:59:00+05:00",
+        started_at: "2026-05-05T09:59:01+05:00",
         finished_at: null,
+        duration_ms: 1253,
+        trace_id: "trace-running-1",
+        retry_count: 0,
+        max_retries: 3,
+        retryable: false,
+        error_code: null,
+        error_category: null,
+        details_url: "/api/operations/op-running",
         result_summary: null,
         error_message: null,
       },
@@ -454,7 +473,16 @@ describe("support workspace mappers", () => {
         tool_name: "diagnose.website",
         command_name: null,
         queued_at: "2026-05-05T09:40:00+05:00",
+        started_at: "2026-05-05T09:40:01+05:00",
         finished_at: "2026-05-05T09:41:00+05:00",
+        duration_ms: 59000,
+        trace_id: "trace-failed-1",
+        retry_count: 1,
+        max_retries: 3,
+        retryable: true,
+        error_code: "HTTP_502",
+        error_category: "execution",
+        details_url: "/api/operations/op-failed",
         result_summary: null,
         error_message: "HTTP 502",
       },
@@ -534,6 +562,7 @@ describe("support workspace mappers", () => {
       statusLabel: "Выполняется",
       statusTone: "info",
       active: true,
+      metaLabels: expect.arrayContaining(["Длительность: 1 s", "Повторы: 0/3", "Trace: trace-ru...", "Детали API"]),
     });
     expect(viewModel.right.operations[1]).toMatchObject({
       title: "diagnose.website",
@@ -541,6 +570,7 @@ describe("support workspace mappers", () => {
       statusTone: "danger",
       active: false,
       summary: "HTTP 502",
+      metaLabels: expect.arrayContaining(["Длительность: 59 s", "Повтор: 1/3 доступен", "Код: HTTP_502", "Категория: Выполнение"]),
     });
   });
 

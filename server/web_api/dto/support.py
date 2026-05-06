@@ -291,6 +291,15 @@ class SupportTicketMessage(BaseModel):
     result_summary: str | None = None
     result_preview: str | None = None
     operation_steps: list[dict[str, Any]] = Field(default_factory=list)
+    operation_id: str | None = None
+    trace_id: str | None = None
+    duration_ms: int | None = None
+    retry_count: int | None = None
+    max_retries: int | None = None
+    retryable: bool | None = None
+    error_code: str | None = None
+    error_category: str | None = None
+    details_url: str | None = None
 
 
 class SupportTicketPresence(BaseModel):
@@ -350,7 +359,16 @@ class SupportTicketOperationSnapshot(BaseModel):
     tool_name: str | None = None
     command_name: str | None = None
     queued_at: str | None = None
+    started_at: str | None = None
     finished_at: str | None = None
+    duration_ms: int | None = None
+    trace_id: str | None = None
+    retry_count: int = 0
+    max_retries: int = 0
+    retryable: bool = False
+    error_code: str | None = None
+    error_category: str | None = None
+    details_url: str | None = None
     result_summary: str | None = None
     error_message: str | None = None
 

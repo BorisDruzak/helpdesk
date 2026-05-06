@@ -216,6 +216,15 @@ export type SupportTicketDetailPayload = {
     tool_status?: string | null;
     result_summary?: string | null;
     result_preview?: string | null;
+    operation_id?: string | null;
+    trace_id?: string | null;
+    duration_ms?: number | null;
+    retry_count?: number | null;
+    max_retries?: number | null;
+    retryable?: boolean | null;
+    error_code?: string | null;
+    error_category?: string | null;
+    details_url?: string | null;
     operation_steps?: Array<{
       name: string;
       status: string;
@@ -268,7 +277,16 @@ export type SupportTicketDetailPayload = {
       tool_name: string | null;
       command_name: string | null;
       queued_at: string | null;
+      started_at?: string | null;
       finished_at: string | null;
+      duration_ms?: number | null;
+      trace_id?: string | null;
+      retry_count?: number;
+      max_retries?: number;
+      retryable?: boolean;
+      error_code?: string | null;
+      error_category?: string | null;
+      details_url?: string | null;
       result_summary: string | null;
       error_message: string | null;
     }>;

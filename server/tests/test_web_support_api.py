@@ -1071,20 +1071,27 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
             trace_id=str(uuid.uuid4()),
             event_id="msg-user-2",
         )
+        operation_started_at = datetime.now(timezone.utc).replace(microsecond=0)
+        operation_finished_at = operation_started_at + timedelta(seconds=2)
         session.add(
             Operation(
-                operation_id=str(uuid.uuid4()),
+                operation_id="op-detail-lifecycle",
                 device_id="device-detail",
                 ticket_id=ticket_id,
                 kind="run_tool",
                 tool_name="network.diagnostics",
                 command_name=None,
                 actor_role="support",
-                trace_id=str(uuid.uuid4()),
-                status="succeeded",
-                queued_at=datetime.now(timezone.utc),
-                finished_at=datetime.now(timezone.utc),
-                result_summary="Связность подтверждена",
+                trace_id="trace-detail-lifecycle",
+                status="failed",
+                queued_at=operation_started_at - timedelta(seconds=1),
+                started_at=operation_started_at,
+                finished_at=operation_finished_at,
+                retry_count=1,
+                max_retries=3,
+                error_code="HTTP_502",
+                error_message="HTTP 502",
+                result_summary="Связность не подтверждена",
             )
         )
         await session.commit()
@@ -1112,7 +1119,16 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["snapshot"]["registry"]["department_name"] == "Бухгалтерия"
     assert payload["data"]["snapshot"]["registry"]["room"] == "214"
     assert payload["data"]["snapshot"]["registry"]["asset_name"] == "ws-detail-host"
-    assert payload["data"]["snapshot"]["latest_operations"][0]["tool_name"] == "network.diagnostics"
+    operation_payload = payload["data"]["snapshot"]["latest_operations"][0]
+    assert operation_payload["tool_name"] == "network.diagnostics"
+    assert operation_payload["duration_ms"] == 2000
+    assert operation_payload["trace_id"] == "trace-detail-lifecycle"
+    assert operation_payload["retry_count"] == 1
+    assert operation_payload["max_retries"] == 3
+    assert operation_payload["retryable"] is True
+    assert operation_payload["error_code"] == "HTTP_502"
+    assert operation_payload["error_category"] == "execution"
+    assert operation_payload["details_url"] == "/api/operations/op-detail-lifecycle"
     assert payload["data"]["snapshot"]["presence"]["agent_online"] is False
     assert {item["value"] for item in payload["data"]["actions"]["status_options"]} >= {"in_progress"}
 
@@ -1380,8 +1396,13 @@ async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_
             agent_seq=None,
             event_type="tool_call_result",
             payload={
+                "operation_id": "op-timeline-1",
+                "trace_id": "trace-timeline-1",
                 "tool_name": "diagnose.website",
                 "status": "succeeded",
+                "duration_ms": 1253,
+                "retry_count": 0,
+                "max_retries": 2,
                 "summary": "HTTP 502 Bad Gateway",
                 "steps": [
                     {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10"},
@@ -1417,6 +1438,13 @@ async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_
         {"name": "DNS", "status": "ok", "value": "site.example -> 192.0.2.10", "details": None},
         {"name": "HTTP", "status": "error", "value": "502 Bad Gateway", "details": None},
     ]
+    assert timeline_by_type["tool_call_result"]["operation_id"] == "op-timeline-1"
+    assert timeline_by_type["tool_call_result"]["trace_id"] == "trace-timeline-1"
+    assert timeline_by_type["tool_call_result"]["duration_ms"] == 1253
+    assert timeline_by_type["tool_call_result"]["retry_count"] == 0
+    assert timeline_by_type["tool_call_result"]["max_retries"] == 2
+    assert timeline_by_type["tool_call_result"]["retryable"] is False
+    assert timeline_by_type["tool_call_result"]["details_url"] == "/api/operations/op-timeline-1"
 
 
 @pytest.mark.asyncio
