@@ -555,12 +555,18 @@ P4.2 - action-specific passport guidance:
   2. [x] Add a local `actionKind -> section/hint/passportItemKey` mapper.
   3. [x] Render section and next-step hint in `closure-focus-card`.
   4. [x] Highlight the related passport checklist item for the focused blocker.
-  5. [ ] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
+  5. [x] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
 
 P4.2 local evidence:
 
 - RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "shows action-specific passport guidance"` failed because `Секция: Решение`, `Следующий шаг` and `closure-focused-passport-item` were absent.
 - GREEN verified: the same focused test passes after adding action-specific guidance and checklist highlighting.
+- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (23 tests).
+- Production build passed: `pnpm --dir webapp run build`.
+- Workspace verification passed: `python scripts\verify_workspace.py`; `git diff --check` returned no whitespace errors.
+- Linux release completed for commit `cca48a5` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
+- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: clicking `Заполнить решение` rendered `Секция: Решение`, `Следующий шаг`, the resolution hint and the related passport checklist item `Решение применено`.
+- Fresh browser console check returned zero errors after the P4.2 flow.
 
 P2.6 verification plan:
 
