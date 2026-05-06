@@ -14,9 +14,9 @@
 
 Created: 2026-05-05.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff, 100% for P2.11 final current-page browser/readiness pass, 100% for P3.1 tool policy metadata including release/browser signoff, 100% for P3.2 operation lifecycle semantics including release/browser signoff, 100% for P3.3 knowledge provider depth including release/browser signoff, 100% for P3.4 closure/passport action depth including release/browser signoff, 100% for P4.1 closure blocker action focus including release/browser signoff, 100% for P4.2 action-specific passport guidance including release/browser signoff, and 100% for P4.3 evidence/worklog target actions including release/browser signoff. P3 domain-depth track completion is about 80% overall. P4 operator-flow polish is continuing with the next optional slice. Overall current-page plan completion remains about 98-100%; P3/P4 are optional depth and polish rather than missing page readiness.
+Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff, 100% for P2.11 final current-page browser/readiness pass, 100% for P3.1 tool policy metadata including release/browser signoff, 100% for P3.2 operation lifecycle semantics including release/browser signoff, 100% for P3.3 knowledge provider depth including release/browser signoff, 100% for P3.4 closure/passport action depth including release/browser signoff, 100% for P4.1 closure blocker action focus including release/browser signoff, 100% for P4.2 action-specific passport guidance including release/browser signoff, and 100% for P4.3 evidence/worklog target actions including release/browser signoff. P4.4 closure blocker visibility/ordering is the next planned slice. P3 domain-depth track completion is about 80-85% overall. P4 operator-flow polish completion is about 70-75% after P4.3. Overall current-page plan completion remains about 98-100%; P3/P4/P5 are optional depth and polish rather than missing page readiness.
 
-Current execution mode: P4.3 completed; next optional P4 slice is pending selection. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`. P2.11 completed final current-page browser/readiness validation across local checks, remote smoke, dark/light screenshots, page interactions, canonical support endpoints and server shutdown. P3.1 added manifest-derived tool policy metadata to the typed support tools payload and `/app/tickets` tools panel, released/browser-checked at commit `5061991`. P3.2 added read-only operation lifecycle hints to latest operation cards and diagnostic timeline cards, released/browser-checked at commit `cdd42ea`. P3.3 added source diagnostics, provider/version metadata, source counts, query signals, match reasons and confidence/source-count fields for support knowledge, released/browser-checked at commit `13a5824`. P3.4 added an aggregate closure plan and central pre-close blocker panel derived from existing closure requirements, released/browser-checked at commit `4049883`. P4.1 made central closure blockers clickable and focused the passport sidebar on the selected blocker. P4.2 added section/next-step guidance and checklist highlighting for action-specific closure focus. P4.3 added explicit target-action copy for evidence/worklog focus states and was released/browser-checked at commit `a3be0fa`. P4 focuses on small operator-flow polish without changing DB schema or bypassing domain services.
+Current execution mode: P4.4 planned. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`. P2.11 completed final current-page browser/readiness validation across local checks, remote smoke, dark/light screenshots, page interactions, canonical support endpoints and server shutdown. P3.1 added manifest-derived tool policy metadata to the typed support tools payload and `/app/tickets` tools panel, released/browser-checked at commit `5061991`. P3.2 added read-only operation lifecycle hints to latest operation cards and diagnostic timeline cards, released/browser-checked at commit `cdd42ea`. P3.3 added source diagnostics, provider/version metadata, source counts, query signals, match reasons and confidence/source-count fields for support knowledge, released/browser-checked at commit `13a5824`. P3.4 added an aggregate closure plan and central pre-close blocker panel derived from existing closure requirements, released/browser-checked at commit `4049883`. P4.1 made central closure blockers clickable and focused the passport sidebar on the selected blocker. P4.2 added section/next-step guidance and checklist highlighting for action-specific closure focus. P4.3 added explicit target-action copy for evidence/worklog focus states and was released/browser-checked at commit `a3be0fa`. P4.4 should make all closure blockers discoverable when the central panel has more blockers than visible rows. P4 focuses on small operator-flow polish without changing DB schema or bypassing domain services.
 
 Working route: `/app/tickets` and `/app/tickets/:ticketId`.
 
@@ -593,6 +593,38 @@ P4.3 local evidence:
 - Browser UI signoff completed at `http://192.168.100.17:8666/app/tickets/2bcde663-851f-42e2-9631-7437d233d4f6`: clicking `Добавить evidence` switched the right sidebar to `Паспорт решения` and rendered `Секция: Evidence`, `Целевое действие`, `Приложить evidence` and the `Проверка и закрытие` checklist row.
 - Fresh browser console check returned zero errors after the P4.3 signoff flow.
 
+### Remaining Work After P4.3
+
+The current `/app/tickets` workspace is production-usable. Remaining work is narrow polish and deeper optional domain capability:
+
+- **P4.4 closure blocker visibility/ordering:** the central "Перед закрытием" panel can have more blockers than visible rows. Make hidden blockers discoverable with priority ordering, a compact "Показать ещё N" affordance and focused tests so `attach_evidence` / `add_worklog` are not missed behind the first four resolution blockers.
+- **P4.5 edge-state browser hardening:** verify and patch no-ticket-selected, ticket-not-found, permission-denied, stale workspace payload, empty timeline, empty tools, empty knowledge, offline device and operation-running states in the current page.
+- **P4.6 final visual polish pass:** re-run 1366/1440/1920 desktop checks in dark/light themes after the closure-panel changes, then fix remaining wrapping, contrast, focus-ring and scroll-containment defects.
+- **P5.1 optional evidence/worklog action depth:** if product wants the focus card to do more than navigate, wire `attach_evidence` into the existing passport/evidence picker/upload flow and `add_worklog` into an existing safe worklog/internal-note path. Do not fake persistence and do not bypass closure guards.
+- **P5.2 optional external knowledge depth:** replace the built-in catalog fallback with a real indexed/searchable KB provider while keeping source diagnostics and AI beta non-authoritative.
+- **P5.3 optional operation action depth:** add operator-visible retry/cancel/details actions only where existing operation policy and RBAC allow them.
+- **P5.4 optional requester/service depth:** enrich requester account, department, service ownership and asset context if authoritative registry sources exist.
+
+Residual estimates after P4.3:
+
+- Typed API gap: **3-5%**, mostly optional action-specific payloads and standalone convenience endpoints.
+- Broader backend/domain gap: **6-10%**, mostly external KB/search, operation action semantics and deeper profile/service providers.
+- UI/page polish gap: **6-10%**, mostly hidden blocker discoverability, rare edge states and final desktop/light-theme QA.
+
+P4.4 - closure blocker visibility and ordering:
+
+- Goal: make every central closure blocker discoverable and actionable even when the ticket has many missing requirements.
+- Non-goal: no new backend fields, no mutation behavior, no changes to closure policy.
+- Files:
+  - Modify: `webapp/src/pages/tickets/list-page.tsx`.
+  - Test: `webapp/src/pages/tickets/list-page.test.tsx`.
+- Checklist:
+  1. [ ] Add a focused frontend test with six closure blockers where `attach_evidence` and `add_worklog` are initially below the first four rows.
+  2. [ ] Add a deterministic local ordering helper that promotes severe actionable blockers, while preserving stable order for equal priority.
+  3. [ ] Render visible blocker rows plus a compact "Показать ещё N" / "Скрыть" control when rows overflow.
+  4. [ ] Ensure clicking newly revealed `Добавить evidence` / `Добавить worklog` still opens the passport focus card with the right section and target action.
+  5. [ ] Run focused Vitest, production build, `python scripts\verify_workspace.py`, release/browser signoff and stop the remote server.
+
 P2.6 verification plan:
 
 - Frontend focused tests for theme persistence, visible theme toggle labels/states and critical page text.
@@ -1117,26 +1149,35 @@ Stage 8 evidence:
 
 ## Open Risks
 
-- The current active ticket detail page is large. Avoid a risky one-shot rewrite; migrate by composition and focused components.
-- Existing `support-workspace.tsx` may tempt duplication. Prefer reusing ideas/mappers, not creating a second route.
-- External KB/search depth is still limited. The current endpoint is source-visible and honest, but a real searchable provider/index remains P2.9 work.
-- Light theme exists, but some surfaces may still read as dark-theme-first. P2.6 must polish tokens/classes without creating a second divergent design system.
-- SLA/OLA progress can be derived, but timer semantics must not be changed without dedicated tests.
+- The active `/app/tickets` page is still large. Continue extracting or changing behavior in narrow slices with focused tests instead of doing a broad rewrite.
+- Existing `support-workspace.tsx` may tempt duplication. Keep `/app/tickets` as the active route and reuse only helpers/patterns that do not create a second source of truth.
+- Closure blocker UI is now actionable, but tickets with many blockers need better discoverability so evidence/worklog actions are not hidden behind the first visible rows.
+- External KB/search depth is still limited. The current provider is source-visible and honest, but a real searchable provider/index remains optional P5 work.
+- Light theme exists and has been browser-checked, but future P4 changes must re-check dark/light surfaces at desktop widths.
+- SLA/OLA timer semantics must not be changed without dedicated backend tests because the UI now trusts typed compact timer DTOs.
 - Deep-link behavior must not regress because operators may share ticket URLs.
 - Combined Windows `run_ci_suite.py` can hit unrelated agent_ws/test-DB lock timeouts. If it recurs, use sequential project gates plus explicit release/browser evidence and record the limitation.
 
 ## Current State
 
-- P0, P1 and P2.1-P2.5 implementation for `/app/tickets` support workspace are complete.
+- P0, P1, P2, P3.1-P3.4 and P4.1-P4.3 implementation for `/app/tickets` support workspace are complete and release/browser-signed off.
 - Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
-- Backend/API residual gap after P2.5 is estimated at 4-7% for typed contracts and 8-12% for broader domain depth, mostly external KB/search, richer operation-running/tool policy metadata and optional deeper context/profile sources.
-- UI/page polish gap for the current page is estimated at 12-18%, mostly full light-theme polish, responsive desktop hardening, richer disabled/running states and reason-capturing action UX.
-- This plan remains the active long-horizon artifact for any P2 follow-up.
-- Current pending step: choose the next P2 slice; recommended candidate is P2.9 externalized knowledge provider or a narrow action-reason UX polish pass.
+- Backend/API residual gap after P4.3 is estimated at 3-5% for typed contracts and 6-10% for broader domain depth, mostly external KB/search, operation action semantics and optional deeper requester/service context.
+- UI/page polish gap for the current page is estimated at 6-10%, mostly closure blocker overflow/discoverability, rare edge states and final desktop/light-theme QA after each new polish slice.
+- This plan remains the active long-horizon artifact for P4 operator-flow polish and optional P5 domain-depth follow-up.
+- Current pending step: execute P4.4 closure blocker visibility/ordering.
 
 ## Handoff
 
-Recommended next step: execute **P2.9 externalized knowledge provider** or a narrow action-reason UX polish pass on the current `/app/tickets` page.
+Recommended next step: execute **P4.4 closure blocker visibility and ordering** on the current `/app/tickets` page.
+
+Concrete P4.4 slice:
+
+1. [ ] Add a focused page test where a ticket has six closure blockers and evidence/worklog actions are below the initial visible rows.
+2. [ ] Add a local blocker ordering/overflow helper in `webapp/src/pages/tickets/list-page.tsx`.
+3. [ ] Render "Показать ещё N" / "Скрыть" in the central "Перед закрытием" panel.
+4. [ ] Verify the revealed `Добавить evidence` and `Добавить worklog` buttons still focus the passport sidebar correctly.
+5. [ ] Run focused Vitest, production build, `python scripts\verify_workspace.py`, release/browser signoff and stop the remote server.
 
 Concrete P2.6 first slice:
 
