@@ -584,6 +584,10 @@ export function TicketListPage() {
       : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
   const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
   const firstRunnablePlaybook = viewModel.right.playbooks.find((item) => item.enabled);
+  const visibleAutomationItems =
+    viewModel.right.playbooks.length && viewModel.right.tools.length
+      ? [...viewModel.right.playbooks.slice(0, 4), ...viewModel.right.tools.slice(0, 4)]
+      : [...viewModel.right.playbooks, ...viewModel.right.tools].slice(0, 8);
   const activeOperations = viewModel.right.operations.filter((operation) => operation.active);
   const statusActionOptions = workspaceQuery.data?.detail.actions.status_options ?? [];
   const queueActionOptions = (queueQuery.data?.summary.queue_counts ?? []).filter((queue) => queue.id !== null);
@@ -1492,7 +1496,7 @@ export function TicketListPage() {
                     </button>
                   </div>
                   <div className="mt-4 grid gap-2">
-                    {[...viewModel.right.playbooks, ...viewModel.right.tools].slice(0, 8).map((item) => {
+                    {visibleAutomationItems.map((item) => {
                       const Icon = toolIcon(item);
                       return (
                         <div className={`rounded-xl border p-3 ${item.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-white/[0.02] opacity-55"}`} key={`${item.id}:${item.title}`}>

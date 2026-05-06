@@ -552,9 +552,19 @@ describe("TicketListPage", () => {
           tool_name: "dns.resolve",
           module_name: "network",
           description: "Проверка DNS",
+          domain: "network",
+          tool_kind: "diagnostic",
           risk_level: "low",
           requires_consent: false,
           install_required: true,
+          required_permission: "module.tool.run.low_risk",
+          allowed_roles: ["support", "admin"],
+          policy_labels: [
+            "permission:module.tool.run.low_risk",
+            "roles:support,admin",
+            "consent:not_required",
+            "install:required",
+          ],
           source: "agent",
           params_schema: [],
           presets: [],
@@ -565,6 +575,21 @@ describe("TicketListPage", () => {
       ticket_id: "ticket-1",
       device_id: "device-1",
       playbooks: [
+        ...Array.from({ length: 8 }, (_, index) => ({
+          playbook_version_id: 100 + index,
+          key: `extra.playbook.${index}`,
+          name: index === 0 ? "Диагностика сайта" : `Extra playbook ${index}`,
+          domain: "diagnostics",
+          version: "1.0",
+          status: "published",
+          blocks_count: 1,
+          required_tools: [],
+          missing_tools: index === 0 ? ["http.check"] : [],
+          missing_params: [],
+          can_run: false,
+          readiness_label: index === 0 ? "Нет инструментов" : "Недоступно",
+          updated_at: null,
+        })),
         {
           playbook_version_id: 1,
           key: "diagnose.website",
@@ -595,6 +620,8 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("Операции выполняются")).toBeInTheDocument();
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
+    expect(screen.getByText("Право: module.tool.run.low_risk")).toBeInTheDocument();
+    expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
     expect(screen.getByText("Диагностика сайта")).toBeInTheDocument();
     expect(screen.getAllByText("Нет tool: http.check").length).toBeGreaterThan(0);
     expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();

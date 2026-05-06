@@ -18,6 +18,7 @@
 - 2026-05-05/2026-05-06 support workspace P2.1/P2.9: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` still prefers manual KB links, but the catalog fallback now lives in `server/tickets/knowledge_provider.py` with a JSON-backed source at `server/tickets/knowledge_catalog.json` for common incidents such as HTTP 502, DNS, printer offline, account access and offline agent; the same payload is embedded in aggregate `/workspace`.
 - 2026-05-06 support workspace P2.2: `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all|messages|internal|diagnostics|history` exposes standalone typed timeline filtering through the same normalized support timeline serializer used by detail/workspace payloads; `/app/tickets` uses it for tab-specific timeline refreshes with aggregate fallback.
 - 2026-05-06 support workspace P2.3-P2.5: support timeline diagnostic rows now extract structured steps from nested result/check payloads and preserve optional `details`; `SupportTicketRegistrySnapshot` includes requester phone/email/source plus location floor from registry people/locations; `/app/tickets` has a localStorage-backed light/dark theme toggle on the workspace shell.
+- 2026-05-06 support workspace P3.1: `GET /api/web/support/tickets/{ticket_id}/tools` now returns manifest-derived `domain`, `tool_kind`, derived `required_permission`, `allowed_roles` and compact `policy_labels` on `SupportToolItem`; `/app/tickets` shows permission/role labels in the tools panel without changing tool run behavior.
 
 ## 2026-04-28 local agent Qt GUI redesign
 
