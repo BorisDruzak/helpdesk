@@ -80,7 +80,9 @@
   }
 
   .support-workspace[data-theme="light"] .bg-\[\#07111f\],
+  .support-workspace[data-theme="light"] .bg-\[\#081321\]\/95,
   .support-workspace[data-theme="light"] .bg-\[\#0b1624\],
+  .support-workspace[data-theme="light"] .bg-\[\#0b1624\]\/70,
   .support-workspace[data-theme="light"] .bg-\[\#0d1828\],
   .support-workspace[data-theme="light"] .bg-\[\#101d30\],
   .support-workspace[data-theme="light"] .bg-\[\#111f33\] {
