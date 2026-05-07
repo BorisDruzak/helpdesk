@@ -21,14 +21,14 @@ Current baseline:
 - Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
 - Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device; evidence/worklog mutation depth needs a targeted closure-blocker fixture.
 
-Remaining gaps:
+Remaining gaps after local P6 implementation:
 
-- Typed/backend gap: **1-2%**.
-  - Mainly final typed response consistency for operation retry/cancel/details, knowledge provider diagnostics and edge-state errors.
-- Domain gap: **3-5%**.
-  - Mainly retry semantics, operation retry/cancel policy, online low-risk tool signoff, and external KB/provider depth beyond current source-visible catalog.
-- UI polish gap: **1-3%**.
-  - Mainly final live fixture coverage, role/permission disabled affordances, long-data polish and screenshot signoff after the final domain slices.
+- Typed/backend gap: **0% locally, pending remote signoff**.
+  - Operation retry/cancel/details and knowledge provider diagnostics now have typed DTO/model coverage.
+- Domain gap: **0-2% locally, pending live safe-tool/device fixture signoff**.
+  - Cancel is first-class. Retry is intentionally disabled until a policy-aware retry endpoint exists; the page now explains this state instead of showing a cosmetic retry.
+- UI polish gap: **0-1% locally, pending final browser screenshot pass**.
+  - Remaining work is release/browser verification, not known implementation work.
 
 Target completion after this plan: **100% for the current `/app/tickets` page scope**.
 
@@ -276,15 +276,30 @@ Expected result:
 
 Goal: close the final UI polish gap and record production signoff.
 
+Status: **local gates passed / remote browser signoff in progress, 2026-05-07**.
+
+Implementation notes:
+
+- No additional broad UI rewrite was needed in this final slice.
+- Operation cards now show typed action availability and typed disabled reasons, which covers the final permission/lifecycle readability gap found in P6.1.
+- Knowledge suggestions now show provider diagnostics, catalog count, external KB status and query tokens, which covers the final "AI beta is source-backed, not magic" polish gap.
+- Closure/passport blocker controls were verified by focused backend/frontend tests and remain wired through existing evidence/worklog/passport endpoints.
+- Local verification passed before release:
+  - `pnpm --dir webapp build` -> success
+  - `python scripts\verify_workspace.py` -> `Verification passed for C:\Users\admin-2\CodexProjects\pc_client`
+  - focused backend gates for support API, knowledge provider, passport/evidence/worklog -> passed
+  - focused frontend gates for workspace mappers and list page -> passed
+
 Files to inspect and likely modify:
 
 - `webapp/src/pages/tickets/list-page.tsx`
 - `webapp/src/features/queues/support-workspace-mappers.ts`
 - shared UI primitives only if a real reusable bug is found.
 
-Steps:
+Remote signoff steps:
 
-- [ ] Re-run desktop checks at 1366, 1440 and 1920 in dark and light themes.
+- [x] Re-run local desktop-oriented frontend checks through component tests and production build.
+- [ ] Re-run browser checks at 1366, 1440 and 1920 in dark and light themes on the Linux stand.
 - [ ] Verify:
   - no horizontal overflow;
   - topbar remains fixed;
@@ -298,8 +313,8 @@ Steps:
   - support without high-risk permission sees high-risk tool disabled/denied;
   - admin shell still routes into support workspace;
   - permission-denied API response renders an error/disabled state, not a crash.
-- [ ] Patch only concrete defects found in this pass.
-- [ ] Capture final screenshot names in this plan.
+- [x] Patch only concrete defects found in this pass.
+- [ ] Capture final screenshot names in this plan or final handoff after browser signoff.
 
 Expected result:
 
@@ -377,19 +392,21 @@ The plan is complete when:
 
 ## Handoff
 
-Recommended next step: execute **P6.1 Typed Operation Action Contract**.
+Current next step: finish release/browser signoff for the committed P6 implementation.
 
 Start commands:
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
-python scripts\task_intake.py
-python scripts\bootstrap_web_toolchain.py
-rg -n "operation.*retry|retry.*operation|cancel.*operation|operation.*details|tools/run|playbooks/run" server webapp
+python scripts\deploy_workspace_to_remote.py
+python scripts\release_server_to_remote.py
+python scripts\manage_remote_stack.py start server
+python scripts\manage_remote_stack.py smoke server
 ```
 
-Expected first checkpoint:
+Expected checkpoint:
 
-- Exact existing operation APIs and services identified.
-- Decision recorded whether retry/cancel need only typed DTO surfacing or a new typed web alias.
-- Failing focused tests written for allowed/denied retry and cancel states.
+- Linux stand serves the committed branch.
+- `http://192.168.100.17:8666/admin` loads `/app/tickets` without console errors.
+- Browser signoff confirms ordinary ticket, operation cards, knowledge diagnostics and passport/closure controls.
+- Remote server is stopped after signoff unless the user explicitly asks to keep it running.
