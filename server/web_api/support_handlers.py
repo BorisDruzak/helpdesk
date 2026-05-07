@@ -106,7 +106,10 @@ from web_api.dto.support import (
     SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
     SupportTicketObserverPayload,
+    SupportTicketObserverOccurrenceCompact,
+    SupportTicketObserverSignature,
     SupportTicketObserverSummary,
+    SupportTicketObserverTraceCompact,
     SupportTicketOperationSnapshot,
     SupportTicketPassportDetailPayload,
     SupportTicketPassportEvidenceLinkRequest,
@@ -1940,6 +1943,25 @@ def _operation_details_url(operation_id: object) -> str | None:
     return f"/api/operations/{value}" if value else None
 
 
+def _observer_trace_url(trace_id: object) -> str | None:
+    value = str(trace_id or "").strip()
+    return f"/app/admin/observer?trace_id={value}" if value else None
+
+
+def _operation_trace_relation(operation: Operation, *, ticket_root_trace_id: str | None, scope: str) -> str:
+    trace_id = str(getattr(operation, "trace_id", None) or "").strip()
+    retry_of_operation_id = str(getattr(operation, "retry_of_operation_id", None) or "").strip()
+    if retry_of_operation_id:
+        return "retry_child"
+    if scope == "playbook" or getattr(operation, "playbook_run_id", None):
+        return "playbook_child"
+    if trace_id and ticket_root_trace_id and trace_id == ticket_root_trace_id:
+        return "ticket_root"
+    if trace_id:
+        return "operation_child"
+    return "unknown"
+
+
 def _operation_cancel_url(operation_id: object, status: str | None) -> str | None:
     value = str(operation_id or "").strip()
     if not value or not _operation_can_cancel(status):
@@ -2320,8 +2342,24 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         online=bool(presence.agent_online),
     )
 
+    latest_operation_rows = await _recent_ticket_operations(session, ticket, limit=5)
+    retry_source_ids = [
+        str(getattr(operation, "retry_of_operation_id", "") or "").strip()
+        for operation, _scope in latest_operation_rows
+        if str(getattr(operation, "retry_of_operation_id", "") or "").strip()
+    ]
+    retry_source_trace_by_id: dict[str, str | None] = {}
+    if retry_source_ids:
+        source_rows = (
+            await session.execute(
+                select(Operation.operation_id, Operation.trace_id).where(Operation.operation_id.in_(retry_source_ids))
+            )
+        ).all()
+        retry_source_trace_by_id = {str(row[0]): row[1] for row in source_rows}
+
+    ticket_root_trace_id = str(getattr(ticket, "observer_root_trace_id", None) or "").strip() or None
     latest_operations: list[SupportTicketOperationSnapshot] = []
-    for operation, scope in await _recent_ticket_operations(session, ticket, limit=5):
+    for operation, scope in latest_operation_rows:
         display_status, display_label = _build_operation_display(operation)
         retry_count = int(getattr(operation, "retry_count", 0) or 0)
         max_retries = int(getattr(operation, "max_retries", 0) or 0)
@@ -2330,6 +2368,7 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         can_cancel = _operation_can_cancel(display_status)
         cancel_disabled_reason = _operation_cancel_disabled_reason(display_status)
         retry_disabled_reason = _operation_retry_disabled_reason(display_status, retry_count, max_retries)
+        retry_of_operation_id = str(getattr(operation, "retry_of_operation_id", "") or "").strip() or None
         latest_operations.append(
             SupportTicketOperationSnapshot(
                 operation_id=operation.operation_id,
@@ -2366,6 +2405,12 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                 details_url=_operation_details_url(operation.operation_id),
                 result_summary=operation.result_summary,
                 error_message=operation.error_message,
+                trace_relation=_operation_trace_relation(operation, ticket_root_trace_id=ticket_root_trace_id, scope=scope),
+                root_trace_id=ticket_root_trace_id,
+                root_trace_url=_observer_trace_url(ticket_root_trace_id),
+                trace_url=_observer_trace_url(operation.trace_id),
+                retry_of_operation_id=retry_of_operation_id,
+                retry_source_trace_id=retry_source_trace_by_id.get(retry_of_operation_id) if retry_of_operation_id else None,
             )
         )
 
@@ -2470,6 +2515,29 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         observer=SupportTicketObserverPayload(
             ticket_summary_endpoint=f"/api/tickets/{ticket.ticket_id}/observer",
             summary=SupportTicketObserverSummary.model_validate(observer_data.get("summary", {})),
+            root_trace=SupportTicketObserverTraceCompact.model_validate(observer_data["root_trace_compact"])
+            if observer_data.get("root_trace_compact")
+            else None,
+            related_traces=[
+                SupportTicketObserverTraceCompact.model_validate(item)
+                for item in observer_data.get("related_traces_compact", [])
+            ],
+            active_traces=[
+                SupportTicketObserverTraceCompact.model_validate(item)
+                for item in observer_data.get("active_traces_compact", [])
+            ],
+            error_traces=[
+                SupportTicketObserverTraceCompact.model_validate(item)
+                for item in observer_data.get("error_traces_compact", [])
+            ],
+            signatures=[
+                SupportTicketObserverSignature.model_validate(item)
+                for item in observer_data.get("signatures_compact", [])
+            ],
+            recent_occurrences=[
+                SupportTicketObserverOccurrenceCompact.model_validate(item)
+                for item in observer_data.get("recent_occurrences_compact", [])
+            ],
         ),
         timeline=timeline,
         snapshot=snapshot,
@@ -3085,7 +3153,6 @@ async def handle_web_support_ticket_passport_evidence_link(request: web.Request)
                     actor_id=auth_context.actor_id,
                     item=item,
                 ),
-                trace_id=str(uuid.uuid4()),
                 event_id=f"passport-evidence-linked-{item.id}",
             )
             await session.commit()
@@ -3169,7 +3236,6 @@ async def handle_web_support_ticket_passport_evidence_update(request: web.Reques
                     item=item,
                     reason=data.reason,
                 ),
-                trace_id=str(uuid.uuid4()),
                 event_id=f"{event_type}-{item.id}-{uuid.uuid4().hex[:8]}",
             )
             await session.commit()
@@ -3254,7 +3320,6 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
                     actor_id=auth_context.actor_id,
                     item=item,
                 ),
-                trace_id=str(uuid.uuid4()),
                 event_id=f"passport-evidence-{item.id}",
             )
             await session.commit()
@@ -3356,7 +3421,6 @@ async def handle_web_support_ticket_worklog(request: web.Request):
                 agent_seq=None,
                 event_type="worklog_added",
                 payload=payload,
-                trace_id=str(uuid.uuid4()),
             )
             await session.commit()
 
@@ -3429,7 +3493,6 @@ async def handle_web_support_send_message(request: web.Request):
                 agent_seq=None,
                 event_type="chat_message",
                 payload=payload,
-                trace_id=str(uuid.uuid4()),
                 event_id=message_id,
             )
             if visibility == "public" and sender_role in {"support", "agent"}:
@@ -3624,7 +3687,6 @@ async def handle_web_support_change_status(request: web.Request):
                     agent_seq=None,
                     event_type="chat_message",
                     payload=followup_payload,
-                    trace_id=str(uuid.uuid4()),
                     event_id=followup_payload["message_id"],
                 )
             elif to_status == "closed" and _resolution_confirmation_pending(ticket):
@@ -3753,7 +3815,7 @@ async def handle_web_support_change_queue(request: web.Request):
             if queue_id != old_queue_id:
                 ticket, captured = await _reconcile_queue_scope_state(session, repo, ticket, actor_id=auth_context.actor_id, actor_role=auth_context.actor_role, reason_prefix="manual_queue_change")
             payload = {"queue_id": queue_id, "previous_queue_id": old_queue_id, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "reason": reason}
-            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=payload, trace_id=str(uuid.uuid4()))
+            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=payload)
             await session.commit()
             await _push_ticket_event(request, ticket.ticket_id, result, "queue_changed", payload)
             for event_type, event_payload, event_result in captured:
@@ -3786,7 +3848,7 @@ async def handle_web_support_change_priority(request: web.Request):
             await repo.update_ticket(ticket.ticket_id, urgency=normalized["urgency"], importance=normalized["importance"], urgency_reason=normalized["urgency_reason"], importance_reason=normalized["importance_reason"], priority=normalized["legacy_priority"], custom_fields=custom_fields)
             await TicketSlaService(session, repo).recalc_due_for_priority(ticket.ticket_id, normalized["legacy_priority"])
             payload = {"priority_class": normalized["priority_class"], "priority": normalized["legacy_priority"], "urgency": normalized["urgency"], "importance": normalized["importance"], "urgency_reason": normalized["urgency_reason"], "importance_reason": normalized["importance_reason"], "reason": str(data.get("reason") or "").strip() or None, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role}
-            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="priority_changed", payload=payload, trace_id=str(uuid.uuid4()))
+            result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="priority_changed", payload=payload)
             await session.commit()
             await _push_ticket_event(request, ticket.ticket_id, result, "priority_changed", payload)
             ticket = await repo.get_ticket(ticket.ticket_id)
@@ -3815,7 +3877,7 @@ async def handle_web_support_reroute_ticket(request: web.Request):
 
             async def capture(ticket_id: str, device_id: str, event_type: str, payload: dict[str, Any]) -> None:
                 payload = {**payload, "manual_reason": str(data.get("reason") or "manual_recalculate")}
-                result = await repo.add_event(ticket_id=ticket_id, device_id=device_id, agent_seq=None, event_type=event_type, payload=payload, trace_id=str(uuid.uuid4()))
+                result = await repo.add_event(ticket_id=ticket_id, device_id=device_id, agent_seq=None, event_type=event_type, payload=payload)
                 captured.append((event_type, payload, result))
 
             await routing.apply_routing(ticket.ticket_id, ticket.device_id, force_clear_lock=True, add_events_fn=capture)
@@ -3987,7 +4049,6 @@ async def handle_web_support_approval_decision(request: web.Request):
                 agent_seq=None,
                 event_type=event_type,
                 payload=payload,
-                trace_id=str(uuid.uuid4()),
             )
             await notify_ticket_event(
                 repo,

@@ -1649,7 +1649,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, live coverage canary reports, full-ticket observer summary counts, ticket-local signature occurrence counts, single-flight UI polling, the canonical `/support` ticket-trace drawer, support-facing playbook failure/readiness evidence for MODULE_NOT_ON_SERVER and failed steps, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and evidence-source trace detail.",
+        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search, Codex-friendly diagnostics bundle, live coverage canary reports, full-ticket observer summary counts, ticket-local signature occurrence counts, support lifecycle events resolving through canonical ticket-root trace instead of ad-hoc trace ids, compact typed `/app/tickets` observer diagnostic card with root trace URL/status/kind, health label, latest error, top signature and compact related/active/error traces, operation-card trace relation labels for ticket root / operation child / retry child / playbook child with direct `/app/admin/observer` links, `/app/admin/observer?trace_id=...` deep-link selection, single-flight UI polling, the canonical `/support` ticket-trace drawer, support-facing playbook failure/readiness evidence for MODULE_NOT_ON_SERVER and failed steps, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and evidence-source trace detail.",
         aliases=(
             "observer",
             "trace overlay",
@@ -1693,6 +1693,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/auth/middleware.py",
             "server/modules/reconcile.py",
             "server/tech/handlers.py",
+            "server/web_api/support_handlers.py",
+            "server/web_api/dto/support.py",
             "pc_agent/core/action_trace.py",
             "pc_agent/ws_agent.py",
             "webapp/src/features/tech/api.ts",

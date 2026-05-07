@@ -230,6 +230,37 @@ async def test_web_support_worklog_action_uses_web_support_boundary(test_client,
 
 
 @pytest.mark.asyncio
+async def test_web_support_lifecycle_event_uses_existing_ticket_root_trace(test_client, test_engine):
+    root_trace_id = str(uuid.uuid4())
+    ticket_id = await _seed_support_ticket(test_engine)
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+        ticket.observer_root_trace_id = root_trace_id
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/worklogs",
+        headers=_support_headers(),
+        json={"spent_minutes": 11, "note": "Observer trace continuity"},
+    )
+
+    assert response.status == 200, await response.text()
+
+    async with session_maker() as session:
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "worklog_added")
+            )
+        ).scalar_one()
+
+    assert event.trace_id == root_trace_id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("endpoint", "body", "permission"),
     [
@@ -1139,6 +1170,13 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["ticket"]["queue"]["code"] == "servicedesk_l1"
     assert payload["data"]["observer"]["summary"]["ticket_id"] == ticket_id
     assert payload["data"]["observer"]["ticket_summary_endpoint"] == f"/api/tickets/{ticket_id}/observer"
+    observer_summary = payload["data"]["observer"]["summary"]
+    assert observer_summary["health_label"] in {"empty", "ok", "running", "error"}
+    if observer_summary["root_trace_id"]:
+        assert observer_summary["root_trace_url"] == f"/app/admin/observer?trace_id={observer_summary['root_trace_id']}"
+        assert payload["data"]["observer"]["root_trace"]["trace_id"] == observer_summary["root_trace_id"]
+    assert isinstance(payload["data"]["observer"]["related_traces"], list)
+    assert all("trace_url" in item for item in payload["data"]["observer"]["related_traces"])
     assert payload["data"]["request_form"]["request_kind"] == "printer"
     assert payload["data"]["request_form"]["form_title"] == "Принтер"
     assert payload["data"]["request_form"]["rows"][0] == {"key": "room", "label": "Кабинет", "value": "214"}
@@ -1156,6 +1194,12 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert operation_payload["tool_name"] == "network.diagnostics"
     assert operation_payload["duration_ms"] == 2000
     assert operation_payload["trace_id"] == "trace-detail-lifecycle"
+    assert operation_payload["trace_relation"] == "operation_child"
+    assert operation_payload["trace_url"] == "/app/admin/observer?trace_id=trace-detail-lifecycle"
+    assert operation_payload["root_trace_id"] == observer_summary["root_trace_id"]
+    assert operation_payload["root_trace_url"] == observer_summary["root_trace_url"]
+    assert operation_payload["retry_of_operation_id"] is None
+    assert operation_payload["retry_source_trace_id"] is None
     assert operation_payload["retry_count"] == 1
     assert operation_payload["max_retries"] == 3
     assert operation_payload["retryable"] is True
@@ -1171,6 +1215,65 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert operation_payload["details_url"] == "/api/operations/op-detail-lifecycle"
     assert payload["data"]["snapshot"]["presence"]["agent_online"] is False
     assert {item["value"] for item in payload["data"]["actions"]["status_options"]} >= {"in_progress"}
+
+
+@pytest.mark.asyncio
+async def test_web_support_ticket_detail_marks_retry_operation_trace_relation(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-retry-relation", status="in_progress")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    source_operation_id = str(uuid.uuid4())
+    retry_operation_id = str(uuid.uuid4())
+    source_trace_id = str(uuid.uuid4())
+    retry_trace_id = str(uuid.uuid4())
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.observer_root_trace_id = str(uuid.uuid4())
+        session.add_all(
+            [
+                Operation(
+                    operation_id=source_operation_id,
+                    device_id="device-retry-relation",
+                    ticket_id=ticket_id,
+                    kind="tool_call",
+                    tool_name="system.collect",
+                    actor_role="support",
+                    trace_id=source_trace_id,
+                    status="failed",
+                    queued_at=now - timedelta(minutes=5),
+                    finished_at=now - timedelta(minutes=4),
+                    retry_count=1,
+                    max_retries=2,
+                ),
+                Operation(
+                    operation_id=retry_operation_id,
+                    device_id="device-retry-relation",
+                    ticket_id=ticket_id,
+                    kind="tool_call",
+                    tool_name="system.collect",
+                    actor_role="support",
+                    trace_id=retry_trace_id,
+                    status="queued",
+                    queued_at=now,
+                    retry_count=0,
+                    max_retries=2,
+                    retry_of_operation_id=source_operation_id,
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    retry_operation = payload["data"]["snapshot"]["latest_operations"][0]
+    assert retry_operation["operation_id"] == retry_operation_id
+    assert retry_operation["trace_relation"] == "retry_child"
+    assert retry_operation["retry_of_operation_id"] == source_operation_id
+    assert retry_operation["retry_source_trace_id"] == source_trace_id
+    assert retry_operation["trace_url"] == f"/app/admin/observer?trace_id={retry_trace_id}"
 
 
 @pytest.mark.asyncio

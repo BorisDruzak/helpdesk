@@ -98,6 +98,13 @@ _TRACE_PROJECTION_LOCK_GUARD = asyncio.Lock()
 _TRACE_PROJECTION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
+def _observer_trace_url(trace_id: str | None) -> str | None:
+    value = str(trace_id or "").strip()
+    if not value:
+        return None
+    return f"/app/admin/observer?trace_id={value}"
+
+
 @dataclass(slots=True)
 class TraceOverlayFilters:
     query: Optional[str] = None
@@ -756,24 +763,110 @@ class ObserverOverlayService:
         active_related = [self._serialize_trace(row) for row in active_related_rows]
         error_related = [self._serialize_trace(row) for row in error_related_rows]
         signatures = await self._annotate_ticket_signature_stats(ticket_id, signatures)
+        root_trace_id_for_url = str(root_trace_id or "").strip() or None
+        top_signature = signatures[0] if signatures else None
+        latest_occurrence = recent_occurrences[0] if recent_occurrences else None
+        latest_occurrence_payload = self._serialize_occurrence(latest_occurrence) if latest_occurrence else None
+        latest_error_label = None
+        latest_error_stage = None
+        latest_error_at = None
+        if latest_occurrence_payload:
+            latest_error_label = (
+                latest_occurrence_payload.get("message_norm")
+                or latest_occurrence_payload.get("error_kind")
+                or latest_occurrence_payload.get("exception_type")
+                or latest_occurrence_payload.get("error_signature")
+            )
+            latest_error_stage = latest_occurrence_payload.get("failure_stage") or latest_occurrence_payload.get("component")
+            latest_error_at = latest_occurrence_payload.get("created_at")
+        health_label = "empty"
+        if int(active_trace_count or 0) > 0:
+            health_label = "running"
+        elif int(error_trace_count or 0) > 0 or signatures:
+            health_label = "error"
+        elif int(total_traces or 0) > 0:
+            health_label = "ok"
 
         return {
             "summary": {
                 "ticket_id": ticket_id,
                 "root_trace_id": root_trace_id,
+                "root_trace_url": _observer_trace_url(root_trace_id_for_url),
+                "root_trace_status": root_trace.get("status") if root_trace else None,
+                "root_kind": root_trace.get("root_kind") if root_trace else None,
                 "trace_count": int(total_traces or 0),
                 "active_trace_count": int(active_trace_count or 0),
                 "error_trace_count": int(error_trace_count or 0),
                 "signature_count": len(signatures),
                 "latest_trace_at": _iso(related_rows[0].started_at) if related_rows else None,
+                "latest_error_at": latest_error_at,
+                "latest_error_label": latest_error_label,
+                "latest_error_stage": latest_error_stage,
+                "top_signature": self._compact_signature(top_signature) if top_signature else None,
+                "has_active_operation": int(active_trace_count or 0) > 0,
+                "health_label": health_label,
             },
             "root_trace": root_trace,
+            "root_trace_compact": self._compact_trace(root_trace) if root_trace else None,
             "root_trace_excerpt": root_excerpt,
             "related_traces": [self._serialize_trace(row) for row in related_rows],
+            "related_traces_compact": [self._compact_trace(self._serialize_trace(row)) for row in related_rows],
             "signatures": signatures,
+            "signatures_compact": [self._compact_signature(item) for item in signatures],
             "recent_occurrences": [self._serialize_occurrence(item) for item in recent_occurrences],
+            "recent_occurrences_compact": [self._compact_occurrence(self._serialize_occurrence(item)) for item in recent_occurrences],
             "active_traces": active_related[:trace_limit],
+            "active_traces_compact": [self._compact_trace(item) for item in active_related[:trace_limit]],
             "error_traces": error_related[:trace_limit],
+            "error_traces_compact": [self._compact_trace(item) for item in error_related[:trace_limit]],
+        }
+
+    def _compact_trace(self, trace: dict[str, Any]) -> dict[str, Any]:
+        attrs = trace.get("attrs_json") if isinstance(trace.get("attrs_json"), dict) else {}
+        trace_id = str(trace.get("trace_id") or "").strip()
+        title = (
+            attrs.get("title")
+            or attrs.get("event_type")
+            or attrs.get("tool_name")
+            or attrs.get("playbook_id")
+            or trace.get("operation_id")
+            or trace.get("root_kind")
+            or trace_id
+        )
+        return {
+            "trace_id": trace_id,
+            "root_kind": trace.get("root_kind"),
+            "status": trace.get("status"),
+            "title": str(title) if title is not None else None,
+            "started_at": trace.get("started_at"),
+            "finished_at": trace.get("finished_at"),
+            "error_count": int(trace.get("error_count") or 0),
+            "operation_id": trace.get("operation_id"),
+            "tool_name": attrs.get("tool_name"),
+            "playbook_id": attrs.get("playbook_id"),
+            "trace_url": _observer_trace_url(trace_id),
+        }
+
+    def _compact_signature(self, signature: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "error_signature": signature.get("error_signature"),
+            "title": signature.get("title") or signature.get("message_sample") or signature.get("error_signature"),
+            "severity": signature.get("severity") or signature.get("error_kind"),
+            "ticket_occurrences_count": int(signature.get("ticket_occurrences_count") or 0),
+            "global_occurrences_count": int(signature.get("occurrences_count") or 0),
+            "last_seen_at": signature.get("ticket_last_seen_at") or signature.get("last_seen_at"),
+        }
+
+    def _compact_occurrence(self, occurrence: dict[str, Any]) -> dict[str, Any]:
+        trace_id = str(occurrence.get("trace_id") or "").strip()
+        return {
+            "error_signature": occurrence.get("error_signature"),
+            "message": occurrence.get("message_norm") or occurrence.get("error_kind") or occurrence.get("exception_type"),
+            "stage": occurrence.get("failure_stage") or occurrence.get("component"),
+            "severity": occurrence.get("severity"),
+            "trace_id": trace_id or None,
+            "created_at": occurrence.get("created_at"),
+            "trace_url": _observer_trace_url(trace_id),
         }
 
     async def _annotate_ticket_signature_stats(

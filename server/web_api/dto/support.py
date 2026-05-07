@@ -223,16 +223,64 @@ class SupportTicketDetail(BaseModel):
     queue_members: list[SupportTicketQueueMember]
 
 
+class SupportTicketObserverSignature(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error_signature: str | None = None
+    title: str | None = None
+    severity: str | None = None
+    ticket_occurrences_count: int = 0
+    global_occurrences_count: int | None = None
+    last_seen_at: str | None = None
+
+
+class SupportTicketObserverTraceCompact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    root_kind: str | None = None
+    status: str | None = None
+    title: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    error_count: int = 0
+    operation_id: str | None = None
+    tool_name: str | None = None
+    playbook_id: str | None = None
+    trace_url: str | None = None
+
+
+class SupportTicketObserverOccurrenceCompact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error_signature: str | None = None
+    message: str | None = None
+    stage: str | None = None
+    severity: str | None = None
+    trace_id: str | None = None
+    created_at: str | None = None
+    trace_url: str | None = None
+
+
 class SupportTicketObserverSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket_id: str
     root_trace_id: str | None = None
+    root_trace_url: str | None = None
+    root_trace_status: str | None = None
+    root_kind: str | None = None
     trace_count: int
     active_trace_count: int
     error_trace_count: int
     signature_count: int
     latest_trace_at: str | None = None
+    latest_error_at: str | None = None
+    latest_error_label: str | None = None
+    latest_error_stage: str | None = None
+    top_signature: SupportTicketObserverSignature | None = None
+    has_active_operation: bool = False
+    health_label: str = "empty"
 
 
 class SupportTicketObserverPayload(BaseModel):
@@ -240,6 +288,12 @@ class SupportTicketObserverPayload(BaseModel):
 
     ticket_summary_endpoint: str
     summary: SupportTicketObserverSummary
+    root_trace: SupportTicketObserverTraceCompact | None = None
+    related_traces: list[SupportTicketObserverTraceCompact] = Field(default_factory=list)
+    active_traces: list[SupportTicketObserverTraceCompact] = Field(default_factory=list)
+    error_traces: list[SupportTicketObserverTraceCompact] = Field(default_factory=list)
+    signatures: list[SupportTicketObserverSignature] = Field(default_factory=list)
+    recent_occurrences: list[SupportTicketObserverOccurrenceCompact] = Field(default_factory=list)
 
 
 class SupportTicketRequestFormRow(BaseModel):
@@ -387,6 +441,12 @@ class SupportTicketOperationSnapshot(BaseModel):
     details_url: str | None = None
     result_summary: str | None = None
     error_message: str | None = None
+    trace_relation: str = "unknown"
+    root_trace_id: str | None = None
+    root_trace_url: str | None = None
+    trace_url: str | None = None
+    retry_of_operation_id: str | None = None
+    retry_source_trace_id: str | None = None
 
 
 class SupportTicketSnapshot(BaseModel):

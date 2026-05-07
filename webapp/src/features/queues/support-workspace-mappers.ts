@@ -15,6 +15,8 @@ import type {
   SupportWorkspaceClosurePlan,
   SupportWorkspaceKnowledge,
   SupportWorkspaceNextAction,
+  SupportWorkspaceObserverDiagnostic,
+  SupportWorkspaceObserverTrace,
   SupportWorkspaceOperationSummary,
   SupportWorkspacePassport,
   SupportWorkspaceQueue,
@@ -115,6 +117,52 @@ function compactId(value: string | null | undefined): string | null {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
+function observerHealthLabel(value: string | null | undefined): string {
+  switch (value) {
+    case "ok":
+      return "Норма";
+    case "running":
+      return "Есть активные операции";
+    case "error":
+      return "Есть ошибки";
+    case "empty":
+      return "Трасса не создана";
+    default:
+      return "Состояние уточняется";
+  }
+}
+
+function observerHealthTone(value: string | null | undefined): TicketBadgeTone {
+  switch (value) {
+    case "ok":
+      return "success";
+    case "running":
+      return "info";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function observerStatusLabel(value: string | null | undefined): string {
+  switch (value) {
+    case "running":
+      return "В работе";
+    case "completed":
+    case "succeeded":
+    case "ok":
+      return "Завершена";
+    case "failed":
+    case "error":
+      return "Ошибка";
+    case "empty":
+      return "Нет трассы";
+    default:
+      return value || "Неизвестно";
+  }
+}
+
 function errorCategoryLabel(value: string | null | undefined): string | null {
   switch (value) {
     case "consent":
@@ -132,9 +180,29 @@ function errorCategoryLabel(value: string | null | undefined): string | null {
   }
 }
 
+export function operationTraceRelationLabel(value: string | null | undefined): string {
+  const normalized = (value ?? "").trim();
+  if (!normalized) {
+    return "Трасса операции";
+  }
+  switch (normalized) {
+    case "ticket_root":
+      return "Root trace тикета";
+    case "operation_child":
+      return "Трасса операции";
+    case "retry_child":
+      return "Повтор операции";
+    case "playbook_child":
+      return "Трасса playbook";
+    default:
+      return "Связь трассы не определена";
+  }
+}
+
 function operationMetaLabels(operation: {
   operation_id?: string | null;
   trace_id?: string | null;
+  trace_relation?: string | null;
   duration_ms?: number | null;
   retry_count?: number | null;
   max_retries?: number | null;
@@ -168,7 +236,7 @@ function operationMetaLabels(operation: {
       : null,
     operation.error_code ? `Код: ${operation.error_code}` : null,
     category ? `Категория: ${category}` : null,
-    compactId(operation.trace_id) ? `Trace: ${compactId(operation.trace_id)}` : null,
+    compactId(operation.trace_id) ? `${operationTraceRelationLabel(operation.trace_relation)}: ${compactId(operation.trace_id)}` : null,
     operation.details_url ? "Детали API" : null,
   ].filter((label): label is string => Boolean(label));
 }
@@ -696,6 +764,7 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
     const displayLabel = operation.display_label?.trim();
     const active = activeOperationStatuses.has(status);
     const policyLabels = (operation.policy_labels ?? []).map(operationPolicyLabel).filter((label): label is string => Boolean(label));
+    const traceRelation = operation.trace_relation ?? "unknown";
     return {
       id: operation.operation_id,
       title: operation.tool_name ?? operation.command_name ?? displayLabel ?? operation.kind,
@@ -712,12 +781,81 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
       cancelDisabledReason: operation.cancel_disabled_reason ?? null,
       policyLabels,
       detailsUrl: operation.details_url ?? null,
+      traceRelation,
+      traceRelationLabel: operationTraceRelationLabel(traceRelation),
+      traceUrl: operation.trace_url ?? null,
+      rootTraceUrl: operation.root_trace_url ?? null,
+      retryOfOperationId: operation.retry_of_operation_id ?? null,
+      retrySourceTraceId: operation.retry_source_trace_id ?? null,
       summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
       metaLabels: [...operationMetaLabels(operation), ...policyLabels],
       queuedOrStartedLabel: formatDateTime(operation.started_at ?? operation.queued_at),
       finishedLabel: operation.finished_at ? formatDateTime(operation.finished_at) : null,
     };
   });
+}
+
+type ObserverTracePayload = NonNullable<SupportTicketDetailPayload["observer"]["related_traces"]>[number];
+
+function mapObserverTrace(trace: ObserverTracePayload): SupportWorkspaceObserverTrace {
+  return {
+    id: trace.trace_id,
+    compactId: compactId(trace.trace_id) ?? trace.trace_id,
+    title: trace.title ?? trace.tool_name ?? trace.playbook_id ?? trace.operation_id ?? trace.root_kind ?? "Observer trace",
+    status: trace.status ?? "unknown",
+    statusLabel: observerStatusLabel(trace.status),
+    rootKind: trace.root_kind ?? "unknown",
+    errorCount: trace.error_count ?? 0,
+    timeLabel: formatDateTime(trace.finished_at ?? trace.started_at),
+    traceUrl: trace.trace_url ?? null,
+  };
+}
+
+export function mapWorkspaceObserver(detail: SupportTicketDetailPayload | undefined): SupportWorkspaceObserverDiagnostic {
+  const observer = detail?.observer;
+  const summary = observer?.summary;
+  const rootTraceId = summary?.root_trace_id ?? observer?.root_trace?.trace_id ?? null;
+  const health = summary?.health_label ?? (summary?.error_trace_count ? "error" : summary?.active_trace_count ? "running" : rootTraceId ? "ok" : "empty");
+  const topSignature = summary?.top_signature ?? null;
+  return {
+    health,
+    healthLabel: observerHealthLabel(health),
+    healthTone: observerHealthTone(health),
+    summaryEndpoint: observer?.ticket_summary_endpoint ?? "",
+    rootTraceId,
+    rootTraceCompactId: compactId(rootTraceId) ?? "Нет trace",
+    rootTraceUrl: summary?.root_trace_url ?? observer?.root_trace?.trace_url ?? null,
+    rootTraceStatusLabel: observerStatusLabel(summary?.root_trace_status ?? observer?.root_trace?.status),
+    rootKind: summary?.root_kind ?? observer?.root_trace?.root_kind ?? "ticket",
+    traceCount: summary?.trace_count ?? 0,
+    activeTraceCount: summary?.active_trace_count ?? 0,
+    errorTraceCount: summary?.error_trace_count ?? 0,
+    signatureCount: summary?.signature_count ?? 0,
+    latestTraceLabel: formatDateTime(summary?.latest_trace_at),
+    latestErrorLabel: summary?.latest_error_label ?? null,
+    latestErrorStage: summary?.latest_error_stage ?? null,
+    latestErrorAtLabel: summary?.latest_error_at ? formatDateTime(summary.latest_error_at) : null,
+    topSignature: topSignature
+      ? {
+          title: topSignature.title ?? topSignature.error_signature ?? "Ошибка без названия",
+          severity: topSignature.severity ?? "unknown",
+          ticketOccurrences: topSignature.ticket_occurrences_count,
+          globalOccurrences: topSignature.global_occurrences_count ?? null,
+          lastSeenLabel: topSignature.last_seen_at ? formatDateTime(topSignature.last_seen_at) : null,
+        }
+      : null,
+    activeTraces: (observer?.active_traces ?? []).map(mapObserverTrace),
+    errorTraces: (observer?.error_traces ?? []).map(mapObserverTrace),
+    relatedTraces: (observer?.related_traces ?? []).map(mapObserverTrace),
+    recentOccurrences: (observer?.recent_occurrences ?? []).map((item) => ({
+      signature: item.error_signature ?? "unknown",
+      message: item.message ?? "Ошибка без сообщения",
+      stage: item.stage ?? "unknown",
+      severity: item.severity ?? "unknown",
+      timeLabel: formatDateTime(item.created_at),
+      traceUrl: item.trace_url ?? null,
+    })),
+  };
 }
 
 export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestionsPayload | undefined): SupportWorkspaceKnowledge {
@@ -976,6 +1114,7 @@ export function mapSupportWorkspaceViewModel({
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
       operations: mapWorkspaceOperations(detail),
+      observer: mapWorkspaceObserver(detail),
       knowledge: knowledgeModel,
       passport: mapWorkspacePassport(passport, detail?.ticket.ticket_id ?? selectedTicketId, passportReadiness),
     },

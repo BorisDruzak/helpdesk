@@ -620,6 +620,10 @@ describe("TicketListPage", () => {
         finished_at: null,
         duration_ms: 1253,
         trace_id: "trace-running-1",
+        trace_relation: "operation_child",
+        trace_url: "/app/admin/observer?trace_id=trace-running-1",
+        root_trace_id: "trace-root-1",
+        root_trace_url: "/app/admin/observer?trace_id=trace-root-1",
         retry_count: 0,
         max_retries: 3,
         retryable: false,
@@ -650,6 +654,12 @@ describe("TicketListPage", () => {
         finished_at: "2026-05-05T09:41:00+05:00",
         duration_ms: 59000,
         trace_id: "trace-failed-1",
+        trace_relation: "retry_child",
+        trace_url: "/app/admin/observer?trace_id=trace-failed-1",
+        root_trace_id: "trace-root-1",
+        root_trace_url: "/app/admin/observer?trace_id=trace-root-1",
+        retry_of_operation_id: "op-source",
+        retry_source_trace_id: "trace-source-1",
         retry_count: 1,
         max_retries: 3,
         retryable: true,
@@ -764,7 +774,15 @@ describe("TicketListPage", () => {
         reason: "operator_requested_from_support_workspace",
       });
     });
-    expect(screen.getByText("Trace: trace-ru...")).toBeInTheDocument();
+    expect(screen.getByText("Трасса операции: trace-ru...")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Трасса операции" })[0]).toHaveAttribute(
+      "href",
+      "/app/admin/observer?trace_id=trace-running-1",
+    );
+    expect(screen.getAllByRole("link", { name: "Root trace" })[0]).toHaveAttribute(
+      "href",
+      "/app/admin/observer?trace_id=trace-root-1",
+    );
     expect(screen.getAllByRole("link", { name: "Детали операции" })[0]).toHaveAttribute("href", "/api/operations/op-running");
     fireEvent.click(screen.getByRole("button", { name: "Отменить операцию" }));
     await waitFor(() => {
@@ -1436,6 +1454,69 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Web L2")).toBeInTheDocument();
     expect(screen.getByText("Источник услуги: реестр")).toBeInTheDocument();
     expect(screen.getByText("Похожие тикеты")).toBeInTheDocument();
+  });
+
+  it("renders compact observer diagnostics in the context sidebar", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const payload = workspacePayload();
+    payload.detail.observer = {
+      ticket_summary_endpoint: "/api/tickets/ticket-1/observer",
+      summary: {
+        ticket_id: "ticket-1",
+        root_trace_id: "trace-root-1",
+        root_trace_url: "/app/admin/observer?trace_id=trace-root-1",
+        root_trace_status: "running",
+        root_kind: "ticket",
+        trace_count: 4,
+        active_trace_count: 1,
+        error_trace_count: 2,
+        signature_count: 1,
+        latest_trace_at: "2026-05-03T09:22:00+05:00",
+        latest_error_at: "2026-05-03T09:21:00+05:00",
+        latest_error_label: "HTTP 502 Bad Gateway",
+        latest_error_stage: "http.check",
+        health_label: "error",
+        top_signature: {
+          error_signature: "HTTP_502",
+          title: "HTTP 502",
+          severity: "error",
+          ticket_occurrences_count: 2,
+          global_occurrences_count: 9,
+          last_seen_at: "2026-05-03T09:21:00+05:00",
+        },
+      },
+      root_trace: null,
+      related_traces: [],
+      active_traces: [],
+      error_traces: [
+        {
+          trace_id: "trace-op-failed",
+          root_kind: "tool_call",
+          status: "failed",
+          title: "diagnose.website",
+          started_at: "2026-05-03T09:20:00+05:00",
+          finished_at: "2026-05-03T09:21:00+05:00",
+          error_count: 1,
+          operation_id: "op-failed",
+          tool_name: "diagnose.website",
+          playbook_id: null,
+          trace_url: "/app/admin/observer?trace_id=trace-op-failed",
+        },
+      ],
+      signatures: [],
+      recent_occurrences: [],
+    };
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const card = await screen.findByTestId("observer-diagnostic-card");
+    expect(within(card).getByText("Диагностика тикета")).toBeInTheDocument();
+    expect(within(card).getByText("Есть ошибки")).toBeInTheDocument();
+    expect(within(card).getByText("HTTP 502 Bad Gateway")).toBeInTheDocument();
+    expect(within(card).getByText("Top signature")).toBeInTheDocument();
+    expect(within(card).getByText("diagnose.website")).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: "Открыть" })).toHaveAttribute("href", "/app/admin/observer?trace_id=trace-root-1");
   });
 
   it("renders knowledge suggestions from the aggregate workspace payload", async () => {

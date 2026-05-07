@@ -168,6 +168,57 @@ describe("observer workbench search helpers", () => {
     );
   });
 
+  it("serializes support deep-link trace filters", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          query: {
+            device_id: null,
+            lookback_hours: 24,
+            status_filter: "all",
+            root_kind_filter: "all",
+            limit: 40,
+            trace_id: "trace-deep-1",
+            ticket_id: "ticket-1",
+            operation_id: "op-1",
+          },
+          summary: {
+            visible_count: 1,
+            active_count: 0,
+            error_count: 1,
+            selected_trace_id: "trace-deep-1",
+          },
+          filters: {
+            status_options: [],
+            root_kind_options: [],
+          },
+          traces: [],
+          links: {
+            detail_endpoint_template: "/api/web/admin/observer/traces/{trace_id}",
+            runtime_endpoint: "/api/web/admin/observer/runtime",
+          },
+        },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    await fetchObserverWorkbenchTraces({
+      lookbackHours: 24,
+      statusFilter: "all",
+      rootKindFilter: "all",
+      limit: 40,
+      traceId: "trace-deep-1",
+      ticketId: "ticket-1",
+      operationId: "op-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/admin/observer/traces?lookback_hours=24&limit=40&trace_id=trace-deep-1&ticket_id=ticket-1&operation_id=op-1",
+      expect.objectContaining({ credentials: "same-origin" })
+    );
+  });
+
   it("serializes observer closure filters for playbook and web auth traces", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

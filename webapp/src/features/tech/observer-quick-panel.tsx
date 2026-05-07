@@ -5,6 +5,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -661,6 +662,7 @@ function TraceDetailCard({
 
 export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanelProps) {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [lookbackHours, setLookbackHours] = useState<number>(24);
   const [activeTab, setActiveTab] = useState<ObserverTab>("quick");
   const [statusFilter, setStatusFilter] = useState<AdminObserverTraceStatusFilter>("all");
@@ -673,6 +675,27 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
   const [settingsBaseline, setSettingsBaseline] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const deferredSearch = useDeferredValue(search);
+  const urlTraceId = searchParams.get("trace_id")?.trim() || null;
+  const urlTicketId = searchParams.get("ticket_id")?.trim() || null;
+  const urlOperationId = searchParams.get("operation_id")?.trim() || null;
+
+  function selectTrace(traceId: string | null, syncUrl = false) {
+    setSelectedTraceId(traceId);
+    if (!syncUrl) {
+      return;
+    }
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (traceId) {
+        next.set("trace_id", traceId);
+      } else {
+        next.delete("trace_id");
+      }
+      next.delete("ticket_id");
+      next.delete("operation_id");
+      return next;
+    }, { replace: true });
+  }
 
   const quickQuery = useQuery({
     queryKey: ["observer-workbench-quick", deviceId, lookbackHours],
@@ -681,7 +704,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
   });
 
   const tracesQuery = useQuery({
-    queryKey: ["observer-workbench-traces", deviceId, lookbackHours, statusFilter, rootKindFilter, deferredSearch],
+    queryKey: ["observer-workbench-traces", deviceId, lookbackHours, statusFilter, rootKindFilter, deferredSearch, urlTraceId, urlTicketId, urlOperationId],
     queryFn: () =>
       fetchObserverWorkbenchTraces({
         deviceId,
@@ -690,6 +713,9 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
         rootKindFilter,
         limit: 40,
         query: deferredSearch || null,
+        traceId: urlTraceId,
+        ticketId: urlTicketId,
+        operationId: urlOperationId,
       }),
     retry: false,
   });
@@ -739,6 +765,21 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
     setSettingsBaseline(buildSettingsFingerprint(nextDraft));
   }, [settingsDraft, settingsQuery.data]);
 
+  useEffect(() => {
+    if (!urlTraceId && !urlTicketId && !urlOperationId) {
+      return;
+    }
+    startTransition(() => {
+      setActiveTab("traces");
+      setStatusFilter("all");
+      setRootKindFilter("all");
+      setSearch("");
+      if (urlTraceId) {
+        setSelectedTraceId(urlTraceId);
+      }
+    });
+  }, [urlOperationId, urlTicketId, urlTraceId]);
+
   const visibleTraces = useMemo(
     () => (tracesQuery.data?.traces ?? []).filter((trace) => traceMatchesSearch(trace, deferredSearch)),
     [deferredSearch, tracesQuery.data?.traces],
@@ -757,13 +798,19 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
 
   useEffect(() => {
     if (!visibleTraces.length) {
-      setSelectedTraceId(null);
+      if (urlTraceId && selectedTraceId === urlTraceId) {
+        return;
+      }
+      selectTrace(null);
+      return;
+    }
+    if (urlTraceId && selectedTraceId === urlTraceId) {
       return;
     }
     if (!selectedTraceId || !visibleTraces.some((trace) => trace.trace_id === selectedTraceId)) {
-      setSelectedTraceId(visibleTraces[0].trace_id);
+      selectTrace(visibleTraces[0].trace_id);
     }
-  }, [selectedTraceId, visibleTraces]);
+  }, [selectedTraceId, urlTraceId, visibleTraces]);
 
   useEffect(() => {
     if (!visibleSignatures.length) {
@@ -893,7 +940,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
   function openTrace(traceId: string) {
     startTransition(() => {
       setActiveTab("traces");
-      setSelectedTraceId(traceId);
+      selectTrace(traceId, true);
     });
   }
 
@@ -1171,7 +1218,7 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
                 emptyText="Для текущих фильтров traces не найдены."
                 items={visibleTraces}
                 loading={tracesQuery.isLoading}
-                onSelect={setSelectedTraceId}
+                onSelect={(traceId) => selectTrace(traceId, true)}
                 selectedTraceId={selectedTraceId}
               />
             </CardContent>

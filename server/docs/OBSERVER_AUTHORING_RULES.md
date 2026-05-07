@@ -51,6 +51,8 @@
 
 Недопустимо терять trace continuity и каждый раз создавать новый случайный trace без причины.
 
+Для support workspace lifecycle events (`chat_message`, `status_changed`, `queue_changed`, `priority_changed`, `worklog_added`, `approval_*`, `passport_evidence_*`) не передавать ad-hoc `uuid4()` как trace id. Такие события должны идти через `TicketEventsRepo.add_event()` без explicit trace id или с заранее полученным `ensure_ticket_observer_root_trace_id()`, чтобы существующий `tickets.observer_root_trace_id` оставался единой историей тикета. Operation-bound events (`tool_call_started`, `tool_call_result`, `operation_retried`, playbook/tool execution) должны сохранять `operation_id`; repo resolution тогда связывает событие с operation trace, а ticket-root causality восстанавливается через observer projection/span links.
+
 ### 3.3 Добавить source records
 
 Observer строится поверх фактов исполнения. Новый flow должен оставлять минимум один из слоёв:
@@ -65,7 +67,7 @@ Auth/provisioning flows that do not have an operation must write `agent_runtime_
 
 Agent telemetry, playbook local steps, module reconcile, web-auth/API boundary failures and observer-runtime self-health are first-class observer sources. Use `agent_observer_events` for bounded agent-uploaded telemetry; use existing `playbook_run`/`playbook_step_run` rows for local playbook steps; write structured `agent_runtime_audit` rows with `source=module_reconcile`, `source=web_auth` or `source=observer_runtime` for server-originated failures that would otherwise be log-only. These flows map to `root_kind=module_reconcile`, `playbook_run`, `web_auth` and `observer_runtime`.
 
-Passport evidence writes are ticket-bound observer sources. Any evidence add/link/verify/reject/archive endpoint must write a `passport_evidence_*` `ticket_events` row with `trace_id`, `source_ref`, `section_key`, verification/export metadata and an `observer_provenance` object (`domain=passport_evidence`, action, source_ref, required_fact). Do not make evidence provenance support-visible only through raw `ticket_evidence_items`.
+Passport evidence writes are ticket-bound observer sources. Any evidence add/link/verify/reject/archive endpoint must write a `passport_evidence_*` `ticket_events` row with a repo-resolved ticket-root `trace_id`, `source_ref`, `section_key`, verification/export metadata and an `observer_provenance` object (`domain=passport_evidence`, action, source_ref, required_fact). Do not make evidence provenance support-visible only through raw `ticket_evidence_items`.
 
 ### 3.4 Материализовать диагностически полезные spans
 

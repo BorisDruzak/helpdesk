@@ -210,10 +210,66 @@ export type SupportWorkspaceOperationSummary = {
   cancelDisabledReason: string | null;
   policyLabels: string[];
   detailsUrl: string | null;
+  traceRelation: string;
+  traceRelationLabel: string;
+  traceUrl: string | null;
+  rootTraceUrl: string | null;
+  retryOfOperationId: string | null;
+  retrySourceTraceId: string | null;
   summary: string | null;
   metaLabels: string[];
   queuedOrStartedLabel: string;
   finishedLabel: string | null;
+};
+
+export type SupportWorkspaceObserverTrace = {
+  id: string;
+  compactId: string;
+  title: string;
+  status: string;
+  statusLabel: string;
+  rootKind: string;
+  errorCount: number;
+  timeLabel: string;
+  traceUrl: string | null;
+};
+
+export type SupportWorkspaceObserverDiagnostic = {
+  health: string;
+  healthLabel: string;
+  healthTone: TicketBadgeTone;
+  summaryEndpoint: string;
+  rootTraceId: string | null;
+  rootTraceCompactId: string;
+  rootTraceUrl: string | null;
+  rootTraceStatusLabel: string;
+  rootKind: string;
+  traceCount: number;
+  activeTraceCount: number;
+  errorTraceCount: number;
+  signatureCount: number;
+  latestTraceLabel: string;
+  latestErrorLabel: string | null;
+  latestErrorStage: string | null;
+  latestErrorAtLabel: string | null;
+  topSignature: {
+    title: string;
+    severity: string;
+    ticketOccurrences: number;
+    globalOccurrences: number | null;
+    lastSeenLabel: string | null;
+  } | null;
+  activeTraces: SupportWorkspaceObserverTrace[];
+  errorTraces: SupportWorkspaceObserverTrace[];
+  relatedTraces: SupportWorkspaceObserverTrace[];
+  recentOccurrences: Array<{
+    signature: string;
+    message: string;
+    stage: string;
+    severity: string;
+    timeLabel: string;
+    traceUrl: string | null;
+  }>;
 };
 
 export type SupportWorkspaceKnowledge = {
@@ -277,6 +333,7 @@ export type SupportWorkspaceViewModel = {
     tools: SupportWorkspaceToolItem[];
     playbooks: SupportWorkspaceToolItem[];
     operations: SupportWorkspaceOperationSummary[];
+    observer: SupportWorkspaceObserverDiagnostic;
     knowledge: SupportWorkspaceKnowledge;
     passport: SupportWorkspacePassport;
   };

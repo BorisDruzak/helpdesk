@@ -1,12 +1,12 @@
-# Support Workspace Final Hardening Plan
+# Observer Layer Trace Clarity Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` or the project safe workflow to execute this plan task by task. Keep this file current after each checkpoint.
+> **For agentic workers:** REQUIRED SUB-SKILL: use `pc-client-observer-diagnostics` first, then use `superpowers:executing-plans` or the project safe workflow to execute this plan task by task. Keep this file current after each checkpoint.
 
-**Goal:** Close the remaining `/app/tickets` support workspace gaps to 100% readiness: typed/backend gap from 1-2% to 0%, backend/domain gap from 3-5% to 0%, and UI polish gap from 1-3% to 0%.
+**Goal:** Make the existing observer layer clearer and more actionable for `/app/tickets`, operations, retries, passport/evidence flows and admin diagnostics without turning observer into a business source of truth.
 
-**Architecture:** Keep `/app/tickets` as the canonical operator workspace. Reuse the existing React/Vite/Tailwind page, typed `/api/web/support/*` boundary, ticket domain services, operation lifecycle APIs, knowledge provider, registry context and passport APIs. Do not replace working business logic; add typed DTO depth, domain adapters and focused UI polish only where the current page still has shallow behavior.
+**Architecture:** Keep observer as a technical overlay over committed source rows: `operations`, `ticket_events`, `device_events`, `agent_runtime_audit`, `agent_observer_events`, playbook run/steps and agent action traces. Strengthen trace continuity through ticket-root traces and linked child operation/playbook traces, expose compact typed summaries to `/app/tickets`, and keep deep investigation in `/app/admin/observer`.
 
-**Tech Stack:** React 19, Vite, TypeScript, Tailwind v4, TanStack Query, lucide-react, aiohttp typed web API, Pydantic DTOs, existing ticket/operation/knowledge/passport services.
+**Tech Stack:** aiohttp web API, SQLAlchemy async repos, Pydantic DTOs, `server/observer/service.py`, `server/observer/runtime.py`, React 19, Vite, TypeScript, Tailwind v4, TanStack Query, existing `/api/web/support/*` and `/api/web/admin/observer/*` contracts.
 
 ---
 
@@ -14,515 +14,726 @@
 
 Created: 2026-05-07.
 
-Current baseline:
+Current active plan: **P8 Observer Layer Trace Clarity**.
 
-- P0-P5 for `/app/tickets` are implemented and release/browser-signed off.
-- Live verification passed for the current page core flows: 3-column layout, topbar, work slices, queue list, selected ticket workspace, timeline tabs, composer, `Ещё` dialogs, right context tabs, SLA/OLA, knowledge, passport and not-found state.
-- Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
-- Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device.
-- P6.4 live evidence path identified ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`; manual evidence reduced closure missing count from 6 to 5. The first worklog live attempt exposed a real auth boundary bug: `/app/tickets` used legacy `/api/tickets/{ticket_id}/worklogs`, which does not accept httpOnly web-session cookies.
+Current progress:
 
-Remaining gaps after policy-aware retry live signoff:
+- P8.1 Contract audit and trace-continuity baseline: **completed locally**.
+- P8.2 Backend typed observer summary depth: **completed locally**.
+- P8.3 Support action trace continuity cleanup: **completed locally**.
+- P8.4 Operation/retry/playbook trace relation UI: **completed locally**.
+- P8.5 `/app/tickets` Observer diagnostic card: **completed locally**.
+- P8.6 Admin Observer deep-link refinement: **completed locally**.
+- P8.7 Observer documentation and CODEMAP sync: **completed locally**.
+- P8.8 Local verification, browser signoff, commit and optional deploy: **local gates completed; browser/commit/deploy pending**.
 
-- Typed/backend gap: **0%**.
-  - Operation retry/cancel/details and knowledge provider diagnostics now have typed DTO/model coverage.
-- Domain gap: **0-1% for agreed page scope**.
-  - Cancel and retry are first-class. Retry now goes through `POST /api/operations/{operation_id}/retry` or ticket-scoped `POST /api/tickets/{ticket_id}/operations/{operation_id}/retry`, with ticket/device/auth/policy/consent/replay checks before a new operation is created.
-  - Live safe read-only retry was verified on remote server with local online device `59bf6886-c262-516f-95b0-a9593d65f3bf`, tool `system.collect`, ticket `8e0bf484-eb99-44fe-9e12-6adccf24ce9d`, source operation `aa2b073a-346e-4e5e-ad3a-0eec63f6b48e`, retry operation `1876a8c1-ab8e-4ccf-a8e3-24cea400aada`.
-- UI polish gap: **0-1% locally, pending final browser screenshot pass**.
-  - Remaining work is release/browser verification, not known implementation work.
+Latest local verification:
 
-Target completion after this plan: **100% for the current `/app/tickets` page scope**.
+- `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server\tests\test_web_support_api.py::test_web_support_lifecycle_event_uses_existing_ticket_root_trace server\tests\test_web_support_api.py::test_web_support_worklog_action_uses_web_support_boundary server\tests\test_web_support_api.py::test_web_support_status_action_returns_typed_result_and_updates_ticket server\tests\test_web_support_api.py::test_web_support_ticket_mutation_aliases_update_ticket_through_typed_boundary -q --tb=short` -> `5 passed`.
+- `python -m pytest server\tests\test_operation_retry.py -q --tb=short` -> `4 passed`.
+- `python -m pytest server\tests\test_observer_diagnostics_api.py -k "ticket" -q --tb=short` -> `2 passed, 2 deselected`.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run` -> `34 passed`.
+- `pnpm --dir webapp run build` -> passed.
+- `python scripts\verify_workspace.py` -> passed after updating observer docs and `scripts/navigation_catalog.py`.
+- `python scripts\build_context_index.py --force` -> passed.
+- `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server\tests\test_web_support_api.py::test_web_support_ticket_detail_marks_retry_operation_trace_relation -q --tb=short` -> `2 passed`.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run` -> `34 passed` after P8.4.
+- `pnpm --dir webapp run build` -> passed after P8.4.
+- `python scripts\verify_workspace.py` -> passed after P8.4.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run` -> `36 passed` after P8.5.
+- `pnpm --dir webapp run build` -> passed after P8.5.
+- `python scripts\build_context_index.py --force` -> passed after P8.5.
+- `python scripts\verify_workspace.py` -> passed after P8.5.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx src\features\tech\observer-workbench-api.test.ts src\features\tech\observer-quick-panel.test.tsx --run` -> `42 passed` after P8.6.
+- `pnpm --dir webapp run build` -> passed after P8.6.
+- `python scripts\build_context_index.py --force` -> passed after P8.7.
+- `python scripts\verify_workspace.py` -> passed after P8.7.
+- `python scripts\bootstrap_web_toolchain.py` -> passed after P8.8 local signoff.
+- `python -m pytest server\tests\test_web_support_api.py -k "observer or trace or retry or worklog or status" -q --tb=short` -> `10 passed, 42 deselected` after P8.8.
+- `python -m pytest server\tests\test_observer_diagnostics_api.py -q --tb=short` -> `4 passed` after P8.8.
+- `python -m pytest server\tests\test_operation_retry.py -q --tb=short` -> `4 passed` after P8.8.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx src\features\tech\observer-workbench-api.test.ts src\features\tech\observer-quick-panel.test.tsx --run` -> `42 passed` after P8.8.
+- `pnpm --dir webapp run build` -> passed after P8.8.
+- `python scripts\build_context_index.py --force` -> passed after P8.8.
+- `python scripts\verify_workspace.py` -> passed after P8.8.
+
+Implemented in P8.1-P8.3:
+
+- `server/web_api/support_handlers.py` no longer passes ad-hoc random trace ids for support lifecycle events such as passport evidence, worklog, chat, queue, priority, reroute and approval decisions.
+- Operation-bound tool consent trace remains a deliberate child execution trace.
+- `server/tests/test_web_support_api.py` now protects ticket-root continuity for an existing root trace.
+- `server/tests/test_operation_retry.py` now uses an explicit queued-ticket fixture and asserts `operation_retried` resolves to the retry operation trace.
+
+Implemented in P8.2:
+
+- `ObserverOverlayService.get_ticket_observer_summary()` now returns compact support-facing observer data: root trace URL/status/kind, `health_label`, latest error label/stage/time, top signature, compact related/active/error traces and compact recent occurrences.
+- `server/web_api/dto/support.py` exposes strict typed DTOs for compact observer traces, signatures and occurrences.
+- `GET /api/web/support/tickets/{ticket_id}` embeds the compact observer payload for `/app/tickets`.
+- `webapp/src/features/queues/api.ts` knows the extended observer contract.
+- Observer docs, CODEMAP, QUICK_LOOKUP and navigation catalog are synced.
+
+Implemented in P8.4:
+
+- `SupportTicketOperationSnapshot` now exposes operation trace relation fields for `/app/tickets`: `trace_relation`, `root_trace_id`, `root_trace_url`, `trace_url`, `retry_of_operation_id` and `retry_source_trace_id`.
+- `server/web_api/support_handlers.py` derives whether an operation trace is the ticket root, a child operation trace, a retry child trace, a playbook child trace or unknown.
+- Retry operation snapshots prefetch the source operation trace so the UI can show retry lineage without opening raw JSON.
+- `/app/tickets` operation cards now label trace links as `Root trace тикета`, `Трасса операции`, `Повтор операции` or `Трасса playbook`, and show a separate root trace link where useful.
+- Backend and frontend tests cover the new relation metadata and visible links.
+
+Implemented in P8.5:
+
+- `webapp/src/features/queues/support-workspace-model.ts` now has a typed `SupportWorkspaceObserverDiagnostic` model for support-facing observer summaries.
+- `mapWorkspaceObserver()` converts the compact backend observer payload into operator-readable labels, tones, root trace metadata, latest error, top signature, compact trace rows and recent occurrences.
+- `/app/tickets` context sidebar now renders `ObserverDiagnosticCard` with health, counters, root trace link, quiet empty state, latest error/top signature and trace deep links.
+- Mapper and page tests cover the observer diagnostic card and compact mapping.
+
+Implemented in P8.6:
+
+- `/app/admin/observer?trace_id=...` now opens the traces tab, selects that trace, clears local filters that could hide it and requests the typed traces endpoint with `trace_id`.
+- `fetchObserverWorkbenchTraces()` accepts `traceId`, `ticketId` and `operationId` so support/admin deep links can narrow the server-side trace selection.
+- Selecting a trace inside the observer workbench keeps `trace_id` in the URL; selecting from trace links clears stale `ticket_id`/`operation_id` query params.
+- Focused tests cover URL serialization and the `trace_id` deep-link render path.
+
+Implemented in P8.7:
+
+- `docs/QUICK_LOOKUP.md` documents P8.1/P8.2, P8.4, P8.5 and P8.6 support/admin observer behavior.
+- `server/docs/OBSERVER_LAYER.md` documents compact support observer payloads, operation/retry trace relation metadata and `/app/admin/observer?trace_id=...` deep links.
+- `server/docs/OBSERVER_AUTHORING_RULES.md` documents support lifecycle trace continuity and repo-resolved passport evidence events.
+- `server/docs/CODEMAP.md` and `scripts/navigation_catalog.py` point future workers to the updated typed support/admin observer surfaces.
+
+Previous `/app/tickets` hardening baseline:
+
+- P0-P7 support workspace slices are implemented, committed and deployed during the previous stage.
+- `/app/tickets` has the accepted three-column SaaS operator workspace, dark/light theme, typed action controls, SLA/OLA, tools/playbooks, knowledge diagnostics, passport evidence/worklog and guarded resolution close flow.
+- Last deployed support-workspace commits include:
+  - `30b749c webapp: add guarded support resolution close flow`
+  - `e9528ca webapp: improve passport focus light theme`
+- The Linux stand was released and browser-signed off for the previous page scope, then the remote server was stopped.
+
+Observer baseline from analysis:
+
+- Observer layer already exists and is not a stub.
+- Ticket-root anchor exists: `tickets.observer_root_trace_id`.
+- Projection/storage exists:
+  - `observer_traces`
+  - `observer_spans`
+  - `observer_span_links`
+  - `observer_error_occurrences`
+  - `observer_error_signatures`
+- Main backend implementation:
+  - `server/observer/service.py`
+  - `server/observer/runtime.py`
+  - `server/app/repos/ticket_events_repo.py`
+  - `server/app/repos/agent_observer_events_repo.py`
+- Support detail aggregate already embeds observer summary through `ObserverOverlayService.get_ticket_observer_summary(ticket_id)`.
+- `/app/tickets` already renders an Observer block, but it is still too technical and shallow for an operator:
+  - trace count;
+  - active trace count;
+  - error trace count;
+  - signature count;
+  - root trace id;
+  - summary endpoint.
+- Operation cards already expose `trace_id`, details URL and lifecycle action metadata.
+- Retry endpoint already writes `operation_retried` and preserves retry lineage through `retry_of_operation_id`.
+
+Current observer readiness estimate:
+
+- Backend observer coverage: **85-90%**.
+- Trace continuity and causality clarity: **75-85%**.
+- `/app/tickets` operator usefulness: **55-65%**.
+- Admin diagnostics depth: **80-88%**.
+- Documentation alignment for the latest support-workspace observer usage: **70-80%**.
+
+Target after this plan:
+
+- Backend observer coverage for ticket/workspace/operation flows: **95-98%**.
+- Trace continuity and causality clarity: **95%+**.
+- `/app/tickets` operator usefulness: **90-95%**.
+- Admin diagnostics depth for ticket-bound flows: **90-95%**.
+- Documentation alignment: **100% for modified observer surfaces**.
 
 ## Scope
 
 In scope:
 
-- `/app/tickets` and `/app/tickets/:ticketId`.
-- Typed web support API responses used by this page.
-- Operation details/retry/cancel controls where existing lifecycle and RBAC allow them.
-- External/searchable knowledge depth while preserving AI beta as non-authoritative guidance.
-- Closure/passport evidence/worklog live fixture and final UI polish.
-- Browser signoff on `http://192.168.100.17:8666/admin`.
+- Ticket-root trace continuity for support workspace actions.
+- Typed support observer payload depth.
+- `/app/tickets` observer UI readability and diagnostic value.
+- Operation, retry and playbook trace links.
+- Passport/evidence/worklog observer provenance visibility.
+- Admin observer trace detail affordances when reached from a support ticket.
+- Focused backend/frontend tests.
+- Documentation updates required by project canon:
+  - `server/docs/OBSERVER_LAYER.md`
+  - `server/docs/OBSERVER_AUTHORING_RULES.md`
+  - `server/docs/CODEMAP.md`
+  - `docs/QUICK_LOOKUP.md`
+  - `scripts/navigation_catalog.py` if route/navigation surfaces change.
 
 Out of scope:
 
-- Replacing ticket workflow/status/SLA/OLA/assignment/routing logic.
-- Creating a second workspace under `/app/support`.
-- Fake KB, fake evidence, fake operation results or bypassed permissions.
-- Broad redesign beyond the accepted SaaS workspace visual structure.
+- Replacing helpdesk business state with observer state.
+- Changing SLA/OLA, assignment, queue routing or ticket closure policies.
+- Creating fake diagnostic events or fake KB/AI explanations.
+- Full observability platform redesign.
+- Long-term storage/retention overhaul unless an existing bug is found.
+- New external tracing vendor integration.
+
+## Decisions
+
+- Observer remains an overlay. Ticket workflow and closure policy remain the source of truth.
+- `/app/tickets` should show operator-readable observer conclusions, not raw trace dumps.
+- `/app/admin/observer` remains the deep diagnostics workspace.
+- Ticket-bound support actions should use the ticket-root trace unless there is a deliberate child execution trace, in which case it must be linked to the ticket root.
+- Random ad-hoc `uuid.uuid4()` trace ids in support action handlers should be removed or made explicit through `TicketEventsRepo.resolve_ticket_trace_id`.
+- Operation/playbook traces can remain child traces, but the UI and backend detail must make the causal relation visible.
+- Error signatures shown in `/app/tickets` must be source-backed and scoped clearly: global count versus ticket-local count.
 
 ## Functional Improvements We Will Get
 
-1. **Reliable operation actions for operators**
-   - Operators will see when an operation can be retried, canceled or only inspected.
-   - Retry/cancel buttons will follow backend lifecycle and RBAC instead of being cosmetic.
-   - Operation details will expose structured metadata consistently, which makes diagnostics easier to audit.
+1. **Clearer operator diagnosis in the ticket**
+   - The operator sees the latest failed stage, top signature and whether the problem is active, recurring or already terminal.
+   - The Observer block becomes a compact diagnostic card instead of a raw counter panel.
 
-2. **Deeper knowledge suggestions**
-   - Knowledge recommendations will come from a clearer provider contract instead of shallow fallback behavior.
-   - Similar tickets/articles will carry source, match reason, provider/version and confidence diagnostics.
-   - AI beta remains secondary and source-backed, so it helps triage without pretending to be authoritative.
+2. **Trace continuity across support actions**
+   - Status changes, queue changes, worklog, evidence, resolution submit, retry and tool results will be easier to follow inside one ticket-root story.
+   - Random-looking trace fragmentation will be removed from support action code.
 
-3. **Better real-world closure flow**
-   - Evidence/worklog/passport actions will be checked against a live closure-blocker test ticket.
-   - Operators will have a clearer path from blocker to the exact action needed to close the ticket.
-   - Passport readiness will become more trustworthy because it is verified against real mutations.
+3. **Better operation and retry investigation**
+   - A failed operation card will show whether the trace is the ticket root, an operation child trace or a linked retry trace.
+   - Retry lineage will be visible to both the timeline and observer detail.
 
-4. **Cleaner permission and edge-state behavior**
-   - Disabled controls will explain whether the cause is role, permission, offline device, install requirement, missing consent or lifecycle state.
-   - Permission-denied API responses should not crash the page.
-   - Not-found, empty, offline, no-deadline and long-data states stay readable.
+4. **More useful signatures**
+   - `/app/tickets` can show the most relevant ticket-local signature without sending the operator into the admin workbench first.
+   - Admin can still open full trace detail for spans, links and occurrences.
 
-5. **Final production confidence**
-   - The remaining percent is not about making the page "less visual"; it is about proving that rare but important production flows behave correctly.
-   - After this plan, the current page can be treated as complete for the agreed scope.
+5. **Better handoff between support and tech/admin**
+   - Support can copy/open a concrete trace URL.
+   - Admin observer workbench receives enough context to land on the right trace instead of requiring manual search.
+
+6. **Cleaner docs and future authoring rules**
+   - New dangerous/support-visible flows get clear instrumentation rules.
+   - Future module/tool/playbook authors know when to continue ticket-root trace and when to create linked child traces.
+
+## File Map
+
+Backend observer core:
+
+- `server/observer/service.py`
+  - Extend compact ticket observer summary and trace relation metadata.
+  - Add helper serialization for ticket-local top signatures and recent failed trace summaries.
+- `server/observer/runtime.py`
+  - Verify no change is required for hot refresh; update only if new projection source needs runtime refresh.
+- `server/app/repos/ticket_events_repo.py`
+  - Reuse `ensure_ticket_observer_root_trace_id` and `resolve_ticket_trace_id`.
+  - Add tests if trace continuity behavior needs stronger guarantees.
+- `server/web_api/support_handlers.py`
+  - Replace unclear support-action `trace_id=str(uuid.uuid4())` usage with explicit ticket-root trace resolution.
+  - Extend aggregate support detail observer payload.
+- `server/web_api/dto/support.py`
+  - Add typed DTO fields for compact observer diagnostics.
+- `server/web_api/admin_handlers.py`
+  - Modify only if admin trace links need an additional typed URL or filter parameter.
+
+Frontend support workspace:
+
+- `webapp/src/features/queues/api.ts`
+  - Extend typed observer summary contract.
+- `webapp/src/features/queues/support-workspace-mappers.ts`
+  - Map observer backend payload into operator-readable labels.
+- `webapp/src/features/queues/support-workspace-model.ts`
+  - Add view-model types only if the current model cannot hold the new observer card data cleanly.
+- `webapp/src/features/queues/support-workspace.tsx`
+  - Redesign the Observer block into a compact diagnostic card.
+- `webapp/src/pages/tickets/list-page.tsx`
+  - Wire trace links, selected ticket observer state, error/empty states and menu actions.
+- `webapp/src/styles.css` or existing support workspace CSS file if needed
+  - Add only scoped classes/tokens needed for the observer card.
+
+Tests:
+
+- `server/tests/test_web_support_api.py`
+  - Support detail observer aggregate contract.
+  - Support action trace continuity.
+- `server/tests/test_observer_diagnostics_api.py`
+  - Ticket-local signature counts, related trace summaries and root trace detail.
+- `server/tests/test_operation_retry.py`
+  - Retry lineage event trace relation if not already covered deeply enough.
+- `webapp/src/features/queues/support-workspace-mappers.test.ts`
+  - Observer payload mapping.
+- `webapp/src/pages/tickets/list-page.test.tsx`
+  - Observer card rendering, trace links, empty/error states.
+
+Docs:
+
+- `server/docs/OBSERVER_LAYER.md`
+- `server/docs/OBSERVER_AUTHORING_RULES.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `docs/CONTEXT_INDEX.md` only if indexing/navigation rules change.
+- `scripts/navigation_catalog.py` only if route/catalog entries change.
 
 ## Implementation Plan
 
-### P6.1 Typed Operation Action Contract
+### P8.1 Contract Audit And Trace Continuity Test Baseline
+
+Goal: prove the current behavior before changing it and lock the intended trace-continuity contract in focused tests.
 
 Status: **completed locally, 2026-05-07**.
 
-Implementation notes:
-
-- Existing operation details and cancel APIs were found: `GET /api/operations/{operation_id}` and `POST /api/operations/{operation_id}/cancel`.
-- No safe first-class operator retry API exists yet; retry is now represented explicitly as lifecycle metadata with `can_retry=false` and a typed disabled reason instead of a cosmetic button.
-- Backend DTOs now expose operation action fields for snapshot/timeline cards: `can_retry`, `can_cancel`, `retry_url`, `cancel_url`, `retry_disabled_reason`, `cancel_disabled_reason`, `policy_labels`.
-- Frontend operation cards now consume typed action fields instead of deriving cancel/retry affordances only from local status guesses.
-- Focused verification passed:
-  - `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events -q` -> `2 passed`
-  - `pnpm --dir webapp test -- support-workspace-mappers.test.ts list-page.test.tsx` -> `32 passed`
-
-Goal: close the typed/backend gap for operation details, retry and cancel surfaces.
-
-Files to inspect and likely modify:
-
-- `server/web_api/support_handlers.py`
-- `server/web_api/dto/support.py`
-- `server/operations/` or existing operation lifecycle modules found through CODEMAP/search.
-- `webapp/src/features/queues/api.ts`
-- `webapp/src/features/queues/support-workspace-mappers.ts`
-- `webapp/src/pages/tickets/list-page.tsx`
-- Existing focused tests under `server/tests/` and `webapp/src/**`.
-
 Steps:
 
-- [x] Run context search for existing operation detail, retry and cancel APIs.
-- [x] Add or tighten typed DTO fields:
-  - `operation_id`
-  - `status`
-  - `can_retry`
-  - `can_cancel`
-  - `retry_reason`
-  - `cancel_reason`
-  - `details_url`
-  - `policy_labels`
-  - `disabled_reason`
-- [x] Ensure DTOs are derived from existing operation lifecycle and RBAC rules, not frontend guesses.
-- [x] Add focused backend tests for:
-  - completed failed operation can expose retry if policy allows;
-  - running cancelable operation exposes cancel;
-  - completed/succeeded operation is not cancelable;
-  - denied permission returns structured denial.
-- [x] Update frontend API types and mapper so operation cards consume typed fields.
-- [x] Update operation UI actions to show retry/cancel/details only when typed contract allows them.
-- [x] Verify with focused pytest and focused Vitest.
-- [ ] Verify production build and workspace verification.
-
-Expected result:
-
-- Typed/backend gap reduces from 1-2% to about 0.5-1%.
-- Operators get trustworthy retry/cancel/details affordances.
-
-### P6.2 Domain Retry And Online Low-Risk Tool Signoff
-
-Goal: close most of the domain gap around operation retry semantics and safe live tool execution.
-
-Status: **completed locally and live-signed off on remote server, 2026-05-07**.
-
-Implementation notes:
-
-- Existing cancel flow is first-class and lifecycle-aware.
-- Operator retry is now first-class and policy-aware instead of a raw outbox clone.
-- New endpoints:
-  - `POST /api/operations/{operation_id}/retry`
-  - `POST /api/tickets/{ticket_id}/operations/{operation_id}/retry`
-- Retry validates: authenticated actor, `ticket.tool.run`, risk permission, ticket context, ticket/device match, agent online, replayable `run_tool` params, current tool availability, policy engine decision, consent requirement and retry budget.
-- Successful retry increments the source operation retry counter, creates a new operation with `retry_of_operation_id`, re-dispatches through `ToolExecutionService.run_tool`, and writes `operation_retried` into the ticket timeline.
-- Consent-required retries are blocked with `CONSENT_REQUIRED_FOR_RETRY` until a dedicated explicit-consent retry flow is added; this avoids silently replaying actions that require user confirmation.
-- Remote deploy applied commit `bb0cae3` and migration `069 -> 070`.
-- Live signoff used local online agent `retry-live-070`, device `59bf6886-c262-516f-95b0-a9593d65f3bf`, safe read-only tool `system.collect`.
-- Live retry source operation `aa2b073a-346e-4e5e-ad3a-0eec63f6b48e` was seeded into terminal `failed` after a real safe run to prove replay behavior; retry operation `1876a8c1-ab8e-4ccf-a8e3-24cea400aada` was accepted and then succeeded.
-
-Files to inspect and likely modify:
-
-- Existing operation service/repo modules discovered in P6.1.
-- Existing tool/playbook run handlers under `server/web_api/support_handlers.py`.
-- Existing operation tests under `server/tests/`.
-- `webapp/src/pages/tickets/list-page.tsx`.
-
-Steps:
-
-- [x] Create or select a dedicated live ticket bound to an online low-risk test device.
-- [x] Identify one safe read-only tool or playbook:
-  - risk `safe_read`;
-  - no consent required;
-  - allowed for support/admin;
-  - no destructive side effects.
-- [x] Add first-class policy-aware retry endpoint without cloning old payload blindly.
-- [x] Persist retry lineage via `operations.retry_of_operation_id`.
-- [x] Revalidate ticket ownership, permissions, online device, tool availability, risk policy, consent and replayable params.
-- [x] Add `operation_retried` timeline event.
-- [x] Wire `/app/tickets` operation cards to POST retry mutation when `can_retry=true`.
-- [x] Keep cancel visible only for running/cancelable operations.
-- [x] Focused verification:
-  - `python -m pytest server/tests/test_operation_retry.py -q --tb=short` -> `4 passed`
-  - `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` -> `1 passed`
-  - `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> `32 passed`
-- [x] Run one safe tool/playbook on the dedicated live test ticket.
-- [x] Confirm:
-  - operation lifecycle is persisted and visible through `GET /api/operations/{operation_id}`;
-  - timeline receives `tool_call_started`, `operation_retried` and `tool_call_result`;
-  - retry lineage is persisted through `retry_of_operation_id`;
-  - source operation retry counter increments;
-  - retry dispatch reaches the online local agent and succeeds.
-- [x] Record the live ticket id and operation id in this plan.
-
-Expected result:
-
-- Domain gap reduces from 3-5% to about 1.5-2%.
-- Tool/playbook behavior is proven beyond disabled/offline states.
-
-### P6.3 External KB Provider Depth
-
-Goal: close the knowledge part of the domain gap without weakening the current source-visible AI beta design.
-
-Status: **completed locally, 2026-05-07**.
-
-Implementation notes:
-
-- Existing local catalog/manual KB/similar-ticket provider was kept as the source of truth.
-- Diagnostics now include `provider_status`, `external_provider_status`, `fallback_reason`, `catalog_entry_count`, and `query_tokens`.
-- The UI knowledge tab surfaces provider/catalog/external-KB state compactly beside source and confidence.
-- Focused verification passed:
-  - `python -m pytest server/tests/test_support_knowledge_provider.py server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links -q` -> `7 passed`
-  - `pnpm --dir webapp test -- support-workspace-mappers.test.ts list-page.test.tsx` -> `32 passed`
-
-Files to inspect and likely modify:
-
-- Existing knowledge provider modules under `server/tickets/`, `server/web_api/` or provider paths found through search.
-- `server/web_api/support_handlers.py`
-- `server/web_api/dto/support.py`
-- `server/tests/test_web_support_api.py` or focused knowledge tests.
-- `webapp/src/features/queues/support-workspace-mappers.ts`
-- `webapp/src/pages/tickets/list-page.tsx`
-
-Steps:
-
-- [x] Inspect current provider contract for catalog search, manual KB links and similar-ticket suggestions.
-- [x] Add typed provider diagnostics where missing:
-  - provider name;
-  - provider version;
-  - source counts;
-  - query tokens/signals;
-  - match reasons;
-  - confidence;
-  - fallback reason.
-- [x] Add a deeper searchable provider path if existing storage/index is available.
-- [x] If external KB storage is not configured on the stand, keep the provider contract real but return an explicit `provider_unavailable` diagnostic instead of fake content.
-- [x] Add backend tests for:
-  - linked KB article suggestions;
-  - similar-ticket suggestions;
-  - empty provider response;
-  - provider-unavailable response;
-  - AI beta sources never empty when AI text is present.
-- [x] Update UI to show source/provider diagnostics compactly in the knowledge tab.
-- [ ] Verify the knowledge tab in dark/light themes with at least one ticket that has suggestions and one that has none.
-
-Expected result:
-
-- Domain gap reduces from about 1.5-2% to about 0.5-1%.
-- Knowledge suggestions become auditable and production-safe.
-
-### P6.4 Closure Fixture And Evidence/Worklog Live Proof
-
-Goal: prove the final passport/evidence/worklog closure path with a dedicated test ticket.
-
-Status: **completed and live-proven on Linux stand, 2026-05-07**.
-
-Implementation notes:
-
-- Existing closure guidance already has central blocker actions for evidence and worklog.
-- Existing passport/evidence endpoints are wired into `/app/tickets`.
-- Worklog action now uses typed `POST /api/web/support/tickets/{ticket_id}/worklogs`, avoiding broad cookie auth for legacy `/api/tickets/*`.
-- Remote live evidence pre-check on ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`:
-  - before: `missing_count=6`, blockers included `attach_evidence` and `add_worklog`;
-  - after manual evidence: `missing_count=5`, `attach_evidence` disappeared, evidence candidates count became 3;
-  - initial worklog submit returned 401 against legacy `/api/tickets/{ticket_id}/worklogs`, which produced the typed worklog fix.
-- Focused backend verification passed:
-  - `python -m pytest server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_evidence_service.py::test_evidence_service_collects_worklog_approval_chat_and_observer_candidates server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `9 passed`
-- Focused frontend verification passed:
-  - `pnpm --dir webapp test -- list-page.test.tsx` -> `21 passed`
-- Current local verification after typed worklog fix:
-  - `python scripts/verify_workspace.py` -> passed
-  - `pytest server/tests/test_web_support_api.py::test_web_support_worklog_action_uses_web_support_boundary server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `2 passed`
-  - `pnpm --dir webapp test -- --run src/pages/tickets/list-page.test.tsx` -> `21 passed`
-- Release/live proof:
-  - commit `05a3baa` deployed to Linux stand through `python scripts/release_server_to_remote.py --leave-running`;
-  - smoke passed after startup retry;
-  - live worklog POST hit `/api/web/support/tickets/31345a34-dd5c-4121-99e1-95c77a0bed27/worklogs` -> 200;
-  - `add_worklog` disappeared from blockers and `missing_count` changed from 5 to 4;
-  - evidence candidates count became 4 after worklog, proving worklog is now visible to the passport/evidence source flow.
-
-Files to inspect and likely modify:
-
-- Existing passport/evidence/worklog endpoints in `server/web_api/support_handlers.py`.
-- Existing closure/passport services under `server/tickets/`.
-- `webapp/src/features/queues/api.ts`
-- `webapp/src/pages/tickets/list-page.tsx`
-- Focused frontend and backend tests around passport/evidence/worklog.
-
-Steps:
-
-- [x] Identify a dedicated live closure-blocker ticket with closure blockers: `31345a34-dd5c-4121-99e1-95c77a0bed27`.
-- [x] Ensure the ticket has blockers that include evidence and worklog target actions.
-- [x] Click central closure blocker action `Добавить evidence`.
-- [x] Confirm right passport tab focuses the blocker and shows evidence candidates/manual evidence form.
-- [x] Link one safe existing evidence candidate or submit one manual evidence item through the existing API.
-- [x] Confirm blocker/readiness updates after refetch.
-- [x] Click `Добавить worklog`.
-- [x] Submit a small worklog on the test ticket after deploying the typed worklog endpoint.
-- [x] Confirm passport/evidence flow sees the worklog after refetch.
-- [x] Add or update focused tests if any mapper/UI behavior needed adjustment.
-
-Expected result:
-
-- Domain gap reduces to 0-0.5%.
-- Passport readiness becomes live-proven, not only visually verified.
-
-### P6.5 Final UI Polish And Role Matrix
-
-Goal: close the final UI polish gap and record production signoff.
-
-Status: **remote browser signoff passed for agreed desktop scope, 2026-05-07**.
-
-Implementation notes:
-
-- No additional broad UI rewrite was needed in this final slice.
-- Operation cards now show typed action availability and typed disabled reasons, which covers the final permission/lifecycle readability gap found in P6.1.
-- Knowledge suggestions now show provider diagnostics, catalog count, external KB status and query tokens, which covers the final "AI beta is source-backed, not magic" polish gap.
-- Closure/passport blocker controls were verified by focused backend/frontend tests and remain wired through existing evidence/worklog/passport endpoints.
-- Local verification passed before release:
-  - `pnpm --dir webapp build` -> success
-  - `python scripts\verify_workspace.py` -> `Verification passed for C:\Users\admin-2\CodexProjects\pc_client`
-  - focused backend gates for support API, knowledge provider, passport/evidence/worklog -> passed
-  - focused frontend gates for workspace mappers and list page -> passed
-- Full CI passed for commit `05a3baa`:
-  - `python scripts/run_ci_suite.py` -> passed; artifact `artifacts/ci/05a3baa6242cfcd75cca5da9284030e6b10954ef/summary.json`
-- Remote browser matrix on ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`:
-  - widths `1366`, `1440`, `1920`;
-  - themes `dark`, `light`;
-  - `horizontalOverflow=0`, `scrollables=3`, `badRects=0`, header stable after center scroll, composer visible, `Ещё` menu visible and within viewport, console/page errors empty.
-- Screenshots captured:
-  - `support-workspace-p6-1920-light.png`
-  - `support-workspace-p6-1920-dark.png`
-
-Files to inspect and likely modify:
-
-- `webapp/src/pages/tickets/list-page.tsx`
-- `webapp/src/features/queues/support-workspace-mappers.ts`
-- shared UI primitives only if a real reusable bug is found.
-
-Remote signoff steps:
-
-- [x] Re-run local desktop-oriented frontend checks through component tests and production build.
-- [x] Re-run browser checks at 1366, 1440 and 1920 in dark and light themes on the Linux stand.
-- [x] Verify:
-  - no horizontal overflow;
-  - topbar remains fixed;
-  - columns scroll independently;
-  - long subjects, long queue names, long requester names and technical IDs do not overlap controls;
-  - disabled tool/action reasons are readable;
-  - dialogs fit at 1366 width;
-  - composer remains reachable after long timeline scroll.
-- [x] Verify role/permission coverage:
-  - support L1 normal read/comment/action surface;
-  - support without high-risk permission sees high-risk tool disabled/denied;
-  - admin shell still routes into support workspace;
-  - permission-denied API response renders an error/disabled state, not a crash.
-- [x] Patch only concrete defects found in this pass.
-- [x] Capture final screenshot names in this plan or final handoff after browser signoff.
-
-Expected result:
-
-- UI polish gap reduces from 1-3% to 0%.
-- Final page behavior is production-ready for the agreed desktop support-workspace scope.
-
-### P6.6 Localization, Tooltips And Operator Clarity
-
-Goal: make `/app/tickets` understandable as a production operator workspace, not just visually complete.
-
-Status: **closed locally, 2026-05-07**.
-
-Current assessment:
-
-- User-facing Russian localization before this slice: **85-90%**.
-- Operator clarity/readability before this slice: **90-93%**.
-- Tooltips, disabled reasons and edge-state explanations before this slice: **80-85%**.
-- Full multi-language i18n architecture: **50-60%** and explicitly out of current page scope unless we decide to add a translation framework later.
-
-Implementation notes:
-
-- The current page is mostly Russian and already has good placeholders for search, public reply, internal note and action reasons.
-- Key icon buttons have `aria-label`.
-- Operation/tool disabled states already expose typed reasons for offline device, missing tool, missing permission, lifecycle state and retry availability.
-- Remaining quality issue is not missing business functionality; it is the last layer of product language: converting backend/policy codes into concise human labels and adding contextual hints where an operator needs confidence.
-
-Files to inspect and likely modify:
-
-- `webapp/src/pages/tickets/list-page.tsx`
-- `webapp/src/features/queues/support-workspace-mappers.ts`
-- `webapp/src/features/queues/support-workspace-model.ts`
-- `webapp/src/features/queues/api.ts`
-- shared UI tooltip/helpers if an existing component exists.
-
-Steps:
-
-- [x] Inventory all visible technical codes on `/app/tickets`:
-  - permission codes such as `module.tool.run.low_risk`;
-  - retry/cancel reasons such as `status_not_retryable`, `retry_limit_reached`;
-  - provider states such as `provider_unavailable`;
-  - consent states such as `CONSENT_REQUIRED_FOR_RETRY`;
-  - risk levels, lifecycle statuses and operation statuses.
-- [x] Add centralized label helpers for:
-  - permission labels;
-  - retry/cancel disabled reasons;
-  - tool/playbook risk and consent labels;
-  - knowledge provider diagnostics;
-  - operation lifecycle statuses.
-- [x] Keep technical IDs visible only as secondary metadata where they are useful for debugging:
-  - tool id;
-  - playbook id;
-  - operation id;
-  - permission code.
-- [x] Add or reuse tooltip behavior for:
-  - icon-only buttons in topbar/action areas;
-  - disabled retry/cancel/tool/playbook controls;
-  - SLA/OLA paused/breached/at-risk states;
-  - AI beta/provider diagnostics.
-- [x] Review empty/error/no-ticket/offline/permission-denied copy for short, action-oriented Russian text.
-- [x] Verify long Russian strings at 1366px, 1440px and 1920px in dark and light themes.
-- [x] Add focused mapper/component tests for representative label conversions:
-  - permission code -> human label;
-  - retry disabled reason -> human label;
-  - provider unavailable -> human label;
-  - consent-required retry -> human label.
-
-Expected result:
-
-- User-facing localization reaches **93-96%** for the current single-language page after local checks.
-- Operator clarity/readability reaches **96-98%**.
-- Tooltips and disabled-reason explanations reach **95%+** for the current controls.
-- Full i18n remains a separate future project unless multi-language support becomes a requirement.
-
-Implemented in this slice:
-
-- Added centralized `support-workspace-labels` helpers for permission, risk, consent, retry/cancel, operation policy and knowledge provider diagnostic labels.
-- Mappers now expose human-readable labels while preserving raw technical IDs as secondary metadata where useful.
-- `/app/tickets` tools/playbooks, operation actions, topbar controls and AI/knowledge diagnostics now expose clearer Russian copy and `title` hints.
-- Added focused label tests and updated mapper/page assertions for the new operator-facing copy.
-- Updated the Playwright support workspace fixture to serve the aggregate `/workspace` payload and added 1366/1440/1920 dark/light readability checks.
-
-### P7 End-to-End Resolution Close Flow
-
-Goal: make the final operator path from passport blockers to `resolved` first-class in `/app/tickets`.
-
-Status: **implemented locally, focused verification passed, 2026-05-07**.
-
-Current assessment before implementation:
-
-- Overall `/app/tickets` page readiness before the slice: **98-99%**.
-- P7 close-flow slice readiness before the slice: **0%**.
-- Backend/domain readiness for this slice: **85-90%** because `POST /api/web/support/tickets/{ticket_id}/status` already accepts `resolution_code`, `resolution_summary` and `requester_resolution_summary`, and `closure_policy` already validates these fields before `resolved`.
-- Remaining typed/frontend gap for this slice: **10-15%** because the webapp status client and operator dialog currently do not expose those resolution fields.
-
-Why this matters:
-
-- Today the passport can tell an operator that resolution fields are missing, but the operator must infer where to fill them.
-- After P7, clicking `Заполнить решение` will open a focused close form, collect the required resolution facts and submit the typed `resolved` transition through the existing workflow/approval/closure guards.
-- If closure policy still blocks the transition, the operator will see a meaningful policy error instead of a vague failed action.
-
-Files to modify:
-
-- `webapp/src/features/queues/api.ts`
-- `webapp/src/pages/tickets/list-page.tsx`
-- `webapp/src/pages/tickets/list-page.test.tsx`
-- `PLANS.md`
-- Backend tests only if the existing status endpoint contract is found incomplete during implementation.
-
-Implementation steps:
-
-- [x] Extend the typed frontend status mutation payload with:
-  - `resolutionCode`
-  - `resolutionSummary`
-  - `requesterResolutionSummary`
-  - existing `reason`, `publicComment`, `internalComment`
-- [x] Add a focused resolution-close draft state to `/app/tickets`.
-- [x] When a closure blocker has `action_kind=edit_resolution`, open the resolution close form instead of only focusing the passport tab.
-- [x] Pre-fill the form from the selected ticket where existing resolution fields are already present.
-- [x] Add operator copy explaining:
-  - public summary is visible to the requester;
-  - internal summary is for support/audit context;
-  - the transition still goes through workflow, approval and closure policy.
-- [x] Submit `to_status=resolved` through the existing web support status endpoint with typed resolution fields.
-- [x] Keep the existing generic `Ещё -> Сменить статус` flow for non-resolution status changes.
-- [x] On success, invalidate workspace, timeline, queue and passport/evidence queries.
-- [x] Add focused Vitest coverage:
-  - `Заполнить решение` opens the close form;
-  - submit sends `resolved` plus `resolution_code`, `resolution_summary`, `requester_resolution_summary`, `reason`;
-  - form blocks submit until the required operator fields are present;
-  - existing status/queue/priority/assign controls still call their current APIs.
-- [x] Run focused frontend tests.
-- [x] Run relevant backend status/closure tests if frontend sends any newly exposed field names.
-- [x] Run workspace verification/build gates before commit/deploy.
-
-Implemented in this slice:
-
-- `postSupportTicketStatus` now exposes typed resolution fields and sends them as `resolution_code`, `resolution_summary`, `requester_resolution_summary`.
-- The selected ticket view model now carries existing resolution fields for form prefill.
-- Closure blocker action `edit_resolution` opens a focused guarded dialog: code, public requester result, internal support result and reason.
-- Submit posts `resolved` through the existing guarded web support status endpoint and refreshes workspace, timeline, queue and passport/evidence queries.
-- Existing generic status/queue/priority/assign flows remain unchanged.
-- Live browser light-theme pass exposed a low-contrast right passport focus card; it now has explicit light-theme surface/text classes.
-
-Focused verification passed:
+- [x] Re-run context intake for this exact implementation slice.
 
 ```powershell
-pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx -t "guarded resolution close form"
-pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx
-python -m pytest server/tests/test_ticket_closure_policy.py::test_closure_policy_requires_resolution_code server/tests/test_ticket_closure_policy.py::test_closure_passport_accepts_transition_summary_for_user_result server/tests/test_web_support_api.py::test_web_support_resolved_status_respects_confirmation_required_false -q --tb=short
-python scripts\verify_workspace.py
+.\scripts\bootstrap_shell_utf8.ps1
+python scripts\task_intake.py --task "Observer trace clarity for support workspace ticket-root actions and operation retry links"
+```
+
+Expected:
+
+- Task mode points to server/webapp or internal web platform.
+- Plan remains required.
+- Observer docs and support handlers appear in relevant files.
+
+- [x] Search current support action event writes.
+
+```powershell
+rg -n "trace_id=str\(uuid\.uuid4\(\)\)|trace_id=uuid\.uuid4\(\)|add_event\(" server\web_api\support_handlers.py -S
+```
+
+Expected:
+
+- All support action event writes are identified.
+- Any deliberately operation-bound event is separated from generic support lifecycle events.
+
+- [x] Add a backend test proving support-originated ticket lifecycle actions land on the ticket root trace.
+
+Target file:
+
+- `server/tests/test_web_support_api.py`
+
+Behavior to cover:
+
+- Create or load a support ticket with `observer_root_trace_id`.
+- Perform one server-originated support lifecycle mutation through a web support endpoint, for example queue/status/priority/worklog depending on available fixture helpers.
+- Assert the inserted `TicketEvent.trace_id` equals the ticket root trace id for non-operation lifecycle events.
+
+Expected test command:
+
+```powershell
+python -m pytest server\tests\test_web_support_api.py -k "observer or trace" -q --tb=short
+```
+
+Expected first result before implementation:
+
+- The new test may fail if a path does not resolve to ticket-root trace clearly.
+- Existing observer tests remain green.
+
+- [x] Add or update a retry observer relation test.
+
+Target file:
+
+- `server/tests/test_operation_retry.py`
+
+Behavior to cover:
+
+- Original failed operation has a trace id.
+- Retry creates a new operation with `retry_of_operation_id`.
+- `operation_retried` event has `operation_id` of the retry operation.
+- Event trace relation is deterministic:
+  - operation-bound event resolves to the retry operation trace;
+  - ticket lifecycle event remains on ticket-root trace.
+
+Expected command:
+
+```powershell
+python -m pytest server\tests\test_operation_retry.py -q --tb=short
+```
+
+Completion criteria:
+
+- We know exactly which support action paths need code changes.
+- Trace-continuity behavior is protected by failing or passing tests.
+
+### P8.2 Backend Typed Observer Summary Depth
+
+Goal: expose a compact, source-backed observer summary that is useful to `/app/tickets` without requiring full trace detail fetches.
+
+Status: **completed locally, 2026-05-07**.
+
+Backend contract additions:
+
+- `summary.root_trace_url`
+- `summary.root_trace_status`
+- `summary.root_kind`
+- `summary.latest_error_at`
+- `summary.latest_error_label`
+- `summary.latest_error_stage`
+- `summary.top_signature`
+- `summary.has_active_operation`
+- `summary.health_label`
+- `related_traces_compact`
+- `active_traces_compact`
+- `error_traces_compact`
+- `recent_occurrences_compact`
+
+Suggested DTO shape:
+
+```python
+class SupportTicketObserverSignature(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error_signature: str
+    title: str | None = None
+    severity: str | None = None
+    ticket_occurrences_count: int = 0
+    global_occurrences_count: int | None = None
+    last_seen_at: str | None = None
+
+
+class SupportTicketObserverTraceCompact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str
+    root_kind: str | None = None
+    status: str | None = None
+    title: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    error_count: int = 0
+    operation_id: str | None = None
+    tool_name: str | None = None
+    playbook_id: str | None = None
+    trace_url: str | None = None
+
+
+class SupportTicketObserverOccurrenceCompact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    error_signature: str | None = None
+    message: str | None = None
+    stage: str | None = None
+    severity: str | None = None
+    trace_id: str | None = None
+    created_at: str | None = None
+    trace_url: str | None = None
+```
+
+Files:
+
+- Modify: `server/web_api/dto/support.py`
+- Modify: `server/observer/service.py`
+- Modify: `server/web_api/support_handlers.py`
+- Test: `server/tests/test_web_support_api.py`
+- Test: `server/tests/test_observer_diagnostics_api.py`
+
+Steps:
+
+- [x] Extend `ObserverOverlayService.get_ticket_observer_summary()` return dict with compact fields derived from already-loaded `root_trace`, `related_traces`, `signatures` and `recent_occurrences`.
+- [x] Keep the existing `summary` fields unchanged for backward compatibility.
+- [x] Add DTOs with `extra="forbid"` to prevent untyped drift.
+- [x] Serialize admin trace URLs as webapp URLs, for example:
+
+```text
+/app/admin/observer?trace_id=<trace_id>
+```
+
+- [x] Define `health_label` on the backend as a conservative derived label:
+  - `running` when active traces exist;
+  - `error` when error traces or signatures exist;
+  - `ok` when traces exist and no active/error traces exist;
+  - `empty` when no trace exists.
+- [x] Add backend tests for this slice:
+  - typed support detail includes the richer observer summary fields;
+  - compact trace URLs are present when a root trace exists;
+  - existing ticket-local signature count coverage remains in `test_observer_diagnostics_api.py`.
+
+Expected commands:
+
+```powershell
+python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short
+python -m pytest server\tests\test_observer_diagnostics_api.py -k "ticket" -q --tb=short
+```
+
+Completion criteria:
+
+- `/api/web/support/tickets/{ticket_id}` returns richer typed observer data.
+- Existing frontend remains compatible while new fields are available.
+
+### P8.3 Support Action Trace Continuity Cleanup
+
+Goal: remove unclear random trace assignment from support action handlers and make ticket-root continuity explicit.
+
+Status: **completed locally, 2026-05-07**.
+
+Files:
+
+- Modify: `server/web_api/support_handlers.py`
+- Modify only if needed: `server/app/repos/ticket_events_repo.py`
+- Test: `server/tests/test_web_support_api.py`
+
+Steps:
+
+- [x] Evaluate whether a local helper is needed in `support_handlers.py`; it was not needed because omitting `trace_id` lets `TicketEventsRepo.add_event()` resolve ticket-root trace at every cleaned lifecycle callsite.
+
+```python
+async def _ticket_root_trace_id(repo: TicketEventsRepo, ticket_id: str) -> str:
+    return await repo.ensure_ticket_observer_root_trace_id(ticket_id)
+```
+
+- [x] Replace generic lifecycle event writes that currently pass `trace_id=str(uuid.uuid4())` with one of:
+  - omit `trace_id` and let `TicketEventsRepo.add_event()` resolve the ticket root;
+  - pass the explicit value from `ensure_ticket_observer_root_trace_id()` when readability is better.
+- [x] Keep operation-bound events using `operation_id` so `TicketEventsRepo.resolve_ticket_trace_id()` can resolve to operation trace.
+- [x] Do not change event payloads except adding explicit observer provenance when useful.
+- [x] Add focused tests for the first cleanup slice:
+  - status changed;
+  - queue changed;
+  - priority changed;
+  - worklog added with existing ticket-root trace;
+  - operation retried remains operation-bound.
+
+Expected command:
+
+```powershell
+python -m pytest server\tests\test_web_support_api.py -k "trace or observer or worklog or status" -q --tb=short
+```
+
+Completion criteria:
+
+- No generic support lifecycle action creates a misleading unrelated trace id.
+- Operation-bound events still resolve through operation trace ids.
+
+### P8.4 Operation, Retry And Playbook Trace Relations
+
+Goal: make relation between ticket root, operation trace, retry trace and playbook trace visible in backend payloads and UI.
+
+Status: **completed locally, 2026-05-07**.
+
+Files:
+
+- Modify: `server/observer/service.py`
+- Modify: `server/web_api/support_handlers.py`
+- Modify: `server/web_api/dto/support.py`
+- Modify: `webapp/src/features/queues/api.ts`
+- Modify: `webapp/src/features/queues/support-workspace-mappers.ts`
+- Modify: `webapp/src/pages/tickets/list-page.tsx`
+- Test: `server/tests/test_operation_retry.py`
+- Test: `webapp/src/features/queues/support-workspace-mappers.test.ts`
+- Test: `webapp/src/pages/tickets/list-page.test.tsx`
+
+Steps:
+
+- [x] Add compact operation trace relation fields where operation snapshots/timeline cards are built:
+  - `trace_relation`: `ticket_root | operation_child | retry_child | playbook_child | unknown`
+  - `root_trace_id`
+  - `root_trace_url`
+  - `trace_url`
+  - `retry_of_operation_id`
+  - `retry_source_trace_id`
+- [x] Prefer deriving relation server-side where source data is available.
+- [x] Keep frontend fallback conservative if old payload lacks new fields.
+- [x] In operation card metadata, replace short raw `Trace: abc123` only display with:
+  - `Трасса операции`;
+  - `Root trace тикета`;
+  - `Повтор операции`;
+  - `Трасса playbook`.
+- [x] Add mapper tests for relation labels and retry lineage mapping.
+- [x] Add UI tests that operation cards show observer trace links and root trace links when available.
+
+Expected commands:
+
+```powershell
+python -m pytest server\tests\test_operation_retry.py -q --tb=short
+pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx -t "observer" --run
+```
+
+Completion criteria:
+
+- Operator can distinguish ticket root trace from operation child trace.
+- Retry lineage is visible without opening raw JSON.
+
+Verification:
+
+- `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server\tests\test_web_support_api.py::test_web_support_ticket_detail_marks_retry_operation_trace_relation -q --tb=short` -> `2 passed`.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run` -> `34 passed`.
+- `pnpm --dir webapp run build` -> passed.
+- `python scripts\verify_workspace.py` -> passed.
+
+### P8.5 `/app/tickets` Observer Diagnostic Card
+
+Goal: redesign the existing Observer block into a compact support-facing diagnostic card.
+
+Status: **completed locally, 2026-05-07**.
+
+Files:
+
+- Modify: `webapp/src/features/queues/api.ts`
+- Modify: `webapp/src/features/queues/support-workspace-mappers.ts`
+- Modify: `webapp/src/features/queues/support-workspace.tsx`
+- Modify: `webapp/src/pages/tickets/list-page.tsx`
+- Modify scoped CSS only if needed.
+- Test: `webapp/src/features/queues/support-workspace-mappers.test.ts`
+- Test: `webapp/src/pages/tickets/list-page.test.tsx`
+
+Card content:
+
+- Health strip:
+  - `Норма`
+  - `Есть активные операции`
+  - `Есть ошибки`
+  - `Нет трасс`
+- Key facts:
+  - root trace compact id;
+  - total traces;
+  - active traces;
+  - error traces;
+  - signatures.
+- Latest problem:
+  - latest error label;
+  - stage;
+  - time;
+  - top signature with ticket-local count.
+- Actions:
+  - `Открыть трассу`
+  - `Открыть observer`
+  - `Скопировать trace id` if an existing copy pattern exists; otherwise use a plain selectable code value.
+
+UX rules:
+
+- The card must be useful to L1 support without requiring knowledge of tracing internals.
+- Keep raw ids secondary.
+- Do not show scary red state when there is no error, even if traces exist.
+- If no trace exists, show a quiet empty state: `Трасса ещё не создана. Она появится после первого события или операции по тикету.`
+- If observer endpoint fails, show compact error state and keep the rest of the ticket usable.
+
+Steps:
+
+- [x] Extend frontend types for new observer fields.
+- [x] Add mapper helpers:
+  - `observerHealthLabel()`
+  - `observerHealthTone()`
+  - `observerStatusLabel()`
+  - `mapObserverTrace()`
+  - `mapWorkspaceObserver()`
+- [x] Replace current raw Observer block with the new diagnostic card in `/app/tickets`.
+- [x] Add trace action links using server-provided URLs.
+- [x] Add focused mapper/page tests for:
+  - compact observer mapping;
+  - error/signature observer;
+  - root trace link;
+  - trace-row deep link;
+  - quiet no-trace state through the default fixture path.
+
+Expected commands:
+
+```powershell
+pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run
 pnpm --dir webapp run build
 ```
 
-Results:
+Completion criteria:
 
-- `1 passed` for the new red/green UI test.
-- `34 passed` for focused frontend workspace tests.
-- `3 passed` for backend closure/status checks.
-- `verify_workspace.py` passed.
-- `webapp` production build passed.
-- After the light-theme readability fix, focused frontend tests, `verify_workspace.py` and `webapp` production build passed again.
+- `/app/tickets` no longer exposes only raw observer counters.
+- Operator has a clear next diagnostic action from the ticket page.
 
-Expected result:
+Verification:
 
-- Typed/backend gap remains **0%** for the agreed page scope.
-- Domain gap remains **0-1%** because the existing closure policy remains the source of truth.
-- UI/page polish gap reaches **0-1%** by removing the last confusing closure step.
-- Operators get a clear end-to-end path: blocker -> resolution facts -> guarded `resolved` transition -> updated passport/timeline.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run` -> `36 passed`.
+- `pnpm --dir webapp run build` -> passed.
 
-## Verification Gates
+### P8.6 Admin Observer Deep-Link Refinement
+
+Goal: make the transition from support ticket to admin observer workbench precise.
+
+Status: **completed locally, 2026-05-07**.
+
+Files:
+
+- Inspect first: `webapp/src/features/tech/*`
+- Inspect first: `webapp/src/pages/admin/*` or current admin observer route files found by `rg`.
+- Modify only if current admin observer does not already honor `trace_id`, `ticket_id`, `root_kind` query params.
+- Test existing admin observer frontend tests if present.
+
+Steps:
+
+- [x] Verify `/app/admin/observer?trace_id=<trace_id>` opens the trace detail or filters directly to the trace.
+- [x] Verify `/app/admin/observer?ticket_id=<ticket_id>` filters related traces for that ticket.
+- [x] If unsupported, add query-param initialization to the admin observer page:
+  - `trace_id` opens detail;
+  - `ticket_id` sets ticket filter;
+  - `root_kind` sets root kind filter.
+- [x] Add a focused test for query-param handling.
+- [x] Keep support-workspace links aligned with actual admin behavior.
+
+Expected browser check:
+
+```text
+http://192.168.100.17:8666/admin/app/admin/observer?trace_id=<trace_id>
+```
+
+or the actual app route used by the deployed admin shell.
+
+Completion criteria:
+
+- The support operator/admin handoff link lands on the intended trace context.
+
+Verification:
+
+- `pnpm --dir webapp exec vitest run src\features\tech\observer-workbench-api.test.ts src\features\tech\observer-quick-panel.test.tsx --run` -> `6 passed`.
+- `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx src\features\tech\observer-workbench-api.test.ts src\features\tech\observer-quick-panel.test.tsx --run` -> `42 passed`.
+- `pnpm --dir webapp run build` -> passed.
+
+### P8.7 Observer Documentation And CODEMAP Sync
+
+Goal: keep project documentation aligned with trace-visible behavior.
+
+Status: **completed locally, 2026-05-07**.
+
+Files:
+
+- Modify: `server/docs/OBSERVER_LAYER.md`
+- Modify: `server/docs/OBSERVER_AUTHORING_RULES.md`
+- Modify: `server/docs/CODEMAP.md`
+- Modify: `docs/QUICK_LOOKUP.md`
+- Modify only if needed: `scripts/navigation_catalog.py`
+- Modify only if needed: `docs/CONTEXT_INDEX.md`
+
+Steps:
+
+- [x] Update `OBSERVER_LAYER.md` with:
+  - support-workspace observer summary fields;
+  - ticket-root versus operation-child trace rule;
+  - retry lineage visibility;
+  - `/app/tickets` compact observer card.
+- [x] Update `OBSERVER_AUTHORING_RULES.md` with:
+  - support action trace continuity rule;
+  - no random trace ids for ticket lifecycle events;
+  - when to use span links for child operation/playbook traces.
+- [x] Update `server/docs/CODEMAP.md` with changed DTO/routes/services.
+- [x] Update `docs/QUICK_LOOKUP.md` so future workers know observer support workspace entrypoints.
+- [x] Run context index rebuild if docs/navigation changed:
+
+```powershell
+python scripts\build_context_index.py --force
+```
+
+Completion criteria:
+
+- Observer docs describe the implemented behavior, not the old shallow summary.
+- Future agents can find the trace path from support page to observer backend.
+
+Verification:
+
+- `python scripts\build_context_index.py --force` -> passed.
+- `python scripts\verify_workspace.py` -> passed.
+
+### P8.8 Local Verification, Browser Signoff, Commit And Optional Deploy
+
+Goal: prove the observer changes are safe and production-ready.
+
+Status: **local gates completed, 2026-05-07; browser signoff, commit and optional deploy pending**.
 
 Local gates:
 
@@ -536,16 +747,50 @@ pnpm --dir webapp run build
 Focused backend gates:
 
 ```powershell
-python -m pytest server\tests\test_web_support_api.py -q --tb=short
+python -m pytest server\tests\test_web_support_api.py -k "observer or trace or retry or worklog or status" -q --tb=short
+python -m pytest server\tests\test_observer_diagnostics_api.py -q --tb=short
+python -m pytest server\tests\test_operation_retry.py -q --tb=short
 ```
 
 Focused frontend gates:
 
 ```powershell
-pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx
+pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx --run
 ```
 
-Release and remote gates:
+Browser signoff:
+
+- Deploy only after local gates pass.
+- Use canonical server URL:
+
+```text
+http://192.168.100.17:8666/admin
+```
+
+- Check `/app/tickets` at:
+  - 1366px dark;
+  - 1366px light;
+  - 1920px dark;
+  - 1920px light.
+- Verify:
+  - observer card fits without horizontal overflow;
+  - no overlap with SLA/OLA/tools/passport sections;
+  - long signature text wraps cleanly;
+  - trace links are visible and do not look like primary destructive actions;
+  - no console errors;
+  - center timeline remains scrollable;
+  - right sidebar remains scrollable;
+  - admin observer deep-link opens the expected trace/filter.
+
+Commit:
+
+```powershell
+git status --short
+git add server webapp docs scripts PLANS.md
+git commit -m "feat: clarify support observer traces"
+```
+
+Remote release:
 
 ```powershell
 python scripts\deploy_workspace_to_remote.py
@@ -553,61 +798,60 @@ python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smo
 python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 smoke server
 ```
 
-Browser gates:
-
-- Open `http://192.168.100.17:8666/admin`.
-- Confirm redirect into `/app/tickets` or `/app/tickets/:ticketId`.
-- Check normal ticket, online tool test ticket and closure blocker test ticket.
-- Capture dark/light screenshots at 1366 and 1920.
-- Confirm console has no unexpected errors. Known acceptable noise must be recorded explicitly.
-- Stop remote server after signoff:
+Post-signoff cleanup:
 
 ```powershell
 python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop server
 python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 status server
 ```
 
-## Completion Definition
+Completion criteria:
 
-The plan is complete when:
+- All local tests/build checks pass. **Completed locally 2026-05-07.**
+- Browser signoff passes. **Pending.**
+- Commit exists. **Pending.**
+- Remote deploy is optional unless requested for this slice; if deployed, smoke/browser signoff passes and server is stopped unless user asks to keep it running. **Pending/not deployed.**
 
-- Typed/backend gap is 0% for the current `/app/tickets` scope.
-- Domain gap is 0% for agreed operation retry/external KB/passport evidence-worklog depth.
-- UI polish gap is 0% for desktop operator workspace widths 1366-1920.
-- Existing business logic and legacy ticket routes are not broken.
-- Local tests/build/verification pass.
-- Linux stand smoke passes.
-- Browser signoff passes on the three critical scenarios:
-  - ordinary selected ticket;
-  - online low-risk tool/playbook ticket;
-  - closure blocker evidence/worklog ticket.
-- Remote server is stopped after verification.
+## Acceptance Criteria
 
-## Risks And Decisions
+The observer layer plan is complete when:
 
-- Retry/cancel must use existing operation lifecycle rules. Do not invent client-side state transitions.
-- External KB depth must be honest. If no external provider is configured, expose `provider_unavailable` instead of returning fake articles.
-- Tool/playbook live run must use a safe read-only test operation only.
-- Evidence/worklog proof must use a dedicated test ticket only.
-- Any permission-denied state should be visible and explainable, not hidden behind a silent no-op.
+- `/app/tickets` shows a clear Observer diagnostic card, not only raw counters.
+- Ticket-root trace id is stable and support lifecycle events use it consistently.
+- Operation, retry and playbook traces are visibly related to the ticket root.
+- Top signature and latest error are available in typed support detail payload.
+- Observer empty/error states are handled without breaking the ticket workspace.
+- Admin observer deep-links from the ticket land on the intended trace context.
+- Backend tests cover trace continuity and compact observer payload.
+- Frontend tests cover observer mapping and rendering.
+- Observer docs and CODEMAP are updated with the new trace rules.
+- Existing ticket business logic, operation retry/cancel, passport, SLA/OLA and knowledge behavior remain intact.
+
+## Risks
+
+- Over-instrumentation can make observer look like the source of business truth. Mitigation: keep business decisions in ticket services and closure/workflow policy.
+- Too much trace detail in `/app/tickets` can overload L1 operators. Mitigation: show compact diagnosis and link to admin workbench for deep details.
+- Changing trace id behavior can affect existing observer tests. Mitigation: add tests before replacing random trace ids.
+- Operation-bound events must not be forced onto ticket root if they need operation trace detail. Mitigation: keep `operation_id` on operation events and rely on repo resolution.
+- Admin observer route behavior may already support query params. Mitigation: inspect before modifying.
 
 ## Handoff
 
-Current next step: execute P7 end-to-end resolution close flow, then run focused tests and update this plan with exact verification output.
+Recommended next action: finish **P8.8 Browser Signoff, Commit And Optional Deploy**.
 
-Start commands:
+Next commands:
 
 ```powershell
-.\scripts\bootstrap_shell_utf8.ps1
+git status --short
+git add server webapp docs scripts PLANS.md
+git commit -m "feat: clarify support observer traces"
 python scripts\deploy_workspace_to_remote.py
-python scripts\release_server_to_remote.py
-python scripts\manage_remote_stack.py start server
-python scripts\manage_remote_stack.py smoke server
+python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5
 ```
 
-Expected checkpoint:
+Expected first checkpoint:
 
-- Linux stand serves the committed branch.
-- `http://192.168.100.17:8666/admin` loads `/app/tickets` without console errors.
-- Browser signoff confirms ordinary ticket, operation cards, knowledge diagnostics and passport/closure controls.
-- Remote server is stopped after signoff unless the user explicitly asks to keep it running.
+- Local verification is green and already recorded.
+- Commit exists for the observer layer changes.
+- Remote stand serves the updated `/app/tickets` bundle.
+- Browser signoff covers `/app/tickets` Observer card and `/app/admin/observer?trace_id=...`.

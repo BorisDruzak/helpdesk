@@ -73,6 +73,7 @@ import type {
   SupportWorkspacePassport,
   SupportWorkspaceClosurePlan,
   SupportWorkspaceOperationSummary,
+  SupportWorkspaceObserverDiagnostic,
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
   SupportWorkspaceTimer,
@@ -596,6 +597,28 @@ function OperationSummaryCard({
             Детали операции
           </a>
         ) : null}
+        {operation.traceUrl ? (
+          <a
+            className="rounded-md border border-blue-300/20 bg-blue-500/10 px-2 py-1 text-[11px] font-semibold text-blue-100 hover:bg-blue-500/20"
+            href={operation.traceUrl}
+            rel="noreferrer"
+            target="_blank"
+            title={`${operation.traceRelationLabel}: открыть трассу в observer`}
+          >
+            {operation.traceRelationLabel}
+          </a>
+        ) : null}
+        {operation.rootTraceUrl && operation.traceUrl !== operation.rootTraceUrl ? (
+          <a
+            className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-semibold text-slate-200 hover:text-white"
+            href={operation.rootTraceUrl}
+            rel="noreferrer"
+            target="_blank"
+            title="Открыть root trace тикета"
+          >
+            Root trace
+          </a>
+        ) : null}
         {operation.canCancel ? (
           <button
             className="rounded-md border border-red-300/25 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
@@ -635,6 +658,148 @@ function OperationSummaryCard({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ObserverDiagnosticCard({
+  isLightTheme,
+  observer,
+}: {
+  isLightTheme: boolean;
+  observer: SupportWorkspaceObserverDiagnostic;
+}) {
+  const hasTrace = Boolean(observer.rootTraceId);
+  const primaryTraceUrl = observer.rootTraceUrl ?? observer.relatedTraces[0]?.traceUrl ?? null;
+  const traceRows = observer.errorTraces.length ? observer.errorTraces : observer.activeTraces.length ? observer.activeTraces : observer.relatedTraces.slice(0, 2);
+  const shellClass = isLightTheme ? "border border-slate-200 bg-white text-slate-950 shadow-sm" : "border border-white/10 bg-[#111f33]";
+  const mutedTextClass = isLightTheme ? "text-slate-600" : "text-slate-400";
+  const subtlePanelClass = isLightTheme ? "border border-slate-200 bg-slate-50" : "border border-white/10 bg-white/[0.03]";
+
+  return (
+    <section className={`rounded-xl p-4 ${shellClass}`} data-testid="observer-diagnostic-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Observer</p>
+          <p className={`mt-1 font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>Диагностика тикета</p>
+        </div>
+        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(observer.healthTone)}`}>
+          {observer.healthLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 gap-2">
+        {[
+          ["Трассы", observer.traceCount],
+          ["Активн.", observer.activeTraceCount],
+          ["Ошибки", observer.errorTraceCount],
+          ["Сигн.", observer.signatureCount],
+        ].map(([label, value]) => (
+          <div className={`rounded-lg px-2 py-2 text-center ${subtlePanelClass}`} key={String(label)}>
+            <p className="text-[11px] text-slate-500">{label}</p>
+            <p className={`mt-1 text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className={`mt-3 rounded-lg px-3 py-2 ${subtlePanelClass}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Root trace</p>
+            <p className={`mt-1 break-all text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>{observer.rootTraceCompactId}</p>
+            <p className={`mt-1 text-xs ${mutedTextClass}`}>
+              {observer.rootKind} · {observer.rootTraceStatusLabel} · {observer.latestTraceLabel}
+            </p>
+          </div>
+          {primaryTraceUrl ? (
+            <a
+              className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                isLightTheme ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100" : "border-blue-300/30 bg-blue-500/15 text-blue-100 hover:bg-blue-500/25"
+              }`}
+              href={primaryTraceUrl}
+              rel="noreferrer"
+              target="_blank"
+              title="Открыть трассу в observer workbench"
+            >
+              Открыть
+            </a>
+          ) : null}
+        </div>
+        {!hasTrace ? (
+          <p className={`mt-2 text-xs leading-5 ${mutedTextClass}`}>
+            Трасса ещё не создана. Она появится после первого события или операции по тикету.
+          </p>
+        ) : null}
+      </div>
+
+      {observer.latestErrorLabel ? (
+        <div className={`mt-3 rounded-lg px-3 py-2 ${isLightTheme ? "border border-red-200 bg-red-50" : "border border-red-300/20 bg-red-500/10"}`}>
+          <div className="flex items-start gap-2">
+            <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${isLightTheme ? "text-red-700" : "text-red-200"}`} />
+            <div className="min-w-0">
+              <p className={`break-words text-sm font-semibold ${isLightTheme ? "text-red-950" : "text-red-50"}`}>{observer.latestErrorLabel}</p>
+              <p className={`mt-1 text-xs ${isLightTheme ? "text-red-800" : "text-red-100/80"}`}>
+                {observer.latestErrorStage ?? "stage неизвестен"}
+                {observer.latestErrorAtLabel ? ` · ${observer.latestErrorAtLabel}` : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2 ${subtlePanelClass}`}>
+          <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${isLightTheme ? "text-emerald-700" : "text-emerald-300"}`} />
+          <p className={`text-xs leading-5 ${mutedTextClass}`}>Критичных ошибок по observer-сводке сейчас нет.</p>
+        </div>
+      )}
+
+      {observer.topSignature ? (
+        <div className={`mt-3 rounded-lg px-3 py-2 ${subtlePanelClass}`}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Top signature</p>
+          <p className={`mt-1 break-words text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>{observer.topSignature.title}</p>
+          <p className={`mt-1 text-xs ${mutedTextClass}`}>
+            В тикете: {observer.topSignature.ticketOccurrences}
+            {observer.topSignature.globalOccurrences !== null ? ` · глобально: ${observer.topSignature.globalOccurrences}` : ""}
+            {observer.topSignature.lastSeenLabel ? ` · ${observer.topSignature.lastSeenLabel}` : ""}
+          </p>
+        </div>
+      ) : null}
+
+      {traceRows.length ? (
+        <div className="mt-3 space-y-2">
+          {traceRows.slice(0, 3).map((trace) => {
+            const traceHref = trace.traceUrl ?? primaryTraceUrl;
+            const content = (
+              <>
+                <span className={`block truncate font-semibold ${isLightTheme ? "text-slate-950" : "text-slate-100"}`}>{trace.title}</span>
+                <span className={`mt-1 block ${mutedTextClass}`}>
+                  {trace.compactId} · {trace.statusLabel} · ошибок: {trace.errorCount}
+                </span>
+              </>
+            );
+            return traceHref ? (
+              <a
+                className={`block rounded-lg px-3 py-2 text-xs transition ${subtlePanelClass} ${isLightTheme ? "hover:border-blue-300" : "hover:border-blue-300/40"}`}
+                href={traceHref}
+                key={trace.id}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {content}
+              </a>
+            ) : (
+              <div className={`rounded-lg px-3 py-2 text-xs ${subtlePanelClass}`} key={trace.id}>
+                {content}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {observer.summaryEndpoint ? (
+        <p className="mt-3 break-all text-[11px] text-slate-500" title={observer.summaryEndpoint}>
+          Summary API: {observer.summaryEndpoint}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -2082,6 +2247,8 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "context" && viewModel.right.context ? (
               <div className="space-y-3">
+                <ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />
+
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>
                   <div className="mt-3 flex items-center gap-3">

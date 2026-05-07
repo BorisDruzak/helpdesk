@@ -323,6 +323,9 @@ export async function fetchObserverWorkbenchTraces(params: {
   rootKindFilter: AdminObserverRootKindFilter;
   limit?: number;
   query?: string | null;
+  traceId?: string | null;
+  ticketId?: string | null;
+  operationId?: string | null;
   playbookRunId?: number | null;
   stepRunId?: number | null;
   route?: string | null;

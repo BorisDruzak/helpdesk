@@ -184,12 +184,97 @@ export type SupportTicketDetailPayload = {
     summary: {
       ticket_id: string;
       root_trace_id?: string | null;
+      root_trace_url?: string | null;
+      root_trace_status?: string | null;
+      root_kind?: string | null;
       trace_count: number;
       active_trace_count: number;
       error_trace_count: number;
       signature_count: number;
       latest_trace_at?: string | null;
+      latest_error_at?: string | null;
+      latest_error_label?: string | null;
+      latest_error_stage?: string | null;
+      top_signature?: {
+        error_signature?: string | null;
+        title?: string | null;
+        severity?: string | null;
+        ticket_occurrences_count: number;
+        global_occurrences_count?: number | null;
+        last_seen_at?: string | null;
+      } | null;
+      has_active_operation?: boolean;
+      health_label?: string;
     };
+    root_trace?: {
+      trace_id: string;
+      root_kind?: string | null;
+      status?: string | null;
+      title?: string | null;
+      started_at?: string | null;
+      finished_at?: string | null;
+      error_count: number;
+      operation_id?: string | null;
+      tool_name?: string | null;
+      playbook_id?: string | null;
+      trace_url?: string | null;
+    } | null;
+    related_traces?: Array<{
+      trace_id: string;
+      root_kind?: string | null;
+      status?: string | null;
+      title?: string | null;
+      started_at?: string | null;
+      finished_at?: string | null;
+      error_count: number;
+      operation_id?: string | null;
+      tool_name?: string | null;
+      playbook_id?: string | null;
+      trace_url?: string | null;
+    }>;
+    active_traces?: Array<{
+      trace_id: string;
+      root_kind?: string | null;
+      status?: string | null;
+      title?: string | null;
+      started_at?: string | null;
+      finished_at?: string | null;
+      error_count: number;
+      operation_id?: string | null;
+      tool_name?: string | null;
+      playbook_id?: string | null;
+      trace_url?: string | null;
+    }>;
+    error_traces?: Array<{
+      trace_id: string;
+      root_kind?: string | null;
+      status?: string | null;
+      title?: string | null;
+      started_at?: string | null;
+      finished_at?: string | null;
+      error_count: number;
+      operation_id?: string | null;
+      tool_name?: string | null;
+      playbook_id?: string | null;
+      trace_url?: string | null;
+    }>;
+    signatures?: Array<{
+      error_signature?: string | null;
+      title?: string | null;
+      severity?: string | null;
+      ticket_occurrences_count: number;
+      global_occurrences_count?: number | null;
+      last_seen_at?: string | null;
+    }>;
+    recent_occurrences?: Array<{
+      error_signature?: string | null;
+      message?: string | null;
+      stage?: string | null;
+      severity?: string | null;
+      trace_id?: string | null;
+      created_at?: string | null;
+      trace_url?: string | null;
+    }>;
   };
   timeline: Array<{
     message_id: string | null;
@@ -305,6 +390,12 @@ export type SupportTicketDetailPayload = {
       details_url?: string | null;
       result_summary: string | null;
       error_message: string | null;
+      trace_relation?: string | null;
+      root_trace_id?: string | null;
+      root_trace_url?: string | null;
+      trace_url?: string | null;
+      retry_of_operation_id?: string | null;
+      retry_source_trace_id?: string | null;
     }>;
   };
   actions: {

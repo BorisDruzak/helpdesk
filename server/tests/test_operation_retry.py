@@ -6,10 +6,38 @@ import pytest
 from sqlalchemy import select, update
 
 from app.db.engine import async_sessionmaker
-from app.db.models import DeviceOutbox, TicketEvent
+from app.db.models import DeviceOutbox, Operation, Ticket, TicketEvent
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.operations_repo import OperationsRepo
-from tests.test_helpers import TEST_ECHO_TOOL, create_test_ticket
+from tests.test_helpers import TEST_ECHO_TOOL
+from tests.test_ticket_queue_routing_contracts import _seed_queue
+
+
+async def _seed_retry_ticket(test_engine, *, device_id: str) -> str:
+    ticket_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        queue = await _seed_queue(
+            session,
+            code=f"retry_{uuid.uuid4().hex[:8]}",
+            name="Retry tests",
+            members=["support-test"],
+            auto_assign_enabled=False,
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Retry operation ticket",
+                description="Ticket with explicit queue for operation retry tests.",
+                status="in_progress",
+                requester_id="retry-user",
+                queue_id=queue.id,
+                observer_root_trace_id=str(uuid.uuid4()),
+            )
+        )
+        await session.commit()
+    return ticket_id
 
 
 async def _seed_failed_tool_operation(
@@ -73,7 +101,7 @@ async def _seed_failed_tool_operation(
 @pytest.mark.asyncio
 async def test_retry_failed_operation_revalidates_and_creates_new_operation(test_client, test_agent, test_engine):
     device_id = test_agent.device_id
-    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
     original_operation_id = await _seed_failed_tool_operation(
         test_engine,
         device_id=device_id,
@@ -132,11 +160,16 @@ async def test_retry_failed_operation_revalidates_and_creates_new_operation(test
         assert event.payload["retry_of_operation_id"] == original_operation_id
         assert event.payload["retry_operation_id"] == retry_operation_id
 
+        retry_operation_trace_id = (
+            await session.execute(select(Operation.trace_id).where(Operation.operation_id == retry_operation_id))
+        ).scalar_one()
+        assert event.trace_id == retry_operation_trace_id
+
 
 @pytest.mark.asyncio
 async def test_retry_rejects_non_terminal_operation(test_client, test_agent, test_engine):
     device_id = test_agent.device_id
-    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
     operation_id = str(uuid.uuid4())
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -164,8 +197,8 @@ async def test_retry_rejects_non_terminal_operation(test_client, test_agent, tes
 @pytest.mark.asyncio
 async def test_ticket_scoped_retry_rejects_ticket_mismatch(test_client, test_agent, test_engine):
     device_id = test_agent.device_id
-    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
-    other_ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
+    other_ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
     operation_id = await _seed_failed_tool_operation(
         test_engine,
         device_id=device_id,
@@ -185,7 +218,7 @@ async def test_ticket_scoped_retry_rejects_ticket_mismatch(test_client, test_age
 @pytest.mark.asyncio
 async def test_retry_rejects_missing_replay_payload(test_client, test_agent, test_engine):
     device_id = test_agent.device_id
-    ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
     operation_id = str(uuid.uuid4())
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:

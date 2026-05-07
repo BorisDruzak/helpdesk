@@ -146,7 +146,11 @@ Codex/live debugging entrypoints:
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 
-Passport/evidence audit is trace-visible through ticket events. Evidence write handlers must include `trace_id`, `source_ref`, `section_key`, verification/export metadata and `observer_provenance` in `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`, `passport_evidence_superseded` and `passport_evidence_unverified` events, so support can reconstruct why a fact satisfied or failed closure without reading raw DB rows.
+Typed support detail (`GET /api/web/support/tickets/{ticket_id}`) embeds a compact observer payload for `/app/tickets`: root trace status/url, root kind, health label (`empty`, `ok`, `running`, `error`), latest error label/stage/time, top ticket-local signature, compact related/active/error trace rows and compact recent occurrences. Full spans, span links and raw occurrence detail stay in `/app/admin/observer`.
+
+Latest operation snapshots in the same typed support detail payload carry trace relation metadata for the support workspace: `ticket_root`, `operation_child`, `retry_child`, `playbook_child` or `unknown`, plus operation trace URL, ticket root trace URL and retry lineage (`retry_of_operation_id`, `retry_source_trace_id`). The support UI should use these fields to label links as root trace, operation trace, retry trace or playbook trace instead of showing a raw `Trace: <id>` chip.
+
+Passport/evidence audit is trace-visible through ticket events. Evidence write handlers must write `source_ref`, `section_key`, verification/export metadata and `observer_provenance` in `passport_evidence_added`, `passport_evidence_linked`, `passport_evidence_verified`, `passport_evidence_rejected`, `passport_evidence_archived`, `passport_evidence_superseded` and `passport_evidence_unverified` events; the event row `trace_id` must be resolved through `TicketEventsRepo` to the existing ticket-root trace unless the event is deliberately operation-bound. This lets support reconstruct why a fact satisfied or failed closure without reading raw DB rows.
 Summary counts (`trace_count`, `active_trace_count`, `error_trace_count`) должны считаться по полному набору trace-ов тикета, а не по ограниченному recent-срезу.
 
 ## 8. Live canary coverage
@@ -177,6 +181,7 @@ Support workspace:
 - root trace excerpt;
 - related traces;
 - signatures и recent occurrences.
+- `/app/tickets` shows the compact Observer diagnostic card from typed support detail in the context sidebar; it presents operator-readable health, counters, root trace, latest error, top signature, compact trace rows and action links, while raw trace ids and summary endpoint stay secondary.
 
 New React workspaces:
 
@@ -192,6 +197,7 @@ New React workspaces:
 - `/app/admin/observer` теперь считается полноценным observer workbench, а не просто quick-summary экраном: канонический набор вкладок для React surface — `quick`, `traces`, `signatures`, `degradations`, `runtime`; trace detail обязан быстро показывать spans, error occurrences и span links, а agent actions брать из diagnostic bundle, чтобы два параллельных запроса не конкурировали за materialized action sync.
 - `/app/admin/observer` trace search работает на сервере: typed traces принимают `q`, `trace_id`, `ticket_id`, `operation_id`, `tool_name`, `module_name`, `error_signature` и `min_duration_ms`, поэтому UI не ограничен фильтрацией первой загруженной страницы.
 - `/app/admin/observer` trace detail показывает `GET /api/admin/tech/diagnostics/bundle` с next checks, logs/audit counters и компактными agent action rows; long `error_signature`, trace and operation identifiers must wrap inside drilldown cards; server-side action compaction обязан ограничивать большие `details` payloads, а materialized action-span sync включается только через `sync_agent_actions=1`, чтобы `tool response` traces не подвешивали detail/bundle UI.
+- `/app/admin/observer?trace_id=...` is the canonical deep link from support trace cards: it must switch to the traces tab, pass `trace_id` into the typed traces query, select the requested trace and load detail/bundle for that trace. `ticket_id` and `operation_id` query params are accepted as additional typed trace filters for support/admin handoff.
 - `/app/admin/observer` допускает гибрид transport model: быстрый список и фильтры идут через typed `/api/web/admin/observer/*`, а signature/degradation/runtime/settings/detail surfaces могут читать прямые tech/settings endpoints (`/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/admin/tech/traces/runtime`, `/api/admin/settings/observer`) пока они остаются canonical source of truth для observer backend.
 - `/app/admin/device` может поверх карточки устройства встраивать тот же typed observer quick slice, но без отдельного transport-контракта: глобальная `/app/admin/observer` и device-centric `/app/admin/device` обязаны читать один и тот же `/api/web/admin/observer/*` boundary.
 - `/app/admin` может рядом показывать typed modules/actions panel (`GET /api/web/admin/modules`, `PATCH /api/web/admin/modules/rollout_settings`, `PATCH /api/web/admin/modules/{module_name}/preferred`), но observer quick/drilldown при этом остаётся изолированным typed tech slice и не должен деградировать до вызовов legacy `/api/admin/tech/*` из module UI.
