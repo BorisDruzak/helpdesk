@@ -249,7 +249,7 @@ Expected result:
 
 Goal: prove the final passport/evidence/worklog closure path with a dedicated test ticket.
 
-Status: **typed worklog fix completed locally / live proof pending redeploy, 2026-05-07**.
+Status: **completed and live-proven on Linux stand, 2026-05-07**.
 
 Implementation notes:
 
@@ -268,7 +268,12 @@ Implementation notes:
   - `python scripts/verify_workspace.py` -> passed
   - `pytest server/tests/test_web_support_api.py::test_web_support_worklog_action_uses_web_support_boundary server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `2 passed`
   - `pnpm --dir webapp test -- --run src/pages/tickets/list-page.test.tsx` -> `21 passed`
-- Dedicated remote worklog live proof still requires commit + release deploy.
+- Release/live proof:
+  - commit `05a3baa` deployed to Linux stand through `python scripts/release_server_to_remote.py --leave-running`;
+  - smoke passed after startup retry;
+  - live worklog POST hit `/api/web/support/tickets/31345a34-dd5c-4121-99e1-95c77a0bed27/worklogs` -> 200;
+  - `add_worklog` disappeared from blockers and `missing_count` changed from 5 to 4;
+  - evidence candidates count became 4 after worklog, proving worklog is now visible to the passport/evidence source flow.
 
 Files to inspect and likely modify:
 
@@ -287,8 +292,8 @@ Steps:
 - [x] Link one safe existing evidence candidate or submit one manual evidence item through the existing API.
 - [x] Confirm blocker/readiness updates after refetch.
 - [x] Click `Добавить worklog`.
-- [ ] Submit a small worklog on the test ticket after deploying the typed worklog endpoint.
-- [ ] Confirm passport/evidence flow sees the worklog after refetch.
+- [x] Submit a small worklog on the test ticket after deploying the typed worklog endpoint.
+- [x] Confirm passport/evidence flow sees the worklog after refetch.
 - [x] Add or update focused tests if any mapper/UI behavior needed adjustment.
 
 Expected result:
@@ -300,7 +305,7 @@ Expected result:
 
 Goal: close the final UI polish gap and record production signoff.
 
-Status: **local gates passed / remote browser signoff in progress, 2026-05-07**.
+Status: **remote browser signoff passed for agreed desktop scope, 2026-05-07**.
 
 Implementation notes:
 
@@ -313,6 +318,15 @@ Implementation notes:
   - `python scripts\verify_workspace.py` -> `Verification passed for C:\Users\admin-2\CodexProjects\pc_client`
   - focused backend gates for support API, knowledge provider, passport/evidence/worklog -> passed
   - focused frontend gates for workspace mappers and list page -> passed
+- Full CI passed for commit `05a3baa`:
+  - `python scripts/run_ci_suite.py` -> passed; artifact `artifacts/ci/05a3baa6242cfcd75cca5da9284030e6b10954ef/summary.json`
+- Remote browser matrix on ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`:
+  - widths `1366`, `1440`, `1920`;
+  - themes `dark`, `light`;
+  - `horizontalOverflow=0`, `scrollables=3`, `badRects=0`, header stable after center scroll, composer visible, `Ещё` menu visible and within viewport, console/page errors empty.
+- Screenshots captured:
+  - `support-workspace-p6-1920-light.png`
+  - `support-workspace-p6-1920-dark.png`
 
 Files to inspect and likely modify:
 
@@ -323,8 +337,8 @@ Files to inspect and likely modify:
 Remote signoff steps:
 
 - [x] Re-run local desktop-oriented frontend checks through component tests and production build.
-- [ ] Re-run browser checks at 1366, 1440 and 1920 in dark and light themes on the Linux stand.
-- [ ] Verify:
+- [x] Re-run browser checks at 1366, 1440 and 1920 in dark and light themes on the Linux stand.
+- [x] Verify:
   - no horizontal overflow;
   - topbar remains fixed;
   - columns scroll independently;
@@ -332,13 +346,13 @@ Remote signoff steps:
   - disabled tool/action reasons are readable;
   - dialogs fit at 1366 width;
   - composer remains reachable after long timeline scroll.
-- [ ] Verify role/permission coverage:
+- [x] Verify role/permission coverage:
   - support L1 normal read/comment/action surface;
   - support without high-risk permission sees high-risk tool disabled/denied;
   - admin shell still routes into support workspace;
   - permission-denied API response renders an error/disabled state, not a crash.
 - [x] Patch only concrete defects found in this pass.
-- [ ] Capture final screenshot names in this plan or final handoff after browser signoff.
+- [x] Capture final screenshot names in this plan or final handoff after browser signoff.
 
 Expected result:
 
