@@ -494,6 +494,7 @@ Implemented in this slice:
 - Closure blocker action `edit_resolution` opens a focused guarded dialog: code, public requester result, internal support result and reason.
 - Submit posts `resolved` through the existing guarded web support status endpoint and refreshes workspace, timeline, queue and passport/evidence queries.
 - Existing generic status/queue/priority/assign flows remain unchanged.
+- Live browser light-theme pass exposed a low-contrast right passport focus card; it now has explicit light-theme surface/text classes.
 
 Focused verification passed:
 
@@ -512,6 +513,7 @@ Results:
 - `3 passed` for backend closure/status checks.
 - `verify_workspace.py` passed.
 - `webapp` production build passed.
+- After the light-theme readability fix, focused frontend tests, `verify_workspace.py` and `webapp` production build passed again.
 
 Expected result:
 
