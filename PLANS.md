@@ -434,6 +434,92 @@ Implemented in this slice:
 - Added focused label tests and updated mapper/page assertions for the new operator-facing copy.
 - Updated the Playwright support workspace fixture to serve the aggregate `/workspace` payload and added 1366/1440/1920 dark/light readability checks.
 
+### P7 End-to-End Resolution Close Flow
+
+Goal: make the final operator path from passport blockers to `resolved` first-class in `/app/tickets`.
+
+Status: **implemented locally, focused verification passed, 2026-05-07**.
+
+Current assessment before implementation:
+
+- Overall `/app/tickets` page readiness before the slice: **98-99%**.
+- P7 close-flow slice readiness before the slice: **0%**.
+- Backend/domain readiness for this slice: **85-90%** because `POST /api/web/support/tickets/{ticket_id}/status` already accepts `resolution_code`, `resolution_summary` and `requester_resolution_summary`, and `closure_policy` already validates these fields before `resolved`.
+- Remaining typed/frontend gap for this slice: **10-15%** because the webapp status client and operator dialog currently do not expose those resolution fields.
+
+Why this matters:
+
+- Today the passport can tell an operator that resolution fields are missing, but the operator must infer where to fill them.
+- After P7, clicking `Заполнить решение` will open a focused close form, collect the required resolution facts and submit the typed `resolved` transition through the existing workflow/approval/closure guards.
+- If closure policy still blocks the transition, the operator will see a meaningful policy error instead of a vague failed action.
+
+Files to modify:
+
+- `webapp/src/features/queues/api.ts`
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/pages/tickets/list-page.test.tsx`
+- `PLANS.md`
+- Backend tests only if the existing status endpoint contract is found incomplete during implementation.
+
+Implementation steps:
+
+- [x] Extend the typed frontend status mutation payload with:
+  - `resolutionCode`
+  - `resolutionSummary`
+  - `requesterResolutionSummary`
+  - existing `reason`, `publicComment`, `internalComment`
+- [x] Add a focused resolution-close draft state to `/app/tickets`.
+- [x] When a closure blocker has `action_kind=edit_resolution`, open the resolution close form instead of only focusing the passport tab.
+- [x] Pre-fill the form from the selected ticket where existing resolution fields are already present.
+- [x] Add operator copy explaining:
+  - public summary is visible to the requester;
+  - internal summary is for support/audit context;
+  - the transition still goes through workflow, approval and closure policy.
+- [x] Submit `to_status=resolved` through the existing web support status endpoint with typed resolution fields.
+- [x] Keep the existing generic `Ещё -> Сменить статус` flow for non-resolution status changes.
+- [x] On success, invalidate workspace, timeline, queue and passport/evidence queries.
+- [x] Add focused Vitest coverage:
+  - `Заполнить решение` opens the close form;
+  - submit sends `resolved` plus `resolution_code`, `resolution_summary`, `requester_resolution_summary`, `reason`;
+  - form blocks submit until the required operator fields are present;
+  - existing status/queue/priority/assign controls still call their current APIs.
+- [x] Run focused frontend tests.
+- [x] Run relevant backend status/closure tests if frontend sends any newly exposed field names.
+- [x] Run workspace verification/build gates before commit/deploy.
+
+Implemented in this slice:
+
+- `postSupportTicketStatus` now exposes typed resolution fields and sends them as `resolution_code`, `resolution_summary`, `requester_resolution_summary`.
+- The selected ticket view model now carries existing resolution fields for form prefill.
+- Closure blocker action `edit_resolution` opens a focused guarded dialog: code, public requester result, internal support result and reason.
+- Submit posts `resolved` through the existing guarded web support status endpoint and refreshes workspace, timeline, queue and passport/evidence queries.
+- Existing generic status/queue/priority/assign flows remain unchanged.
+
+Focused verification passed:
+
+```powershell
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx -t "guarded resolution close form"
+pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx
+python -m pytest server/tests/test_ticket_closure_policy.py::test_closure_policy_requires_resolution_code server/tests/test_ticket_closure_policy.py::test_closure_passport_accepts_transition_summary_for_user_result server/tests/test_web_support_api.py::test_web_support_resolved_status_respects_confirmation_required_false -q --tb=short
+python scripts\verify_workspace.py
+pnpm --dir webapp run build
+```
+
+Results:
+
+- `1 passed` for the new red/green UI test.
+- `34 passed` for focused frontend workspace tests.
+- `3 passed` for backend closure/status checks.
+- `verify_workspace.py` passed.
+- `webapp` production build passed.
+
+Expected result:
+
+- Typed/backend gap remains **0%** for the agreed page scope.
+- Domain gap remains **0-1%** because the existing closure policy remains the source of truth.
+- UI/page polish gap reaches **0-1%** by removing the last confusing closure step.
+- Operators get a clear end-to-end path: blocker -> resolution facts -> guarded `resolved` transition -> updated passport/timeline.
+
 ## Verification Gates
 
 Local gates:
@@ -505,7 +591,7 @@ The plan is complete when:
 
 ## Handoff
 
-Current next step: finish release/browser signoff for the committed P6 implementation.
+Current next step: execute P7 end-to-end resolution close flow, then run focused tests and update this plan with exact verification output.
 
 Start commands:
 

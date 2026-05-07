@@ -1086,6 +1086,9 @@ export async function postSupportTicketStatus(
     reason?: string;
     publicComment?: string;
     internalComment?: string;
+    resolutionCode?: string;
+    resolutionSummary?: string;
+    requesterResolutionSummary?: string;
   } = {}
 ): Promise<SupportStatusActionResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/status`, {
@@ -1098,7 +1101,10 @@ export async function postSupportTicketStatus(
       to_status: toStatus,
       reason: options.reason,
       public_comment: options.publicComment,
-      internal_comment: options.internalComment
+      internal_comment: options.internalComment,
+      resolution_code: options.resolutionCode,
+      resolution_summary: options.resolutionSummary,
+      requester_resolution_summary: options.requesterResolutionSummary
     })
   });
   const payload = await readJson<SuccessResponse<SupportStatusActionResult> | ErrorResponse>(response);

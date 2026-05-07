@@ -142,6 +142,9 @@ export type SupportWorkspaceSelectedTicket = {
   requesterLabel: string;
   createdLabel: string;
   updatedLabel: string;
+  resolutionCode: string;
+  requesterResolutionSummary: string;
+  resolutionSummary: string;
   nextAction: SupportWorkspaceNextAction;
   timers: SupportWorkspaceTimer[];
   timeline: SupportWorkspaceTimelineItem[];

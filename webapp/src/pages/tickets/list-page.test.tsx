@@ -1142,6 +1142,84 @@ describe("TicketListPage", () => {
     expect(within(screen.getByTestId("closure-focused-passport-item")).getByText("Решение применено")).toBeInTheDocument();
   });
 
+  it("opens a guarded resolution close form from resolution blockers and submits typed resolution facts", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        detail: {
+          ...workspacePayload().detail,
+          ticket: {
+            ...workspacePayload().detail.ticket,
+            resolution_code: "fixed_remote",
+            requester_resolution_summary: "",
+            resolution_summary: "",
+          },
+          actions: {
+            status_options: [
+              { value: "waiting_on_user", label: "Ждёт пользователя" },
+              { value: "resolved", label: "Решено" },
+            ],
+            can_send_internal_note: true,
+          },
+        },
+        closure_plan: {
+          ticket_id: "ticket-1",
+          ready_for_resolution: false,
+          missing_count: 2,
+          total: 4,
+          evidence_candidate_count: 0,
+          recommended_next_action: "Заполнить решение",
+          blockers: [
+            {
+              key: "public_summary",
+              label: "Публичный итог для заявителя",
+              met: false,
+              detail: "Заполните итог, который увидит заявитель.",
+              source: "closure_requirement",
+              action_kind: "edit_resolution",
+              action_label: "Заполнить решение",
+              severity: "blocking",
+              candidate_count: 0,
+              fact_key: null,
+              blocking_for_closure: true,
+            },
+          ],
+        },
+      }),
+    );
+    postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: "resolved", status_label: "Решено" });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const closurePanel = await screen.findByTestId("closure-plan-panel");
+    fireEvent.click(within(closurePanel).getByRole("button", { name: "Заполнить решение" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Перевести тикет в решение" });
+    expect(within(dialog).getByText("Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Перевести в решение" })).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText("Код решения"), { target: { value: "fixed_remote" } });
+    fireEvent.change(within(dialog).getByLabelText("Итог для заявителя"), {
+      target: { value: "Доступ восстановлен, сайт открывается штатно." },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Внутренний итог"), {
+      target: { value: "Перезапущен upstream и очищен кэш reverse proxy." },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Причина перевода"), {
+      target: { value: "resolution completed" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Перевести в решение" }));
+
+    await waitFor(() => {
+      expect(postSupportTicketStatusMock).toHaveBeenCalledWith("ticket-1", "resolved", {
+        reason: "resolution completed",
+        resolutionCode: "fixed_remote",
+        requesterResolutionSummary: "Доступ восстановлен, сайт открывается штатно.",
+        resolutionSummary: "Перезапущен upstream и очищен кэш reverse proxy.",
+      });
+    });
+  });
+
   it("shows evidence-specific focus guidance for attachment blockers", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(

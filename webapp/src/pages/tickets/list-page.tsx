@@ -98,6 +98,13 @@ type OperatorActionDraft = {
   comment: string;
 };
 
+type ResolutionCloseDraft = {
+  resolutionCode: string;
+  requesterResolutionSummary: string;
+  resolutionSummary: string;
+  reason: string;
+};
+
 type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 
 const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
@@ -270,6 +277,15 @@ function makeOperatorActionDraft(
     priority: normalizedPriority === "P0" ? "P1" : "P0",
     reason: "",
     comment: "",
+  };
+}
+
+function makeResolutionCloseDraft(ticket: { resolutionCode: string; requesterResolutionSummary: string; resolutionSummary: string } | null): ResolutionCloseDraft {
+  return {
+    resolutionCode: ticket?.resolutionCode ?? "",
+    requesterResolutionSummary: ticket?.requesterResolutionSummary ?? "",
+    resolutionSummary: ticket?.resolutionSummary ?? "",
+    reason: "",
   };
 }
 
@@ -752,6 +768,7 @@ export function TicketListPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
   const [moreOpen, setMoreOpen] = useState(false);
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
+  const [resolutionCloseDraft, setResolutionCloseDraft] = useState<ResolutionCloseDraft | null>(null);
   const [closureFocus, setClosureFocus] = useState<ClosurePlanBlocker | null>(null);
   const [closureBlockersExpanded, setClosureBlockersExpanded] = useState(false);
   const [manualEvidenceTitle, setManualEvidenceTitle] = useState("");
@@ -959,6 +976,30 @@ export function TicketListPage() {
     },
   });
 
+  const resolutionCloseMutation = useMutation({
+    mutationFn: async (draft: ResolutionCloseDraft) => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      return postSupportTicketStatus(selectedTicketId, "resolved", {
+        reason: draft.reason.trim(),
+        resolutionCode: draft.resolutionCode.trim(),
+        requesterResolutionSummary: draft.requesterResolutionSummary.trim(),
+        resolutionSummary: draft.resolutionSummary.trim(),
+      });
+    },
+    onSuccess: async () => {
+      setResolutionCloseDraft(null);
+      setClosureFocus(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId] }),
+      ]);
+    },
+  });
+
   const evidenceLinkMutation = useMutation({
     mutationFn: async (candidate: SupportTicketEvidenceCandidatePayload) => {
       if (!selectedTicketId) {
@@ -1104,6 +1145,7 @@ export function TicketListPage() {
     evidenceLinkMutation.error ||
     manualEvidenceMutation.error ||
     worklogMutation.error ||
+    resolutionCloseMutation.error ||
     operationCancelMutation.error ||
     operationRetryMutation.error;
   const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
@@ -1116,6 +1158,12 @@ export function TicketListPage() {
     (operatorActionDraft.kind === "queue" && Boolean(operatorActionDraft.queueId)) ||
     (operatorActionDraft.kind === "priority" && Boolean(operatorActionDraft.priority));
   const operatorSubmitDisabled = !operatorActionDraft || !operatorReasonReady || !operatorTargetReady || operatorActionMutation.isPending;
+  const resolutionCloseReady =
+    Boolean(resolutionCloseDraft?.resolutionCode.trim()) &&
+    (resolutionCloseDraft?.requesterResolutionSummary.trim().length ?? 0) >= 3 &&
+    (resolutionCloseDraft?.resolutionSummary.trim().length ?? 0) >= 3 &&
+    (resolutionCloseDraft?.reason.trim().length ?? 0) >= 3;
+  const resolutionCloseSubmitDisabled = !resolutionCloseReady || resolutionCloseMutation.isPending;
 
   function openOperatorAction(kind: OperatorActionKind) {
     setMoreOpen(false);
@@ -1135,6 +1183,9 @@ export function TicketListPage() {
     setWorklogNote(blocker.detail ?? "");
     setWorklogMinutes("15");
     setSidebarTab("passport");
+    if (blocker.actionKind === "edit_resolution") {
+      setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket));
+    }
   }
 
   useEffect(() => {
@@ -1150,6 +1201,7 @@ export function TicketListPage() {
     setManualEvidenceSummary("");
     setWorklogNote("");
     setWorklogMinutes("15");
+    setResolutionCloseDraft(null);
   }, [selectedTicket?.id]);
 
   const isLightTheme = workspaceTheme === "light";
@@ -1628,6 +1680,116 @@ export function TicketListPage() {
                           type="button"
                         >
                           {operatorActionMutation.isPending ? "Выполняем..." : operatorActionMeta.submit}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+                {resolutionCloseDraft ? (
+                  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
+                    <section
+                      aria-labelledby="resolution-close-title"
+                      aria-modal="true"
+                      className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#101d30] p-5 text-slate-100 shadow-2xl shadow-black/50"
+                      role="dialog"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold" id="resolution-close-title">Перевести тикет в решение</h2>
+                          <p className="mt-1 text-sm leading-6 text-slate-400">
+                            Публичный итог увидит заявитель. Внутренний итог останется в истории поддержки.
+                          </p>
+                        </div>
+                        <button
+                          aria-label="Закрыть форму решения"
+                          className="rounded-lg border border-white/10 px-2 py-1 text-sm text-slate-300 hover:text-white"
+                          onClick={() => setResolutionCloseDraft(null)}
+                          type="button"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-sm leading-6 text-blue-100">
+                        Переход в статус «Решено» всё равно пройдёт через workflow, approval и closure policy. Если не хватает evidence,
+                        worklog или согласования, сервер вернёт точное требование.
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        <label className="block text-sm font-medium text-slate-300">
+                          Код решения
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const resolutionCode = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionCode } : draft);
+                            }}
+                            placeholder="Например: fixed_remote"
+                            value={resolutionCloseDraft.resolutionCode}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Итог для заявителя
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const requesterResolutionSummary = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, requesterResolutionSummary } : draft);
+                            }}
+                            placeholder="Коротко и понятно: что исправлено, как проверить результат."
+                            value={resolutionCloseDraft.requesterResolutionSummary}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Внутренний итог
+                          <textarea
+                            className="mt-2 min-h-24 w-full resize-none rounded-xl border border-white/10 bg-[#0d1828] px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const resolutionSummary = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, resolutionSummary } : draft);
+                            }}
+                            placeholder="Причина, действия оператора, технические детали и риски повторения."
+                            value={resolutionCloseDraft.resolutionSummary}
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium text-slate-300">
+                          Причина перевода
+                          <input
+                            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                            onChange={(event) => {
+                              const reason = event.currentTarget.value;
+                              setResolutionCloseDraft((draft) => draft ? { ...draft, reason } : draft);
+                            }}
+                            placeholder="Например: решение проверено оператором"
+                            value={resolutionCloseDraft.reason}
+                          />
+                        </label>
+
+                        {!resolutionCloseReady ? (
+                          <p className="text-xs text-amber-200">
+                            Заполните код решения, оба итога и причину перевода. Это защитит от случайного закрытия без паспорта.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-300 hover:text-white"
+                          onClick={() => setResolutionCloseDraft(null)}
+                          type="button"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={resolutionCloseSubmitDisabled}
+                          onClick={() => resolutionCloseMutation.mutate(resolutionCloseDraft)}
+                          type="button"
+                        >
+                          {resolutionCloseMutation.isPending ? "Переводим..." : "Перевести в решение"}
                         </button>
                       </div>
                     </section>
