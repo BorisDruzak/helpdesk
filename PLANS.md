@@ -25,7 +25,8 @@ Current progress:
 - P8.5 `/app/tickets` Observer diagnostic card: **completed locally**.
 - P8.6 Admin Observer deep-link refinement: **completed locally**.
 - P8.7 Observer documentation and CODEMAP sync: **completed locally**.
-- P8.8 Local verification, browser signoff, commit and optional deploy: **local gates completed; browser/commit/deploy pending**.
+- P8.8 Local verification, browser signoff, commit and optional deploy: **completed with noted CI-suite agent_ws hang**.
+- P8.9 CI-suite agent_ws hang follow-up: **new residual reliability task**.
 
 Latest local verification:
 
@@ -56,6 +57,12 @@ Latest local verification:
 - `pnpm --dir webapp run build` -> passed after P8.8.
 - `python scripts\build_context_index.py --force` -> passed after P8.8.
 - `python scripts\verify_workspace.py` -> passed after P8.8.
+- `git commit -m "server: clarify support observer traces"` -> `3e2bc2a`.
+- `python scripts\run_ci_suite.py` -> partial: `verify_workspace`, webapp bundle, server no-db and DB/API slices passed; DB/API reported `500 passed, 176 deselected`; agent_ws slice hung after `test_tool_dispatch_failure.py::test_dispatch_failure_materializes_failed_operation_and_trace PASSED [72%]` and was stopped manually. No green `summary.json` was produced for `3e2bc2a`.
+- `python scripts\deploy_workspace_to_remote.py --skip-ci-check` -> deployed `3e2bc2a` to `/var/chat_bot/pc_client`.
+- `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5` -> release completed; smoke passed on attempt 2 with `/api/health -> 200`.
+- Browser signoff on `http://192.168.100.17:8666/admin` -> `/app/tickets` checked at `1366x900` and `1920x1080`, no horizontal overflow, no newly captured console errors, Observer card/SLA/passport visible, dark theme toggle works.
+- Browser signoff for `/app/admin/observer?trace_id=506a6fbc-ab76-4bed-8a41-1a90f7679d29` -> Observer page opened with the requested trace id in URL/context, no horizontal overflow, no newly captured console errors.
 
 Implemented in P8.1-P8.3:
 
@@ -733,7 +740,7 @@ Verification:
 
 Goal: prove the observer changes are safe and production-ready.
 
-Status: **local gates completed, 2026-05-07; browser signoff, commit and optional deploy pending**.
+Status: **completed, 2026-05-07, with CI-suite agent_ws hang tracked as P8.9**.
 
 Local gates:
 
@@ -808,9 +815,43 @@ python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 status s
 Completion criteria:
 
 - All local tests/build checks pass. **Completed locally 2026-05-07.**
-- Browser signoff passes. **Pending.**
-- Commit exists. **Pending.**
-- Remote deploy is optional unless requested for this slice; if deployed, smoke/browser signoff passes and server is stopped unless user asks to keep it running. **Pending/not deployed.**
+- Browser signoff passes. **Completed on remote stand 2026-05-07.**
+- Commit exists. **Completed: `3e2bc2a server: clarify support observer traces`.**
+- Remote deploy is optional unless requested for this slice; if deployed, smoke/browser signoff passes and server is stopped unless user asks to keep it running. **Deploy/smoke/browser completed; stop server after final status capture.**
+
+CI-suite note:
+
+- The canonical CI artifact gate was attempted before deploy.
+- The no-db and DB/API slices passed, including `500 passed, 176 deselected` for DB/API.
+- The `agent_ws` slice hung without output after 72%; deploy used the explicit project-supported `--skip-ci-check` bypass.
+- This is not a blocker for the observer UI/browser signoff, but it must be investigated before treating full release-control CI as healthy.
+
+### P8.9 CI-Suite Agent_WS Hang Follow-Up
+
+Goal: restore reliable green CI artifacts for release-control deploys.
+
+Status: **pending residual reliability task**.
+
+Known symptom:
+
+- `python scripts\run_ci_suite.py` starts `python -m pytest server/tests -m "not manual and agent_ws"`.
+- The slice reached `test_tool_dispatch_failure.py::test_dispatch_failure_materializes_failed_operation_and_trace PASSED [72%]`.
+- No new log output was written after that point; the next collected test is `test_tool_started_event.py::test_tool_call_started_created_before_command`.
+- `run_ci_suite.py` currently runs this step with `idle_timeout_seconds=disabled`, so the wrapper does not fail fast on this hang.
+
+Next steps:
+
+```powershell
+python -m pytest server\tests\test_tool_started_event.py -q --tb=short
+python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short
+python scripts\run_ci_suite.py --idle-timeout 600
+```
+
+Completion criteria:
+
+- The suspected hanging test is either fixed or ruled out.
+- `run_ci_suite.py` produces `artifacts\ci\<commit>\summary.json` without manual intervention.
+- Release deploy can run without `--skip-ci-check`.
 
 ## Acceptance Criteria
 
@@ -837,21 +878,18 @@ The observer layer plan is complete when:
 
 ## Handoff
 
-Recommended next action: finish **P8.8 Browser Signoff, Commit And Optional Deploy**.
+Recommended next action: stop the remote server after checks, then handle **P8.9 CI-Suite Agent_WS Hang Follow-Up** if full release-control health is required.
 
 Next commands:
 
 ```powershell
-git status --short
-git add server webapp docs scripts PLANS.md
-git commit -m "feat: clarify support observer traces"
-python scripts\deploy_workspace_to_remote.py
-python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5
+python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop server
+python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 status server
+python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short
 ```
 
 Expected first checkpoint:
 
-- Local verification is green and already recorded.
-- Commit exists for the observer layer changes.
-- Remote stand serves the updated `/app/tickets` bundle.
-- Browser signoff covers `/app/tickets` Observer card and `/app/admin/observer?trace_id=...`.
+- Remote server is stopped after signoff.
+- The suspected `agent_ws` hang is reproduced or ruled out with a focused command.
+- The next release attempt can avoid `--skip-ci-check`.
