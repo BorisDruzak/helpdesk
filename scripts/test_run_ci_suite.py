@@ -251,10 +251,10 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["build_webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["server_pytest_no_db"] is None
-    assert idle_by_step["server_pytest_db_api"] is None
-    assert idle_by_step["server_pytest_agent_ws"] is None
-    assert idle_by_step["pc_agent_pytest"] is None
+    assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["server_pytest_db_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["pc_agent_pytest"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
 
     command_by_step = {
         step_name: command

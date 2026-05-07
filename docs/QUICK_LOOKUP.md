@@ -53,7 +53,7 @@
 ## 2026-04-26 test and CI layering
 
 - Canonical testing rules live in `docs/TESTING_RULES.md`.
-- `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, `server_pytest_db_api`, and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
+- `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, `server_pytest_db_api`, and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
 - `server/tests/conftest.py` auto-marks tests that use `test_agent` as `agent_ws`/`integration` and prints all Python thread stacks when a watched test exceeds the watchdog threshold.
 
 ## 2026-04-26 diagnostic playbooks

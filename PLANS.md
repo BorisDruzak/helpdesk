@@ -830,14 +830,27 @@ CI-suite note:
 
 Goal: restore reliable green CI artifacts for release-control deploys.
 
-Status: **pending residual reliability task**.
+Status: **in progress, root cause found locally**.
 
 Known symptom:
 
 - `python scripts\run_ci_suite.py` starts `python -m pytest server/tests -m "not manual and agent_ws"`.
 - The slice reached `test_tool_dispatch_failure.py::test_dispatch_failure_materializes_failed_operation_and_trace PASSED [72%]`.
 - No new log output was written after that point; the next collected test is `test_tool_started_event.py::test_tool_call_started_created_before_command`.
-- `run_ci_suite.py` currently runs this step with `idle_timeout_seconds=disabled`, so the wrapper does not fail fast on this hang.
+- `run_ci_suite.py` passed `idle_timeout_seconds=None` to all pytest steps, so the documented/CLI idle timeout was ignored for `server_pytest_agent_ws`.
+- The first observed "hang" happened after the Codex shell command hit its own 20 minute timeout; the CI child processes kept running and no green artifact could be written.
+
+Focused findings:
+
+- `python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short` -> `1 passed`.
+- `python -m pytest server\tests\test_tool_dispatch_failure.py::test_dispatch_failure_materializes_failed_operation_and_trace server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short --durations=10` -> `2 passed`.
+- `python -m pytest server/tests -m "not manual and agent_ws" -vv --tb=short --durations=30` -> `29 passed, 647 deselected`.
+
+Implemented fix:
+
+- `scripts/run_ci_suite.py` now applies `args.idle_timeout` to all pytest steps, not just `verify_workspace` and `build_webapp_bundle`.
+- `scripts/test_run_ci_suite.py` now asserts the pytest layers receive the default idle timeout.
+- `docs/QUICK_LOOKUP.md` and `docs/TESTING_RULES.md` now document that pytest CI layers use the configured idle timeout.
 
 Next steps:
 

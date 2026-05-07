@@ -74,6 +74,7 @@ http://192.168.100.17:8666/admin
 `scripts/run_ci_suite.py` uses:
 
 - 45 minutes per server pytest layer.
+- The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
 

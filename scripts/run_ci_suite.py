@@ -363,7 +363,7 @@ def main() -> None:
             _server_pytest_command("not manual and no_db", artifact_dir / "junit-server-no-db.xml"),
             logs_dir / "server_pytest_no_db.log",
             float(args.server_pytest_timeout),
-            None,
+            float(args.idle_timeout),
             _server_pytest_env(),
         ),
         (
@@ -374,7 +374,7 @@ def main() -> None:
             ),
             logs_dir / "server_pytest_db_api.log",
             float(args.server_pytest_timeout),
-            None,
+            float(args.idle_timeout),
             _server_pytest_env(),
         ),
         (
@@ -382,7 +382,7 @@ def main() -> None:
             _server_pytest_command("not manual and agent_ws", artifact_dir / "junit-server-agent-ws.xml"),
             logs_dir / "server_pytest_agent_ws.log",
             float(args.server_pytest_timeout),
-            None,
+            float(args.idle_timeout),
             _server_pytest_env(),
         ),
         (
@@ -399,7 +399,7 @@ def main() -> None:
             ],
             logs_dir / "pc_agent_pytest.log",
             float(args.pc_agent_pytest_timeout),
-            None,
+            float(args.idle_timeout),
             None,
         ),
     ]
