@@ -4,9 +4,12 @@ API обработчики для управления операциями.
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from aiohttp import web
 from loguru import logger
 
+from access_control.service import can
+from config import ALLOW_REMOTE_CODE
 from app.db import get_session
 from app.db.models import DeviceOutbox
 from app.repos.operations_repo import OperationsRepo
@@ -14,7 +17,147 @@ from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
+from core.policy_engine import PolicyEngine
+from core.tool_metadata import ToolMetadata
+from shared.tool_contracts import normalize_risk_level
+from tools.service import ToolExecutionService
 from websocket.device_outbox_sender import _send_single_command
+
+
+_RETRYABLE_OPERATION_STATUSES = {"failed", "timed_out", "timeout"}
+_HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
+
+
+def _operation_payload(operation) -> dict[str, Any]:
+    return {
+        "operation_id": operation.operation_id,
+        "device_id": operation.device_id,
+        "ticket_id": operation.ticket_id,
+        "job_id": operation.job_id,
+        "kind": operation.kind,
+        "tool_name": operation.tool_name,
+        "actor_role": operation.actor_role,
+        "trace_id": operation.trace_id,
+        "status": operation.status,
+        "deadline_at": operation.deadline_at.isoformat() if operation.deadline_at else None,
+        "queued_at": operation.queued_at.isoformat() if operation.queued_at else None,
+        "sent_at": operation.sent_at.isoformat() if operation.sent_at else None,
+        "accepted_at": operation.accepted_at.isoformat() if operation.accepted_at else None,
+        "started_at": operation.started_at.isoformat() if operation.started_at else None,
+        "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
+        "retry_count": operation.retry_count,
+        "max_retries": operation.max_retries,
+        "retry_of_operation_id": getattr(operation, "retry_of_operation_id", None),
+        "error_code": operation.error_code,
+        "error_message": operation.error_message,
+        "result_summary": operation.result_summary,
+        "result_event_id": operation.result_event_id,
+    }
+
+
+def _json_error(error: str, *, status: int, error_code: str, **payload: Any) -> web.Response:
+    body = {"status": "error", "error": error, "error_code": error_code}
+    body.update(payload)
+    return web.json_response(body, status=status)
+
+
+async def _require_permission(session, auth_context: AuthContext, permission_code: str) -> web.Response | None:
+    if await can(session, auth_context, permission_code):
+        return None
+    return _json_error(
+        f"Недостаточно прав: {permission_code}",
+        status=403,
+        error_code="FORBIDDEN",
+        required_permission=permission_code,
+    )
+
+
+def _tool_risk_permission(risk_level: str | None) -> str:
+    normalized = str(risk_level or "").strip().lower()
+    if normalized in _HIGH_RISK_TOOL_LEVELS:
+        return "module.tool.run.high_risk"
+    return "module.tool.run.low_risk"
+
+
+def _find_raw_tool_entry(raw_items: list[object], tool_name: str) -> dict | None:
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        current = str(raw_item.get("tool") or raw_item.get("name") or "").strip()
+        aliases = raw_item.get("aliases") if isinstance(raw_item.get("aliases"), list) else []
+        if current == tool_name or tool_name in aliases:
+            return raw_item
+    return None
+
+
+def _tool_metadata_from_raw_tool(raw_tool: dict, tool_name: str) -> ToolMetadata:
+    spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
+    spec_metadata = spec.get("metadata") if isinstance(spec.get("metadata"), dict) else {}
+    raw_metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
+    metadata = dict(spec_metadata)
+    metadata.update(raw_metadata)
+
+    allow_roles = metadata.get("allow_roles")
+    if tool_name in ("screen.collect", "screen.record"):
+        screen_roles = ["user", "agent", "llm", "support", "admin"]
+        allow_roles = list(dict.fromkeys((allow_roles or []) + screen_roles))
+        metadata["requires_consent"] = False
+
+    return ToolMetadata(
+        domain=str(metadata.get("domain") or "system"),
+        platforms=metadata.get("platforms", ["any"]),
+        risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
+        scopes=metadata.get("scopes", []),
+        requires_consent=bool(metadata.get("requires_consent")),
+        allow_roles=allow_roles,
+        timeout_sec=metadata.get("timeout_sec"),
+        idempotent=bool(metadata.get("idempotent")),
+        origin=str(metadata.get("origin") or "builtin"),
+        side_effects=bool(metadata.get("side_effects")),
+        tool_kind=metadata.get("tool_kind") or "diagnostic",
+    )
+
+
+async def _resolve_retry_tool_metadata(
+    *,
+    tool_service: ToolExecutionService,
+    device_id: str,
+    tool_name: str,
+) -> ToolMetadata | None:
+    for source, method_name in (("device", "get_tools_list"), ("server", "get_tools_from_server")):
+        method = getattr(tool_service, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            raw_items = await method(device_id) or []
+        except Exception as exc:
+            logger.debug(
+                f"[operation_retry] tool metadata lookup skipped: "
+                f"device_id={device_id} tool={tool_name} source={source} error={exc}"
+            )
+            raw_items = []
+        raw_tool = _find_raw_tool_entry(raw_items, tool_name)
+        if raw_tool is not None:
+            return _tool_metadata_from_raw_tool(raw_tool, tool_name)
+    return None
+
+
+def _extract_replay_params(outbox_entry: DeviceOutbox, tool_name: str, ticket_id: str) -> dict[str, Any] | None:
+    payload = outbox_entry.params if isinstance(outbox_entry.params, dict) else {}
+    if str(payload.get("tool_name") or payload.get("tool") or "").strip() not in {"", tool_name}:
+        return None
+    if str(payload.get("ticket_id") or "").strip() not in {"", ticket_id}:
+        return None
+    raw_params = payload.get("params")
+    if raw_params is None:
+        raw_params = {}
+    if not isinstance(raw_params, dict):
+        return None
+    return {
+        str(key): value
+        for key, value in raw_params.items()
+        if isinstance(key, str) and not key.startswith("_") and key not in {"operation_id", "request_id", "call_id"}
+    }
 
 
 async def handle_get_operations(request: web.Request) -> web.Response:
@@ -86,6 +229,7 @@ async def handle_get_operations(request: web.Request) -> web.Response:
                     "finished_at": op.finished_at.isoformat() if op.finished_at else None,
                     "retry_count": op.retry_count,
                     "max_retries": op.max_retries,
+                    "retry_of_operation_id": getattr(op, "retry_of_operation_id", None),
                     "error_code": op.error_code,
                     "error_message": op.error_message,
                     "result_summary": op.result_summary,
@@ -150,6 +294,7 @@ async def handle_get_operation(request: web.Request) -> web.Response:
                 "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
                 "retry_count": operation.retry_count,
                 "max_retries": operation.max_retries,
+                "retry_of_operation_id": getattr(operation, "retry_of_operation_id", None),
                 "error_code": operation.error_code,
                 "error_message": operation.error_message,
                 "result_summary": operation.result_summary,
@@ -167,6 +312,313 @@ async def handle_get_operation(request: web.Request) -> web.Response:
             "status": "error",
             "error": str(e)
         }, status=500)
+
+
+async def handle_retry_operation(request: web.Request) -> web.Response:
+    """
+    POST /api/operations/{operation_id}/retry
+    POST /api/tickets/{ticket_id}/operations/{operation_id}/retry
+
+    Re-run a failed/timed-out tool operation after revalidating ticket context,
+    permissions, device online state, tool availability, risk policy, consent,
+    and replayable params.
+    """
+    try:
+        auth_context: AuthContext = request.get("auth_context")
+        if not auth_context:
+            return _json_error(
+                "Authentication required",
+                status=401,
+                error_code="AUTH_REQUIRED",
+            )
+
+        operation_id = str(request.match_info["operation_id"]).strip()
+        scoped_ticket_id = str(request.match_info.get("ticket_id") or "").strip() or None
+        body = await request.json() if request.content_type == "application/json" else {}
+        if not isinstance(body, dict):
+            return _json_error("Request body must be an object", status=400, error_code="VALIDATION_ERROR")
+        reason = str(body.get("reason") or "manual_retry").strip() or "manual_retry"
+
+        if "actor_role" in body:
+            logger.warning(
+                "[handle_retry_operation] actor_role in JSON body ignored: "
+                f"using actor_role={auth_context.actor_role} from AuthContext"
+            )
+
+        state = request.app.get("state")
+        if state is None:
+            return _json_error("Server state unavailable", status=503, error_code="SERVER_STATE_UNAVAILABLE")
+
+        retry_operation_id = str(uuid.uuid4())
+        retry_trace_id = str(uuid.uuid4())
+        replay_params: dict[str, Any]
+        target_ticket_id: str
+        target_device_id: str
+        tool_name: str
+        original_job_id: str | None
+        risk_level = "safe_read"
+
+        async with get_session() as session:
+            op_repo = OperationsRepo(session)
+            outbox_repo = DeviceOutboxRepo(session)
+            ticket_repo = TicketEventsRepo(session)
+
+            target_op = await op_repo.get_by_operation_id(operation_id)
+            if target_op is None:
+                return _json_error("Operation not found", status=404, error_code="NOT_FOUND")
+
+            if target_op.kind not in {"tool_call", "run_tool", "tool"} or not target_op.tool_name:
+                return _json_error(
+                    "Only tool operations can be retried",
+                    status=409,
+                    error_code="OPERATION_KIND_NOT_RETRYABLE",
+                    operation_id=operation_id,
+                )
+
+            if target_op.status not in _RETRYABLE_OPERATION_STATUSES:
+                return _json_error(
+                    "Operation is not in a retryable terminal status",
+                    status=409,
+                    error_code="OPERATION_NOT_RETRYABLE",
+                    operation_id=operation_id,
+                    current_status=target_op.status,
+                )
+
+            max_retries = int(target_op.max_retries or 0)
+            retry_count = int(target_op.retry_count or 0)
+            if max_retries <= 0 or retry_count >= max_retries:
+                return _json_error(
+                    "Operation retry limit reached",
+                    status=409,
+                    error_code="RETRY_LIMIT_REACHED",
+                    operation_id=operation_id,
+                    retry_count=retry_count,
+                    max_retries=max_retries,
+                )
+
+            target_ticket_id = str(target_op.ticket_id or "").strip()
+            if not target_ticket_id:
+                return _json_error(
+                    "Operation has no ticket context",
+                    status=400,
+                    error_code="TICKET_CONTEXT_REQUIRED",
+                    operation_id=operation_id,
+                )
+            if scoped_ticket_id and scoped_ticket_id != target_ticket_id:
+                return _json_error(
+                    "Operation belongs to a different ticket",
+                    status=403,
+                    error_code="TICKET_CONTEXT_MISMATCH",
+                    operation_id=operation_id,
+                    ticket_id=scoped_ticket_id,
+                    operation_ticket_id=target_ticket_id,
+                )
+
+            ticket = await ticket_repo.get_ticket(target_ticket_id)
+            if ticket is None:
+                return _json_error("Ticket not found", status=404, error_code="TICKET_NOT_FOUND")
+
+            target_device_id = str(target_op.device_id or "").strip()
+            ticket_device_id = str(getattr(ticket, "device_id", "") or "").strip()
+            if ticket_device_id and ticket_device_id != target_device_id:
+                return _json_error(
+                    "Operation device does not match ticket device",
+                    status=403,
+                    error_code="TICKET_DEVICE_MISMATCH",
+                    operation_id=operation_id,
+                    ticket_id=target_ticket_id,
+                    device_id=target_device_id,
+                    ticket_device_id=ticket_device_id,
+                )
+
+            if auth_context.actor_role == "agent" and target_device_id != auth_context.actor_id:
+                return _json_error(
+                    "Agent token is not allowed for this device context",
+                    status=403,
+                    error_code="DEVICE_CONTEXT_MISMATCH",
+                    device_id=target_device_id,
+                )
+
+            denied = await _require_permission(session, auth_context, "ticket.tool.run")
+            if denied:
+                return denied
+
+            agent_info = state.get_agent(target_device_id) if hasattr(state, "get_agent") else None
+            if not agent_info:
+                return _json_error(
+                    "Device agent is offline",
+                    status=503,
+                    error_code="DEVICE_OFFLINE",
+                    device_id=target_device_id,
+                )
+
+            source_outbox = await outbox_repo.get_latest_by_operation_id(operation_id)
+            if source_outbox is None or source_outbox.command != "run_tool":
+                return _json_error(
+                    "Replay payload is not available for this operation",
+                    status=409,
+                    error_code="RETRY_PARAMS_UNAVAILABLE",
+                    operation_id=operation_id,
+                )
+
+            tool_name = str(target_op.tool_name)
+            if source_outbox.params is None or not isinstance(source_outbox.params, dict):
+                return _json_error(
+                    "Replay payload is not available for this operation",
+                    status=409,
+                    error_code="RETRY_PARAMS_UNAVAILABLE",
+                    operation_id=operation_id,
+                )
+            extracted_params = _extract_replay_params(source_outbox, tool_name, target_ticket_id)
+            if extracted_params is None:
+                return _json_error(
+                    "Replay payload is not available for this operation",
+                    status=409,
+                    error_code="RETRY_PARAMS_UNAVAILABLE",
+                    operation_id=operation_id,
+                )
+            replay_params = extracted_params
+
+            tool_service = ToolExecutionService(state)
+            metadata = await _resolve_retry_tool_metadata(
+                tool_service=tool_service,
+                device_id=target_device_id,
+                tool_name=tool_name,
+            )
+            if metadata is None:
+                return _json_error(
+                    "Tool is not currently available for this device",
+                    status=409,
+                    error_code="TOOL_UNAVAILABLE",
+                    operation_id=operation_id,
+                    tool_name=tool_name,
+                    device_id=target_device_id,
+                )
+
+            risk_level = str(getattr(metadata, "risk_level", None) or "safe_read")
+            denied = await _require_permission(session, auth_context, _tool_risk_permission(risk_level))
+            if denied:
+                return denied
+
+            policy_decision = PolicyEngine(config={"allow_remote_code": ALLOW_REMOTE_CODE}).check_policy(
+                actor_role=auth_context.actor_role,
+                tool_name=tool_name,
+                metadata=metadata,
+                params=replay_params,
+            )
+            if not policy_decision.allow:
+                return _json_error(
+                    "Policy violation",
+                    status=403,
+                    error_code=policy_decision.reason or "POLICY_DENIED",
+                    required_role=policy_decision.required_role,
+                    actor_role=auth_context.actor_role,
+                    tool_name=tool_name,
+                )
+            if policy_decision.requires_consent:
+                return _json_error(
+                    "Retry requires explicit consent and was not replayed",
+                    status=409,
+                    error_code="CONSENT_REQUIRED_FOR_RETRY",
+                    operation_id=operation_id,
+                    tool_name=tool_name,
+                )
+
+            new_retry_count = await op_repo.increment_retry_count_if_available(operation_id)
+            if new_retry_count is None:
+                return _json_error(
+                    "Operation retry limit reached",
+                    status=409,
+                    error_code="RETRY_LIMIT_REACHED",
+                    operation_id=operation_id,
+                    retry_count=retry_count,
+                    max_retries=max_retries,
+                )
+
+            ui_publisher = state.ui_publisher if hasattr(state, "ui_publisher") else None
+            op_service = OperationService(session, publisher=ui_publisher)
+            original_job_id = target_op.job_id
+            await op_service.enqueue_operation(
+                operation_id=retry_operation_id,
+                device_id=target_device_id,
+                kind="tool_call",
+                actor_role=auth_context.actor_role,
+                trace_id=retry_trace_id,
+                ticket_id=target_ticket_id,
+                job_id=original_job_id,
+                tool_name=tool_name,
+                retry_of_operation_id=operation_id,
+                max_retries=max_retries,
+                initial_status="queued",
+            )
+            await session.commit()
+
+        dispatch_params = dict(replay_params)
+        dispatch_params["_operation_id"] = retry_operation_id
+        result = await ToolExecutionService(state).run_tool(
+            device_id=target_device_id,
+            ticket_id=target_ticket_id,
+            tool_name=tool_name,
+            params=dispatch_params,
+            call_id=str(uuid.uuid4()),
+            auth_context=auth_context,
+            wait_for_result=False,
+        )
+
+        dispatch_status = str(result.get("status") or "accepted")
+        if dispatch_status != "accepted":
+            return _json_error(
+                str(result.get("error") or "Tool retry dispatch failed"),
+                status=503,
+                error_code=str(result.get("error_code") or "TOOL_RETRY_DISPATCH_FAILED"),
+                operation_id=retry_operation_id,
+                retry_of_operation_id=operation_id,
+            )
+
+        async with get_session() as event_session:
+            event_repo = TicketEventsRepo(event_session)
+            ev_result = await event_repo.add_event(
+                ticket_id=target_ticket_id,
+                device_id=target_device_id,
+                agent_seq=None,
+                event_type="operation_retried",
+                payload={
+                    "event": "operation_retried",
+                    "operation_id": operation_id,
+                    "retry_operation_id": retry_operation_id,
+                    "retry_of_operation_id": operation_id,
+                    "tool_name": tool_name,
+                    "reason": reason,
+                    "actor_id": auth_context.actor_id,
+                    "actor_role": auth_context.actor_role,
+                    "risk_level": risk_level,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                trace_id=str(result.get("trace_id") or retry_trace_id),
+                operation_id=retry_operation_id,
+            )
+            if ev_result is not None:
+                await event_session.commit()
+            else:
+                await event_session.rollback()
+
+        return web.json_response(
+            {
+                "status": "accepted",
+                "operation_id": retry_operation_id,
+                "retry_of_operation_id": operation_id,
+                "ticket_id": target_ticket_id,
+                "device_id": target_device_id,
+                "tool_name": tool_name,
+                "poll_url": f"/api/operations/{retry_operation_id}",
+                "trace_id": str(result.get("trace_id") or retry_trace_id),
+            },
+            status=202,
+        )
+
+    except Exception as e:
+        logger.error(f"[handle_retry_operation] Error: {e}", exc_info=True)
+        return _json_error(str(e), status=500, error_code="OPERATION_RETRY_FAILED")
 
 
 async def handle_cancel_operation(request: web.Request) -> web.Response:

@@ -44,6 +44,7 @@ class OperationsRepo:
         command_name: Optional[str] = None,
         timeout_override_sec: Optional[int] = None,
         playbook_run_id: Optional[int] = None,
+        retry_of_operation_id: Optional[str] = None,
         status: str = "queued",
         deadline_at: Optional[datetime] = None,
         max_retries: int = 3
@@ -80,6 +81,7 @@ class OperationsRepo:
             command_name=command_name,
             timeout_override_sec=timeout_override_sec,
             playbook_run_id=playbook_run_id,
+            retry_of_operation_id=retry_of_operation_id,
             actor_role=actor_role,
             trace_id=trace_id,
             status=status,
@@ -135,6 +137,26 @@ class OperationsRepo:
             Operation instance or None if not found
         """
         stmt = select(Operation).where(Operation.operation_id == operation_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def increment_retry_count_if_available(self, operation_id: str) -> Optional[int]:
+        """
+        Atomically increments manual retry_count if the operation still has retry budget.
+
+        Returns the new retry_count, or None when the retry limit has already been reached.
+        """
+        stmt = (
+            update(Operation)
+            .where(
+                and_(
+                    Operation.operation_id == operation_id,
+                    Operation.retry_count < Operation.max_retries,
+                )
+            )
+            .values(retry_count=Operation.retry_count + 1)
+            .returning(Operation.retry_count)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
     

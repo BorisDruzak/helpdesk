@@ -1429,9 +1429,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             retry_count=retry_count,
             max_retries=max_retries,
             retryable=retryable,
-            can_retry=False,
+            can_retry=retryable,
             can_cancel=_operation_can_cancel(status),
-            retry_url=None,
+            retry_url=_operation_retry_url(operation_id, status, retry_count, max_retries),
             cancel_url=_operation_cancel_url(operation_id, status),
             retry_disabled_reason=_operation_retry_disabled_reason(status, retry_count, max_retries),
             cancel_disabled_reason=_operation_cancel_disabled_reason(status),
@@ -1925,7 +1925,7 @@ def _operation_cancel_disabled_reason(status: str | None) -> str | None:
 
 def _operation_retry_disabled_reason(status: str | None, retry_count: int | None, max_retries: int | None) -> str | None:
     if _operation_retryable(status, retry_count, max_retries):
-        return "retry_endpoint_unavailable"
+        return None
     if status not in _OPERATION_FAILED_STATUSES:
         return "status_not_retryable"
     if max_retries is None:
@@ -1945,6 +1945,13 @@ def _operation_cancel_url(operation_id: object, status: str | None) -> str | Non
     if not value or not _operation_can_cancel(status):
         return None
     return f"/api/operations/{value}/cancel"
+
+
+def _operation_retry_url(operation_id: object, status: str | None, retry_count: int | None, max_retries: int | None) -> str | None:
+    value = str(operation_id or "").strip()
+    if not value or not _operation_retryable(status, retry_count, max_retries):
+        return None
+    return f"/api/operations/{value}/retry"
 
 
 def _operation_policy_labels(
@@ -2341,9 +2348,9 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                 retry_count=retry_count,
                 max_retries=max_retries,
                 retryable=retryable,
-                can_retry=False,
+                can_retry=retryable,
                 can_cancel=can_cancel,
-                retry_url=None,
+                retry_url=_operation_retry_url(operation.operation_id, display_status, retry_count, max_retries),
                 cancel_url=_operation_cancel_url(operation.operation_id, display_status),
                 retry_disabled_reason=retry_disabled_reason,
                 cancel_disabled_reason=cancel_disabled_reason,

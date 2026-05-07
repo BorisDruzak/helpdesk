@@ -79,7 +79,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 | **operations** | Материализованное состояние операций (run_tool, cancel и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.). Связь с consent_decisions. Tools API, WebSocket, отмена операций. |
 
 **device_outbox:** `id` (PK), `device_id`, `command_id`, `command`, `params` (JSONB), `status`, `request_id`, `trace_id`, `operation_id`, `actor_role`, `retry_count`, `max_retries`, `created_at`, `sent_at`, `delivered_at`, `failed_at`, `error_code`, `error_message`.  
-**operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
+**operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `retry_of_operation_id`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
 
 ---
 

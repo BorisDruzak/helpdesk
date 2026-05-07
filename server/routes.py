@@ -202,6 +202,7 @@ from api.operations import (
     handle_get_operations,
     handle_get_operation,
     handle_cancel_operation,
+    handle_retry_operation,
     handle_approve_consent,
     handle_deny_consent
 )
@@ -687,6 +688,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/operations', handle_get_operations),
         web.get('/api/operations/{operation_id}', handle_get_operation),
         web.post('/api/operations/{operation_id}/cancel', handle_cancel_operation),
+        web.post('/api/operations/{operation_id}/retry', handle_retry_operation),
+        web.post('/api/tickets/{ticket_id}/operations/{operation_id}/retry', handle_retry_operation),
         web.post('/api/operations/{operation_id}/approve', handle_approve_consent),
         web.post('/api/operations/{operation_id}/deny', handle_deny_consent),
         

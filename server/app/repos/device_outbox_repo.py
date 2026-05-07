@@ -205,6 +205,22 @@ class DeviceOutboxRepo:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_latest_by_operation_id(self, operation_id: str) -> Optional[DeviceOutbox]:
+        """
+        Return the latest outbox command materialized for an operation.
+
+        Retry uses this as the auditable replay source and revalidates policy before
+        creating any new operation.
+        """
+        stmt = (
+            select(DeviceOutbox)
+            .where(DeviceOutbox.operation_id == operation_id)
+            .order_by(DeviceOutbox.id.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_devices_with_pending(
         self,
         limit: int = 100,

@@ -10,6 +10,7 @@ import {
   fetchSupportTicketWorkspace,
   linkSupportTicketPassportEvidence,
   postSupportOperationCancel,
+  postSupportOperationRetry,
   postSupportTicketWorklog,
   postSupportTicketAssign,
   postSupportTicketPriority,
@@ -33,6 +34,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     fetchSupportTicketWorkspace: vi.fn(),
     linkSupportTicketPassportEvidence: vi.fn(),
     postSupportOperationCancel: vi.fn(),
+    postSupportOperationRetry: vi.fn(),
     postSupportTicketWorklog: vi.fn(),
     postSupportTicketAssign: vi.fn(),
     postSupportTicketPriority: vi.fn(),
@@ -57,6 +59,7 @@ const fetchSupportTicketTimelineMock = vi.mocked(fetchSupportTicketTimeline);
 const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
 const linkSupportTicketPassportEvidenceMock = vi.mocked(linkSupportTicketPassportEvidence);
 const postSupportOperationCancelMock = vi.mocked(postSupportOperationCancel);
+const postSupportOperationRetryMock = vi.mocked(postSupportOperationRetry);
 const postSupportTicketWorklogMock = vi.mocked(postSupportTicketWorklog);
 const postSupportTicketAssignMock = vi.mocked(postSupportTicketAssign);
 const postSupportTicketPriorityMock = vi.mocked(postSupportTicketPriority);
@@ -650,13 +653,13 @@ describe("TicketListPage", () => {
         retry_count: 1,
         max_retries: 3,
         retryable: true,
-        can_retry: false,
+        can_retry: true,
         can_cancel: false,
-        retry_url: null,
+        retry_url: "/api/operations/op-failed/retry",
         cancel_url: null,
-        retry_disabled_reason: "retry_endpoint_unavailable",
+        retry_disabled_reason: null,
         cancel_disabled_reason: "already_finished",
-        policy_labels: ["cancel:already_finished", "retry:retry_endpoint_unavailable"],
+        policy_labels: ["cancel:already_finished", "retry:available"],
         error_code: "HTTP_502",
         error_category: "execution",
         details_url: "/api/operations/op-failed",
@@ -734,6 +737,15 @@ describe("TicketListPage", () => {
       target_operation_id: "op-running",
       cancel_operation_id: "op-cancel-1",
     });
+    postSupportOperationRetryMock.mockResolvedValue({
+      status: "accepted",
+      operation_id: "op-retry-1",
+      retry_of_operation_id: "op-failed",
+      ticket_id: "ticket-1",
+      device_id: "device-1",
+      tool_name: "diagnose.website",
+      poll_url: "/api/operations/op-retry-1",
+    });
 
     renderTicketListPage("/app/tickets/ticket-1");
 
@@ -746,7 +758,12 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
     expect(screen.getByText("Длительность: 1 s")).toBeInTheDocument();
     expect(screen.getByText("Повторы: 0/3")).toBeInTheDocument();
-    expect(screen.getByText("Повтор недоступен")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "\u041f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u044c" }));
+    await waitFor(() => {
+      expect(postSupportOperationRetryMock).toHaveBeenCalledWith("op-failed", {
+        reason: "operator_requested_from_support_workspace",
+      });
+    });
     expect(screen.getByText("Trace: trace-ru...")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Детали операции" })[0]).toHaveAttribute("href", "/api/operations/op-running");
     fireEvent.click(screen.getByRole("button", { name: "Отменить операцию" }));

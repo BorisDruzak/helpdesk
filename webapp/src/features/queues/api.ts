@@ -622,6 +622,17 @@ export type SupportOperationCancelPayload = {
   reason?: string | null;
 };
 
+export type SupportOperationRetryPayload = {
+  status: string;
+  operation_id: string;
+  retry_of_operation_id: string;
+  ticket_id: string;
+  device_id: string;
+  tool_name: string;
+  poll_url?: string | null;
+  trace_id?: string | null;
+};
+
 export type SupportTicketPassportSectionPatchPayload = {
   operator_check_summary?: string | null;
   changes_made_summary?: string | null;
@@ -1038,6 +1049,34 @@ export async function postSupportOperationCancel(
   }
 
   return payload as SupportOperationCancelPayload;
+}
+
+export async function postSupportOperationRetry(
+  operationId: string,
+  options: { reason?: string | null } = {}
+): Promise<SupportOperationRetryPayload> {
+  const response = await fetch(`/api/operations/${encodeURIComponent(operationId)}/retry`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      reason: options.reason ?? null
+    })
+  });
+  const payload = await readJson<SupportOperationRetryPayload | ErrorResponse>(response);
+
+  if (!response.ok || !payload || ("error" in payload && payload.status === "error")) {
+    const errorPayload = payload && "error" in payload ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось повторить операцию",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload as SupportOperationRetryPayload;
 }
 
 export async function postSupportTicketStatus(

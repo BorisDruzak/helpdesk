@@ -50,6 +50,7 @@ import {
   fetchSupportTicketWorkspace,
   linkSupportTicketPassportEvidence,
   postSupportOperationCancel,
+  postSupportOperationRetry,
   postSupportTicketAssign,
   postSupportTicketMessage,
   postSupportTicketPlaybookRun,
@@ -552,11 +553,15 @@ function operationActionReasonLabel(reason: string | null | undefined): string {
 
 function OperationSummaryCard({
   isCanceling = false,
+  isRetrying = false,
   onCancel,
+  onRetry,
   operation,
 }: {
   isCanceling?: boolean;
+  isRetrying?: boolean;
   onCancel?: (operationId: string) => void;
+  onRetry?: (operationId: string) => void;
   operation: SupportWorkspaceOperationSummary;
 }) {
   return (
@@ -613,14 +618,14 @@ function OperationSummaryCard({
           </span>
         ) : null}
         {operation.canRetry ? (
-          <a
-            className="rounded-md border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
-            href={operation.retryUrl ?? "#"}
-            rel="noreferrer"
-            target="_blank"
+          <button
+            className="rounded-md border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isRetrying || !onRetry}
+            onClick={() => onRetry?.(operation.id)}
+            type="button"
           >
             Повторить
-          </a>
+          </button>
         ) : operation.retryable ? (
           <span
             className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
@@ -1054,6 +1059,20 @@ export function TicketListPage() {
     },
   });
 
+  const operationRetryMutation = useMutation({
+    mutationFn: async (operationId: string) =>
+      postSupportOperationRetry(operationId, {
+        reason: "operator_requested_from_support_workspace",
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+      ]);
+    },
+  });
+
   function openTicket(ticketId: string) {
     startTransition(() => {
       navigate(`/app/tickets/${ticketId}`);
@@ -1096,7 +1115,8 @@ export function TicketListPage() {
     evidenceLinkMutation.error ||
     manualEvidenceMutation.error ||
     worklogMutation.error ||
-    operationCancelMutation.error;
+    operationCancelMutation.error ||
+    operationRetryMutation.error;
   const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
   const operatorReasonReady = (operatorActionDraft?.reason.trim().length ?? 0) >= 3;
   const operatorTargetReady =
@@ -2019,8 +2039,10 @@ export function TicketListPage() {
                       {viewModel.right.operations.slice(0, 4).map((operation) => (
                         <OperationSummaryCard
                           isCanceling={operationCancelMutation.isPending}
+                          isRetrying={operationRetryMutation.isPending}
                           key={operation.id}
                           onCancel={(operationId) => operationCancelMutation.mutate(operationId)}
+                          onRetry={(operationId) => operationRetryMutation.mutate(operationId)}
                           operation={operation}
                         />
                       ))}

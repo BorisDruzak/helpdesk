@@ -1127,13 +1127,13 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert operation_payload["retry_count"] == 1
     assert operation_payload["max_retries"] == 3
     assert operation_payload["retryable"] is True
-    assert operation_payload["can_retry"] is False
-    assert operation_payload["retry_url"] is None
-    assert operation_payload["retry_disabled_reason"] == "retry_endpoint_unavailable"
+    assert operation_payload["can_retry"] is True
+    assert operation_payload["retry_url"] == "/api/operations/op-detail-lifecycle/retry"
+    assert operation_payload["retry_disabled_reason"] is None
     assert operation_payload["can_cancel"] is False
     assert operation_payload["cancel_url"] is None
     assert operation_payload["cancel_disabled_reason"] == "already_finished"
-    assert "retry:retry_endpoint_unavailable" in operation_payload["policy_labels"]
+    assert "retry:available" in operation_payload["policy_labels"]
     assert operation_payload["error_code"] == "HTTP_502"
     assert operation_payload["error_category"] == "execution"
     assert operation_payload["details_url"] == "/api/operations/op-detail-lifecycle"

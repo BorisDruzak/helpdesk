@@ -1419,6 +1419,7 @@ class Operation(Base):
     # Retry tracking
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    retry_of_operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     
     # Result tracking
     error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -1440,6 +1441,7 @@ class Operation(Base):
         Index("ix_operations_deadline_at", "deadline_at"),
         Index("ix_operations_cancel_target", "cancel_target_operation_id"),
         Index("ix_operations_active_cancel", "active_cancel_operation_id"),
+        Index("ix_operations_retry_of", "retry_of_operation_id"),
     )
     
     def __repr__(self) -> str:

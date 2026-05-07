@@ -21,12 +21,12 @@ Current baseline:
 - Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
 - Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device; evidence/worklog mutation depth needs a targeted closure-blocker fixture.
 
-Remaining gaps after local P6 implementation:
+Remaining gaps after policy-aware retry implementation:
 
 - Typed/backend gap: **0% locally, pending remote signoff**.
   - Operation retry/cancel/details and knowledge provider diagnostics now have typed DTO/model coverage.
-- Domain gap: **0-2% locally, pending live safe-tool/device fixture signoff**.
-  - Cancel is first-class. Retry is intentionally disabled until a policy-aware retry endpoint exists; the page now explains this state instead of showing a cosmetic retry.
+- Domain gap: **0-1% locally, pending live safe-tool/device fixture signoff**.
+  - Cancel and retry are first-class. Retry now goes through `POST /api/operations/{operation_id}/retry` or ticket-scoped `POST /api/tickets/{ticket_id}/operations/{operation_id}/retry`, with ticket/device/auth/policy/consent/replay checks before a new operation is created.
 - UI polish gap: **0-1% locally, pending final browser screenshot pass**.
   - Remaining work is release/browser verification, not known implementation work.
 
@@ -137,13 +137,18 @@ Expected result:
 
 Goal: close most of the domain gap around operation retry semantics and safe live tool execution.
 
-Status: **partially completed / blocked for safe retry, 2026-05-07**.
+Status: **completed locally for retry, live low-risk device signoff still pending, 2026-05-07**.
 
 Implementation notes:
 
 - Existing cancel flow is first-class and lifecycle-aware.
-- Operator retry cannot be safely implemented by cloning old `device_outbox` payloads: the legacy `/api/operations/*` layer does not carry enough typed risk/policy context to prove that a retry is low-risk.
-- Current production-safe behavior is therefore explicit: retryable failed operations expose `retryable=true`, `can_retry=false`, and `retry_disabled_reason=retry_endpoint_unavailable`.
+- Operator retry is now first-class and policy-aware instead of a raw outbox clone.
+- New endpoints:
+  - `POST /api/operations/{operation_id}/retry`
+  - `POST /api/tickets/{ticket_id}/operations/{operation_id}/retry`
+- Retry validates: authenticated actor, `ticket.tool.run`, risk permission, ticket context, ticket/device match, agent online, replayable `run_tool` params, current tool availability, policy engine decision, consent requirement and retry budget.
+- Successful retry increments the source operation retry counter, creates a new operation with `retry_of_operation_id`, re-dispatches through `ToolExecutionService.run_tool`, and writes `operation_retried` into the ticket timeline.
+- Consent-required retries are blocked with `CONSENT_REQUIRED_FOR_RETRY` until a dedicated explicit-consent retry flow is added; this avoids silently replaying actions that require user confirmation.
 - Remote server was checked before live signoff and is currently stopped: `python scripts\manage_remote_stack.py status server` -> `server: stopped`.
 - Live low-risk tool signoff still requires deploying the current branch and selecting/creating an online test device/ticket.
 
@@ -162,9 +167,16 @@ Steps:
   - no consent required;
   - allowed for support/admin;
   - no destructive side effects.
-- [x] Confirm retry is not backed by a safe first-class operator API.
-- [x] Avoid adding an unsafe typed web alias until retry can pass risk/policy checks without duplicating lifecycle logic.
+- [x] Add first-class policy-aware retry endpoint without cloning old payload blindly.
+- [x] Persist retry lineage via `operations.retry_of_operation_id`.
+- [x] Revalidate ticket ownership, permissions, online device, tool availability, risk policy, consent and replayable params.
+- [x] Add `operation_retried` timeline event.
+- [x] Wire `/app/tickets` operation cards to POST retry mutation when `can_retry=true`.
 - [x] Keep cancel visible only for running/cancelable operations.
+- [x] Focused verification:
+  - `python -m pytest server/tests/test_operation_retry.py -q --tb=short` -> `4 passed`
+  - `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` -> `1 passed`
+  - `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> `32 passed`
 - [ ] Run one safe tool/playbook on the dedicated live test ticket.
 - [ ] Confirm:
   - operation-running state appears in the right panel;
