@@ -52,6 +52,7 @@ P9.1 local verification:
 
 - `python -m pytest server\tests\test_web_support_api.py -k "workspace_summary or internal_navigation_noise or published_custom_smart_view or queue_returns_typed_scope" -q --tb=short` -> `4 passed, 49 deselected`.
 - `python scripts\verify_workspace.py` -> passed.
+- Live deploy/signoff on `http://192.168.100.17:8666/app/tickets` -> passed after commit `eb83af1`: server smoke passed, Linux agent reconnected and received `handshake_ack`, workspace queues no longer show `Stage...` / `Live...` / `...Test...` navigation artifacts, no horizontal overflow at `1366x900`, and fresh page reload produced `0` console/page errors.
 
 Latest local verification:
 
