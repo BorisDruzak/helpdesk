@@ -830,7 +830,7 @@ CI-suite note:
 
 Goal: restore reliable green CI artifacts for release-control deploys.
 
-Status: **in progress, root cause found locally**.
+Status: **completed, 2026-05-08**.
 
 Known symptom:
 
@@ -845,6 +845,8 @@ Focused findings:
 - `python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short` -> `1 passed`.
 - `python -m pytest server\tests\test_tool_dispatch_failure.py::test_dispatch_failure_materializes_failed_operation_and_trace server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short --durations=10` -> `2 passed`.
 - `python -m pytest server/tests -m "not manual and agent_ws" -vv --tb=short --durations=30` -> `29 passed, 647 deselected`.
+- `python -m pytest scripts\test_run_ci_suite.py -q --tb=short` -> `8 passed`.
+- `python -m pytest server/tests -m "not manual and agent_ws" -q --tb=short --durations=20` -> `29 passed, 647 deselected`.
 
 Implemented fix:
 
@@ -852,7 +854,14 @@ Implemented fix:
 - `scripts/test_run_ci_suite.py` now asserts the pytest layers receive the default idle timeout.
 - `docs/QUICK_LOOKUP.md` and `docs/TESTING_RULES.md` now document that pytest CI layers use the configured idle timeout.
 
-Next steps:
+Full CI verification:
+
+- `python scripts\run_ci_suite.py` for `337ad6d2aff6072ce1804677f250a61ee3c54a1b` -> green.
+- `server_pytest_agent_ws` in the full suite: `29 passed, 647 deselected`, duration `389.127s`, idle timeout enabled at `600s`.
+- `server_pytest_db_api`: `500 passed, 176 deselected`, duration `2492.434s`.
+- `pc_agent_pytest`: `190 passed, 4 deselected`.
+
+Historical reproduction commands:
 
 ```powershell
 python -m pytest server\tests\test_tool_started_event.py -q --tb=short
@@ -862,9 +871,9 @@ python scripts\run_ci_suite.py --idle-timeout 600
 
 Completion criteria:
 
-- The suspected hanging test is either fixed or ruled out.
-- `run_ci_suite.py` produces `artifacts\ci\<commit>\summary.json` without manual intervention.
-- Release deploy can run without `--skip-ci-check`.
+- The suspected hanging test is either fixed or ruled out. **Completed: ruled out by focused and full `agent_ws` runs.**
+- `run_ci_suite.py` produces `artifacts\ci\<commit>\summary.json` without manual intervention. **Completed for `337ad6d`.**
+- Release deploy can run without `--skip-ci-check`. **Completed for commits with green artifact; rerun full CI after any new commit before release.**
 
 ## Acceptance Criteria
 
@@ -891,18 +900,18 @@ The observer layer plan is complete when:
 
 ## Handoff
 
-Recommended next action: stop the remote server after checks, then handle **P8.9 CI-Suite Agent_WS Hang Follow-Up** if full release-control health is required.
+Recommended next action: for the next release/deploy, run `python scripts\run_ci_suite.py` on the final commit, then deploy without `--skip-ci-check`.
 
 Next commands:
 
 ```powershell
-python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop server
-python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 status server
-python -m pytest server\tests\test_tool_started_event.py::test_tool_call_started_created_before_command -vv --tb=short
+python scripts\run_ci_suite.py
+python scripts\deploy_workspace_to_remote.py
+python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5
 ```
 
 Expected first checkpoint:
 
-- Remote server is stopped after signoff.
-- The suspected `agent_ws` hang is reproduced or ruled out with a focused command.
-- The next release attempt can avoid `--skip-ci-check`.
+- Green CI artifact exists for the final commit.
+- Deploy/release scripts pass without `--skip-ci-check`.
+- Remote smoke and browser checks are run for UI-facing changes.
