@@ -199,6 +199,13 @@ export type SupportWorkspaceOperationSummary = {
   statusTone: TicketBadgeTone;
   active: boolean;
   retryable: boolean;
+  canRetry: boolean;
+  canCancel: boolean;
+  retryUrl: string | null;
+  cancelUrl: string | null;
+  retryDisabledReason: string | null;
+  cancelDisabledReason: string | null;
+  policyLabels: string[];
   detailsUrl: string | null;
   summary: string | null;
   metaLabels: string[];
@@ -218,6 +225,11 @@ export type SupportWorkspaceKnowledge = {
   diagnostics: {
     provider: string;
     providerVersion: string;
+    providerStatus: string;
+    externalProviderStatus: string;
+    fallbackReason: string | null;
+    catalogEntryCount: number;
+    queryTokens: string[];
     sourceCounts: Record<string, number>;
     querySignals: string[];
     articleMatches: Record<string, {

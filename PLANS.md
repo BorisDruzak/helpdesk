@@ -1,1333 +1,395 @@
-# Support Workspace SaaS Redesign Implementation Plan
+# Support Workspace Final Hardening Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` or the project safe workflow when executing this plan. Keep this file current after each checkpoint. This plan replaces the old live-acceptance campaign plan and is now the active long-horizon plan for the `/app/tickets` redesign.
+> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` or the project safe workflow to execute this plan task by task. Keep this file current after each checkpoint.
 
-**Goal:** Redesign the operator support workspace around active `/app/tickets` routes into a production-ready modern SaaS service-desk workspace without breaking ticket business logic.
+**Goal:** Close the remaining `/app/tickets` support workspace gaps to 100% readiness: typed/backend gap from 1-2% to 0%, backend/domain gap from 3-5% to 0%, and UI polish gap from 1-3% to 0%.
 
-**Architecture:** Use the existing React/Vite webapp, shared UI primitives, typed `/api/web/support/*` boundary, ticket domain services, SLA/OLA/runtime services, playbook/tool APIs and passport APIs. Prefer an adaptation/view-model layer over replacing domain logic. Add backend DTO fields and typed aliases only where the current contract cannot support the reference workspace.
+**Architecture:** Keep `/app/tickets` as the canonical operator workspace. Reuse the existing React/Vite/Tailwind page, typed `/api/web/support/*` boundary, ticket domain services, operation lifecycle APIs, knowledge provider, registry context and passport APIs. Do not replace working business logic; add typed DTO depth, domain adapters and focused UI polish only where the current page still has shallow behavior.
 
-**Tech Stack:** React 19, Vite, TypeScript, Tailwind v4, TanStack Query, lucide-react, aiohttp typed web API, Pydantic DTOs, existing ticket/services/repos.
+**Tech Stack:** React 19, Vite, TypeScript, Tailwind v4, TanStack Query, lucide-react, aiohttp typed web API, Pydantic DTOs, existing ticket/operation/knowledge/passport services.
 
 ---
 
 ## Status
 
-Created: 2026-05-05.
+Created: 2026-05-07.
 
-Current completion: 100% for P0, 100% for P1 including release/browser signoff, 100% for P2.1 knowledge catalog/search slice including release/browser signoff, 100% for P2.2 standalone timeline filtering including release/browser signoff, 100% for P2.3-P2.5 including release/browser signoff, 100% for P2.6 first-slice visual/readability hardening including release/browser signoff, 100% for P2.7 right-context enrichment polish including release/browser signoff, 100% for P2.8 diagnostics/tools UX hardening including release/browser signoff, 100% for P2.9 externalized knowledge provider including release/browser signoff, 100% for P2.10 "More" controls hardening including release/browser signoff, 100% for P2.11 final current-page browser/readiness pass, 100% for P3.1 tool policy metadata including release/browser signoff, 100% for P3.2 operation lifecycle semantics including release/browser signoff, 100% for P3.3 knowledge provider depth including release/browser signoff, 100% for P3.4 closure/passport action depth including release/browser signoff, 100% for P4.1 closure blocker action focus including release/browser signoff, 100% for P4.2 action-specific passport guidance including release/browser signoff, 100% for P4.3 evidence/worklog target actions including release/browser signoff, 100% for P4.4 closure blocker visibility/ordering including release/browser signoff, 100% for P4.5 edge-state browser hardening including release/browser signoff, and 100% for P4.6/P5.1-P5.4 full depth slice including release/browser signoff. P3/P4/P5 are now optional depth and polish tracks completed for the current page; remaining future work is outside the agreed current-page scope.
+Current baseline:
 
-Current execution mode: user requested full P4/P5 completion; P4.6 through P5.4 implementation, local verification, Linux release and browser signoff are complete at commit `23775e0`. P0 backend contract hardening and release/browser signoff are complete. P1 now has a typed selected-ticket aggregate endpoint, compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary endpoint, first-class KB-link-backed knowledge suggestions with conservative AI beta summary, visible "More" controls wired to the tested mutation aliases, and Linux/browser signoff for commit `7a5fad8`. P2.1 extends the existing knowledge endpoint with a source-visible built-in catalog fallback for tickets without manual KB links and is deployed on the Linux stand. P2.2 adds standalone typed timeline filtering behind the existing timeline normalization and wires `/app/tickets` timeline tabs to it with aggregate fallback. P2.3-P2.5 adds nested structured diagnostic step/details extraction, a persisted `/app/tickets` theme toggle, and requester contact enrichment from registry person/location data, deployed on the Linux stand at commit `de8bf80`. P2.6 first slice completes SLA/OLA/passport readability, light-theme surface coverage and desktop-width audit. P2.7 enriches the right context tab with real registry provenance, asset identifiers, service/category metadata and related-knowledge count without adding fake data. P2.8 normalizes operation statuses, surfaces latest/running operations, makes tool/playbook disabled reasons visible in the right sidebar, and wraps long technical metadata safely. P2.9 moves support knowledge catalog/search out of the web handler into a first-class domain provider while keeping the existing API contract stable. P2.10 replaces primitive inline action controls with reason-capturing operator dialogs while preserving existing typed mutation aliases and backend workflow/RBAC guards, and was released/browser-checked at commit `7f835bf`. P2.11 completed final current-page browser/readiness validation across local checks, remote smoke, dark/light screenshots, page interactions, canonical support endpoints and server shutdown. P3.1 added manifest-derived tool policy metadata to the typed support tools payload and `/app/tickets` tools panel, released/browser-checked at commit `5061991`. P3.2 added read-only operation lifecycle hints to latest operation cards and diagnostic timeline cards, released/browser-checked at commit `cdd42ea`. P3.3 added source diagnostics, provider/version metadata, source counts, query signals, match reasons and confidence/source-count fields for support knowledge, released/browser-checked at commit `13a5824`. P3.4 added an aggregate closure plan and central pre-close blocker panel derived from existing closure requirements, released/browser-checked at commit `4049883`. P4.1 made central closure blockers clickable and focused the passport sidebar on the selected blocker. P4.2 added section/next-step guidance and checklist highlighting for action-specific closure focus. P4.3 added explicit target-action copy for evidence/worklog focus states and was released/browser-checked at commit `a3be0fa`. P4.4 added local priority ordering plus overflow disclosure so evidence/worklog blockers stay discoverable on tickets with many missing closure requirements. P4.5 adds typed workspace error states and actionable empty timeline states, released/browser-checked at commit `d9700a8`. P4.6 fixed verified light-theme closure-panel contrast after dark/light desktop audit; P5.1 wires evidence candidates/manual evidence and worklog actions into real existing APIs; P5.2 adds token-indexed KB catalog search; P5.3 adds operation details/cancel controls using existing operation APIs; P5.4 enriches requester/service context from registry service ownership. Fresh evidence for this slice: `verify_workspace.py` passed, focused backend pytest passed 11 tests, focused Vitest passed 32 tests, `pnpm --dir webapp run build` passed, release smoke passed on `http://192.168.100.17:8666`, and Playwright browser signoff covered `/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca` closure evidence/worklog focus, tools panel, light theme and zero horizontal overflow.
+- P0-P5 for `/app/tickets` are implemented and release/browser-signed off.
+- Live verification passed for the current page core flows: 3-column layout, topbar, work slices, queue list, selected ticket workspace, timeline tabs, composer, `Ещё` dialogs, right context tabs, SLA/OLA, knowledge, passport and not-found state.
+- Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
+- Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device; evidence/worklog mutation depth needs a targeted closure-blocker fixture.
 
-Working route: `/app/tickets` and `/app/tickets/:ticketId`.
+Remaining gaps:
 
-Design reference: user-provided `image.png`. Treat it as the accepted visual target: dark SaaS operator workspace, 3 columns, calm topbar, left work slices/queues/tickets, central selected ticket/next action/timeline/composer, right context/SLA/tools/knowledge/passport.
+- Typed/backend gap: **1-2%**.
+  - Mainly final typed response consistency for operation retry/cancel/details, knowledge provider diagnostics and edge-state errors.
+- Domain gap: **3-5%**.
+  - Mainly retry semantics, operation retry/cancel policy, online low-risk tool signoff, and external KB/provider depth beyond current source-visible catalog.
+- UI polish gap: **1-3%**.
+  - Mainly final live fixture coverage, role/permission disabled affordances, long-data polish and screenshot signoff after the final domain slices.
 
-## Source Of Truth And Constraints
+Target completion after this plan: **100% for the current `/app/tickets` page scope**.
 
-- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
-- Do not edit `\\192.168.100.17\NTFS_Share\pc_client` directly.
-- Use active React routes under `/app/tickets`; `/app/support` is a compatibility redirect and must not become a second divergent workspace.
-- Preserve existing business logic: statuses, assignment, queue/routing, priority, SLA/OLA, approval, diagnostics, playbooks, passport, observer, RBAC.
-- Reuse existing shared components: `Button`, `Card`, `Tabs`, `Badge`, `SearchField`, `Select`, `Avatar` where they fit.
-- Use Tailwind/Tailwind tokens and current React code style.
-- Keep UI dense and operator-focused; no marketing landing layout.
-- Browser verification must use `http://192.168.100.17:8666/admin` after deployment.
-- Remote server must be stopped after verification unless the user explicitly asks to leave it running.
+## Scope
 
-## Current Project Findings
+In scope:
 
-### Active Frontend Surface
+- `/app/tickets` and `/app/tickets/:ticketId`.
+- Typed web support API responses used by this page.
+- Operation details/retry/cancel controls where existing lifecycle and RBAC allow them.
+- External/searchable knowledge depth while preserving AI beta as non-authoritative guidance.
+- Closure/passport evidence/worklog live fixture and final UI polish.
+- Browser signoff on `http://192.168.100.17:8666/admin`.
 
-- `webapp/src/app/navigation.tsx`
-  - `SUPPORT_HOME_PATH = "/app/tickets"`.
-- `webapp/src/app/router.tsx`
-  - `/app/support` redirects to `/app/tickets`.
-  - `/app/tickets` renders `TicketListPage`.
-  - `/app/tickets/:ticketId` renders `TicketDetailPage`.
-- `webapp/src/pages/tickets/list-page.tsx`
-  - Current ticket queue/list page.
-- `webapp/src/pages/tickets/detail-page.tsx`
-  - Current detailed ticket page with timeline, status actions, tools, playbooks, passport.
-- `webapp/src/features/queues/support-workspace.tsx`
-  - Existing support workspace implementation exists, but is not the canonical active route and should not be treated as the main page.
-- `webapp/src/features/queues/api.ts`
-  - Current typed support API client for queue, ticket detail, messages, status, tools, playbooks, passport, knowledge draft and tool/playbook run.
+Out of scope:
 
-### Existing Backend Surface
+- Replacing ticket workflow/status/SLA/OLA/assignment/routing logic.
+- Creating a second workspace under `/app/support`.
+- Fake KB, fake evidence, fake operation results or bypassed permissions.
+- Broad redesign beyond the accepted SaaS workspace visual structure.
 
-- `GET /api/web/support/bootstrap`
-- `GET /api/web/support/queue`
-- `GET /api/web/support/tickets/{ticket_id}`
-- `POST /api/web/support/tickets/{ticket_id}/messages`
-- `POST /api/web/support/tickets/{ticket_id}/status`
-- `GET /api/web/support/tickets/{ticket_id}/tools`
-- `POST /api/web/support/tickets/{ticket_id}/tools/run`
-- `GET /api/web/support/tickets/{ticket_id}/playbooks`
-- `POST /api/web/support/tickets/{ticket_id}/playbooks/run`
-- `GET /api/web/support/tickets/{ticket_id}/passport`
-- `POST /api/web/support/tickets/{ticket_id}/passport/generate`
-- `PATCH /api/web/support/tickets/{ticket_id}/passport`
-- `GET/POST/PATCH /api/web/support/tickets/{ticket_id}/passport/evidence*`
-- `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft`
-- `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`
+## Functional Improvements We Will Get
 
-### Existing Domain Capabilities
+1. **Reliable operation actions for operators**
+   - Operators will see when an operation can be retried, canceled or only inspected.
+   - Retry/cancel buttons will follow backend lifecycle and RBAC instead of being cosmetic.
+   - Operation details will expose structured metadata consistently, which makes diagnostics easier to audit.
 
-- Smart views exist in `server/tickets/smart_views.py`.
-- SLA and OLA logic exist in `server/tickets/sla_service.py` and `server/tickets/ola_service.py`.
-- Ticket status/workflow logic exists in `server/tickets/workflow_service.py`.
-- Assignment service exists in `server/tickets/assignment_service.py`.
-- Routing service exists in `server/tickets/routing_service.py`.
-- Playbook/tool launch exists in `server/web_api/support_handlers.py` and `server/app/services/playbook_engine.py`.
-- Passport/evidence exists in `server/tickets/passport_service.py`, `server/tickets/evidence_service.py`, and `server/app/repos/ticket_passport_repo.py`.
-- Registry/device context exists in `server/registry/*`, `RegistryRepo`, `DevicesRepo`.
-- KB links exist at legacy ticket handler level and are now exposed through a first-class support workspace knowledge-suggestions endpoint; P2.1 adds a small built-in catalog fallback for common incidents when no manual KB links are present.
+2. **Deeper knowledge suggestions**
+   - Knowledge recommendations will come from a clearer provider contract instead of shallow fallback behavior.
+   - Similar tickets/articles will carry source, match reason, provider/version and confidence diagnostics.
+   - AI beta remains secondary and source-backed, so it helps triage without pretending to be authoritative.
 
-## Backend Functionality Gap Estimate
+3. **Better real-world closure flow**
+   - Evidence/worklog/passport actions will be checked against a live closure-blocker test ticket.
+   - Operators will have a clearer path from blocker to the exact action needed to close the ticket.
+   - Passport readiness will become more trustworthy because it is verified against real mutations.
 
-Estimated remaining backend functionality for the requested target after P2.5 implementation: **4-7%** at the typed web contract layer.
+4. **Cleaner permission and edge-state behavior**
+   - Disabled controls will explain whether the cause is role, permission, offline device, install requirement, missing consent or lifecycle state.
+   - Permission-denied API responses should not crash the page.
+   - Not-found, empty, offline, no-deadline and long-data states stay readable.
 
-Important distinction:
+5. **Final production confidence**
+   - The remaining percent is not about making the page "less visual"; it is about proving that rare but important production flows behave correctly.
+   - After this plan, the current page can be treated as complete for the agreed scope.
 
-- Domain/business functionality missing: **8-12%**. The project already has ticket lifecycle, smart views, routing, assignment, priority, SLA/OLA services, tools/playbooks, operations, passports, evidence, observer data and KB links. The remaining domain gap is mostly external/searchable KB depth, richer tool policy metadata, and richer operation state semantics.
-- Typed workspace/API functionality missing: **4-7%**. The current React workspace now has a selected-ticket aggregate payload with compact SLA/OLA and passport readiness DTOs, a lightweight workspace summary contract, mutation aliases, first-class knowledge suggestions, standalone typed timeline filtering, nested diagnostic step extraction and registry requester enrichment. Remaining typed gaps are optional: external KB provider/index, richer operation-running/retry metadata, and deeper requester/account/service context.
+## Implementation Plan
 
-Already present:
+### P6.1 Typed Operation Action Contract
 
-- Ticket list and detail.
-- Smart-view counts.
-- Messages and internal notes.
-- Status transitions and closure gates.
-- Tools/playbooks, operation lifecycle, consent status.
-- Passport and evidence management.
-- Registry/device snapshot.
-- Basic observer/timeline data.
+Status: **completed locally, 2026-05-07**.
 
-Missing or incomplete for target:
+Implementation notes:
 
-- Workspace summary endpoint matching `GET /api/support/workspace/summary` semantics is now available as `GET /api/web/support/workspace/summary`.
-- Aggregated ticket workspace endpoint returning all center/right-panel data in one payload is implemented as `GET /api/web/support/tickets/{ticket_id}/workspace`.
-- First-class queue list/count DTO separate from smart views is implemented in the workspace summary/queue payloads; remaining queue work is optional inventory polish for missing/empty queues.
-- Ticket list priority/assignee display DTO fields are implemented; remaining left-worklist work is visual density and selected-state polish.
-- SLA/OLA progress DTO with remaining/target/status/progress is now available in the aggregate selected-ticket workspace payload; a standalone summary/list contract is still not implemented.
-- Typed support aliases for assign, queue change, priority change and reroute are implemented and wired from visible "More" controls.
-- Filterable unified timeline endpoint exists as `GET /api/web/support/tickets/{ticket_id}/timeline`; remaining timeline work is mostly operation-running, retry and details UX.
-- Structured operation result mapper with step cards is implemented for common top-level and nested diagnostic payloads; remaining work is richer UI treatment for details, running state and unavailable-tool states.
-- Knowledge suggestions endpoint with KB-linked articles, similar tickets, built-in catalog fallback and conservative AI beta summary is implemented as `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and included in the aggregate workspace payload.
-- Compact resolution passport readiness DTO for sidebar is now available in the aggregate selected-ticket workspace payload; a standalone endpoint remains optional.
-- Theme toggle/light-dark workspace shell state is implemented; remaining work is full light-theme visual polish across every panel and responsive desktop width.
+- Existing operation details and cancel APIs were found: `GET /api/operations/{operation_id}` and `POST /api/operations/{operation_id}/cancel`.
+- No safe first-class operator retry API exists yet; retry is now represented explicitly as lifecycle metadata with `can_retry=false` and a typed disabled reason instead of a cosmetic button.
+- Backend DTOs now expose operation action fields for snapshot/timeline cards: `can_retry`, `can_cancel`, `retry_url`, `cancel_url`, `retry_disabled_reason`, `cancel_disabled_reason`, `policy_labels`.
+- Frontend operation cards now consume typed action fields instead of deriving cancel/retry affordances only from local status guesses.
+- Focused verification passed:
+  - `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events -q` -> `2 passed`
+  - `pnpm --dir webapp test -- support-workspace-mappers.test.ts list-page.test.tsx` -> `32 passed`
 
-## Backend Contract Analysis 2026-05-05
+Goal: close the typed/backend gap for operation details, retry and cancel surfaces.
 
-### Routes Already Available
+Files to inspect and likely modify:
 
-- `GET /api/web/support/bootstrap`
-  - Current typed bootstrap for support capabilities and observer endpoint hints.
-- `GET /api/web/support/queue`
-  - Current queue/list route. Supports `scope`, `status`, `smart_view`, `query`, `limit`.
-  - Returns `summary.smart_view_counts`, status counts, smart-view options and ticket rows.
-  - Built-in and custom smart views are evaluated through `server/tickets/smart_views.py`.
-- `GET /api/web/support/tickets/{ticket_id}`
-  - Current typed detail route. Returns ticket header data, request form summary, observer summary, filtered timeline, snapshot, status actions and closure requirements.
-- `POST /api/web/support/tickets/{ticket_id}/messages`
-  - Current public/internal message route used by composer.
-- `POST /api/web/support/tickets/{ticket_id}/status`
-  - Current status transition route. Uses workflow/approval/closure guards and can auto-assign on `in_progress`.
-- `GET /api/web/support/tickets/{ticket_id}/tools`
-  - Current typed tool availability route.
-- `POST /api/web/support/tickets/{ticket_id}/tools/run`
-  - Current ticket-scoped tool run route with consent handling.
-- `GET /api/web/support/tickets/{ticket_id}/playbooks`
-  - Current typed playbook availability/readiness route.
-- `POST /api/web/support/tickets/{ticket_id}/playbooks/run`
-  - Current ticket-scoped playbook run route.
-- `GET/POST/PATCH /api/web/support/tickets/{ticket_id}/passport*`
-  - Current passport, evidence and knowledge-draft routes.
-- `POST /api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision`
-  - Current approval decision route.
-- Legacy but available: `POST /api/tickets/{ticket_id}/assign`, `/queue`, `/priority`, `/reroute`.
-  - These use the existing assignment, queue, priority and routing services, but are not yet exposed through the typed `/api/web/support/*` boundary.
-
-### Gaps By Priority
-
-P0 - required before calling the backend contract production-complete:
-
-- [x] Add priority and assignee display fields to `SupportQueueTicketItem` and `webapp/src/features/queues/api.ts`.
-- [x] Add authoritative queue counts/list to the support queue payload or a new summary payload.
-- [x] Expand typed detail timeline to include status, assignment, queue, priority, SLA/OLA, passport/evidence and operation events with normalized event kinds.
-- [x] Add typed `/api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` aliases over the existing legacy handlers/services.
-
-P0 first-slice evidence:
-
-- RED verified: `server/tests/test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload` failed on missing `priority`.
-- GREEN verified: the same backend test passes after adding queue item priority/assignee fields and `summary.queue_counts`.
-- Frontend focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`.
-- `server/tests/test_web_support_api.py` passed: 35 tests.
-- `pnpm --dir webapp run build` passed.
-- `python scripts/verify_workspace.py` passed after updating `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py` for the typed support/registry DTO drift rule.
-
-P0 second-slice evidence:
-
-- RED verified: `server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events` failed because lifecycle events were filtered out of the typed detail timeline.
-- GREEN verified: the same backend test passes after adding `event_category`, `event_label`, `event_details`, `operation_steps` and expanding support timeline event filtering.
-- `server/tests/test_web_support_api.py` passed: 36 tests.
-- Frontend mapper RED/GREEN verified for normalized timeline categories and operation steps.
-- Focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`: 12 tests.
-- `pnpm --dir webapp run build` passed.
-
-P0 third-slice evidence:
-
-- RED verified: new alias tests failed with 404 before routes existed.
-- GREEN verified: `POST /api/web/support/tickets/{ticket_id}/assign|queue|priority|reroute` now return typed `SupportTicketMutationActionResult`.
-- RBAC tests verify typed forbidden payloads for `ticket.assign`, `ticket.queue.change` and `ticket.status.change`.
-- `server/tests/test_web_support_api.py` passed: 41 tests.
-- Focused Vitest passed for `support-workspace-mappers.test.ts`, `list-page.test.tsx` and `router.test.tsx`: 12 tests.
-- `pnpm --dir webapp run build` passed.
-
-P0 release/browser signoff evidence:
-
-- Green CI artifact created for commit `055f20b88286446e6ad739ecf9d75840cc2c4189`: `python scripts/run_ci_suite.py` wrote `artifacts/ci/055f20b88286446e6ad739ecf9d75840cc2c4189/summary.json` with status `green`.
-- Linux release completed: `python scripts/release_server_to_remote.py` deployed branch `codex/helpdesk-process-model`, applied remote migrations, uploaded the webapp bundle and passed remote smoke (`/api/health -> 200`).
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: React shell redirected to `/app/tickets/:ticketId`, and the 3-column support workspace rendered with topbar, smart views, queue list, selected ticket, next-action panel, timeline/composer and right context tabs.
-- Browser network verified support APIs returned 200 for queue, ticket detail, tools, playbooks and passport.
-- Non-blocking browser observation: the support-role shell still logs one 403 for admin-only `GET /api/web/admin/connection_requests`; this does not block `/app/tickets` and remains a separate access UX cleanup item.
-
-P1 - important for performance and the target architecture:
-
-- [x] Add `GET /api/web/support/tickets/{ticket_id}/workspace` aggregate payload:
-  - ticket detail;
-  - full timeline;
-  - context;
-  - SLA/OLA;
-  - tools/playbooks;
-  - knowledge;
-  - passport readiness;
-  - permissions/actions.
-- [x] Add `GET /api/web/support/workspace/summary` or extend `GET /api/web/support/queue?include_rows=0`.
-- [x] Add compact `sla_ola` DTO with `first_response`, `resolution`, `ola_ack`, `ola_processing`.
-- [x] Add compact passport readiness DTO so the right sidebar does not need the full passport payload.
-- [x] Wire visible "More" menu controls to the typed `assign`, `queue`, `priority` and `reroute` aliases.
-
-P1 first-slice evidence:
-
-- RED verified: `server/tests/test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge` failed with 404 before the aggregate route existed.
-- GREEN verified: the same backend test passes after adding `SupportTicketWorkspacePayload` and `GET /api/web/support/tickets/{ticket_id}/workspace`.
-- RED/GREEN frontend verified: `webapp/src/pages/tickets/list-page.test.tsx` now proves `/app/tickets/:ticketId` calls `fetchSupportTicketWorkspace()` and the "Ещё" menu exposes typed actions; reroute calls `postSupportTicketReroute(ticketId, { reason: "manual_recalculate" })`.
-- Local verification passed: `python -m pytest server/tests/test_web_support_api.py -q --tb=short`, focused Vitest, `pnpm --dir webapp run build`, and `python scripts/verify_workspace.py`.
-- Green CI artifact created for commit `368328b8a92f4d8fcc0ca965f0420da27117552a`; `python scripts/run_ci_suite.py` passed workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
-- Linux release completed: `python scripts/release_server_to_remote.py` deployed branch `codex/helpdesk-process-model`, applied migrations, uploaded the webapp bundle and passed remote smoke (`/api/health -> 200`).
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` loaded the selected ticket through `GET /api/web/support/tickets/{ticket_id}/workspace -> 200`, and the visible "Ещё" menu rendered `Назначить на себя`, `Сменить очередь`, `Изменить приоритет`, `Пересчитать маршрут`.
-
-P1 second-slice evidence:
-
-- RED verified: backend aggregate test failed with missing `sla_ola`, and frontend mapper test failed because it still derived two timers from detail instead of preferring compact workspace DTOs.
-- GREEN verified: `GET /api/web/support/tickets/{ticket_id}/workspace` now returns compact `sla_ola` timers for first response, resolution, OLA ack and OLA processing, plus `passport_readiness` with the four sidebar checklist items.
-- Frontend mapper now prefers compact `sla_ola` and `passport_readiness` when present, while keeping the previous detail/passport derivation as fallback.
-- Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts`.
-- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (42 tests), `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
-
-P1 third-slice evidence:
-
-- RED verified: `server\tests\test_web_support_api.py::test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows` failed with 404 before the endpoint existed.
-- GREEN verified: `GET /api/web/support/workspace/summary` now returns row-free `views`, `queues`, `smart_view_counts` and `smart_view_options`.
-- The summary `views` object exposes target aliases `needs_action`, `sla_risk`, `unassigned` and `requester_replied` while preserving existing backend smart-view ids in `smart_view_counts`.
-- Frontend typed client `fetchSupportWorkspaceSummary(limit)` added for the lightweight endpoint.
-- Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_workspace_summary_returns_view_and_queue_counts_without_rows server\tests\test_web_support_api.py::test_web_support_queue_returns_typed_scope_and_filter_payload -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts`.
-- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (43 tests), `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts`, `pnpm --dir webapp run build`, and `python scripts\verify_workspace.py`.
-- Linux release completed for commit `0a69b51fe1b49b7c00312facbf5d9a16ffce304e` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; release verification, local webapp build, remote migrations, bundle upload and remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, and `GET /api/web/support/workspace/summary` returned 200 with row-free `views`, `queues`, `smart_view_counts` and no `tickets` key.
-
-P1 fourth-slice evidence:
-
-- RED verified: `server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload` failed with 404 before the typed endpoint existed.
-- GREEN verified: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` returns KB-linked articles, similar tickets from `custom_fields.similar_tickets`, and a conservative `AI-рекомендация / Бета` summary with explicit sources.
-- Aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` now embeds the same knowledge payload, so the right sidebar does not need a separate waterfall.
-- Frontend typed client `fetchSupportTicketKnowledgeSuggestions(ticketId)` added; `/app/tickets` maps aggregate `knowledge` into articles, similar tickets and the AI beta block instead of the old placeholder text.
-- Focused verification passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload -q --tb=short` and `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`.
-- Local release verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (44 tests), focused Vitest (13 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Linux release completed for commit `7a5fad89b5a551f82c62b34538423cfeb04346ae` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; release verification, local webapp build, remote migrations, bundle upload and remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab showed the source-safe empty state for a ticket without KB links, `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200 with `knowledge`, and standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` returned 200.
-
-P2 - valuable, but can follow after core operator flows:
-
-- [x] Add richer knowledge catalog/search integration behind the existing `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` contract.
-- [x] Add standalone typed timeline filtering endpoint behind existing support timeline normalization.
-- [x] Add structured operation step extraction for diagnostic payloads.
-- [x] Add frontend theme toggle/state integration for `/app/tickets`.
-- [x] Add richer assignee/user profile display names and requester phone/email where registry data exists.
-
-P2.1 knowledge catalog/search evidence:
-
-- RED verified: `server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links` failed because `KB-HTTP-502` was absent without manual KB links.
-- GREEN verified: the same test passes after adding a built-in knowledge catalog fallback in `server/web_api/support_handlers.py`.
-- Compatibility verified: existing manual-KB/workspace aggregate test still passes, and catalog fallback is suppressed when manual KB links are already attached to avoid duplicate right-sidebar suggestions.
-- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (45 tests), focused Vitest for queues/list page (13 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Full CI passed for commit `2cb35928754f17825e8863f6465766d1e39c9f69`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
-- Linux release completed for commit `2cb35928754f17825e8863f6465766d1e39c9f69` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab opened, `GET /api/web/support/tickets/{ticket_id}/workspace`, standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and `GET /api/web/support/workspace/summary` returned 200, and aggregate `/workspace` embedded `knowledge`.
-
-P2.2 standalone timeline filtering scope:
-
-- Add `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all|messages|internal|diagnostics|history&limit=...`.
-- Reuse existing support timeline event allow-list and normalized `SupportTicketMessage` serializer.
-- Keep aggregate `/workspace` behavior unchanged; the standalone endpoint is an optimization/contract for tab-specific refreshes.
-- Map `history` to lifecycle/governance categories: history, SLA, OLA, passport and approval.
-
-P2.2 standalone timeline filtering evidence:
-
-- RED verified: `server\tests\test_web_support_api.py::test_web_support_ticket_timeline_endpoint_filters_normalized_events` failed with 404 before the typed endpoint existed.
-- GREEN verified: `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics|internal|history|all` returns normalized timeline rows using the same support serializer and lifecycle allow-list as aggregate/detail timeline.
-- RED/GREEN frontend verified: `webapp/src/features/queues/api.test.ts` first failed on missing `fetchSupportTicketTimeline()`, then passed after adding the typed client; `webapp/src/pages/tickets/list-page.test.tsx` proves the "Диагностика" tab calls `fetchSupportTicketTimeline(ticketId, "diagnostics")` and renders filtered operation results.
-- `/app/tickets` keeps aggregate `/workspace` timeline behavior for `all` and uses the standalone endpoint only for tab-specific refreshes, with local aggregate filtering as fallback.
-- Local verification passed: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (46 tests), focused Vitest for queue API/mappers/list page (15 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Full CI passed for commit `3bff79a65bf08b127430d4936a95095093fa58ee`: workspace verification, webapp bundle, server no-db/db-api/agent-ws layers and pc_agent tests.
-- Linux release completed for commit `3bff79a65bf08b127430d4936a95095093fa58ee` with `python scripts\release_server_to_remote.py --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, bundle upload and remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200, standalone `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics` returned 200, and clicking the exact "Диагностика" timeline tab waited for the same 200 response.
-
-P2.3-P2.5 execution scope:
-
-- P2.3: Extract operation steps not only from top-level `payload.steps`, but also from common nested diagnostic payload shapes such as `payload.result.steps`, `payload.result.checks`, `payload.result.diagnostics`, `payload.observations.steps`, and normalize titles/status/value/details for richer operation result cards.
-- P2.4: Add a compact theme toggle to `/app/tickets` topbar, persist the workspace theme in browser storage, and keep dark mode as the default accepted visual target.
-- P2.5: Extend support registry/contact DTOs to include requester `phone`, `email`, location `floor`, and source/contact provenance when existing `registry_people` / `registry_locations` rows provide those fields. Keep safe fallbacks when data is absent.
-
-P2.3-P2.5 verification plan:
-
-- Backend RED/GREEN in `server/tests/test_web_support_api.py` for nested diagnostic step extraction and registry contact fields in aggregate workspace payload.
-- Frontend RED/GREEN in `support-workspace-mappers.test.ts` and `list-page.test.tsx` for enriched context, structured step cards and theme persistence/toggle.
-- Required local gates: focused backend test, focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, `git diff --check`.
-- Required release gates: full `python scripts\run_ci_suite.py`, standard Linux release, browser signoff at `http://192.168.100.17:8666/admin`, then stop remote server.
-
-P2.3-P2.5 local evidence:
-
-- RED verified: focused backend tests failed on missing nested diagnostic `operation_steps` and missing `person_phone` in aggregate workspace registry snapshot.
-- RED verified: focused frontend tests failed on missing step `details` rendering, missing workspace theme state and missing registry phone/email in the right context sidebar.
-- GREEN verified: `python -m pytest server\tests\test_web_support_api.py::test_web_support_timeline_extracts_nested_diagnostic_steps server\tests\test_web_support_api.py::test_web_support_workspace_enriches_requester_contact_from_registry -q --tb=short` passed.
-- GREEN verified: `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` passed.
-- Extended local verification passed so far: `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (48 tests), `pnpm --dir webapp exec vitest run src\features\queues\api.test.ts src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` (18 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Pre-commit full CI evidence: `python scripts\run_ci_suite.py --server-pytest-timeout 5400 --idle-timeout 0` passed with green summary for current dirty workspace state; repeat required after commit so deploy artifact matches the final commit SHA.
-- Post-commit verification for `de8bf80` passed sequentially: `python scripts\verify_workspace.py`, `python -m pytest server\tests\test_web_support_api.py -q --tb=short` (48 tests), focused frontend Vitest/build, and `python -m pytest server\tests -m "not manual and agent_ws" -vv --durations=80 --tb=short` (25 tests). Combined `run_ci_suite.py` on Windows hit an unrelated agent_ws/test-DB lock timeout after verify/build/no-db/db-api layers passed; release used the standard script with explicit `--skip-ci-check` and the sequential evidence above.
-- Linux release completed for commit `de8bf80` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote fast-forward, migrations, web bundle upload and remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin` for `/app/tickets/:ticketId`: workspace root rendered with `data-theme="dark"`, aggregate `/workspace` returned 200, standalone diagnostics timeline returned 200, exact `Диагностика` tab rendered, theme toggle switched to `data-theme="light"` and `localStorage.support-workspace-theme=light`, and final browser console reported 0 errors.
-
-### Recommended Next Slices For `/app/tickets`
-
-Recommended next slice: **P2.6 visual/light-theme/responsive hardening**. The page already has the target data contract and working operator flows, so the next useful work is visual production readiness on the current route rather than more backend shape work.
-
-P2.6 - visual/light-theme/responsive hardening:
-
-- Audit `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px desktop widths in dark and light themes.
-- Polish the current light theme so all major surfaces, chips, borders, timeline rows, sidebars, composer and dropdowns are readable and cohesive, not only the topbar/root shell.
-- Treat SLA/OLA and resolution passport as high-priority visual surfaces: timers must show breached/at-risk/paused/ok states clearly, progress bars must remain readable in both themes, passport readiness must not look like a passive placeholder, and "open passport" must stay obvious.
-- Add edge-case visual states for SLA/OLA/passport where the existing view model supports them: unknown timer, paused timer, breached timer, no timers, passport 0/N, passport complete N/N, and missing passport fallback.
-- Tighten density and overflow handling in the left ticket list, central action/timeline area and right context tabs.
-- Fix any clipped text, awkward wraps, weak contrast, non-obvious selected state or scroll containment issues found in browser screenshots.
-- Keep this frontend-only unless the audit exposes missing data that cannot be represented safely.
-
-P2.7 - right-context enrichment polish:
-
-- Improve display of requester/contact/source provenance, device/account/service/category/location fields when existing registry data provides them.
-- Keep absent data quiet and explicit; avoid fake values.
-- Add tests for mapper fallback behavior where registry fields are missing.
-
-P2.8 - diagnostics/tools UX hardening:
-
-- Improve operation-running and tool-unavailable states in the right sidebar and timeline.
-- Show structured diagnostic step details more clearly, including retry/details affordances when the payload provides them.
-- Disable agent-required tools with visible reason when the device is offline or policy denies the action.
-
-P2.9 - externalized knowledge provider:
-
-- Keep the existing `knowledge-suggestions` contract stable.
-- Move beyond the built-in catalog fallback toward a first-class searchable KB provider/index if a project source exists.
-- Keep AI beta copy source-visible and conservative; no automatic action execution.
-- Concrete P2.9 slice in progress:
-  1. [x] Move the hardcoded support knowledge catalog/search out of `server/web_api/support_handlers.py` into a `server/tickets` provider module with a small JSON-backed catalog source.
-  2. [x] Preserve the existing typed `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` and aggregate `/workspace` payload shape.
-  3. [x] Keep manual ticket KB links preferred, then catalog search, then similar tickets; no fake AI/action execution.
-  4. [x] Add focused provider/API tests for catalog search, manual-link precedence, dedupe and source summary behavior.
-  5. [x] Update CODEMAP/quick lookup for the new provider location, then run focused server tests, webapp build/type checks and workspace verification.
-
-P2.9 local evidence:
-
-- Implemented `server/tickets/knowledge_provider.py` and `server/tickets/knowledge_catalog.json` as the support knowledge provider/catalog boundary.
-- `server/web_api/support_handlers.py` now keeps only the typed route/DTO mapping and calls `build_knowledge_suggestions(...)`; the public `knowledge-suggestions` and aggregate `/workspace` payload shapes stay unchanged.
-- Manual KB links remain preferred; catalog suggestions are added only when no manual articles are attached, and similar tickets plus AI beta summary remain source-visible and non-acting.
-- Added `server/tests/test_support_knowledge_provider.py` for JSON catalog loading, dedupe, scoring and conservative source summary behavior.
-- Local verification passed: focused support knowledge pytest (6 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Linux release completed for commit `079caf2` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Знания" tab opened, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200 with embedded `knowledge`, and standalone `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` returned 200.
-- Remaining browser console/network noise: known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`; `/app/tickets` support APIs were 200.
-
-P2.10 - "More" controls hardening:
-
-- Replace primitive controls with proper reason-capturing modals/drawers for status, queue, priority, assign and reroute where the current workflow requires operator context.
-- Preserve the existing typed mutation aliases and workflow/RBAC guards.
-- Add permission/disabled states rather than hiding critical operator context.
-- Concrete P2.10 slice complete:
-  1. [x] Move status change from the inline select/apply pair into the "Ещё" action menu.
-  2. [x] Add one compact operator action dialog that captures reason/comment for status, assign-to-self, queue change, priority change and reroute.
-  3. [x] Use existing typed mutations only: status, assign, queue, priority and reroute; do not add backend routes.
-  4. [x] Disable submit when the required target or reason is missing, and show clear disabled states for missing queues/status options.
-  5. [x] Add focused React tests for the dialog, reason payloads, and queue/priority/status target selection.
-  6. [x] Run focused Vitest, production build, workspace verification, deploy/browser signoff and stop the remote server.
-
-P2.10 local evidence:
-
-- Replaced the central inline status select/apply pair with a status action in the "Ещё" menu.
-- Added a compact operator action dialog for status, assign-to-self, queue change, priority change and reroute.
-- The dialog requires a human-readable reason before submit and sends optional internal comment where the existing typed client/backend support it.
-- No backend routes were added; the UI still uses existing typed status/assign/queue/priority/reroute mutations.
-- Focused verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\api.test.ts` (12 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Linux release completed for commit `7f835bf` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser signoff completed at `http://192.168.100.17:8666/admin`: `/app/tickets/:ticketId` rendered, the "Ещё" menu showed `Назначить на себя`, `Сменить статус`, `Сменить очередь`, `Изменить приоритет` and `Пересчитать маршрут`; status and reroute dialogs enforced required reason before submit, and no live mutation was submitted during signoff.
-- Aggregate/current support endpoints returned 200 in browser context: `GET /api/web/support/workspace/summary`, `GET /api/web/support/tickets/{ticket_id}/workspace`, `GET /api/web/support/tickets/{ticket_id}/tools`, `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`, and `GET /api/web/support/tickets/{ticket_id}/passport`.
-- Remaining browser console/network noise: known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`; three 404 entries were created only by a manual probe against obsolete non-canonical `/api/web/tickets/...` URLs and are not emitted by the page flow.
-
-P2.11 - final current-page browser signoff:
-
-- Concrete P2.11 slice complete:
-  1. [x] Re-run local focused tests, production build and workspace verification after the P2.10 plan closeout commit.
-  2. [x] Deploy the plan closeout/docs state to the Linux stand without changing runtime code.
-  3. [x] Capture dark/light desktop screenshots at 1366px and 1920px.
-  4. [x] Verify `/app/tickets`, selected ticket, right tabs, timeline filters, composer and "Ещё" controls in browser.
-  5. [x] Verify console/network health against canonical `/api/web/support/*` endpoints and record known non-blocking noise.
-  6. [x] Stop the remote server after signoff.
-
-P2.11 evidence:
-
-- Local verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\api.test.ts` (12 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`.
-- Remote server was started with `python scripts\manage_remote_stack.py start server`; the first smoke failed during warm-up, logs showed successful DB init and running service, and the repeat `python scripts\manage_remote_stack.py smoke server` returned `OK http://192.168.100.17:8666/api/health -> 200`.
-- Browser Use runtime failed to start because the local app-server path was missing, so final rendered validation used Playwright MCP against the canonical stand URL `http://192.168.100.17:8666/admin`.
-- Browser identity and nonblank checks passed: page title `pc_client — рабочие места`, URL `/app/tickets/{ticket_id}`, visible topbar, left work slices, selected ticket, next action, timeline, composer and right context.
-- Screenshots captured for visual evidence: `support-workspace-p2-11-1366-light.png`, `support-workspace-p2-11-1366-dark.png`, `support-workspace-p2-11-1920-dark.png`, and `support-workspace-p2-11-1920-light.png`.
-- Right sidebar tabs were exercised: `Контекст`, `SLA`, `Инструменты`, `Знания`, `Паспорт`; SLA tab showed breached first-response/resolution timers plus no-deadline OLA rows.
-- Timeline filters were exercised: `Сообщения`, `Внутреннее`, `Диагностика`, `История`, `Все`; article counts changed by filter without rendering errors.
-- Composer was exercised in public/internal modes; public mode kept empty `Отправить` disabled, internal mode changed placeholder to `Напишите внутреннюю заметку для команды...`.
-- "Ещё" controls were exercised: all five actions were visible, and `Пересчитать маршрут` opened a dialog with submit disabled until a reason is entered; no live mutation was submitted during signoff.
-- Canonical support endpoints returned 200 in browser context: `GET /api/web/support/workspace/summary`, `GET /api/web/support/tickets/{ticket_id}/workspace`, `GET /api/web/support/tickets/{ticket_id}/tools`, `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`, and `GET /api/web/support/tickets/{ticket_id}/passport`.
-- Console health: only known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`.
-- Remote server was stopped after signoff: `active=inactive`, `sub=dead`.
-
-## P3 Domain Depth Track
-
-P3 is not a rescue pass for the page. The page is production-ready for the current contract after P2.11. P3 adds deeper domain semantics where the UI currently has enough structure to work but can expose better operational truth to an L1/L2 operator.
-
-Scope:
-
-- Keep `/app/tickets` as the only active support workspace route.
-- Prefer typed DTO additions and adapter fields over new routes.
-- Avoid DB migrations unless a slice explicitly needs persistent state.
-- Keep AI/knowledge suggestions conservative and source-visible.
-- Keep tool/playbook execution confirmation under operator control.
-
-P3.1 - tool policy metadata:
-
-- Goal: make tool/playbook availability less opaque by surfacing existing manifest/policy metadata in the typed support tools payload and right sidebar.
-- Files:
-  - `server/web_api/dto/support.py`
-  - `server/web_api/support_handlers.py`
-  - `server/tests/test_web_support_api.py`
-  - `webapp/src/features/queues/api.ts`
-  - `webapp/src/features/queues/support-workspace-mappers.ts`
-  - `webapp/src/pages/tickets/list-page.test.tsx`
-  - `server/docs/CODEMAP.md`
-- Checklist:
-  1. [x] Extend `SupportToolItem` with policy fields derived from `ToolMetadata`: `domain`, `tool_kind`, `required_permission`, `allowed_roles`, `policy_labels`.
-  2. [x] Populate those fields in `_normalize_support_tool_entry()` without adding routes or changing run behavior.
-  3. [x] Extend TypeScript API types and workspace mapper to show concise policy labels in the tools sidebar.
-  4. [x] Add focused backend and frontend tests proving the metadata is returned and rendered.
-  5. [x] Update CODEMAP and run focused tests/build/workspace verification.
-
-P3.1 local evidence:
-
-- `SupportToolItem` now carries existing tool-manifest policy metadata (`domain`, `tool_kind`, `required_permission`, `allowed_roles`, `policy_labels`) through the typed support tools payload.
-- `_normalize_support_tool_entry()` keeps the existing tool run behavior intact and only enriches the DTO from `ToolMetadata`.
-- `/app/tickets` tools sidebar mapper renders concise operator-visible labels such as required permission and allowed roles.
-- The sidebar automation list now keeps both playbooks and tools visible when both catalogs are present, instead of letting many playbooks hide tool policy labels.
-- Focused checks already passed: `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_tools_returns_typed_inventory -v --tb=short`; `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts src\features\queues\api.test.ts`.
-- Build/verification passed: `python scripts\bootstrap_web_toolchain.py`; `pnpm --dir webapp run build`; `python scripts\verify_workspace.py`; `git diff --check`.
-- Release/browser signoff passed on Linux stand at commit `5061991`: `release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`, smoke `/api/health` 200, `/app/tickets` tools tab shows both playbooks and tools, and live tool cards show `Право: module.tool.run.low_risk` plus `Роли: admin, support`.
-
-P3.2 - operation lifecycle semantics:
-
-- Goal: enrich latest operation cards and timeline operation results with retryability, duration, trace/detail hints and policy/error category when existing operation/event payloads provide them.
-- Non-goal: no retry button until the backend has a safe, idempotent retry contract.
-- Checklist:
-  1. [x] Extend typed support operation/timeline DTOs with read-only lifecycle metadata: duration, retry counts/retryable, error code/category, trace id and details URL.
-  2. [x] Populate metadata from existing `Operation` columns and diagnostic event payloads without changing lifecycle transitions or adding retry actions.
-  3. [x] Extend `/app/tickets` view-model and UI to show compact lifecycle chips in latest operations and diagnostic timeline cards.
-  4. [x] Add focused backend/frontend tests.
-  5. [x] Run focused tests/build/workspace verification, then release/browser signoff.
-
-P3.2 local evidence:
-
-- `SupportTicketOperationSnapshot` and support timeline messages now carry read-only lifecycle hints: `duration_ms`, `retry_count`, `max_retries`, `retryable`, `error_code`, `error_category`, `trace_id` and `details_url`.
-- Latest operation snapshots populate those fields from existing `operations` columns; diagnostic timeline rows populate them from event payloads when present. No retry button or lifecycle mutation was added.
-- `/app/tickets` renders compact lifecycle chips in latest operation cards and diagnostic timeline operation result cards.
-- Focused checks passed: `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_events -v --tb=short`; `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`; `pnpm --dir webapp run build`; `git diff --check`.
-- Workspace verification passed after docs/index updates: `python scripts\verify_workspace.py`.
-- Linux release completed for commit `cdd42ea` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; release verification, local webapp build, remote migrations, bundle upload and remote smoke passed (`/api/health` 200 on attempt 2 while the server was starting).
-- Browser signoff passed at `http://192.168.100.17:8666/app/tickets/003b30fd-7c36-4d9f-b081-832a341f299b`: the tools tab rendered the latest timed-out operation with compact lifecycle chips `Длительность: 4 min 19 s`, `Повтор: 0/3 доступен`, `Код: timeout`, `Категория: Таймаут` and `Trace: 8c2ae683...`.
-- Browser API evidence: `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200 and carried `duration_ms`, `retry_count`, `max_retries`, `retryable`, `error_code`, `error_category`, `trace_id` and `details_url` on the latest operation snapshot.
-- Fresh browser console check returned `Total messages: 0 (Errors: 0, Warnings: 0)` after opening the lifecycle signoff ticket.
-
-P3.3 - knowledge provider depth:
-
-- Goal: add scoring/source diagnostics to the current provider and prepare a clean adapter boundary for future external KB/search indexes.
-- Non-goal: no autonomous AI action execution and no unverified answer-as-truth UX.
-- Checklist:
-  1. [x] Extend provider dataclasses and support DTOs with source diagnostics: `source_type`, `score`, `match_reasons`, provider name/version, source counts and query signals.
-  2. [x] Keep manual KB links highest confidence, catalog fallback source-visible, and similar-ticket matches explicitly separate.
-  3. [x] Render compact diagnostics in `/app/tickets` knowledge tab without making AI look authoritative.
-  4. [x] Add focused provider, backend API and frontend mapper/component tests.
-  5. [x] Run focused tests/build/workspace verification, then release/browser signoff.
-
-P3.3 local evidence:
-
-- `server/tickets/knowledge_provider.py` now returns source diagnostics without changing the article/similar-ticket list shape: manual KB links are `manual_kb` with score `100`, catalog matches are `catalog` with keyword match reasons, and similar tickets are `similar_ticket` with linked/fallback reasons.
-- `SupportTicketKnowledgeSuggestionsPayload` now includes `ai_summary.confidence`, `ai_summary.source_count` and a `diagnostics` object with provider/version, source counts, query signals, article match diagnostics and similar-ticket match diagnostics.
-- `/app/tickets` knowledge tab renders compact provider, confidence and signal chips under the AI beta block; the UI still frames AI as a source-visible suggestion and does not trigger actions.
-- Focused checks passed: `python -m pytest server\tests\test_support_knowledge_provider.py server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server\tests\test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links -v --tb=short`; `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`; `pnpm --dir webapp run build`; `git diff --check`.
-- Workspace verification passed: `python scripts\verify_workspace.py`.
-- Linux release completed for commit `13a5824` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed after service warm-up.
-- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/263fede2-20a6-49b6-8b10-8e07541787dc`: the "Знания" tab showed `Источник: support_knowledge_provider`, `Доверие: medium`, source signals `printer`, `print`, `принтер`, `печать`, and article `KB-PRINTER-OFFLINE`.
-- Browser API signoff verified aggregate `GET /api/web/support/tickets/{ticket_id}/workspace -> 200` with embedded `knowledge.diagnostics` (`provider=support_knowledge_provider`, `provider_version=local-v1`, `source_counts.catalog=1`) and `ai_summary.confidence=medium`; fresh browser console check returned zero errors.
-
-P3.4 - closure/passport action depth:
-
-- Goal: make closure blockers and passport/evidence candidates more actionable from the central workspace while preserving current closure guards.
-- Non-goal: no weakening of closure policy or evidence requirements.
-- Checklist:
-  1. [x] Add compact aggregate `closure_plan` DTO derived from existing `actions.closure_requirements`.
-  2. [x] Keep workflow/closure policy services authoritative; no new close/resolve bypass.
-  3. [x] Map closure plan into the `/app/tickets` selected-ticket view model.
-  4. [x] Render a central "Перед закрытием" blocker panel with recommended action labels, evidence candidate counts and passport navigation.
-  5. [x] Run focused tests/build/workspace verification, then release/browser signoff.
-
-P3.4 local evidence:
-
-- `GET /api/web/support/tickets/{ticket_id}/workspace` now embeds `closure_plan` with `ready_for_resolution`, `missing_count`, `total`, `evidence_candidate_count`, `recommended_next_action` and blocker action hints.
-- The closure plan is derived from existing `actions.closure_requirements`; backend workflow and closure guards remain unchanged and authoritative.
-- `/app/tickets` now renders a central closure blocker panel when requirements are missing, with an "Открыть паспорт" action and per-blocker labels such as `Добавить evidence`.
-- RED/GREEN focused tests passed for backend aggregate payload and frontend mapper/page rendering: `test_web_support_ticket_workspace_exposes_actionable_closure_plan`, `support-workspace-mappers.test.ts`, and `list-page.test.tsx`.
-- Focused checks passed: `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q --tb=short`; `python -m pytest server\tests\test_web_support_api.py::test_web_support_ticket_workspace_aggregates_detail_tools_passport_and_knowledge server\tests\test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan server\tests\test_web_support_api.py::test_web_support_detail_exposes_closure_policy_requirements -q --tb=short`; `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx`; `pnpm --dir webapp run build`; `python scripts\verify_workspace.py`; `git diff --check`.
-- Linux release completed for commit `4049883` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser API signoff found real closure blocker tickets through `GET /api/web/support/queue?scope=all&smart_view=all` and aggregate workspace payloads; `T-000409` returned `closure_plan.missing_count=6`.
-- Browser UI signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: the center panel rendered "Перед закрытием", showed `Осталось требований: 6/7`, listed blockers such as `Код решения`, `Публичный итог для заявителя`, `Внутренний итог решения`, `Worklog`, and the "Открыть паспорт" button switched the right sidebar to `Паспорт решения` with readiness `3/4`.
-- Fresh browser console check returned zero errors after the P3.4 signoff flow.
-
-P3.5 - final P3 release/browser signoff:
-
-- Goal: deploy the completed P3 domain-depth slices, verify `/app/tickets` in browser, record known console/network noise, and stop the remote server.
-
-## P4 Operator Flow Polish Track
-
-P4 is a polish track for already-working `/app/tickets` flows. It should improve operator ergonomics without adding fake data, weakening backend workflow guards, or creating a second page architecture.
-
-P4.1 - closure blocker action focus:
-
-- Goal: make each central closure blocker action clickable and focus the passport sidebar on the selected requirement.
-- Non-goal: no new close/resolve mutation, no bypass of closure policy, no passport schema migration.
-- Checklist:
-  1. [x] Add a focused frontend test proving a closure blocker action opens passport guidance.
-  2. [x] Convert blocker action chips from passive labels to buttons.
-  3. [x] Store selected closure blocker focus locally and reset it on ticket change.
-  4. [x] Render a compact `closure-focus-card` in the passport tab with selected blocker label, action label, details and evidence candidate count.
-  5. [x] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
-
-P4.1 local evidence:
-
-- RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "opens passport focus guidance"` failed because no blocker action button existed and `closure-focus-card` was absent.
-- GREEN verified: the same focused test passes after adding blocker action buttons and passport focus guidance.
-- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (22 tests).
-- Production build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\verify_workspace.py`; `git diff --check` returned no whitespace errors.
-- Linux release completed for commit `f61a917` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: clicking the central blocker action `Заполнить решение` switched the right sidebar to `Паспорт решения` and rendered `Фокус паспорта` for `Код решения` with the requirement details.
-- Fresh browser console check returned zero errors after the P4.1 flow.
-
-P4.2 - action-specific passport guidance:
-
-- Goal: make the passport focus card explain the correct operator step for each closure blocker action kind and highlight the related passport checklist item.
-- Non-goal: no new backend mutation, no fake form persistence, no closure guard changes.
-- Checklist:
-  1. [x] Add focused frontend test for `edit_resolution` guidance and checklist highlighting.
-  2. [x] Add a local `actionKind -> section/hint/passportItemKey` mapper.
-  3. [x] Render section and next-step hint in `closure-focus-card`.
-  4. [x] Highlight the related passport checklist item for the focused blocker.
-  5. [x] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
-
-P4.2 local evidence:
-
-- RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "shows action-specific passport guidance"` failed because `Секция: Решение`, `Следующий шаг` and `closure-focused-passport-item` were absent.
-- GREEN verified: the same focused test passes after adding action-specific guidance and checklist highlighting.
-- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (23 tests).
-- Production build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\verify_workspace.py`; `git diff --check` returned no whitespace errors.
-- Linux release completed for commit `cca48a5` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: clicking `Заполнить решение` rendered `Секция: Решение`, `Следующий шаг`, the resolution hint and the related passport checklist item `Решение применено`.
-- Fresh browser console check returned zero errors after the P4.2 flow.
-
-P4.3 - evidence/worklog target actions:
-
-- Goal: make `attach_evidence` and `add_worklog` focus states show an explicit target action, while keeping passport checklist highlighting.
-- Non-goal: no upload/worklog mutation from this slice; no fake persistence.
-- Checklist:
-  1. [x] Add focused frontend tests for evidence and worklog closure blockers.
-  2. [x] Extend local closure focus guide with `targetAction`.
-  3. [x] Render `Целевое действие` in the focus card.
-  4. [x] Keep `Проверка и закрытие` highlighted for evidence/worklog blockers.
-  5. [x] Run focused Vitest, production build, workspace verification, release/browser signoff and stop the remote server.
-
-P4.3 local evidence:
-
-- RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "evidence-specific|worklog-specific"` failed because `Целевое действие`, `Приложить evidence` and `Зафиксировать worklog` were absent.
-- GREEN verified: the same focused test passes after adding `targetAction` to the local guide and rendering it in the focus card.
-- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (25 tests).
-- Production webapp build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\verify_workspace.py`.
-- Whitespace check passed with no diff errors: `git diff --check`.
-- Linux release completed for commit `a3be0fa` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser API signoff found real closure blocker ticket `T-000409` with both `add_worklog` and `attach_evidence` blockers through `GET /api/web/support/queue?scope=all&smart_view=all&limit=250` and `GET /api/web/support/tickets/{ticket_id}/workspace`.
-- Browser UI signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: clicking `Добавить worklog` switched the right sidebar to `Паспорт решения` and rendered `Секция: Worklog`, `Целевое действие`, `Зафиксировать worklog` and the `Проверка и закрытие` checklist row.
-- Browser UI signoff completed at `http://192.168.100.17:8666/app/tickets/2bcde663-851f-42e2-9631-7437d233d4f6`: clicking `Добавить evidence` switched the right sidebar to `Паспорт решения` and rendered `Секция: Evidence`, `Целевое действие`, `Приложить evidence` and the `Проверка и закрытие` checklist row.
-- Fresh browser console check returned zero errors after the P4.3 signoff flow.
-
-### Remaining Work After P4.3
-
-The current `/app/tickets` workspace is production-usable. Remaining work is narrow polish and deeper optional domain capability:
-
-- **P4.4 closure blocker visibility/ordering:** the central "Перед закрытием" panel can have more blockers than visible rows. Make hidden blockers discoverable with priority ordering, a compact "Показать ещё N" affordance and focused tests so `attach_evidence` / `add_worklog` are not missed behind the first four resolution blockers.
-- **P4.5 edge-state browser hardening:** verify and patch no-ticket-selected, ticket-not-found, permission-denied, stale workspace payload, empty timeline, empty tools, empty knowledge, offline device and operation-running states in the current page.
-- **P4.6 final visual polish pass:** re-run 1366/1440/1920 desktop checks in dark/light themes after the closure-panel changes, then fix remaining wrapping, contrast, focus-ring and scroll-containment defects.
-- **P5.1 optional evidence/worklog action depth:** if product wants the focus card to do more than navigate, wire `attach_evidence` into the existing passport/evidence picker/upload flow and `add_worklog` into an existing safe worklog/internal-note path. Do not fake persistence and do not bypass closure guards.
-- **P5.2 optional external knowledge depth:** replace the built-in catalog fallback with a real indexed/searchable KB provider while keeping source diagnostics and AI beta non-authoritative.
-- **P5.3 optional operation action depth:** add operator-visible retry/cancel/details actions only where existing operation policy and RBAC allow them.
-- **P5.4 optional requester/service depth:** enrich requester account, department, service ownership and asset context if authoritative registry sources exist.
-
-Residual estimates after P4.3:
-
-- Typed API gap: **3-5%**, mostly optional action-specific payloads and standalone convenience endpoints.
-- Broader backend/domain gap: **6-10%**, mostly external KB/search, operation action semantics and deeper profile/service providers.
-- UI/page polish gap: **6-10%**, mostly hidden blocker discoverability, rare edge states and final desktop/light-theme QA.
-
-P4.4 - closure blocker visibility and ordering:
-
-- Goal: make every central closure blocker discoverable and actionable even when the ticket has many missing requirements.
-- Non-goal: no new backend fields, no mutation behavior, no changes to closure policy.
-- Files:
-  - Modify: `webapp/src/pages/tickets/list-page.tsx`.
-  - Test: `webapp/src/pages/tickets/list-page.test.tsx`.
-- Checklist:
-  1. [x] Add a focused frontend test with six closure blockers where `attach_evidence` and `add_worklog` are initially below the first four rows.
-  2. [x] Add a deterministic local ordering helper that promotes severe actionable blockers, while preserving stable order for equal priority.
-  3. [x] Render visible blocker rows plus a compact "Показать ещё N" / "Скрыть" control when rows overflow.
-  4. [x] Ensure clicking newly revealed `Добавить evidence` / `Добавить worklog` still opens the passport focus card with the right section and target action.
-  5. [x] Run focused Vitest, production build, `python scripts\verify_workspace.py`, release/browser signoff and stop the remote server.
-
-P4.4 local evidence:
-
-- RED verified: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx -t "keeps evidence and worklog blockers discoverable"` failed because the central closure panel sliced the first four blockers and did not render `Добавить evidence`.
-- GREEN verified: the same focused test passes after adding deterministic blocker ordering, overflow state and `Показать ещё N` / `Скрыть`.
-- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (26 tests).
-- Production webapp build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\verify_workspace.py`.
-- Whitespace check passed with no diff errors: `git diff --check`.
-- Linux release completed for commit `6a92c1d` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser UI signoff completed at `http://192.168.100.17:8666/app/tickets/a3278940-c567-4f8b-8be8-01e7236de6ca`: `T-000409` rendered `Добавить evidence` and `Добавить worklog` in the initial visible closure rows, `Показать ещё 2` expanded hidden blockers including `Официальный паспорт решения`, and `Добавить evidence` opened the passport focus card with `Секция: Evidence` and `Приложить evidence`.
-- Fresh browser console check returned zero errors after the P4.4 signoff flow.
-
-P4.5 - edge-state browser hardening:
-
-- Goal: make rare `/app/tickets` operator states readable and recoverable instead of showing raw errors or generic empty panels.
-- Non-goal: no backend contract changes, no new DB fields, no fake data for tools/knowledge/operations.
-- Files:
-  - Modify: `webapp/src/pages/tickets/list-page.tsx`.
-  - Test: `webapp/src/pages/tickets/list-page.test.tsx`.
-- Checklist:
-  1. [x] Add focused frontend tests for ticket-not-found, permission-denied and empty timeline states.
-  2. [x] Classify workspace load errors by typed `status` when available and by known message patterns as fallback.
-  3. [x] Render operator-readable recovery actions for `Тикет не найден`, `Недостаточно прав` and generic retry states.
-  4. [x] Replace the generic timeline empty copy with all/filter-specific empty states and a `Показать все события` affordance for filtered views.
-  5. [x] Run focused Vitest, production build, `python scripts\\verify_workspace.py` and whitespace check.
-  6. [x] Commit, release to the Linux stand, perform browser signoff and stop the remote server.
-
-P4.5 local evidence:
-
-- RED verified: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx -t "workspace edge state|empty timeline"` failed because `Тикет не найден`, `Недостаточно прав` and `В таймлайне пока нет событий` were absent.
-- GREEN verified: the same focused test passes after adding workspace error classification and actionable timeline empty states.
-- Focused frontend checks passed: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/features/queues/support-workspace-mappers.test.ts` (29 tests).
-- Production webapp build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\\verify_workspace.py`.
-- Whitespace check passed with no diff errors: `git diff --check`.
-- Code/plan commit created: `d9700a8 support: harden ticket workspace edge states`.
-- Linux release completed for commit `d9700a8` with `python scripts\\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed on the second attempt after service warm-up.
-- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/00000000-0000-0000-0000-000000000000`: the selected-ticket workspace rendered `Тикет не найден`, explanatory copy and `Вернуться к очереди` instead of a raw error.
-- Browser signoff completed at `http://192.168.100.17:8666/app/tickets/2c83384f-7eee-4b72-a4bd-21f5f6f830dd`: ticket `T-000321` rendered normally, the `Диагностика` timeline tab showed `Нет событий: Диагностика` plus `Показать все события`, and the button returned the timeline to all events.
-- Browser network check on the valid ticket route showed `GET /api/web/session/me`, `GET /api/web/support/queue?...` and `GET /api/web/support/tickets/{ticket_id}/workspace` returning 200. The not-found route intentionally produced a 404 workspace request for the edge-state check.
-
-P4/P5 completion campaign:
-
-- Goal: finish the remaining P4 polish and P5 depth items for the current `/app/tickets` support workspace without replacing established ticket, passport, operation, knowledge or registry services.
-- Scope:
-  - P4.6 final visual polish pass for desktop widths 1366/1440/1920 in dark/light themes.
-  - P5.1 evidence/worklog action depth using existing passport/evidence APIs and internal-note/worklog-safe paths.
-  - P5.2 deeper searchable knowledge provider while keeping AI beta source-visible and non-authoritative.
-  - P5.3 operation details/actions only where existing operation policy/RBAC and lifecycle state allow them.
-  - P5.4 requester/account/service enrichment only from authoritative registry/ticket sources.
-- Non-goals:
-  - No fake persistence, no local-only completion for domain actions, no bypass of closure guards.
-  - No DB schema migration unless an existing domain source is genuinely insufficient and tests prove the gap.
-  - No autonomous AI action execution; knowledge stays advisory with sources.
-  - No operation retry/cancel button unless the backend exposes a safe endpoint and permission semantics.
-- Ownership and contracts:
-  - React UI: `webapp/src/pages/tickets/*`, `webapp/src/features/queues/*`.
-  - Typed web boundary if payload/action fields change: `server/web_api/support_handlers.py`, `server/web_api/dto/support.py`, `webapp/src/features/queues/api.ts`.
-  - Ticket/passport/evidence/knowledge domain if behavior changes: `server/tickets/passport_service.py`, `server/tickets/evidence_service.py`, `server/tickets/knowledge_provider.py`, `server/tickets/knowledge_catalog.json`.
-  - Operation action semantics if exposed: existing operation/tool/playbook services only; do not invent UI actions without server authority.
-- Verification matrix:
-  - TDD RED/GREEN for every behavior-changing slice.
-  - Focused frontend tests: `pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/features/queues/support-workspace-mappers.test.ts`.
-  - Focused server tests as needed: `python -m pytest server/tests/test_web_support_api.py server/tests/test_support_knowledge_provider.py server/tests/test_ticket_evidence_service.py -v --tb=short`.
-  - Production build: `pnpm --dir webapp run build`.
-  - Workspace check: `python scripts/verify_workspace.py`.
-  - Release: `python scripts/release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`.
-  - Browser signoff at `http://192.168.100.17:8666/admin` / `/app/tickets` and stop remote server afterwards.
-
-P4.6 - final visual polish pass:
-
-- Checklist:
-  1. [x] Release/start a current stand and capture/check `/app/tickets` at 1366, 1440 and 1920px in dark theme.
-  2. [x] Toggle light theme and repeat the same widths.
-  3. [x] Fix concrete wrapping, contrast, focus-ring or scroll-containment defects found in browser evidence.
-  4. [x] Add focused tests only for deterministic UI state regressions; use browser evidence for viewport-only defects.
-  5. [x] Record screenshots/findings and update this plan.
-
-P5.1 - evidence/worklog action depth:
-
-- Checklist:
-  1. [x] Inventory existing passport evidence candidate/link/manual evidence APIs and internal note/worklog paths.
-  2. [x] Add failing frontend tests for `Добавить evidence` and `Добавить worklog` opening real action surfaces instead of only focus guidance.
-  3. [x] Wire `attach_evidence` to the existing passport/evidence candidate or manual evidence flow.
-  4. [x] Wire `add_worklog` to a safe existing worklog/internal-note path with explicit visibility and reason copy.
-  5. [x] Verify backend closure/passport guards still remain authoritative.
-
-P5.2 - searchable knowledge provider depth:
-
-- Checklist:
-  1. [x] Add/extend server tests proving knowledge suggestions use an indexed/searchable provider rather than only static fallback order.
-  2. [x] Keep manual KB links preferred over provider matches.
-  3. [x] Expose provider diagnostics/source counts without making AI beta authoritative.
-  4. [x] Keep the existing `/knowledge-suggestions` and aggregate `/workspace` contracts stable unless tests require additive fields.
-
-P5.3 - operation details/actions depth:
-
-- Checklist:
-  1. [x] Inventory existing operation details, retry, cancel or run-again endpoints and RBAC policy.
-  2. [x] If safe action endpoints exist, add visible controls gated by lifecycle, policy and permission metadata.
-  3. [x] If safe action endpoints do not exist, render details-only controls and disabled explanations; do not fake retry/cancel.
-  4. [x] Test that operation cards show policy-aware details/actions and do not expose unsafe controls.
-
-P5.4 - requester/service enrichment depth:
-
-- Checklist:
-  1. [x] Inventory authoritative registry/ticket fields for requester account, department, service owner, asset/service metadata and escalation contacts.
-  2. [x] Add typed additive DTO/mapper fields only where existing sources exist.
-  3. [x] Render enrichment in the right context sidebar without inventing values.
-  4. [x] Add mapper/component tests for enriched and missing-source cases.
-
-P2.6 verification plan:
-
-- Frontend focused tests for theme persistence, visible theme toggle labels/states and critical page text.
-- Frontend focused tests for SLA/OLA edge labels and passport readiness visual copy where practical.
-- `pnpm --dir webapp run build`.
-- `python scripts\verify_workspace.py`.
-- Browser MCP signoff at `http://192.168.100.17:8666/admin` with dark/light snapshots and console-error check.
-
-P2.6 first-slice local evidence:
-
-- Implemented scoped light-theme workspace overrides for `/app/tickets` so the existing dark-first panels, cards, timeline rows, composer, tabs and right sidebar receive readable light surfaces without changing the ticket business logic.
-- Reworked right-sidebar SLA/OLA rendering to show explicit `Нарушен`, `Риск`, `Пауза`, `В норме` and `Нет срока` states, due labels, readable progress bars and no stale OLA placeholder.
-- Reworked passport readiness rendering with a status chip, progress bar and clearer open-passport action.
-- Added focused frontend coverage for SLA/OLA edge labels and passport `4/4` readiness copy.
-- Local verification passed: `pnpm --dir webapp exec vitest run src\pages\tickets\list-page.test.tsx src\features\queues\support-workspace-mappers.test.ts` (16 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Linux release completed for commits `27e687f` and follow-up light-header fix `b244e7e` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed.
-- Browser plugin path failed to start with a local app-server path error, so rendered signoff used Playwright MCP against the canonical `http://192.168.100.17:8666/admin` stand.
-- Browser signoff passed: logged in as `op1`, `/app/tickets/:ticketId` rendered, `GET /api/web/support/queue?...` returned 200, aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` returned 200, theme toggle switched dark/light, SLA tab showed explicit timer states, and passport tab showed `Готовность 4/4` plus open action.
-- Visual screenshots checked at 1366, 1440 and 1920px in dark/light. One light-theme defect was found (`bg-[#0b1624]/70` center header stayed dark) and fixed in `b244e7e`; final light screenshots show the center header, timeline and composer on readable light surfaces.
-- Remaining browser console/network noise: known non-blocking support-role 403 for admin-only `GET /api/web/admin/connection_requests`; `/app/tickets` support APIs were 200.
-
-## Design System Target
-
-### Layout
-
-- App fills `100vh`.
-- Topbar height: 56-64px.
-- Left column: 300-340px.
-- Center column: flexible main workspace.
-- Right sidebar: 360-420px.
-- Each column scrolls independently.
-- Topbar remains fixed/sticky.
-
-### Visual Tokens
-
-- Workspace dark app bg: `#07111f`.
-- Panel bg: `#0d1828`.
-- Card bg: `#111f33`.
-- Elevated bg: `#13233a`.
-- Border: `rgba(255,255,255,0.08)`.
-- Text primary: `#e8edf5`.
-- Text secondary: `#9aa8bd`.
-- Primary: blue.
-- Warning: orange.
-- Danger: red.
-- Success: green.
-- Purple only as secondary accent.
-
-### Interaction
-
-- Selected ticket must be visually obvious.
-- Next action is the central UX anchor.
-- Public reply and internal note are visually distinct.
-- Dangerous or unavailable actions must be disabled with visible reason.
-- Agent offline disables agent-required tools.
-- Operation running appears in timeline and right tools panel.
-
-## Target Frontend Units
-
-Prefer these focused units under `webapp/src/pages/tickets/` or `webapp/src/features/queues/`:
-
-- `SupportWorkspacePage`
-- `support-workspace-model.ts`
-- `support-workspace-mappers.ts`
-- `SupportTopbar` or route-aware `AppTopbar` dark variant
-- `WorkSlicesPanel`
-- `QueueList`
-- `TicketWorklist`
-- `TicketHeader`
-- `NextActionPanel`
-- `TicketActionBar`
-- `TimelineTabs`
-- `TicketTimeline`
-- `TimelineEventItem`
-- `OperationResultCard`
-- `ReplyComposer`
-- `TicketContextSidebar`
-- `SlaOlaCard`
-- `ToolsPlaybookCard`
-- `KnowledgeSuggestionCard`
-- `ResolutionPassportCard`
-
-Do not split so aggressively that every component is one-use boilerplate; the final file layout should follow the existing repo style and testability.
-
-## Target Backend Units
-
-Modify these only as needed:
-
-- `server/web_api/dto/support.py`
-  - Add workspace DTOs, SLA/OLA DTOs, context DTOs, knowledge DTOs, action DTOs.
 - `server/web_api/support_handlers.py`
-  - Add or extend typed handlers and serializer helpers.
-- `server/routes.py`
-  - Register only missing typed routes.
-- `server/tickets/smart_views.py`
-  - Reuse existing smart-view ids and counts.
-- `server/tickets/sla_service.py`, `server/tickets/ola_service.py`
-  - Prefer read-only helper/serializer logic; do not change timer semantics unless a bug is proven.
-- `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`
-  - Update if new routes or key entrypoints are added.
-
-## Route And API Strategy
-
-Use current typed `/api/web/support/*` routes as canonical React API. Add compatibility aliases only if needed for the requested names.
-
-Preferred final API shape:
-
-- Keep `GET /api/web/support/queue`.
-- `GET /api/web/support/workspace/summary` now provides summary without ticket rows; keep `GET /api/web/support/queue` as the row/list contract.
-- Add `GET /api/web/support/tickets/{ticket_id}/workspace` to aggregate:
-  - selected ticket;
-  - timeline;
-  - context;
-  - SLA/OLA;
-  - tools/playbooks;
-  - knowledge;
-  - passport readiness;
-  - permissions/actions.
-- Keep `POST /api/web/support/tickets/{ticket_id}/messages`.
-- Keep `POST /api/web/support/tickets/{ticket_id}/status`.
-- Add typed aliases if UI uses them:
-  - `POST /api/web/support/tickets/{ticket_id}/assign`
-  - `POST /api/web/support/tickets/{ticket_id}/queue`
-  - `POST /api/web/support/tickets/{ticket_id}/priority`
-  - `POST /api/web/support/tickets/{ticket_id}/reroute`
-- Keep `GET /api/web/support/tickets/{ticket_id}/tools`.
-- Keep `POST /api/web/support/tickets/{ticket_id}/tools/run`.
-- Keep `GET /api/web/support/tickets/{ticket_id}/playbooks`.
-- Keep `POST /api/web/support/tickets/{ticket_id}/playbooks/run`.
-- Keep `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` as the first-class knowledge contract; it now prefers manual KB links and falls back to built-in catalog search when no links exist, without changing the UI boundary.
-
-Do not add public `/api/support/*` duplicates unless an external consumer requires them. Inside the React app, typed `/api/web/support/*` is the canonical boundary.
-
-## Execution Stages And Progress
-
-Progress is tracked in 100 points:
-
-- Stage 0: Plan and baseline, 8 points.
-- Stage 1: Frontend view-model/mappers, 12 points.
-- Stage 2: Backend DTO/serializer gaps, 18 points.
-- Stage 3: Workspace shell and layout, 16 points.
-- Stage 4: Left worklist, 10 points.
-- Stage 5: Center ticket workspace, 16 points.
-- Stage 6: Right sidebar, 10 points.
-- Stage 7: Mutations, states and permissions, 5 points.
-- Stage 8: Tests/docs/verification/browser, 5 points.
-
-### Stage 0: Plan And Baseline (8 points)
-
-- [x] Run UTF-8 shell bootstrap.
-- [x] Run `python scripts/task_intake.py`.
-- [x] Read workflow, quick lookup, boundaries and context index docs.
-- [x] Rebuild context index.
-- [x] Run `python scripts/bootstrap_web_toolchain.py`.
-- [x] Identify active route ownership.
-- [x] Replace `PLANS.md` with this plan.
-- [x] Capture current `/app/tickets` and `/app/tickets/:ticketId` source structure in implementation notes.
-
-Expected completion after Stage 0: 8%.
-
-### Stage 1: View Model And Mappers (12 points)
-
-Files:
-
-- Create or modify `webapp/src/features/queues/support-workspace-model.ts`.
-- Create or modify `webapp/src/features/queues/support-workspace-mappers.ts`.
-- Modify `webapp/src/features/queues/api.ts`.
-- Add tests near `webapp/src/features/queues/`.
-
-Tasks:
-
-- [x] Define `SupportWorkspaceViewModel`.
-- [x] Define left-panel view models:
-  - smart views;
-  - queues;
-  - ticket items.
-- [x] Define selected ticket model:
-  - header;
-  - priority/status chips;
-  - next action;
-  - SLA/OLA summary;
-  - requester/device/classification context.
-- [x] Define timeline model:
-  - messages;
-  - internal notes;
-  - diagnostics;
-  - history.
-- [x] Define sidebar models:
-  - context;
-  - SLA/OLA;
-  - tools/playbooks;
-  - knowledge;
-  - passport.
-- [x] Map current `SupportQueuePayload`, `SupportTicketDetailPayload`, `SupportTicketToolsPayload`, `SupportTicketPlaybooksPayload`, `SupportTicketPassportPayload` into the new view model.
-- [x] Add mapper tests for:
-  - next action by status/owner;
-  - SLA risk countdown;
-  - timeline filter classification;
-  - passport readiness fallback.
-
-Expected completion after Stage 1: 20%.
-
-Stage 1 evidence:
-
-- Added `webapp/src/features/queues/support-workspace-model.ts`.
-- Added `webapp/src/features/queues/support-workspace-mappers.ts`.
-- Added `webapp/src/features/queues/support-workspace-mappers.test.ts`.
-- Ran `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts`: 5 tests passed.
-
-### Stage 2: Backend DTO And Serializer Gaps (18 points)
-
-Files:
-
-- Modify `server/web_api/dto/support.py`.
-- Modify `server/web_api/support_handlers.py`.
-- Modify `server/routes.py` only if new routes are added.
-- Update `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md` if route surface changes.
-- Add or extend `server/tests/test_web_support_api.py`.
-
-Tasks:
-
-- [x] Add summary/queues DTO if existing queue payload is not enough.
-- [ ] Add SLA/OLA card DTO serializer:
-  - first response;
-  - resolution;
-  - OLA ack;
-  - OLA processing.
-- [ ] Add next-action serializer:
-  - owner;
-  - label;
-  - hint;
-  - due_at;
-  - remaining_seconds;
-  - timer_type.
-- [ ] Add context serializer:
-  - requester;
-  - registry/location;
-  - device;
-  - classification.
-- [x] Add knowledge suggestions endpoint as KB-link-backed payload with conservative source-visible AI beta summary.
-- [x] Add aggregated workspace endpoint if frontend complexity or round-trips justify it.
-- [x] Add typed aliases for assign/queue/priority/reroute only if used in visible action menu.
-- [x] Expand typed detail timeline with normalized lifecycle/SLA/OLA/passport event categories and structured operation steps.
-- [ ] Extend tests for DTO shape and RBAC denial payloads.
-
-Expected completion after Stage 2: 38%.
-
-Stage 2 note:
-
-- No new backend route was added in the first implementation pass.
-- The existing `GET /api/web/support/queue`, `GET /api/web/support/tickets/{ticket_id}`, tools/playbooks/passport and mutation endpoints are sufficient for the current UI with a frontend adapter.
-- Updated frontend `SupportTicketDetailPayload.snapshot.registry` typing to match the existing backend DTO and handler.
-- Remaining backend additions are still TODO if product requires fewer round trips or first-class knowledge/SLA-OLA workspace DTOs.
-
-### Stage 3: Workspace Shell And Layout (16 points)
-
-Files:
-
-- Modify `webapp/src/pages/tickets/list-page.tsx`.
-- Modify or replace portions of `webapp/src/pages/tickets/detail-page.tsx`.
-- Possibly create `webapp/src/pages/tickets/workspace-page.tsx`.
-- Modify `webapp/src/components/shell/app-topbar.tsx` only if route-specific dark topbar is needed.
-- Modify `webapp/src/app/layouts/app-shell.tsx` only if the support workspace needs full-bleed mode.
-
-Tasks:
-
-- [x] Make `/app/tickets` the full 3-column workspace.
-- [x] Keep `/app/tickets/:ticketId` deep-link behavior by selecting ticket in the same workspace.
-- [x] Support no selected ticket state.
-- [x] Add route-aware dark workspace mode without breaking admin/settings pages.
-- [x] Implement fixed topbar and independent column scrolling.
-- [x] Remove topbar KPI cards from the support workspace.
-- [ ] Preserve sidebar navigation shell unless full-bleed support route requires a scoped exception.
-- [ ] Ensure desktop width from 1366px works without overlap.
-
-Expected completion after Stage 3: 54%.
-
-Stage 3 evidence:
-
-- Modified `webapp/src/pages/tickets/list-page.tsx` into the active 3-column dark support workspace.
-- Modified `webapp/src/app/layouts/app-shell.tsx` with a route-scoped full-bleed exception for `/app/tickets` and `/app/tickets/:ticketId`.
-- Modified `webapp/src/app/routes/lazy-pages.tsx` so `/app/tickets/:ticketId` uses the same workspace page.
-- Ran focused route tests: `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx src/app/router.test.tsx`: 11 tests passed.
-
-### Stage 4: Left Worklist (10 points)
-
-Files:
-
-- New/modified component files under `webapp/src/pages/tickets/` or `webapp/src/features/queues/`.
-
-Tasks:
-
-- [x] Render work slices:
-  - Нужен ответ;
-  - SLA риск;
-  - Без исполнителя;
-  - Ответил пользователь.
-- [ ] Render queues:
-  - ServiceDesk L1;
-  - Сети;
-  - Серверы;
-  - Оргтехника;
-  - Системы;
-  - ИБ.
-- [x] Use existing smart-view and queue data where available; show zero/missing queues honestly.
-- [x] Preserve extra saved/custom smart views after the four primary slices.
-- [x] Render compact ticket rows:
-  - number/code;
-  - subject;
-  - requester;
-  - priority;
-  - status;
-  - SLA/risk;
-  - unread dot;
-  - assignee.
-- [x] Implement selected state and filtering.
-- [x] Add loading/error/empty states.
-
-Expected completion after Stage 4: 64%.
-
-Stage 4 evidence:
-
-- Added canonical primary work-slice labels while preserving backend custom smart views.
-- Updated `webapp/src/pages/tickets/list-page.test.tsx` to cover custom smart-view rendering and API filtering.
-- Focused route/list/mapper tests passed: 11 tests.
-
-### Stage 5: Center Ticket Workspace (16 points)
-
-Files:
-
-- New/modified component files under `webapp/src/pages/tickets/` or `webapp/src/features/queues/`.
-
-Tasks:
-
-- [x] Header:
-  - breadcrumb/back;
-  - ticket code and subject;
-  - star/menu affordances;
-  - metadata row.
-- [x] Next action panel:
-  - owner;
-  - label;
-  - hint;
-  - remaining time;
-  - SLA/OLA linkage.
-- [x] Action bar:
-  - Ответить;
-  - Внутренняя заметка;
-  - Запустить диагностику;
-  - Ещё.
-- [x] Timeline tabs:
-  - Все;
-  - Сообщения;
-  - Внутреннее;
-  - Диагностика;
-  - История.
-- [x] Timeline:
-  - message/internal/system/operation/passport/approval styles;
-  - structured operation result card;
-  - attachments row where available.
-- [x] Composer:
-  - public/internal switch;
-  - textarea;
-  - attach/templates placeholders if backend is not ready;
-  - explicit internal lock state;
-  - send via current message mutation.
-
-Expected completion after Stage 5: 80%.
-
-Stage 5 evidence:
-
-- Implemented selected ticket header, metadata chips, next-action panel, action bar, timeline tabs, timeline event cards and composer in `webapp/src/pages/tickets/list-page.tsx`.
-- Public/internal composer uses the existing message mutation.
-- Internal note tab/action is disabled when `can_send_internal_note` is false.
-
-### Stage 6: Right Context Sidebar (10 points)
-
-Files:
-
-- New/modified component files under `webapp/src/pages/tickets/` or `webapp/src/features/queues/`.
-
-Tasks:
-
-- [x] Add tabs:
-  - Контекст;
-  - SLA;
-  - Инструменты;
-  - Знания;
-  - Паспорт.
-- [x] Context:
-  - requester;
-  - device;
-  - category/service/classification.
-- [x] SLA/OLA:
-  - first response;
-  - resolution;
-  - OLA ack;
-  - OLA processing;
-  - ok/warning/danger/paused states.
-- [x] Tools/playbooks:
-  - available tools;
-  - published playbooks;
-  - disabled when offline/unavailable;
-  - operation running summary.
-- [x] Knowledge:
-  - similar tickets/articles if available;
-  - AI recommendation beta if backend returns it;
-  - honest empty state if not available.
-- [x] Passport:
-  - readiness count;
-  - checklist;
-  - open passport action.
-
-Expected completion after Stage 6: 90%.
-
-Stage 6 evidence:
-
-- Implemented right segmented sidebar for context, SLA, tools, knowledge and passport.
-- Context reads requester/device/classification from the current ticket detail and registry snapshot.
-- SLA cards are derived from first-response/resolution timers; detailed OLA DTO remains a backend TODO.
-- Knowledge block is intentionally secondary and honest until a typed suggestions endpoint exists.
-
-### Stage 7: Mutations, Permissions And States (5 points)
-
-Files:
-
-- `webapp/src/features/queues/api.ts`.
-- Workspace component files.
-- `server/web_api/support_handlers.py` only if new mutations are needed.
-
-Tasks:
-
-- [x] Public reply uses `postSupportTicketMessage(..., "public")`.
-- [x] Internal note uses `postSupportTicketMessage(..., "internal")`.
-- [x] Status action uses current typed status mutation.
-- [x] Tool run uses current typed tool run mutation.
-- [x] Playbook run uses current typed playbook run mutation.
-- [x] Permission-denied states are shown, not silently ignored.
-- [x] Agent offline disables agent-required tools.
-- [x] Operation running invalidates detail/tools/playbooks/queue queries.
-
-Expected completion after Stage 7: 95%.
-
-Stage 7 evidence:
-
-- Focused Vitest passed: `src/features/queues/support-workspace-mappers.test.ts`, `src/pages/tickets/list-page.test.tsx`, `src/app/router.test.tsx`.
-- Production build passed: `pnpm --dir webapp run build`.
-
-### Stage 8: Tests, Docs, Verification And Browser Signoff (5 points)
-
-Files:
-
-- Frontend tests for mappers and components.
-- Server tests if API changes.
-- `docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md` if route/API structure changes.
-
-Commands:
+- `server/web_api/dto/support.py`
+- `server/operations/` or existing operation lifecycle modules found through CODEMAP/search.
+- `webapp/src/features/queues/api.ts`
+- `webapp/src/features/queues/support-workspace-mappers.ts`
+- `webapp/src/pages/tickets/list-page.tsx`
+- Existing focused tests under `server/tests/` and `webapp/src/**`.
+
+Steps:
+
+- [x] Run context search for existing operation detail, retry and cancel APIs.
+- [x] Add or tighten typed DTO fields:
+  - `operation_id`
+  - `status`
+  - `can_retry`
+  - `can_cancel`
+  - `retry_reason`
+  - `cancel_reason`
+  - `details_url`
+  - `policy_labels`
+  - `disabled_reason`
+- [x] Ensure DTOs are derived from existing operation lifecycle and RBAC rules, not frontend guesses.
+- [x] Add focused backend tests for:
+  - completed failed operation can expose retry if policy allows;
+  - running cancelable operation exposes cancel;
+  - completed/succeeded operation is not cancelable;
+  - denied permission returns structured denial.
+- [x] Update frontend API types and mapper so operation cards consume typed fields.
+- [x] Update operation UI actions to show retry/cancel/details only when typed contract allows them.
+- [x] Verify with focused pytest and focused Vitest.
+- [ ] Verify production build and workspace verification.
+
+Expected result:
+
+- Typed/backend gap reduces from 1-2% to about 0.5-1%.
+- Operators get trustworthy retry/cancel/details affordances.
+
+### P6.2 Domain Retry And Online Low-Risk Tool Signoff
+
+Goal: close most of the domain gap around operation retry semantics and safe live tool execution.
+
+Status: **partially completed / blocked for safe retry, 2026-05-07**.
+
+Implementation notes:
+
+- Existing cancel flow is first-class and lifecycle-aware.
+- Operator retry cannot be safely implemented by cloning old `device_outbox` payloads: the legacy `/api/operations/*` layer does not carry enough typed risk/policy context to prove that a retry is low-risk.
+- Current production-safe behavior is therefore explicit: retryable failed operations expose `retryable=true`, `can_retry=false`, and `retry_disabled_reason=retry_endpoint_unavailable`.
+- Remote server was checked before live signoff and is currently stopped: `python scripts\manage_remote_stack.py status server` -> `server: stopped`.
+- Live low-risk tool signoff still requires deploying the current branch and selecting/creating an online test device/ticket.
+
+Files to inspect and likely modify:
+
+- Existing operation service/repo modules discovered in P6.1.
+- Existing tool/playbook run handlers under `server/web_api/support_handlers.py`.
+- Existing operation tests under `server/tests/`.
+- `webapp/src/pages/tickets/list-page.tsx`.
+
+Steps:
+
+- [ ] Create or select a dedicated `LIVE-SIGNOFF-ONLINE-*` ticket bound to an online low-risk test device.
+- [ ] Identify one safe read-only tool or playbook:
+  - risk `safe_read`;
+  - no consent required;
+  - allowed for support/admin;
+  - no destructive side effects.
+- [x] Confirm retry is not backed by a safe first-class operator API.
+- [x] Avoid adding an unsafe typed web alias until retry can pass risk/policy checks without duplicating lifecycle logic.
+- [x] Keep cancel visible only for running/cancelable operations.
+- [ ] Run one safe tool/playbook on the dedicated live test ticket.
+- [ ] Confirm:
+  - operation-running state appears in the right panel;
+  - timeline receives start/result events;
+  - result card shows structured steps/details;
+  - details action opens or fetches operation details;
+  - retry/cancel affordances match lifecycle state.
+- [ ] Record the live ticket id and operation id in this plan.
+
+Expected result:
+
+- Domain gap reduces from 3-5% to about 1.5-2%.
+- Tool/playbook behavior is proven beyond disabled/offline states.
+
+### P6.3 External KB Provider Depth
+
+Goal: close the knowledge part of the domain gap without weakening the current source-visible AI beta design.
+
+Status: **completed locally, 2026-05-07**.
+
+Implementation notes:
+
+- Existing local catalog/manual KB/similar-ticket provider was kept as the source of truth.
+- Diagnostics now include `provider_status`, `external_provider_status`, `fallback_reason`, `catalog_entry_count`, and `query_tokens`.
+- The UI knowledge tab surfaces provider/catalog/external-KB state compactly beside source and confidence.
+- Focused verification passed:
+  - `python -m pytest server/tests/test_support_knowledge_provider.py server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links -q` -> `7 passed`
+  - `pnpm --dir webapp test -- support-workspace-mappers.test.ts list-page.test.tsx` -> `32 passed`
+
+Files to inspect and likely modify:
+
+- Existing knowledge provider modules under `server/tickets/`, `server/web_api/` or provider paths found through search.
+- `server/web_api/support_handlers.py`
+- `server/web_api/dto/support.py`
+- `server/tests/test_web_support_api.py` or focused knowledge tests.
+- `webapp/src/features/queues/support-workspace-mappers.ts`
+- `webapp/src/pages/tickets/list-page.tsx`
+
+Steps:
+
+- [x] Inspect current provider contract for catalog search, manual KB links and similar-ticket suggestions.
+- [x] Add typed provider diagnostics where missing:
+  - provider name;
+  - provider version;
+  - source counts;
+  - query tokens/signals;
+  - match reasons;
+  - confidence;
+  - fallback reason.
+- [x] Add a deeper searchable provider path if existing storage/index is available.
+- [x] If external KB storage is not configured on the stand, keep the provider contract real but return an explicit `provider_unavailable` diagnostic instead of fake content.
+- [x] Add backend tests for:
+  - linked KB article suggestions;
+  - similar-ticket suggestions;
+  - empty provider response;
+  - provider-unavailable response;
+  - AI beta sources never empty when AI text is present.
+- [x] Update UI to show source/provider diagnostics compactly in the knowledge tab.
+- [ ] Verify the knowledge tab in dark/light themes with at least one ticket that has suggestions and one that has none.
+
+Expected result:
+
+- Domain gap reduces from about 1.5-2% to about 0.5-1%.
+- Knowledge suggestions become auditable and production-safe.
+
+### P6.4 Closure Fixture And Evidence/Worklog Live Proof
+
+Goal: prove the final passport/evidence/worklog closure path with a dedicated test ticket.
+
+Status: **completed locally / live proof pending deploy, 2026-05-07**.
+
+Implementation notes:
+
+- Existing closure guidance already has central blocker actions for evidence and worklog.
+- Existing passport/evidence endpoints and legacy worklog endpoint are wired into `/app/tickets`.
+- Focused backend verification passed:
+  - `python -m pytest server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_evidence_service.py::test_evidence_service_collects_worklog_approval_chat_and_observer_candidates server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `9 passed`
+- Focused frontend verification passed:
+  - `pnpm --dir webapp test -- list-page.test.tsx` -> `21 passed`
+- Dedicated remote live fixture still requires deploy/start of the remote server, because the server is currently stopped.
+
+Files to inspect and likely modify:
+
+- Existing passport/evidence/worklog endpoints in `server/web_api/support_handlers.py`.
+- Existing closure/passport services under `server/tickets/`.
+- `webapp/src/features/queues/api.ts`
+- `webapp/src/pages/tickets/list-page.tsx`
+- Focused frontend and backend tests around passport/evidence/worklog.
+
+Steps:
+
+- [ ] Create or identify a dedicated `LIVE-SIGNOFF-CLOSURE-*` ticket with closure blockers.
+- [ ] Ensure the ticket has blockers that include evidence and worklog target actions.
+- [ ] Click central closure blocker action `Добавить evidence`.
+- [ ] Confirm right passport tab focuses the blocker and shows evidence candidates/manual evidence form.
+- [ ] Link one safe existing evidence candidate or submit one manual evidence item through the existing API.
+- [ ] Confirm blocker/readiness updates after refetch.
+- [ ] Click `Добавить worklog`.
+- [ ] Submit a small worklog on the test ticket.
+- [ ] Confirm passport/evidence flow sees the worklog after refetch.
+- [ ] Add or update focused tests if any mapper/UI behavior needed adjustment.
+
+Expected result:
+
+- Domain gap reduces to 0-0.5%.
+- Passport readiness becomes live-proven, not only visually verified.
+
+### P6.5 Final UI Polish And Role Matrix
+
+Goal: close the final UI polish gap and record production signoff.
+
+Files to inspect and likely modify:
+
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/features/queues/support-workspace-mappers.ts`
+- shared UI primitives only if a real reusable bug is found.
+
+Steps:
+
+- [ ] Re-run desktop checks at 1366, 1440 and 1920 in dark and light themes.
+- [ ] Verify:
+  - no horizontal overflow;
+  - topbar remains fixed;
+  - columns scroll independently;
+  - long subjects, long queue names, long requester names and technical IDs do not overlap controls;
+  - disabled tool/action reasons are readable;
+  - dialogs fit at 1366 width;
+  - composer remains reachable after long timeline scroll.
+- [ ] Verify role/permission coverage:
+  - support L1 normal read/comment/action surface;
+  - support without high-risk permission sees high-risk tool disabled/denied;
+  - admin shell still routes into support workspace;
+  - permission-denied API response renders an error/disabled state, not a crash.
+- [ ] Patch only concrete defects found in this pass.
+- [ ] Capture final screenshot names in this plan.
+
+Expected result:
+
+- UI polish gap reduces from 1-3% to 0%.
+- Final page behavior is production-ready for the agreed desktop support-workspace scope.
+
+## Verification Gates
+
+Local gates:
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
 python scripts\verify_workspace.py
 python scripts\bootstrap_web_toolchain.py
 pnpm --dir webapp run build
-pnpm --dir webapp test src\features\queues\support-workspace.test.tsx src\pages\tickets\list-page.test.tsx src\pages\tickets\detail-page.test.tsx
+```
+
+Focused backend gates:
+
+```powershell
 python -m pytest server\tests\test_web_support_api.py -q --tb=short
 ```
 
-Remote/browser after local verification:
+Focused frontend gates:
 
 ```powershell
-python scripts\release_server_to_remote.py
-python scripts\manage_remote_stack.py smoke server
+pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx
 ```
 
-Browser paths:
+Release and remote gates:
 
-- `http://192.168.100.17:8666/admin`
-- `http://192.168.100.17:8666/app/tickets`
-- `http://192.168.100.17:8666/app/tickets/:ticketId`
+```powershell
+python scripts\deploy_workspace_to_remote.py
+python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5
+python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 smoke server
+```
 
-Expected completion after Stage 8: 100%.
+Browser gates:
 
-Stage 8 evidence:
+- Open `http://192.168.100.17:8666/admin`.
+- Confirm redirect into `/app/tickets` or `/app/tickets/:ticketId`.
+- Check normal ticket, online tool test ticket and closure blocker test ticket.
+- Capture dark/light screenshots at 1366 and 1920.
+- Confirm console has no unexpected errors. Known acceptable noise must be recorded explicitly.
+- Stop remote server after signoff:
 
-- Full CI passed for commit `fb7dc58`: workspace verification, webapp bundle, server no-db tests, server db/api tests, agent websocket tests and pc_agent tests.
-- Focused follow-up verification passed for commit `63e3e58`: Vitest mapper/page/router tests, production webapp build and `python scripts/verify_workspace.py`.
-- Remote release succeeded for `63e3e58` with server smoke passing after deploy.
-- Browser verification completed at `http://192.168.100.17:8666/admin` for `/app/tickets/:ticketId`: 3-column layout, topbar, work slices, queues, ticket list, selected ticket, next action, actions, timeline tabs, composer and right context tabs render correctly.
-- Final browser console check after the right-tab layout fix reported 0 errors and 0 warnings.
+```powershell
+python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop server
+python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 status server
+```
 
-## Verification Matrix
+## Completion Definition
 
-### Local Functional Checks
+The plan is complete when:
 
-- Queue loads with smart-view counts.
-- Selecting a ticket opens center workspace.
-- Deep link `/app/tickets/:ticketId` opens the same workspace with selected ticket.
-- Public reply appears in timeline after mutation.
-- Internal note is guarded by permission and visually distinct.
-- Status transition uses server workflow guard.
-- Tools show offline/unavailable/permission states.
-- Playbooks show readiness and missing requirements.
-- Passport readiness and open action work.
+- Typed/backend gap is 0% for the current `/app/tickets` scope.
+- Domain gap is 0% for agreed operation retry/external KB/passport evidence-worklog depth.
+- UI polish gap is 0% for desktop operator workspace widths 1366-1920.
+- Existing business logic and legacy ticket routes are not broken.
+- Local tests/build/verification pass.
+- Linux stand smoke passes.
+- Browser signoff passes on the three critical scenarios:
+  - ordinary selected ticket;
+  - online low-risk tool/playbook ticket;
+  - closure blocker evidence/worklog ticket.
+- Remote server is stopped after verification.
 
-### Visual Checks
+## Risks And Decisions
 
-- Layout remains stable at 1366px desktop.
-- Topbar is calm and has no KPI cards.
-- Left, center and right columns scroll independently.
-- Selected ticket and next action are the strongest focus.
-- Timeline text does not overlap or clip.
-- Buttons do not wrap awkwardly.
-- Dark palette is not one-note; semantic colors remain readable.
-
-### Backend Checks
-
-- New DTOs validate with Pydantic.
-- Existing support tests still pass.
-- RBAC returns structured denial.
-- No raw tokens or sensitive values appear in logs.
-- Existing legacy routes remain unchanged.
-
-## Open Risks
-
-- The active `/app/tickets` page is still large. Continue extracting or changing behavior in narrow slices with focused tests instead of doing a broad rewrite.
-- Existing `support-workspace.tsx` may tempt duplication. Keep `/app/tickets` as the active route and reuse only helpers/patterns that do not create a second source of truth.
-- Closure blocker UI is now actionable, but tickets with many blockers need better discoverability so evidence/worklog actions are not hidden behind the first visible rows.
-- External KB/search depth is still limited. The current provider is source-visible and honest, but a real searchable provider/index remains optional P5 work.
-- Light theme exists and has been browser-checked, but future P4 changes must re-check dark/light surfaces at desktop widths.
-- SLA/OLA timer semantics must not be changed without dedicated backend tests because the UI now trusts typed compact timer DTOs.
-- Deep-link behavior must not regress because operators may share ticket URLs.
-- Combined Windows `run_ci_suite.py` can hit unrelated agent_ws/test-DB lock timeouts. If it recurs, use sequential project gates plus explicit release/browser evidence and record the limitation.
-
-## Current State
-
-- P0, P1, P2, P3.1-P3.4 and P4.1-P4.3 implementation for `/app/tickets` support workspace are complete and release/browser-signed off.
-- Active route ownership remains `/app/tickets` and `/app/tickets/:ticketId`.
-- Backend/API residual gap after P4.3 is estimated at 3-5% for typed contracts and 6-10% for broader domain depth, mostly external KB/search, operation action semantics and optional deeper requester/service context.
-- UI/page polish gap for the current page is estimated at 6-10%, mostly closure blocker overflow/discoverability, rare edge states and final desktop/light-theme QA after each new polish slice.
-- This plan remains the active long-horizon artifact for P4 operator-flow polish and optional P5 domain-depth follow-up.
-- Current pending step: execute P4.4 closure blocker visibility/ordering.
+- Retry/cancel must use existing operation lifecycle rules. Do not invent client-side state transitions.
+- External KB depth must be honest. If no external provider is configured, expose `provider_unavailable` instead of returning fake articles.
+- Tool/playbook live run must use a safe read-only test operation only.
+- Evidence/worklog proof must use a dedicated test ticket only.
+- Any permission-denied state should be visible and explainable, not hidden behind a silent no-op.
 
 ## Handoff
 
-Recommended next step: execute **P4.4 closure blocker visibility and ordering** on the current `/app/tickets` page.
+Recommended next step: execute **P6.1 Typed Operation Action Contract**.
 
-Concrete P4.4 slice:
+Start commands:
 
-1. [ ] Add a focused page test where a ticket has six closure blockers and evidence/worklog actions are below the initial visible rows.
-2. [ ] Add a local blocker ordering/overflow helper in `webapp/src/pages/tickets/list-page.tsx`.
-3. [ ] Render "Показать ещё N" / "Скрыть" in the central "Перед закрытием" panel.
-4. [ ] Verify the revealed `Добавить evidence` and `Добавить worklog` buttons still focus the passport sidebar correctly.
-5. [ ] Run focused Vitest, production build, `python scripts\verify_workspace.py`, release/browser signoff and stop the remote server.
+```powershell
+.\scripts\bootstrap_shell_utf8.ps1
+python scripts\task_intake.py
+python scripts\bootstrap_web_toolchain.py
+rg -n "operation.*retry|retry.*operation|cancel.*operation|operation.*details|tools/run|playbooks/run" server webapp
+```
 
-Concrete P2.6 first slice:
+Expected first checkpoint:
 
-1. [x] Run browser audit for `/app/tickets` and `/app/tickets/:ticketId` at 1366, 1440 and 1920px in dark and light themes.
-2. [x] Record concrete visual defects: contrast, clipping, wrapping, selected states, scroll containment, dropdown/composer readability, SLA/OLA timer readability and passport readiness clarity.
-3. [x] Patch only the current page/component classes and mapper-safe UI helpers needed for those defects.
-4. [x] Add or update focused frontend tests for theme persistence and critical rendered workspace controls.
-5. [x] Run focused Vitest, `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
-
-Concrete P2.7 slice:
-
-1. [x] Extend the support workspace context view-model with requester provenance, asset type/id and similar-ticket count from existing aggregate data.
-2. [x] Update the context sidebar to show labeled contact fields, registry/source provenance, device identity and category/service/source metadata without decorative placeholder values.
-3. [x] Add focused mapper and page tests for enriched context rendering and fallback behavior.
-4. [x] Run focused Vitest, production webapp build, `python scripts\verify_workspace.py`, deploy to the Linux stand, complete browser signoff, then stop the remote server.
-
-P2.7 local evidence:
-
-- Focused Vitest passed: `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` (16 tests).
-- Production webapp build passed: `pnpm --dir webapp run build`.
-- Workspace verification passed: `python scripts\verify_workspace.py`.
-- Full green CI artifact exists for commit `127e855`: `artifacts\ci\127e855e9fe102bc0d438852c906221e411bf451\summary.json`.
-- Linux release succeeded for commit `127e855`; remote smoke passed after deploy.
-- Browser signoff completed at `http://192.168.100.17:8666/admin` redirecting to `/app/tickets/:ticketId`: context tab renders profile provenance, Asset ID, Device ID, category/service/source and similar-ticket count. Support queue and workspace aggregate requests returned 200.
-- Non-blocking browser observation remains unchanged: support shell logs one 403 for admin-only `GET /api/web/admin/connection_requests`.
-
-Next slice after P2.7: P2.8 diagnostics/tools UX hardening, focused on operation-running, unavailable-tool reasons and diagnostic detail readability.
-
-Concrete P2.8 slice:
-
-1. [x] Normalize operation status labels/tones in the support workspace view-model so timeline diagnostic cards do not render raw backend statuses as the main UX.
-2. [x] Surface ticket-scoped latest/running operations from the aggregate workspace snapshot in the right Tools panel.
-3. [x] Add visible disabled reasons and metadata chips for unavailable tools/playbooks, including offline device, install-required tools and playbook readiness blockers.
-4. [x] Tighten launch buttons so they are disabled only/always according to actually runnable tool/playbook availability.
-5. [x] Add focused mapper/page tests, run focused Vitest, production webapp build, `python scripts\verify_workspace.py`, then deploy/browser-signoff if the release gate is available.
-
-P2.8 completion note:
-
-- Local verification passed: `pnpm --dir webapp exec vitest run src\features\queues\support-workspace-mappers.test.ts src\pages\tickets\list-page.test.tsx` (18 tests), `pnpm --dir webapp run build`, `python scripts\verify_workspace.py`, and `git diff --check`.
-- Linux release completed for commits `bfab893` and follow-up metadata wrapping fix `9e567a2` with `python scripts\release_server_to_remote.py --skip-ci-check --leave-running --smoke-attempts 6 --smoke-delay 5`; remote smoke passed.
-- Browser signoff passed at `http://192.168.100.17:8666/admin` on `/app/tickets/:ticketId`: support queue and aggregate workspace requests returned 200, right Tools tab rendered latest operations, normalized operation status labels, visible playbook blockers and no document-level horizontal overflow.
-- Release used `--skip-ci-check` because the standard release gate had no green CI artifact for the new HEAD yet (`artifacts\ci\...\summary.json` missing). Local focused checks, production webapp build and `verify_workspace.py` passed before deploy.
+- Exact existing operation APIs and services identified.
+- Decision recorded whether retry/cancel need only typed DTO surfacing or a new typed web alias.
+- Failing focused tests written for allowed/denied retry and cancel states.

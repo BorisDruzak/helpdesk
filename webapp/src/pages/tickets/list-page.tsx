@@ -529,6 +529,27 @@ function diagnosticStepTextClass(status: string) {
   return "text-amber-200";
 }
 
+function operationActionReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "already_finished":
+      return "Операция уже завершена";
+    case "retry_endpoint_unavailable":
+      return "Повтор ожидает безопасный API";
+    case "retry_limit_reached":
+      return "Лимит повторов исчерпан";
+    case "retry_policy_missing":
+      return "Нет политики повтора";
+    case "status_not_cancelable":
+      return "Текущий статус нельзя отменить";
+    case "status_not_retryable":
+      return "Текущий статус нельзя повторить";
+    case "status_unknown":
+      return "Статус операции неизвестен";
+    default:
+      return "Действие недоступно";
+  }
+}
+
 function OperationSummaryCard({
   isCanceling = false,
   onCancel,
@@ -573,7 +594,7 @@ function OperationSummaryCard({
             Детали операции
           </a>
         ) : null}
-        {operation.active ? (
+        {operation.canCancel ? (
           <button
             className="rounded-md border border-red-300/25 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isCanceling || !onCancel}
@@ -583,12 +604,29 @@ function OperationSummaryCard({
             {isCanceling ? "Отменяем..." : "Отменить операцию"}
           </button>
         ) : null}
-        {operation.retryable ? (
+        {!operation.canCancel && operation.active ? (
+          <span
+            className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-semibold text-slate-400"
+            title={operationActionReasonLabel(operation.cancelDisabledReason)}
+          >
+            Отмена недоступна
+          </span>
+        ) : null}
+        {operation.canRetry ? (
+          <a
+            className="rounded-md border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20"
+            href={operation.retryUrl ?? "#"}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Повторить
+          </a>
+        ) : operation.retryable ? (
           <span
             className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
-            title="Backend exposes retryability metadata, but no safe retry endpoint is available in the current operation API."
+            title={operationActionReasonLabel(operation.retryDisabledReason)}
           >
-            Повтор требует API
+            Повтор недоступен
           </span>
         ) : null}
       </div>
@@ -2070,6 +2108,15 @@ export function TicketListPage() {
                         Источник: {viewModel.right.knowledge.diagnostics.provider}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                        Provider: {viewModel.right.knowledge.diagnostics.providerStatus}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                        Catalog: {viewModel.right.knowledge.diagnostics.catalogEntryCount}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                        External KB: {viewModel.right.knowledge.diagnostics.externalProviderStatus}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
                         Доверие: {viewModel.right.knowledge.aiSummary.confidence}
                       </span>
                     </div>
@@ -2078,6 +2125,15 @@ export function TicketListPage() {
                         {viewModel.right.knowledge.diagnostics.querySignals.slice(0, 6).map((signal) => (
                           <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-400" key={signal}>
                             {signal}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {viewModel.right.knowledge.diagnostics.queryTokens.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {viewModel.right.knowledge.diagnostics.queryTokens.slice(0, 6).map((token) => (
+                          <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-slate-500" key={`token:${token}`}>
+                            token:{token}
                           </span>
                         ))}
                       </div>

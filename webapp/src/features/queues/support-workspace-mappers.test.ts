@@ -325,6 +325,11 @@ function knowledgePayload(): SupportTicketKnowledgeSuggestionsPayload {
     diagnostics: {
       provider: "support_knowledge_provider",
       provider_version: "local-v1",
+      provider_status: "ok",
+      external_provider_status: "not_configured",
+      fallback_reason: null,
+      catalog_entry_count: 5,
+      query_tokens: ["502", "gateway"],
       source_counts: { manual_kb: 1, catalog: 0, similar_ticket: 1 },
       query_signals: ["manual_link", "linked_ticket"],
       article_matches: {
@@ -471,6 +476,13 @@ describe("support workspace mappers", () => {
         retry_count: 0,
         max_retries: 3,
         retryable: false,
+        can_retry: false,
+        can_cancel: true,
+        retry_url: null,
+        cancel_url: "/api/operations/op-running/cancel",
+        retry_disabled_reason: "status_not_retryable",
+        cancel_disabled_reason: null,
+        policy_labels: ["cancel:available"],
         error_code: null,
         error_category: null,
         details_url: "/api/operations/op-running",
@@ -494,6 +506,13 @@ describe("support workspace mappers", () => {
         retry_count: 1,
         max_retries: 3,
         retryable: true,
+        can_retry: false,
+        can_cancel: false,
+        retry_url: null,
+        cancel_url: null,
+        retry_disabled_reason: "retry_endpoint_unavailable",
+        cancel_disabled_reason: "already_finished",
+        policy_labels: ["cancel:already_finished", "retry:retry_endpoint_unavailable"],
         error_code: "HTTP_502",
         error_category: "execution",
         details_url: "/api/operations/op-failed",
@@ -576,6 +595,8 @@ describe("support workspace mappers", () => {
       statusLabel: "Выполняется",
       statusTone: "info",
       active: true,
+      canCancel: true,
+      cancelUrl: "/api/operations/op-running/cancel",
       metaLabels: expect.arrayContaining(["Длительность: 1 s", "Повторы: 0/3", "Trace: trace-ru...", "Детали API"]),
     });
     expect(viewModel.right.operations[1]).toMatchObject({
@@ -583,8 +604,16 @@ describe("support workspace mappers", () => {
       statusLabel: "Ошибка",
       statusTone: "danger",
       active: false,
+      canRetry: false,
+      retryDisabledReason: "retry_endpoint_unavailable",
       summary: "HTTP 502",
-      metaLabels: expect.arrayContaining(["Длительность: 59 s", "Повтор: 1/3 доступен", "Код: HTTP_502", "Категория: Выполнение"]),
+      metaLabels: expect.arrayContaining([
+        "Длительность: 59 s",
+        "Повтор: 1/3 доступен",
+        "Повтор: ожидает безопасный API",
+        "Код: HTTP_502",
+        "Категория: Выполнение",
+      ]),
     });
   });
 
@@ -753,6 +782,10 @@ describe("support workspace mappers", () => {
     expect(viewModel.right.knowledge.aiSummary?.sources).toEqual(["KB-502", "T-001011"]);
     expect(viewModel.right.knowledge.aiSummary?.confidence).toBe("high");
     expect(viewModel.right.knowledge.diagnostics.sourceCounts).toEqual({ manual_kb: 1, catalog: 0, similar_ticket: 1 });
+    expect(viewModel.right.knowledge.diagnostics.providerStatus).toBe("ok");
+    expect(viewModel.right.knowledge.diagnostics.externalProviderStatus).toBe("not_configured");
+    expect(viewModel.right.knowledge.diagnostics.catalogEntryCount).toBe(5);
+    expect(viewModel.right.knowledge.diagnostics.queryTokens).toEqual(["502", "gateway"]);
     expect(viewModel.right.knowledge.diagnostics.querySignals).toEqual(["manual_link", "linked_ticket"]);
     expect(viewModel.right.knowledge.diagnostics.articleMatches["KB-502"]).toEqual({
       sourceType: "manual_kb",

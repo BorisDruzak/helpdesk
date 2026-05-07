@@ -620,11 +620,48 @@ describe("TicketListPage", () => {
         retry_count: 0,
         max_retries: 3,
         retryable: false,
+        can_retry: false,
+        can_cancel: true,
+        retry_url: null,
+        cancel_url: "/api/operations/op-running/cancel",
+        retry_disabled_reason: "status_not_retryable",
+        cancel_disabled_reason: null,
+        policy_labels: ["cancel:available"],
         error_code: null,
         error_category: null,
         details_url: "/api/operations/op-running",
         result_summary: null,
         error_message: null,
+      },
+      {
+        operation_id: "op-failed",
+        kind: "tool",
+        status: "failed",
+        display_status: null,
+        display_label: "HTTP check",
+        scope: "ticket",
+        tool_name: "diagnose.website",
+        command_name: null,
+        queued_at: "2026-05-05T09:40:00+05:00",
+        started_at: "2026-05-05T09:40:00+05:00",
+        finished_at: "2026-05-05T09:41:00+05:00",
+        duration_ms: 59000,
+        trace_id: "trace-failed-1",
+        retry_count: 1,
+        max_retries: 3,
+        retryable: true,
+        can_retry: false,
+        can_cancel: false,
+        retry_url: null,
+        cancel_url: null,
+        retry_disabled_reason: "retry_endpoint_unavailable",
+        cancel_disabled_reason: "already_finished",
+        policy_labels: ["cancel:already_finished", "retry:retry_endpoint_unavailable"],
+        error_code: "HTTP_502",
+        error_category: "execution",
+        details_url: "/api/operations/op-failed",
+        result_summary: null,
+        error_message: "HTTP 502",
       },
     ];
     payload.tools = {
@@ -709,8 +746,9 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
     expect(screen.getByText("Длительность: 1 s")).toBeInTheDocument();
     expect(screen.getByText("Повторы: 0/3")).toBeInTheDocument();
+    expect(screen.getByText("Повтор недоступен")).toBeInTheDocument();
     expect(screen.getByText("Trace: trace-ru...")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Детали операции" })).toHaveAttribute("href", "/api/operations/op-running");
+    expect(screen.getAllByRole("link", { name: "Детали операции" })[0]).toHaveAttribute("href", "/api/operations/op-running");
     fireEvent.click(screen.getByRole("button", { name: "Отменить операцию" }));
     await waitFor(() => {
       expect(postSupportOperationCancelMock).toHaveBeenCalledWith("op-running", {

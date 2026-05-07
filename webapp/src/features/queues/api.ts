@@ -222,6 +222,12 @@ export type SupportTicketDetailPayload = {
     retry_count?: number | null;
     max_retries?: number | null;
     retryable?: boolean | null;
+    can_retry?: boolean | null;
+    can_cancel?: boolean | null;
+    retry_url?: string | null;
+    cancel_url?: string | null;
+    retry_disabled_reason?: string | null;
+    cancel_disabled_reason?: string | null;
     error_code?: string | null;
     error_category?: string | null;
     details_url?: string | null;
@@ -287,6 +293,13 @@ export type SupportTicketDetailPayload = {
       retry_count?: number;
       max_retries?: number;
       retryable?: boolean;
+      can_retry?: boolean;
+      can_cancel?: boolean;
+      retry_url?: string | null;
+      cancel_url?: string | null;
+      retry_disabled_reason?: string | null;
+      cancel_disabled_reason?: string | null;
+      policy_labels?: string[];
       error_code?: string | null;
       error_category?: string | null;
       details_url?: string | null;
@@ -647,6 +660,11 @@ export type SupportTicketKnowledgeSuggestionsPayload = {
   diagnostics?: {
     provider: string;
     provider_version: string;
+    provider_status?: string;
+    external_provider_status?: string;
+    fallback_reason?: string | null;
+    catalog_entry_count?: number;
+    query_tokens?: string[];
     source_counts: Record<string, number>;
     query_signals: string[];
     article_matches: Record<string, {

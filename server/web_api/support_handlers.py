@@ -1351,6 +1351,12 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             result_preview=None,
             operation_id=str(operation_id) if operation_id else None,
             trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
+            can_retry=False,
+            can_cancel=_operation_can_cancel("running"),
+            retry_url=None,
+            cancel_url=_operation_cancel_url(operation_id, "running"),
+            retry_disabled_reason=_operation_retry_disabled_reason("running", None, None),
+            cancel_disabled_reason=_operation_cancel_disabled_reason("running"),
             details_url=_operation_details_url(operation_id),
         )
 
@@ -1378,6 +1384,12 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             result_preview=None,
             operation_id=str(operation_id) if operation_id else None,
             trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
+            can_retry=False,
+            can_cancel=_operation_can_cancel("accepted"),
+            retry_url=None,
+            cancel_url=_operation_cancel_url(operation_id, "accepted"),
+            retry_disabled_reason=_operation_retry_disabled_reason("accepted", None, None),
+            cancel_disabled_reason=_operation_cancel_disabled_reason("accepted"),
             details_url=_operation_details_url(operation_id),
         )
 
@@ -1417,6 +1429,12 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             retry_count=retry_count,
             max_retries=max_retries,
             retryable=retryable,
+            can_retry=False,
+            can_cancel=_operation_can_cancel(status),
+            retry_url=None,
+            cancel_url=_operation_cancel_url(operation_id, status),
+            retry_disabled_reason=_operation_retry_disabled_reason(status, retry_count, max_retries),
+            cancel_disabled_reason=_operation_cancel_disabled_reason(status),
             error_code=error_code,
             error_category=_operation_error_category(status, error_code, str(payload.get("error") or "")),
             details_url=_operation_details_url(operation_id),
@@ -1887,9 +1905,63 @@ def _operation_retryable(status: str | None, retry_count: int | None, max_retrie
     return bool(status in {"failed", "timed_out", "timeout"} and max_retries is not None and (retry_count or 0) < max_retries)
 
 
+_OPERATION_CANCELABLE_STATUSES = {"accepted", "in_progress", "queued", "running", "sent", "waiting_consent"}
+_OPERATION_FAILED_STATUSES = {"failed", "timed_out", "timeout"}
+
+
+def _operation_can_cancel(status: str | None) -> bool:
+    return bool(status in _OPERATION_CANCELABLE_STATUSES)
+
+
+def _operation_cancel_disabled_reason(status: str | None) -> str | None:
+    if _operation_can_cancel(status):
+        return None
+    if status in {"succeeded", "failed", "timed_out", "timeout", "canceled", "cancelled", "denied"}:
+        return "already_finished"
+    if not status or status == "unknown":
+        return "status_unknown"
+    return "status_not_cancelable"
+
+
+def _operation_retry_disabled_reason(status: str | None, retry_count: int | None, max_retries: int | None) -> str | None:
+    if _operation_retryable(status, retry_count, max_retries):
+        return "retry_endpoint_unavailable"
+    if status not in _OPERATION_FAILED_STATUSES:
+        return "status_not_retryable"
+    if max_retries is None:
+        return "retry_policy_missing"
+    if (retry_count or 0) >= max_retries:
+        return "retry_limit_reached"
+    return "retry_not_available"
+
+
 def _operation_details_url(operation_id: object) -> str | None:
     value = str(operation_id or "").strip()
     return f"/api/operations/{value}" if value else None
+
+
+def _operation_cancel_url(operation_id: object, status: str | None) -> str | None:
+    value = str(operation_id or "").strip()
+    if not value or not _operation_can_cancel(status):
+        return None
+    return f"/api/operations/{value}/cancel"
+
+
+def _operation_policy_labels(
+    status: str | None,
+    *,
+    can_cancel: bool,
+    retryable: bool,
+    cancel_disabled_reason: str | None,
+    retry_disabled_reason: str | None,
+) -> list[str]:
+    labels: list[str] = []
+    labels.append("cancel:available" if can_cancel else f"cancel:{cancel_disabled_reason or 'unavailable'}")
+    if retryable:
+        labels.append(f"retry:{retry_disabled_reason or 'available'}")
+    elif status in _OPERATION_FAILED_STATUSES:
+        labels.append(f"retry:{retry_disabled_reason or 'unavailable'}")
+    return labels
 
 
 def _build_operation_display(operation: object) -> tuple[str, str]:
@@ -2247,6 +2319,10 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
         retry_count = int(getattr(operation, "retry_count", 0) or 0)
         max_retries = int(getattr(operation, "max_retries", 0) or 0)
         error_code = str(getattr(operation, "error_code", None) or "").strip() or None
+        retryable = _operation_retryable(display_status, retry_count, max_retries)
+        can_cancel = _operation_can_cancel(display_status)
+        cancel_disabled_reason = _operation_cancel_disabled_reason(display_status)
+        retry_disabled_reason = _operation_retry_disabled_reason(display_status, retry_count, max_retries)
         latest_operations.append(
             SupportTicketOperationSnapshot(
                 operation_id=operation.operation_id,
@@ -2264,7 +2340,20 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                 trace_id=operation.trace_id,
                 retry_count=retry_count,
                 max_retries=max_retries,
-                retryable=_operation_retryable(display_status, retry_count, max_retries),
+                retryable=retryable,
+                can_retry=False,
+                can_cancel=can_cancel,
+                retry_url=None,
+                cancel_url=_operation_cancel_url(operation.operation_id, display_status),
+                retry_disabled_reason=retry_disabled_reason,
+                cancel_disabled_reason=cancel_disabled_reason,
+                policy_labels=_operation_policy_labels(
+                    display_status,
+                    can_cancel=can_cancel,
+                    retryable=retryable,
+                    cancel_disabled_reason=cancel_disabled_reason,
+                    retry_disabled_reason=retry_disabled_reason,
+                ),
                 error_code=error_code,
                 error_category=_operation_error_category(display_status, error_code, operation.error_message),
                 details_url=_operation_details_url(operation.operation_id),
@@ -2409,6 +2498,11 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
         diagnostics=SupportKnowledgeDiagnostics(
             provider=suggestions.diagnostics.provider,
             provider_version=suggestions.diagnostics.provider_version,
+            provider_status=suggestions.diagnostics.provider_status,
+            external_provider_status=suggestions.diagnostics.external_provider_status,
+            fallback_reason=suggestions.diagnostics.fallback_reason,
+            catalog_entry_count=suggestions.diagnostics.catalog_entry_count,
+            query_tokens=suggestions.diagnostics.query_tokens,
             source_counts=suggestions.diagnostics.source_counts,
             query_signals=suggestions.diagnostics.query_signals,
             article_matches=suggestions.diagnostics.article_matches,

@@ -1127,6 +1127,13 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert operation_payload["retry_count"] == 1
     assert operation_payload["max_retries"] == 3
     assert operation_payload["retryable"] is True
+    assert operation_payload["can_retry"] is False
+    assert operation_payload["retry_url"] is None
+    assert operation_payload["retry_disabled_reason"] == "retry_endpoint_unavailable"
+    assert operation_payload["can_cancel"] is False
+    assert operation_payload["cancel_url"] is None
+    assert operation_payload["cancel_disabled_reason"] == "already_finished"
+    assert "retry:retry_endpoint_unavailable" in operation_payload["policy_labels"]
     assert operation_payload["error_code"] == "HTTP_502"
     assert operation_payload["error_category"] == "execution"
     assert operation_payload["details_url"] == "/api/operations/op-detail-lifecycle"
@@ -1309,6 +1316,9 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
     assert similar_ticket_code in data["ai_summary"]["sources"]
     assert data["ai_summary"]["confidence"] == "high"
     assert data["diagnostics"]["provider"] == "support_knowledge_provider"
+    assert data["diagnostics"]["provider_status"] == "ok"
+    assert data["diagnostics"]["external_provider_status"] == "not_configured"
+    assert data["diagnostics"]["catalog_entry_count"] >= 1
     assert data["diagnostics"]["source_counts"]["manual_kb"] == 1
     assert data["diagnostics"]["source_counts"]["similar_ticket"] == 1
     assert data["diagnostics"]["article_matches"]["KB-502"]["source_type"] == "manual_kb"
@@ -1370,6 +1380,10 @@ async def test_web_support_ticket_knowledge_suggestions_uses_catalog_search_with
     assert "KB-HTTP-502" in data["ai_summary"]["sources"]
     assert data["ai_summary"]["text"].startswith("AI-")
     assert data["diagnostics"]["source_counts"]["catalog"] >= 1
+    assert data["diagnostics"]["provider_status"] == "ok"
+    assert data["diagnostics"]["external_provider_status"] == "not_configured"
+    assert data["diagnostics"]["catalog_entry_count"] >= 1
+    assert "502" in data["diagnostics"]["query_tokens"]
     assert "502" in data["diagnostics"]["query_signals"]
     assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["source_type"] == "catalog"
     assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["score"] >= 80
@@ -1508,6 +1522,9 @@ async def test_web_support_ticket_detail_timeline_includes_normalized_lifecycle_
     assert timeline_by_type["tool_call_result"]["retry_count"] == 0
     assert timeline_by_type["tool_call_result"]["max_retries"] == 2
     assert timeline_by_type["tool_call_result"]["retryable"] is False
+    assert timeline_by_type["tool_call_result"]["can_retry"] is False
+    assert timeline_by_type["tool_call_result"]["can_cancel"] is False
+    assert timeline_by_type["tool_call_result"]["cancel_disabled_reason"] == "already_finished"
     assert timeline_by_type["tool_call_result"]["details_url"] == "/api/operations/op-timeline-1"
 
 

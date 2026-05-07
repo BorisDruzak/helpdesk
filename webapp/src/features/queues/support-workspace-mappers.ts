@@ -118,6 +118,27 @@ function errorCategoryLabel(value: string | null | undefined): string | null {
   }
 }
 
+function operationActionReasonLabel(reason: string | null | undefined): string | null {
+  switch (reason) {
+    case "already_finished":
+      return "уже завершена";
+    case "retry_endpoint_unavailable":
+      return "ожидает безопасный API";
+    case "retry_limit_reached":
+      return "лимит исчерпан";
+    case "retry_policy_missing":
+      return "нет политики";
+    case "status_not_cancelable":
+      return "статус нельзя отменить";
+    case "status_not_retryable":
+      return "статус нельзя повторить";
+    case "status_unknown":
+      return "статус неизвестен";
+    default:
+      return reason ?? null;
+  }
+}
+
 function operationMetaLabels(operation: {
   operation_id?: string | null;
   trace_id?: string | null;
@@ -125,6 +146,10 @@ function operationMetaLabels(operation: {
   retry_count?: number | null;
   max_retries?: number | null;
   retryable?: boolean | null;
+  can_retry?: boolean | null;
+  can_cancel?: boolean | null;
+  retry_disabled_reason?: string | null;
+  cancel_disabled_reason?: string | null;
   error_code?: string | null;
   error_category?: string | null;
   details_url?: string | null;
@@ -142,6 +167,12 @@ function operationMetaLabels(operation: {
   return [
     duration ? `Длительность: ${duration}` : null,
     retryLabel,
+    operation.can_cancel === false && operation.cancel_disabled_reason
+      ? `Отмена: ${operationActionReasonLabel(operation.cancel_disabled_reason)}`
+      : null,
+    operation.retryable && operation.can_retry === false && operation.retry_disabled_reason
+      ? `Повтор: ${operationActionReasonLabel(operation.retry_disabled_reason)}`
+      : null,
     operation.error_code ? `Код: ${operation.error_code}` : null,
     category ? `Категория: ${category}` : null,
     compactId(operation.trace_id) ? `Trace: ${compactId(operation.trace_id)}` : null,
@@ -670,14 +701,22 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
   return (detail?.snapshot.latest_operations ?? []).slice(0, 5).map((operation) => {
     const status = operation.display_status ?? operation.status;
     const displayLabel = operation.display_label?.trim();
+    const active = activeOperationStatuses.has(status);
     return {
       id: operation.operation_id,
       title: operation.tool_name ?? operation.command_name ?? displayLabel ?? operation.kind,
       status,
       statusLabel: operationStatusLabel(status),
       statusTone: operationStatusTone(status),
-      active: activeOperationStatuses.has(status),
+      active,
       retryable: Boolean(operation.retryable),
+      canRetry: Boolean(operation.can_retry),
+      canCancel: typeof operation.can_cancel === "boolean" ? operation.can_cancel : active,
+      retryUrl: operation.retry_url ?? null,
+      cancelUrl: operation.cancel_url ?? null,
+      retryDisabledReason: operation.retry_disabled_reason ?? null,
+      cancelDisabledReason: operation.cancel_disabled_reason ?? null,
+      policyLabels: operation.policy_labels ?? [],
       detailsUrl: operation.details_url ?? null,
       summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
       metaLabels: operationMetaLabels(operation),
@@ -731,6 +770,11 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
     diagnostics: {
       provider: knowledge?.diagnostics?.provider ?? "support_knowledge_provider",
       providerVersion: knowledge?.diagnostics?.provider_version ?? "local-v1",
+      providerStatus: knowledge?.diagnostics?.provider_status ?? "ok",
+      externalProviderStatus: knowledge?.diagnostics?.external_provider_status ?? "not_configured",
+      fallbackReason: knowledge?.diagnostics?.fallback_reason ?? null,
+      catalogEntryCount: knowledge?.diagnostics?.catalog_entry_count ?? 0,
+      queryTokens: knowledge?.diagnostics?.query_tokens ?? [],
       sourceCounts: knowledge?.diagnostics?.source_counts ?? {},
       querySignals: knowledge?.diagnostics?.query_signals ?? [],
       articleMatches,

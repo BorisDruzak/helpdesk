@@ -49,6 +49,11 @@ class KnowledgeAiSuggestion:
 class KnowledgeDiagnostics:
     provider: str = "support_knowledge_provider"
     provider_version: str = "local-v1"
+    provider_status: str = "ok"
+    external_provider_status: str = "not_configured"
+    fallback_reason: str | None = None
+    catalog_entry_count: int = 0
+    query_tokens: list[str] = field(default_factory=list)
     source_counts: dict[str, int] = field(default_factory=dict)
     query_signals: list[str] = field(default_factory=list)
     article_matches: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -388,6 +393,9 @@ def knowledge_source_summary(
 def knowledge_diagnostics(
     articles: list[KnowledgeArticleSuggestion],
     tickets: list[KnowledgeSimilarTicketSuggestion],
+    *,
+    ticket: Ticket | None = None,
+    catalog_entry_count: int = 0,
 ) -> KnowledgeDiagnostics:
     source_counts = {"manual_kb": 0, "catalog": 0, "similar_ticket": 0}
     article_matches: dict[str, dict[str, Any]] = {}
@@ -401,7 +409,20 @@ def knowledge_diagnostics(
         source_counts["similar_ticket"] = source_counts.get("similar_ticket", 0) + 1
         similar_ticket_matches[ticket.id] = _similar_match_payload(ticket)
         query_signals.extend(ticket.match_reasons)
+    query_tokens = _unique_strings(_knowledge_tokens(ticket_knowledge_search_text(ticket)) if ticket else (), limit=12)
+    fallback_reason = None
+    if not articles and not tickets:
+        fallback_reason = "no_sources_found"
+    elif not articles:
+        fallback_reason = "similar_tickets_only"
+    elif not tickets:
+        fallback_reason = "articles_only"
     return KnowledgeDiagnostics(
+        provider_status="ok",
+        external_provider_status="not_configured",
+        fallback_reason=fallback_reason,
+        catalog_entry_count=catalog_entry_count,
+        query_tokens=query_tokens,
         source_counts=source_counts,
         query_signals=_unique_strings(query_signals, limit=10),
         article_matches=article_matches,
@@ -417,6 +438,7 @@ async def build_knowledge_suggestions(
     catalog_limit_without_manual_links: int = 5,
     similar_limit: int = 3,
 ) -> KnowledgeSuggestions:
+    catalog_entries = load_knowledge_catalog()
     articles = [
         KnowledgeArticleSuggestion(
             id=str(link.article_ref),
@@ -435,6 +457,7 @@ async def build_knowledge_suggestions(
             search_catalog_articles_for_ticket(
                 ticket,
                 existing_article_ids,
+                catalog=catalog_entries,
                 limit=catalog_limit_without_manual_links,
             )
         )
@@ -443,5 +466,10 @@ async def build_knowledge_suggestions(
         articles=articles,
         similar_tickets=similar_tickets,
         ai_summary=knowledge_source_summary(articles, similar_tickets),
-        diagnostics=knowledge_diagnostics(articles, similar_tickets),
+        diagnostics=knowledge_diagnostics(
+            articles,
+            similar_tickets,
+            ticket=ticket,
+            catalog_entry_count=len(catalog_entries),
+        ),
     )

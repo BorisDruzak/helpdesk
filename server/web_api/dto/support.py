@@ -297,6 +297,12 @@ class SupportTicketMessage(BaseModel):
     retry_count: int | None = None
     max_retries: int | None = None
     retryable: bool | None = None
+    can_retry: bool | None = None
+    can_cancel: bool | None = None
+    retry_url: str | None = None
+    cancel_url: str | None = None
+    retry_disabled_reason: str | None = None
+    cancel_disabled_reason: str | None = None
     error_code: str | None = None
     error_category: str | None = None
     details_url: str | None = None
@@ -369,6 +375,13 @@ class SupportTicketOperationSnapshot(BaseModel):
     retry_count: int = 0
     max_retries: int = 0
     retryable: bool = False
+    can_retry: bool = False
+    can_cancel: bool = False
+    retry_url: str | None = None
+    cancel_url: str | None = None
+    retry_disabled_reason: str | None = None
+    cancel_disabled_reason: str | None = None
+    policy_labels: list[str] = Field(default_factory=list)
     error_code: str | None = None
     error_category: str | None = None
     details_url: str | None = None
@@ -855,6 +868,11 @@ class SupportKnowledgeDiagnostics(BaseModel):
 
     provider: str = "support_knowledge_provider"
     provider_version: str = "local-v1"
+    provider_status: str = "ok"
+    external_provider_status: str = "not_configured"
+    fallback_reason: str | None = None
+    catalog_entry_count: int = 0
+    query_tokens: list[str] = Field(default_factory=list)
     source_counts: dict[str, int] = Field(default_factory=dict)
     query_signals: list[str] = Field(default_factory=list)
     article_matches: dict[str, dict[str, Any]] = Field(default_factory=dict)
