@@ -354,6 +354,24 @@ describe("support workspace mappers", () => {
     ]);
   });
 
+  it("keeps workspace slices stable for older queue payloads without smart view counts", () => {
+    const queue = queuePayload() as unknown as {
+      filters?: { smart_view_options?: SupportQueuePayload["filters"]["smart_view_options"] };
+      summary?: { smart_view_counts?: SupportQueuePayload["summary"]["smart_view_counts"] };
+    };
+    delete queue.filters?.smart_view_options;
+    delete queue.summary?.smart_view_counts;
+
+    const slices = mapWorkspaceSlices(queue as SupportQueuePayload, "all");
+
+    expect(slices.map((slice) => [slice.id, slice.label, slice.count])).toEqual([
+      ["my_action", "Нужен ответ", 0],
+      ["sla_risk", "SLA риск", 0],
+      ["unassigned", "Без исполнителя", 0],
+      ["requester_reply", "Ответил пользователь", 0],
+    ]);
+  });
+
   it("derives next action owner and countdown from status and due dates", () => {
     const viewModel = mapSupportWorkspaceViewModel({
       activeQueueId: null,
@@ -578,9 +596,9 @@ describe("support workspace mappers", () => {
       enabled: false,
       disabledReason: "Агент устройства offline",
       metaLabels: expect.arrayContaining([
-        "Риск: low",
-        "Без согласия",
-        "Право: module.tool.run.low_risk",
+        "Риск: низкий",
+        "Согласие не требуется",
+        "Право: запуск безопасных инструментов",
         "Роли: support, admin",
         "Домен: network",
       ]),
@@ -588,7 +606,7 @@ describe("support workspace mappers", () => {
     expect(viewModel.right.playbooks[0]).toMatchObject({
       kind: "playbook",
       enabled: false,
-      disabledReason: "Нет tool: http.check",
+      disabledReason: "Нет инструмента: http.check",
     });
     expect(viewModel.right.operations[0]).toMatchObject({
       title: "dns.resolve",
@@ -782,7 +800,10 @@ describe("support workspace mappers", () => {
     expect(viewModel.right.knowledge.aiSummary?.confidence).toBe("high");
     expect(viewModel.right.knowledge.diagnostics.sourceCounts).toEqual({ manual_kb: 1, catalog: 0, similar_ticket: 1 });
     expect(viewModel.right.knowledge.diagnostics.providerStatus).toBe("ok");
+    expect(viewModel.right.knowledge.diagnostics.providerStatusLabel).toBe("готов");
     expect(viewModel.right.knowledge.diagnostics.externalProviderStatus).toBe("not_configured");
+    expect(viewModel.right.knowledge.diagnostics.externalProviderStatusLabel).toBe("не подключена");
+    expect(viewModel.right.knowledge.diagnostics.fallbackReasonLabel).toBeNull();
     expect(viewModel.right.knowledge.diagnostics.catalogEntryCount).toBe(5);
     expect(viewModel.right.knowledge.diagnostics.queryTokens).toEqual(["502", "gateway"]);
     expect(viewModel.right.knowledge.diagnostics.querySignals).toEqual(["manual_link", "linked_ticket"]);

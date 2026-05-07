@@ -68,6 +68,7 @@ import {
   mapSupportTimelineEntries,
   mapSupportWorkspaceViewModel,
 } from "../../features/queues/support-workspace-mappers";
+import { operationActionReasonSentence } from "../../features/queues/support-workspace-labels";
 import type {
   SupportWorkspacePassport,
   SupportWorkspaceClosurePlan,
@@ -530,27 +531,6 @@ function diagnosticStepTextClass(status: string) {
   return "text-amber-200";
 }
 
-function operationActionReasonLabel(reason: string | null | undefined): string {
-  switch (reason) {
-    case "already_finished":
-      return "Операция уже завершена";
-    case "retry_endpoint_unavailable":
-      return "Повтор ожидает безопасный API";
-    case "retry_limit_reached":
-      return "Лимит повторов исчерпан";
-    case "retry_policy_missing":
-      return "Нет политики повтора";
-    case "status_not_cancelable":
-      return "Текущий статус нельзя отменить";
-    case "status_not_retryable":
-      return "Текущий статус нельзя повторить";
-    case "status_unknown":
-      return "Статус операции неизвестен";
-    default:
-      return "Действие недоступно";
-  }
-}
-
 function OperationSummaryCard({
   isCanceling = false,
   isRetrying = false,
@@ -595,6 +575,7 @@ function OperationSummaryCard({
             href={operation.detailsUrl}
             rel="noreferrer"
             target="_blank"
+            title="Открыть технические детали операции в API"
           >
             Детали операции
           </a>
@@ -604,6 +585,7 @@ function OperationSummaryCard({
             className="rounded-md border border-red-300/25 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isCanceling || !onCancel}
             onClick={() => onCancel?.(operation.id)}
+            title="Отправить запрос на отмену running/queued операции"
             type="button"
           >
             {isCanceling ? "Отменяем..." : "Отменить операцию"}
@@ -612,7 +594,7 @@ function OperationSummaryCard({
         {!operation.canCancel && operation.active ? (
           <span
             className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-semibold text-slate-400"
-            title={operationActionReasonLabel(operation.cancelDisabledReason)}
+            title={operationActionReasonSentence(operation.cancelDisabledReason)}
           >
             Отмена недоступна
           </span>
@@ -622,6 +604,7 @@ function OperationSummaryCard({
             className="rounded-md border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isRetrying || !onRetry}
             onClick={() => onRetry?.(operation.id)}
+            title="Повторить операцию через policy-aware retry"
             type="button"
           >
             Повторить
@@ -629,7 +612,7 @@ function OperationSummaryCard({
         ) : operation.retryable ? (
           <span
             className="rounded-md border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
-            title={operationActionReasonLabel(operation.retryDisabledReason)}
+            title={operationActionReasonSentence(operation.retryDisabledReason)}
           >
             Повтор недоступен
           </span>
@@ -685,6 +668,7 @@ function SupportWorkspaceTopbar({
       <div className="ml-auto flex items-center gap-2">
         <Link
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500"
+          title="Создать новую заявку от имени пользователя"
           to="/app/help"
         >
           Создать
@@ -695,6 +679,7 @@ function SupportWorkspaceTopbar({
           className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:text-white"
           disabled={refreshing}
           onClick={onRefresh}
+          title="Обновить очередь и выбранный тикет"
           type="button"
         >
           <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -703,6 +688,7 @@ function SupportWorkspaceTopbar({
           aria-label={isLightTheme ? "Тёмная тема" : "Светлая тема"}
           className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-950" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"}`}
           onClick={onToggleTheme}
+          title={isLightTheme ? "Переключить на тёмную тему" : "Переключить на светлую тему"}
           type="button"
         >
           {isLightTheme ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
@@ -710,6 +696,7 @@ function SupportWorkspaceTopbar({
         <button
           aria-label="Уведомления"
           className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
+          title="Уведомления по тикетам и SLA"
           type="button"
         >
           <Bell className="h-4 w-4" />
@@ -722,6 +709,7 @@ function SupportWorkspaceTopbar({
         <button
           aria-label="Сообщения"
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
+          title="Сообщения и комментарии"
           type="button"
         >
           <MessageSquare className="h-4 w-4" />
@@ -729,6 +717,7 @@ function SupportWorkspaceTopbar({
         <button
           aria-label="Помощь"
           className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
+          title="Справка по рабочему месту оператора"
           type="button"
         >
           <CircleHelp className="h-4 w-4" />
@@ -2065,32 +2054,47 @@ export function TicketListPage() {
                     {visibleAutomationItems.map((item) => {
                       const Icon = toolIcon(item);
                       return (
-                        <div className={`rounded-xl border p-3 ${item.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-white/[0.02] opacity-55"}`} key={`${item.id}:${item.title}`}>
+                        <div
+                          className={`rounded-xl border p-3 ${item.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-white/[0.02] opacity-55"}`}
+                          key={`${item.id}:${item.title}`}
+                          title={item.disabledReason ?? `${item.kind === "playbook" ? "Playbook" : "Инструмент"}: ${item.title}`}
+                        >
                           <div className="flex items-start gap-3">
                             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15 text-blue-200">
                               <Icon className="h-4 w-4" />
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center justify-between gap-2">
-                                <p className="truncate text-sm font-semibold text-white">{item.title}</p>
+                                <p className="truncate text-sm font-semibold text-white" title={item.title}>
+                                  {item.title}
+                                </p>
                                 <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-400">
-                                  {item.kind === "playbook" ? "Playbook" : "Tool"}
+                                  {item.kind === "playbook" ? "Playbook" : "Инструмент"}
                                 </span>
                               </div>
-                              <p className="truncate text-xs text-slate-400">{item.subtitle}</p>
+                              <p className="truncate text-xs text-slate-400" title={item.subtitle}>
+                                {item.subtitle}
+                              </p>
                             </div>
                           </div>
                           {item.metaLabels.length ? (
                             <div className="mt-3 flex flex-wrap gap-1.5">
                               {item.metaLabels.slice(0, 4).map((label) => (
-                                <span className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400" key={`${item.id}:${label}`}>
+                                <span
+                                  className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400"
+                                  key={`${item.id}:${label}`}
+                                  title={label}
+                                >
                                   {label}
                                 </span>
                               ))}
                             </div>
                           ) : null}
                           {!item.enabled && item.disabledReason ? (
-                            <p className="mt-2 break-all rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">
+                            <p
+                              className="mt-2 break-all rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100"
+                              title={item.disabledReason}
+                            >
                               {item.disabledReason}
                             </p>
                           ) : null}
@@ -2127,17 +2131,25 @@ export function TicketListPage() {
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-                        Источник: {viewModel.right.knowledge.diagnostics.provider}
+                        Провайдер: {viewModel.right.knowledge.diagnostics.providerStatusLabel}
+                      </span>
+                      <span
+                        className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1"
+                        title={`Технический ID: ${viewModel.right.knowledge.diagnostics.provider}`}
+                      >
+                        ID: {viewModel.right.knowledge.diagnostics.provider}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-                        Provider: {viewModel.right.knowledge.diagnostics.providerStatus}
+                        Каталог: {viewModel.right.knowledge.diagnostics.catalogEntryCount}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-                        Catalog: {viewModel.right.knowledge.diagnostics.catalogEntryCount}
+                        Внешняя БЗ: {viewModel.right.knowledge.diagnostics.externalProviderStatusLabel}
                       </span>
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-                        External KB: {viewModel.right.knowledge.diagnostics.externalProviderStatus}
-                      </span>
+                      {viewModel.right.knowledge.diagnostics.fallbackReasonLabel ? (
+                        <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                          Fallback: {viewModel.right.knowledge.diagnostics.fallbackReasonLabel}
+                        </span>
+                      ) : null}
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
                         Доверие: {viewModel.right.knowledge.aiSummary.confidence}
                       </span>

@@ -226,8 +226,11 @@ export type SupportWorkspaceKnowledge = {
     provider: string;
     providerVersion: string;
     providerStatus: string;
+    providerStatusLabel: string;
     externalProviderStatus: string;
+    externalProviderStatusLabel: string;
     fallbackReason: string | null;
+    fallbackReasonLabel: string | null;
     catalogEntryCount: number;
     queryTokens: string[];
     sourceCounts: Record<string, number>;

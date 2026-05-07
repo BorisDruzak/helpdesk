@@ -31,6 +31,20 @@ import {
   getTicketStatusPresentation,
   type TicketBadgeTone,
 } from "../tickets/status-presentation";
+import {
+  consentLabel,
+  externalProviderStatusLabel,
+  fallbackReasonLabel,
+  operationActionReasonLabel,
+  operationPolicyLabel,
+  permissionMetaLabel,
+  providerStatusLabel,
+  riskLevelLabel,
+  riskMetaLabel,
+  roleListLabel,
+  sourceLabel,
+  toolKindLabel,
+} from "./support-workspace-labels";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
   day: "2-digit",
@@ -115,27 +129,6 @@ function errorCategoryLabel(value: string | null | undefined): string | null {
       return "Связь";
     default:
       return value || null;
-  }
-}
-
-function operationActionReasonLabel(reason: string | null | undefined): string | null {
-  switch (reason) {
-    case "already_finished":
-      return "уже завершена";
-    case "retry_endpoint_unavailable":
-      return "ожидает безопасный API";
-    case "retry_limit_reached":
-      return "лимит исчерпан";
-    case "retry_policy_missing":
-      return "нет политики";
-    case "status_not_cancelable":
-      return "статус нельзя отменить";
-    case "status_not_retryable":
-      return "статус нельзя повторить";
-    case "status_unknown":
-      return "статус неизвестен";
-    default:
-      return reason ?? null;
   }
 }
 
@@ -278,7 +271,7 @@ function operationStatusTone(status: string | null | undefined): TicketBadgeTone
 }
 
 function countFor(queue: SupportQueuePayload | undefined, value: string): number {
-  return queue?.summary.smart_view_counts.find((item) => item.value === value)?.count ?? 0;
+  return queue?.summary?.smart_view_counts?.find((item) => item.value === value)?.count ?? 0;
 }
 
 function queueIcon(label: string): SupportWorkspaceQueue["icon"] {
@@ -309,7 +302,7 @@ function normalizePriority(raw: string | null | undefined): string {
 }
 
 export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activeSmartView: string): SupportWorkspaceSlice[] {
-  const optionMap = new Map((queue?.filters.smart_view_options ?? []).map((option) => [option.value, option.label]));
+  const optionMap = new Map((queue?.filters?.smart_view_options ?? []).map((option) => [option.value, option.label]));
   const knownIds = new Set(WORK_SLICE_ORDER);
   const primarySlices: SupportWorkspaceSlice[] = WORK_SLICE_ORDER.map((id) => ({
     id,
@@ -318,7 +311,7 @@ export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activ
     icon: id === "sla_risk" ? "alert" : id === "unassigned" ? "user" : id === "requester_reply" ? "message" : "inbox",
     active: activeSmartView === id,
   }));
-  const customSlices: SupportWorkspaceSlice[] = (queue?.summary.smart_view_counts ?? [])
+  const customSlices: SupportWorkspaceSlice[] = (queue?.summary?.smart_view_counts ?? [])
     .filter((item) => item.value !== "all" && !knownIds.has(item.value))
     .map((item) => ({
       id: item.value,
@@ -331,8 +324,8 @@ export function mapWorkspaceSlices(queue: SupportQueuePayload | undefined, activ
 }
 
 export function mapWorkspaceQueues(queue: SupportQueuePayload | undefined, activeQueueId: string | null): SupportWorkspaceQueue[] {
-  if ((queue?.summary.queue_counts ?? []).length > 0) {
-    return (queue?.summary.queue_counts ?? []).map((item) => {
+  if ((queue?.summary?.queue_counts ?? []).length > 0) {
+    return (queue?.summary?.queue_counts ?? []).map((item) => {
       const label = item.name ?? item.code ?? "Без очереди";
       const id = item.code ?? String(item.id ?? label);
       return {
@@ -646,25 +639,25 @@ export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, 
         ? "Требуется установка модуля"
         : null;
     const policyLabels = [
-      tool.required_permission ? `Право: ${tool.required_permission}` : null,
-      tool.allowed_roles?.length ? `Роли: ${tool.allowed_roles.join(", ")}` : null,
+      permissionMetaLabel(tool.required_permission),
+      roleListLabel(tool.allowed_roles),
       tool.domain ? `Домен: ${tool.domain}` : null,
-      tool.tool_kind ? `Тип: ${tool.tool_kind}` : null,
+      tool.tool_kind ? `Тип: ${toolKindLabel(tool.tool_kind)}` : null,
     ];
     return {
       id: tool.tool_name,
       kind: "tool",
-      title: tool.tool_name,
-      subtitle: tool.description ?? tool.module_name ?? tool.source,
-      riskLabel: tool.risk_level,
+      title: tool.description ?? tool.tool_name,
+      subtitle: tool.description ? tool.tool_name : (tool.module_name ?? sourceLabel(tool.source)),
+      riskLabel: riskLevelLabel(tool.risk_level),
       enabled: !disabledReason,
       disabledReason,
       requiresConsent: tool.requires_consent,
       metaLabels: [
-        `Риск: ${tool.risk_level}`,
-        tool.requires_consent ? "Нужно согласие" : "Без согласия",
+        riskMetaLabel(tool.risk_level),
+        consentLabel(tool.requires_consent),
         ...policyLabels,
-        tool.source ? `Источник: ${tool.source}` : null,
+        tool.source ? `Источник: ${sourceLabel(tool.source)}` : null,
       ].filter((label): label is string => Boolean(label)),
     };
   });
@@ -673,15 +666,15 @@ export function mapWorkspaceTools(tools: SupportTicketToolsPayload | undefined, 
 export function mapWorkspacePlaybooks(playbooks: SupportTicketPlaybooksPayload | undefined): SupportWorkspaceToolItem[] {
   return (playbooks?.playbooks ?? []).map((playbook) => {
     const blockers = [
-      ...(playbook.missing_tools ?? []).map((tool) => `Нет tool: ${tool}`),
+      ...(playbook.missing_tools ?? []).map((tool) => `Нет инструмента: ${tool}`),
       ...(playbook.missing_params ?? []).map((param) => `Нужен параметр: ${param}`),
     ];
     const disabledReason = playbook.can_run ? null : blockers[0] ?? playbook.readiness_label ?? "Playbook недоступен";
     return {
       id: String(playbook.playbook_version_id),
       kind: "playbook",
-      title: playbook.key,
-      subtitle: playbook.name,
+      title: playbook.name || playbook.key,
+      subtitle: playbook.name ? playbook.key : "Playbook",
       riskLabel: playbook.readiness_label,
       enabled: playbook.can_run,
       disabledReason,
@@ -690,7 +683,7 @@ export function mapWorkspacePlaybooks(playbooks: SupportTicketPlaybooksPayload |
         playbook.domain ? `Домен: ${playbook.domain}` : null,
         playbook.version ? `Версия: ${playbook.version}` : null,
         `${playbook.blocks_count} шагов`,
-        playbooks?.diagnostic_policy?.requester_consent_required ? "Нужно согласие" : null,
+        playbooks?.diagnostic_policy?.requester_consent_required ? consentLabel(true) : null,
         ...blockers.slice(0, 2),
       ].filter((label): label is string => Boolean(label)),
     };
@@ -702,6 +695,7 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
     const status = operation.display_status ?? operation.status;
     const displayLabel = operation.display_label?.trim();
     const active = activeOperationStatuses.has(status);
+    const policyLabels = (operation.policy_labels ?? []).map(operationPolicyLabel).filter((label): label is string => Boolean(label));
     return {
       id: operation.operation_id,
       title: operation.tool_name ?? operation.command_name ?? displayLabel ?? operation.kind,
@@ -716,10 +710,10 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
       cancelUrl: operation.cancel_url ?? null,
       retryDisabledReason: operation.retry_disabled_reason ?? null,
       cancelDisabledReason: operation.cancel_disabled_reason ?? null,
-      policyLabels: operation.policy_labels ?? [],
+      policyLabels,
       detailsUrl: operation.details_url ?? null,
       summary: operation.result_summary ?? operation.error_message ?? (displayLabel && displayLabel !== status ? displayLabel : null),
-      metaLabels: operationMetaLabels(operation),
+      metaLabels: [...operationMetaLabels(operation), ...policyLabels],
       queuedOrStartedLabel: formatDateTime(operation.started_at ?? operation.queued_at),
       finishedLabel: operation.finished_at ? formatDateTime(operation.finished_at) : null,
     };
@@ -771,8 +765,11 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
       provider: knowledge?.diagnostics?.provider ?? "support_knowledge_provider",
       providerVersion: knowledge?.diagnostics?.provider_version ?? "local-v1",
       providerStatus: knowledge?.diagnostics?.provider_status ?? "ok",
+      providerStatusLabel: providerStatusLabel(knowledge?.diagnostics?.provider_status ?? "ok"),
       externalProviderStatus: knowledge?.diagnostics?.external_provider_status ?? "not_configured",
+      externalProviderStatusLabel: externalProviderStatusLabel(knowledge?.diagnostics?.external_provider_status ?? "not_configured"),
       fallbackReason: knowledge?.diagnostics?.fallback_reason ?? null,
+      fallbackReasonLabel: fallbackReasonLabel(knowledge?.diagnostics?.fallback_reason ?? null),
       catalogEntryCount: knowledge?.diagnostics?.catalog_entry_count ?? 0,
       queryTokens: knowledge?.diagnostics?.query_tokens ?? [],
       sourceCounts: knowledge?.diagnostics?.source_counts ?? {},
@@ -968,7 +965,7 @@ export function mapSupportWorkspaceViewModel({
       slices: mapWorkspaceSlices(queue, activeSmartView),
       queues: mapWorkspaceQueues(queue, activeQueueId),
       tickets: mapWorkspaceTicketItems(queue, selectedTicketId, now),
-      visibleCount: queue?.summary.visible_count ?? 0,
+      visibleCount: queue?.summary?.visible_count ?? 0,
     },
     selectedTicket,
     right: {

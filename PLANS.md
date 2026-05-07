@@ -335,6 +335,81 @@ Expected result:
 - UI polish gap reduces from 1-3% to 0%.
 - Final page behavior is production-ready for the agreed desktop support-workspace scope.
 
+### P6.6 Localization, Tooltips And Operator Clarity
+
+Goal: make `/app/tickets` understandable as a production operator workspace, not just visually complete.
+
+Status: **closed locally, 2026-05-07**.
+
+Current assessment:
+
+- User-facing Russian localization before this slice: **85-90%**.
+- Operator clarity/readability before this slice: **90-93%**.
+- Tooltips, disabled reasons and edge-state explanations before this slice: **80-85%**.
+- Full multi-language i18n architecture: **50-60%** and explicitly out of current page scope unless we decide to add a translation framework later.
+
+Implementation notes:
+
+- The current page is mostly Russian and already has good placeholders for search, public reply, internal note and action reasons.
+- Key icon buttons have `aria-label`.
+- Operation/tool disabled states already expose typed reasons for offline device, missing tool, missing permission, lifecycle state and retry availability.
+- Remaining quality issue is not missing business functionality; it is the last layer of product language: converting backend/policy codes into concise human labels and adding contextual hints where an operator needs confidence.
+
+Files to inspect and likely modify:
+
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/features/queues/support-workspace-mappers.ts`
+- `webapp/src/features/queues/support-workspace-model.ts`
+- `webapp/src/features/queues/api.ts`
+- shared UI tooltip/helpers if an existing component exists.
+
+Steps:
+
+- [x] Inventory all visible technical codes on `/app/tickets`:
+  - permission codes such as `module.tool.run.low_risk`;
+  - retry/cancel reasons such as `status_not_retryable`, `retry_limit_reached`;
+  - provider states such as `provider_unavailable`;
+  - consent states such as `CONSENT_REQUIRED_FOR_RETRY`;
+  - risk levels, lifecycle statuses and operation statuses.
+- [x] Add centralized label helpers for:
+  - permission labels;
+  - retry/cancel disabled reasons;
+  - tool/playbook risk and consent labels;
+  - knowledge provider diagnostics;
+  - operation lifecycle statuses.
+- [x] Keep technical IDs visible only as secondary metadata where they are useful for debugging:
+  - tool id;
+  - playbook id;
+  - operation id;
+  - permission code.
+- [x] Add or reuse tooltip behavior for:
+  - icon-only buttons in topbar/action areas;
+  - disabled retry/cancel/tool/playbook controls;
+  - SLA/OLA paused/breached/at-risk states;
+  - AI beta/provider diagnostics.
+- [x] Review empty/error/no-ticket/offline/permission-denied copy for short, action-oriented Russian text.
+- [x] Verify long Russian strings at 1366px, 1440px and 1920px in dark and light themes.
+- [x] Add focused mapper/component tests for representative label conversions:
+  - permission code -> human label;
+  - retry disabled reason -> human label;
+  - provider unavailable -> human label;
+  - consent-required retry -> human label.
+
+Expected result:
+
+- User-facing localization reaches **93-96%** for the current single-language page after local checks.
+- Operator clarity/readability reaches **96-98%**.
+- Tooltips and disabled-reason explanations reach **95%+** for the current controls.
+- Full i18n remains a separate future project unless multi-language support becomes a requirement.
+
+Implemented in this slice:
+
+- Added centralized `support-workspace-labels` helpers for permission, risk, consent, retry/cancel, operation policy and knowledge provider diagnostic labels.
+- Mappers now expose human-readable labels while preserving raw technical IDs as secondary metadata where useful.
+- `/app/tickets` tools/playbooks, operation actions, topbar controls and AI/knowledge diagnostics now expose clearer Russian copy and `title` hints.
+- Added focused label tests and updated mapper/page assertions for the new operator-facing copy.
+- Updated the Playwright support workspace fixture to serve the aggregate `/workspace` payload and added 1366/1440/1920 dark/light readability checks.
+
 ## Verification Gates
 
 Local gates:

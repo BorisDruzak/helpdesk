@@ -773,10 +773,10 @@ describe("TicketListPage", () => {
       });
     });
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
-    expect(screen.getByText("Право: module.tool.run.low_risk")).toBeInTheDocument();
+    expect(screen.getByText("Право: запуск безопасных инструментов")).toBeInTheDocument();
     expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
     expect(screen.getByText("Диагностика сайта")).toBeInTheDocument();
-    expect(screen.getAllByText("Нет tool: http.check").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Нет инструмента: http.check").length).toBeGreaterThan(0);
     expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Запустить" })).toBeDisabled();
   });
@@ -1407,7 +1407,9 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("Ошибка 502 Bad Gateway")).toBeInTheDocument();
     expect(screen.getByText("Ошибка 502 на портале")).toBeInTheDocument();
     expect(screen.getAllByText(/AI-рекомендация \/ Бета/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Источник: support_knowledge_provider")).toBeInTheDocument();
+    expect(screen.getByText("Провайдер: готов")).toBeInTheDocument();
+    expect(screen.getByText("ID: support_knowledge_provider")).toBeInTheDocument();
+    expect(screen.getByText("Внешняя БЗ: не подключена")).toBeInTheDocument();
     expect(screen.getByText("Доверие: high")).toBeInTheDocument();
     expect(screen.getByText("manual_link")).toBeInTheDocument();
     expect(screen.queryByText(/Knowledge suggestions/)).not.toBeInTheDocument();

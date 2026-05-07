@@ -628,6 +628,11 @@ def build_fixture_state() -> dict:
                             "risk_level": "safe_read",
                             "requires_consent": False,
                             "install_required": False,
+                            "required_permission": "module.tool.run.low_risk",
+                            "allowed_roles": ["support"],
+                            "policy_labels": ["permission:module.tool.run.low_risk", "roles:support", "consent:not_required"],
+                            "domain": "network",
+                            "tool_kind": "diagnostic",
                             "source": "device",
                             "params_schema": [
                                 {
@@ -1517,6 +1522,205 @@ def build_ticket_detail(state: dict, ticket_id: str) -> dict:
     }
 
 
+def build_ticket_playbooks(ticket_state: dict) -> dict:
+    ticket_id = ticket_state["ticket"]["ticket_id"]
+    device_id = ticket_state["ticket"].get("device_id")
+    return {
+        "ticket_id": ticket_id,
+        "device_id": device_id,
+        "diagnostic_policy": {
+            "suggested_playbooks": ["diagnose.profile_sync"],
+            "auto_run_enabled": False,
+            "auto_run_priorities": [],
+            "requester_consent_required": False,
+            "high_risk_consent_required": True,
+            "attach_to_timeline": True,
+            "attach_to_passport": True,
+            "attach_as_evidence": True,
+            "reroute_by_result": {},
+        },
+        "playbooks": [
+            {
+                "playbook_version_id": 1,
+                "key": "diagnose.profile_sync",
+                "name": "Диагностика синхронизации профиля",
+                "domain": "identity",
+                "version": "1.0",
+                "status": "published",
+                "blocks_count": 3,
+                "required_tools": ["network.diagnostics"],
+                "missing_tools": [],
+                "missing_params": [],
+                "can_run": bool(device_id),
+                "readiness_label": "Готов к запуску" if device_id else "Нет устройства",
+                "updated_at": now_iso(minutes=20),
+            }
+        ],
+        "recent_runs": [],
+    }
+
+
+def build_ticket_passport(ticket_id: str) -> dict:
+    return {
+        "ticket_id": ticket_id,
+        "status": "draft",
+        "passport": None,
+        "requirements": {
+            "required_sections": ["problem", "root_cause", "solution", "verification"],
+            "require_official_passport": True,
+            "missing_facts": [
+                {
+                    "required_fact": "root_cause",
+                    "section_key": "cause",
+                    "source": "passport",
+                    "current_value": None,
+                    "requester_visible_label": "Причина установлена",
+                    "severity": "warning",
+                    "candidate_count": 0,
+                    "blocking_for_closure": True,
+                }
+            ],
+            "missing_count": 1,
+            "blocking_missing_count": 1,
+            "export_preview": {},
+            "knowledge_draft_hints": {},
+        },
+        "evidence": [],
+        "actions": [],
+        "approvals": [],
+        "related_objects": [],
+    }
+
+
+def build_ticket_passport_readiness(ticket_id: str) -> dict:
+    return {
+        "ticket_id": ticket_id,
+        "status": "draft",
+        "done": 1,
+        "total": 4,
+        "items": [
+            {"key": "problem_identified", "label": "Проблема идентифицирована", "status": "done"},
+            {"key": "cause_found", "label": "Причина установлена", "status": "pending"},
+            {"key": "solution_applied", "label": "Решение применено", "status": "pending"},
+            {"key": "verified_and_closed", "label": "Проверка и закрытие", "status": "pending"},
+        ],
+    }
+
+
+def build_ticket_sla_ola() -> dict:
+    return {
+        "first_response": {
+            "due_at": now_iso(minutes=18),
+            "remaining_seconds": 1080,
+            "target_seconds": 1800,
+            "status": "ok",
+        },
+        "resolution": {
+            "due_at": now_iso(minutes=240),
+            "remaining_seconds": 14400,
+            "target_seconds": 28800,
+            "status": "ok",
+        },
+        "ola_ack": {
+            "due_at": now_iso(minutes=30),
+            "remaining_seconds": 1800,
+            "target_seconds": 3600,
+            "status": "ok",
+        },
+        "ola_processing": {
+            "due_at": now_iso(minutes=120),
+            "remaining_seconds": 7200,
+            "target_seconds": 14400,
+            "status": "ok",
+        },
+    }
+
+
+def build_ticket_knowledge(ticket_state: dict) -> dict:
+    ticket = ticket_state["ticket"]
+    return {
+        "ticket_id": ticket["ticket_id"],
+        "similar_tickets": [
+            {
+                "id": "ticket-kb-1",
+                "number": "T-199991",
+                "subject": "Профиль не синхронизируется после обновления",
+                "resolution_summary": "Проверить доступность policy-сервера и перезапустить sync job.",
+            }
+        ],
+        "articles": [
+            {
+                "id": "KB-PROFILE-SYNC",
+                "title": "Проверка синхронизации рабочего профиля",
+                "url": "/app/knowledge/KB-PROFILE-SYNC",
+            }
+        ],
+        "ai_summary": {
+            "text": "AI-рекомендация / Бета: проверьте канал до policy-сервера и последний sync job перед изменениями.",
+            "sources": ["KB-PROFILE-SYNC", "T-199991"],
+            "confidence": "medium",
+            "source_count": 2,
+        },
+        "diagnostics": {
+            "provider": "fixture_knowledge_provider",
+            "provider_version": "local-v1",
+            "provider_status": "ok",
+            "external_provider_status": "not_configured",
+            "fallback_reason": None,
+            "catalog_entry_count": 1,
+            "query_tokens": ["profile", "sync"],
+            "source_counts": {"manual_kb": 1, "catalog": 0, "similar_ticket": 1},
+            "query_signals": ["fixture_kb", "similar_ticket"],
+            "article_matches": {
+                "KB-PROFILE-SYNC": {"source_type": "manual_kb", "score": 90, "match_reasons": ["fixture_kb"]}
+            },
+            "similar_ticket_matches": {
+                "ticket-kb-1": {"source_type": "similar_ticket", "score": 80, "match_reasons": ["similar_ticket"]}
+            },
+        },
+    }
+
+
+def build_ticket_closure_plan(ticket_id: str) -> dict:
+    return {
+        "ticket_id": ticket_id,
+        "ready_for_resolution": False,
+        "missing_count": 1,
+        "total": 4,
+        "evidence_candidate_count": 0,
+        "recommended_next_action": "Заполнить причину",
+        "blockers": [
+            {
+                "key": "root_cause",
+                "label": "Причина установлена",
+                "met": False,
+                "detail": "Укажите причину перед закрытием.",
+                "source": "passport",
+                "action_kind": "edit_resolution",
+                "action_label": "Заполнить решение",
+                "severity": "warning",
+                "candidate_count": 0,
+                "fact_key": "root_cause",
+                "blocking_for_closure": True,
+            }
+        ],
+    }
+
+
+def build_ticket_workspace(state: dict, ticket_id: str) -> dict:
+    ticket_state = state["tickets"][ticket_id]
+    return {
+        "detail": build_ticket_detail(state, ticket_id),
+        "tools": deepcopy(ticket_state["tools"]),
+        "playbooks": build_ticket_playbooks(ticket_state),
+        "passport": build_ticket_passport(ticket_id),
+        "knowledge": build_ticket_knowledge(ticket_state),
+        "sla_ola": build_ticket_sla_ola(),
+        "passport_readiness": build_ticket_passport_readiness(ticket_id),
+        "closure_plan": build_ticket_closure_plan(ticket_id),
+    }
+
+
 async def handle_session_me(request: web.Request) -> web.Response:
     if request.cookies.get(WEB_SESSION_COOKIE_NAME) != SESSION_TOKEN:
         return json_success(None)
@@ -1803,6 +2007,17 @@ async def handle_support_ticket_detail(request: web.Request) -> web.Response:
     return json_success(build_ticket_detail(state, ticket_id))
 
 
+async def handle_support_ticket_workspace(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    state = request.app["fixture_state"]
+    if ticket_id not in state["tickets"]:
+        raise web.HTTPNotFound()
+    return json_success(build_ticket_workspace(state, ticket_id))
+
+
 async def handle_support_ticket_tools(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -1812,6 +2027,39 @@ async def handle_support_ticket_tools(request: web.Request) -> web.Response:
     if ticket_id not in state["tickets"]:
         raise web.HTTPNotFound()
     return json_success(deepcopy(state["tickets"][ticket_id]["tools"]))
+
+
+async def handle_support_ticket_playbooks(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    state = request.app["fixture_state"]
+    if ticket_id not in state["tickets"]:
+        raise web.HTTPNotFound()
+    return json_success(build_ticket_playbooks(state["tickets"][ticket_id]))
+
+
+async def handle_support_ticket_knowledge(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    state = request.app["fixture_state"]
+    if ticket_id not in state["tickets"]:
+        raise web.HTTPNotFound()
+    return json_success(build_ticket_knowledge(state["tickets"][ticket_id]))
+
+
+async def handle_support_ticket_passport(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    state = request.app["fixture_state"]
+    if ticket_id not in state["tickets"]:
+        raise web.HTTPNotFound()
+    return json_success(build_ticket_passport(ticket_id))
 
 
 async def handle_support_ticket_message(request: web.Request) -> web.Response:
@@ -2348,6 +2596,10 @@ def build_app() -> web.Application:
             web.get("/api/web/realtime/bootstrap", handle_realtime_bootstrap),
             web.get("/api/web/support/bootstrap", handle_support_bootstrap),
             web.get("/api/web/support/queue", handle_support_queue),
+            web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
+            web.get("/api/web/support/tickets/{ticket_id}/knowledge-suggestions", handle_support_ticket_knowledge),
+            web.get("/api/web/support/tickets/{ticket_id}/playbooks", handle_support_ticket_playbooks),
+            web.get("/api/web/support/tickets/{ticket_id}/passport", handle_support_ticket_passport),
             web.get("/api/web/support/tickets/{ticket_id}", handle_support_ticket_detail),
             web.get("/api/web/support/tickets/{ticket_id}/tools", handle_support_ticket_tools),
             web.post("/api/web/support/tickets/{ticket_id}/messages", handle_support_ticket_message),
