@@ -21,12 +21,13 @@ Current baseline:
 - Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
 - Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device; evidence/worklog mutation depth needs a targeted closure-blocker fixture.
 
-Remaining gaps after policy-aware retry implementation:
+Remaining gaps after policy-aware retry live signoff:
 
-- Typed/backend gap: **0% locally, pending remote signoff**.
+- Typed/backend gap: **0%**.
   - Operation retry/cancel/details and knowledge provider diagnostics now have typed DTO/model coverage.
-- Domain gap: **0-1% locally, pending live safe-tool/device fixture signoff**.
+- Domain gap: **0-1% for agreed page scope**.
   - Cancel and retry are first-class. Retry now goes through `POST /api/operations/{operation_id}/retry` or ticket-scoped `POST /api/tickets/{ticket_id}/operations/{operation_id}/retry`, with ticket/device/auth/policy/consent/replay checks before a new operation is created.
+  - Live safe read-only retry was verified on remote server with local online device `59bf6886-c262-516f-95b0-a9593d65f3bf`, tool `system.collect`, ticket `8e0bf484-eb99-44fe-9e12-6adccf24ce9d`, source operation `aa2b073a-346e-4e5e-ad3a-0eec63f6b48e`, retry operation `1876a8c1-ab8e-4ccf-a8e3-24cea400aada`.
 - UI polish gap: **0-1% locally, pending final browser screenshot pass**.
   - Remaining work is release/browser verification, not known implementation work.
 
@@ -137,7 +138,7 @@ Expected result:
 
 Goal: close most of the domain gap around operation retry semantics and safe live tool execution.
 
-Status: **completed locally for retry, live low-risk device signoff still pending, 2026-05-07**.
+Status: **completed locally and live-signed off on remote server, 2026-05-07**.
 
 Implementation notes:
 
@@ -149,8 +150,9 @@ Implementation notes:
 - Retry validates: authenticated actor, `ticket.tool.run`, risk permission, ticket context, ticket/device match, agent online, replayable `run_tool` params, current tool availability, policy engine decision, consent requirement and retry budget.
 - Successful retry increments the source operation retry counter, creates a new operation with `retry_of_operation_id`, re-dispatches through `ToolExecutionService.run_tool`, and writes `operation_retried` into the ticket timeline.
 - Consent-required retries are blocked with `CONSENT_REQUIRED_FOR_RETRY` until a dedicated explicit-consent retry flow is added; this avoids silently replaying actions that require user confirmation.
-- Remote server was checked before live signoff and is currently stopped: `python scripts\manage_remote_stack.py status server` -> `server: stopped`.
-- Live low-risk tool signoff still requires deploying the current branch and selecting/creating an online test device/ticket.
+- Remote deploy applied commit `bb0cae3` and migration `069 -> 070`.
+- Live signoff used local online agent `retry-live-070`, device `59bf6886-c262-516f-95b0-a9593d65f3bf`, safe read-only tool `system.collect`.
+- Live retry source operation `aa2b073a-346e-4e5e-ad3a-0eec63f6b48e` was seeded into terminal `failed` after a real safe run to prove replay behavior; retry operation `1876a8c1-ab8e-4ccf-a8e3-24cea400aada` was accepted and then succeeded.
 
 Files to inspect and likely modify:
 
@@ -161,8 +163,8 @@ Files to inspect and likely modify:
 
 Steps:
 
-- [ ] Create or select a dedicated `LIVE-SIGNOFF-ONLINE-*` ticket bound to an online low-risk test device.
-- [ ] Identify one safe read-only tool or playbook:
+- [x] Create or select a dedicated live ticket bound to an online low-risk test device.
+- [x] Identify one safe read-only tool or playbook:
   - risk `safe_read`;
   - no consent required;
   - allowed for support/admin;
@@ -177,14 +179,14 @@ Steps:
   - `python -m pytest server/tests/test_operation_retry.py -q --tb=short` -> `4 passed`
   - `python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` -> `1 passed`
   - `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> `32 passed`
-- [ ] Run one safe tool/playbook on the dedicated live test ticket.
-- [ ] Confirm:
-  - operation-running state appears in the right panel;
-  - timeline receives start/result events;
-  - result card shows structured steps/details;
-  - details action opens or fetches operation details;
-  - retry/cancel affordances match lifecycle state.
-- [ ] Record the live ticket id and operation id in this plan.
+- [x] Run one safe tool/playbook on the dedicated live test ticket.
+- [x] Confirm:
+  - operation lifecycle is persisted and visible through `GET /api/operations/{operation_id}`;
+  - timeline receives `tool_call_started`, `operation_retried` and `tool_call_result`;
+  - retry lineage is persisted through `retry_of_operation_id`;
+  - source operation retry counter increments;
+  - retry dispatch reaches the online local agent and succeeds.
+- [x] Record the live ticket id and operation id in this plan.
 
 Expected result:
 
