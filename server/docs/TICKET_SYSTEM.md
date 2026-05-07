@@ -154,6 +154,7 @@
 ### Worklog
 
 - **POST** `/api/tickets/{ticket_id}/worklogs` — body: `spent_minutes`, `note`. RBAC: support/admin.
+- **POST** `/api/web/support/tickets/{ticket_id}/worklogs` — typed support workspace alias for web-session based `/app/tickets`.
 - **GET** `/api/tickets/{ticket_id}/worklogs` — список (support/admin).
 - **GET** `/api/tickets/{ticket_id}/worklog_total` — сумма минут (все роли с ownership).
 - В GET ticket/snapshot добавлено `worklog_total_minutes`. Worklog append-only; событие `worklog_added`.

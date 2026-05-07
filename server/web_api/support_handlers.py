@@ -3313,6 +3313,69 @@ async def handle_web_support_ticket_passport_knowledge_draft(request: web.Reques
     return json_model_response(SuccessResponse[SupportTicketKnowledgeDraftPayload](data=draft))
 
 
+@require_auth("admin", "support")
+async def handle_web_support_ticket_worklog(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+
+    try:
+        spent_minutes = int(data.get("spent_minutes"))
+    except Exception:
+        return _support_json_error(
+            "spent_minutes должен быть целым числом",
+            status=400,
+            error_code="VALIDATION_ERROR",
+            details={"spent_minutes": "spent_minutes must be integer"},
+        )
+    note = str(data.get("note") or "").strip() or None
+
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=True)
+            if error:
+                return error
+            worklog = await repo.add_worklog(ticket.ticket_id, auth_context.actor_id, spent_minutes, note)
+            if worklog is None:
+                return _support_json_error(
+                    "spent_minutes должен быть больше 0",
+                    status=400,
+                    error_code="VALIDATION_ERROR",
+                    details={"spent_minutes": "spent_minutes must be > 0"},
+                )
+            payload = {
+                "worklog_id": worklog.id,
+                "ticket_id": ticket.ticket_id,
+                "actor_id": worklog.actor_id,
+                "spent_minutes": worklog.spent_minutes,
+                "note": worklog.note,
+            }
+            result = await repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=None,
+                event_type="worklog_added",
+                payload=payload,
+                trace_id=str(uuid.uuid4()),
+            )
+            await session.commit()
+
+        await _push_ticket_event(request, ticket.ticket_id, result, "worklog_added", payload)
+        return web.json_response({"status": "success", "worklog": payload})
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_ticket_worklog] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
+        )
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось добавить worklog",
+                "error_code": "WORKLOG_ACTION_FAILED",
+            },
+            status=503,
+        )
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_send_message(request: web.Request):
     try:

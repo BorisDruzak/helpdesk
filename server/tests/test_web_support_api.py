@@ -198,6 +198,38 @@ async def test_web_support_status_action_requires_status_permission(test_client,
 
 
 @pytest.mark.asyncio
+async def test_web_support_worklog_action_uses_web_support_boundary(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/worklogs",
+        headers=_support_headers(),
+        json={"spent_minutes": 7, "note": "Typed support worklog"},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["worklog"]["ticket_id"] == ticket_id
+    assert payload["worklog"]["actor_id"] == "support-test"
+    assert payload["worklog"]["spent_minutes"] == 7
+    assert payload["worklog"]["note"] == "Typed support worklog"
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        rows = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "worklog_added")
+            )
+        ).scalars().all()
+
+    assert len(rows) == 1
+    assert rows[0].payload["spent_minutes"] == 7
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("endpoint", "body", "permission"),
     [

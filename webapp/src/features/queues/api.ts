@@ -996,7 +996,7 @@ export async function postSupportTicketWorklog(
   ticketId: string,
   worklog: { spentMinutes: number; note?: string | null }
 ): Promise<SupportTicketWorklogPayload> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/worklogs`, {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/worklogs`, {
     method: "POST",
     credentials: "same-origin",
     headers: {

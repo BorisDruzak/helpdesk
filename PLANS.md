@@ -19,7 +19,8 @@ Current baseline:
 - P0-P5 for `/app/tickets` are implemented and release/browser-signed off.
 - Live verification passed for the current page core flows: 3-column layout, topbar, work slices, queue list, selected ticket workspace, timeline tabs, composer, `Ещё` dialogs, right context tabs, SLA/OLA, knowledge, passport and not-found state.
 - Dedicated live mutation ticket used in signoff: `T-000518`, id `e72c31d5-2f1c-4812-ac37-cd420b06be05`.
-- Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device; evidence/worklog mutation depth needs a targeted closure-blocker fixture.
+- Last live limitation: safe tool/playbook run was not executed because the test ticket was bound to an offline/unbound device.
+- P6.4 live evidence path identified ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`; manual evidence reduced closure missing count from 6 to 5. The first worklog live attempt exposed a real auth boundary bug: `/app/tickets` used legacy `/api/tickets/{ticket_id}/worklogs`, which does not accept httpOnly web-session cookies.
 
 Remaining gaps after policy-aware retry live signoff:
 
@@ -248,17 +249,26 @@ Expected result:
 
 Goal: prove the final passport/evidence/worklog closure path with a dedicated test ticket.
 
-Status: **completed locally / live proof pending deploy, 2026-05-07**.
+Status: **typed worklog fix completed locally / live proof pending redeploy, 2026-05-07**.
 
 Implementation notes:
 
 - Existing closure guidance already has central blocker actions for evidence and worklog.
-- Existing passport/evidence endpoints and legacy worklog endpoint are wired into `/app/tickets`.
+- Existing passport/evidence endpoints are wired into `/app/tickets`.
+- Worklog action now uses typed `POST /api/web/support/tickets/{ticket_id}/worklogs`, avoiding broad cookie auth for legacy `/api/tickets/*`.
+- Remote live evidence pre-check on ticket `31345a34-dd5c-4121-99e1-95c77a0bed27`:
+  - before: `missing_count=6`, blockers included `attach_evidence` and `add_worklog`;
+  - after manual evidence: `missing_count=5`, `attach_evidence` disappeared, evidence candidates count became 3;
+  - initial worklog submit returned 401 against legacy `/api/tickets/{ticket_id}/worklogs`, which produced the typed worklog fix.
 - Focused backend verification passed:
   - `python -m pytest server/tests/test_ticket_passport_web_api.py server/tests/test_ticket_evidence_service.py::test_evidence_service_collects_worklog_approval_chat_and_observer_candidates server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `9 passed`
 - Focused frontend verification passed:
   - `pnpm --dir webapp test -- list-page.test.tsx` -> `21 passed`
-- Dedicated remote live fixture still requires deploy/start of the remote server, because the server is currently stopped.
+- Current local verification after typed worklog fix:
+  - `python scripts/verify_workspace.py` -> passed
+  - `pytest server/tests/test_web_support_api.py::test_web_support_worklog_action_uses_web_support_boundary server/tests/test_web_support_api.py::test_web_support_ticket_workspace_exposes_actionable_closure_plan -q` -> `2 passed`
+  - `pnpm --dir webapp test -- --run src/pages/tickets/list-page.test.tsx` -> `21 passed`
+- Dedicated remote worklog live proof still requires commit + release deploy.
 
 Files to inspect and likely modify:
 
@@ -270,16 +280,16 @@ Files to inspect and likely modify:
 
 Steps:
 
-- [ ] Create or identify a dedicated `LIVE-SIGNOFF-CLOSURE-*` ticket with closure blockers.
-- [ ] Ensure the ticket has blockers that include evidence and worklog target actions.
-- [ ] Click central closure blocker action `Добавить evidence`.
-- [ ] Confirm right passport tab focuses the blocker and shows evidence candidates/manual evidence form.
-- [ ] Link one safe existing evidence candidate or submit one manual evidence item through the existing API.
-- [ ] Confirm blocker/readiness updates after refetch.
-- [ ] Click `Добавить worklog`.
-- [ ] Submit a small worklog on the test ticket.
+- [x] Identify a dedicated live closure-blocker ticket with closure blockers: `31345a34-dd5c-4121-99e1-95c77a0bed27`.
+- [x] Ensure the ticket has blockers that include evidence and worklog target actions.
+- [x] Click central closure blocker action `Добавить evidence`.
+- [x] Confirm right passport tab focuses the blocker and shows evidence candidates/manual evidence form.
+- [x] Link one safe existing evidence candidate or submit one manual evidence item through the existing API.
+- [x] Confirm blocker/readiness updates after refetch.
+- [x] Click `Добавить worklog`.
+- [ ] Submit a small worklog on the test ticket after deploying the typed worklog endpoint.
 - [ ] Confirm passport/evidence flow sees the worklog after refetch.
-- [ ] Add or update focused tests if any mapper/UI behavior needed adjustment.
+- [x] Add or update focused tests if any mapper/UI behavior needed adjustment.
 
 Expected result:
 

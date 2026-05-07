@@ -248,6 +248,7 @@ from web_api.support_handlers import (
     handle_web_support_ticket_playbooks,
     handle_web_support_ticket_timeline,
     handle_web_support_ticket_tools,
+    handle_web_support_ticket_worklog,
     handle_web_support_ticket_workspace,
 )
 from web_api.admin_handlers import (
@@ -460,6 +461,7 @@ def setup_routes(app: web.Application) -> None:
         web.patch('/api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}', handle_web_support_ticket_passport_evidence_update),
         web.post('/api/web/support/tickets/{ticket_id}/passport/evidence', handle_web_support_ticket_passport_evidence),
         web.post('/api/web/support/tickets/{ticket_id}/passport/knowledge-draft', handle_web_support_ticket_passport_knowledge_draft),
+        web.post('/api/web/support/tickets/{ticket_id}/worklogs', handle_web_support_ticket_worklog),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
