@@ -621,6 +621,83 @@ async def test_web_support_workspace_summary_returns_view_and_queue_counts_witho
 
 
 @pytest.mark.asyncio
+async def test_web_support_workspace_hides_internal_navigation_noise_without_hiding_tickets(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        visible_queue = await _seed_queue(
+            session,
+            code="servicedesk_l1",
+            name="ServiceDesk L1",
+            members=["support-test"],
+        )
+        noisy_queue = await _seed_queue(
+            session,
+            code="stage27_workspace_noise",
+            name="Stage 27 workspace noise",
+            members=["support-test"],
+        )
+        session.add_all([
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-visible-workspace-nav",
+                title="Normal workspace ticket",
+                description="Normal queue should remain in navigation",
+                status="new",
+                requester_id="nav-normal-user",
+                queue_id=visible_queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-stage27-workspace-nav",
+                title="Stage 27 workspace ticket",
+                description="Internal queue ticket should remain accessible by search",
+                status="new",
+                requester_id="nav-stage-user",
+                queue_id=noisy_queue.id,
+            ),
+        ])
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_smart_view(
+            code="stage27_custom_deadline_noise",
+            title="Stage27 custom deadline noise",
+            filter_config={"status_not_in": ["closed", "canceled"]},
+            sort=[{"field": "updated_at", "direction": "desc"}],
+            columns=["ticket_id", "title"],
+            actor_id="admin",
+            actor_role="admin",
+        )
+        await session.commit()
+
+    summary_response = await test_client.get("/api/web/support/workspace/summary", headers=_support_headers())
+    assert summary_response.status == 200, await summary_response.text()
+    summary_payload = await summary_response.json()
+    summary_data = summary_payload["data"]
+
+    assert "servicedesk_l1" in {item["id"] for item in summary_data["queues"]}
+    assert "stage27_workspace_noise" not in {item["id"] for item in summary_data["queues"]}
+    assert "stage27_custom_deadline_noise" not in {item["value"] for item in summary_data["smart_view_counts"]}
+    assert "stage27_custom_deadline_noise" not in {item["value"] for item in summary_data["smart_view_options"]}
+
+    queue_response = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Stage%2027",
+        headers=_support_headers(),
+    )
+    assert queue_response.status == 200, await queue_response.text()
+    queue_payload = await queue_response.json()
+    queue_data = queue_payload["data"]
+
+    assert [item["title"] for item in queue_data["tickets"]] == ["Stage 27 workspace ticket"]
+    assert "stage27_workspace_noise" not in {
+        item["code"] for item in queue_data["summary"]["queue_counts"]
+    }
+    assert "stage27_custom_deadline_noise" not in {
+        item["value"] for item in queue_data["filters"]["smart_view_options"]
+    }
+
+
+@pytest.mark.asyncio
 async def test_web_support_queue_applies_smart_view_sla_risk(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc)

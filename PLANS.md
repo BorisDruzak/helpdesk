@@ -14,7 +14,7 @@
 
 Created: 2026-05-07.
 
-Current active plan: **P8 Observer Layer Trace Clarity**.
+Current active plan: **P9 Support Workspace Data Hygiene And Final Polish**.
 
 Current progress:
 
@@ -27,6 +27,31 @@ Current progress:
 - P8.7 Observer documentation and CODEMAP sync: **completed locally**.
 - P8.8 Local verification, browser signoff, commit and optional deploy: **completed with noted CI-suite agent_ws hang**.
 - P8.9 CI-suite agent_ws hang follow-up: **new residual reliability task**.
+- P9.1 Hide internal/test queue and smart-view navigation noise in `/app/tickets`: **completed locally**.
+
+P9 target after completion:
+
+- Typed/backend gap: **0-1%**.
+- Backend/domain gap: **1-3%**.
+- UI/page polish gap: **1-2%**.
+
+P9 scope:
+
+- Keep ticket access and search behavior unchanged.
+- Hide clearly internal navigation artifacts such as `Stage ...`, `Stage27 ...`, `Codex OLA ...` and `Live L1 ...` from workspace queue/smart-view navigation.
+- Preserve legitimate custom smart views and production queues.
+- Verify summary, queue payloads, and workspace regression tests.
+
+P9 functional benefit:
+
+- `/app/tickets` left column becomes operator-focused instead of mixing production work queues with test/stage fixtures.
+- Search can still find accessible tickets from internal queues when needed, so this is UI data hygiene rather than permission or routing logic.
+- Future support-browser signoff should be easier because noisy one-off queues no longer dominate the sidebar.
+
+P9.1 local verification:
+
+- `python -m pytest server\tests\test_web_support_api.py -k "workspace_summary or internal_navigation_noise or published_custom_smart_view or queue_returns_typed_scope" -q --tb=short` -> `4 passed, 49 deselected`.
+- `python scripts\verify_workspace.py` -> passed.
 
 Latest local verification:
 

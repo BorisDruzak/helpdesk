@@ -1,6 +1,7 @@
 import ast
 from dataclasses import dataclass
 import json
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
@@ -173,6 +174,13 @@ WORKSPACE_SUMMARY_VIEW_ALIASES = {
     "unassigned": "unassigned",
     "requester_replied": "requester_reply",
 }
+SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS = [
+    re.compile(r"^stage[\s_-]*\d+", re.IGNORECASE),
+    re.compile(r"^codex[\s_-]*ola\b", re.IGNORECASE),
+    re.compile(r"^live[\s_-]*l1[\s_-]*\d+", re.IGNORECASE),
+]
+
+
 @dataclass
 class SupportQueueState:
     active_queues: list[object]
@@ -200,6 +208,16 @@ def _build_status_options(statuses: set[str]) -> list[SupportFilterOption]:
     for status in sorted(status for status in statuses if status not in CANONICAL_STATUSES):
         options.append(SupportFilterOption(value=status, label=status_label_ru(status)))
     return options
+
+
+def _is_internal_support_workspace_nav_item(*values: object) -> bool:
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if any(pattern.search(text) for pattern in SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS):
+            return True
+    return False
 
 
 def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str, smart_view: str = "all") -> SupportQueuePayload:
@@ -721,18 +739,24 @@ def _build_queue_counts(
         code = str(getattr(queue, "code", "") or "").strip()
         if not code:
             continue
+        name = getattr(queue, "name", None) or code
+        if _is_internal_support_workspace_nav_item(code, name):
+            known_codes.add(code)
+            continue
         known_codes.add(code)
         result.append(
             SupportQueueCountItem(
                 id=getattr(queue, "id", None),
                 code=code,
-                name=getattr(queue, "name", None) or code,
+                name=name,
                 count=counts_by_code.get(code, 0),
             )
         )
 
     for code, count in sorted(counts_by_code.items()):
         if code in known_codes:
+            continue
+        if _is_internal_support_workspace_nav_item(code):
             continue
         result.append(SupportQueueCountItem(id=None, code=code, name=code, count=count))
     return result
@@ -784,9 +808,19 @@ async def _load_support_queue_state(
     admin_config_repo = TicketAdminConfigRepo(session)
     custom_smart_views = await helpdesk_policy_repo.list_smart_views(include_inactive=False)
     active_queues = await admin_config_repo.list_queues(include_inactive=False)
+    operator_smart_views = [
+        view
+        for view in custom_smart_views
+        if not _is_internal_support_workspace_nav_item(
+            view.get("code"),
+            view.get("title"),
+            view.get("name"),
+            view.get("label"),
+        )
+    ]
     custom_smart_view_map = {
         str(view.get("code") or "").strip(): view
-        for view in custom_smart_views
+        for view in operator_smart_views
         if str(view.get("code") or "").strip()
     }
 
@@ -822,7 +856,7 @@ async def _load_support_queue_state(
 
     return SupportQueueState(
         active_queues=active_queues,
-        smart_options=smart_view_options(custom_smart_views),
+        smart_options=smart_view_options(operator_smart_views),
         custom_smart_view_map=custom_smart_view_map,
         accessible_entries=accessible_entries,
     )
