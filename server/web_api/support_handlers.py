@@ -177,7 +177,8 @@ WORKSPACE_SUMMARY_VIEW_ALIASES = {
 SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS = [
     re.compile(r"^stage[\s_-]*\d+", re.IGNORECASE),
     re.compile(r"^codex[\s_-]*ola\b", re.IGNORECASE),
-    re.compile(r"^live[\s_-]*l1[\s_-]*\d+", re.IGNORECASE),
+    re.compile(r"^live[\s_-]", re.IGNORECASE),
+    re.compile(r"\btest\b", re.IGNORECASE),
 ]
 
 

@@ -38,7 +38,7 @@ P9 target after completion:
 P9 scope:
 
 - Keep ticket access and search behavior unchanged.
-- Hide clearly internal navigation artifacts such as `Stage ...`, `Stage27 ...`, `Codex OLA ...` and `Live L1 ...` from workspace queue/smart-view navigation.
+- Hide clearly internal navigation artifacts such as `Stage ...`, `Stage27 ...`, `Codex OLA ...`, `Live ...` and `... Test ...` from workspace queue/smart-view navigation.
 - Preserve legitimate custom smart views and production queues.
 - Verify summary, queue payloads, and workspace regression tests.
 

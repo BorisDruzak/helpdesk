@@ -287,6 +287,7 @@ TOPICS: tuple[Topic, ...] = (
             "workspace navigation hygiene",
             "internal queue navigation filter",
             "support smart view navigation filter",
+            "live test queue navigation filter",
             "public access",
             "requester",
             "sla",

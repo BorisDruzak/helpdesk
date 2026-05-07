@@ -638,6 +638,18 @@ async def test_web_support_workspace_hides_internal_navigation_noise_without_hid
             name="Stage 27 workspace noise",
             members=["support-test"],
         )
+        live_queue = await _seed_queue(
+            session,
+            code="live_network_1777437448",
+            name="Live Network 1777437448",
+            members=["support-test"],
+        )
+        test_queue = await _seed_queue(
+            session,
+            code="servicedesk_test",
+            name="ServiceDesk Test",
+            members=["support-test"],
+        )
         session.add_all([
             Ticket(
                 ticket_id=str(uuid.uuid4()),
@@ -656,6 +668,24 @@ async def test_web_support_workspace_hides_internal_navigation_noise_without_hid
                 status="new",
                 requester_id="nav-stage-user",
                 queue_id=noisy_queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-live-workspace-nav",
+                title="Live workspace ticket",
+                description="Live smoke queue ticket should remain accessible by search",
+                status="new",
+                requester_id="nav-live-user",
+                queue_id=live_queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-test-workspace-nav",
+                title="ServiceDesk test workspace ticket",
+                description="Test queue ticket should remain accessible by search",
+                status="new",
+                requester_id="nav-test-user",
+                queue_id=test_queue.id,
             ),
         ])
         repo = HelpdeskPolicyRepo(session)
@@ -676,7 +706,10 @@ async def test_web_support_workspace_hides_internal_navigation_noise_without_hid
     summary_data = summary_payload["data"]
 
     assert "servicedesk_l1" in {item["id"] for item in summary_data["queues"]}
-    assert "stage27_workspace_noise" not in {item["id"] for item in summary_data["queues"]}
+    queue_ids = {item["id"] for item in summary_data["queues"]}
+    assert "stage27_workspace_noise" not in queue_ids
+    assert "live_network_1777437448" not in queue_ids
+    assert "servicedesk_test" not in queue_ids
     assert "stage27_custom_deadline_noise" not in {item["value"] for item in summary_data["smart_view_counts"]}
     assert "stage27_custom_deadline_noise" not in {item["value"] for item in summary_data["smart_view_options"]}
 
@@ -694,6 +727,17 @@ async def test_web_support_workspace_hides_internal_navigation_noise_without_hid
     }
     assert "stage27_custom_deadline_noise" not in {
         item["value"] for item in queue_data["filters"]["smart_view_options"]
+    }
+
+    live_response = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Live%20workspace",
+        headers=_support_headers(),
+    )
+    assert live_response.status == 200, await live_response.text()
+    live_payload = await live_response.json()
+    assert [item["title"] for item in live_payload["data"]["tickets"]] == ["Live workspace ticket"]
+    assert "live_network_1777437448" not in {
+        item["code"] for item in live_payload["data"]["summary"]["queue_counts"]
     }
 
 
