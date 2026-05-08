@@ -28,10 +28,11 @@ Current progress:
 - P8.8 Local verification, browser signoff, commit and optional deploy: **completed with noted CI-suite agent_ws hang**.
 - P8.9 CI-suite agent_ws hang follow-up: **completed 2026-05-08; idle-timeout wiring fixed and green artifact proven for earlier commit**.
 - P9.1 Hide internal/test queue and smart-view navigation noise in `/app/tickets`: **completed locally**.
-- P10.1 Green CI artifact for current support-workspace branch head: **partially resolved; DB/API layer passes with canonical timeout, full green `run_ci_suite.py` artifact still needs rerun for final HEAD**.
+- P10.1 Green CI artifact for current support-workspace branch head: **completed for release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`; full CI summary is green**.
 - P10.2 Ticket hide/archive/delete model for `/app/tickets`: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.3 Consent-required retry flow policy refinement: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.4 Final release/browser/agent signoff: **completed on stand with explicit CI-bypass caveat 2026-05-08**.
+- P10.5 Final no-bypass release/browser/agent signoff: **completed 2026-05-08 for runtime release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`; server stopped after checks**.
 
 ## P10 Support Workspace Tail Closure
 
@@ -52,7 +53,7 @@ Current progress:
 
 **Purpose:** remove the current release caveat caused by using `--skip-ci-check` for commits `de36a56`, `eb83af1`, `439b391`.
 
-**Status 2026-05-08:** current branch state has fresh targeted local verification for the support workspace slices. The earlier red `run_ci_suite.py` artifact used an intentionally short `--server-pytest-timeout 420`, while the DB/API layer normally needs about 40-42 minutes. Follow-up verification proved `server_pytest_db_api` itself is green on the current HEAD with the canonical timeout. Remaining release-process caveat: a full green `run_ci_suite.py` summary for the final HEAD has not yet been produced after the latest commits/checks, so final no-bypass release is still pending.
+**Status 2026-05-08:** completed for runtime release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`. The earlier red `run_ci_suite.py` artifact used an intentionally short `--server-pytest-timeout 420`, while the DB/API layer normally needs about 40-42 minutes. The final HEAD now has a green canonical CI artifact, and the final stand release was performed without `--skip-ci-check`.
 
 **Files/Commands:**
 
@@ -63,8 +64,8 @@ Current progress:
 
 **Acceptance:**
 
-- `artifacts/ci/<HEAD_SHA>/summary.json` exists for current HEAD. **Pending:** rerun full `python scripts/run_ci_suite.py` with normal timeouts for final HEAD.
-- Final deploy/release can run without `--skip-ci-check`. **Pending:** requires that final green summary.
+- `artifacts/ci/1c819d7046b4382d498b0b265b26665cb011b4ed/summary.json` exists and has `status=green`.
+- Final deploy/release ran without `--skip-ci-check` in P10.5.
 
 **Verification 2026-05-08:**
 
@@ -265,7 +266,20 @@ Current progress:
 
 **Purpose:** turn the current support workspace branch state into a final no-bypass release candidate and run source-backed live checks on the Linux stand.
 
-**Status 2026-05-08:** planned. `server_pytest_db_api` has been proven green on current HEAD with a normal timeout; remaining work is to produce a full green CI artifact for the final committed HEAD, then release without `--skip-ci-check` and execute the live checklist below.
+**Status 2026-05-08:** completed for final release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`. Full CI is green, the Linux stand was released without `--skip-ci-check`, browser/live checks passed, and the remote server was stopped after signoff.
+
+**Completion evidence 2026-05-08:**
+
+- Full CI artifact: `artifacts/ci/1c819d7046b4382d498b0b265b26665cb011b4ed/summary.json` -> `status=green`.
+- CI layers passed: `verify_workspace`, `build_webapp_bundle`, `server_pytest_no_db`, `server_pytest_db_api` (`504 passed, 177 deselected`), `server_pytest_agent_ws` (`30 passed, 651 deselected`), `pc_agent_pytest` (`190 passed, 4 deselected`).
+- No-bypass release command passed: `python scripts/release_server_to_remote.py --leave-running --smoke-attempts 8 --smoke-delay 5`; remote fast-forwarded to `1c819d7`, Alembic `upgrade head` ran, webapp dist was unpacked, `/api/health` smoke returned 200.
+- Remote status during live signoff: server running, agent running, agent reconnected and received `handshake_ack` after server start.
+- Browser layout checks passed at `1366x900`, `1600x900`, `1920x1080`: no horizontal page overflow; three-column `/app/tickets` workspace rendered with topbar, left worklist, center ticket workspace and right context tabs.
+- Browser workflow checks passed: `Ещё` menu exposed hide/archive plus assignment/status/queue/priority/reroute controls; `Показывать архив` triggered `include_archived=1`; right sidebar tabs, timeline tabs and public/internal composer mode switched without failed requests.
+- Support API checks returned 200: `/api/web/support/workspace/summary`, `/api/web/support/queue?limit=5`, `/api/web/support/queue?limit=5&include_archived=1`, selected ticket `/workspace`, and selected ticket `/timeline?filter=diagnostics`.
+- Observer checks passed: support Observer card visible; trace link opened `/app/admin/observer?trace_id=...`; browser console warnings/errors count was 0.
+- Screenshots saved under `artifacts/diagnostics/support-workspace-p10-5-*.png`.
+- Cleanup completed: `python scripts/manage_remote_stack.py stop server` -> stopped; `status server` -> inactive/stopped. Agent remains running and logs expected connection errors while the intentionally stopped server is down.
 
 **Final HEAD steps:**
 
