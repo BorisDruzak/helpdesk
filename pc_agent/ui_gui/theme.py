@@ -643,6 +643,23 @@ def main_window_stylesheet() -> str:
             border: 1px solid {p.border};
             border-radius: 20px;
         }}
+        QFrame#SecurityFooter {{
+            background: transparent;
+            border: none;
+            min-height: 32px;
+        }}
+        QLabel#SecurityFooterIcon {{
+            color: {p.text_muted};
+            font-size: 14px;
+            font-weight: 700;
+            background: transparent;
+        }}
+        QLabel#SecurityFooterText {{
+            color: {p.text_muted};
+            font-size: 12px;
+            font-weight: 600;
+            background: transparent;
+        }}
     """
 
 
@@ -696,6 +713,313 @@ def apply_application_theme(app, mode: str | None = None) -> str:
 def apply_widget_palette(widget) -> None:
     widget.setAutoFillBackground(True)
     widget.setPalette(build_palette())
+
+
+def refresh_qss_state(widget) -> None:
+    """Repolish a widget after changing Qt dynamic properties used by QSS."""
+
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+    widget.update()
+
+
+def requester_helpdesk_stylesheet() -> str:
+    """QSS for the requester-facing ticket detail and create-ticket wizard."""
+
+    p = current_palette()
+    return f"""
+        QWidget#HelpdeskWorkspace,
+        QWidget#TicketDetailPage,
+        QWidget#CreateTicketWizardPage {{
+            background: {p.window_bg};
+            color: {p.text_primary};
+        }}
+        QFrame#Card,
+        QFrame#SoftCard,
+        QFrame#SidebarCard,
+        QFrame#InfoCard,
+        QFrame#CreateTicketSuccessPanel,
+        QFrame#CreateTicketConfirmationPanel,
+        QFrame#TicketComposerWidget {{
+            background: {p.bg_card};
+            border: 1px solid {p.border};
+            border-radius: 16px;
+        }}
+        QFrame#NextActionCard {{
+            background: {p.bg_card_alt};
+            border: 1px solid {p.border};
+            border-radius: 16px;
+        }}
+        QFrame#TicketHeaderWidget,
+        QFrame#TicketRightInfoPanel,
+        QFrame#CreateTicketProgressBar,
+        QFrame#CreateTicketTypeGrid {{
+            background: transparent;
+            border: none;
+        }}
+        QLabel#NextActionIcon {{
+            background: {p.info_bg};
+            color: {p.accent};
+            border-radius: 26px;
+            font-size: 22px;
+            font-weight: 800;
+        }}
+        QFrame#NextActionCard[nextActionStyle="success"] {{
+            background: {p.status_online_bg};
+            border-color: {p.status_online_fg};
+        }}
+        QFrame#NextActionCard[nextActionStyle="warning"] {{
+            background: {p.status_busy_bg};
+            border-color: {p.status_busy_fg};
+        }}
+        QFrame#NextActionCard[nextActionStyle="danger"] {{
+            background: {p.danger_bg};
+            border-color: {p.danger_border};
+        }}
+        QLabel#NextActionIcon[nextActionStyle="success"] {{
+            background: {p.status_online_bg};
+            color: {p.status_online_fg};
+        }}
+        QLabel#NextActionIcon[nextActionStyle="warning"] {{
+            background: {p.status_busy_bg};
+            color: {p.status_busy_fg};
+        }}
+        QLabel#NextActionIcon[nextActionStyle="danger"] {{
+            background: {p.danger_bg};
+            color: {p.danger_fg};
+        }}
+        QLabel#NextActionIcon[nextActionStyle="info"] {{
+            background: {p.info_bg};
+            color: {p.accent};
+        }}
+        QLabel#TicketHeaderTitle {{
+            color: {p.text_primary};
+            font-size: 18pt;
+            font-weight: 900;
+            background: transparent;
+        }}
+        QLabel#StatusBadge,
+        QLabel#PriorityBadge,
+        QLabel#SlaBadge {{
+            background: {p.info_bg};
+            color: {p.accent};
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            padding: 7px 12px;
+            font-size: {UI_FONT_PT}pt;
+            font-weight: 800;
+        }}
+        QLabel#StatusBadge[statusStyle="success"],
+        QLabel#PriorityBadge[statusStyle="success"],
+        QLabel#SlaBadge[statusStyle="success"] {{
+            background: {p.status_online_bg};
+            color: {p.status_online_fg};
+        }}
+        QLabel#StatusBadge[statusStyle="warning"],
+        QLabel#PriorityBadge[statusStyle="warning"],
+        QLabel#SlaBadge[statusStyle="warning"] {{
+            background: {p.status_busy_bg};
+            color: {p.status_busy_fg};
+        }}
+        QLabel#StatusBadge[statusStyle="danger"],
+        QLabel#PriorityBadge[statusStyle="danger"],
+        QLabel#SlaBadge[statusStyle="danger"] {{
+            background: {p.danger_bg};
+            color: {p.danger_fg};
+            border-color: {p.danger_border};
+        }}
+        QLabel#StatusBadge[statusStyle="info"],
+        QLabel#PriorityBadge[statusStyle="info"],
+        QLabel#SlaBadge[statusStyle="info"] {{
+            background: {p.info_bg};
+            color: {p.accent};
+        }}
+        QLabel#InfoCardTitle,
+        QLabel#TimelineTitle {{
+            color: {p.text_primary};
+            font-size: {TITLE_PT}pt;
+            font-weight: 800;
+            background: transparent;
+        }}
+        QLabel#InfoLabel,
+        QLabel#TimelineTime,
+        QLabel#ComposerStatusLabel {{
+            color: {p.text_muted};
+            font-size: {UI_FONT_PT}pt;
+            font-weight: 700;
+            background: transparent;
+        }}
+        QLabel#InfoValue,
+        QLabel#TimelineSubtitle {{
+            color: {p.text_secondary};
+            font-size: {BODY_PT}pt;
+            font-weight: 600;
+            background: transparent;
+        }}
+        QLabel#AccessCodeValue {{
+            background: {p.info_bg};
+            color: {p.text_primary};
+            border-radius: 12px;
+            padding: 10px;
+            font-size: {TITLE_PT}pt;
+            font-weight: 900;
+        }}
+        QFrame#TimelineSystemEvent {{
+            background: {p.bg_card_alt};
+            border: 1px solid {p.border};
+            border-radius: 14px;
+        }}
+        QFrame#TimelineDiagnosticResult {{
+            background: {p.bg_card};
+            border: 1px solid {p.border};
+            border-radius: 16px;
+        }}
+        QFrame#TimelineAttachment {{
+            background: {p.bg_card};
+            border: 1px solid {p.border};
+            border-radius: 16px;
+        }}
+        QFrame#TimelineUserMessage {{
+            background: #EAF6FF;
+            border: 1px solid #BFDBFE;
+            border-radius: 16px;
+        }}
+        QFrame#TimelineSupportMessage {{
+            background: #ECFDF3;
+            border: 1px solid #BBF7D0;
+            border-radius: 16px;
+        }}
+        QLabel#TimelineMessageActor {{
+            color: {p.text_primary};
+            font-size: {UI_FONT_PT}pt;
+            font-weight: 800;
+            background: transparent;
+        }}
+        QLabel#TimelineMessageText {{
+            color: {p.text_primary};
+            font-size: {BODY_PT}pt;
+            font-weight: 500;
+            background: transparent;
+        }}
+        QLabel#DiagnosticCheck {{
+            background: {p.bg_card_alt};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 10px;
+            padding: 8px;
+            font-size: {UI_FONT_PT}pt;
+            font-weight: 700;
+        }}
+        QTextEdit#ChatComposerInput {{
+            background: {p.bg_input};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            padding: 10px;
+            font-size: {BODY_PT}pt;
+        }}
+        QPushButton#PrimaryButton {{
+            background: {p.primary_btn};
+            color: {p.primary_btn_text};
+            border: 1px solid {p.primary_btn};
+            border-radius: 14px;
+            padding: 12px 22px;
+            min-height: 24px;
+            font-weight: 800;
+            font-size: {BODY_PT}pt;
+        }}
+        QPushButton#PrimaryButton:hover {{
+            background: {p.primary_btn_hover};
+            border-color: {p.primary_btn_hover};
+        }}
+        QPushButton#SecondaryButton,
+        QToolButton#SecondaryButton {{
+            background: {p.bg_input};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 12px;
+            padding: 10px 14px;
+            min-height: 22px;
+            font-size: {BODY_PT}pt;
+            font-weight: 700;
+        }}
+        QPushButton#SecondaryButton:hover,
+        QToolButton#SecondaryButton:hover {{
+            background: {p.list_item_hover};
+            border-color: {p.list_item_hover_border};
+        }}
+        QPushButton#GhostButton {{
+            background: transparent;
+            color: {p.text_secondary};
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 700;
+        }}
+        QPushButton#DangerButton {{
+            background: {p.danger_bg};
+            color: {p.danger_fg};
+            border: 1px solid {p.danger_border};
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 800;
+        }}
+        QPushButton#WizardStepButton {{
+            background: {p.bg_card};
+            color: {p.text_secondary};
+            border: 1px solid {p.border};
+            border-radius: 14px;
+            padding: 10px 12px;
+            font-weight: 700;
+            text-align: center;
+        }}
+        QPushButton#WizardStepButton[wizardState="available"] {{
+            background: {p.bg_card};
+            color: {p.text_primary};
+            border-color: {p.border};
+        }}
+        QPushButton#WizardStepButton[wizardState="current"],
+        QPushButton#WizardStepButton:checked {{
+            background: {p.primary_btn};
+            color: {p.primary_btn_text};
+            border-color: {p.primary_btn};
+        }}
+        QPushButton#WizardStepButton[wizardState="completed"] {{
+            background: {p.status_online_bg};
+            color: {p.status_online_fg};
+            border-color: {p.status_online_fg};
+        }}
+        QPushButton#WizardStepButton[wizardState="locked"] {{
+            background: {p.bg_card_alt};
+            color: {p.text_muted};
+            border-color: {p.border_soft};
+        }}
+        QPushButton#TicketTypeCard {{
+            text-align: left;
+            background: {p.bg_card};
+            color: {p.text_primary};
+            border: 1px solid {p.border};
+            border-radius: 14px;
+            padding: 12px;
+            font-weight: 700;
+        }}
+        QPushButton#TicketTypeCard:hover {{
+            background: {p.list_item_hover};
+            border-color: {p.list_item_hover_border};
+        }}
+        QPushButton#TicketTypeCard[ticketTypeSelected="true"],
+        QPushButton#TicketTypeCard:checked {{
+            background: {p.info_bg};
+            border-color: {p.primary_btn};
+            color: {p.text_primary};
+        }}
+        QCheckBox#ProfileHint {{
+            color: {p.text_secondary};
+            background: transparent;
+            font-weight: 700;
+        }}
+    """
 
 
 def chat_panel_stylesheet() -> str:
@@ -956,7 +1280,7 @@ def chat_panel_stylesheet() -> str:
             background: {p.border_soft};
             margin: 6px 10px;
         }}
-    """
+    """ + requester_helpdesk_stylesheet()
 
 
 def agent_dialog_stylesheet() -> str:

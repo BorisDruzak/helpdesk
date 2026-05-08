@@ -562,7 +562,7 @@ class TicketPassportService:
             text = _payload_text(event.payload)
             if visibility == "internal" and include_internal_notes:
                 operator_lines.append(text)
-            if sender_role in {"support", "agent", "admin"} and visibility == "public":
+            if sender_role in {"support", "admin"} and visibility == "public":
                 change_lines.append(text)
         for worklog in worklogs:
             operator_lines.append(f"{worklog.spent_minutes} мин: {worklog.note or 'worklog'}")

@@ -41,6 +41,7 @@ from tickets.priority_policy import compute_priority_from_policy
 from tickets.request_template_submission import resolve_create_form_submission
 from tickets.ola_service import build_ola_block, close_ola_processing, start_ola_for_ticket
 from tickets.public_access import (
+    is_public_support_reply_payload,
     mark_public_ticket_unbound,
 )
 from tickets.queue_position_service import QueuePositionService
@@ -1572,7 +1573,7 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             )
             status_result = transition.get("event_result")
             status_payload = transition.get("event_payload") or {}
-        if visibility == "public" and sender_role in {"support", "agent"}:
+        if is_public_support_reply_payload(payload):
             sla = TicketSlaService(session, repo)
             await sla.close_frt(ticket.ticket_id)
         await session.commit()

@@ -58,6 +58,7 @@ from tickets.handlers import (
 )
 from tickets.assignment_service import MAX_ACTIVE_TICKETS_PER_OPERATOR, TicketAssignmentError, TicketAssignmentService
 from tickets.ola_service import close_ola_processing, start_ola_for_ticket
+from tickets.public_access import is_public_support_reply_payload
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.statuses import (
     CANONICAL_STATUSES,
@@ -3890,7 +3891,7 @@ async def handle_web_support_send_message(request: web.Request):
                 payload=payload,
                 event_id=message_id,
             )
-            if visibility == "public" and sender_role in {"support", "agent"}:
+            if is_public_support_reply_payload(payload):
                 await TicketSlaService(session, repo).close_frt(ticket.ticket_id)
             await session.commit()
 

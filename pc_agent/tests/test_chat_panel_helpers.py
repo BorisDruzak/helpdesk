@@ -2,6 +2,7 @@ import sys
 import inspect
 import os
 from pathlib import Path
+from datetime import datetime
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ui_gui.chat_panel as chat_panel_module
 import ui_gui.main_window as main_window_module
 
-from PySide6.QtWidgets import QApplication, QComboBox, QDateEdit, QDateTimeEdit, QListWidget, QLineEdit  # noqa: E402
+from PySide6.QtWidgets import QApplication, QComboBox, QDateEdit, QDateTimeEdit, QLabel, QListWidget, QLineEdit, QTextEdit  # noqa: E402
 
 from ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
@@ -41,6 +42,13 @@ from ui_gui.chat_panel import (  # noqa: E402
     ticket_matches_query,
     ticket_status_label,
     validate_create_attachment_paths,
+)
+from ui_gui import theme  # noqa: E402
+from ui_gui.ticket_view_models import (  # noqa: E402
+    build_next_action_view_model,
+    format_datetime_local,
+    format_due_label,
+    map_ticket_event_to_user_timeline_item,
 )
 
 
@@ -120,6 +128,18 @@ def test_ticket_creation_user_microcopy_uses_request_wording():
     assert "Обращение создано" in creation_source
 
 
+def test_main_window_has_protected_connection_footer():
+    setup_source = inspect.getsource(main_window_module.MainWindow._setup_ui)
+    qss = theme.main_window_stylesheet()
+
+    assert "self.security_footer" in setup_source
+    assert "SecurityFooter" in setup_source
+    assert "Ваше соединение защищено. Все данные передаются в зашифрованном виде." in setup_source
+    assert "content_layout.addWidget(self.security_footer" in setup_source
+    assert "QFrame#SecurityFooter" in qss
+    assert "QLabel#SecurityFooterText" in qss
+
+
 def test_ticket_create_wizard_uses_server_backed_preview():
     source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
 
@@ -145,15 +165,453 @@ def test_ticket_create_wizard_has_searchable_template_chooser():
 
 
 def test_ticket_create_wizard_has_post_create_result_panel():
-    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
 
+    source = "\n".join(
+        [
+            inspect.getsource(chat_panel_module.TicketCreateWizardWidget),
+            inspect.getsource(CreateTicketSuccessPanel),
+        ]
+    )
+
+    assert "CreateTicketSuccessPanel" in source
     assert "result_group" in source
-    assert "access_code_label" in source
-    assert "next_action_label" in source
     assert "Открыть обращение" in source
     assert "Добавить сообщение" in source
     assert "Создать ещё одно" in source
     assert "_show_create_result" in source
+
+
+def test_create_ticket_success_panel_renders_reference_done_screen():
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = CreateTicketSuccessPanel()
+    panel.set_result(
+        ticket_number="#T-000521",
+        title="Проблема с сайтом",
+        access_code="RZ76RPDR",
+        next_action="Что дальше: сейчас работает поддержка.",
+        deadlines="Вам должны ответить до Сегодня, до 14:15.",
+        summary="Обращение отправлено в службу поддержки.",
+        has_ticket=True,
+    )
+
+    assert app is not None
+    assert panel.objectName() == "CreateTicketSuccessPanel"
+    assert panel.title_label.text() == "Обращение создано"
+    assert panel.ticket_number_label.text() == "#T-000521"
+    assert panel.subject_label.text() == "Проблема с сайтом"
+    assert panel.access_code_label.text() == "RZ76RPDR"
+    assert panel.copy_code_btn.text() == "Скопировать код"
+    assert "https://" not in panel.access_code_label.text()
+    assert panel.open_created_ticket_btn.isEnabled()
+    assert panel.add_message_to_created_ticket_btn.isEnabled()
+
+
+def test_requester_helpdesk_stylesheet_defines_reference_object_names():
+    qss = theme.requester_helpdesk_stylesheet()
+
+    assert "#F6F8FC" in qss
+    assert "#4F63F6" in qss
+    assert "QFrame#NextActionCard" in qss
+    assert "QFrame#InfoCard" in qss
+    assert "QLabel#StatusBadge" in qss
+    assert "QPushButton#PrimaryButton" in qss
+    assert "QPushButton#SecondaryButton" in qss
+    assert "QPushButton#TicketTypeCard" in qss
+    assert "QFrame#CreateTicketSuccessPanel" in qss
+    assert "border-radius: 16px" in qss
+
+
+def test_requester_helpdesk_stylesheet_is_applied_to_chat_panel_theme():
+    source = inspect.getsource(theme.chat_panel_stylesheet)
+
+    assert "requester_helpdesk_stylesheet()" in source
+
+
+def test_create_ticket_progress_bar_renders_four_human_steps_and_emits_selection():
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar
+
+    app = QApplication.instance() or QApplication([])
+    selected_steps: list[int] = []
+    progress = CreateTicketProgressBar(["Тип обращения", "Описание", "Подтверждение", "Готово"])
+    progress.stepRequested.connect(selected_steps.append)
+    progress.set_state(current_step=2, unlocked_steps={0, 1, 2}, completed_steps={0, 1})
+
+    assert app is not None
+    assert progress.objectName() == "CreateTicketProgressBar"
+    assert len(progress.step_buttons) == 4
+    assert progress.step_buttons[0].text().startswith("✓")
+    assert "Тип обращения" in progress.step_buttons[0].text()
+    assert progress.step_buttons[2].isChecked()
+    assert progress.step_buttons[3].isEnabled() is False
+
+    progress.step_buttons[1].click()
+
+    assert selected_steps == [1]
+
+
+def test_create_ticket_wizard_cards_use_qss_state_properties_instead_of_inline_styles():
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar, CreateTicketTypeGrid
+
+    app = QApplication.instance() or QApplication([])
+    progress = CreateTicketProgressBar(["Тип обращения", "Описание", "Подтверждение", "Готово"])
+    progress.set_state(current_step=1, unlocked_steps={0, 1}, completed_steps={0})
+    grid = CreateTicketTypeGrid()
+    grid.set_templates(
+        [
+            {"key": "website", "title": "Проблема с сайтом"},
+            {"key": "printer", "title": "Принтер / МФУ"},
+        ],
+        current_key="website",
+    )
+
+    progress_source = inspect.getsource(CreateTicketProgressBar.set_state)
+    grid_source = inspect.getsource(CreateTicketTypeGrid.set_selected_key)
+    qss = theme.requester_helpdesk_stylesheet()
+
+    assert app is not None
+    assert ".setStyleSheet(" not in progress_source
+    assert ".setStyleSheet(" not in grid_source
+    assert progress.step_buttons[0].property("wizardState") == "completed"
+    assert progress.step_buttons[1].property("wizardState") == "current"
+    assert progress.step_buttons[3].property("wizardState") == "locked"
+    assert grid.card_buttons[0].property("ticketTypeSelected") is True
+    assert grid.card_buttons[1].property("ticketTypeSelected") is False
+    assert 'wizardState="completed"' in qss
+    assert 'ticketTypeSelected="true"' in qss
+
+
+def test_create_ticket_type_grid_renders_cards_and_emits_template_key():
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketTypeGrid
+
+    app = QApplication.instance() or QApplication([])
+    selected_keys: list[str] = []
+    grid = CreateTicketTypeGrid()
+    grid.typeSelected.connect(selected_keys.append)
+    grid.set_templates(
+        [
+            {
+                "key": "site_system",
+                "title": "Проблема с сайтом",
+                "description": "Сайт или веб-сервис не загружается.",
+                "category": "website",
+            },
+            {
+                "key": "printer",
+                "title": "Принтер / МФУ",
+                "description": "Проблемы с печатью или сканированием.",
+            },
+        ],
+        current_key="printer",
+    )
+
+    assert app is not None
+    assert grid.objectName() == "CreateTicketTypeGrid"
+    assert len(grid.card_buttons) == 2
+    assert "Проблема с сайтом" in grid.card_buttons[0].text()
+    assert "Сайт или веб-сервис" in grid.card_buttons[0].text()
+    assert grid.card_buttons[1].isChecked()
+
+    grid.card_buttons[0].click()
+
+    assert selected_keys == ["site_system"]
+
+
+def test_create_ticket_confirmation_panel_renders_summary_without_inline_checkbox():
+    from ui_gui.ticket_create_wizard_widgets import CreateTicketConfirmationPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = CreateTicketConfirmationPanel()
+    panel.set_summary(
+        category="Проблема с сайтом",
+        subject="Не открывается портал",
+        requester="Фигаро | Кабинет 501",
+        impact="Несколько человек",
+        urgency="Работа затруднена",
+        description="Ошибка ERR_CONNECTION_TIMED_OUT.",
+        attachments=["browser.png", "har_export.har"],
+        process_preview="Очередь: IT — Веб-сервисы\nПервый ответ: 2 ч",
+    )
+
+    assert app is not None
+    assert panel.objectName() == "CreateTicketConfirmationPanel"
+    assert panel.category_value.text() == "Проблема с сайтом"
+    assert panel.subject_value.text() == "Не открывается портал"
+    assert "Фигаро" in panel.requester_value.text()
+    assert "browser.png" in panel.attachments_value.text()
+    assert not hasattr(panel, "confirm_checkbox")
+
+
+def test_ticket_create_wizard_uses_progress_bar_component():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+
+    assert "CreateTicketProgressBar" in source
+    assert "self.progress_bar" in source
+    assert "self.progress_bar.set_state" in source
+    assert "stepRequested.connect" in source
+
+
+def test_ticket_create_wizard_uses_confirmation_panel_before_submit():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+    step_ready_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._step_ready)
+    submit_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._on_submit_clicked)
+    confirm_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._confirm_submit_after_click)
+
+    assert "CreateTicketConfirmationPanel" in source
+    assert "self.confirmation_panel" in source
+    assert "confirmation_panel.is_confirmed()" not in step_ready_source
+    assert "self._confirm_submit_after_click()" in submit_source
+    assert "Подтвердите корректность данных" in confirm_source
+    assert "Подтверждаю, отправить" in confirm_source
+
+
+def test_ticket_create_wizard_uses_type_grid_without_changing_form_selector_contract():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+
+    assert "CreateTicketTypeGrid" in source
+    assert "self.type_grid" in source
+    assert "typeSelected.connect" in source
+    assert "_on_type_card_selected" in source
+    assert "self.form_selector.findData" in source
+
+
+def test_ticket_create_wizard_first_step_combines_type_and_profile():
+    init_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget.__init__)
+    form_step_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_form_step)
+    ready_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._step_ready)
+    caption_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._update_navigation_state)
+
+    assert "_build_profile_step()" not in init_source
+    assert "Шаг 1. Тип обращения" in form_step_source
+    assert "profile_selector" in form_step_source
+    assert "manage_profiles_btn" in form_step_source
+    assert "return self._panel.has_active_profile()" not in ready_source
+    assert "bool(self._selected_form())" in ready_source
+    assert "Выберите тип обращения" in caption_source
+
+
+def test_ticket_create_wizard_type_step_does_not_render_legacy_template_list_or_dynamic_fields():
+    form_step_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_form_step)
+    description_step_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_description_step)
+    ready_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._step_ready)
+    validation_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._step_validation_error)
+
+    assert "group_layout.addWidget(self.template_search_input)" not in form_step_source
+    assert "group_layout.addWidget(self.template_list)" not in form_step_source
+    assert "group_layout.addWidget(self.selected_template_card)" not in form_step_source
+    assert "group_layout.addWidget(self.dynamic_fields_widget)" not in form_step_source
+    assert "description_layout.addWidget(self.form_summary)" in description_step_source
+    assert "description_layout.addWidget(self.dynamic_fields_widget)" in description_step_source
+    step_zero_block = ready_source.split("if step == 1:", 1)[0]
+    assert "dynamic_fields_widget.validate_required_fields" not in step_zero_block
+    assert "dynamic_fields_widget.validate_required_fields" in ready_source.split("if step == 1:", 1)[1]
+    assert "dynamic_fields_widget.validate_required_fields(show_feedback=True)" in validation_source.split("if step == 1:", 1)[1]
+
+
+def test_ticket_create_wizard_description_step_wraps_long_forms_in_scroll_area():
+    description_step_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_description_step)
+
+    assert "self.description_scroll = QScrollArea()" in description_step_source
+    assert 'self.description_scroll.setObjectName("CreateTicketDescriptionScroll")' in description_step_source
+    assert "self.description_scroll.setWidgetResizable(True)" in description_step_source
+    assert "self.description_scroll.setWidget(description_group)" in description_step_source
+    assert "layout.addWidget(self.description_scroll, 1)" in description_step_source
+
+
+def test_ticket_create_wizard_confirmation_step_wraps_long_forms_in_scroll_area():
+    priority_step_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_priority_step)
+
+    assert "self.confirmation_scroll = QScrollArea()" in priority_step_source
+    assert 'self.confirmation_scroll.setObjectName("CreateTicketConfirmationScroll")' in priority_step_source
+    assert "self.confirmation_scroll.setWidgetResizable(True)" in priority_step_source
+    assert "self.confirmation_scroll.setWidget(confirmation_content)" in priority_step_source
+    assert "page_layout.addWidget(self.confirmation_scroll, 1)" in priority_step_source
+
+
+def test_ticket_create_wizard_submit_uses_gui_task_scheduler():
+    submit_click_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._on_submit_clicked)
+    scheduler_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._spawn_gui_task)
+
+    assert "asyncio.create_task" not in submit_click_source
+    assert 'self._spawn_gui_task(self._async_submit(), name="ticket_create.submit")' in submit_click_source
+    assert "loop.create_task(coro, name=name)" in scheduler_source
+    assert "done_task.result()" in scheduler_source
+
+
+def test_ticket_create_wizard_submit_stays_clickable_to_show_validation_feedback():
+    nav_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._update_navigation_state)
+
+    assert "self._submit_btn.setVisible(self._current_step == 2)" in nav_source
+    assert "self._submit_btn.setEnabled(self._current_step == 2 and not self._submitting)" in nav_source
+    assert "self._submit_btn.setEnabled(self._all_required_steps_ready()" not in nav_source
+
+
+async def test_ticket_create_wizard_submit_click_calls_create_when_ready():
+    class _FakeClient:
+        async def preview_ticket_create(self, **_kwargs):
+            return {}
+
+    class _FakePanel:
+        user_display_name = "Tester"
+
+        def __init__(self):
+            self.created_payloads: list[dict] = []
+            self._ticket_form_pack = build_default_ticket_form_pack()
+            self.ticket_client = _FakeClient()
+            self._profiles_data = {
+                "active_profile_id": "profile-1",
+                "profiles": [{"id": "profile-1", "display_name": "Tester"}],
+            }
+
+        def ticket_form_pack(self):
+            return self._ticket_form_pack
+
+        def registry_options(self):
+            return {}
+
+        def _profiles(self):
+            return self._profiles_data["profiles"]
+
+        def has_active_profile(self):
+            return True
+
+        def current_requester_profile_summary(self):
+            return "Tester"
+
+        def _save_profiles(self):
+            return None
+
+        async def _async_create_ticket(self, payload, **_kwargs):
+            self.created_payloads.append(payload)
+            return {
+                "ticket": {"ticket_id": "ticket-1", "ticket_code": "T-1", "title": "Test"},
+                "public_access_code": "CODE",
+            }
+
+    def _fill_dynamic_widget(dynamic_widget) -> None:
+        for input_widget in dynamic_widget._widgets.values():
+            if isinstance(input_widget, QLineEdit):
+                input_widget.setText("значение")
+            elif isinstance(input_widget, QTextEdit):
+                input_widget.setPlainText("значение")
+            elif isinstance(input_widget, QComboBox) and input_widget.count() > 1:
+                input_widget.setCurrentIndex(1)
+
+    app = QApplication.instance() or QApplication([])
+    panel = _FakePanel()
+    wizard = chat_panel_module.TicketCreateWizardWidget(panel)
+    assert app is not None
+
+    wizard._on_type_card_selected(wizard.form_selector.itemData(0))
+    wizard.description_input.setPlainText("Описание проблемы")
+    _fill_dynamic_widget(wizard.dynamic_fields_widget)
+    _fill_dynamic_widget(wizard.priority_dynamic_fields_widget)
+    wizard._go_to_step(2, force=True)
+    wizard._update_navigation_state()
+    wizard._confirm_submit_after_click = lambda: True
+
+    assert wizard._submit_btn.isEnabled()
+    wizard._submit_btn.click()
+
+    import asyncio
+
+    await asyncio.sleep(0.05)
+    assert len(panel.created_payloads) == 1
+    assert wizard._current_step == 3
+
+
+async def test_ticket_create_wizard_submit_confirmation_can_cancel_create():
+    class _FakeClient:
+        async def preview_ticket_create(self, **_kwargs):
+            return {}
+
+    class _FakePanel:
+        user_display_name = "Tester"
+
+        def __init__(self):
+            self.created_payloads: list[dict] = []
+            self._ticket_form_pack = build_default_ticket_form_pack()
+            self.ticket_client = _FakeClient()
+            self._profiles_data = {
+                "active_profile_id": "profile-1",
+                "profiles": [{"id": "profile-1", "display_name": "Tester"}],
+            }
+
+        def ticket_form_pack(self):
+            return self._ticket_form_pack
+
+        def registry_options(self):
+            return {}
+
+        def _profiles(self):
+            return self._profiles_data["profiles"]
+
+        def has_active_profile(self):
+            return True
+
+        def current_requester_profile_summary(self):
+            return "Tester"
+
+        def _save_profiles(self):
+            return None
+
+        async def _async_create_ticket(self, payload, **_kwargs):
+            self.created_payloads.append(payload)
+            return {
+                "ticket": {"ticket_id": "ticket-1", "ticket_code": "T-1", "title": "Test"},
+                "public_access_code": "CODE",
+            }
+
+    def _fill_dynamic_widget(dynamic_widget) -> None:
+        for input_widget in dynamic_widget._widgets.values():
+            if isinstance(input_widget, QLineEdit):
+                input_widget.setText("значение")
+            elif isinstance(input_widget, QTextEdit):
+                input_widget.setPlainText("значение")
+            elif isinstance(input_widget, QComboBox) and input_widget.count() > 1:
+                input_widget.setCurrentIndex(1)
+
+    app = QApplication.instance() or QApplication([])
+    panel = _FakePanel()
+    wizard = chat_panel_module.TicketCreateWizardWidget(panel)
+    assert app is not None
+
+    wizard._on_type_card_selected(wizard.form_selector.itemData(0))
+    wizard.description_input.setPlainText("Описание проблемы")
+    _fill_dynamic_widget(wizard.dynamic_fields_widget)
+    _fill_dynamic_widget(wizard.priority_dynamic_fields_widget)
+    wizard._go_to_step(2, force=True)
+    wizard._update_navigation_state()
+    wizard._confirm_submit_after_click = lambda: False
+
+    wizard._submit_btn.click()
+
+    import asyncio
+
+    await asyncio.sleep(0.05)
+    assert panel.created_payloads == []
+    assert wizard._current_step == 2
+
+
+def test_ticket_create_wizard_has_real_done_step_in_stack():
+    init_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget.__init__)
+    done_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_done_step)
+    nav_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._update_navigation_state)
+    submit_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._async_submit)
+
+    assert "_build_done_step()" in init_source
+    assert "self._stack.addWidget(self.result_group)" in done_source
+    assert "self._submit_btn.setVisible(self._current_step == 2" in nav_source
+    assert "self._next_btn.setVisible(self._current_step < 2" in nav_source
+    assert "self._go_to_step(3, force=True)" in submit_source
+
+
+def test_ticket_create_wizard_locks_done_step_until_created_ticket_exists():
+    nav_source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._update_navigation_state)
+
+    assert "index < 3 or bool(self._last_created_ticket_id)" in nav_source
 
 
 def test_open_create_wizard_refreshes_when_form_pack_changes():
@@ -1043,10 +1501,44 @@ def test_build_ticket_meta_html_explains_support_work_without_assignee():
         ],
     )
 
-    assert "Исполнитель" in html
+    assert "Специалист" in html
     assert "Не назначен персонально" in html
     assert "op1" in html
     assert "работе у поддержки" in html
+
+
+def test_build_ticket_meta_html_is_requester_safe_without_raw_queue_or_priority():
+    panel = ChatPanel.__new__(ChatPanel)
+    panel._format_ts = lambda value: value or ""
+    panel._support_presence_text = lambda _ticket: "онлайн"
+    panel._escape_html = lambda value: str(value)
+
+    html = panel._build_ticket_meta_html(
+        {
+            "status": "in_progress",
+            "requester_display_name": "Фигаро",
+            "priority_class": "P0",
+            "queue_code": "servicedesk_l1",
+            "assignee_id": "op1",
+            "first_response_due_at": "2026-05-08T14:15:00+05:00",
+            "resolution_due_at": "2026-05-08T16:00:00+05:00",
+            "description": "Не открывается портал",
+            "custom_fields": {
+                "request_form_title": "Проблема с сайтом",
+                "request_form_summary": [{"label": "URL сайта", "value": "portal.company.local"}],
+            },
+        }
+    )
+
+    assert "Что сейчас происходит" in html
+    assert "Следующее действие" in html
+    assert "Специалист" in html
+    assert "Форма" in html
+    assert "Проблема с сайтом" in html
+    assert "servicedesk_l1" not in html
+    assert "P0" not in html
+    assert "Очередь" not in html
+    assert "Приоритет" not in html
 
 
 def test_build_ticket_sla_user_summary_uses_dynamic_due_dates():
@@ -1142,8 +1634,675 @@ def test_format_event_text_localizes_status_and_diagnostic_events():
 
 
 def test_ticket_status_label_is_localized():
-    assert ticket_status_label("waiting_on_user") == "Ждёт пользователя"
-    assert ticket_status_label("closed") == "Закрыт"
+    assert ticket_status_label("queued") == "Заявка принята"
+    assert ticket_status_label("waiting_user") == "Нужен ваш ответ"
+    assert ticket_status_label("waiting_on_user") == "Нужен ваш ответ"
+    assert ticket_status_label("waiting_internal") == "Передано профильному специалисту"
+    assert ticket_status_label("closed") == "Закрыта"
+
+
+def test_ticket_due_labels_are_local_and_requester_friendly():
+    now = datetime.fromisoformat("2026-05-08T13:45:00+05:00")
+
+    assert format_due_label("2026-05-08T14:15:00+05:00", now=now) == "Сегодня, до 14:15"
+    assert format_due_label("2026-05-09T10:00:00+05:00", now=now) == "Завтра, до 10:00"
+    assert format_datetime_local("2026-05-10T13:48:00+05:00", now=now) == "10.05.2026 13:48"
+
+
+def test_build_next_action_view_model_for_core_statuses():
+    queued = build_next_action_view_model(
+        {
+            "status": "queued",
+            "first_response_due_at": "2026-05-08T14:15:00+05:00",
+            "resolution_due_at": "2026-05-08T16:00:00+05:00",
+        },
+        now=datetime.fromisoformat("2026-05-08T13:45:00+05:00"),
+    )
+    assert queued.title == "Ожидаем специалиста"
+    assert queued.first_response_text == "Сегодня, до 14:15"
+    assert queued.resolution_text == "Сегодня, до 16:00"
+
+    waiting_user = build_next_action_view_model({"status": "waiting_user"})
+    assert waiting_user.title == "Нужен ваш ответ"
+    assert waiting_user.primary_action_label == "Ответить"
+
+    resolved = build_next_action_view_model({"status": "resolved"})
+    assert resolved.title == "Решение предложено"
+    assert resolved.primary_action_label == "Да, всё работает"
+    assert resolved.secondary_action_label == "Нет, проблема осталась"
+
+
+def test_build_next_action_view_model_uses_server_next_action_and_first_response_fact():
+    model = build_next_action_view_model(
+        {
+            "status": "queued",
+            "next_action_owner": "support",
+            "first_response_at": "2026-05-08T13:48:00+05:00",
+            "first_response_due_at": "2026-05-08T13:48:00+05:00",
+            "resolution_due_at": "2026-05-08T17:33:00+05:00",
+        },
+        now=datetime.fromisoformat("2026-05-08T14:00:00+05:00"),
+    )
+
+    assert model.title == "Сейчас на стороне поддержки"
+    assert "Первый ответ уже получен" in model.description
+    assert "Ожидаем специалиста" not in model.title
+
+
+def test_ticket_info_panel_marks_first_response_done_when_server_sends_fact():
+    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+
+    model = build_ticket_info_panel_view_model(
+        {
+            "created_at": "2026-05-08T13:00:00+05:00",
+            "first_response_at": "2026-05-08T13:48:00+05:00",
+            "first_response_due_at": "2026-05-08T13:48:00+05:00",
+            "resolution_due_at": "2026-05-08T17:33:00+05:00",
+        },
+        now=datetime.fromisoformat("2026-05-08T14:00:00+05:00"),
+    )
+
+    assert model.first_response_text == "Получен: 13:48"
+    assert model.first_response_progress == 100
+    assert model.first_response_remaining_text == "Первый ответ получен"
+
+
+def test_map_ticket_event_to_user_timeline_item_hides_internal_and_maps_diagnostics():
+    assert map_ticket_event_to_user_timeline_item({"event_type": "internal_note"}) is None
+
+    started = map_ticket_event_to_user_timeline_item(
+        {"event_type": "tool_call_started", "created_at": "2026-05-08T13:47:00+05:00"}
+    )
+    assert started is not None
+    assert started.kind == "system_event"
+    assert started.text == "Специалист запустил диагностику."
+
+    result = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "tool_call_result",
+            "created_at": "2026-05-08T13:48:00+05:00",
+            "payload": {
+                "checks": [
+                    {"name": "DNS", "status": "ok"},
+                    {"name": "HTTP", "status": "error", "message": "502 Bad Gateway"},
+                ]
+            },
+        }
+    )
+    assert result is not None
+    assert result.kind == "diagnostic_result"
+    assert result.text == "Диагностика выполнена"
+    assert result.payload["checks"][1]["label"] == "HTTP"
+    assert result.payload["checks"][1]["summary"] == "502 Bad Gateway"
+
+    attachment = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "attachment_uploaded",
+            "created_at": "2026-05-08T13:49:00+05:00",
+            "payload": {
+                "file_name": "browser-error.png",
+                "size_bytes": 158 * 1024,
+                "download_url": "https://support.example/attachments/raw-token",
+            },
+        }
+    )
+    assert attachment is not None
+    assert attachment.kind == "attachment"
+    assert attachment.text == "Файл приложен"
+    assert attachment.payload["name"] == "browser-error.png"
+    assert attachment.payload["size_label"] == "158 КБ"
+    assert "raw-token" not in attachment.text
+
+
+def test_map_ticket_event_to_user_timeline_item_uses_clear_status_messages_and_hides_noop_updates():
+    in_progress = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "status_changed",
+            "created_at": "2026-05-08T13:50:00+05:00",
+            "to_status": "in_progress",
+        }
+    )
+    assert in_progress is not None
+    assert in_progress.text == "Специалист взял обращение в работу."
+    assert "unknown" not in in_progress.text.lower()
+
+    queued_update = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "ticket_updated",
+            "created_at": "2026-05-08T13:51:00+05:00",
+            "payload": {"technical_refresh": True},
+        }
+    )
+    assert queued_update is None
+
+
+def test_next_action_card_renders_only_next_action_without_duplicate_due_dates():
+    from ui_gui.ticket_detail_widgets import NextActionCard
+
+    app = QApplication.instance() or QApplication([])
+    card = NextActionCard()
+    model = build_next_action_view_model(
+        {
+            "status": "resolved",
+            "first_response_due_at": "2026-05-08T14:15:00+05:00",
+            "resolution_due_at": "2026-05-08T16:00:00+05:00",
+        },
+        now=datetime.fromisoformat("2026-05-08T13:45:00+05:00"),
+    )
+
+    card.set_view_model(model)
+
+    assert app is not None
+    assert card.objectName() == "NextActionCard"
+    assert card.title_label.text() == "Решение предложено"
+    assert "Проверьте" in card.description_label.text()
+    assert "Сегодня, до 14:15" not in card.findChild(QLabel, "NextActionDueText").text()
+    assert "Сегодня, до 16:00" not in card.findChild(QLabel, "NextActionDueText").text()
+    assert card.primary_button.text() == "Да, всё работает"
+    assert card.secondary_button.text() == "Нет, проблема осталась"
+
+
+def test_next_action_card_uses_compact_layout_for_ticket_detail():
+    from ui_gui.ticket_detail_widgets import NextActionCard
+
+    source = inspect.getsource(NextActionCard.__init__)
+    app = QApplication.instance() or QApplication([])
+    card = NextActionCard()
+
+    assert app is not None
+    assert "root.setContentsMargins(14, 10, 14, 10)" in source
+    assert "self.icon_label.setFixedSize(40, 40)" in source
+    assert card.icon_label.width() == 40
+
+
+def test_ticket_detail_status_styles_use_qss_properties_instead_of_inline_status_qss():
+    from ui_gui.ticket_detail_widgets import NextActionCard, TicketHeaderWidget
+    from ui_gui.ticket_view_models import NextActionViewModel, TicketHeaderViewModel
+
+    app = QApplication.instance() or QApplication([])
+    next_card = NextActionCard()
+    next_card.set_view_model(NextActionViewModel(title="Нужен ответ", description="Ответьте ниже.", style="warning"))
+    header = TicketHeaderWidget()
+    header.set_view_model(
+        TicketHeaderViewModel(
+            number_text="#T-000520",
+            title="Проблема с сайтом",
+            status_label="Нужен ваш ответ",
+            status_style="warning",
+        )
+    )
+    next_source = inspect.getsource(NextActionCard._apply_style)
+    header_source = inspect.getsource(TicketHeaderWidget._apply_styles)
+    qss = theme.requester_helpdesk_stylesheet()
+
+    assert app is not None
+    assert ".setStyleSheet(" not in next_source
+    assert ".setStyleSheet(" not in header_source
+    assert next_card.property("nextActionStyle") == "warning"
+    assert next_card.icon_label.property("nextActionStyle") == "warning"
+    assert header.status_badge.property("statusStyle") == "warning"
+    assert 'nextActionStyle="warning"' in qss
+    assert 'statusStyle="warning"' in qss
+
+
+def test_chat_panel_wires_next_action_card_into_detail_header():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+    header_source = inspect.getsource(chat_panel_module.ChatPanel._apply_ticket_detail_header)
+
+    assert "NextActionCard" in setup_source
+    assert "self.next_action_card" in setup_source
+    assert "build_next_action_view_model(ticket)" in header_source
+    assert "self.next_action_card.set_view_model" in header_source
+
+
+def test_ticket_header_view_model_uses_number_title_status_and_access_actions():
+    from ui_gui.ticket_view_models import build_ticket_header_view_model
+
+    model = build_ticket_header_view_model(
+        {
+            "ticket_code": "T-000520",
+            "title": "Проблема с сайтом",
+            "status": "in_progress",
+            "public_access_url": "https://support.example/t/T-000520",
+        },
+        access_code="RZ76RPDR",
+    )
+
+    assert model.number_text == "#T-000520"
+    assert model.title == "Проблема с сайтом"
+    assert model.status_label == "В работе"
+    assert model.access_code == "RZ76RPDR"
+    assert model.public_url == "https://support.example/t/T-000520"
+
+
+def test_ticket_header_widget_renders_actions_without_raw_public_url():
+    from ui_gui.ticket_detail_widgets import TicketHeaderWidget
+    from ui_gui.ticket_view_models import build_ticket_header_view_model
+
+    app = QApplication.instance() or QApplication([])
+    widget = TicketHeaderWidget()
+    widget.set_view_model(
+        build_ticket_header_view_model(
+            {
+                "ticket_code": "T-000520",
+                "title": "Поломка",
+                "status": "queued",
+                "public_access_url": "https://support.example/t/T-000520",
+            },
+            access_code="RZ76RPDR",
+        )
+    )
+
+    assert app is not None
+    assert widget.objectName() == "TicketHeaderWidget"
+    assert widget.title_label.text() == "#T-000520 · Поломка"
+    assert widget.status_badge.text() == "Заявка принята"
+    assert widget.actions_button.text() == "Действия"
+    assert widget.copy_code_action.text() == "Скопировать код доступа"
+    assert widget.open_url_action.text() == "Открыть в браузере"
+    assert widget.attach_action.text() == "Приложить файл"
+    assert widget.refresh_action.text() == "Обновить статус"
+    assert "support.example" not in widget.title_label.text()
+
+
+def test_ticket_header_actions_include_resolved_resolution_choices():
+    from ui_gui.ticket_detail_widgets import TicketHeaderWidget
+    from ui_gui.ticket_view_models import build_ticket_header_view_model
+
+    app = QApplication.instance() or QApplication([])
+    widget = TicketHeaderWidget()
+    widget.set_view_model(
+        build_ticket_header_view_model(
+            {
+                "ticket_code": "T-000520",
+                "title": "Проблема с сайтом",
+                "status": "resolved",
+            }
+        )
+    )
+
+    assert app is not None
+    assert widget.confirm_resolution_action.text() == "Да, всё работает"
+    assert widget.reject_resolution_action.text() == "Нет, проблема осталась"
+    assert widget.confirm_resolution_action.isVisible()
+    assert widget.reject_resolution_action.isVisible()
+
+    widget.set_view_model(
+        build_ticket_header_view_model(
+            {
+                "ticket_code": "T-000520",
+                "title": "Проблема с сайтом",
+                "status": "in_progress",
+            }
+        )
+    )
+
+    assert not widget.confirm_resolution_action.isVisible()
+    assert not widget.reject_resolution_action.isVisible()
+
+
+def test_chat_panel_wires_ticket_header_into_detail_header():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+    header_source = inspect.getsource(chat_panel_module.ChatPanel._apply_ticket_detail_header)
+
+    assert "TicketHeaderWidget" in setup_source
+    assert "self.ticket_header" in setup_source
+    assert "build_ticket_header_view_model(ticket" in header_source
+    assert "self.ticket_header.set_view_model" in header_source
+    assert "self.ticket_header.copyCodeRequested.connect(self._copy_access_code)" in setup_source
+    assert "self.ticket_header.attachRequested.connect(self._on_attach_any_file)" in setup_source
+    assert "self.ticket_header.confirmResolutionRequested.connect" in setup_source
+    assert "self.ticket_header.rejectResolutionRequested.connect(self._on_reject_resolution)" in setup_source
+
+
+def test_ticket_info_panel_view_model_uses_requester_deadlines_access_and_device():
+    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+
+    model = build_ticket_info_panel_view_model(
+        {
+            "requester_display_name": "Фигаро",
+            "requester_profile": {
+                "full_name": "Фигаро Фигаро",
+                "building": "Москва",
+                "room": "501",
+                "phone": "+7 (999) 123-45-67",
+            },
+            "assignee_display_name": "Иван Петров",
+            "first_response_due_at": "2026-05-08T14:15:00+05:00",
+            "resolution_due_at": "2026-05-08T16:00:00+05:00",
+            "sla_status": "ok",
+            "public_access_url": "https://support.example/t/T-000521?raw=1",
+            "device": {
+                "hostname": "FIGARO-WIN10",
+                "os_name": "Windows",
+                "os_version": "10 Pro",
+                "agent_online": True,
+                "last_seen_at": "2026-05-08T13:48:30+05:00",
+            },
+        },
+        access_code="RZ76RPDR",
+        now=datetime.fromisoformat("2026-05-08T13:45:00+05:00"),
+    )
+
+    assert model.requester_name == "Фигаро Фигаро"
+    assert model.room == "Москва, кабинет 501"
+    assert model.phone == "+7 (999) 123-45-67"
+    assert model.assignee_name == "Иван Петров"
+    assert model.first_response_text == "Сегодня, до 14:15"
+    assert model.resolution_text == "Сегодня, до 16:00"
+    assert 0 <= model.first_response_progress <= 100
+    assert 0 <= model.resolution_progress <= 100
+    assert model.first_response_remaining_text
+    assert model.resolution_remaining_text
+    assert model.sla_status_text == "Без нарушения"
+    assert model.access_code == "RZ76RPDR"
+    assert model.public_url == "https://support.example/t/T-000521?raw=1"
+    assert model.device_name == "FIGARO-WIN10"
+    assert model.os_text == "Windows 10 Pro"
+    assert model.agent_status_text == "Онлайн"
+    assert model.show_device is True
+    assert model.last_contact_text == "08.05.2026 13:48"
+
+
+def test_ticket_right_info_panel_renders_visual_sla_without_raw_url_text():
+    from ui_gui.ticket_detail_widgets import TicketRightInfoPanel
+    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+
+    app = QApplication.instance() or QApplication([])
+    panel = TicketRightInfoPanel()
+    panel.set_view_model(
+        build_ticket_info_panel_view_model(
+            {
+                "requester_display_name": "Фигаро",
+                "requester_profile": {"room": "501"},
+                "assignee_id": "op1",
+                "first_response_due_at": "2026-05-08T14:15:00+05:00",
+                "resolution_due_at": "2026-05-08T16:00:00+05:00",
+                "public_access_url": "https://support.example/t/T-000521",
+                "created_at": "2026-05-08T13:00:00+05:00",
+            },
+            access_code="RZ76RPDR",
+            now=datetime.fromisoformat("2026-05-08T13:45:00+05:00"),
+        )
+    )
+
+    assert app is not None
+    assert panel.objectName() == "TicketRightInfoPanel"
+    assert panel.requester_value.text() == "Фигаро"
+    assert panel.assignee_value.text() == "op1"
+    assert panel.room_value.text() == "кабинет 501"
+    assert panel.first_response_value.text() == "Сегодня, до 14:15"
+    assert panel.resolution_value.text() == "Сегодня, до 16:00"
+    assert panel.first_response_progress.objectName() == "SlaProgressBar"
+    assert panel.resolution_progress.objectName() == "SlaProgressBar"
+    assert panel.first_response_progress.value() > 0
+    assert panel.resolution_progress.value() > 0
+    assert panel.access_code_value.text() == "RZ76RPDR"
+    assert "support.example" not in panel.access_code_value.text()
+    assert not panel.device_card.isVisible()
+    assert panel.copy_code_button.text() == "Скопировать код"
+    assert panel.open_url_button.text() == "Открыть в браузере"
+
+
+def test_ticket_info_panel_does_not_mark_missing_device_as_offline():
+    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+
+    model = build_ticket_info_panel_view_model(
+        {
+            "requester_display_name": "Фигаро",
+            "first_response_due_at": "2026-05-08T14:15:00+05:00",
+            "resolution_due_at": "2026-05-08T16:00:00+05:00",
+        },
+        now=datetime.fromisoformat("2026-05-08T13:45:00+05:00"),
+    )
+
+    assert model.show_device is False
+    assert model.agent_status_text == "—"
+
+
+def test_chat_panel_wires_right_info_panel_into_detail_header():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+    header_source = inspect.getsource(chat_panel_module.ChatPanel._apply_ticket_detail_header)
+
+    assert "TicketRightInfoPanel" in setup_source
+    assert "self.ticket_info_panel" in setup_source
+    assert "main_layout.addWidget(self.ticket_info_panel" in setup_source
+    assert "build_ticket_info_panel_view_model(ticket" in header_source
+    assert "self.ticket_info_panel.set_view_model" in header_source
+
+
+def test_timeline_item_widget_renders_diagnostic_result_without_raw_event_type():
+    from ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from ui_gui.ticket_view_models import TimelineItem
+
+    app = QApplication.instance() or QApplication([])
+    widget = TimelineItemWidget(
+        TimelineItem(
+            id="evt-1",
+            kind="diagnostic_result",
+            actor_label="Система",
+            time_label="13:48",
+            text="Диагностика выполнена",
+            payload={
+                "checks": [
+                    {"label": "DNS", "status": "ok", "summary": "OK"},
+                    {"label": "HTTP", "status": "error", "summary": "502 Bad Gateway"},
+                ]
+            },
+        )
+    )
+
+    assert app is not None
+    assert widget.objectName() == "TimelineDiagnosticResult"
+    assert widget.title_label.text() == "Диагностика выполнена"
+    assert widget.subtitle_label.text() == "Результат проверки вашего подключения к ресурсу."
+    rendered = " ".join(label.text() for label in widget.check_labels)
+    assert "DNS" in rendered
+    assert "HTTP" in rendered
+    assert "502 Bad Gateway" in rendered
+    assert "tool_call_result" not in rendered
+
+
+def test_timeline_item_widget_renders_attachment_card_without_raw_url():
+    from ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from ui_gui.ticket_view_models import TimelineItem
+
+    app = QApplication.instance() or QApplication([])
+    widget = TimelineItemWidget(
+        TimelineItem(
+            id="att-1",
+            kind="attachment",
+            actor_label="Вы",
+            time_label="13:49",
+            text="Файл приложен",
+            payload={
+                "name": "browser-error.png",
+                "size_label": "158 КБ",
+                "url": "https://support.example/raw-token",
+            },
+        )
+    )
+
+    assert app is not None
+    assert widget.objectName() == "TimelineAttachment"
+    assert widget.title_label.text() == "Файл приложен"
+    assert widget.attachment_name_label.text() == "browser-error.png"
+    assert widget.attachment_size_label.text() == "158 КБ"
+    assert widget.open_attachment_button.text() == "Открыть"
+    assert "support.example" not in widget.attachment_name_label.text()
+    assert "raw-token" not in widget.attachment_size_label.text()
+
+
+def test_timeline_item_widget_renders_user_and_support_message_bubbles():
+    from ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from ui_gui.ticket_view_models import TimelineItem
+
+    app = QApplication.instance() or QApplication([])
+    user_widget = TimelineItemWidget(
+        TimelineItem(
+            id="msg-1",
+            kind="user_message",
+            actor_label="Вы",
+            time_label="13:41",
+            text="Здравствуйте! Не открывается портал.",
+            payload={},
+        )
+    )
+    support_widget = TimelineItemWidget(
+        TimelineItem(
+            id="msg-2",
+            kind="support_message",
+            actor_label="Иван, специалист поддержки",
+            time_label="13:44",
+            text="Начинаю проверку, это займет несколько минут.",
+            payload={},
+        )
+    )
+
+    assert app is not None
+    assert user_widget.objectName() == "TimelineUserMessage"
+    assert support_widget.objectName() == "TimelineSupportMessage"
+    assert user_widget.message_actor_label.text() == "Вы"
+    assert support_widget.message_actor_label.text() == "Иван, специалист поддержки"
+    assert user_widget.message_text_label.text() == "Здравствуйте! Не открывается портал."
+    assert support_widget.message_text_label.text() == "Начинаю проверку, это займет несколько минут."
+    assert user_widget.time_label.text() == "13:41"
+    assert support_widget.time_label.text() == "13:44"
+    assert not user_widget.subtitle_label.isVisible()
+    assert not support_widget.subtitle_label.isVisible()
+
+
+def test_chat_panel_build_timeline_items_uses_requester_safe_event_mapper():
+    panel = ChatPanel.__new__(ChatPanel)
+    panel.local_action_buffer = {}
+    panel.active_ticket_id = "ticket-1"
+
+    items = panel._build_timeline_items(
+        {"ticket_id": "ticket-1"},
+        [],
+        [
+            {"event_type": "internal_note", "created_at": "2026-05-08T13:46:00+05:00"},
+            {"event_type": "tool_call_started", "created_at": "2026-05-08T13:47:00+05:00"},
+            {
+                "event_type": "tool_call_result",
+                "created_at": "2026-05-08T13:48:00+05:00",
+                "payload": {"checks": [{"name": "HTTP", "status": "error", "message": "502 Bad Gateway"}]},
+            },
+        ],
+    )
+
+    texts = [payload["text"] for _sort, _kind, payload in items]
+    assert len(items) == 2
+    assert "Специалист запустил диагностику." in texts
+    assert "Диагностика выполнена" in texts
+    assert all("tool_call" not in text for text in texts)
+    diagnostic_payload = next(payload for _sort, _kind, payload in items if payload["text"] == "Диагностика выполнена")
+    assert diagnostic_payload["timeline_item"]["kind"] == "diagnostic_result"
+    assert diagnostic_payload["timeline_item"]["payload"]["checks"][0]["summary"] == "502 Bad Gateway"
+
+
+def test_chat_panel_wires_timeline_item_widget_for_mapped_events():
+    append_source = (
+        inspect.getsource(chat_panel_module.ChatPanel._append_timeline_widgets)
+        + inspect.getsource(chat_panel_module.ChatPanel._create_timeline_widget)
+    )
+    build_source = inspect.getsource(chat_panel_module.ChatPanel._build_timeline_items)
+
+    assert "map_ticket_event_to_user_timeline_item" in build_source
+    assert "TimelineItemWidget" in append_source
+    assert "timeline_item" in append_source
+
+
+def test_chat_panel_uses_header_resolution_confirmation_only():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+    prompt_source = inspect.getsource(chat_panel_module.ChatPanel._maybe_prompt_resolution_confirmation)
+
+    assert "resolution_message_widget" not in setup_source
+    assert "Подтвердить и закрыть" not in setup_source
+    assert ".show()" not in prompt_source
+
+
+def test_chat_panel_detail_layout_removes_legacy_left_meta_and_raw_access_panel():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+
+    assert "main_layout.addWidget(self.left_panel)" not in setup_source
+    assert "center_layout.addWidget(self.top_pinned_info)" not in setup_source
+    assert "self.left_panel.hide()" in setup_source
+    assert "self.top_pinned_info.hide()" in setup_source
+    assert "main_layout.addWidget(self.right_center, 3)" in setup_source
+    assert "main_layout.addWidget(self.ticket_info_panel" in setup_source
+
+
+def test_chat_panel_aligns_mapped_user_and_support_message_events_like_chat_bubbles():
+    assert (
+        ChatPanel._timeline_alignment_for_payload(
+            "event",
+            {"timeline_item": {"kind": "user_message", "actor_label": "Вы", "text": "Вопрос"}},
+        )
+        == "right"
+    )
+    assert (
+        ChatPanel._timeline_alignment_for_payload(
+            "event",
+            {
+                "timeline_item": {
+                    "kind": "support_message",
+                    "actor_label": "Иван, специалист поддержки",
+                    "text": "Проверяю",
+                }
+            },
+        )
+        == "left"
+    )
+    assert ChatPanel._timeline_alignment_for_payload("event", {"timeline_item": {"kind": "system_event"}}) == "center"
+    assert ChatPanel._timeline_alignment_for_payload("message", {"bubble_role": "support"}) == "right"
+    assert ChatPanel._timeline_alignment_for_payload("message", {"bubble_role": "self"}) == "left"
+
+
+def test_ticket_composer_widget_controls_send_and_terminal_state():
+    from ui_gui.ticket_detail_widgets import TicketComposerWidget
+
+    app = QApplication.instance() or QApplication([])
+    composer = TicketComposerWidget()
+
+    assert app is not None
+    assert composer.objectName() == "TicketComposerWidget"
+    assert composer.message_edit.placeholderText() == "Напишите сообщение специалисту..."
+    assert composer.attach_button.text() == "Прикрепить файл"
+    assert composer.media_button.text() == "Скриншот / Видео"
+    assert composer.send_button.text() == "Отправить"
+    assert not composer.send_button.isEnabled()
+
+    composer.set_ticket_state(active=True, ticket_status="in_progress", connected=True)
+    assert composer.message_edit.isEnabled()
+    assert composer.attach_button.isEnabled()
+    assert composer.media_button.isEnabled()
+    assert not composer.send_button.isEnabled()
+
+    composer.message_edit.setPlainText("Здравствуйте\nНужна помощь")
+    assert composer.message_text() == "Здравствуйте\nНужна помощь"
+    assert composer.send_button.isEnabled()
+
+    composer.set_ticket_state(active=True, ticket_status="closed", connected=True)
+    assert not composer.message_edit.isEnabled()
+    assert not composer.attach_button.isEnabled()
+    assert not composer.media_button.isEnabled()
+    assert not composer.send_button.isEnabled()
+
+
+def test_chat_panel_wires_ticket_composer_without_changing_send_paths():
+    setup_source = inspect.getsource(chat_panel_module.ChatPanel._setup_chat_screen)
+    send_source = inspect.getsource(chat_panel_module.ChatPanel._on_send)
+    async_send_source = inspect.getsource(chat_panel_module.ChatPanel._async_send_message)
+    header_source = inspect.getsource(chat_panel_module.ChatPanel._apply_ticket_detail_header)
+
+    assert "TicketComposerWidget" in setup_source
+    assert "self.composer.sendRequested.connect(self._on_send)" in setup_source
+    assert "self.input_line = self.composer.message_edit" in setup_source
+    assert "self.send_btn = self.composer.send_button" in setup_source
+    assert "self._composer_text()" in send_source
+    assert "self.ticket_client.send_message" in async_send_source
+    assert "self._refresh_composer_state()" in header_source
 
 
 def test_resolve_reply_reference_prefers_message_index_and_fallback_author():

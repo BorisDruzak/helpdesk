@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from . import theme
+from .ticket_view_models import human_ticket_status_label
 
 STATUS_LABELS = {
     "new": "Новый",
@@ -22,8 +23,7 @@ STATUS_LABELS = {
 
 
 def ticket_status_label(status: Optional[str]) -> str:
-    normalized = str(status or "unknown").strip().lower()
-    return STATUS_LABELS.get(normalized, normalized or "unknown")
+    return human_ticket_status_label(status)
 
 
 def ticket_status_colors(status: Optional[str]) -> tuple[str, str]:

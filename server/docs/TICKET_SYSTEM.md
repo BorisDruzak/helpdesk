@@ -80,7 +80,7 @@
 **TicketSlaService (`tickets/sla_service.py`)**
 - При создании тикета: старт FRT и Resolution по policy + priority; standalone `request_template.sla_policy.targets` и inline/legacy calendars поддерживаются без обязательного legacy `ticket_sla_policies.id`.
 - `start_conditions`, `pause_conditions`, `resume_conditions` и `stop_conditions` могут управлять стартом, паузой, возобновлением, остановкой FRT и остановкой resolution timer; policy strings accept canonical statuses plus live aliases (`waiting_user` -> `waiting_on_user`, `waiting_approval` -> `waiting_on_approval`, `ticket_resolved`, `ticket_closed`); workflow передаёт целевой статус перехода в pause/resume checks, поэтому standalone условия корректны до финального сохранения `ticket.status`; без явных условий сохраняется legacy-поведение.
-- FRT закрывается первым public comment от support/agent (`first_response_at`) или другим trigger, если это явно задано в policy.
+- FRT закрывается первым public comment от support/admin (`first_response_at`) или другим trigger, если это явно задано в policy. Системное сообщение с кодом доступа (`ticket_public_access_code`) и сообщения клиентского агента/requester не считаются первым ответом поддержки.
 - В статусах ожидания (`waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`) workflow пишет `ticket_waits`, обновляет `next_action_owner` и выполняет policy-aware паузу/возобновление SLA с накоплением `sla_paused_seconds`; transition action result фиксирует `executed`/`no_op` по фактическому SLA hook.
 - При reopen: сброс resolution timer, `reopen_count++`.
 
@@ -159,7 +159,7 @@
 - **GET** `/api/tickets/{ticket_id}/worklog_total` — сумма минут (все роли с ownership).
 - В GET ticket/snapshot добавлено `worklog_total_minutes`. Worklog append-only; событие `worklog_added`.
 
-**FRT:** закрывается любым комментарием support/admin (public или internal). Миграция 020: индекс `ix_ticket_worklogs_ticket_created_at`.
+**FRT:** закрывается публичным комментарием support/admin. Internal notes, системный код доступа и сообщения requester/client-agent не закрывают первый ответ. Миграция 020: индекс `ix_ticket_worklogs_ticket_created_at`.
 
 ---
 

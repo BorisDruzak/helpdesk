@@ -168,6 +168,7 @@ class MainWindow(QMainWindow):
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.body_splitter.setChildrenCollapsible(False)
+        self._sidebar_collapsed_width = 84
 
         self.sidebar_shell = QFrame()
         self.sidebar_shell.setObjectName("Sidebar")
@@ -196,10 +197,14 @@ class MainWindow(QMainWindow):
         sidebar_header.addWidget(self.sidebar_logo_label, 0, Qt.AlignmentFlag.AlignTop)
         self.sidebar_toggle_btn = QToolButton()
         self.sidebar_toggle_btn.setObjectName("SecondaryButton")
-        self.sidebar_toggle_btn.setText("")
-        self.sidebar_toggle_btn.hide()
+        self.sidebar_toggle_btn.setText("☰")
+        self.sidebar_toggle_btn.setToolTip("Свернуть или развернуть навигацию")
+        self.sidebar_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar_expanded)
+        self.sidebar_toggle_btn.show()
 
         sidebar_header.addStretch(1)
+        sidebar_header.addWidget(self.sidebar_toggle_btn, 0, Qt.AlignmentFlag.AlignTop)
         sidebar_shell_layout.addLayout(sidebar_header)
 
         self.sidebar_nav_label = QLabel("Навигация")
@@ -291,6 +296,22 @@ class MainWindow(QMainWindow):
         self.body_splitter.setSizes([300, 1000])
 
         content_layout.addWidget(self.body_splitter, 1)
+        self.security_footer = QFrame()
+        self.security_footer.setObjectName("SecurityFooter")
+        security_footer_layout = QHBoxLayout(self.security_footer)
+        security_footer_layout.setContentsMargins(12, 8, 12, 0)
+        security_footer_layout.setSpacing(8)
+        security_footer_layout.addStretch(1)
+        self.security_footer_icon = QLabel("▣")
+        self.security_footer_icon.setObjectName("SecurityFooterIcon")
+        self.security_footer_text = QLabel(
+            "Ваше соединение защищено. Все данные передаются в зашифрованном виде."
+        )
+        self.security_footer_text.setObjectName("SecurityFooterText")
+        security_footer_layout.addWidget(self.security_footer_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        security_footer_layout.addWidget(self.security_footer_text, 0, Qt.AlignmentFlag.AlignVCenter)
+        security_footer_layout.addStretch(1)
+        content_layout.addWidget(self.security_footer, 0)
         layout.addWidget(content_widget, 1)
         self._resize_handler = FramelessResizeHandler(self)
         self.chat_panel.chatSessionChanged.connect(self._on_chat_session_changed)
@@ -677,14 +698,27 @@ class MainWindow(QMainWindow):
         if list_mode:
             self._select_sidebar_view("tickets", expand=True)
         else:
-            self._set_sidebar_selection_state(tickets=True)
-            self.main_content_stack.setCurrentWidget(self.chat_panel)
+            self._select_sidebar_view("ticket", expand=False)
+            self._set_sidebar_expanded(False)
 
     def _set_sidebar_expanded(self, expanded: bool) -> None:
-        self._sidebar_expanded = True
-        target_width = self._sidebar_content_width
+        self._sidebar_expanded = expanded
+        target_width = self._sidebar_content_width if expanded else self._sidebar_collapsed_width
         self.sidebar_shell.setMinimumWidth(target_width)
         self.sidebar_shell.setMaximumWidth(target_width)
+        if expanded:
+            self.sidebar_shell_layout.setContentsMargins(16, 18, 16, 18)
+            self.sidebar_toggle_btn.setText("‹")
+            self.sidebar_toggle_btn.setToolTip("Свернуть навигацию")
+        else:
+            self.sidebar_shell_layout.setContentsMargins(10, 18, 10, 18)
+            self.sidebar_toggle_btn.setText("☰")
+            self.sidebar_toggle_btn.setToolTip("Развернуть навигацию")
+        self.sidebar_nav_label.setVisible(expanded)
+        self.sidebar_logo_label.setVisible(expanded)
+        self.sidebar_profile_card.setVisible(expanded)
+        if hasattr(self, "footer_status_block"):
+            self.footer_status_block.setVisible(expanded)
         sizes = self.body_splitter.sizes()
         total = sum(sizes) if sizes else self.width()
         chat_width = max(640, total - target_width - 12)
@@ -796,6 +830,12 @@ class MainWindow(QMainWindow):
         self.dashboard_status_value.setText(status_text)
 
     def _refresh_sidebar_labels(self) -> None:
+        if not self._sidebar_expanded:
+            self.sidebar_dashboard_btn.setText("")
+            self.sidebar_create_ticket_btn.setText("")
+            self.sidebar_tickets_btn.setText("")
+            self.sidebar_settings_btn.setText("")
+            return
         self.sidebar_dashboard_btn.setText("  Рабочий стол")
         self.sidebar_create_ticket_btn.setText("  Создать обращение")
         self.sidebar_tickets_btn.setText("  Обращения")
@@ -841,17 +881,58 @@ class MainWindow(QMainWindow):
             button.style().polish(button)
 
     def _on_create_ticket_from_menu(self) -> None:
-        self._select_sidebar_view("create", expand=True)
-        asyncio.create_task(self.ticket_create_page.async_prepare())
+        logger.info("[ui] open create ticket wizard requested")
+        self._select_sidebar_view("create", expand=False)
+        self.ticket_create_page.reset_wizard()
+        self.ticket_create_page._set_status("Открываю форму обращения...", error=False)
+        self._spawn_gui_task(self.ticket_create_page.async_prepare(), name="gui.create_ticket.prepare")
+
+    def _spawn_gui_task(self, coro, *, name: str = "gui.task") -> Optional[asyncio.Task]:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop_policy().get_event_loop()
+            except RuntimeError:
+                logger.error(f"[ui] cannot schedule {name}: asyncio loop is not available")
+                try:
+                    coro.close()
+                except Exception:
+                    pass
+                return None
+        if not loop.is_running():
+            logger.error(f"[ui] cannot schedule {name}: asyncio loop is not running")
+            try:
+                coro.close()
+            except Exception:
+                pass
+            return None
+        task = loop.create_task(coro, name=name)
+
+        def _done(done_task: asyncio.Task) -> None:
+            try:
+                done_task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.error(f"[ui] background task failed: {name}: {exc}")
+
+        task.add_done_callback(_done)
+        return task
 
     def _select_sidebar_view(self, view_name: str, *, expand: bool) -> None:
         self._active_sidebar_view = view_name
-        if expand:
+        if view_name in {"create", "ticket"}:
+            self._set_sidebar_expanded(False)
+        elif expand:
             self._set_sidebar_expanded(True)
         if view_name == "tickets":
             self._set_sidebar_selection_state(tickets=True)
             self.main_content_stack.setCurrentWidget(self.tickets_sidebar)
             self.chat_panel._refresh_ticket_list_async()
+        elif view_name == "ticket":
+            self._set_sidebar_selection_state(tickets=True)
+            self.main_content_stack.setCurrentWidget(self.chat_panel)
         elif view_name == "dashboard":
             self._set_sidebar_selection_state(dashboard=True)
             self.main_content_stack.setCurrentWidget(self.dashboard_page)
@@ -871,8 +952,7 @@ class MainWindow(QMainWindow):
             self._set_sidebar_selection_state()
 
     def _on_ticket_created_from_wizard(self, _ticket_id: str) -> None:
-        self._set_sidebar_selection_state(tickets=True)
-        self.main_content_stack.setCurrentWidget(self.chat_panel)
+        self._select_sidebar_view("ticket", expand=False)
 
     def _add_log(self, message: str, level: str = "info"):
         """
@@ -1715,7 +1795,7 @@ class MainWindow(QMainWindow):
             fg = theme.current_palette().status_online_fg
             dot_name = "StatusDotOnline"
         elif self._server_connection_state in {"connecting", "authorizing", "starting"}:
-            text = "Онлайн"
+            text = "Подключение..."
             meta = "Идёт подключение"
             bg = theme.current_palette().status_busy_bg
             fg = theme.current_palette().status_busy_fg
@@ -1726,11 +1806,11 @@ class MainWindow(QMainWindow):
             bg = theme.current_palette().status_offline_bg
             fg = theme.current_palette().status_offline_fg
             dot_name = "StatusDot"
-        elif self._server_connection_state == "rejected":
-            text = "Офлайн"
+        elif self._server_connection_state in {"rejected", "error"}:
+            text = "Ошибка подключения"
             meta = "Доступ отклонён"
             bg = theme.current_palette().status_offline_bg
-            fg = theme.current_palette().status_offline_fg
+            fg = theme.current_palette().danger_fg
             dot_name = "StatusDot"
         else:
             text = "Офлайн"

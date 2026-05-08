@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QDate, QDateTime, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPalette
+from PySide6.QtCore import QDate, QDateTime, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -50,12 +50,32 @@ from pc_agent.core.runtime_paths import resolve_data_root
 
 from .server_api import TicketApiClient
 from . import theme
+from .ticket_detail_widgets import (
+    NextActionCard,
+    TicketComposerWidget,
+    TicketHeaderWidget,
+    TicketRightInfoPanel,
+    TimelineItemWidget,
+)
+from .ticket_create_wizard_widgets import (
+    CreateTicketConfirmationPanel,
+    CreateTicketProgressBar,
+    CreateTicketSuccessPanel,
+    CreateTicketTypeGrid,
+)
 from .ticket_format import (
     format_ts_short,
     normalize_iso_ts,
     ticket_row_fingerprint,
     ticket_status_colors,
     ticket_status_label,
+)
+from .ticket_view_models import (
+    TimelineItem,
+    build_next_action_view_model,
+    build_ticket_header_view_model,
+    build_ticket_info_panel_view_model,
+    map_ticket_event_to_user_timeline_item,
 )
 from .tickets_list_model import TicketCardDelegate, TicketsListModel
 
@@ -2431,17 +2451,9 @@ class TicketCreateWizardWidget(QFrame):
         self._subtitle.setWordWrap(True)
         outer.addWidget(self._subtitle)
 
-        step_row = QHBoxLayout()
-        step_row.setSpacing(8)
-        self._step_buttons: list[QPushButton] = []
-        for index, label in enumerate(("1. Профиль", "2. Тип", "3. Описание", "4. Приоритет")):
-            btn = QPushButton(label)
-            btn.setCheckable(True)
-            btn.setObjectName("SecondaryButton")
-            btn.clicked.connect(lambda _checked=False, step=index: self._go_to_step(step))
-            step_row.addWidget(btn)
-            self._step_buttons.append(btn)
-        outer.addLayout(step_row)
+        self.progress_bar = CreateTicketProgressBar(["Тип обращения", "Описание", "Подтверждение", "Готово"])
+        self.progress_bar.stepRequested.connect(self._go_to_step)
+        outer.addWidget(self.progress_bar)
 
         self._step_caption = QLabel("")
         self._step_caption.setObjectName("ProfileHint")
@@ -2451,10 +2463,10 @@ class TicketCreateWizardWidget(QFrame):
         self._stack.setObjectName("TicketCreateWizardStack")
         outer.addWidget(self._stack, 1)
 
-        self._build_profile_step()
         self._build_form_step()
         self._build_description_step()
         self._build_priority_step()
+        self._build_done_step()
 
         footer = QHBoxLayout()
         footer.setSpacing(8)
@@ -2482,70 +2494,8 @@ class TicketCreateWizardWidget(QFrame):
         self._status_label.setWordWrap(True)
         outer.addWidget(self._status_label)
 
-        self.result_group = QGroupBox("Обращение создано")
-        result_layout = QVBoxLayout(self.result_group)
-        result_layout.setContentsMargins(10, 10, 10, 10)
-        result_layout.setSpacing(8)
-        self.result_label = QLabel("")
-        self.result_label.setWordWrap(True)
-        self.result_label.setObjectName("ProfileHint")
-        self.access_code_label = QLabel("")
-        self.access_code_label.setWordWrap(True)
-        self.access_code_label.setObjectName("ProfileHint")
-        self.next_action_label = QLabel("")
-        self.next_action_label.setWordWrap(True)
-        self.next_action_label.setObjectName("ProfileHint")
-        self.deadline_label = QLabel("")
-        self.deadline_label.setWordWrap(True)
-        self.deadline_label.setObjectName("ProfileHint")
-        result_layout.addWidget(self.access_code_label)
-        result_layout.addWidget(self.next_action_label)
-        result_layout.addWidget(self.deadline_label)
-        result_layout.addWidget(self.result_label)
-        result_actions = QHBoxLayout()
-        self.open_created_ticket_btn = QPushButton("Открыть обращение")
-        self.open_created_ticket_btn.setObjectName("PrimaryButton")
-        self.open_created_ticket_btn.clicked.connect(self._on_open_created_ticket)
-        self.add_message_to_created_ticket_btn = QPushButton("Добавить сообщение")
-        self.add_message_to_created_ticket_btn.setObjectName("SecondaryButton")
-        self.add_message_to_created_ticket_btn.clicked.connect(self._on_add_message_to_created_ticket)
-        self.create_another_btn = QPushButton("Создать ещё одно")
-        self.create_another_btn.setObjectName("SecondaryButton")
-        self.create_another_btn.clicked.connect(self._on_create_another_clicked)
-        result_actions.addWidget(self.open_created_ticket_btn)
-        result_actions.addWidget(self.add_message_to_created_ticket_btn)
-        result_actions.addWidget(self.create_another_btn)
-        result_actions.addStretch(1)
-        result_layout.addLayout(result_actions)
-        self.result_group.setVisible(False)
-        outer.addWidget(self.result_group)
-
         self.refresh_from_panel()
         self.reset_wizard()
-
-    def _build_profile_step(self) -> None:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-
-        group = QGroupBox("Шаг 1. Профиль инициатора")
-        group_layout = QVBoxLayout(group)
-        self.profile_selector = QComboBox()
-        self.profile_selector.currentIndexChanged.connect(self._on_profile_changed)
-        group_layout.addWidget(self.profile_selector)
-
-        self.profile_summary = QLabel("")
-        self.profile_summary.setWordWrap(True)
-        group_layout.addWidget(self.profile_summary)
-
-        self.manage_profiles_btn = QPushButton("Изменить / создать профиль")
-        self.manage_profiles_btn.setObjectName("SecondaryButton")
-        self.manage_profiles_btn.clicked.connect(self._on_manage_profiles)
-        group_layout.addWidget(self.manage_profiles_btn, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(group)
-        layout.addStretch(1)
-        self._stack.addWidget(page)
 
     def _build_form_step(self) -> None:
         page = QWidget()
@@ -2553,33 +2503,58 @@ class TicketCreateWizardWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
-        group = QGroupBox("Шаг 2. Шаблон обращения и уточнения")
+        group = QGroupBox("Шаг 1. Тип обращения")
         group_layout = QVBoxLayout(group)
+        profile_card = QFrame()
+        profile_card.setObjectName("InfoCard")
+        profile_layout = QVBoxLayout(profile_card)
+        profile_layout.setContentsMargins(12, 10, 12, 10)
+        profile_layout.setSpacing(8)
+        profile_title = QLabel("Профиль инициатора")
+        profile_title.setObjectName("ProfileFieldLabel")
+        profile_layout.addWidget(profile_title)
+        self.profile_selector = QComboBox()
+        self.profile_selector.currentIndexChanged.connect(self._on_profile_changed)
+        profile_layout.addWidget(self.profile_selector)
+        self.profile_summary = QLabel("")
+        self.profile_summary.setWordWrap(True)
+        self.profile_summary.setObjectName("ProfileHint")
+        profile_layout.addWidget(self.profile_summary)
+        self.manage_profiles_btn = QPushButton("Изменить / создать профиль")
+        self.manage_profiles_btn.setObjectName("SecondaryButton")
+        self.manage_profiles_btn.clicked.connect(self._on_manage_profiles)
+        profile_layout.addWidget(self.manage_profiles_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        group_layout.addWidget(profile_card)
+
+        self.type_grid = CreateTicketTypeGrid()
+        self.type_grid.typeSelected.connect(self._on_type_card_selected)
+        group_layout.addWidget(self.type_grid)
+
         self.template_search_input = QLineEdit()
         self.template_search_input.setPlaceholderText("Поиск по шаблонам")
         self.template_search_input.textChanged.connect(self._refresh_template_list)
-        group_layout.addWidget(self.template_search_input)
+        self.template_search_input.hide()
 
         self.template_list = QListWidget()
         self.template_list.setMinimumHeight(132)
         self.template_list.currentItemChanged.connect(self._on_template_item_changed)
-        group_layout.addWidget(self.template_list)
+        self.template_list.hide()
 
         self.selected_template_card = QLabel("Выберите шаблон обращения.")
         self.selected_template_card.setWordWrap(True)
         self.selected_template_card.setObjectName("ProfileHint")
-        group_layout.addWidget(self.selected_template_card)
+        self.selected_template_card.hide()
 
         self.form_selector = QComboBox()
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
         self.form_selector.setVisible(False)
-        group_layout.addWidget(self.form_selector)
+        self.form_selector.hide()
         self.form_summary = QLabel("")
         self.form_summary.setWordWrap(True)
-        group_layout.addWidget(self.form_summary)
+        self.form_summary.setObjectName("ProfileHint")
+        self.form_summary.setVisible(False)
         self.dynamic_fields_widget = TicketDynamicFieldsWidget(self)
         self.dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
-        group_layout.addWidget(self.dynamic_fields_widget)
         layout.addWidget(group)
         layout.addStretch(1)
         self._stack.addWidget(page)
@@ -2605,6 +2580,9 @@ class TicketCreateWizardWidget(QFrame):
         attachments_hint.setObjectName("ProfileHint")
         description_layout.addWidget(attachments_hint)
 
+        description_layout.addWidget(self.form_summary)
+        description_layout.addWidget(self.dynamic_fields_widget)
+
         attachments_actions = QHBoxLayout()
         self.add_screenshot_btn = QPushButton("Сделать скриншот")
         self.add_screenshot_btn.setObjectName("SecondaryButton")
@@ -2629,13 +2607,26 @@ class TicketCreateWizardWidget(QFrame):
         self.attachments_list.setMinimumHeight(120)
         description_layout.addWidget(self.attachments_list)
 
-        layout.addWidget(description_group)
-        layout.addStretch(1)
+        self.description_scroll = QScrollArea()
+        self.description_scroll.setObjectName("CreateTicketDescriptionScroll")
+        self.description_scroll.setWidgetResizable(True)
+        self.description_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.description_scroll.setWidget(description_group)
+        layout.addWidget(self.description_scroll, 1)
         self._stack.addWidget(page)
 
     def _build_priority_step(self) -> None:
         page = QWidget()
-        layout = QVBoxLayout(page)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+
+        self.confirmation_scroll = QScrollArea()
+        self.confirmation_scroll.setObjectName("CreateTicketConfirmationScroll")
+        self.confirmation_scroll.setWidgetResizable(True)
+        self.confirmation_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        confirmation_content = QWidget()
+        layout = QVBoxLayout(confirmation_content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
@@ -2710,8 +2701,26 @@ class TicketCreateWizardWidget(QFrame):
         self.preview_warning_label.setVisible(False)
         process_preview_layout.addWidget(self.preview_warning_label)
         layout.addWidget(process_preview_group)
+        self.confirmation_panel = CreateTicketConfirmationPanel()
+        layout.addWidget(self.confirmation_panel)
         layout.addStretch(1)
+        self.confirmation_scroll.setWidget(confirmation_content)
+        page_layout.addWidget(self.confirmation_scroll, 1)
         self._stack.addWidget(page)
+
+    def _build_done_step(self) -> None:
+        self.result_group = CreateTicketSuccessPanel()
+        self.result_group.openRequested.connect(self._on_open_created_ticket)
+        self.result_group.addMessageRequested.connect(self._on_add_message_to_created_ticket)
+        self.result_group.createAnotherRequested.connect(self._on_create_another_clicked)
+        self.result_label = self.result_group.result_label
+        self.access_code_label = self.result_group.access_code_label
+        self.next_action_label = self.result_group.next_action_label
+        self.deadline_label = self.result_group.deadline_label
+        self.open_created_ticket_btn = self.result_group.open_created_ticket_btn
+        self.add_message_to_created_ticket_btn = self.result_group.add_message_to_created_ticket_btn
+        self.create_another_btn = self.result_group.create_another_btn
+        self._stack.addWidget(self.result_group)
 
     async def async_prepare(self) -> None:
         self._set_status("Загружаю шаблоны обращений...", error=False)
@@ -2756,22 +2765,28 @@ class TicketCreateWizardWidget(QFrame):
 
     def _hide_create_result(self) -> None:
         self._last_created_ticket_id = ""
-        self.result_label.setText("")
-        self.access_code_label.setText("")
-        self.next_action_label.setText("")
-        self.deadline_label.setText("")
+        self.result_group.clear_result()
         self.result_group.setVisible(False)
 
     def _show_create_result(self, ticket: dict[str, Any], *, public_access_code: str = "") -> None:
         self._last_created_ticket_id = str(ticket.get("ticket_id") or "")
         labels = build_post_create_result_labels(ticket, public_access_code=public_access_code)
-        self.access_code_label.setText(labels["access_code"])
-        self.next_action_label.setText(labels["next_action"])
-        self.deadline_label.setText(labels["deadlines"])
-        self.result_label.setText(labels["summary"])
         has_ticket = bool(self._last_created_ticket_id)
-        self.open_created_ticket_btn.setEnabled(has_ticket)
-        self.add_message_to_created_ticket_btn.setEnabled(has_ticket)
+        number = str(ticket.get("ticket_code") or ticket.get("number") or ticket.get("ticket_number") or "")
+        if number and not number.startswith("#"):
+            number = f"#{number}"
+        access_code = str(public_access_code or "").strip()
+        if labels["access_code"].startswith("Код доступа:"):
+            access_code = labels["access_code"].split(":", 1)[1].strip()
+        self.result_group.set_result(
+            ticket_number=number,
+            title=str(ticket.get("title") or "Обращение в поддержку"),
+            access_code=access_code,
+            next_action=labels["next_action"],
+            deadlines=labels["deadlines"],
+            summary=labels["summary"],
+            has_ticket=has_ticket,
+        )
         self.result_group.setVisible(True)
 
     def _on_open_created_ticket(self) -> None:
@@ -2828,14 +2843,37 @@ class TicketCreateWizardWidget(QFrame):
         return "P3"
 
     def _update_creation_preview(self) -> None:
+        preview_text = build_request_creation_preview(
+            self._selected_form(),
+            priority_class=self._current_priority_class_hint(),
+            server_preview=self._server_creation_preview,
+        )
         if hasattr(self, "preview_label"):
-            self.preview_label.setText(
-                build_request_creation_preview(
-                    self._selected_form(),
-                    priority_class=self._current_priority_class_hint(),
-                    server_preview=self._server_creation_preview,
-                )
-            )
+            self.preview_label.setText(preview_text)
+        if hasattr(self, "confirmation_panel"):
+            self._update_confirmation_panel(preview_text)
+
+    def _update_confirmation_panel(self, process_preview: str) -> None:
+        form = self._selected_form() or {}
+        description = self.description_input.toPlainText().strip()
+        attachment_names = [
+            Path(path).name
+            for path in [
+                *self._attachment_paths,
+                *self.dynamic_fields_widget.file_attachment_paths(),
+                *self.priority_dynamic_fields_widget.file_attachment_paths(),
+            ]
+        ]
+        self.confirmation_panel.set_summary(
+            category=str(form.get("request_template_title") or form.get("title") or form.get("key") or ""),
+            subject=(description.splitlines()[0] if description else ""),
+            requester=self._panel.current_requester_profile_summary(),
+            impact=self.impact_scope_select.currentText(),
+            urgency=self.work_continuity_select.currentText(),
+            description=description,
+            attachments=attachment_names,
+            process_preview=process_preview,
+        )
 
     def _schedule_server_creation_preview(self) -> None:
         self._preview_request_seq += 1
@@ -2846,11 +2884,54 @@ class TicketCreateWizardWidget(QFrame):
         self._update_creation_preview()
         if not self._selected_form() or not getattr(self._panel, "ticket_client", None):
             return
+        self._spawn_gui_task(
+            self._async_refresh_server_creation_preview(self._preview_request_seq),
+            name="ticket_create.preview",
+            silent_if_no_loop=True,
+        )
+
+    def _spawn_gui_task(
+        self,
+        coro,
+        *,
+        name: str,
+        silent_if_no_loop: bool = False,
+    ) -> Optional[asyncio.Task]:
         try:
-            asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            return
-        asyncio.create_task(self._async_refresh_server_creation_preview(self._preview_request_seq))
+            try:
+                loop = asyncio.get_event_loop_policy().get_event_loop()
+            except RuntimeError:
+                if not silent_if_no_loop:
+                    self._set_status("Не удалось запустить фоновую задачу интерфейса.", error=True)
+                    logger.error(f"[ui] cannot schedule {name}: asyncio loop is not available")
+                try:
+                    coro.close()
+                except Exception:
+                    pass
+                return None
+        if not loop.is_running():
+            if not silent_if_no_loop:
+                self._set_status("Не удалось запустить фоновую задачу интерфейса.", error=True)
+                logger.error(f"[ui] cannot schedule {name}: asyncio loop is not running")
+            try:
+                coro.close()
+            except Exception:
+                pass
+            return None
+        task = loop.create_task(coro, name=name)
+
+        def _done(done_task: asyncio.Task) -> None:
+            try:
+                done_task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.error(f"[ui] background task failed: {name}: {exc}")
+
+        task.add_done_callback(_done)
+        return task
 
     async def _async_refresh_server_creation_preview(self, request_seq: int) -> None:
         try:
@@ -2922,6 +3003,16 @@ class TicketCreateWizardWidget(QFrame):
             item.setData(Qt.ItemDataRole.UserRole, form.get("key"))
             item.setToolTip(build_request_template_card_summary(form, priority_class=self._current_priority_class_hint()))
             self.template_list.addItem(item)
+        if hasattr(self, "type_grid"):
+            visible_templates = []
+            for row in range(self.template_list.count()):
+                item = self.template_list.item(row)
+                item_key = item.data(Qt.ItemDataRole.UserRole)
+                for form in forms:
+                    if form.get("key") == item_key:
+                        visible_templates.append(form)
+                        break
+            self.type_grid.set_templates(visible_templates, current_key=current_key)
         selected_row = 0
         for row in range(self.template_list.count()):
             item = self.template_list.item(row)
@@ -2952,10 +3043,16 @@ class TicketCreateWizardWidget(QFrame):
         if index >= 0 and index != self.form_selector.currentIndex():
             self.form_selector.setCurrentIndex(index)
 
+    def _on_type_card_selected(self, form_key: str) -> None:
+        index = self.form_selector.findData(form_key)
+        if index >= 0 and index != self.form_selector.currentIndex():
+            self.form_selector.setCurrentIndex(index)
+
     def _on_form_changed(self, *_args) -> None:
         form = self._selected_form()
         if not form:
             self.form_summary.setText("Каталог форм пока недоступен.")
+            self.form_summary.setVisible(False)
             if hasattr(self, "selected_template_card"):
                 self.selected_template_card.setText("Каталог шаблонов пока недоступен.")
             self.dynamic_fields_widget.clear_form()
@@ -2965,9 +3062,12 @@ class TicketCreateWizardWidget(QFrame):
             self.diagnostic_consent_hint_label.setVisible(False)
         else:
             self._sync_template_list_selection(form.get("key"))
+            if hasattr(self, "type_grid"):
+                self.type_grid.set_selected_key(form.get("key"))
             self.form_summary.setText(
                 form.get("description") or "Уточните детали, чтобы обращение сразу попало в нужный поток."
             )
+            self.form_summary.setVisible(True)
             if hasattr(self, "selected_template_card"):
                 self.selected_template_card.setText(
                     build_request_template_card_summary(form, priority_class=self._current_priority_class_hint())
@@ -3041,7 +3141,7 @@ class TicketCreateWizardWidget(QFrame):
     def _on_add_screenshot(self) -> None:
         if self._capture_in_progress:
             return
-        asyncio.create_task(self._async_capture_screenshot())
+        self._spawn_gui_task(self._async_capture_screenshot(), name="ticket_create.screenshot")
 
     def _on_add_video(self) -> None:
         if self._capture_in_progress:
@@ -3057,7 +3157,7 @@ class TicketCreateWizardWidget(QFrame):
         )
         if not accepted:
             return
-        asyncio.create_task(self._async_capture_video(duration_sec))
+        self._spawn_gui_task(self._async_capture_video(duration_sec), name="ticket_create.video")
 
     def _on_add_file(self) -> None:
         self._pick_attachments(
@@ -3130,21 +3230,27 @@ class TicketCreateWizardWidget(QFrame):
 
     def _step_ready(self, step: int) -> bool:
         if step == 0:
-            return self._panel.has_active_profile()
+            return (
+                self._panel.has_active_profile()
+                and bool(self._selected_form())
+            )
         if step == 1:
-            return bool(self._selected_form()) and not self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
+            return bool(self.description_input.toPlainText().strip()) and not self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
         if step == 2:
-            return bool(self.description_input.toPlainText().strip())
-        if step == 3:
             consent_error = diagnostic_consent_submission_error(
                 self._selected_form(),
                 granted=self.diagnostic_consent_checkbox.isChecked(),
             )
-            return not self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False) and not consent_error
+            return (
+                not self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=False)
+                and not consent_error
+            )
+        if step == 3:
+            return bool(self._last_created_ticket_id)
         return True
 
     def _all_required_steps_ready(self) -> bool:
-        return all(self._step_ready(step) for step in range(4))
+        return all(self._step_ready(step) for step in range(3))
 
     def _go_to_step(self, step: int, *, force: bool = False) -> None:
         if not force:
@@ -3156,37 +3262,52 @@ class TicketCreateWizardWidget(QFrame):
         self._update_navigation_state()
 
     def _update_navigation_state(self) -> None:
-        for index, button in enumerate(self._step_buttons):
-            unlocked = all(self._step_ready(prev_step) for prev_step in range(index))
-            button.setEnabled(unlocked and not self._submitting)
-            button.setChecked(index == self._current_step)
+        unlocked_steps = {
+            index
+            for index in range(self._stack.count())
+            if all(self._step_ready(prev_step) for prev_step in range(index))
+            and (index < 3 or bool(self._last_created_ticket_id))
+            and not self._submitting
+        }
+        completed_steps = {
+            index
+            for index in range(self._stack.count())
+            if index < self._current_step and self._step_ready(index)
+        }
+        self.progress_bar.set_state(
+            current_step=self._current_step,
+            unlocked_steps=unlocked_steps,
+            completed_steps=completed_steps,
+        )
 
         self._back_btn.setEnabled(self._current_step > 0 and not self._submitting)
-        self._next_btn.setVisible(self._current_step < self._stack.count() - 1)
+        self._next_btn.setVisible(self._current_step < 2)
         self._next_btn.setEnabled(self._step_ready(self._current_step) and not self._submitting)
-        self._submit_btn.setVisible(self._current_step == self._stack.count() - 1)
-        self._submit_btn.setEnabled(self._all_required_steps_ready() and not self._submitting)
-        self._cancel_btn.setEnabled(not self._submitting)
+        self._submit_btn.setVisible(self._current_step == 2)
+        # Keep the final button clickable so validation feedback is visible instead
+        # of turning the primary action into a silent no-op.
+        self._submit_btn.setEnabled(self._current_step == 2 and not self._submitting)
+        self._cancel_btn.setEnabled(not self._submitting and self._current_step < 3)
 
         captions = {
-            0: "Шаг 1 из 4. Выберите инициатора заявки.",
-            1: "Шаг 2 из 4. Укажите тип обращения и обязательные поля.",
-            2: "Шаг 3 из 4. Опишите проблему и при желании приложите материалы.",
-            3: "Шаг 4 из 4. Уточните приоритет и завершите создание.",
+            0: "Шаг 1 из 4. Выберите тип обращения и проверьте профиль инициатора.",
+            1: "Шаг 2 из 4. Опишите проблему и при желании приложите материалы.",
+            2: "Шаг 3 из 4. Проверьте влияние, сроки и данные обращения.",
+            3: "Шаг 4 из 4. Обращение создано.",
         }
         self._step_caption.setText(captions.get(self._current_step, ""))
 
     def _step_validation_error(self, step: int) -> str:
         if step == 0:
-            return "Выберите профиль инициатора перед переходом дальше."
+            if not self._panel.has_active_profile():
+                return "Выберите профиль инициатора перед переходом дальше."
+            return "Выберите тип обращения."
         if step == 1:
             missing_fields = self.dynamic_fields_widget.validate_required_fields(show_feedback=True)
             if missing_fields:
                 return "Заполните обязательные поля: " + ", ".join(missing_fields)
-            return "Выберите шаблон обращения."
-        if step == 2:
             return "Опишите проблему, чтобы можно было создать заявку."
-        if step == 3:
+        if step == 2:
             missing_fields = self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=True)
             if missing_fields:
                 return "Заполните поля для расчета приоритета: " + ", ".join(missing_fields)
@@ -3270,7 +3391,25 @@ class TicketCreateWizardWidget(QFrame):
                     self._set_status(self._step_validation_error(step), error=True)
                     break
             return
-        asyncio.create_task(self._async_submit())
+        if not self._confirm_submit_after_click():
+            self._set_status("Отправка отменена. Вы можете проверить данные и нажать «Создать обращение» снова.", error=False)
+            return
+        self._spawn_gui_task(self._async_submit(), name="ticket_create.submit")
+
+    def _confirm_submit_after_click(self) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Подтверждение данных")
+        dialog.setText("Подтвердите корректность данных")
+        dialog.setInformativeText(
+            "После подтверждения обращение будет отправлено в поддержку. "
+            "Если нужно что-то исправить, вернитесь к форме."
+        )
+        confirm_button = dialog.addButton("Подтверждаю, отправить", QMessageBox.ButtonRole.AcceptRole)
+        dialog.addButton("Вернуться к проверке", QMessageBox.ButtonRole.RejectRole)
+        dialog.setDefaultButton(confirm_button)
+        dialog.exec()
+        return dialog.clickedButton() is confirm_button
 
     async def _async_submit(self) -> None:
         self._submitting = True
@@ -3292,9 +3431,9 @@ class TicketCreateWizardWidget(QFrame):
             ticket = result.get("ticket", {}) if isinstance(result, dict) else {}
             ticket_id = str(ticket.get("ticket_id") or "")
             code = result.get("public_access_code") or "—"
-            self.reset_wizard()
             self._set_status("Обращение создано. Проверьте дальнейшие действия ниже.", error=False)
             self._show_create_result(ticket, public_access_code=str(code))
+            self._go_to_step(3, force=True)
             self.ticketCreated.emit(ticket_id)
         except Exception as exc:
             logger.error(f"Ошибка создания обращения из мастера: {exc}")
@@ -3694,6 +3833,7 @@ class ChatPanel(QWidget):
         self._pending_ticket_snapshot: Optional[tuple[dict, List[dict], List[dict]]] = None
         self._active_ticket_messages: List[dict] = []
         self._active_ticket_events: List[dict] = []
+        self._active_ticket_status = ""
         self._last_detail_event_id = 0
         self._oldest_loaded_event_id = 0
         self._has_older_history = False
@@ -3798,7 +3938,7 @@ class ChatPanel(QWidget):
         )
         left_layout.addWidget(self.ticket_meta_label, 1)
         left_layout.addStretch(1)
-        main_layout.addWidget(self.left_panel)
+        self.left_panel.hide()
 
         self.right_center = QWidget()
         self.right_center.setObjectName("ChatRightColumn")
@@ -3809,12 +3949,20 @@ class ChatPanel(QWidget):
         center_layout.setContentsMargins(12, 12, 12, 12)
         center_layout.setSpacing(10)
 
-        self.ticket_status_top = QLabel("Статус: —")
-        self.ticket_status_top.setStyleSheet(
-            f"font-weight: 700; font-size: {theme.TITLE_PT}pt; padding: 12px 16px; border-radius: 14px; "
-            f"background: {theme.INFO_BG}; color: {theme.INFO_FG};"
-        )
-        center_layout.addWidget(self.ticket_status_top)
+        self.ticket_header = TicketHeaderWidget()
+        self.ticket_header.copyCodeRequested.connect(self._copy_access_code)
+        self.ticket_header.openUrlRequested.connect(self._open_public_ticket_url)
+        self.ticket_header.attachRequested.connect(self._on_attach_any_file)
+        self.ticket_header.refreshRequested.connect(self._refresh_ticket_detail_async)
+        self.ticket_header.confirmResolutionRequested.connect(lambda: self._spawn_task(self._async_close_ticket()))
+        self.ticket_header.rejectResolutionRequested.connect(self._on_reject_resolution)
+        self.ticket_status_top = self.ticket_header.status_badge
+        center_layout.addWidget(self.ticket_header)
+
+        self.next_action_card = NextActionCard()
+        self.next_action_card.primaryActionRequested.connect(self._on_next_action_primary)
+        self.next_action_card.secondaryActionRequested.connect(self._on_next_action_secondary)
+        center_layout.addWidget(self.next_action_card)
 
         self.top_pinned_info = QLabel("Код авторизации и ссылка обращения появятся здесь.")
         self.top_pinned_info.setWordWrap(True)
@@ -3828,7 +3976,7 @@ class ChatPanel(QWidget):
             f"padding: 12px 14px; border: 1px solid {theme.BORDER}; border-radius: 12px; "
             f"background: {theme.INFO_BG}; color: {theme.INFO_FG}; font-size: {theme.BODY_PT}pt;"
         )
-        center_layout.addWidget(self.top_pinned_info)
+        self.top_pinned_info.hide()
 
         self.pinned_messages_widget = QWidget()
         pinned_row = QHBoxLayout(self.pinned_messages_widget)
@@ -3896,78 +4044,32 @@ class ChatPanel(QWidget):
         timeline_scrollbar.valueChanged.connect(self._on_timeline_scroll_changed)
         timeline_scrollbar.rangeChanged.connect(self._on_timeline_scroll_changed)
 
-        self.input_line = QLineEdit()
-        self.input_line.setObjectName("ChatInputLine")
-        self.input_line.setPlaceholderText("Сообщение по обращению")
-        self.input_line.returnPressed.connect(self._on_send)
-        center_layout.addWidget(self.input_line)
-
-        self.resolution_message_widget = QWidget()
-        self.resolution_message_widget.setObjectName("ResolutionConfirmationCard")
-        self.resolution_message_widget.setStyleSheet(
-            f"QWidget#ResolutionConfirmationCard {{"
-            f"background: {theme.INFO_BG}; border: 2px solid {theme.ACCENT}; border-radius: 14px;"
-            f"}}"
-        )
-        resolution_layout = QHBoxLayout(self.resolution_message_widget)
-        resolution_layout.setContentsMargins(14, 12, 14, 12)
-        resolution_layout.setSpacing(12)
-        self.resolution_prompt_label = QLabel(
-            "<b>Требуется подтверждение решения.</b><br>"
-            "Поддержка отметила обращение как решённое. Если всё работает, закройте обращение. "
-            "Если проблема осталась, верните его в работу."
-        )
-        self.resolution_prompt_label.setWordWrap(True)
-        self.resolution_prompt_label.setTextFormat(Qt.TextFormat.RichText)
-        self.resolution_prompt_label.setStyleSheet(
-            f"font-size: {theme.BODY_PT}pt; color: {theme.TEXT_PRIMARY}; background: transparent;"
-        )
-        self.resolution_confirm_btn = QPushButton("Подтвердить и закрыть")
-        self.resolution_confirm_btn.setObjectName("PrimaryButton")
-        self.resolution_confirm_btn.setMinimumSize(220, 46)
-        self.resolution_confirm_btn.setStyleSheet(
-            f"background: {theme.PRIMARY_BTN}; color: {theme.PRIMARY_BTN_TEXT}; "
-            f"border: 1px solid {theme.PRIMARY_BTN}; border-radius: 12px; font-weight: 800;"
-        )
-        self.resolution_confirm_btn.clicked.connect(lambda: self._spawn_task(self._async_close_ticket()))
-        self.resolution_reject_btn = QPushButton("Отклонить решение")
-        self.resolution_reject_btn.setObjectName("SecondaryButton")
-        self.resolution_reject_btn.setMinimumSize(170, 46)
-        self.resolution_reject_btn.clicked.connect(self._on_reject_resolution)
-        resolution_layout.addWidget(self.resolution_prompt_label, 1)
-        resolution_layout.addWidget(self.resolution_confirm_btn)
-        resolution_layout.addWidget(self.resolution_reject_btn)
-        self.resolution_message_widget.hide()
-        center_layout.addWidget(self.resolution_message_widget)
-
-        actions = QHBoxLayout()
-        self.send_btn = QPushButton("Отправить")
-        self.send_btn.setObjectName("ChatSendButton")
-        self.send_btn.clicked.connect(self._on_send)
-        self.attach_btn = QToolButton()
-        self.attach_btn.setText("📎")
-        self.attach_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.attach_btn.setToolTip("Прикрепить")
+        self.composer = TicketComposerWidget()
+        self.composer.sendRequested.connect(self._on_send)
+        self.input_line = self.composer.message_edit
+        self.send_btn = self.composer.send_button
+        self.attach_btn = self.composer.attach_button
+        self.media_btn = self.composer.media_button
+        self.tool_status_label = self.composer.status_label
         attach_menu = QMenu(self.attach_btn)
         attach_menu.setObjectName("AgentPopupMenu")
         attach_menu.addAction("Прикрепить фото", self._on_attach_photo)
         attach_menu.addAction("Прикрепить документ", self._on_attach_document)
         attach_menu.addAction("Прикрепить любой файл", self._on_attach_any_file)
         self.attach_btn.setMenu(attach_menu)
-        self.media_btn = QPushButton("Скриншот / Видео")
         media_menu = QMenu(self.media_btn)
         media_menu.setObjectName("AgentPopupMenu")
         media_menu.addAction("Сделать скриншот", self._on_send_screenshot)
         media_menu.addAction("Записать видео до 60 секунд", self._on_send_video)
         self.media_btn.setMenu(media_menu)
-        self.tool_status_label = QLabel("")
-        actions.addWidget(self.send_btn)
-        actions.addWidget(self.attach_btn)
-        actions.addWidget(self.media_btn)
-        actions.addWidget(self.tool_status_label, 1)
-        center_layout.addLayout(actions)
+        center_layout.addWidget(self.composer)
+        self._refresh_composer_state()
 
         main_layout.addWidget(self.right_center, 3)
+        self.ticket_info_panel = TicketRightInfoPanel()
+        self.ticket_info_panel.copyCodeRequested.connect(self._copy_access_code)
+        self.ticket_info_panel.openUrlRequested.connect(self._open_public_ticket_url)
+        main_layout.addWidget(self.ticket_info_panel, 0)
         self.refresh_theme()
 
     def refresh_theme(self) -> None:
@@ -3992,7 +4094,7 @@ class ChatPanel(QWidget):
                 f"border: 1px solid {theme.BORDER}; border-radius: 14px; font-size: {theme.BODY_PT}pt; line-height: 1.45;"
             )
         normalized_status = ""
-        if hasattr(self, "ticket_status_top"):
+        if hasattr(self, "ticket_status_top") and not hasattr(self, "ticket_header"):
             status_text = self.ticket_status_top.text()
             if ":" in status_text:
                 normalized_status = status_text.split(":", 1)[1].split("•", 1)[0].strip().lower().replace(" ", "_")
@@ -4843,7 +4945,7 @@ class ChatPanel(QWidget):
         code = ticket.get("ticket_code") or ticket.get("ticket_id", "")
         title = ticket.get("title") or "Без названия"
         status = ticket.get("status") or "unknown"
-        status_fg, status_bg = ticket_status_colors(status)
+        self._active_ticket_status = str(status or "").strip().lower()
         ticket_id = str(ticket.get("ticket_id") or "")
         counters = ticket.get("chat_counters") or {}
         unread_messages = int(counters.get("requester_unread_messages") or 0)
@@ -4869,15 +4971,16 @@ class ChatPanel(QWidget):
         safe_code = self._escape_html(str(code))
         safe_title = self._escape_html(str(title))
         info_html = f"Обращение <a href='copy_ticket_code:{safe_code}'>#{safe_code}</a><br>{safe_title}"
-        status_text = f"Статус обращения: {ticket_status_label(status)}{status_suffix}"
-        status_style = (
-            f"font-weight: 700; padding: 10px 14px; border-radius: 14px; background: {status_bg}; color: {status_fg};"
-        )
+        access_code = self._extract_public_access_code(ticket, messages)
         meta_html = self._build_ticket_meta_html(ticket, events)
         self.ticket_info_label.setText(info_html)
-        self.ticket_status_top.setText(status_text)
-        self.ticket_status_top.setStyleSheet(status_style)
+        self.ticket_header.set_view_model(build_ticket_header_view_model(ticket, access_code=access_code))
         self.ticket_meta_label.setText(meta_html)
+        self.next_action_card.set_view_model(build_next_action_view_model(ticket))
+        self.ticket_info_panel.set_view_model(
+            build_ticket_info_panel_view_model(ticket, access_code=access_code)
+        )
+        self._refresh_composer_state()
         self._refresh_top_pinned_info(ticket, messages)
         self._refresh_pinned_messages_label(ticket.get("ticket_id") or "")
         self._apply_ticket_background(status)
@@ -4946,8 +5049,10 @@ class ChatPanel(QWidget):
             ev_type = event.get("type") or event.get("event_type") or ""
             if ev_type in _HIDDEN:
                 continue
-            ts = event.get("ts")
-            line = self._format_event_text(event)
+            timeline_item = map_ticket_event_to_user_timeline_item(event)
+            if timeline_item is None:
+                continue
+            ts = event.get("ts") or event.get("created_at")
             items.append(
                 (
                     self._ts_sort_value(ts),
@@ -4955,10 +5060,18 @@ class ChatPanel(QWidget):
                     {
                         "bubble_role": "event",
                         "sender": "",
-                        "text": f"⚙ {line}",
+                        "text": timeline_item.text,
                         "attachments": [],
-                        "ts_text": self._format_ts(ts),
+                        "ts_text": timeline_item.time_label or self._format_ts(ts),
                         "menu_text": "",
+                        "timeline_item": {
+                            "id": timeline_item.id,
+                            "kind": timeline_item.kind,
+                            "actor_label": timeline_item.actor_label,
+                            "time_label": timeline_item.time_label,
+                            "text": timeline_item.text,
+                            "payload": timeline_item.payload,
+                        },
                     },
                 )
             )
@@ -5066,28 +5179,17 @@ class ChatPanel(QWidget):
         return "офлайн"
 
     def _build_ticket_meta_html(self, ticket: dict, events: Optional[List[dict]] = None) -> str:
-        requester = ticket.get("requester_display_name") or "Пользователь"
-        profile = ticket.get("requester_profile") or {}
-        location = " ".join(
-            part for part in (profile.get("building"), profile.get("room")) if part
-        ).strip() or "—"
         deadlines_summary = build_ticket_deadlines_status_summary(ticket)
+        deadlines_summary = re.sub(r"^Приоритет:\s*[^;]+;\s*", "", deadlines_summary or "")
         diagnostics_summary = build_ticket_diagnostics_user_summary(ticket, events)
+        next_action = build_next_action_view_model(ticket)
         rows = [
-            ("Пользователь", requester),
-            ("ФИО", profile.get("full_name") or "—"),
-            ("Кабинет", location),
-            ("Телефон", profile.get("phone") or "—"),
-            ("Приоритет", ticket.get("priority_class") or ticket.get("priority") or "—"),
-            ("Сроки", deadlines_summary or "—"),
-            ("Очередь", ticket.get("queue_code") or ticket.get("queue_id") or "—"),
-            ("Исполнитель", build_ticket_assignee_user_text(ticket, events)),
+            ("Что сейчас происходит", ticket_status_label(ticket.get("status") or "unknown")),
+            ("Следующее действие", next_action.title),
+            ("Сроки", deadlines_summary or "Сроки будут рассчитаны после регистрации обращения."),
+            ("Специалист", build_ticket_assignee_user_text(ticket, events)),
             ("Поддержка", self._support_presence_text(ticket)),
-            ("Диагностика", diagnostics_summary or "Нет данных по диагностике."),
-            ("Создан", self._format_ts(ticket.get("created_at")) or "—"),
-            ("Обновлён", self._format_ts(ticket.get("updated_at")) or "—"),
-            ("Решён", self._format_ts(ticket.get("resolved_at")) or "—"),
-            ("Закрыт", self._format_ts(ticket.get("closed_at")) or "—"),
+            ("Диагностика", diagnostics_summary or "Пока нет данных по диагностике."),
             ("Описание", (ticket.get("description") or "—").replace("\n", " ")),
         ]
         rows.extend(ticket_request_form_summary_rows(ticket))
@@ -5348,37 +5450,60 @@ class ChatPanel(QWidget):
             row_layout.addStretch(1)
         return row
 
+    @staticmethod
+    def _timeline_item_from_payload(payload: dict) -> TimelineItem | None:
+        raw = payload.get("timeline_item")
+        if not isinstance(raw, dict):
+            return None
+        return TimelineItem(
+            id=str(raw.get("id") or ""),
+            kind=str(raw.get("kind") or "system_event"),
+            actor_label=str(raw.get("actor_label") or ""),
+            time_label=str(raw.get("time_label") or payload.get("ts_text") or ""),
+            text=str(raw.get("text") or payload.get("text") or ""),
+            payload=raw.get("payload") if isinstance(raw.get("payload"), dict) else {},
+        )
+
+    def _create_timeline_widget(self, payload: dict) -> QWidget:
+        timeline_item = self._timeline_item_from_payload(payload)
+        if timeline_item is not None:
+            return TimelineItemWidget(timeline_item, self)
+        return MessageBubbleWidget(
+            self,
+            payload.get("bubble_role", "event"),
+            payload.get("sender", ""),
+            payload.get("text", ""),
+            payload.get("ts_text", ""),
+            payload.get("attachments", []),
+            payload.get("menu_text", ""),
+            payload.get("reply_to"),
+            payload.get("message_context"),
+        )
+
+    @staticmethod
+    def _timeline_alignment_for_payload(kind: str, payload: dict) -> str:
+        timeline_item = ChatPanel._timeline_item_from_payload(payload)
+        if timeline_item is not None:
+            if timeline_item.kind == "user_message":
+                return "right"
+            if timeline_item.kind == "support_message":
+                return "left"
+            return "center"
+        if kind == "event":
+            return "center"
+        return "right" if payload.get("bubble_role") == "support" else "left"
+
     def _append_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
         for _sort_value, kind, payload in items:
-            bubble = MessageBubbleWidget(
-                self,
-                payload.get("bubble_role", "event"),
-                payload.get("sender", ""),
-                payload.get("text", ""),
-                payload.get("ts_text", ""),
-                payload.get("attachments", []),
-                payload.get("menu_text", ""),
-                payload.get("reply_to"),
-                payload.get("message_context"),
-            )
-            alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
+            bubble = self._create_timeline_widget(payload)
+            alignment = self._timeline_alignment_for_payload(kind, payload)
             self.timeline_layout.addWidget(self._create_timeline_row(bubble, alignment))
 
     def _prepend_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
         insert_index = 1 if self.timeline_layout.count() > 0 else 0
         for _sort_value, kind, payload in reversed(items):
-            bubble = MessageBubbleWidget(
-                self,
-                payload.get("bubble_role", "event"),
-                payload.get("sender", ""),
-                payload.get("text", ""),
-                payload.get("ts_text", ""),
-                payload.get("attachments", []),
-                payload.get("menu_text", ""),
-                payload.get("reply_to"),
-                payload.get("message_context"),
-            )
-            alignment = "center" if kind == "event" else ("right" if payload.get("bubble_role") == "support" else "left")
+            bubble = self._create_timeline_widget(payload)
+            alignment = self._timeline_alignment_for_payload(kind, payload)
             self.timeline_layout.insertWidget(insert_index, self._create_timeline_row(bubble, alignment))
 
     def _render_timeline_widgets(self, items: List[tuple[float, str, dict]]) -> None:
@@ -5397,7 +5522,6 @@ class ChatPanel(QWidget):
 
     def _maybe_prompt_resolution_confirmation(self, ticket: dict) -> None:
         if not ticket or not can_user_confirm_close(ticket):
-            self.resolution_message_widget.hide()
             return
         ticket_id = str(ticket.get("ticket_id") or "")
         prompt_key = f"{ticket_id}:{ticket.get('resolved_at') or ticket.get('updated_at') or 'resolved'}"
@@ -5405,8 +5529,6 @@ class ChatPanel(QWidget):
             return
         self._resolution_prompt_keys.add(prompt_key)
         self._resolution_prompt_open_for = ticket_id
-
-        self.resolution_message_widget.show()
 
     def _ts_sort_value(self, value) -> float:
         if value is None:
@@ -5726,15 +5848,40 @@ class ChatPanel(QWidget):
 
     def _on_send(self) -> None:
         if not self.active_ticket_id:
+            self._refresh_composer_state()
             return
-        text = self.input_line.text().strip()
+        text = self._composer_text()
         if not text:
+            self._refresh_composer_state()
             return
         self._spawn_task(self._async_send_message(text))
 
+    def _composer_text(self) -> str:
+        if hasattr(self, "composer"):
+            return self.composer.message_text()
+        if hasattr(self.input_line, "toPlainText"):
+            return self.input_line.toPlainText().strip()
+        return self.input_line.text().strip()
+
+    def _clear_composer_text(self) -> None:
+        if hasattr(self, "composer"):
+            self.composer.clear_message()
+        else:
+            self.input_line.clear()
+
+    def _refresh_composer_state(self, *, sending: bool = False) -> None:
+        if not hasattr(self, "composer"):
+            return
+        self.composer.set_ticket_state(
+            active=bool(self.active_ticket_id),
+            ticket_status=self._active_ticket_status,
+            connected=True,
+            sending=sending,
+        )
+
     async def _async_send_message(self, text: str, *, trace_parent_action_id: Optional[str] = None) -> None:
         try:
-            self.send_btn.setEnabled(False)
+            self._refresh_composer_state(sending=True)
             action_id = trace_parent_action_id or get_action_trace_recorder().context(
                 source="gui_user",
                 action="ticket.message.send",
@@ -5766,7 +5913,7 @@ class ChatPanel(QWidget):
                 reply_to=reply_to,
                 trace_parent_action_id=action_id,
             )
-            self.input_line.clear()
+            self._clear_composer_text()
             self._clear_reply_stub()
             self._refresh_ticket_detail_async()
             self._ensure_timeline_bottom_follow()
@@ -5774,7 +5921,7 @@ class ChatPanel(QWidget):
             logger.error(f"Ошибка отправки сообщения: {exc}")
             QMessageBox.critical(self, "Ошибка", str(exc))
         finally:
-            self.send_btn.setEnabled(True)
+            self._refresh_composer_state()
 
     def _on_attach_files(self) -> None:
         if not self.active_ticket_id:
@@ -5835,7 +5982,7 @@ class ChatPanel(QWidget):
             if not refs:
                 self.tool_status_label.setText("Нет загруженных файлов")
                 return
-            text = self.input_line.text().strip()
+            text = self._composer_text()
             if not text:
                 text = "Вложение" if len(refs) == 1 else f"Вложения ({len(refs)})"
             reply_to = None
@@ -5864,7 +6011,7 @@ class ChatPanel(QWidget):
                 reply_to=reply_to,
                 trace_parent_action_id=action_id,
             )
-            self.input_line.clear()
+            self._clear_composer_text()
             self._clear_reply_stub()
             self.tool_status_label.setText(f"Отправлено вложений: {len(refs)}")
             self._refresh_ticket_detail_async()
@@ -5936,6 +6083,20 @@ class ChatPanel(QWidget):
     def _on_reject_resolution(self) -> None:
         self._spawn_task(self._async_reject_resolution())
 
+    def _on_next_action_primary(self) -> None:
+        if self._active_ticket_status == "resolved":
+            self._spawn_task(self._async_close_ticket())
+            return
+        self.input_line.setFocus()
+        self._ensure_timeline_bottom_follow()
+
+    def _on_next_action_secondary(self) -> None:
+        if self._active_ticket_status == "resolved":
+            self._on_reject_resolution()
+            return
+        self.input_line.setFocus()
+        self._ensure_timeline_bottom_follow()
+
     async def _async_reject_resolution(self) -> None:
         try:
             request_id = self._resolution_confirmation_request_id()
@@ -5959,7 +6120,8 @@ class ChatPanel(QWidget):
                 },
                 trace_parent_action_id=action_id,
             )
-            self.resolution_message_widget.hide()
+            if hasattr(self, "resolution_message_widget"):
+                self.resolution_message_widget.hide()
             await self._async_refresh_ticket_list()
             await self._async_refresh_ticket_detail()
         except Exception as exc:
@@ -6180,3 +6342,19 @@ class ChatPanel(QWidget):
         from PySide6.QtWidgets import QApplication
         QApplication.clipboard().setText(code)
         QMessageBox.information(self, "Скопировано", f"Код авторизации скопирован: {code}")
+
+    def _copy_access_code(self, code: str) -> None:
+        code = str(code or "").strip()
+        if not code:
+            QMessageBox.information(self, "Код", "Код доступа пока недоступен.")
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(code)
+        QMessageBox.information(self, "Скопировано", f"Код доступа скопирован: {code}")
+
+    def _open_public_ticket_url(self, url: str) -> None:
+        url = str(url or "").strip()
+        if not url:
+            QMessageBox.information(self, "Обращение", "Ссылка на обращение пока недоступна.")
+            return
+        QDesktopServices.openUrl(QUrl(url))

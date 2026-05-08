@@ -704,7 +704,8 @@ class TicketEventsRepo:
                 FROM base
                 WHERE event_type = 'chat_message'
                   AND COALESCE(payload->>'visibility', 'public') = 'public'
-                  AND COALESCE(payload->>'sender_role', payload->>'from', '') IN ('support', 'agent', 'admin')
+                  AND COALESCE(payload->>'sender_role', payload->>'from', '') IN ('support', 'admin')
+                  AND COALESCE(payload->'metadata'->>'kind', '') <> 'ticket_public_access_code'
                 GROUP BY ticket_id
             ),
             latest_user_message AS (
@@ -726,7 +727,8 @@ class TicketEventsRepo:
                     count(*) FILTER (
                         WHERE b.event_type = 'chat_message'
                           AND COALESCE(b.payload->>'visibility', 'public') = 'public'
-                          AND COALESCE(b.payload->>'sender_role', b.payload->>'from', '') IN ('support', 'agent', 'admin')
+                          AND COALESCE(b.payload->>'sender_role', b.payload->>'from', '') IN ('support', 'admin')
+                          AND COALESCE(b.payload->'metadata'->>'kind', '') <> 'ticket_public_access_code'
                           AND b.id > COALESCE(rc.last_read_event_id, 0)
                     ) AS requester_unread_messages,
                     count(*) FILTER (

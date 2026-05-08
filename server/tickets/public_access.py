@@ -15,6 +15,7 @@ PUBLIC_ACCESS_FIELD = "public_access"
 PUBLIC_ACCESS_CODE_LENGTH = 8
 PUBLIC_ACCESS_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 PUBLIC_ACCESS_MESSAGE_KIND = "ticket_public_access_code"
+FIRST_RESPONSE_STAFF_ROLES = {"support", "admin"}
 
 
 def generate_public_access_code(length: int = PUBLIC_ACCESS_CODE_LENGTH) -> str:
@@ -68,8 +69,8 @@ def build_public_access_message(code: str, ticket_id: Optional[str] = None) -> D
     access_url = build_public_access_url(ticket_id)
     return {
         "message_id": secrets.token_hex(16),
-        "sender_role": "support",
-        "from": "support",
+        "sender_role": "system",
+        "from": "system",
         "visibility": "public",
         "text": (
             "Код авторизации для входа в тикет: "
@@ -79,9 +80,29 @@ def build_public_access_message(code: str, ticket_id: Optional[str] = None) -> D
         ),
         "metadata": {
             "kind": PUBLIC_ACCESS_MESSAGE_KIND,
+            "public_access_code": access_code,
             "public_access_url": access_url,
         },
     }
+
+
+def is_public_access_message_payload(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    metadata = payload.get("metadata")
+    return isinstance(metadata, dict) and metadata.get("kind") == PUBLIC_ACCESS_MESSAGE_KIND
+
+
+def is_public_support_reply_payload(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if is_public_access_message_payload(payload):
+        return False
+    visibility = str(payload.get("visibility") or "public").strip().lower()
+    if visibility != "public":
+        return False
+    sender_role = str(payload.get("sender_role") or payload.get("from_role") or payload.get("from") or "").strip().lower()
+    return sender_role in FIRST_RESPONSE_STAFF_ROLES
 
 
 def make_public_requester_id(ticket_id: str) -> str:

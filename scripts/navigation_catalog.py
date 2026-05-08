@@ -1186,7 +1186,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="ui_agent",
         title="Agent GUI / ui_bridge",
-        summary="Qt GUI, dashboard/ticket stack, request-template-aware обращение creation with `request_template_key`, cached form-pack schema/policy version refs (`form_schema_id`, `*_policy_code`, `policy_refs`) plus metadata-aware cache refresh and open-wizard refresh, searchable request-template chooser, selected-template summary cards, inline required-field errors, native date/datetime controls, replaceable/clearable file fields with attachment size labels and pre-submit checks, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback and non-blocking preview warning, post-create result panel for access code/owner/next step/deadlines/passport plus add-message action without raw SLA wording, explicit required diagnostic-consent hint and payloads, support assignment fallback, visible diagnostics/deadline summaries, requester-safe hidden internal SLA/OLA pause/resume events, Russian system event text, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
+        summary="Qt GUI, dashboard/ticket stack, auto-collapsing sidebar icon rail for focused ticket/create workspaces, sidebar agent-status/update card for online/version/update state, create-ticket navigation switches synchronously before async server preparation and wizard submit/preview/media slots use a GUI task scheduler, final wizard submit stays clickable to show validation feedback instead of a silent disabled no-op and asks for correctness confirmation after the click, request-template-aware обращение creation with `request_template_key`, cached form-pack schema/policy version refs (`form_schema_id`, `*_policy_code`, `policy_refs`) plus metadata-aware cache refresh and open-wizard refresh, visible Step 1 type cards without the legacy template search/list block, scrollable Step 2 dynamic request fields and scrollable Step 3 confirmation without inline checkbox, selected-template summary cards, inline required-field errors, native date/datetime controls, replaceable/clearable file fields with attachment size labels and pre-submit checks, extended dynamic fields, server-driven priority fields, structured process preview for effective queue/priority/approval/diagnostics/deadlines with local fallback and non-blocking preview warning, post-create result panel for access code/owner/next step/deadlines/passport plus add-message action without raw SLA wording, explicit required diagnostic-consent hint and payloads, support assignment fallback, compact next-action card, single visual SLA/deadline card with progress bars, requester-safe hidden internal SLA/OLA pause/resume events, requester-safe timeline mapping for diagnostics/attachments/user/support message bubbles, optional real device facts without defaulting missing inventory to offline, Russian system event text, legacy fallback facts, dynamic response/resolution deadline display in Russian user-facing wording, localized validation/update microcopy, SSE bridge, initiator profiles, auth-block tray notifications and local GUI integration plus always-on diagnostics entrypoints.",
         aliases=(
             "gui",
             "ui bridge",
@@ -1216,6 +1216,9 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ui_gui/main_window.py",
             "pc_agent/ui_gui/window_chrome.py",
             "pc_agent/ui_gui/chat_panel.py",
+            "pc_agent/ui_gui/ticket_view_models.py",
+            "pc_agent/ui_gui/ticket_detail_widgets.py",
+            "pc_agent/ui_gui/ticket_create_wizard_widgets.py",
             "pc_agent/ui_gui/tray_notifications.py",
             "pc_agent/ui_bridge/api_server.py",
             "pc_agent/ui_bridge/event_bus.py",
@@ -1253,7 +1256,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, recording STOP overlay windowing, orphan sidebar label windowing, frameless chrome without Qt `_q_titlebar` helper windows, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets including requester helpdesk objectName/dynamic-property QSS from theme.requester_helpdesk_stylesheet() and refresh_qss_state(), sidebar agent-status/update card, auto-collapsing sidebar icon rail for ticket/create focus, protected-connection footer, recording STOP overlay windowing, orphan sidebar label windowing, frameless chrome without Qt `_q_titlebar` helper windows, request-form wizard live path with visible type cards and hidden legacy selector/list compatibility state, scrollable description/confirmation steps, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, requester-facing timeline cards and user/support message bubbles, detail layout without legacy left meta panel/raw access strip and without misleading offline device card for missing inventory, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
@@ -1269,6 +1272,9 @@ TOPICS: tuple[Topic, ...] = (
             "agent gui",
             "qt gui",
             "gui theme",
+            "requester helpdesk qss",
+            "dynamic property qss",
+            "protected connection footer",
             "custom title bar",
             "frameless window",
             "duplicate taskbar window",
@@ -1302,6 +1308,9 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ui_gui/main_window.py",
             "pc_agent/ui_gui/window_chrome.py",
             "pc_agent/ui_gui/chat_panel.py",
+            "pc_agent/ui_gui/ticket_view_models.py",
+            "pc_agent/ui_gui/ticket_detail_widgets.py",
+            "pc_agent/ui_gui/ticket_create_wizard_widgets.py",
             "pc_agent/ui_gui/theme.py",
             "pc_agent/ui_gui/tickets_list_model.py",
             "pc_agent/ui_gui/assets/icons/",
