@@ -26,9 +26,9 @@ Current progress:
 - P8.6 Admin Observer deep-link refinement: **completed locally**.
 - P8.7 Observer documentation and CODEMAP sync: **completed locally**.
 - P8.8 Local verification, browser signoff, commit and optional deploy: **completed with noted CI-suite agent_ws hang**.
-- P8.9 CI-suite agent_ws hang follow-up: **new residual reliability task**.
+- P8.9 CI-suite agent_ws hang follow-up: **completed 2026-05-08; idle-timeout wiring fixed and green artifact proven for earlier commit**.
 - P9.1 Hide internal/test queue and smart-view navigation noise in `/app/tickets`: **completed locally**.
-- P10.1 Green CI artifact for current support-workspace branch head: **blocked; targeted local checks green but canonical DB API CI exceeded local timeout 2026-05-08**.
+- P10.1 Green CI artifact for current support-workspace branch head: **partially resolved; DB/API layer passes with canonical timeout, full green `run_ci_suite.py` artifact still needs rerun for final HEAD**.
 - P10.2 Ticket hide/archive/delete model for `/app/tickets`: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.3 Consent-required retry flow policy refinement: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.4 Final release/browser/agent signoff: **completed on stand with explicit CI-bypass caveat 2026-05-08**.
@@ -52,7 +52,7 @@ Current progress:
 
 **Purpose:** remove the current release caveat caused by using `--skip-ci-check` for commits `de36a56`, `eb83af1`, `439b391`.
 
-**Status 2026-05-08:** current branch state has fresh targeted local verification for the support workspace slices, but the canonical `run_ci_suite.py` artifact is not green yet. `server_pytest_no_db` passed, while `server_pytest_db_api` exceeded the explicit 420 second local timeout after reaching 14% of its selected DB/API layer. This is now a release-process caveat, not a known functional regression in `/app/tickets`.
+**Status 2026-05-08:** current branch state has fresh targeted local verification for the support workspace slices. The earlier red `run_ci_suite.py` artifact used an intentionally short `--server-pytest-timeout 420`, while the DB/API layer normally needs about 40-42 minutes. Follow-up verification proved `server_pytest_db_api` itself is green on the current HEAD with the canonical timeout. Remaining release-process caveat: a full green `run_ci_suite.py` summary for the final HEAD has not yet been produced after the latest commits/checks, so final no-bypass release is still pending.
 
 **Files/Commands:**
 
@@ -63,8 +63,8 @@ Current progress:
 
 **Acceptance:**
 
-- `artifacts/ci/<HEAD_SHA>/summary.json` exists for current HEAD. **Blocked:** missing green summary for `b787b4f5e4bd2344e38f796095b0fffa5e9a0e21`.
-- Final deploy/release can run without `--skip-ci-check`. **Blocked:** release without bypass refused as expected.
+- `artifacts/ci/<HEAD_SHA>/summary.json` exists for current HEAD. **Pending:** rerun full `python scripts/run_ci_suite.py` with normal timeouts for final HEAD.
+- Final deploy/release can run without `--skip-ci-check`. **Pending:** requires that final green summary.
 
 **Verification 2026-05-08:**
 
@@ -74,6 +74,9 @@ Current progress:
 - `pytest server/tests/test_web_support_api.py -k "hide_removes_ticket_from_queue or archive_is_admin_only or cleanup_noise_hides or support_ticket_detail_includes_observer_summary or support_ticket_detail_marks_retry_operation_trace_relation or support_ticket_detail_timeline_includes_normalized_lifecycle_events or support_ticket_detail_exposes_template_visibility_policy or worklog_action_uses_web_support_boundary or lifecycle_event_uses_existing_ticket_root_trace or status_action_returns_typed_result" -q` -> 10 passed, 46 deselected.
 - `pnpm --dir webapp test -- --run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> 37 passed.
 - `python scripts/run_ci_suite.py --commit HEAD --verify-timeout 180 --web-build-timeout 240 --server-pytest-timeout 420 --pc-agent-pytest-timeout 420 --idle-timeout 180` -> red artifact under `artifacts/ci/HEAD`: `verify_workspace`, `build_webapp_bundle`, `server_pytest_no_db` passed; `server_pytest_db_api` timed out at 420 seconds.
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py::test_web_admin_publish_policy_creates_version_and_audit -vv -s --tb=short --durations=20` -> 1 passed in 9.77s; the previously visible stop point is not a hanging test.
+- `python -m pytest server/tests/test_helpdesk_policy_registry.py -m "not manual and not no_db and not agent_ws" -vv --tb=short --durations=80` -> 25 passed in 162.94s.
+- `python -m pytest server/tests -m "not manual and not no_db and not agent_ws" -vv --durations=80 --junitxml artifacts/diagnostics/junit-server-db-api-head-check.xml` -> 504 passed, 177 deselected, 1 warning in 2493.44s. Conclusion: DB/API layer is healthy but too long for a 420 second timeout.
 
 ### P10.2 Ticket Hide / Archive / Delete Model
 
@@ -257,6 +260,82 @@ Current progress:
 - Browser console -> 0 errors, 0 warnings.
 - Browser support APIs -> `/api/web/support/workspace/summary`, `/api/web/support/queue?limit=3`, selected `/workspace` all returned 200.
 - `python scripts/manage_remote_stack.py stop server; python scripts/manage_remote_stack.py status server` -> stopped.
+
+### P10.5 Final HEAD And Live Verification Plan
+
+**Purpose:** turn the current support workspace branch state into a final no-bypass release candidate and run source-backed live checks on the Linux stand.
+
+**Status 2026-05-08:** planned. `server_pytest_db_api` has been proven green on current HEAD with a normal timeout; remaining work is to produce a full green CI artifact for the final committed HEAD, then release without `--skip-ci-check` and execute the live checklist below.
+
+**Final HEAD steps:**
+
+- Commit this `PLANS.md` update so the branch HEAD reflects the current verification truth and live-check plan.
+- Run full CI with normal layer timeouts:
+  - `python scripts/run_ci_suite.py`
+  - acceptable fallback if local workspace state interferes: `python scripts/run_ci_in_temp_workspace.py`
+- Confirm `artifacts/ci/<HEAD_SHA>/summary.json` has `status=green`.
+- Do not use `--skip-ci-check` after this point unless a new explicit blocker is documented.
+
+**Remote release steps:**
+
+- `python scripts/release_server_to_remote.py --leave-running --smoke-attempts 8 --smoke-delay 5`
+- Confirm release script accepts the green CI artifact without bypass.
+- Confirm remote status:
+  - `python scripts/manage_remote_stack.py status control`
+  - `python scripts/manage_remote_stack.py status server`
+  - `python scripts/manage_remote_stack.py smoke server`
+  - `python scripts/manage_remote_stack.py status agent`
+  - `python scripts/manage_remote_stack.py logs server --lines 120`
+  - `python scripts/manage_remote_stack.py logs agent --lines 120`
+
+**Browser live checks at `http://192.168.100.17:8666/admin`:**
+
+- Login as admin and open `/app/tickets`.
+- Desktop layout checks:
+  - `1366x900`, `1600x900`, `1920x1080`.
+  - topbar fixed, left/center/right columns independently scroll.
+  - no horizontal page overflow.
+  - no text overlap in ticket rows, next-action panel, SLA/OLA, tools, observer and passport sections.
+- Data checks:
+  - `/api/web/support/workspace/summary` returns 200.
+  - `/api/web/support/queue` returns 200 and excludes hidden/archived by default.
+  - selected `/api/web/support/tickets/{ticket_id}/workspace` returns 200.
+  - timeline tab filter request returns 200 or uses aggregate fallback without UI breakage.
+- Operator workflow checks:
+  - select a ticket from left worklist.
+  - `Ещё` menu shows assignment/status/queue/priority/reroute plus hide/archive controls.
+  - `Показывать архив` toggles queue reload with `include_archived=1`.
+  - right sidebar tabs/accordions switch without losing selected ticket.
+  - public/internal composer mode changes labels and lock/internal state clearly.
+- Hide/archive safety checks:
+  - run only on a safe test/noise ticket or via existing `Скрыть test` cleanup action.
+  - hide removes the ticket from active queue.
+  - direct workspace detail still opens the hidden ticket and marks its state.
+  - archive is admin-only and appears only through explicit control.
+  - unhide/unarchive restores visibility.
+- Operation/agent checks:
+  - agent is running and connected while server is up.
+  - low-risk retry action is visible only when the backend marks operation retryable.
+  - consent-required retry creates/indicates waiting consent instead of dispatching immediately.
+  - operation cards show trace/details links without raw JSON noise.
+- Observer checks:
+  - support Observer card shows health, root trace or quiet empty state.
+  - trace links open `/app/admin/observer` with the intended trace context.
+  - browser console has 0 fresh errors/warnings during support and observer navigation.
+- Cleanup:
+  - save screenshots under Playwright output or diagnostics artifacts.
+  - stop server after checks unless the user explicitly asks to keep it running:
+    `python scripts/manage_remote_stack.py stop server`
+  - confirm `python scripts/manage_remote_stack.py status server` reports stopped/inactive.
+
+**Acceptance:**
+
+- Full green CI artifact exists for final HEAD.
+- Remote release runs without `--skip-ci-check`.
+- Smoke, server status and agent status are healthy.
+- `/app/tickets` passes the browser checklist.
+- No fresh browser console errors.
+- Server is stopped after signoff unless explicitly kept running.
 
 ### P10 Open Product Questions
 
