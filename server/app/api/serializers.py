@@ -88,6 +88,7 @@ def ticket_to_dict(
         "status_reason": getattr(ticket, "status_reason", None),
         "created_at": _iso(created_at),
         "updated_at": _iso(getattr(ticket, "updated_at", None)),
+        "archived_at": _iso(getattr(ticket, "archived_at", None)),
         "queue_id": getattr(ticket, "queue_id", None),
         "queue_code": _queue_code_from_ticket(ticket, queue_code=queue_code),
         "assignee_id": getattr(ticket, "assignee_id", None),

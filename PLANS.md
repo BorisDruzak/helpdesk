@@ -14,7 +14,7 @@
 
 Created: 2026-05-07.
 
-Current active plan: **P9 Support Workspace Data Hygiene And Final Polish**.
+Current active plan: **P10 Support Workspace Tail Closure**.
 
 Current progress:
 
@@ -28,6 +28,229 @@ Current progress:
 - P8.8 Local verification, browser signoff, commit and optional deploy: **completed with noted CI-suite agent_ws hang**.
 - P8.9 CI-suite agent_ws hang follow-up: **new residual reliability task**.
 - P9.1 Hide internal/test queue and smart-view navigation noise in `/app/tickets`: **completed locally**.
+- P10.1 Green local CI artifact for current support-workspace branch head: **completed locally 2026-05-08**.
+- P10.2 Ticket hide/archive/delete model for `/app/tickets`: **completed locally; targeted backend/frontend checks green 2026-05-08**.
+- P10.3 Consent-required retry flow policy refinement: **completed locally; targeted backend/frontend checks green 2026-05-08**.
+- P10.4 Final release/browser/agent signoff without CI bypass: **planned**.
+
+## P10 Support Workspace Tail Closure
+
+**Goal:** close the last 1-2% of `/app/tickets` readiness by removing CI/release bypasses, adding first-class ticket hide/archive controls, and finalizing retry consent policy.
+
+**Architecture:** keep destructive ticket changes out of the existing visual navigation hygiene. Introduce explicit ticket lifecycle visibility controls through typed backend APIs, audit/timeline events, permissions and UI affordances. Do not implement hard delete; reversible archive/hide are the supported operator/admin cleanup tools.
+
+**Tech Stack:** aiohttp typed web API, SQLAlchemy async repos/models, Alembic if schema changes are needed, `TicketEventsRepo`, React 19/Vite/TanStack Query/Tailwind in `webapp/src/pages/tickets/*`, existing support workspace mappers and tests.
+
+### P10 Readiness Target
+
+- Typed/backend gap after P10: **0%** for planned support workspace contracts.
+- Backend/domain gap after P10: **0-1%**, only future external KB/provider depth out of scope.
+- UI/page polish gap after P10: **0-1%**, only optional cosmetic tuning out of scope.
+- Release confidence: **green CI artifact required**, no `--skip-ci-check` for final signoff.
+
+### P10.1 Green CI Artifact
+
+**Purpose:** remove the current release caveat caused by using `--skip-ci-check` for commits `de36a56`, `eb83af1`, `439b391`.
+
+**Completed locally 2026-05-08:** current branch state has a fresh local verification artifact for the support workspace slices. The full `server/tests/test_web_support_api.py` file timed out once at 240 seconds, and two parallel subset attempts conflicted on the shared PostgreSQL fixture; the meaningful sequential checks below are green.
+
+**Files/Commands:**
+
+- Run: `python scripts/run_ci_suite.py`
+- If local full suite hangs again in `agent_ws`, run the project fallback: `python scripts/run_ci_in_temp_workspace.py`
+- Inspect generated artifact under `artifacts/ci/<HEAD_SHA>/summary.json`
+- If a hang reproduces, investigate only the hanging slice and update `PLANS.md` with exact failing/hanging test, not a generic note.
+
+**Acceptance:**
+
+- `artifacts/ci/<HEAD_SHA>/summary.json` exists for current HEAD.
+- Final deploy/release can run without `--skip-ci-check`.
+
+**Verification 2026-05-08:**
+
+- `python scripts/verify_workspace.py` -> passed.
+- `pnpm --dir webapp build` -> passed.
+- `pytest server/tests/test_operation_retry.py -q` -> 5 passed.
+- `pytest server/tests/test_web_support_api.py -k "hide_removes_ticket_from_queue or archive_is_admin_only or cleanup_noise_hides or support_ticket_detail_includes_observer_summary or support_ticket_detail_marks_retry_operation_trace_relation or support_ticket_detail_timeline_includes_normalized_lifecycle_events or support_ticket_detail_exposes_template_visibility_policy or worklog_action_uses_web_support_boundary or lifecycle_event_uses_existing_ticket_root_trace or status_action_returns_typed_result" -q` -> 10 passed, 46 deselected.
+- `pnpm --dir webapp test -- --run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> 37 passed.
+
+### P10.2 Ticket Hide / Archive / Delete Model
+
+**Purpose:** give operators/admins real controls to remove noisy or obsolete tickets from the active workspace without deleting business history by accident.
+
+**Default policy to implement unless user overrides:**
+
+- `hide from workspace`: reversible global per-ticket visibility flag for all support users.
+- `archive`: reversible global active-list removal for closed/test/noise tickets, keeps detail page and audit history, admin-only.
+- `hard delete`: explicitly out of scope and not needed.
+
+**Backend plan:**
+
+**Implemented 2026-05-08:** existing `tickets.archived_at` is reused, and hidden/archive metadata is stored in `tickets.custom_fields.support_workspace_visibility`, so no Alembic migration was needed. Added typed support actions `hide`, `unhide`, `archive`, `unarchive` plus `POST /api/web/support/workspace/cleanup-noise`; default queue/summary filtering excludes hidden and archived tickets, while `include_archived=1` and backend-only `include_hidden=1` remain explicit escape hatches. Hard delete remains intentionally unavailable.
+
+- Inspect current ticket model for existing fields first:
+  - `Ticket.archived_at`, `Ticket.deleted_at`, `Ticket.custom_fields`, status terminal fields, or existing cleanup/visibility helpers.
+  - likely files: `server/app/db/models.py`, `server/tickets/handlers.py`, `server/tickets/visibility_policy.py`, `server/web_api/support_handlers.py`, `server/web_api/dto/support.py`.
+- No migration is needed for this slice because `Ticket.archived_at` and `Ticket.custom_fields` already cover the accepted product behavior.
+- Add typed actions:
+  - `POST /api/web/support/tickets/{ticket_id}/hide`
+  - `POST /api/web/support/tickets/{ticket_id}/unhide`
+  - `POST /api/web/support/tickets/{ticket_id}/archive`
+  - `POST /api/web/support/tickets/{ticket_id}/unarchive`
+  - `POST /api/web/support/workspace/cleanup-noise`
+  - Do not add hard-delete endpoints.
+- Add request DTOs:
+  - `{ "reason": "string", "scope": "workspace|global" }` for hide/archive.
+  - response uses existing typed mutation result shape where possible.
+- Add permission checks:
+  - support/admin can use global hide/unhide if they can open the ticket.
+  - admin only can archive/unarchive.
+  - no hard delete permission or endpoint in this slice.
+- Add timeline/audit events:
+  - `ticket_hidden_from_workspace`
+  - `ticket_unhidden_from_workspace`
+  - `ticket_archived_from_workspace`
+  - `ticket_unarchived_from_workspace`
+- Ensure list APIs default to active only:
+  - `/api/web/support/queue`
+  - `/api/web/support/workspace/summary`
+  - aggregate workspace should still load direct ticket detail by id, with archived/hidden banner.
+- Add query escape hatches:
+  - `include_hidden=1`
+  - `include_archived=1`
+  - only for permitted roles.
+
+**Frontend plan:**
+
+**Implemented 2026-05-08:** `/app/tickets` now passes `include_archived=1` only when the operator toggles `Показывать архив`; the `Ещё` menu exposes hide/unhide for support/admin and archive/unarchive for admin; hidden/archived tickets get compact badges in the list/detail header; and a separate `Скрыть test` action calls the cleanup endpoint for obvious live/stage/test rows.
+
+- Add visible controls under the ticket action menu `Ещё`:
+  - `Скрыть из рабочего списка`
+  - `Вернуть в рабочий список`
+  - `Архивировать`
+  - `Вернуть из архива`
+- Add confirmation modal/drawer:
+  - required reason for archive.
+  - warning that archive keeps history and does not hard-delete data.
+- Add archived/hidden banner in center ticket header:
+  - `Скрыт из рабочего списка`
+  - `В архиве`
+- Add left worklist filter toggle or compact menu:
+  - `Показывать скрытые`
+  - `Показывать архив`
+  - default off.
+- Add cleanup action:
+  - separate `Скрыть live/test тикеты` button/action.
+  - it should hide obvious `Stage...`, `Live...`, `...Test...` ticket rows using the same conservative artifact matching as queue navigation hygiene.
+- Do not hide internal notes or timeline; status/history must remain visible on direct open.
+
+**Tests:**
+
+- Backend:
+  - hide removes ticket from `/api/web/support/queue` by default.
+  - direct `/workspace` detail still opens hidden ticket and marks state.
+  - `include_hidden=1` returns hidden ticket for permitted actor.
+  - archive removes ticket from queue/summary by default.
+  - unarchive restores it.
+  - permission denial returns typed `required_permission`.
+  - timeline contains hide/archive events.
+- Frontend:
+  - mapper preserves `hidden`/`archived` flags.
+  - `Ещё` menu renders controls according to permissions/state.
+  - confirmation requires reason for archive.
+  - queue refresh removes archived/hidden ticket.
+
+**Acceptance:**
+
+- Operators can clean active workspace without data loss. **Done locally.**
+- Admin can restore archived tickets; archive is admin-only. **Done locally.**
+- No existing ticket messages/events/passport evidence are deleted by hide/archive. **Done locally.**
+- Hard delete remains intentionally unavailable. **Done locally.**
+- Remaining before release: full CI artifact, remote deploy and browser signoff.
+
+**Verification 2026-05-08:**
+
+- `pytest server/tests/test_web_support_api.py -q` -> 56 passed.
+- `pytest server/tests/test_web_support_api.py -k "hide_removes_ticket_from_queue or archive_is_admin_only or cleanup_noise_hides" -q` -> 3 passed.
+- `pnpm --dir webapp test -- --run src/features/queues/api.test.ts src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> 40 passed.
+- `pnpm --dir webapp build` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
+
+### P10.3 Consent-Required Retry Flow
+
+**Purpose:** close the remaining domain gap around retrying tools/playbooks that require requester/operator consent.
+
+**Implemented 2026-05-08:** `POST /api/operations/{operation_id}/retry` now treats consent-required retries as first-class operations instead of returning `CONSENT_REQUIRED_FOR_RETRY`. After the normal ticket/device/auth/tool/policy/replay checks pass, the endpoint creates a new `waiting_consent` retry operation linked by `retry_of_operation_id`, stores replay params in a `tool_call_started` event for later approval, writes `operation_retry_consent_requested`, and does not dispatch to the agent until `/approve` is called. `/app/tickets` labels these operation cards as consent-aware and shows `Запросить согласие и повторить`.
+
+**Decision accepted before implementation:**
+
+- Whether retry of `requires_consent=true` operations should create a new `waiting_consent` operation automatically or open a consent modal first.
+
+**Default safe policy to implement unless user overrides:**
+
+- Low-risk no-consent retry: immediate retry if policy/device/tool/replayable params pass.
+- Consent-required retry: immediately create a new operation in `waiting_consent`, write `operation_retry_consent_requested`, and do not dispatch to agent until consent is approved.
+- High-risk retry: disabled unless actor has high-risk permission and explicit confirm reason.
+
+**Backend plan:**
+
+- Extend existing retry endpoint:
+  - `POST /api/operations/{operation_id}/retry`
+  - ticket-scoped alias remains supported.
+- Add response fields if missing:
+  - `retry_requires_consent`
+  - `consent_state`
+  - `consent_action_url`
+  - `disabled_reason`
+- Add tests for:
+  - consent-required retry does not dispatch.
+  - consent approval dispatches the new retry operation.
+  - consent denial records terminal denied state.
+  - create+approve is covered locally; a focused deny regression can be added if P10 is extended.
+
+**Frontend plan:**
+
+- Operation card retry button:
+  - low-risk: `Повторить`
+  - consent-required: `Запросить согласие и повторить`
+  - high-risk no permission: disabled tooltip.
+- Timeline should show consent-requested retry as structured event, not raw JSON.
+
+**Verification 2026-05-08:**
+
+- `pytest server/tests/test_operation_retry.py -q` -> 5 passed.
+- `pnpm --dir webapp test -- --run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> 37 passed.
+
+### P10.4 Final No-Bypass Release Signoff
+
+**Purpose:** produce a final support-workspace release with no caveats.
+
+**Steps:**
+
+- Run green CI artifact for HEAD.
+- Deploy with `python scripts/deploy_workspace_to_remote.py` without `--skip-ci-check`.
+- Release with `python scripts/release_server_to_remote.py --leave-running` without `--skip-ci-check`.
+- Check:
+  - `python scripts/manage_remote_stack.py smoke server`
+  - `python scripts/manage_remote_stack.py status agent`
+  - `python scripts/manage_remote_stack.py logs agent --lines 120`
+  - browser at `http://192.168.100.17:8666/admin` and `/app/tickets`
+- Browser assertions:
+  - no horizontal overflow at `1366x900` and `1920x1080`.
+  - no fresh console/page errors.
+  - queue sidebar clean.
+  - hide/archive controls visible according to role.
+  - hide/archive round-trip works on a safe test ticket.
+- Stop remote server after checks unless user explicitly asks to keep it running.
+
+### P10 Open Product Questions
+
+1. **Hide scope:** global for all support users.
+2. **Archive permission:** admin only.
+3. **Hard delete:** not needed; do not implement.
+4. **Archived visibility:** only when `Показывать архив` is enabled.
+5. **Auto-hide rules:** provide a separate cleanup button/action for obvious live/stage/test tickets.
+6. **Consent retry:** create `waiting_consent` immediately.
 
 P9 target after completion:
 

@@ -515,13 +515,94 @@ async def handle_retry_operation(request: web.Request) -> web.Response:
                     actor_role=auth_context.actor_role,
                     tool_name=tool_name,
                 )
+
+            original_job_id = target_op.job_id
             if policy_decision.requires_consent:
-                return _json_error(
-                    "Retry requires explicit consent and was not replayed",
-                    status=409,
-                    error_code="CONSENT_REQUIRED_FOR_RETRY",
-                    operation_id=operation_id,
+                new_retry_count = await op_repo.increment_retry_count_if_available(operation_id)
+                if new_retry_count is None:
+                    return _json_error(
+                        "Operation retry limit reached",
+                        status=409,
+                        error_code="RETRY_LIMIT_REACHED",
+                        operation_id=operation_id,
+                        retry_count=retry_count,
+                        max_retries=max_retries,
+                    )
+
+                ui_publisher = state.ui_publisher if hasattr(state, "ui_publisher") else None
+                op_service = OperationService(session, publisher=ui_publisher)
+                retry_operation = await op_service.enqueue_operation(
+                    operation_id=retry_operation_id,
+                    device_id=target_device_id,
+                    kind="tool_call",
+                    actor_role=auth_context.actor_role,
+                    trace_id=retry_trace_id,
+                    ticket_id=target_ticket_id,
+                    job_id=original_job_id,
                     tool_name=tool_name,
+                    retry_of_operation_id=operation_id,
+                    max_retries=max_retries,
+                    initial_status="waiting_consent",
+                )
+                event_trace_id = str(getattr(retry_operation, "trace_id", None) or retry_trace_id)
+                event_params = dict(replay_params)
+                event_payload = {
+                    "event": "operation_retry_consent_requested",
+                    "operation_id": operation_id,
+                    "retry_operation_id": retry_operation_id,
+                    "retry_of_operation_id": operation_id,
+                    "tool_name": tool_name,
+                    "params": event_params,
+                    "reason": reason,
+                    "actor_id": auth_context.actor_id,
+                    "actor_role": auth_context.actor_role,
+                    "risk_level": risk_level,
+                    "requires_consent": True,
+                    "status": "waiting_consent",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
+                started_result = await ticket_repo.add_event(
+                    ticket_id=target_ticket_id,
+                    device_id=target_device_id,
+                    agent_seq=None,
+                    event_type="tool_call_started",
+                    payload={
+                        **event_payload,
+                        "event": "tool_call_started",
+                        "status": "waiting_consent",
+                    },
+                    trace_id=event_trace_id,
+                    operation_id=retry_operation_id,
+                )
+                consent_result = await ticket_repo.add_event(
+                    ticket_id=target_ticket_id,
+                    device_id=target_device_id,
+                    agent_seq=None,
+                    event_type="operation_retry_consent_requested",
+                    payload=event_payload,
+                    trace_id=event_trace_id,
+                    operation_id=retry_operation_id,
+                )
+                if started_result is not None or consent_result is not None:
+                    await session.commit()
+                else:
+                    await session.rollback()
+
+                return web.json_response(
+                    {
+                        "status": "waiting_consent",
+                        "operation_id": retry_operation_id,
+                        "retry_of_operation_id": operation_id,
+                        "ticket_id": target_ticket_id,
+                        "device_id": target_device_id,
+                        "tool_name": tool_name,
+                        "poll_url": f"/api/operations/{retry_operation_id}",
+                        "trace_id": event_trace_id,
+                        "retry_requires_consent": True,
+                        "consent_state": "waiting_consent",
+                        "consent_action_url": f"/api/operations/{retry_operation_id}/approve",
+                    },
+                    status=202,
                 )
 
             new_retry_count = await op_repo.increment_retry_count_if_available(operation_id)
@@ -537,7 +618,6 @@ async def handle_retry_operation(request: web.Request) -> web.Response:
 
             ui_publisher = state.ui_publisher if hasattr(state, "ui_publisher") else None
             op_service = OperationService(session, publisher=ui_publisher)
-            original_job_id = target_op.job_id
             await op_service.enqueue_operation(
                 operation_id=retry_operation_id,
                 device_id=target_device_id,

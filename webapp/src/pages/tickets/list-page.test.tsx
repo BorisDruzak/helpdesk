@@ -11,12 +11,14 @@ import {
   linkSupportTicketPassportEvidence,
   postSupportOperationCancel,
   postSupportOperationRetry,
+  postSupportTicketHide,
   postSupportTicketWorklog,
   postSupportTicketAssign,
   postSupportTicketPriority,
   postSupportTicketQueue,
   postSupportTicketReroute,
   postSupportTicketStatus,
+  postSupportWorkspaceCleanupNoise,
   type SupportQueuePayload,
   type SupportTicketTimelinePayload,
   type SupportQueueScope,
@@ -35,12 +37,14 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     linkSupportTicketPassportEvidence: vi.fn(),
     postSupportOperationCancel: vi.fn(),
     postSupportOperationRetry: vi.fn(),
+    postSupportTicketHide: vi.fn(),
     postSupportTicketWorklog: vi.fn(),
     postSupportTicketAssign: vi.fn(),
     postSupportTicketPriority: vi.fn(),
     postSupportTicketQueue: vi.fn(),
     postSupportTicketReroute: vi.fn(),
     postSupportTicketStatus: vi.fn(),
+    postSupportWorkspaceCleanupNoise: vi.fn(),
   };
 });
 
@@ -60,12 +64,14 @@ const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
 const linkSupportTicketPassportEvidenceMock = vi.mocked(linkSupportTicketPassportEvidence);
 const postSupportOperationCancelMock = vi.mocked(postSupportOperationCancel);
 const postSupportOperationRetryMock = vi.mocked(postSupportOperationRetry);
+const postSupportTicketHideMock = vi.mocked(postSupportTicketHide);
 const postSupportTicketWorklogMock = vi.mocked(postSupportTicketWorklog);
 const postSupportTicketAssignMock = vi.mocked(postSupportTicketAssign);
 const postSupportTicketPriorityMock = vi.mocked(postSupportTicketPriority);
 const postSupportTicketQueueMock = vi.mocked(postSupportTicketQueue);
 const postSupportTicketRerouteMock = vi.mocked(postSupportTicketReroute);
 const postSupportTicketStatusMock = vi.mocked(postSupportTicketStatus);
+const postSupportWorkspaceCleanupNoiseMock = vi.mocked(postSupportWorkspaceCleanupNoise);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
   return {
@@ -217,6 +223,10 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
       actions: {
         status_options: [{ value: "waiting_on_user", label: "Ждёт пользователя" }],
         can_send_internal_note: true,
+        can_hide_from_workspace: true,
+        can_unhide_from_workspace: false,
+        can_archive_ticket: false,
+        can_unarchive_ticket: false,
       },
     },
     tools: { ticket_id: "ticket-1", device_id: "device-1", tools: [] },
@@ -582,6 +592,51 @@ describe("TicketListPage", () => {
     });
   });
 
+  it("renders workspace visibility controls and sends archive/cleanup parameters", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    postSupportTicketHideMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      action: "hide",
+      status: "in_progress",
+      status_label: "Р’ СЂР°Р±РѕС‚Рµ",
+      queue: { id: 1, code: "networks", name: "networks" },
+      assignee_id: "support-test",
+      priority: "P1",
+      priority_class: "P1",
+      auto_assigned: false,
+      hidden_from_workspace: true,
+    });
+    postSupportWorkspaceCleanupNoiseMock.mockResolvedValue({
+      action: "cleanup_noise",
+      matched_count: 1,
+      hidden_count: 1,
+      hidden_ticket_ids: ["ticket-1"],
+      skipped_ticket_ids: [],
+    });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Показывать архив" }));
+    await waitFor(() => {
+      expect(fetchSupportQueueMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: true }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Скрыть test" }));
+    await waitFor(() => {
+      expect(postSupportWorkspaceCleanupNoiseMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Скрыть у всех" }));
+    await waitFor(() => {
+      expect(postSupportTicketHideMock).toHaveBeenCalledWith("ticket-1", { reason: "support workspace hide" });
+    });
+  });
+
   it("loads filtered timeline tab through the typed timeline endpoint", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
@@ -669,7 +724,7 @@ describe("TicketListPage", () => {
         cancel_url: null,
         retry_disabled_reason: null,
         cancel_disabled_reason: "already_finished",
-        policy_labels: ["cancel:already_finished", "retry:available"],
+        policy_labels: ["cancel:already_finished", "retry:available", "consent:required"],
         error_code: "HTTP_502",
         error_category: "execution",
         details_url: "/api/operations/op-failed",
@@ -748,13 +803,16 @@ describe("TicketListPage", () => {
       cancel_operation_id: "op-cancel-1",
     });
     postSupportOperationRetryMock.mockResolvedValue({
-      status: "accepted",
+      status: "waiting_consent",
       operation_id: "op-retry-1",
       retry_of_operation_id: "op-failed",
       ticket_id: "ticket-1",
       device_id: "device-1",
       tool_name: "diagnose.website",
       poll_url: "/api/operations/op-retry-1",
+      retry_requires_consent: true,
+      consent_state: "waiting_consent",
+      consent_action_url: "/api/operations/op-retry-1/approve",
     });
 
     renderTicketListPage("/app/tickets/ticket-1");
@@ -768,7 +826,7 @@ describe("TicketListPage", () => {
     expect(screen.getByText("Выполняется")).toBeInTheDocument();
     expect(screen.getByText("Длительность: 1 s")).toBeInTheDocument();
     expect(screen.getByText("Повторы: 0/3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "\u041f\u043e\u0432\u0442\u043e\u0440\u0438\u0442\u044c" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запросить согласие и повторить" }));
     await waitFor(() => {
       expect(postSupportOperationRetryMock).toHaveBeenCalledWith("op-failed", {
         reason: "operator_requested_from_support_workspace",

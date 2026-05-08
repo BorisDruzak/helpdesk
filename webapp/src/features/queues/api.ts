@@ -65,6 +65,13 @@ export type SupportQueuePayload = {
     device_id: string | null;
     updated_at: string | null;
     created_at: string | null;
+    hidden_from_workspace?: boolean;
+    hidden_at?: string | null;
+    hidden_by?: string | null;
+    hidden_reason?: string | null;
+    archived_at?: string | null;
+    archived_by?: string | null;
+    archive_reason?: string | null;
     requires_operator_action: boolean;
     unread_user_messages: number;
   }>;
@@ -123,6 +130,13 @@ export type SupportTicketDetailPayload = {
     assignee_id: string | null;
     updated_at: string | null;
     created_at: string | null;
+    hidden_from_workspace?: boolean;
+    hidden_at?: string | null;
+    hidden_by?: string | null;
+    hidden_reason?: string | null;
+    archived_at?: string | null;
+    archived_by?: string | null;
+    archive_reason?: string | null;
     resolution_code?: string | null;
     resolution_summary?: string | null;
     requester_resolution_summary?: string | null;
@@ -404,6 +418,10 @@ export type SupportTicketDetailPayload = {
       label: string;
     }>;
     can_send_internal_note: boolean;
+    can_hide_from_workspace?: boolean;
+    can_unhide_from_workspace?: boolean;
+    can_archive_ticket?: boolean;
+    can_unarchive_ticket?: boolean;
     closure_requirements?: Array<{
       key: string;
       label: string;
@@ -451,7 +469,7 @@ export type SupportStatusActionResult = {
 
 export type SupportTicketMutationActionResult = {
   ticket_id: string;
-  action: "assign" | "queue" | "priority" | "reroute";
+  action: "assign" | "queue" | "priority" | "reroute" | "hide" | "unhide" | "archive" | "unarchive";
   status: string;
   status_label: string;
   queue: {
@@ -463,6 +481,21 @@ export type SupportTicketMutationActionResult = {
   priority: string | null;
   priority_class: string | null;
   auto_assigned: boolean;
+  hidden_from_workspace?: boolean;
+  hidden_at?: string | null;
+  hidden_by?: string | null;
+  hidden_reason?: string | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archive_reason?: string | null;
+};
+
+export type SupportWorkspaceCleanupResult = {
+  action: "cleanup_noise";
+  matched_count: number;
+  hidden_count: number;
+  hidden_ticket_ids: string[];
+  skipped_ticket_ids: string[];
 };
 
 export type SupportTicketToolsPayload = {
@@ -722,6 +755,9 @@ export type SupportOperationRetryPayload = {
   tool_name: string;
   poll_url?: string | null;
   trace_id?: string | null;
+  retry_requires_consent?: boolean | null;
+  consent_state?: string | null;
+  consent_action_url?: string | null;
 };
 
 export type SupportTicketPassportSectionPatchPayload = {
@@ -918,6 +954,8 @@ type SupportQueueParams = {
   statusFilter: string;
   smartView?: string;
   query: string;
+  includeArchived?: boolean;
+  includeHidden?: boolean;
 };
 
 function buildSupportQueueUrl(params: SupportQueueParams): string {
@@ -931,6 +969,12 @@ function buildSupportQueueUrl(params: SupportQueueParams): string {
   }
   if (params.query.trim()) {
     searchParams.set("query", params.query.trim());
+  }
+  if (params.includeArchived) {
+    searchParams.set("include_archived", "1");
+  }
+  if (params.includeHidden) {
+    searchParams.set("include_hidden", "1");
   }
   return `/api/web/support/queue?${searchParams.toString()}`;
 }
@@ -1286,6 +1330,45 @@ export function postSupportTicketReroute(
   } = {}
 ): Promise<SupportTicketMutationActionResult> {
   return postSupportTicketMutationAlias(ticketId, "reroute", payload);
+}
+
+export function postSupportTicketHide(ticketId: string, payload: { reason?: string } = {}): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "hide", payload);
+}
+
+export function postSupportTicketUnhide(ticketId: string, payload: { reason?: string } = {}): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "unhide", payload);
+}
+
+export function postSupportTicketArchive(ticketId: string, payload: { reason?: string } = {}): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "archive", payload);
+}
+
+export function postSupportTicketUnarchive(ticketId: string, payload: { reason?: string } = {}): Promise<SupportTicketMutationActionResult> {
+  return postSupportTicketMutationAlias(ticketId, "unarchive", payload);
+}
+
+export async function postSupportWorkspaceCleanupNoise(reason = "manual live/stage/test cleanup"): Promise<SupportWorkspaceCleanupResult> {
+  const response = await fetch("/api/web/support/workspace/cleanup-noise", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ reason })
+  });
+  const payload = await readJson<SuccessResponse<SupportWorkspaceCleanupResult> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось скрыть live/test тикеты",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
 }
 
 export async function fetchSupportTicketTools(ticketId: string): Promise<SupportTicketToolsPayload> {

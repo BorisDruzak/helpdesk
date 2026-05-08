@@ -85,6 +85,13 @@ class SupportQueueTicketItem(BaseModel):
     device_id: str | None
     updated_at: str | None
     created_at: str | None
+    hidden_from_workspace: bool = False
+    hidden_at: str | None = None
+    hidden_by: str | None = None
+    hidden_reason: str | None = None
+    archived_at: str | None = None
+    archived_by: str | None = None
+    archive_reason: str | None = None
     requires_operator_action: bool
     unread_user_messages: int
 
@@ -210,6 +217,13 @@ class SupportTicketDetail(BaseModel):
     assignee_id: str | None
     updated_at: str | None
     created_at: str | None
+    hidden_from_workspace: bool = False
+    hidden_at: str | None = None
+    hidden_by: str | None = None
+    hidden_reason: str | None = None
+    archived_at: str | None = None
+    archived_by: str | None = None
+    archive_reason: str | None = None
     resolution_code: str | None = None
     resolution_summary: str | None = None
     requester_resolution_summary: str | None = None
@@ -488,6 +502,10 @@ class SupportTicketActions(BaseModel):
 
     status_options: list[SupportStatusAction] = Field(default_factory=list)
     can_send_internal_note: bool = False
+    can_hide_from_workspace: bool = False
+    can_unhide_from_workspace: bool = False
+    can_archive_ticket: bool = False
+    can_unarchive_ticket: bool = False
     closure_requirements: list[SupportClosureRequirement] = Field(default_factory=list)
     approval: dict[str, Any] | None = None
 
@@ -895,6 +913,23 @@ class SupportTicketMutationActionResult(BaseModel):
     priority: str | None = None
     priority_class: str | None = None
     auto_assigned: bool = False
+    hidden_from_workspace: bool = False
+    hidden_at: str | None = None
+    hidden_by: str | None = None
+    hidden_reason: str | None = None
+    archived_at: str | None = None
+    archived_by: str | None = None
+    archive_reason: str | None = None
+
+
+class SupportWorkspaceCleanupResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = "cleanup_noise"
+    matched_count: int = 0
+    hidden_count: int = 0
+    hidden_ticket_ids: list[str] = Field(default_factory=list)
+    skipped_ticket_ids: list[str] = Field(default_factory=list)
 
 
 class SupportKnowledgeSimilarTicket(BaseModel):

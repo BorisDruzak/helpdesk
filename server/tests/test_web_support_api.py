@@ -37,7 +37,7 @@ from registry.service import RegistryIngestionService
 from routes import setup_routes
 from tickets.workflow_profiles import save_workflow_profiles
 import web_api.support_handlers as support_handlers_module
-from tests.conftest import TEST_UI_AUDITOR_TOKEN, TEST_UI_SUPPORT_TOKEN
+from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_AUDITOR_TOKEN, TEST_UI_SUPPORT_TOKEN
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
@@ -101,6 +101,10 @@ def _support_headers() -> dict[str, str]:
 
 def _auditor_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_AUDITOR_TOKEN}"}
+
+
+def _admin_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 
 
 async def _seed_support_ticket(
@@ -739,6 +743,227 @@ async def test_web_support_workspace_hides_internal_navigation_noise_without_hid
     assert "live_network_1777437448" not in {
         item["code"] for item in live_payload["data"]["summary"]["queue_counts"]
     }
+
+
+@pytest.mark.asyncio
+async def test_web_support_hide_removes_ticket_from_queue_but_direct_workspace_marks_hidden(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="hide_contract", name="Hide contract", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-hide-contract",
+            title="Hide workspace contract",
+            description="Hidden support ticket must leave active worklists.",
+            status="new",
+            requester_id="hide-contract-user",
+            queue_id=queue.id,
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    before = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Hide%20workspace%20contract",
+        headers=_support_headers(),
+    )
+    assert before.status == 200, await before.text()
+    before_payload = await before.json()
+    assert [item["ticket_id"] for item in before_payload["data"]["tickets"]] == [ticket_id]
+
+    hide_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/hide",
+        headers=_support_headers(),
+        json={"reason": "live workspace cleanup"},
+    )
+    assert hide_response.status == 200, await hide_response.text()
+    hide_payload = await hide_response.json()
+    assert hide_payload["status"] == "success"
+    assert hide_payload["data"]["hidden_from_workspace"] is True
+    assert hide_payload["data"]["hidden_reason"] == "live workspace cleanup"
+
+    hidden_default = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Hide%20workspace%20contract",
+        headers=_support_headers(),
+    )
+    assert hidden_default.status == 200, await hidden_default.text()
+    hidden_default_payload = await hidden_default.json()
+    assert hidden_default_payload["data"]["tickets"] == []
+
+    hidden_included = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Hide%20workspace%20contract&include_hidden=1",
+        headers=_support_headers(),
+    )
+    assert hidden_included.status == 200, await hidden_included.text()
+    hidden_included_payload = await hidden_included.json()
+    assert hidden_included_payload["data"]["tickets"][0]["ticket_id"] == ticket_id
+    assert hidden_included_payload["data"]["tickets"][0]["hidden_from_workspace"] is True
+
+    detail_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+    assert detail_response.status == 200, await detail_response.text()
+    detail_payload = await detail_response.json()
+    assert detail_payload["data"]["detail"]["ticket"]["hidden_from_workspace"] is True
+    assert detail_payload["data"]["detail"]["ticket"]["hidden_reason"] == "live workspace cleanup"
+
+    async with session_maker() as session:
+        event = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "ticket_hidden_from_workspace")
+            )
+        ).scalar_one()
+    assert event.payload["reason"] == "live workspace cleanup"
+
+
+@pytest.mark.asyncio
+async def test_web_support_archive_is_admin_only_and_requires_show_archive_toggle(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="archive_contract", name="Archive contract", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-archive-contract",
+            title="Archive workspace contract",
+            description="Archived tickets are excluded until explicitly requested.",
+            status="closed",
+            requester_id="archive-contract-user",
+            queue_id=queue.id,
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    denied = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/archive",
+        headers=_support_headers(),
+        json={"reason": "archive requires admin"},
+    )
+    await _assert_forbidden_permission(denied, "ticket.archive.manage")
+
+    archive_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/archive",
+        headers=_admin_headers(),
+        json={"reason": "resolved and verified"},
+    )
+    assert archive_response.status == 200, await archive_response.text()
+    archive_payload = await archive_response.json()
+    assert archive_payload["data"]["archived_at"] is not None
+    assert archive_payload["data"]["archive_reason"] == "resolved and verified"
+
+    default_queue = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Archive%20workspace%20contract",
+        headers=_support_headers(),
+    )
+    assert default_queue.status == 200, await default_queue.text()
+    default_payload = await default_queue.json()
+    assert default_payload["data"]["tickets"] == []
+
+    archive_queue = await test_client.get(
+        "/api/web/support/queue?scope=all&query=Archive%20workspace%20contract&include_archived=1",
+        headers=_support_headers(),
+    )
+    assert archive_queue.status == 200, await archive_queue.text()
+    archive_queue_payload = await archive_queue.json()
+    assert archive_queue_payload["data"]["tickets"][0]["ticket_id"] == ticket_id
+    assert archive_queue_payload["data"]["tickets"][0]["archived_at"] is not None
+
+    detail_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+    assert detail_response.status == 200, await detail_response.text()
+    detail_payload = await detail_response.json()
+    assert detail_payload["data"]["detail"]["ticket"]["archived_at"] is not None
+
+    unarchive_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/unarchive",
+        headers=_admin_headers(),
+        json={"reason": "returned to active work"},
+    )
+    assert unarchive_response.status == 200, await unarchive_response.text()
+    unarchive_payload = await unarchive_response.json()
+    assert unarchive_payload["data"]["archived_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_web_support_cleanup_noise_hides_obvious_live_stage_test_tickets(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        tickets = [
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-cleanup-normal",
+                title="Normal user printer outage",
+                description="Real ticket stays visible.",
+                status="new",
+                requester_id="cleanup-normal-user",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-cleanup-live",
+                title="Live workspace ticket",
+                description="Generated live check row.",
+                status="new",
+                requester_id="cleanup-live-user",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-cleanup-stage",
+                title="Stage 27 workspace ticket",
+                description="Generated stage check row.",
+                status="new",
+                requester_id="cleanup-stage-user",
+                queue_id=queue.id,
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id="device-cleanup-test",
+                title="ServiceDesk test workspace ticket",
+                description="Generated test check row.",
+                status="new",
+                requester_id="cleanup-test-user",
+                queue_id=queue.id,
+            ),
+        ]
+        session.add_all(tickets)
+        expected_hidden_ids = {tickets[1].ticket_id, tickets[2].ticket_id, tickets[3].ticket_id}
+        await session.commit()
+
+    cleanup_response = await test_client.post(
+        "/api/web/support/workspace/cleanup-noise",
+        headers=_support_headers(),
+        json={"reason": "manual live/stage/test cleanup"},
+    )
+    assert cleanup_response.status == 200, await cleanup_response.text()
+    cleanup_payload = await cleanup_response.json()
+    assert cleanup_payload["data"]["hidden_count"] == 3
+    assert set(cleanup_payload["data"]["hidden_ticket_ids"]) == expected_hidden_ids
+
+    active_response = await test_client.get("/api/web/support/queue?scope=all&query=workspace", headers=_support_headers())
+    assert active_response.status == 200, await active_response.text()
+    active_payload = await active_response.json()
+    assert active_payload["data"]["tickets"] == []
+
+    all_response = await test_client.get(
+        "/api/web/support/queue?scope=all&query=workspace&include_hidden=1",
+        headers=_support_headers(),
+    )
+    assert all_response.status == 200, await all_response.text()
+    all_payload = await all_response.json()
+    assert {item["ticket_id"] for item in all_payload["data"]["tickets"]} == expected_hidden_ids
 
 
 @pytest.mark.asyncio

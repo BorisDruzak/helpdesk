@@ -3,7 +3,7 @@
 import uuid
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.db.engine import async_sessionmaker
 from app.db.models import DeviceOutbox, Operation, Ticket, TicketEvent
@@ -164,6 +164,123 @@ async def test_retry_failed_operation_revalidates_and_creates_new_operation(test
             await session.execute(select(Operation.trace_id).where(Operation.operation_id == retry_operation_id))
         ).scalar_one()
         assert event.trace_id == retry_operation_trace_id
+
+
+@pytest.mark.asyncio
+async def test_retry_consent_required_operation_creates_waiting_consent_without_dispatch(
+    test_client,
+    test_agent,
+    test_engine,
+    monkeypatch,
+):
+    device_id = test_agent.device_id
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
+    original_operation_id = await _seed_failed_tool_operation(
+        test_engine,
+        device_id=device_id,
+        ticket_id=ticket_id,
+        tool_name="observer_canary.consent_probe",
+        params={"label": "retry-consent"},
+    )
+
+    class ConsentRetryToolService:
+        def __init__(self, _state):
+            pass
+
+        async def get_tools_list(self, device_id_arg):
+            assert device_id_arg == device_id
+            return [
+                {
+                    "tool": "observer_canary.consent_probe",
+                    "spec": {
+                        "risk_level": "safe_read",
+                        "metadata": {"requires_consent": True, "risk_level": "safe_read"},
+                    },
+                }
+            ]
+
+        async def get_tools_from_server(self, device_id_arg):
+            assert device_id_arg == device_id
+            return []
+
+        async def run_tool(self, **_kwargs):
+            raise AssertionError("consent-required retry must not dispatch before approval")
+
+    monkeypatch.setattr("api.operations.ToolExecutionService", ConsentRetryToolService)
+
+    response = await test_client.post(
+        f"/api/operations/{original_operation_id}/retry",
+        json={"reason": "operator requested consent retry"},
+    )
+
+    assert response.status == 202, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "waiting_consent"
+    retry_operation_id = payload["operation_id"]
+    assert retry_operation_id != original_operation_id
+    assert payload["retry_of_operation_id"] == original_operation_id
+    assert payload["retry_requires_consent"] is True
+    assert payload["consent_state"] == "waiting_consent"
+    assert payload["consent_action_url"] == f"/api/operations/{retry_operation_id}/approve"
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        original = await OperationsRepo(session).get_by_operation_id(original_operation_id)
+        retried = await OperationsRepo(session).get_by_operation_id(retry_operation_id)
+        assert original.retry_count == 1
+        assert retried is not None
+        assert retried.status == "waiting_consent"
+        assert retried.retry_of_operation_id == original_operation_id
+        assert retried.tool_name == "observer_canary.consent_probe"
+
+        outbox_count = (
+            await session.execute(
+                select(func.count(DeviceOutbox.id)).where(DeviceOutbox.operation_id == retry_operation_id)
+            )
+        ).scalar_one()
+        assert outbox_count == 0
+
+        consent_event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.operation_id == retry_operation_id,
+                    TicketEvent.event_type == "operation_retry_consent_requested",
+                )
+            )
+        ).scalar_one_or_none()
+        assert consent_event is not None
+        assert consent_event.payload["retry_of_operation_id"] == original_operation_id
+        assert consent_event.payload["params"]["label"] == "retry-consent"
+
+        started_event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.operation_id == retry_operation_id,
+                    TicketEvent.event_type == "tool_call_started",
+                )
+            )
+        ).scalar_one_or_none()
+        assert started_event is not None
+        assert started_event.payload["params"]["label"] == "retry-consent"
+
+    approve_response = await test_client.post(
+        f"/api/operations/{retry_operation_id}/approve",
+        json={"reason": "requester consent approved"},
+    )
+    assert approve_response.status == 200, await approve_response.text()
+
+    async with session_maker() as session:
+        retried = await OperationsRepo(session).get_by_operation_id(retry_operation_id)
+        assert retried.status in {"queued", "sent", "accepted", "running", "failed", "succeeded"}
+        outbox = (
+            await session.execute(select(DeviceOutbox).where(DeviceOutbox.operation_id == retry_operation_id))
+        ).scalar_one()
+        assert outbox.command == "run_tool"
+        assert outbox.params["tool_name"] == "observer_canary.consent_probe"
+        assert outbox.params["ticket_id"] == ticket_id
+        assert outbox.params["params"]["label"] == "retry-consent"
 
 
 @pytest.mark.asyncio

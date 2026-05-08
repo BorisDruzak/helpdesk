@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   Bell,
   BookOpen,
   Building2,
@@ -10,6 +12,8 @@ import {
   ClipboardList,
   Clock3,
   Cpu,
+  Eye,
+  EyeOff,
   FileCheck2,
   Fingerprint,
   Inbox,
@@ -51,7 +55,9 @@ import {
   linkSupportTicketPassportEvidence,
   postSupportOperationCancel,
   postSupportOperationRetry,
+  postSupportTicketArchive,
   postSupportTicketAssign,
+  postSupportTicketHide,
   postSupportTicketMessage,
   postSupportTicketPlaybookRun,
   postSupportTicketPriority,
@@ -59,7 +65,10 @@ import {
   postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportTicketToolRun,
+  postSupportTicketUnarchive,
+  postSupportTicketUnhide,
   postSupportTicketWorklog,
+  postSupportWorkspaceCleanupNoise,
   type SupportQueueScope,
   type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
@@ -643,10 +652,14 @@ function OperationSummaryCard({
             className="rounded-md border border-amber-300/25 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isRetrying || !onRetry}
             onClick={() => onRetry?.(operation.id)}
-            title="Повторить операцию через policy-aware retry"
+            title={
+              operation.requiresConsentForRetry
+                ? "Запросить новое согласие пользователя и создать безопасный повтор операции"
+                : "Повторить операцию через policy-aware retry"
+            }
             type="button"
           >
-            Повторить
+            {operation.requiresConsentForRetry ? "Запросить согласие и повторить" : "Повторить"}
           </button>
         ) : operation.retryable ? (
           <span
@@ -940,6 +953,7 @@ export function TicketListPage() {
   const [manualEvidenceSummary, setManualEvidenceSummary] = useState("");
   const [worklogMinutes, setWorklogMinutes] = useState("15");
   const [worklogNote, setWorklogNote] = useState("");
+  const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const deferredSearch = useDeferredValue(search);
 
@@ -948,13 +962,14 @@ export function TicketListPage() {
   }, [params.ticketId]);
 
   const queueQuery = useQuery({
-    queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch],
+    queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch, showArchive],
     queryFn: () =>
       fetchSupportQueue({
         scope,
         statusFilter: "all",
         smartView,
         query: deferredSearch,
+        includeArchived: showArchive,
       }),
     retry: false,
     refetchInterval: SUPPORT_QUEUE_REFRESH_MS,
@@ -1141,6 +1156,47 @@ export function TicketListPage() {
     },
   });
 
+  const ticketVisibilityMutation = useMutation({
+    mutationFn: async (action: "hide" | "unhide" | "archive" | "unarchive") => {
+      if (!selectedTicketId) {
+        return null;
+      }
+      const reason =
+        action === "hide"
+          ? "support workspace hide"
+          : action === "unhide"
+            ? "support workspace unhide"
+            : action === "archive"
+              ? "support workspace archive"
+              : "support workspace unarchive";
+      if (action === "hide") {
+        return postSupportTicketHide(selectedTicketId, { reason });
+      }
+      if (action === "unhide") {
+        return postSupportTicketUnhide(selectedTicketId, { reason });
+      }
+      if (action === "archive") {
+        return postSupportTicketArchive(selectedTicketId, { reason });
+      }
+      return postSupportTicketUnarchive(selectedTicketId, { reason });
+    },
+    onSuccess: async () => {
+      setMoreOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+      ]);
+    },
+  });
+
+  const cleanupNoiseMutation = useMutation({
+    mutationFn: () => postSupportWorkspaceCleanupNoise(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] });
+    },
+  });
+
   const resolutionCloseMutation = useMutation({
     mutationFn: async (draft: ResolutionCloseDraft) => {
       if (!selectedTicketId) {
@@ -1312,7 +1368,10 @@ export function TicketListPage() {
     worklogMutation.error ||
     resolutionCloseMutation.error ||
     operationCancelMutation.error ||
-    operationRetryMutation.error;
+    operationRetryMutation.error ||
+    ticketVisibilityMutation.error ||
+    cleanupNoiseMutation.error;
+  const isAdmin = session?.actor_role === "admin";
   const operatorActionMeta = operatorActionDraft ? operatorActionLabels[operatorActionDraft.kind] : null;
   const operatorReasonReady = (operatorActionDraft?.reason.trim().length ?? 0) >= 3;
   const operatorTargetReady =
@@ -1407,6 +1466,34 @@ export function TicketListPage() {
                 </button>
               ))}
             </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                  showArchive ? "border-blue-400/60 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                }`}
+                onClick={() => setShowArchive((value) => !value)}
+                title="Показывать архивные тикеты в рабочем списке"
+                type="button"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Показывать архив
+              </button>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={cleanupNoiseMutation.isPending}
+                onClick={() => cleanupNoiseMutation.mutate()}
+                title="Скрыть очевидные live/stage/test тикеты из общего рабочего списка"
+                type="button"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                Скрыть test
+              </button>
+            </div>
+            {cleanupNoiseMutation.data ? (
+              <p className="mt-2 px-1 text-xs text-slate-400">
+                Скрыто test/live: {cleanupNoiseMutation.data.hidden_count}
+              </p>
+            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -1510,6 +1597,16 @@ export function TicketListPage() {
                     <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${toneClasses(ticket.statusTone)}`}>
                       {ticket.statusLabel}
                     </span>
+                    {ticket.archivedAt ? (
+                      <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                        Архив
+                      </span>
+                    ) : null}
+                    {ticket.hiddenFromWorkspace ? (
+                      <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                        Скрыт
+                      </span>
+                    ) : null}
                     <span className={`ml-auto text-xs font-semibold ${ticket.slaRisk ? "text-red-300" : "text-amber-200"}`}>
                       {ticket.nextDueLabel}
                     </span>
@@ -1594,6 +1691,12 @@ export function TicketListPage() {
                       <span>Очередь: {selectedTicket.queueLabel}</span>
                       <span>Исполнитель: {selectedTicket.assigneeLabel}</span>
                       <span className={`rounded-md border px-2 py-1 font-semibold ${toneClasses(selectedTicket.statusTone)}`}>{selectedTicket.statusLabel}</span>
+                      {selectedTicket.archivedAt ? (
+                        <span className="rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-1 font-semibold text-slate-200">Архив</span>
+                      ) : null}
+                      {selectedTicket.hiddenFromWorkspace ? (
+                        <span className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 font-semibold text-amber-100">Скрыт из списков</span>
+                      ) : null}
                       <span>SLA: {selectedTicket.nextAction.remainingLabel}</span>
                     </div>
                   </div>
@@ -1655,7 +1758,7 @@ export function TicketListPage() {
                       <button
                         aria-expanded={moreOpen}
                         className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                        disabled={operatorActionMutation.isPending}
+                        disabled={operatorActionMutation.isPending || ticketVisibilityMutation.isPending}
                         onClick={() => setMoreOpen((open) => !open)}
                         type="button"
                       >
@@ -1663,6 +1766,50 @@ export function TicketListPage() {
                       </button>
                       {moreOpen ? (
                         <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                          {selectedTicket.hiddenFromWorkspace ? (
+                            <button
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedTicket.canUnhideFromWorkspace || ticketVisibilityMutation.isPending}
+                              onClick={() => ticketVisibilityMutation.mutate("unhide")}
+                              type="button"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Вернуть в списки
+                            </button>
+                          ) : (
+                            <button
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedTicket.canHideFromWorkspace || ticketVisibilityMutation.isPending}
+                              onClick={() => ticketVisibilityMutation.mutate("hide")}
+                              type="button"
+                            >
+                              <EyeOff className="h-4 w-4" />
+                              Скрыть у всех
+                            </button>
+                          )}
+                          {isAdmin && selectedTicket.archivedAt ? (
+                            <button
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedTicket.canUnarchiveTicket || ticketVisibilityMutation.isPending}
+                              onClick={() => ticketVisibilityMutation.mutate("unarchive")}
+                              type="button"
+                            >
+                              <ArchiveRestore className="h-4 w-4" />
+                              Вернуть из архива
+                            </button>
+                          ) : null}
+                          {isAdmin && !selectedTicket.archivedAt ? (
+                            <button
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!selectedTicket.canArchiveTicket || ticketVisibilityMutation.isPending}
+                              onClick={() => ticketVisibilityMutation.mutate("archive")}
+                              type="button"
+                            >
+                              <Archive className="h-4 w-4" />
+                              Архивировать
+                            </button>
+                          ) : null}
+                          <div className="my-1 border-t border-white/10" />
                           <button
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={!session?.user_login}

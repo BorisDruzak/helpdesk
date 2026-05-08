@@ -23,6 +23,7 @@ from app.db.models import (
     PlaybookVersion,
     Ticket,
     TicketApproval,
+    TicketEvent,
     TicketQueue,
     TicketResolutionPassport,
 )
@@ -138,6 +139,7 @@ from web_api.dto.support import (
     SupportTicketWorkspacePayload,
     SupportWorkspaceSummaryPayload,
     SupportWorkspaceSummaryQueueItem,
+    SupportWorkspaceCleanupResult,
     SupportTicketKnowledgeDraftPayload,
     SupportPlaybookItem,
     SupportPlaybookRunActionResult,
@@ -180,6 +182,7 @@ SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS = [
     re.compile(r"^live[\s_-]", re.IGNORECASE),
     re.compile(r"\btest\b", re.IGNORECASE),
 ]
+SUPPORT_WORKSPACE_VISIBILITY_KEY = "support_workspace_visibility"
 
 
 @dataclass
@@ -219,6 +222,107 @@ def _is_internal_support_workspace_nav_item(*values: object) -> bool:
         if any(pattern.search(text) for pattern in SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS):
             return True
     return False
+
+
+def _parse_bool_query(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ticket_custom_fields(ticket_or_data: object) -> dict[str, Any]:
+    if isinstance(ticket_or_data, dict):
+        raw = ticket_or_data.get("custom_fields")
+    else:
+        raw = getattr(ticket_or_data, "custom_fields", None)
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _support_workspace_visibility(ticket_or_data: object) -> dict[str, Any]:
+    custom_fields = _ticket_custom_fields(ticket_or_data)
+    raw_meta = custom_fields.get(SUPPORT_WORKSPACE_VISIBILITY_KEY)
+    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+    archived_at: object
+    if isinstance(ticket_or_data, dict):
+        archived_at = ticket_or_data.get("archived_at")
+    else:
+        archived_at = getattr(ticket_or_data, "archived_at", None)
+    archived_at_value = archived_at.isoformat() if hasattr(archived_at, "isoformat") else archived_at
+    return {
+        "hidden_from_workspace": bool(meta.get("hidden")),
+        "hidden_at": meta.get("hidden_at"),
+        "hidden_by": meta.get("hidden_by"),
+        "hidden_reason": meta.get("hidden_reason"),
+        "archived_at": archived_at_value,
+        "archived_by": meta.get("archived_by") if archived_at_value else None,
+        "archive_reason": meta.get("archive_reason") if archived_at_value else None,
+    }
+
+
+def _is_support_workspace_hidden(ticket_or_data: object) -> bool:
+    return bool(_support_workspace_visibility(ticket_or_data).get("hidden_from_workspace"))
+
+
+def _apply_support_workspace_visibility(ticket_data: dict[str, Any], ticket: object) -> dict[str, Any]:
+    ticket_data.update(_support_workspace_visibility(ticket))
+    return ticket_data
+
+
+def _support_workspace_custom_fields(
+    ticket: object,
+    *,
+    hidden: bool | None = None,
+    archived: bool | None = None,
+    actor_id: str,
+    reason: str | None,
+    now: datetime,
+) -> dict[str, Any]:
+    custom_fields = _ticket_custom_fields(ticket)
+    meta = dict(custom_fields.get(SUPPORT_WORKSPACE_VISIBILITY_KEY) or {})
+    iso_now = now.isoformat()
+    normalized_reason = str(reason or "").strip() or None
+    if hidden is True:
+        meta.update(
+            {
+                "hidden": True,
+                "hidden_at": iso_now,
+                "hidden_by": actor_id,
+                "hidden_reason": normalized_reason,
+            }
+        )
+    elif hidden is False:
+        meta.update(
+            {
+                "hidden": False,
+                "unhidden_at": iso_now,
+                "unhidden_by": actor_id,
+                "unhidden_reason": normalized_reason,
+            }
+        )
+    if archived is True:
+        meta.update(
+            {
+                "archived_by": actor_id,
+                "archive_reason": normalized_reason,
+                "archive_action_at": iso_now,
+            }
+        )
+    elif archived is False:
+        meta.update(
+            {
+                "unarchived_by": actor_id,
+                "unarchive_reason": normalized_reason,
+                "unarchive_action_at": iso_now,
+            }
+        )
+    custom_fields[SUPPORT_WORKSPACE_VISIBILITY_KEY] = meta
+    return custom_fields
+
+
+def _is_support_workspace_cleanup_noise(ticket_data: dict[str, Any]) -> bool:
+    return _is_internal_support_workspace_nav_item(
+        ticket_data.get("title"),
+        ticket_data.get("queue_code"),
+        ticket_data.get("requester_display_name"),
+    )
 
 
 def _build_empty_queue_payload(*, scope: str, query: str, status_filter: str, smart_view: str = "all") -> SupportQueuePayload:
@@ -283,6 +387,7 @@ async def _read_support_json(request: web.Request) -> dict[str, Any] | web.Respo
 
 async def _support_mutation_result(session, ticket: object, *, action: str, auto_assigned: bool = False) -> SupportTicketMutationActionResult:
     ticket_data = await _ticket_payload(session, ticket, include_assignment_context=True)
+    visibility = _support_workspace_visibility(ticket)
     return SupportTicketMutationActionResult(
         ticket_id=str(ticket_data.get("ticket_id") or getattr(ticket, "ticket_id", "")),
         action=action,
@@ -304,6 +409,13 @@ async def _support_mutation_result(session, ticket: object, *, action: str, auto
         priority=ticket_data.get("priority"),
         priority_class=ticket_data.get("priority_class"),
         auto_assigned=auto_assigned,
+        hidden_from_workspace=bool(visibility.get("hidden_from_workspace")),
+        hidden_at=visibility.get("hidden_at"),
+        hidden_by=visibility.get("hidden_by"),
+        hidden_reason=visibility.get("hidden_reason"),
+        archived_at=visibility.get("archived_at"),
+        archived_by=visibility.get("archived_by"),
+        archive_reason=visibility.get("archive_reason"),
     )
 
 
@@ -462,6 +574,13 @@ def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
         device_id=ticket_data.get("device_id"),
         updated_at=ticket_data.get("updated_at"),
         created_at=ticket_data.get("created_at"),
+        hidden_from_workspace=bool(ticket_data.get("hidden_from_workspace")),
+        hidden_at=ticket_data.get("hidden_at"),
+        hidden_by=ticket_data.get("hidden_by"),
+        hidden_reason=ticket_data.get("hidden_reason"),
+        archived_at=ticket_data.get("archived_at"),
+        archived_by=ticket_data.get("archived_by"),
+        archive_reason=ticket_data.get("archive_reason"),
         requires_operator_action=bool(ticket_data.get("requires_operator_action")),
         unread_user_messages=unread_messages,
     )
@@ -800,8 +919,10 @@ async def _load_support_queue_state(
     auth_context,
     *,
     limit: int,
+    include_hidden: bool = False,
+    include_archived: bool = False,
 ) -> SupportQueueState:
-    filters: dict[str, object] = {"exclude_archived": True}
+    filters: dict[str, object] = {"exclude_archived": not include_archived}
     if auth_context.actor_role == "support":
         filters["support_actor_id"] = auth_context.actor_id
 
@@ -844,6 +965,9 @@ async def _load_support_queue_state(
     accessible_entries: list[tuple[dict, SupportQueueTicketItem]] = []
     for ticket in tickets:
         ticket_data = ticket_to_dict(ticket, queue_map.get(getattr(ticket, "queue_id", None)))
+        _apply_support_workspace_visibility(ticket_data, ticket)
+        if _is_support_workspace_hidden(ticket_data) and not include_hidden:
+            continue
         ticket_data.update(counters_map.get(getattr(ticket, "ticket_id", None), {}))
         ticket_data.update(
             {
@@ -973,7 +1097,7 @@ def _apply_custom_smart_view_sort(
     return sorted(entries, key=cmp_to_key(compare))
 
 
-async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> SupportTicketActions:
+async def _build_support_status_actions(session, ticket, *, is_staff: bool, is_admin: bool = False) -> SupportTicketActions:
     if not is_staff:
         return SupportTicketActions(status_options=[], can_send_internal_note=False)
 
@@ -998,6 +1122,10 @@ async def _build_support_status_actions(session, ticket, *, is_staff: bool) -> S
     return SupportTicketActions(
         status_options=options,
         can_send_internal_note=True,
+        can_hide_from_workspace=not _is_support_workspace_hidden(ticket),
+        can_unhide_from_workspace=_is_support_workspace_hidden(ticket),
+        can_archive_ticket=is_admin and getattr(ticket, "archived_at", None) is None,
+        can_unarchive_ticket=is_admin and getattr(ticket, "archived_at", None) is not None,
         closure_requirements=await build_closure_requirements(session, ticket),
         approval=approval_action,
     )
@@ -2016,6 +2144,7 @@ def _operation_policy_labels(
     *,
     can_cancel: bool,
     retryable: bool,
+    requires_consent: bool,
     cancel_disabled_reason: str | None,
     retry_disabled_reason: str | None,
 ) -> list[str]:
@@ -2025,6 +2154,8 @@ def _operation_policy_labels(
         labels.append(f"retry:{retry_disabled_reason or 'available'}")
     elif status in _OPERATION_FAILED_STATUSES:
         labels.append(f"retry:{retry_disabled_reason or 'unavailable'}")
+    if requires_consent:
+        labels.append("consent:required")
     return labels
 
 
@@ -2391,6 +2522,25 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
             )
         ).all()
         retry_source_trace_by_id = {str(row[0]): row[1] for row in source_rows}
+    operation_ids = [
+        str(getattr(operation, "operation_id", "") or "").strip()
+        for operation, _scope in latest_operation_rows
+        if str(getattr(operation, "operation_id", "") or "").strip()
+    ]
+    consent_required_by_operation_id: dict[str, bool] = {}
+    if operation_ids:
+        event_rows = (
+            await session.execute(
+                select(TicketEvent.operation_id, TicketEvent.payload).where(
+                    TicketEvent.ticket_id == str(getattr(ticket, "ticket_id", "") or ""),
+                    TicketEvent.operation_id.in_(operation_ids),
+                    TicketEvent.event_type == "tool_call_started",
+                )
+            )
+        ).all()
+        for operation_id, payload in event_rows:
+            payload_dict = payload if isinstance(payload, dict) else {}
+            consent_required_by_operation_id[str(operation_id)] = bool(payload_dict.get("requires_consent"))
 
     ticket_root_trace_id = str(getattr(ticket, "observer_root_trace_id", None) or "").strip() or None
     latest_operations: list[SupportTicketOperationSnapshot] = []
@@ -2432,6 +2582,7 @@ async def _build_support_snapshot(request: web.Request, session, ticket, auth_co
                     display_status,
                     can_cancel=can_cancel,
                     retryable=retryable,
+                    requires_consent=consent_required_by_operation_id.get(str(operation.operation_id), False),
                     cancel_disabled_reason=cancel_disabled_reason,
                     retry_disabled_reason=retry_disabled_reason,
                 ),
@@ -2485,6 +2636,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         session,
         ticket,
         is_staff=auth_context.actor_role in {"admin", "support"},
+        is_admin=auth_context.actor_role == "admin",
     )
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
@@ -2527,6 +2679,13 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             assignee_id=ticket_data.get("assignee_id"),
             updated_at=ticket_data.get("updated_at"),
             created_at=ticket_data.get("created_at"),
+            hidden_from_workspace=bool(_support_workspace_visibility(ticket).get("hidden_from_workspace")),
+            hidden_at=_support_workspace_visibility(ticket).get("hidden_at"),
+            hidden_by=_support_workspace_visibility(ticket).get("hidden_by"),
+            hidden_reason=_support_workspace_visibility(ticket).get("hidden_reason"),
+            archived_at=_support_workspace_visibility(ticket).get("archived_at"),
+            archived_by=_support_workspace_visibility(ticket).get("archived_by"),
+            archive_reason=_support_workspace_visibility(ticket).get("archive_reason"),
             resolution_code=ticket_data.get("resolution_code"),
             resolution_summary=ticket_data.get("resolution_summary"),
             requester_resolution_summary=ticket_data.get("requester_resolution_summary"),
@@ -2674,6 +2833,189 @@ async def handle_web_support_ticket_timeline(request: web.Request):
     return json_model_response(SuccessResponse[SupportTicketTimelinePayload](data=payload))
 
 
+async def _handle_support_visibility_mutation(
+    request: web.Request,
+    *,
+    hidden: bool | None = None,
+    archived: bool | None = None,
+    action: str,
+    event_type: str,
+    admin_only: bool = False,
+) -> web.Response:
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    reason = str(data.get("reason") or "").strip() or None
+    try:
+        async with get_session() as session:
+            ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
+            if error:
+                return error
+            if admin_only and auth_context.actor_role != "admin":
+                return _permission_denied("ticket.archive.manage")
+
+            now = datetime.now(timezone.utc)
+            previous_visibility = _support_workspace_visibility(ticket)
+            custom_fields = _support_workspace_custom_fields(
+                ticket,
+                hidden=hidden,
+                archived=archived,
+                actor_id=auth_context.actor_id,
+                reason=reason,
+                now=now,
+            )
+            updates: dict[str, Any] = {"custom_fields": custom_fields}
+            if archived is True:
+                updates["archived_at"] = now
+            elif archived is False:
+                updates["archived_at"] = None
+            await repo.update_ticket(ticket.ticket_id, **updates)
+            refreshed_ticket = await repo.get_ticket(ticket.ticket_id)
+            payload = {
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "reason": reason,
+                "hidden": hidden,
+                "archived": archived,
+                "previous": previous_visibility,
+                "current": _support_workspace_visibility(refreshed_ticket),
+            }
+            event_result = await repo.add_event(
+                ticket_id=refreshed_ticket.ticket_id,
+                device_id=refreshed_ticket.device_id,
+                agent_seq=None,
+                event_type=event_type,
+                payload=payload,
+            )
+            await session.commit()
+            await _push_ticket_event(request, refreshed_ticket.ticket_id, event_result, event_type, payload)
+            refreshed_ticket = await repo.get_ticket(refreshed_ticket.ticket_id)
+            return json_model_response(
+                SuccessResponse[SupportTicketMutationActionResult](
+                    data=await _support_mutation_result(session, refreshed_ticket, action=action)
+                )
+            )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_visibility_mutation] failed: "
+            f"ticket_id={request.match_info.get('ticket_id')}, action={action}, error={exc}"
+        )
+        return _support_json_error("Не удалось обновить видимость тикета", status=503, error_code="SUPPORT_VISIBILITY_FAILED")
+
+
+@require_auth("admin", "support")
+async def handle_web_support_hide_ticket(request: web.Request):
+    return await _handle_support_visibility_mutation(
+        request,
+        hidden=True,
+        action="hide",
+        event_type="ticket_hidden_from_workspace",
+    )
+
+
+@require_auth("admin", "support")
+async def handle_web_support_unhide_ticket(request: web.Request):
+    return await _handle_support_visibility_mutation(
+        request,
+        hidden=False,
+        action="unhide",
+        event_type="ticket_unhidden_from_workspace",
+    )
+
+
+@require_auth("admin", "support")
+async def handle_web_support_archive_ticket(request: web.Request):
+    return await _handle_support_visibility_mutation(
+        request,
+        archived=True,
+        action="archive",
+        event_type="ticket_archived_from_workspace",
+        admin_only=True,
+    )
+
+
+@require_auth("admin", "support")
+async def handle_web_support_unarchive_ticket(request: web.Request):
+    return await _handle_support_visibility_mutation(
+        request,
+        archived=False,
+        action="unarchive",
+        event_type="ticket_unarchived_from_workspace",
+        admin_only=True,
+    )
+
+
+@require_auth("admin", "support")
+async def handle_web_support_cleanup_noise(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    reason = str(data.get("reason") or "manual_live_stage_test_cleanup").strip() or "manual_live_stage_test_cleanup"
+    auth_context = request["auth_context"]
+    hidden_ticket_ids: list[str] = []
+    skipped_ticket_ids: list[str] = []
+    pushed_events: list[tuple[str, object, dict[str, Any]]] = []
+    try:
+        async with get_session() as session:
+            state = await _load_support_queue_state(
+                session,
+                auth_context,
+                limit=1000,
+                include_hidden=False,
+                include_archived=False,
+            )
+            repo = TicketEventsRepo(session)
+            now = datetime.now(timezone.utc)
+            for ticket_data, _item in state.accessible_entries:
+                if not _is_support_workspace_cleanup_noise(ticket_data):
+                    continue
+                ticket_id = str(ticket_data.get("ticket_id") or "")
+                ticket = await repo.get_ticket(ticket_id)
+                if ticket is None or _is_support_workspace_hidden(ticket):
+                    skipped_ticket_ids.append(ticket_id)
+                    continue
+                previous_visibility = _support_workspace_visibility(ticket)
+                custom_fields = _support_workspace_custom_fields(
+                    ticket,
+                    hidden=True,
+                    actor_id=auth_context.actor_id,
+                    reason=reason,
+                    now=now,
+                )
+                await repo.update_ticket(ticket.ticket_id, custom_fields=custom_fields)
+                refreshed_ticket = await repo.get_ticket(ticket.ticket_id)
+                payload = {
+                    "actor_id": auth_context.actor_id,
+                    "actor_role": auth_context.actor_role,
+                    "reason": reason,
+                    "cleanup": "live_stage_test",
+                    "previous": previous_visibility,
+                    "current": _support_workspace_visibility(refreshed_ticket),
+                }
+                event_result = await repo.add_event(
+                    ticket_id=refreshed_ticket.ticket_id,
+                    device_id=refreshed_ticket.device_id,
+                    agent_seq=None,
+                    event_type="ticket_hidden_from_workspace",
+                    payload=payload,
+                )
+                hidden_ticket_ids.append(refreshed_ticket.ticket_id)
+                pushed_events.append((refreshed_ticket.ticket_id, event_result, payload))
+            await session.commit()
+        for ticket_id, event_result, payload in pushed_events:
+            await _push_ticket_event(request, ticket_id, event_result, "ticket_hidden_from_workspace", payload)
+        result = SupportWorkspaceCleanupResult(
+            matched_count=len(hidden_ticket_ids) + len(skipped_ticket_ids),
+            hidden_count=len(hidden_ticket_ids),
+            hidden_ticket_ids=hidden_ticket_ids,
+            skipped_ticket_ids=skipped_ticket_ids,
+        )
+        return json_model_response(SuccessResponse[SupportWorkspaceCleanupResult](data=result))
+    except Exception as exc:
+        logger.warning(f"[web_support_cleanup_noise] failed: error={exc}")
+        return _support_json_error("Не удалось скрыть live/test тикеты", status=503, error_code="SUPPORT_CLEANUP_FAILED")
+
+
 @require_auth("admin", "support")
 async def handle_web_support_queue(request: web.Request):
     auth_context = request["auth_context"]
@@ -2683,10 +3025,18 @@ async def handle_web_support_queue(request: web.Request):
     smart_view = normalize_smart_view_id(requested_smart_view)
     query = str(request.query.get("query", "") or "").strip()
     limit = min(max(int(request.query.get("limit", "200")), 1), 300)
+    include_hidden = _parse_bool_query(request.query.get("include_hidden"))
+    include_archived = _parse_bool_query(request.query.get("include_archived"))
 
     try:
         async with get_session() as session:
-            state = await _load_support_queue_state(session, auth_context, limit=limit)
+            state = await _load_support_queue_state(
+                session,
+                auth_context,
+                limit=limit,
+                include_hidden=include_hidden,
+                include_archived=include_archived,
+            )
             smart_view = normalize_smart_view_id(
                 requested_smart_view,
                 custom_view_ids=set(state.custom_smart_view_map),

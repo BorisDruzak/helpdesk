@@ -51,6 +51,8 @@ export type SupportWorkspaceTicketItem = {
   unread: boolean;
   nextDueLabel: string;
   slaRisk: boolean;
+  hiddenFromWorkspace: boolean;
+  archivedAt: string | null;
   active: boolean;
 };
 
@@ -142,6 +144,14 @@ export type SupportWorkspaceSelectedTicket = {
   requesterLabel: string;
   createdLabel: string;
   updatedLabel: string;
+  hiddenFromWorkspace: boolean;
+  hiddenReason: string | null;
+  archivedAt: string | null;
+  archiveReason: string | null;
+  canHideFromWorkspace: boolean;
+  canUnhideFromWorkspace: boolean;
+  canArchiveTicket: boolean;
+  canUnarchiveTicket: boolean;
   resolutionCode: string;
   requesterResolutionSummary: string;
   resolutionSummary: string;
@@ -204,6 +214,7 @@ export type SupportWorkspaceOperationSummary = {
   retryable: boolean;
   canRetry: boolean;
   canCancel: boolean;
+  requiresConsentForRetry: boolean;
   retryUrl: string | null;
   cancelUrl: string | null;
   retryDisabledReason: string | null;

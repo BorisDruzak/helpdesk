@@ -466,6 +466,8 @@ export function mapWorkspaceTicketItems(
       unread: ticket.unread_user_messages > 0,
       nextDueLabel: formatRemainingSeconds(remainingSeconds),
       slaRisk: status === "at_risk" || status === "breached",
+      hiddenFromWorkspace: Boolean(ticket.hidden_from_workspace),
+      archivedAt: ticket.archived_at ?? null,
       active: ticket.ticket_id === selectedTicketId,
     };
   });
@@ -763,8 +765,10 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
     const status = operation.display_status ?? operation.status;
     const displayLabel = operation.display_label?.trim();
     const active = activeOperationStatuses.has(status);
+    const rawPolicyLabels = operation.policy_labels ?? [];
     const policyLabels = (operation.policy_labels ?? []).map(operationPolicyLabel).filter((label): label is string => Boolean(label));
     const traceRelation = operation.trace_relation ?? "unknown";
+    const requiresConsentForRetry = status === "waiting_consent" || rawPolicyLabels.includes("consent:required");
     return {
       id: operation.operation_id,
       title: operation.tool_name ?? operation.command_name ?? displayLabel ?? operation.kind,
@@ -775,6 +779,7 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
       retryable: Boolean(operation.retryable),
       canRetry: Boolean(operation.can_retry),
       canCancel: typeof operation.can_cancel === "boolean" ? operation.can_cancel : active,
+      requiresConsentForRetry,
       retryUrl: operation.retry_url ?? null,
       cancelUrl: operation.cancel_url ?? null,
       retryDisabledReason: operation.retry_disabled_reason ?? null,
@@ -1087,6 +1092,14 @@ export function mapSupportWorkspaceViewModel({
           requesterLabel: detail.ticket.requester_display_name ?? "Не указан",
           createdLabel: formatDateTime(detail.ticket.created_at, true),
           updatedLabel: formatDateTime(detail.ticket.updated_at, true),
+          hiddenFromWorkspace: Boolean(detail.ticket.hidden_from_workspace),
+          hiddenReason: detail.ticket.hidden_reason ?? null,
+          archivedAt: detail.ticket.archived_at ?? null,
+          archiveReason: detail.ticket.archive_reason ?? null,
+          canHideFromWorkspace: Boolean(detail.actions.can_hide_from_workspace),
+          canUnhideFromWorkspace: Boolean(detail.actions.can_unhide_from_workspace),
+          canArchiveTicket: Boolean(detail.actions.can_archive_ticket),
+          canUnarchiveTicket: Boolean(detail.actions.can_unarchive_ticket),
           resolutionCode: detail.ticket.resolution_code ?? "",
           requesterResolutionSummary: detail.ticket.requester_resolution_summary ?? "",
           resolutionSummary: detail.ticket.resolution_summary ?? "",
