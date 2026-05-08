@@ -14,7 +14,7 @@
 
 Created: 2026-05-07.
 
-Current active plan: **P12 Support Workspace Manual QA Bugfixes**.
+Current active plan: **P13 Support Workspace Shell Navigation Closure**.
 
 Current progress:
 
@@ -41,6 +41,33 @@ Current progress:
 - P12.5 `/app/support` support entry handoff: **completed locally; router test covers redirect to `/app/tickets`**.
 - P12.6 Observer root trace open target: **completed locally; mapper hardens trace URLs to `/app/admin/observer?trace_id=...`**.
 - P12.7 Explicit tool/module/playbook picker: **completed locally; central diagnostics opens right tools launcher and requires explicit selection before run**.
+- P13.1 `/app/tickets` topbar support navigation and logout: **completed locally; focused React test, production build and `verify_workspace.py` are green**.
+
+## P13 Support Workspace Shell Navigation Closure
+
+**Goal:** make `/app/tickets` feel connected to the broader support workspace even though it intentionally bypasses the generic `AppShell` for the dense 3-column operator layout.
+
+**Classification:** local frontend UI/auth flow change. Touches only React `/app/tickets` topbar behavior and its focused tests; no backend/API contract change.
+
+### P13.1 Add Support Navigation And Logout
+
+**Files/areas:**
+
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/pages/tickets/list-page.test.tsx`
+
+**Steps:**
+
+- Add explicit topbar navigation links: `Тикеты`, `Отчёты`, `Знания`, `Настройки`.
+- Add logout control next to the operator avatar using existing `useSession().logout()` and redirect to `/app/login`.
+- Keep the layout dense enough for desktop support widths and preserve dark/light theme styling.
+- Add focused React test for nav hrefs and logout redirect.
+
+**Acceptance:**
+
+- `/app/tickets` no longer feels isolated from the support workspace.
+- The operator can log out from the ticket workspace without going to another page.
+- Focused frontend test and build pass.
 
 ## P12 Support Workspace Manual QA Bugfixes
 

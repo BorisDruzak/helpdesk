@@ -29,6 +29,8 @@ import {
 } from "../../features/queues/api";
 import { TicketListPage } from "./list-page";
 
+const logoutMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
+
 vi.mock("../../features/queues/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../features/queues/api")>();
   return {
@@ -56,6 +58,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
 
 vi.mock("../../features/auth/session-provider", () => ({
   useSession: () => ({
+    logout: logoutMock,
     session: {
       actor_role: "support",
       user_login: "support-test",
@@ -338,6 +341,7 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
         <Routes>
           <Route path="/app/tickets" element={<TicketListPage />} />
           <Route path="/app/tickets/:ticketId" element={<TicketListPage />} />
+          <Route path="/app/login" element={<div>Login page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -350,6 +354,26 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("shows support workspace navigation and logs out from the isolated ticket topbar", async () => {
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const nav = await screen.findByRole("navigation", { name: "Разделы поддержки" });
+    expect(within(nav).getByRole("link", { name: /Тикеты/ })).toHaveAttribute("href", "/app/tickets");
+    expect(within(nav).getByRole("link", { name: /Отчёты/ })).toHaveAttribute("href", "/app/reports");
+    expect(within(nav).getByRole("link", { name: /Знания/ })).toHaveAttribute("href", "/app/knowledge");
+    expect(within(nav).getByRole("link", { name: /Настройки/ })).toHaveAttribute("href", "/app/settings");
+
+    fireEvent.click(screen.getByRole("button", { name: /Выйти/ }));
+
+    await waitFor(() => {
+      expect(logoutMock).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
+  });
+
   it("renders built-in and custom smart-view counts and sends selected smart view to the queue API", async () => {
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportQueueMock.mockImplementation(async ({ scope, statusFilter, smartView, query }) =>

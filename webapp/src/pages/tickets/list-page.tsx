@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Archive,
   ArchiveRestore,
+  BarChart3,
   Bell,
   BookOpen,
   Building2,
@@ -18,6 +19,7 @@ import {
   Fingerprint,
   Inbox,
   Lock,
+  LogOut,
   Mail,
   MapPin,
   MessageSquare,
@@ -33,6 +35,7 @@ import {
   Search,
   Send,
   Server,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Star,
@@ -835,6 +838,7 @@ function ObserverDiagnosticCard({
 function SupportWorkspaceTopbar({
   theme,
   onToggleTheme,
+  onLogout,
   notificationCount,
   onRefresh,
   refreshing,
@@ -845,6 +849,7 @@ function SupportWorkspaceTopbar({
 }: {
   theme: SupportWorkspaceTheme;
   onToggleTheme: () => void;
+  onLogout: () => void;
   notificationCount: number;
   onRefresh: () => void;
   refreshing: boolean;
@@ -854,9 +859,16 @@ function SupportWorkspaceTopbar({
   userRole: string;
 }) {
   const isLightTheme = theme === "light";
+  const navItems = [
+    { label: "Тикеты", to: "/app/tickets", icon: ClipboardList, active: true },
+    { label: "Отчёты", to: "/app/reports", icon: BarChart3, active: false },
+    { label: "Знания", to: "/app/knowledge", icon: BookOpen, active: false },
+    { label: "Настройки", to: "/app/settings", icon: Settings2, active: false },
+  ];
+
   return (
-    <header className={`flex h-16 shrink-0 items-center gap-4 border-b px-4 backdrop-blur-xl ${isLightTheme ? "border-slate-200 bg-white/95 text-slate-950" : "border-white/10 bg-[#081321]/95 text-slate-100"}`}>
-      <Link className="flex min-w-[220px] items-center gap-3" to="/app/tickets">
+    <header className={`flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-xl ${isLightTheme ? "border-slate-200 bg-white/95 text-slate-950" : "border-white/10 bg-[#081321]/95 text-slate-100"}`}>
+      <Link className="flex min-w-[180px] items-center gap-3" to="/app/tickets">
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-950/40">
           <ShieldCheck className="h-5 w-5" />
         </span>
@@ -864,10 +876,35 @@ function SupportWorkspaceTopbar({
         <span className="sr-only">Тикеты</span>
       </Link>
 
-      <label className="flex h-10 min-w-0 max-w-[520px] flex-1 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-400">
+      <nav
+        aria-label="Разделы поддержки"
+        className={`hidden items-center gap-1 rounded-xl border p-1 min-[1180px]:flex ${isLightTheme ? "border-slate-200 bg-slate-100" : "border-white/10 bg-white/[0.04]"}`}
+      >
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-semibold transition ${
+                item.active
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-950/20"
+                  : isLightTheme
+                    ? "text-slate-600 hover:bg-white hover:text-slate-950"
+                    : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              key={item.to}
+              to={item.to}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <label className={`flex h-10 min-w-[220px] max-w-[420px] flex-1 items-center gap-3 rounded-xl border px-3 text-sm ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-500" : "border-white/10 bg-white/[0.04] text-slate-400"}`}>
         <Search className="h-4 w-4 shrink-0" />
         <input
-          className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-500"
+          className={`min-w-0 flex-1 bg-transparent outline-none ${isLightTheme ? "text-slate-950 placeholder:text-slate-500" : "text-slate-100 placeholder:text-slate-500"}`}
           onChange={(event) => setSearch(event.currentTarget.value)}
           placeholder="Поиск по тикетам, пользователям, устройствам..."
           type="search"
@@ -875,9 +912,9 @@ function SupportWorkspaceTopbar({
         />
       </label>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1.5">
         <Link
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500"
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500"
           title="Создать новую заявку от имени пользователя"
           to="/app/help"
         >
@@ -933,14 +970,24 @@ function SupportWorkspaceTopbar({
           <CircleHelp className="h-4 w-4" />
         </button>
         <div className="hidden items-center gap-3 pl-2 md:flex">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-slate-700">
-            <UserRound className="h-5 w-5 text-slate-200" />
+          <div className={`flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl ${isLightTheme ? "bg-slate-200" : "bg-slate-700"}`}>
+            <UserRound className={`h-5 w-5 ${isLightTheme ? "text-slate-700" : "text-slate-200"}`} />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-white">{userLogin}</p>
-            <p className="text-xs text-slate-400">{userRole}</p>
+            <p className={`text-sm font-semibold ${isLightTheme ? "text-slate-950" : "text-white"}`}>{userLogin}</p>
+            <p className={`text-xs ${isLightTheme ? "text-slate-500" : "text-slate-400"}`}>{userRole}</p>
           </div>
         </div>
+        <button
+          aria-label="Выйти из Service Desk"
+          className={`flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-950" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"}`}
+          onClick={onLogout}
+          title="Выйти"
+          type="button"
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="hidden 2xl:inline">Выйти</span>
+        </button>
       </div>
     </header>
   );
@@ -950,7 +997,7 @@ export function TicketListPage() {
   const navigate = useNavigate();
   const params = useParams<{ ticketId?: string }>();
   const queryClient = useQueryClient();
-  const { session } = useSession();
+  const { logout, session } = useSession();
   const [scope, setScope] = useState<SupportQueueScope>("all");
   const [smartView, setSmartView] = useState("my_action");
   const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
@@ -1478,6 +1525,13 @@ export function TicketListPage() {
 
   const isLightTheme = workspaceTheme === "light";
 
+  async function handleLogout() {
+    await logout();
+    startTransition(() => {
+      navigate("/app/login", { replace: true });
+    });
+  }
+
   return (
     <section
       className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
@@ -1488,6 +1542,7 @@ export function TicketListPage() {
       <SupportWorkspaceTopbar
         theme={workspaceTheme}
         onToggleTheme={toggleWorkspaceTheme}
+        onLogout={() => void handleLogout()}
         notificationCount={workspaceQuery.data?.detail.snapshot.notification_unread ?? 0}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
