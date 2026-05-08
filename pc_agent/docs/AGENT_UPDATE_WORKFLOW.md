@@ -33,6 +33,7 @@
 ### 2.2 2026-05-04 release note
 
 - `3.1.29` is the Windows stable agent release for follow-up requester GUI fixes after `3.1.28`: required diagnostic-consent hint, clearer confirmation card, diagnostics/deadline/assignment summaries, and Russian system event text. Publish it as a new build/upload/rollout target; do not overwrite existing artifacts.
+- `3.1.30` is the next Windows agent release for the GUI taskbar-window fix: the recording STOP overlay uses a `Qt.Tool` window and no longer creates extra `pc_agent` Taskbar/Alt-Tab entries. Publish it as a new build/upload/rollout target; do not overwrite `3.1.29` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 

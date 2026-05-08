@@ -14,7 +14,7 @@
 
 Created: 2026-05-07.
 
-Current active plan: **P10 Support Workspace Tail Closure**.
+Current active plan: **P11 Agent GUI Duplicate Taskbar Windows**.
 
 Current progress:
 
@@ -33,6 +33,39 @@ Current progress:
 - P10.3 Consent-required retry flow policy refinement: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.4 Final release/browser/agent signoff: **completed on stand with explicit CI-bypass caveat 2026-05-08**.
 - P10.5 Final no-bypass release/browser/agent signoff: **completed 2026-05-08 for runtime release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`; server stopped after checks**.
+- P11.1 Agent GUI duplicate taskbar windows root cause and source fix: **completed locally 2026-05-08**.
+
+## P11 Agent GUI Duplicate Taskbar Windows
+
+**Goal:** remove confusing extra `pc_agent` taskbar/Alt-Tab windows when the compiled Windows agent is running, without changing the always-on launcher/runtime model.
+
+**Findings so far:**
+
+- Live process tree shows one real `pc_agent.exe` process under the launcher.
+- The two visible `launcher.exe` rows are parent/child around the onefile launcher and have no GUI windows.
+- Win32 window enumeration shows two extra visible top-level Qt windows titled `pc_agent`, both `136x56`, no owner/parent, inside the single agent process.
+- The matching code path is the recording STOP overlay in `pc_agent/ui_gui/main_window.py::_show_stop_button()`, which creates a standalone `QWidget` with `Qt.Window`.
+
+**Plan:**
+
+- Add a regression test that the STOP overlay uses a tool/owned window flag instead of a normal app window.
+- Change `_show_stop_button()` so the overlay is not a normal taskbar/Alt-Tab window and has an explicit object/title.
+- Keep launcher behavior unchanged unless new evidence shows it is launching duplicate independent runtime instances.
+- Verify with focused GUI/static tests, runtime tests, and `python scripts/verify_workspace.py`.
+
+**Acceptance:**
+
+- Compiled agent still has one real `pc_agent.exe` runtime.
+- Recording STOP overlay can appear without creating taskbar entries titled `pc_agent`.
+- Launcher parent/child behavior is documented in the final report as expected PyInstaller onefile behavior, not an agent duplicate.
+
+**Verification 2026-05-08:**
+
+- Live Windows inspection of the already-running `3.1.29` binary: one `pc_agent.exe` process, two visible `launcher.exe` parent/child processes, and two extra top-level Qt windows titled `pc_agent` inside the single agent process.
+- Red test before fix: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> failed because STOP overlay was `WindowType.Window`.
+- Green focused tests after fix: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> 1 passed; `python -m pytest pc_agent\tests\test_main_window_update_status.py -q --tb=short` -> 3 passed; `python -m pytest pc_agent\tests\test_ui_api_server_shutdown.py -v --tb=short` -> 6 passed; `python -m pytest pc_agent\tests\test_runtime_logging.py -v --tb=short` -> 2 passed.
+- Agent baseline: `python -m pytest pc_agent\tests -m "not manual" -v --tb=short` -> 191 passed, 4 deselected.
+- Workspace/docs: `python scripts\verify_workspace.py` -> passed; `python -m pytest scripts\test_navigation_catalog.py scripts\test_task_intake.py -q --tb=short` -> 21 passed; `python scripts\docs_inventory.py --check-links` -> all local markdown links valid; `python scripts\build_context_index.py --force` -> rebuilt.
 
 ## P10 Support Workspace Tail Closure
 

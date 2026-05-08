@@ -1975,11 +1975,15 @@ class MainWindow(QMainWindow):
         )
         stop_btn.clicked.connect(self._on_stop_recording_clicked)
         widget = QWidget()
+        widget.setObjectName("RecordingStopOverlay")
+        widget.setWindowTitle("Maria Agent recording control")
         widget.setWindowFlags(
-            Qt.WindowType.Window
+            Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
+        widget.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(stop_btn)

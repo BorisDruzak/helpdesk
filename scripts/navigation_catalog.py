@@ -1253,7 +1253,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets, recording STOP overlay windowing, request-form wizard live path with searchable templates, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
@@ -1271,6 +1271,10 @@ TOPICS: tuple[Topic, ...] = (
             "gui theme",
             "custom title bar",
             "frameless window",
+            "duplicate taskbar window",
+            "extra pc_agent window",
+            "recording stop overlay",
+            "stop recording overlay",
             "ticket cards",
             "sidebar",
             "update_request_state",
@@ -1578,7 +1582,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump to 3.1.29 for requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump to 3.1.30 for the GUI taskbar-window fix after 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",
