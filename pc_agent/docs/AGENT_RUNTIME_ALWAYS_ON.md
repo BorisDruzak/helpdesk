@@ -35,6 +35,7 @@
 - Если tray недоступен на платформе, агент не должен падать: GUI просто работает обычным окном.
 - Плавающие служебные оверлеи GUI, включая STOP-кнопку записи экрана, не должны быть обычными top-level `Qt.Window`: используйте `Qt.Tool`, чтобы они не появлялись в Taskbar/Alt-Tab как отдельные окна `pc_agent`.
 - Кастомная frameless-шапка не должна вызывать Qt native `startSystemMove()` / `startSystemResize()` на Windows: эти calls могут создавать `_q_titlebar` helper windows, которые попадают в Taskbar/Alt-Tab как отдельные окна `python`. Drag/resize держать на ручном fallback в `window_chrome.py`.
+- Внутренние элементы главного окна нельзя оставлять parentless и затем делать visible: пустые orphan `QLabel`/`QWidget` становятся отдельными top-level окнами `python` / `pc_agent` в Taskbar/Alt-Tab. Служебные элементы должны иметь parent или быть добавлены в layout до показа.
 
 ## Runtime logs
 

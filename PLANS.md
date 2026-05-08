@@ -33,7 +33,7 @@ Current progress:
 - P10.3 Consent-required retry flow policy refinement: **completed locally; targeted backend/frontend checks green 2026-05-08**.
 - P10.4 Final release/browser/agent signoff: **completed on stand with explicit CI-bypass caveat 2026-05-08**.
 - P10.5 Final no-bypass release/browser/agent signoff: **completed 2026-05-08 for runtime release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`; server stopped after checks**.
-- P11.1 Agent GUI duplicate taskbar windows root cause and source fix: **reopened; second root cause fixed locally 2026-05-08**.
+- P11.1 Agent GUI duplicate taskbar windows root cause and source fix: **completed locally 2026-05-08**.
 
 ## P11 Agent GUI Duplicate Taskbar Windows
 
@@ -46,12 +46,14 @@ Current progress:
 - Win32 window enumeration shows two extra visible top-level Qt windows titled `pc_agent`, both `136x56`, no owner/parent, inside the single agent process.
 - The matching code path is the recording STOP overlay in `pc_agent/ui_gui/main_window.py::_show_stop_button()`, which creates a standalone `QWidget` with `Qt.Window`.
 - After launching the source copy as `3.1.30`, user still saw blank `python` Taskbar/Alt-Tab windows. Current Win32 enumeration shows a Qt `_q_titlebar` helper window in the agent process; the matching code path is `window_chrome.py` calling native `startSystemMove()` / `startSystemResize()`.
+- After removing native move/resize calls, live source-run inspection still reproduced two visible `python` windows. Qt top-level diagnostics mapped both HWNDs to orphan `QLabel("")` widgets: `sidebar_title_label` and `sidebar_subtitle_label` were created without parent, never added to a layout, then made visible by `_set_sidebar_expanded()`.
 
 **Plan:**
 
 - Add a regression test that the STOP overlay uses a tool/owned window flag instead of a normal app window.
 - Change `_show_stop_button()` so the overlay is not a normal taskbar/Alt-Tab window and has an explicit object/title.
 - Add a regression test that frameless chrome does not call Qt native move/resize helpers, then keep drag/resize on the manual fallback.
+- Add a regression test that the sidebar header does not create unused parentless blank labels, then remove the orphan labels and their `setVisible()` calls.
 - Keep launcher behavior unchanged unless new evidence shows it is launching duplicate independent runtime instances.
 - Verify with focused GUI/static tests, runtime tests, and `python scripts/verify_workspace.py`.
 
@@ -60,6 +62,7 @@ Current progress:
 - Compiled agent still has one real `pc_agent.exe` runtime.
 - Recording STOP overlay can appear without creating taskbar entries titled `pc_agent`.
 - Frameless chrome does not create `_q_titlebar` helper windows titled `python`.
+- The sidebar header does not create orphan blank `QLabel` top-level windows, and live source-run Win32 inspection reports `bad_count=0` for visible default-title Qt app windows.
 - Launcher parent/child behavior is documented in the final report as expected PyInstaller onefile behavior, not an agent duplicate.
 
 **Verification 2026-05-08:**
@@ -69,8 +72,12 @@ Current progress:
 - Green focused tests after fix: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> 1 passed; `python -m pytest pc_agent\tests\test_main_window_update_status.py -q --tb=short` -> 3 passed; `python -m pytest pc_agent\tests\test_ui_api_server_shutdown.py -v --tb=short` -> 6 passed; `python -m pytest pc_agent\tests\test_runtime_logging.py -v --tb=short` -> 2 passed.
 - Second red test after source-run report: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> failed because `window_chrome.py` still used `startSystemMove`.
 - Second green focused test: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> 2 passed after removing native Qt move/resize helper calls.
-- Agent baseline: `python -m pytest pc_agent\tests -m "not manual" -v --tb=short` -> 191 passed, 4 deselected.
-- Workspace/docs: `python scripts\verify_workspace.py` -> passed; `python -m pytest scripts\test_navigation_catalog.py scripts\test_task_intake.py -q --tb=short` -> 21 passed; `python scripts\docs_inventory.py --check-links` -> all local markdown links valid; `python scripts\build_context_index.py --force` -> rebuilt.
+- Third red test after source-run report: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> failed because the sidebar still created `sidebar_title_label` / `sidebar_subtitle_label` as parentless blank labels and toggled them visible.
+- Third green focused test: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py -q --tb=short` -> 3 passed after removing the orphan sidebar labels.
+- Live source-run Win32 verification after final fix: one visible `Maria Agent v3.1.30` `Qt6102QWindowIcon`, no visible `python` / `pc_agent` `Qt6102QWindowIcon` helper windows (`bad_count=0`).
+- Focused runtime suite after final fix: `python -m pytest pc_agent\tests\test_main_window_runtime_windows.py pc_agent\tests\test_main_window_update_status.py pc_agent\tests\test_ui_api_server_shutdown.py pc_agent\tests\test_runtime_logging.py -v --tb=short` -> 14 passed.
+- Agent baseline after final fix: `python -m pytest pc_agent\tests -m "not manual" -v --tb=short` -> 193 passed, 4 deselected.
+- Workspace/docs after final fix: `python scripts\verify_workspace.py` -> passed; `python -m pytest scripts\test_navigation_catalog.py scripts\test_task_intake.py -q --tb=short` -> 21 passed; `python scripts\docs_inventory.py --check-links` -> all local markdown links valid; `python scripts\build_context_index.py --force` -> rebuilt.
 
 ## P10 Support Workspace Tail Closure
 

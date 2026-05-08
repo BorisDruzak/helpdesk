@@ -40,3 +40,17 @@ def test_frameless_chrome_avoids_qt_native_helper_windows():
 
     assert "startSystemMove" not in source
     assert "startSystemResize" not in source
+
+
+def test_sidebar_header_does_not_create_unparented_blank_top_level_labels():
+    source = "\n".join(
+        (
+            inspect.getsource(MainWindow._setup_ui),
+            inspect.getsource(MainWindow._set_sidebar_expanded),
+        )
+    )
+
+    assert "sidebar_title_label = QLabel" not in source
+    assert "sidebar_subtitle_label = QLabel" not in source
+    assert "sidebar_title_label.setVisible" not in source
+    assert "sidebar_subtitle_label.setVisible" not in source

@@ -199,10 +199,6 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle_btn.setText("")
         self.sidebar_toggle_btn.hide()
 
-        self.sidebar_title_label = QLabel("")
-        self.sidebar_title_label.hide()
-        self.sidebar_subtitle_label = QLabel("")
-        self.sidebar_subtitle_label.hide()
         sidebar_header.addStretch(1)
         sidebar_shell_layout.addLayout(sidebar_header)
 
@@ -693,8 +689,6 @@ class MainWindow(QMainWindow):
         total = sum(sizes) if sizes else self.width()
         chat_width = max(640, total - target_width - 12)
         self.body_splitter.setSizes([target_width, chat_width])
-        self.sidebar_title_label.setVisible(True)
-        self.sidebar_subtitle_label.setVisible(True)
         self._refresh_sidebar_labels()
 
     def _toggle_sidebar_expanded(self) -> None:
