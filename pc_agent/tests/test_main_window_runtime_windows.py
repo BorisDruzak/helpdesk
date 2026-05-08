@@ -1,4 +1,5 @@
 import sys
+import inspect
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pc_agent.ui_gui.main_window import MainWindow
+from pc_agent.ui_gui.window_chrome import CustomTitleBar, FramelessResizeHandler
 
 
 def test_stop_recording_overlay_is_tool_window_not_taskbar_window():
@@ -26,3 +28,15 @@ def test_stop_recording_overlay_is_tool_window_not_taskbar_window():
         if window._stop_button_widget is not None:
             window._hide_stop_button()
         app.processEvents()
+
+
+def test_frameless_chrome_avoids_qt_native_helper_windows():
+    source = "\n".join(
+        (
+            inspect.getsource(CustomTitleBar.mousePressEvent),
+            inspect.getsource(FramelessResizeHandler.eventFilter),
+        )
+    )
+
+    assert "startSystemMove" not in source
+    assert "startSystemResize" not in source

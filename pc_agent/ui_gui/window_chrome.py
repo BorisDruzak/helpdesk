@@ -93,14 +93,6 @@ class CustomTitleBar(QFrame):
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             window = self.window()
-            handle = window.windowHandle() if window else None
-            if handle is not None and hasattr(handle, "startSystemMove"):
-                try:
-                    handle.startSystemMove()
-                    event.accept()
-                    return
-                except Exception:
-                    pass
             if window is not None and not window.isMaximized() and not window.isFullScreen():
                 self._dragging = True
                 self._drag_start_global = event.globalPosition().toPoint()
@@ -157,14 +149,6 @@ class FramelessResizeHandler(QWidget):
                 self._pressed_edges = edges
                 self._press_pos = event.globalPosition().toPoint()
                 self._press_geometry = self._window.geometry()
-                handle = self._window.windowHandle()
-                if handle is not None and hasattr(handle, "startSystemResize"):
-                    try:
-                        if handle.startSystemResize(edges):
-                            self._pressed_edges = Qt.Edge(0)
-                            return True
-                    except Exception:
-                        pass
                 return True
         if event.type() == QEvent.Type.MouseButtonRelease:
             self._pressed_edges = Qt.Edge(0)
