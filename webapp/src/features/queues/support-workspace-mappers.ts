@@ -541,7 +541,11 @@ export function mapNextAction(
 ): SupportWorkspaceNextAction {
   const owner = ticket.next_action_owner || getNextActionOwnerForStatus(ticket.status);
   const ownerLabel = getNextActionOwnerLabel(owner);
-  const dueAt = ticket.next_action_due_at || ticket.first_response_due_at || ticket.resolution_due_at || null;
+  const firstResponseSatisfied = Boolean(ticket.first_response_at);
+  const nextActionDueAt =
+    firstResponseSatisfied && ticket.next_action_due_at === ticket.first_response_due_at ? null : ticket.next_action_due_at;
+  const firstResponseDueAt = firstResponseSatisfied ? null : ticket.first_response_due_at;
+  const dueAt = nextActionDueAt || firstResponseDueAt || ticket.resolution_due_at || null;
   const remainingSeconds = secondsUntil(dueAt, now);
   const status = timerStatus(remainingSeconds);
   const timerType = timers.some((timer) => timer.key.startsWith("ola") && timer.dueAt === dueAt) ? "ola" : dueAt ? "sla" : "none";
@@ -552,11 +556,15 @@ export function mapNextAction(
     nextActionOwner: owner,
     statusReason: ticket.status_reason,
   });
+  const hint =
+    firstResponseSatisfied && owner === "support" && presentation.operatorActionLabel === "Ответить или продолжить диагностику"
+      ? "Продолжить диагностику или подготовить решение"
+      : presentation.operatorActionLabel;
   return {
     owner,
     ownerLabel,
     label: owner === "support" ? "Ожидаем от вас" : `Ожидаем: ${ownerLabel}`,
-    hint: presentation.operatorActionLabel,
+    hint,
     dueAt,
     remainingSeconds,
     remainingLabel: formatRemainingSeconds(remainingSeconds),
@@ -802,6 +810,17 @@ export function mapWorkspaceOperations(detail: SupportTicketDetailPayload | unde
 
 type ObserverTracePayload = NonNullable<SupportTicketDetailPayload["observer"]["related_traces"]>[number];
 
+function supportObserverTraceUrl(traceId: string | null | undefined, candidate: string | null | undefined): string | null {
+  if (traceId) {
+    const encodedTraceId = encodeURIComponent(traceId);
+    if (candidate?.includes("/app/admin/observer") && candidate.includes("trace_id=")) {
+      return candidate;
+    }
+    return `/app/admin/observer?trace_id=${encodedTraceId}`;
+  }
+  return candidate?.includes("/app/tickets") ? null : candidate ?? null;
+}
+
 function mapObserverTrace(trace: ObserverTracePayload): SupportWorkspaceObserverTrace {
   return {
     id: trace.trace_id,
@@ -812,7 +831,7 @@ function mapObserverTrace(trace: ObserverTracePayload): SupportWorkspaceObserver
     rootKind: trace.root_kind ?? "unknown",
     errorCount: trace.error_count ?? 0,
     timeLabel: formatDateTime(trace.finished_at ?? trace.started_at),
-    traceUrl: trace.trace_url ?? null,
+    traceUrl: supportObserverTraceUrl(trace.trace_id, trace.trace_url),
   };
 }
 
@@ -829,7 +848,7 @@ export function mapWorkspaceObserver(detail: SupportTicketDetailPayload | undefi
     summaryEndpoint: observer?.ticket_summary_endpoint ?? "",
     rootTraceId,
     rootTraceCompactId: compactId(rootTraceId) ?? "Нет trace",
-    rootTraceUrl: summary?.root_trace_url ?? observer?.root_trace?.trace_url ?? null,
+    rootTraceUrl: supportObserverTraceUrl(rootTraceId, summary?.root_trace_url ?? observer?.root_trace?.trace_url),
     rootTraceStatusLabel: observerStatusLabel(summary?.root_trace_status ?? observer?.root_trace?.status),
     rootKind: summary?.root_kind ?? observer?.root_trace?.root_kind ?? "ticket",
     traceCount: summary?.trace_count ?? 0,

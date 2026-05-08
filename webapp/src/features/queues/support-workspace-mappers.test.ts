@@ -957,6 +957,59 @@ describe("support workspace mappers", () => {
     });
   });
 
+  it("moves next action away from the first response timer after support reply", () => {
+    const detail = detailPayload();
+    detail.ticket.first_response_at = "2026-05-05T10:05:00+05:00";
+    detail.ticket.next_action_due_at = detail.ticket.first_response_due_at;
+
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail,
+      slaOla: slaOlaPayload(),
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      now: NOW,
+    });
+
+    expect(viewModel.selectedTicket?.nextAction.dueAt).toBe("2026-05-05T14:00:00+05:00");
+    expect(viewModel.selectedTicket?.nextAction.timerType).toBe("sla");
+    expect(viewModel.selectedTicket?.nextAction.hint).toBe("Продолжить диагностику или подготовить решение");
+  });
+
+  it("keeps observer trace links in the support admin observer surface", () => {
+    const detail = detailPayload();
+    detail.observer.summary = {
+      ...detail.observer.summary,
+      root_trace_id: "trace-root-1",
+      root_trace_url: "/app/tickets/ticket-1",
+    };
+    detail.observer.related_traces = [
+      {
+        trace_id: "trace-child-1",
+        root_kind: "operation",
+        status: "ok",
+        title: "Tool trace",
+        trace_url: "/app/tickets/ticket-1",
+        started_at: "2026-05-05T09:20:00+05:00",
+        finished_at: "2026-05-05T09:21:00+05:00",
+        error_count: 0,
+      },
+    ];
+
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail,
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      now: NOW,
+    });
+
+    expect(viewModel.right.observer.rootTraceUrl).toBe("/app/admin/observer?trace_id=trace-root-1");
+    expect(viewModel.right.observer.relatedTraces[0]?.traceUrl).toBe("/app/admin/observer?trace_id=trace-child-1");
+  });
+
   it("formats overdue timers explicitly", () => {
     expect(formatRemainingSeconds(-90)).toBe("Просрочено на 1 мин");
   });

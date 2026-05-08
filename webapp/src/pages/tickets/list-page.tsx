@@ -43,7 +43,7 @@ import {
   UsersRound,
   Wrench,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -72,6 +72,7 @@ import {
   type SupportQueueScope,
   type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
+  type SupportTicketWorkspacePayload,
 } from "../../features/queues/api";
 import {
   mapSupportTimelineEntries,
@@ -92,12 +93,18 @@ import type {
 import { useSession } from "../../features/auth/session-provider";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
+const SUPPORT_OPERATION_REFRESH_MS = 2_500;
+const LIVE_OPERATION_STATUSES = new Set(["accepted", "queued", "running", "sent", "in_progress", "waiting_consent"]);
 
 type ComposerMode = "public" | "internal";
 type SidebarTab = "context" | "sla" | "tools" | "knowledge" | "passport";
 type TimelineFilter = "all" | SupportWorkspaceTimelineKind;
 type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
+type AutomationLaunchDraft =
+  | { kind: "tool"; id: string }
+  | { kind: "playbook"; id: string }
+  | null;
 
 type OperatorActionDraft = {
   kind: OperatorActionKind;
@@ -125,6 +132,15 @@ function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
     return "dark";
   }
   return window.localStorage.getItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function workspaceHasLiveOperations(payload: SupportTicketWorkspacePayload | undefined): boolean {
+  return Boolean(
+    payload?.detail.snapshot.latest_operations.some((operation) => {
+      const status = operation.display_status ?? operation.status;
+      return LIVE_OPERATION_STATUSES.has(status);
+    }),
+  );
 }
 
 const sliceIcons: Record<SupportWorkspaceSlice["icon"], typeof Inbox> = {
@@ -946,6 +962,7 @@ export function TicketListPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
   const [moreOpen, setMoreOpen] = useState(false);
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
+  const [automationLaunchDraft, setAutomationLaunchDraft] = useState<AutomationLaunchDraft>(null);
   const [resolutionCloseDraft, setResolutionCloseDraft] = useState<ResolutionCloseDraft | null>(null);
   const [closureFocus, setClosureFocus] = useState<ClosurePlanBlocker | null>(null);
   const [closureBlockersExpanded, setClosureBlockersExpanded] = useState(false);
@@ -955,6 +972,7 @@ export function TicketListPage() {
   const [worklogNote, setWorklogNote] = useState("");
   const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -992,6 +1010,8 @@ export function TicketListPage() {
     queryFn: () => fetchSupportTicketWorkspace(selectedTicketId!),
     enabled: Boolean(selectedTicketId),
     retry: false,
+    refetchInterval: (query) =>
+      workspaceHasLiveOperations(query.state.data as SupportTicketWorkspacePayload | undefined) ? SUPPORT_OPERATION_REFRESH_MS : false,
   });
 
   const timelineApiFilter: SupportTicketTimelineFilter =
@@ -1002,6 +1022,7 @@ export function TicketListPage() {
     queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, timelineApiFilter),
     enabled: Boolean(selectedTicketId) && timelineFilter !== "all",
     retry: false,
+    refetchInterval: workspaceHasLiveOperations(workspaceQuery.data) ? SUPPORT_OPERATION_REFRESH_MS : false,
   });
 
   const evidenceCandidatesQuery = useQuery({
@@ -1054,6 +1075,39 @@ export function TicketListPage() {
   const firstQueueActionId = queueActionOptions[0]?.id ?? null;
   const firstStatusActionValue = statusActionOptions[0]?.value ?? null;
 
+  const refreshSelectedTicketData = async () => {
+    if (!selectedTicketId) {
+      return;
+    }
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ["tickets-workspace", selectedTicketId], type: "active" }),
+      queryClient.refetchQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId], type: "active" }),
+      queryClient.refetchQueries({ queryKey: ["tickets-workspace-queue"], type: "active" }),
+    ]);
+  };
+
+  const focusComposer = (mode: ComposerMode) => {
+    setComposerMode(mode);
+    window.requestAnimationFrame(() => {
+      composerTextareaRef.current?.scrollIntoView?.({ block: "center" });
+      composerTextareaRef.current?.focus();
+    });
+  };
+
+  const openAutomationLauncher = (draft: AutomationLaunchDraft = null) => {
+    setSidebarTab("tools");
+    setAutomationLaunchDraft(draft ?? (firstRunnablePlaybook ? { kind: "playbook", id: firstRunnablePlaybook.id } : firstRunnableTool ? { kind: "tool", id: firstRunnableTool.id } : null));
+  };
+
+  const selectedLaunchTool =
+    automationLaunchDraft?.kind === "tool"
+      ? workspaceQuery.data?.tools.tools.find((item) => item.tool_name === automationLaunchDraft.id) ?? null
+      : null;
+  const selectedLaunchPlaybook =
+    automationLaunchDraft?.kind === "playbook"
+      ? workspaceQuery.data?.playbooks.playbooks.find((item) => String(item.playbook_version_id) === automationLaunchDraft.id) ?? null
+      : null;
+
   const messageMutation = useMutation({
     mutationFn: async () => {
       if (!selectedTicketId) {
@@ -1063,17 +1117,13 @@ export function TicketListPage() {
     },
     onSuccess: async () => {
       setComposerText("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
-      ]);
+      await refreshSelectedTicketData();
     },
   });
 
   const toolRunMutation = useMutation({
-    mutationFn: async () => {
-      const tool = workspaceQuery.data?.tools.tools.find((item) => item.tool_name === firstRunnableTool?.id);
+    mutationFn: async (toolName: string) => {
+      const tool = workspaceQuery.data?.tools.tools.find((item) => item.tool_name === toolName);
       if (!selectedTicketId || !tool) {
         return null;
       }
@@ -1085,26 +1135,24 @@ export function TicketListPage() {
       });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
-      ]);
+      setTimelineFilter("diagnostics");
+      setAutomationLaunchDraft(null);
+      await refreshSelectedTicketData();
     },
   });
 
   const playbookRunMutation = useMutation({
-    mutationFn: async () => {
-      const playbook = workspaceQuery.data?.playbooks.playbooks.find((item) => String(item.playbook_version_id) === firstRunnablePlaybook?.id);
+    mutationFn: async (playbookVersionId: number) => {
+      const playbook = workspaceQuery.data?.playbooks.playbooks.find((item) => item.playbook_version_id === playbookVersionId);
       if (!selectedTicketId || !playbook) {
         return null;
       }
       return postSupportTicketPlaybookRun(selectedTicketId, { playbookVersionId: playbook.playbook_version_id });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }),
-        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }),
-      ]);
+      setTimelineFilter("diagnostics");
+      setAutomationLaunchDraft(null);
+      await refreshSelectedTicketData();
     },
   });
 
@@ -1729,16 +1777,16 @@ export function TicketListPage() {
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
                     className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500"
-                    onClick={() => setComposerMode("public")}
+                    onClick={() => focusComposer("public")}
                     type="button"
                   >
                     <Send className="h-4 w-4" />
-                    Ответить
+                    К ответу
                   </button>
                   <button
                     className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!internalNoteAllowed}
-                    onClick={() => setComposerMode("internal")}
+                    onClick={() => focusComposer("internal")}
                     type="button"
                   >
                     <Lock className="h-4 w-4" />
@@ -1746,8 +1794,8 @@ export function TicketListPage() {
                   </button>
                   <button
                     className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                    disabled={toolRunMutation.isPending || !firstRunnableTool}
-                    onClick={() => toolRunMutation.mutate()}
+                    disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
+                    onClick={() => openAutomationLauncher()}
                     type="button"
                   >
                     <Wrench className="h-4 w-4" />
@@ -2339,9 +2387,11 @@ export function TicketListPage() {
                     </div>
                     <textarea
                       className="h-24 w-full resize-none bg-transparent px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      data-testid="support-reply-composer"
                       onChange={(event) => setComposerText(event.currentTarget.value)}
                       placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Напишите внутреннюю заметку для команды..."}
                       value={composerText}
+                      ref={composerTextareaRef}
                     />
                     <div className="flex items-center gap-2 px-4 pb-4">
                       <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400" type="button">
@@ -2519,13 +2569,61 @@ export function TicketListPage() {
                     <p className="font-semibold text-white">Инструменты / Playbook</p>
                     <button
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                      disabled={playbookRunMutation.isPending || !firstRunnablePlaybook}
-                      onClick={() => playbookRunMutation.mutate()}
+                      disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
+                      onClick={() => openAutomationLauncher()}
                       type="button"
                     >
                       Запустить
                     </button>
                   </div>
+                  {automationLaunchDraft ? (
+                    <div className="mt-4 rounded-xl border border-blue-400/30 bg-blue-500/10 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-200">Запуск диагностики</p>
+                          <p className="mt-1 truncate text-sm font-semibold text-white">
+                            {selectedLaunchPlaybook?.name ?? selectedLaunchTool?.tool_name ?? "Выберите инструмент"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-300">
+                            {selectedLaunchPlaybook
+                              ? selectedLaunchPlaybook.readiness_label
+                              : selectedLaunchTool
+                                ? selectedLaunchTool.presets[0]?.label ?? selectedLaunchTool.description ?? "Без пресета"
+                                : "Выберите конкретный playbook или модуль ниже."}
+                          </p>
+                        </div>
+                        <button
+                          className="rounded-lg border border-white/10 px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white"
+                          onClick={() => setAutomationLaunchDraft(null)}
+                          type="button"
+                        >
+                          Закрыть
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedLaunchPlaybook ? (
+                          <button
+                            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedLaunchPlaybook.can_run || playbookRunMutation.isPending}
+                            onClick={() => playbookRunMutation.mutate(selectedLaunchPlaybook.playbook_version_id)}
+                            type="button"
+                          >
+                            Запустить playbook
+                          </button>
+                        ) : null}
+                        {selectedLaunchTool ? (
+                          <button
+                            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={toolRunMutation.isPending}
+                            onClick={() => toolRunMutation.mutate(selectedLaunchTool.tool_name)}
+                            type="button"
+                          >
+                            Запустить инструмент
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-2">
                     {visibleAutomationItems.map((item) => {
                       const Icon = toolIcon(item);
@@ -2574,6 +2672,16 @@ export function TicketListPage() {
                               {item.disabledReason}
                             </p>
                           ) : null}
+                          <div className="mt-3 flex justify-end">
+                            <button
+                              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!item.enabled || toolRunMutation.isPending || playbookRunMutation.isPending}
+                              onClick={() => setAutomationLaunchDraft({ kind: item.kind, id: item.id })}
+                              type="button"
+                            >
+                              Выбрать
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

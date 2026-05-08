@@ -633,6 +633,7 @@ def _ticket_timer_payload(
     breached_attr: str | None = None,
     paused_attr: str | None = None,
     paused_seconds_attr: str | None = None,
+    completed_attr: str | None = None,
     anchor_attr: str = "created_at",
     now: datetime | None = None,
 ) -> SupportTicketTimerPayload:
@@ -644,6 +645,13 @@ def _ticket_timer_payload(
     target_seconds = None
     if anchor_at is not None and due_at is not None:
         target_seconds = max(0, int((due_at - anchor_at).total_seconds()))
+    if completed_attr and _aware_datetime(getattr(ticket, completed_attr, None)) is not None:
+        return SupportTicketTimerPayload(
+            due_at=None,
+            remaining_seconds=None,
+            target_seconds=target_seconds,
+            status="unknown",
+        )
     return SupportTicketTimerPayload(
         due_at=due_at.isoformat() if due_at is not None else None,
         remaining_seconds=int((effective_due_at - now).total_seconds()) if effective_due_at is not None else None,
@@ -667,6 +675,7 @@ def _build_support_sla_ola_payload(ticket, now: datetime | None = None) -> Suppo
             breached_attr="first_response_breached_at",
             paused_attr="sla_paused_at",
             paused_seconds_attr="sla_paused_seconds",
+            completed_attr="first_response_at",
             now=now,
         ),
         resolution=_ticket_timer_payload(
@@ -2669,6 +2678,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             urgency=ticket_data.get("urgency"),
             importance=ticket_data.get("importance"),
             priority_decision=custom_fields.get("priority_decision") if isinstance(custom_fields.get("priority_decision"), dict) else {},
+            first_response_at=ticket_data.get("first_response_at"),
             first_response_due_at=ticket_data.get("first_response_due_at"),
             resolution_due_at=ticket_data.get("resolution_due_at"),
             queue=SupportTicketQueueInfo(

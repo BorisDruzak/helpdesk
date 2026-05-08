@@ -135,6 +135,53 @@ describe("appRoutes", () => {
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 
+  it("redirects /app/support to the new support ticket workspace", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createSupportSession()
+        });
+      }
+
+      if (url.startsWith("/api/web/support/queue")) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            scope: "all",
+            query: "",
+            status_filter: "all",
+            smart_view: "all",
+            summary: {
+              visible_count: 0,
+              selected_ticket_id: null,
+              scope_counts: [],
+              status_counts: [],
+              queue_counts: [],
+              smart_view_counts: [],
+              smart_view_options: []
+            },
+            filters: {
+              scope_options: [],
+              status_options: [],
+              smart_view_options: []
+            },
+            tickets: []
+          }
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { router } = renderApp(["/app/support"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Тикеты" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/app/tickets");
+  });
+
   it("returns support user from /app/admin to tickets after login", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

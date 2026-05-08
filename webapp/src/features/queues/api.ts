@@ -120,6 +120,7 @@ export type SupportTicketDetailPayload = {
     urgency?: number | null;
     importance?: number | null;
     priority_decision?: Record<string, unknown>;
+    first_response_at?: string | null;
     first_response_due_at?: string | null;
     resolution_due_at?: string | null;
     queue: {

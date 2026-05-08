@@ -1677,6 +1677,34 @@ async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and
 
 
 @pytest.mark.asyncio
+async def test_web_support_ticket_workspace_stops_first_response_timer_after_reply(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-workspace-first-response", status="in_progress")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.created_at = now - timedelta(minutes=10)
+        ticket.first_response_at = now - timedelta(minutes=1)
+        ticket.first_response_due_at = now + timedelta(minutes=20)
+        ticket.resolution_due_at = now + timedelta(hours=3)
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/workspace",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    data = payload["data"]
+    assert data["detail"]["ticket"]["first_response_at"] == (now - timedelta(minutes=1)).isoformat()
+    assert data["sla_ola"]["first_response"]["due_at"] is None
+    assert data["sla_ola"]["first_response"]["remaining_seconds"] is None
+    assert data["sla_ola"]["first_response"]["status"] == "unknown"
+    assert data["sla_ola"]["resolution"]["due_at"] == (now + timedelta(hours=3)).isoformat()
+
+
+@pytest.mark.asyncio
 async def test_web_support_ticket_workspace_exposes_actionable_closure_plan(test_client, test_engine):
     ticket_id = await _seed_support_ticket(
         test_engine,

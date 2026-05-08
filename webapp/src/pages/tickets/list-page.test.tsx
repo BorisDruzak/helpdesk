@@ -11,6 +11,9 @@ import {
   linkSupportTicketPassportEvidence,
   postSupportOperationCancel,
   postSupportOperationRetry,
+  postSupportTicketMessage,
+  postSupportTicketPlaybookRun,
+  postSupportTicketToolRun,
   postSupportTicketHide,
   postSupportTicketWorklog,
   postSupportTicketAssign,
@@ -37,6 +40,9 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     linkSupportTicketPassportEvidence: vi.fn(),
     postSupportOperationCancel: vi.fn(),
     postSupportOperationRetry: vi.fn(),
+    postSupportTicketMessage: vi.fn(),
+    postSupportTicketPlaybookRun: vi.fn(),
+    postSupportTicketToolRun: vi.fn(),
     postSupportTicketHide: vi.fn(),
     postSupportTicketWorklog: vi.fn(),
     postSupportTicketAssign: vi.fn(),
@@ -64,6 +70,9 @@ const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
 const linkSupportTicketPassportEvidenceMock = vi.mocked(linkSupportTicketPassportEvidence);
 const postSupportOperationCancelMock = vi.mocked(postSupportOperationCancel);
 const postSupportOperationRetryMock = vi.mocked(postSupportOperationRetry);
+const postSupportTicketMessageMock = vi.mocked(postSupportTicketMessage);
+const postSupportTicketPlaybookRunMock = vi.mocked(postSupportTicketPlaybookRun);
+const postSupportTicketToolRunMock = vi.mocked(postSupportTicketToolRun);
 const postSupportTicketHideMock = vi.mocked(postSupportTicketHide);
 const postSupportTicketWorklogMock = vi.mocked(postSupportTicketWorklog);
 const postSupportTicketAssignMock = vi.mocked(postSupportTicketAssign);
@@ -855,6 +864,111 @@ describe("TicketListPage", () => {
     expect(screen.getAllByText("Нет инструмента: http.check").length).toBeGreaterThan(0);
     expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Запустить" })).toBeDisabled();
+  });
+
+  it("opens an explicit diagnostics launcher instead of auto-running the first tool", async () => {
+    const payload = workspacePayload();
+    payload.detail.snapshot.presence.agent_online = true;
+    payload.detail.snapshot.device.online = true;
+    payload.tools.tools = [
+      {
+        tool_name: "system.collect",
+        module_name: "system",
+        description: "Collect system information",
+        risk_level: "low",
+        requires_consent: false,
+        install_required: false,
+        source: "module",
+        params_schema: [],
+        presets: [{ preset_id: "quick", label: "Quick collect", description: null, params: { scope: "quick" } }],
+      },
+      {
+        tool_name: "dns.resolve",
+        module_name: "network",
+        description: "Resolve DNS",
+        risk_level: "low",
+        requires_consent: false,
+        install_required: false,
+        source: "module",
+        params_schema: [],
+        presets: [],
+      },
+    ];
+    payload.playbooks.playbooks = [
+      {
+        playbook_version_id: 7,
+        key: "diagnose.website",
+        name: "Diagnose website",
+        domain: "network",
+        version: "1.0",
+        status: "published",
+        blocks_count: 2,
+        required_tools: ["dns.resolve"],
+        missing_tools: [],
+        missing_params: [],
+        can_run: true,
+        readiness_label: "Ready",
+        updated_at: null,
+      },
+    ];
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(payload);
+    postSupportTicketToolRunMock.mockResolvedValue({
+      ticket_id: "ticket-1",
+      device_id: "device-1",
+      tool_name: "dns.resolve",
+      dispatch_status: "accepted",
+      operation_id: "op-tool-1",
+      poll_url: "/api/operations/op-tool-1",
+      trace_id: "trace-tool-1",
+      message: "accepted",
+    });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const diagnosticsButton = await screen.findByRole("button", { name: /диагностику/i });
+    fireEvent.click(diagnosticsButton);
+
+    expect(await screen.findByText("Запуск диагностики")).toBeInTheDocument();
+    expect(postSupportTicketToolRunMock).not.toHaveBeenCalled();
+    expect(postSupportTicketPlaybookRunMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Выбрать" })[2]);
+    fireEvent.click(screen.getByRole("button", { name: "Запустить инструмент" }));
+
+    await waitFor(() => {
+      expect(postSupportTicketToolRunMock).toHaveBeenCalledWith("ticket-1", {
+        toolName: "dns.resolve",
+        presetId: null,
+        params: {},
+      });
+    });
+  });
+
+  it("uses the top reply control only to focus the composer and refreshes after send", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-1", message: {} } as any);
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const replyButton = await screen.findByRole("button", { name: "К ответу" });
+    fireEvent.click(replyButton);
+    expect(postSupportTicketMessageMock).not.toHaveBeenCalled();
+
+    const composer = screen.getByTestId("support-reply-composer");
+    await waitFor(() => {
+      expect(composer).toHaveFocus();
+    });
+    fireEvent.change(composer, { target: { value: "public reply" } });
+    fireEvent.click(screen.getByRole("button", { name: /РћС‚РїСЂР°РІРёС‚СЊ|Отправить/ }));
+
+    await waitFor(() => {
+      expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "public reply", "public");
+    });
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock.mock.calls.length).toBeGreaterThan(1);
+    });
   });
 
   it("persists the support workspace theme toggle", async () => {

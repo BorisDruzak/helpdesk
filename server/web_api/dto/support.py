@@ -211,6 +211,7 @@ class SupportTicketDetail(BaseModel):
     urgency: int | None = None
     importance: int | None = None
     priority_decision: dict[str, Any] = Field(default_factory=dict)
+    first_response_at: str | None = None
     first_response_due_at: str | None = None
     resolution_due_at: str | None = None
     queue: SupportTicketQueueInfo

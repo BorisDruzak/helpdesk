@@ -14,7 +14,7 @@
 
 Created: 2026-05-07.
 
-Current active plan: **P11 Agent GUI Duplicate Taskbar Windows**.
+Current active plan: **P12 Support Workspace Manual QA Bugfixes**.
 
 Current progress:
 
@@ -34,6 +34,260 @@ Current progress:
 - P10.4 Final release/browser/agent signoff: **completed on stand with explicit CI-bypass caveat 2026-05-08**.
 - P10.5 Final no-bypass release/browser/agent signoff: **completed 2026-05-08 for runtime release HEAD `1c819d7046b4382d498b0b265b26665cb011b4ed`; server stopped after checks**.
 - P11.1 Agent GUI duplicate taskbar windows root cause and source fix: **completed locally 2026-05-08**.
+- P12.1 Manual QA bug intake for ticket `T-000520`: **completed locally; user-reported live issues captured and mapped 2026-05-08**.
+- P12.2 SLA/next-action refresh after public reply: **completed locally; backend workspace now serializes `first_response_at` and stops first-response timer, frontend force-refetches selected data after send**.
+- P12.3 Live operation refresh for diagnostics: **completed locally; selected workspace/timeline short-poll while operations are active**.
+- P12.4 Reply controls clarity: **completed locally; top reply action focuses composer and composer remains the only send control**.
+- P12.5 `/app/support` support entry handoff: **completed locally; router test covers redirect to `/app/tickets`**.
+- P12.6 Observer root trace open target: **completed locally; mapper hardens trace URLs to `/app/admin/observer?trace_id=...`**.
+- P12.7 Explicit tool/module/playbook picker: **completed locally; central diagnostics opens right tools launcher and requires explicit selection before run**.
+
+## P12 Support Workspace Manual QA Bugfixes
+
+**Goal:** close manual QA bugs found on `/app/tickets` for ticket `T-000520`: stale SLA/next-action state after public replies, delayed diagnostic result rendering, confusing duplicate reply controls, incomplete support navigation handoff, wrong Observer root-trace link behavior, and lack of explicit module/playbook selection before diagnostics run.
+
+**Classification:** cross-cutting UI/API bugfix. Touches React `/app/tickets`, typed support API contracts, operation/playbook launch UX, SLA/timeline serialization and Observer deep-link behavior. No new destructive ticket behavior and no hard-delete scope.
+
+**Current hypothesis map:**
+
+- SLA/next action after public reply: either backend does not stop/serialize first-response SLA for the typed `/workspace` payload after `POST /api/web/support/tickets/{ticket_id}/messages`, or React invalidates cache but keeps stale aggregate/timer state long enough to show the old first-action card.
+- Diagnostic result delay: operation start mutation invalidates once, but the page does not poll selected ticket workspace/timeline while an operation is `accepted/queued/running/sent/waiting_consent`; if realtime event is missed, the UI stays on `Нет результата` until manual refresh.
+- Duplicate reply controls: the top `Ответить` button is a mode/focus action, while the composer `Отправить` button is the real submit action. This is functionally ambiguous and makes one control feel broken.
+- `/app/tickets` support navigation: `/app/support` redirects to `/app/tickets`, but legacy/main support links or shell navigation may still not land on the new workspace consistently.
+- Root trace link: Observer card/button must open `/app/admin/observer?trace_id=...`, not the ticket route. Need verify whether the wrong target is produced by backend `root_trace_url` or frontend fallback.
+- Diagnostics picker: central `Запустить диагностику` currently uses the first runnable tool/playbook path. Operators need an explicit chooser for modules/tools/playbooks and visible params/readiness before dispatch.
+
+### P12.1 Reproduce And Capture Evidence
+
+**Files/areas:**
+
+- Inspect: `webapp/src/pages/tickets/list-page.tsx`
+- Inspect: `webapp/src/features/queues/api.ts`
+- Inspect: `webapp/src/features/queues/support-workspace-mappers.ts`
+- Inspect: `server/web_api/support_handlers.py`
+- Inspect/tests: `server/tests/test_web_support_api.py`
+- Inspect/tests: `webapp/src/pages/tickets/list-page.test.tsx`, `webapp/src/features/queues/support-workspace-mappers.test.ts`
+
+**Steps:**
+
+- Start stand or use current live stand through project scripts only.
+- Open `http://192.168.100.17:8666/app/tickets/T-000520`.
+- Capture before/after payloads:
+  - `GET /api/web/support/tickets/{ticket_id}/workspace`
+  - `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all`
+  - `GET /api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics`
+- Send a public reply and compare `first_response_at`, `first_response_due_at`, `sla_ola.first_response`, `next_action`, timeline events and queue row countdown.
+- Run a low-risk diagnostic and watch network/realtime: verify whether result payload arrives through websocket, polling, or only after full reload.
+- Click Observer `Root trace -> Открыть` and record final URL.
+
+**Acceptance:**
+
+- Each bug has a concrete source: backend stale first-response serialization, frontend cache/polling, wrong mapper URL, or UX-only ambiguity.
+- The tasks below are refined if evidence contradicts a hypothesis.
+
+**Status 2026-05-08:** completed by code inspection plus targeted tests. Live browser verification on stand is still pending after deploy.
+
+### P12.2 Fix SLA And Next-Action Refresh After Public Reply
+
+**Planned behavior:**
+
+- After a public support reply, the first-response SLA must disappear from the `next action / first action` focus if it has been satisfied.
+- The next-action panel may still show support work if status requires support, but the label/hint must no longer imply `answer first` when `first_response_at` is set.
+- The page must refresh selected workspace, selected timeline and queue row immediately after message mutation, not wait for the 15s queue poll.
+
+**Implementation outline:**
+
+- Backend: verify `POST /api/web/support/tickets/{ticket_id}/messages` calls the same SLA first-response close path as legacy/public support comments.
+- Backend serializer: ensure `/workspace` and `/timeline` expose the updated first-response state from fresh DB rows after mutation.
+- Frontend: after `messageMutation` success, force `refetchQueries` or `invalidate+refetch` for:
+  - `["tickets-workspace", selectedTicketId]`
+  - `["tickets-workspace-timeline", selectedTicketId]`
+  - `["tickets-workspace-queue"]`
+- Mapper: when `first_response_at` exists or first-response timer is stopped, choose resolution/OLA/current next-action timer instead of first-response timer for the focus card.
+
+**Tests:**
+
+- Add/extend server test around `POST /api/web/support/tickets/{ticket_id}/messages` -> workspace payload no longer presents active first-response as the primary countdown.
+- Add/extend mapper test for `public reply already sent` -> next action does not show first-response timer as active.
+- Add/extend React test proving public message success refetches workspace/timeline/queue.
+
+**Status 2026-05-08:** completed locally.
+
+- Backend `SupportTicketDetail` now includes `first_response_at`.
+- `/workspace` `sla_ola.first_response` returns inactive `unknown` timer when `first_response_at` is set.
+- Frontend mapper skips first-response as next-action due date once first response is satisfied.
+- Message mutation uses active `refetchQueries` for selected workspace, selected timeline and queue.
+
+### P12.3 Live Operation Refresh For Diagnostics
+
+**Planned behavior:**
+
+- After starting a diagnostic, timeline must show queued/accepted immediately.
+- While any selected-ticket operation is active (`accepted`, `queued`, `running`, `sent`, `waiting_consent`), `/app/tickets` must poll selected workspace/timeline/tools every 2-3 seconds.
+- When operation reaches a terminal state, result card must update automatically and polling can fall back to normal cadence.
+
+**Implementation outline:**
+
+- Frontend: derive `activeOperations.length` from the mapped workspace payload.
+- Add conditional `refetchInterval` to `workspaceQuery` and selected `timelineQuery`.
+- After tool/playbook run success, set `timelineFilter` to `diagnostics` or keep current tab but refetch all selected-ticket data immediately.
+- Keep realtime invalidation as an accelerator, not the only refresh mechanism.
+- Backend: if accepted operation rows lack enough status/result data in aggregate `/workspace`, extend existing serializer rather than adding a new endpoint.
+
+**Tests:**
+
+- React test: active operation enables short polling/refetch interval and terminal operation disables it.
+- React test: tool/playbook run invalidates/refetches workspace and diagnostics timeline.
+- Server test only if serializer lacks terminal result fields.
+
+**Status 2026-05-08:** completed locally.
+
+- `workspaceQuery` short-polls every 2.5s while selected ticket has active operations.
+- Filtered `timelineQuery` short-polls during active operations.
+- Tool/playbook run success switches to diagnostics timeline and refetches selected data.
+
+### P12.4 Clarify Reply Controls
+
+**Planned behavior:**
+
+- Top action bar must not look like a second submit button.
+- Keep one actual submit action in composer: `Отправить`.
+- Top `Ответить` becomes a navigation/focus action, for example `К ответу`, or it remains `Ответить` but scrolls/focuses the composer and visibly selects `Публичный ответ`.
+- Internal note action similarly focuses composer in internal mode when permission allows; otherwise disabled with a clear tooltip/reason.
+
+**Implementation outline:**
+
+- Add a composer ref in `list-page.tsx`.
+- Top actions call `setComposerMode(...)` and focus/scroll the textarea.
+- Rename/tooltip top actions to distinguish `prepare reply` vs `send`.
+- Add test ids for top reply action and composer textarea.
+
+**Tests:**
+
+- React test: clicking top reply focuses composer and does not send.
+- React test: composer send remains disabled until text is entered, then calls message API.
+
+**Status 2026-05-08:** completed locally.
+
+- Top action is now `К ответу`, selects public composer and focuses the textarea.
+- Internal note top action selects/focuses internal composer when permitted.
+
+### P12.5 Connect `/app/tickets` With Main Support Entry Points
+
+**Planned behavior:**
+
+- All support-shell `Тикеты/Support workspace` entry points should land on `/app/tickets`.
+- `/app/support` remains a redirect to `/app/tickets`.
+- If a legacy/main support route still exists in navigation or links, add a clear `Открыть новое рабочее место` handoff or redirect only where safe.
+
+**Implementation outline:**
+
+- Audit `webapp/src/app/navigation.tsx`, `webapp/src/app/router.tsx`, shell/sidebar/topbar links and legacy support links.
+- Keep route compatibility; do not remove legacy ticket detail pages used by requester/public flows.
+- Add route/navigation tests for support workspace entry points.
+
+**Tests:**
+
+- Router test: `/app/support` redirects to `/app/tickets`.
+- Navigation test: support ticket nav item points to `/app/tickets`.
+- Browser check: main support nav opens the new 3-column workspace.
+
+**Status 2026-05-08:** completed locally for route compatibility. Browser shell verification is pending after deploy.
+
+### P12.6 Fix Observer Root Trace Open Target
+
+**Planned behavior:**
+
+- Observer root trace `Открыть` opens admin observer workbench with trace context: `/app/admin/observer?trace_id=<id>`.
+- It must never navigate to the current ticket detail route unless no trace exists and the UI explicitly labels that fallback.
+
+**Implementation outline:**
+
+- Verify backend `root_trace_url`, `trace_url` and related trace URL generation in `server/web_api/support_handlers.py` / observer summary serializer.
+- Harden frontend mapper: if URL is missing but `trace_id` exists, synthesize `/app/admin/observer?trace_id=...`; if URL points to `/app/tickets`, treat it as invalid for Observer CTA and replace with admin observer URL.
+- Rename CTA tooltip to `Открыть в Observer`.
+
+**Tests:**
+
+- Mapper test: root trace with `trace_id` and bad/missing URL maps to `/app/admin/observer?trace_id=...`.
+- Browser/live check: click opens observer tab, not ticket page.
+
+**Status 2026-05-08:** completed locally.
+
+- Mapper synthesizes `/app/admin/observer?trace_id=...` for root/related traces.
+- Bad `/app/tickets` observer URLs are replaced when a trace id exists.
+
+### P12.7 Add Explicit Tool/Module/Playbook Picker
+
+**Planned behavior:**
+
+- Central `Запустить диагностику` opens the right `Инструменты` tab and a picker/drawer, not an automatic first-tool launch.
+- The picker lists:
+  - playbooks;
+  - tools/modules;
+  - enabled/disabled state and reason;
+  - risk/consent labels;
+  - preset/params when available.
+- Operator chooses a concrete module/tool/playbook and then confirms `Запустить`.
+- The right `Инструменты` tab remains the persistent place for operation history plus available automation.
+
+**Implementation outline:**
+
+- Frontend: introduce `selectedAutomationItem` state and a compact launch drawer/panel inside `list-page.tsx` or split into `TicketAutomationLauncher`.
+- Reuse existing `postSupportTicketToolRun`, `postSupportTicketPlaybookRun`, `tool-param-fields.ts` and `SupportWorkspaceToolItem` mappers.
+- Support params:
+  - default preset params prefilled;
+  - editable primitive params if metadata is available;
+  - disabled confirm with reason if tool/playbook not runnable.
+- Backend only if current `/tools` or `/playbooks` payload lacks required param metadata for existing modules.
+
+**Tests:**
+
+- Mapper test for tools/playbooks enabled/disabled labels.
+- React test: central diagnostic button opens picker, no API call yet.
+- React test: selecting a specific tool calls `/api/web/support/tickets/{ticket_id}/tools/run` with its id/preset/params.
+- React test: selecting a playbook calls `/api/web/support/tickets/{ticket_id}/playbooks/run`.
+
+**Status 2026-05-08:** completed locally for explicit selection and low-risk tool launch.
+
+- Central diagnostics button opens the right `Инструменты` tab launcher.
+- The launcher lists playbooks/tools with disabled reasons and requires `Выбрать` + explicit run.
+- Tool run uses the selected tool and first preset params if present.
+- Playbook run uses the selected playbook version id.
+
+### P12.8 Verification, Release And Manual QA
+
+**Local checks:**
+
+- `python scripts/verify_workspace.py`
+- `pnpm --dir webapp test -- --run webapp/src/pages/tickets/list-page.test.tsx webapp/src/features/queues/support-workspace-mappers.test.ts`
+- Targeted server tests in `server/tests/test_web_support_api.py` around messages/SLA, workspace aggregate, tools/playbooks run and observer URL.
+- `pnpm --dir webapp build`
+
+**Verification 2026-05-08 so far:**
+
+- `pnpm --dir webapp test -- --run src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` -> 41 passed.
+- `pnpm --dir webapp test -- --run src/app/router.test.tsx` -> 6 passed.
+- `pytest server/tests/test_web_support_api.py::test_web_support_ticket_workspace_stops_first_response_timer_after_reply -q` -> 1 passed.
+- `pnpm --dir webapp run build` -> passed.
+- `python scripts\verify_workspace.py` -> passed after updating `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py`.
+
+**Live checks:**
+
+- Release through no-bypass path only after green CI artifact.
+- Browser test `http://192.168.100.17:8666/app/tickets/T-000520`:
+  - public reply updates first-response/next-action without reload;
+  - diagnostic result appears without reload;
+  - top reply action focuses composer, composer send is the only submit;
+  - `/app/support` and main nav land on `/app/tickets`;
+  - Observer opens `/app/admin/observer?trace_id=...`;
+  - tool/playbook picker can run selected low-risk item.
+- Stop server after checks unless explicitly asked to keep it running.
+
+**Resolved product answers 2026-05-08:**
+
+1. `/app/support` and the broader support shell entries near settings/navigation must connect to the new `/app/tickets` workspace, not only the standalone tickets page.
+2. Diagnostics picker is confirmed as right `Инструменты` tab + inline drawer/panel. The central action should focus that picker instead of launching the first available diagnostic automatically.
 
 ## P11 Agent GUI Duplicate Taskbar Windows
 
