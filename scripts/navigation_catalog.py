@@ -1601,7 +1601,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump to 3.1.30 for the GUI taskbar-window fix after 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, Windows stable release bump to 3.1.31 for requester timeline projection support after 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",
