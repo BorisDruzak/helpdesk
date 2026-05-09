@@ -372,6 +372,10 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
   );
 }
 
+beforeEach(() => {
+  fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [], total: 0 }));
+});
+
 afterEach(() => {
   vi.clearAllMocks();
   ticketRealtimeListeners.clear();
@@ -438,6 +442,42 @@ describe("TicketListPage", () => {
     await waitFor(() => {
       expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
       expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+    });
+  });
+
+  it("loads and refreshes the all timeline through the typed timeline endpoint", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(
+      timelinePayload({
+        filter: "all",
+        items: [
+          {
+            ...timelinePayload().items[0],
+            result_summary: "Fresh all-tab diagnostic result",
+          },
+        ],
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await waitFor(() => {
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "all");
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
+    });
+    expect(await screen.findByText("Fresh all-tab diagnostic result")).toBeInTheDocument();
+
+    fetchSupportTicketTimelineMock.mockClear();
+
+    await act(async () => {
+      for (const listener of ticketRealtimeListeners.get("ticket-1") ?? []) {
+        listener({ kind: "operation_updated", ticketId: "ticket-1" });
+      }
+    });
+
+    await waitFor(() => {
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "all");
     });
   });
 

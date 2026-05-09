@@ -544,7 +544,7 @@ Created: 2026-05-09.
 
 Working mode: **Plan / Debug / Typed Web Boundary**.
 
-Overall progress: **75% implementation for this new slice**.
+Overall progress: **90% implementation for this new slice**.
 
 Change classification: **boundary change inside typed web boundary**. The work changes how `/app/tickets` consumes existing realtime events and query invalidation, but it should not change ticket workflow, SLA calculation, message persistence, operation dispatch, DB schema, Protocol V3 frames, or requester-visible semantics.
 
@@ -609,8 +609,8 @@ Conclusion:
 | P14.2 | `/app/tickets` query invalidation and fallback polling | 100% | Completed |
 | P14.3 | Backend producer audit for all message/operation event paths | 100% | Completed |
 | P14.4 | Unit/integration tests for realtime invalidation | 100% | Completed |
-| P14.5 | Remote browser/live checks with T-000520-style scenario | 0% | Planned |
-| P14.6 | Docs/CODEMAP sync and deploy signoff if code changes | 50% | In progress |
+| P14.5 | Remote browser/live checks with T-000520-style scenario | 60% | In progress |
+| P14.6 | Docs/CODEMAP sync and deploy signoff if code changes | 75% | In progress |
 
 ## Implementation Tasks
 
@@ -820,10 +820,14 @@ Completed locally:
 - Keeps existing fast polling for active operations and adds bounded selected-ticket fallback polling for non-operation message catch-up.
 - Added tests in `webapp/src/pages/tickets/list-page.test.tsx` for selected-ticket subscription, selected-only invalidation, active standalone timeline refresh and unsubscribe on ticket change.
 - Backend producer audit found existing push paths in `server/web_api/support_handlers.py`, `server/tickets/handlers.py`, `server/tools/service.py`, `server/websocket/command_result_components.py`, `server/websocket/outbox_ingest_components.py` and `server/app/services/operation_service.py`; no backend code change was needed.
+- Remote live check showed public support messages now appear in the selected ticket without manual refresh in under one second.
+- Remote operation check found a second root cause for diagnostics: the central `Все` timeline used the aggregate `/workspace` timeline, while fresh operation results were present in the typed `/timeline?filter=diagnostics` endpoint. The page now loads `filter=all` through the typed timeline endpoint as well, with aggregate timeline as loading fallback.
+- Added a regression test that the `Все` timeline calls `fetchSupportTicketTimeline(ticketId, "all")` and refreshes it on `operation_updated`.
 
 Verification completed:
 
 ```powershell
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx --run -t "all timeline"
 pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx --run
 pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/shared/realtime/client.test.ts --run
 pnpm --dir webapp run build

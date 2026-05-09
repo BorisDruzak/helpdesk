@@ -1076,7 +1076,7 @@ export function TicketListPage() {
   const timelineQuery = useQuery({
     queryKey: ["tickets-workspace-timeline", selectedTicketId, timelineApiFilter],
     queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, timelineApiFilter),
-    enabled: Boolean(selectedTicketId) && timelineFilter !== "all",
+    enabled: Boolean(selectedTicketId),
     retry: false,
     refetchInterval: workspaceHasLiveOperations(workspaceQuery.data)
       ? SUPPORT_OPERATION_REFRESH_MS
@@ -1117,7 +1117,7 @@ export function TicketListPage() {
   const endpointTimeline = timelineQuery.data ? mapSupportTimelineEntries(timelineQuery.data.items) : null;
   const visibleTimeline =
     timelineFilter === "all"
-      ? aggregateTimeline
+      ? endpointTimeline ?? aggregateTimeline
       : endpointTimeline ?? aggregateTimeline.filter((item) => item.kind === timelineFilter);
   const workspaceErrorState = workspaceQuery.isError ? classifyWorkspaceError(workspaceQuery.error) : null;
   const timelineEmptyState = visibleTimeline.length === 0 ? getTimelineEmptyState(timelineFilter) : null;
