@@ -174,6 +174,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 - admin observer surfaces должны поддерживать оба режима одного typed boundary: global обзор без выбранного `device_id` и device-scoped quick/drilldown после выбора устройства; отсутствие выбранного устройства не должно тихо отключать observer query целиком.
 
 - `/app/admin/observer` считается полноценным workbench: вкладки `quick`, `traces`, `signatures`, `degradations`, `runtime` должны оставаться согласованными между собой, а trace detail обязан показывать spans, error occurrences, span links и agent actions в одном экране вместо деградации до "open raw payload".
+- Admin observer cards and details must lead with operator-readable fields (`ticket_code`, `ticket_title`, device hostname/label, operation/tool label, latest error label, `display_title`, `display_subtitle`) and keep raw UUID-like ids as secondary metadata. Search and handoff flows must accept familiar ticket numbers such as `T-000520`, not only `ticket_id`.
 - если React observer surface использует mix typed `/api/web/admin/observer/*` и canonical `/api/admin/tech/*` / `/api/admin/settings/observer`, это допустимо только при явной фиксации в docs и при сохранении единого operator flow без legacy iframe/tech-panel jump.
 
 ## 8. Минимальный набор проверок

@@ -167,13 +167,69 @@ function traceMatchesSearch(trace: AdminObserverTraceItem, query: string): boole
   }
   return [
     trace.trace_id,
+    trace.display_title ?? "",
+    trace.display_subtitle ?? "",
     trace.root_kind_label,
     trace.status_label,
+    trace.ticket_code ?? "",
+    trace.ticket_title ?? "",
     trace.ticket_id ?? "",
+    trace.device_hostname ?? "",
+    trace.device_label ?? "",
+    trace.operation_label ?? "",
+    trace.primary_tool_name ?? "",
+    trace.primary_module_name ?? "",
+    trace.latest_error_label ?? "",
     trace.operation_id ?? "",
     trace.device_id ?? "",
     trace.job_id ?? "",
   ].some((value) => value.toLowerCase().includes(normalized));
+}
+
+function traceDisplayTitle(trace: AdminObserverTraceItem): string {
+  if (trace.display_title?.trim()) {
+    return trace.display_title.trim();
+  }
+  if (trace.ticket_code?.trim()) {
+    return `Тикет ${trace.ticket_code.trim()}`;
+  }
+  return trace.root_kind_label;
+}
+
+function traceDisplaySubtitle(trace: AdminObserverTraceItem): string {
+  if (trace.display_subtitle?.trim()) {
+    return trace.display_subtitle.trim();
+  }
+  return [
+    trace.ticket_title,
+    trace.device_label ?? trace.device_hostname,
+    trace.operation_label,
+    trace.primary_tool_name,
+    trace.latest_error_label,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function traceTicketLabel(trace: AdminObserverTraceItem): string {
+  if (trace.ticket_code?.trim()) {
+    return `Тикет ${trace.ticket_code.trim()}`;
+  }
+  if (trace.ticket_id?.trim()) {
+    return `ID тикета ${trace.ticket_id.trim()}`;
+  }
+  return "Без тикета";
+}
+
+function traceMetaParts(trace: AdminObserverTraceItem): string[] {
+  return [
+    traceTicketLabel(trace),
+    trace.ticket_status_label,
+    trace.ticket_priority ? `Приоритет ${trace.ticket_priority}` : null,
+    trace.queue_name,
+    trace.device_label ?? trace.device_hostname,
+    trace.operation_label,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function signatureMatchesSearch(signature: ObserverSignatureListItem, query: string): boolean {
@@ -291,6 +347,8 @@ function TraceList({
     <div className="space-y-3">
       {items.map((trace) => {
         const active = trace.trace_id === selectedTraceId;
+        const subtitle = traceDisplaySubtitle(trace);
+        const metaParts = traceMetaParts(trace);
 
         return (
           <button
@@ -306,8 +364,9 @@ function TraceList({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-semibold text-slate-950">{trace.root_kind_label}</p>
-                <p className="mt-1 truncate text-xs text-slate-500">{trace.trace_id}</p>
+                <p className="font-semibold text-slate-950">{traceDisplayTitle(trace)}</p>
+                {subtitle ? <p className="mt-1 truncate text-sm text-slate-600">{subtitle}</p> : null}
+                <p className="mt-1 truncate text-xs text-slate-500">trace: {trace.trace_id}</p>
               </div>
               <Badge tone={getStatusTone(trace.status)}>{trace.status_label}</Badge>
             </div>
@@ -315,10 +374,7 @@ function TraceList({
               Ошибок: {trace.error_count} • spans: {trace.span_count} • длительность:{" "}
               {formatDuration(trace.duration_ms)}
             </p>
-            <p className="mt-2 text-xs text-slate-500">
-              {trace.ticket_id ? `Тикет ${trace.ticket_id}` : "Без тикета"}
-              {trace.operation_id ? ` • операция ${trace.operation_id}` : ""}
-            </p>
+            <p className="mt-2 text-xs text-slate-500">{metaParts.join(" · ")}</p>
             <p className="mt-1 text-xs text-slate-400">
               Завершена: {formatDateTime(trace.finished_at ?? trace.started_at)}
             </p>
@@ -377,9 +433,23 @@ function TraceDetailCard({
   const agentActionsError = bundle?.agent_actions_error ?? detail.agent_actions_error;
   const evidenceSources = buildTraceEvidenceSources(detail.trace);
   const bundleEvidenceStats = buildBundleEvidenceStats(bundle);
+  const traceSubtitle = traceDisplaySubtitle(detail.trace);
+  const traceMeta = traceMetaParts(detail.trace);
 
   return (
     <div className="space-y-4">
+      <div className="rounded-[1.1rem] border border-border bg-white px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.22em] text-brand-700">{detail.trace.root_kind_label}</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-950">{traceDisplayTitle(detail.trace)}</h3>
+            {traceSubtitle ? <p className="mt-2 text-sm text-slate-600">{traceSubtitle}</p> : null}
+            <p className="mt-2 break-all text-xs text-slate-500">trace: {detail.trace.trace_id}</p>
+          </div>
+          <Badge tone={getStatusTone(detail.trace.status)}>{detail.trace.status_label}</Badge>
+        </div>
+        {traceMeta.length ? <p className="mt-3 text-xs text-slate-500">{traceMeta.join(" · ")}</p> : null}
+      </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
           <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Статус</p>
@@ -1129,25 +1199,31 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
             </CardHeader>
             <CardContent className="space-y-3">
               {(quickQuery.data?.hot_traces ?? []).length ? (
-                quickQuery.data!.hot_traces.map((trace) => (
-                  <article key={trace.trace_id} className="rounded-[1rem] border border-border bg-white px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-950">{trace.root_kind_label}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{trace.trace_id}</p>
+                quickQuery.data!.hot_traces.map((trace) => {
+                  const subtitle = traceDisplaySubtitle(trace);
+                  const metaParts = traceMetaParts(trace);
+                  return (
+                    <article key={trace.trace_id} className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-950">{traceDisplayTitle(trace)}</p>
+                          {subtitle ? <p className="mt-1 truncate text-sm text-slate-600">{subtitle}</p> : null}
+                          <p className="mt-1 truncate text-xs text-slate-500">trace: {trace.trace_id}</p>
+                        </div>
+                        <Badge tone={getStatusTone(trace.status)}>{trace.status_label}</Badge>
                       </div>
-                      <Badge tone={getStatusTone(trace.status)}>{trace.status_label}</Badge>
-                    </div>
-                    <p className="mt-3 text-sm text-slate-600">
-                      Ошибок: {trace.error_count} • spans: {trace.span_count} • {formatDuration(trace.duration_ms)}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <Button onClick={() => openTrace(trace.trace_id)} size="sm" variant="outline">
-                        Открыть trace
-                      </Button>
-                    </div>
-                  </article>
-                ))
+                      <p className="mt-3 text-sm text-slate-600">
+                        Ошибок: {trace.error_count} • spans: {trace.span_count} • {formatDuration(trace.duration_ms)}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">{metaParts.join(" · ")}</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button onClick={() => openTrace(trace.trace_id)} size="sm" variant="outline">
+                          Открыть trace
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })
               ) : (
                 <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-8 text-sm text-slate-500">
                   За выбранное окно горячих traces пока нет.

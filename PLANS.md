@@ -959,9 +959,9 @@ Next implementation checkpoint: run final workspace verification, then remote de
 
 ## Status
 
-Overall progress: **0%**.
+Overall progress: **45%**.
 
-Working mode: **Plan / Boundary / React UI**.
+Working mode: **Execute / Boundary / React UI**.
 
 Change classification: **boundary change inside observer typed web boundary**. Expected changes will likely touch server DTO mapping plus React UI. If search semantics or observer docs change, update canonical docs in the same slice.
 
@@ -969,12 +969,19 @@ Change classification: **boundary change inside observer typed web boundary**. E
 
 | Phase | Scope | Progress | Status |
 |---|---|---:|---|
-| O1 | Backend DTO enrichment for human-readable trace context | 0% | Pending |
-| O2 | Search by ticket number and business context | 0% | Pending |
-| O3 | Observer overview and traces UI redesign for operator readability | 0% | Pending |
-| O4 | Trace detail context panel and diagnostic explanation improvements | 0% | Pending |
+| O1 | Backend DTO enrichment for human-readable trace context | 100% | Done |
+| O2 | Search by ticket number and business context | 100% | Done |
+| O3 | Observer overview and traces UI redesign for operator readability | 55% | In progress |
+| O4 | Trace detail context panel and diagnostic explanation improvements | 45% | In progress |
 | O5 | Signatures/degradations readability pass | 0% | Pending |
-| O6 | Tests, docs and browser verification | 0% | Pending |
+| O6 | Tests, docs and browser verification | 35% | In progress |
+
+## Execution Notes
+
+- 2026-05-09: backend typed observer trace payloads now enrich traces with `ticket_code`, `ticket_title`, ticket status/priority/queue, `device_hostname`, `device_label`, operation/tool labels and `display_title` / `display_subtitle`.
+- 2026-05-09: observer trace search now matches trace `attrs_json`, so `q=T-000520` can find ticket-root traces by the familiar ticket number when projection contains `ticket_code`.
+- 2026-05-09: `/app/admin/observer` trace list, hot traces and detail header now prefer human-readable display fields while keeping `trace_id` as secondary technical metadata.
+- 2026-05-09: targeted backend and React tests were added for ticket-code search and human-readable observer cards; broader verification and live `T-000520` check are still pending.
 
 ## Target User Experience
 

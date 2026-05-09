@@ -464,6 +464,7 @@ class ObserverOverlayService:
                         ObserverTrace.operation_id.ilike(pattern),
                         ObserverTrace.device_id.ilike(pattern),
                         ObserverTrace.job_id.ilike(pattern),
+                        ObserverTrace.attrs_json.cast(sa.Text).ilike(pattern),
                         exists(
                             select(ObserverSpan.span_id).where(
                                 ObserverSpan.trace_id == ObserverTrace.trace_id,
@@ -2050,6 +2051,7 @@ class ObserverOverlayService:
                     "attrs_json": {
                         "ticket_id": root_ticket.ticket_id,
                         "ticket_code": root_ticket.ticket_code,
+                        "ticket_title": root_ticket.title,
                         "ticket_status": root_ticket.status,
                         "observer_root_trace_id": root_ticket.observer_root_trace_id,
                     },
@@ -2447,6 +2449,7 @@ class ObserverOverlayService:
         if root_ticket is not None:
             attrs_json["ticket_status"] = root_ticket.status
             attrs_json["ticket_code"] = root_ticket.ticket_code
+            attrs_json["ticket_title"] = root_ticket.title
             attrs_json["observer_root_trace_id"] = root_ticket.observer_root_trace_id
 
         return payloads, links, {

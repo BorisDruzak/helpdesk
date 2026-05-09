@@ -19,7 +19,7 @@ from agents.agent_builds_handlers import (
     enqueue_device_agent_update,
 )
 from app.db import get_session
-from app.db.models import Playbook, PlaybookStep, PlaybookVersion
+from app.db.models import Device, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketQueue
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
@@ -927,6 +927,161 @@ def _observer_runtime_summary_from_app(request: web.Request) -> AdminObserverRun
     )
 
 
+def _first_compact_value(*values: object) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        compacted = value.strip() if isinstance(value, str) else str(value).strip()
+        if compacted:
+            return compacted
+    return None
+
+
+def _first_compact_from_list(value: object) -> str | None:
+    if not isinstance(value, list):
+        return None
+    for item in value:
+        compacted = _first_compact_value(item)
+        if compacted:
+            return compacted
+    return None
+
+
+def _observer_display_title(item: dict) -> str:
+    ticket_code = _first_compact_value(item.get("ticket_code"))
+    root_kind = _first_compact_value(item.get("root_kind"))
+    if ticket_code and root_kind == "ticket":
+        return f"Тикет {ticket_code}"
+    if ticket_code:
+        return f"Связано с тикетом {ticket_code}"
+    operation_label = _first_compact_value(item.get("operation_label"))
+    if operation_label:
+        return operation_label
+    tool_name = _first_compact_value(item.get("primary_tool_name"))
+    if tool_name:
+        return f"Инструмент {tool_name}"
+    return _observer_kind_label(root_kind)
+
+
+def _observer_display_subtitle(item: dict) -> str:
+    parts = [
+        _first_compact_value(item.get("ticket_title")),
+        _first_compact_value(item.get("ticket_status_label")),
+        _first_compact_value(item.get("device_label")),
+        _first_compact_value(item.get("primary_tool_name")),
+        _first_compact_value(item.get("latest_error_label")),
+    ]
+    compacted = []
+    for part in parts:
+        if part and part not in compacted:
+            compacted.append(part)
+    if compacted:
+        return " · ".join(compacted)
+    trace_id = _first_compact_value(item.get("trace_id"))
+    return f"Trace {trace_id}" if trace_id else ""
+
+
+async def _enrich_admin_observer_trace_items(session, items: list[dict]) -> list[dict]:
+    if not items:
+        return []
+
+    enriched = [dict(item) for item in items if isinstance(item, dict)]
+    ticket_ids: set[str] = set()
+    device_ids: set[str] = set()
+    operation_ids: set[str] = set()
+    queue_ids: set[int] = set()
+
+    for item in enriched:
+        attrs = item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {}
+        ticket_id = _first_compact_value(item.get("ticket_id"), attrs.get("ticket_id"))
+        device_id = _first_compact_value(item.get("device_id"), attrs.get("device_id"))
+        operation_id = _first_compact_value(item.get("operation_id"), attrs.get("operation_id"))
+        if ticket_id:
+            ticket_ids.add(ticket_id)
+        if device_id:
+            device_ids.add(device_id)
+        if operation_id:
+            operation_ids.add(operation_id)
+
+    tickets: dict[str, Ticket] = {}
+    if ticket_ids:
+        rows = (await session.execute(select(Ticket).where(Ticket.ticket_id.in_(ticket_ids)))).scalars().all()
+        tickets = {row.ticket_id: row for row in rows}
+        queue_ids = {int(row.queue_id) for row in rows if row.queue_id is not None}
+        device_ids.update(row.device_id for row in rows if row.device_id)
+
+    devices: dict[str, Device] = {}
+    if device_ids:
+        rows = (await session.execute(select(Device).where(Device.device_id.in_(device_ids)))).scalars().all()
+        devices = {row.device_id: row for row in rows}
+
+    operations: dict[str, Operation] = {}
+    if operation_ids:
+        rows = (await session.execute(select(Operation).where(Operation.operation_id.in_(operation_ids)))).scalars().all()
+        operations = {row.operation_id: row for row in rows}
+
+    queues: dict[int, TicketQueue] = {}
+    if queue_ids:
+        rows = (await session.execute(select(TicketQueue).where(TicketQueue.id.in_(queue_ids)))).scalars().all()
+        queues = {int(row.id): row for row in rows}
+
+    for item in enriched:
+        attrs = item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {}
+        ticket_id = _first_compact_value(item.get("ticket_id"), attrs.get("ticket_id"))
+        operation_id = _first_compact_value(item.get("operation_id"), attrs.get("operation_id"))
+        ticket = tickets.get(ticket_id or "")
+        operation = operations.get(operation_id or "")
+        device_id = _first_compact_value(item.get("device_id"), attrs.get("device_id"), getattr(ticket, "device_id", None))
+        device = devices.get(device_id or "")
+        queue = queues.get(int(ticket.queue_id)) if ticket is not None and ticket.queue_id is not None else None
+
+        tool_name = _first_compact_value(
+            _first_compact_from_list(attrs.get("tool_names")),
+            attrs.get("tool_name"),
+            getattr(operation, "tool_name", None),
+        )
+        module_name = _first_compact_value(
+            _first_compact_from_list(attrs.get("module_names")),
+            attrs.get("module_name"),
+        )
+        operation_kind = _first_compact_value(getattr(operation, "kind", None), item.get("root_kind"))
+        operation_label = _first_compact_value(
+            attrs.get("operation_label"),
+            f"{operation_kind}: {tool_name}" if operation_kind and tool_name else None,
+            tool_name,
+            operation_kind,
+        )
+        latest_error = _first_compact_value(
+            attrs.get("latest_error_label"),
+            attrs.get("error_signature"),
+            _first_compact_from_list(attrs.get("error_signatures")),
+        )
+
+        item["ticket_id"] = ticket_id
+        item["ticket_code"] = _first_compact_value(getattr(ticket, "ticket_code", None), attrs.get("ticket_code"))
+        item["ticket_title"] = _first_compact_value(getattr(ticket, "title", None), attrs.get("ticket_title"))
+        item["ticket_status"] = _first_compact_value(getattr(ticket, "status", None), attrs.get("ticket_status"))
+        item["ticket_status_label"] = _observer_status_label(item.get("ticket_status"))
+        item["ticket_priority"] = _first_compact_value(getattr(ticket, "priority", None), attrs.get("ticket_priority"))
+        item["queue_name"] = _first_compact_value(getattr(queue, "name", None), attrs.get("queue_name"))
+        item["requester_display_name"] = _first_compact_value(
+            getattr(ticket, "requester_id", None),
+            attrs.get("requester_display_name"),
+        )
+        item["device_id"] = device_id
+        item["device_hostname"] = _first_compact_value(getattr(device, "hostname", None), attrs.get("device_hostname"))
+        item["device_label"] = _first_compact_value(item.get("device_hostname"), device_id)
+        item["operation_label"] = operation_label
+        item["latest_error_label"] = latest_error
+        item["latest_error_stage"] = _first_compact_value(attrs.get("failure_stage"), attrs.get("component"))
+        item["primary_tool_name"] = tool_name
+        item["primary_module_name"] = module_name
+        item["display_title"] = _first_compact_value(item.get("display_title"), _observer_display_title(item))
+        item["display_subtitle"] = _first_compact_value(item.get("display_subtitle"), _observer_display_subtitle(item))
+
+    return enriched
+
+
 def _empty_admin_observer_quick_payload(
     *,
     lookback_hours: int,
@@ -962,7 +1117,23 @@ def _map_admin_observer_quick_trace(item: dict) -> AdminObserverQuickTrace:
         status=item.get("status"),
         status_label=_observer_status_label(item.get("status")),
         ticket_id=item.get("ticket_id"),
+        ticket_code=item.get("ticket_code"),
+        ticket_title=item.get("ticket_title"),
+        ticket_status=item.get("ticket_status"),
+        ticket_status_label=item.get("ticket_status_label"),
+        ticket_priority=item.get("ticket_priority"),
+        queue_name=item.get("queue_name"),
+        requester_display_name=item.get("requester_display_name"),
         device_id=item.get("device_id"),
+        device_hostname=item.get("device_hostname"),
+        device_label=item.get("device_label"),
+        operation_label=item.get("operation_label"),
+        latest_error_label=item.get("latest_error_label"),
+        latest_error_stage=item.get("latest_error_stage"),
+        primary_tool_name=item.get("primary_tool_name"),
+        primary_module_name=item.get("primary_module_name"),
+        display_title=item.get("display_title"),
+        display_subtitle=item.get("display_subtitle"),
         duration_ms=item.get("duration_ms"),
         error_count=int(item.get("error_count") or 0),
         span_count=int(item.get("span_count") or 0),
@@ -980,8 +1151,24 @@ def _map_admin_observer_trace_item(item: dict) -> AdminObserverTraceItem:
         status=item.get("status"),
         status_label=_observer_status_label(item.get("status")),
         ticket_id=item.get("ticket_id"),
+        ticket_code=item.get("ticket_code"),
+        ticket_title=item.get("ticket_title"),
+        ticket_status=item.get("ticket_status"),
+        ticket_status_label=item.get("ticket_status_label"),
+        ticket_priority=item.get("ticket_priority"),
+        queue_name=item.get("queue_name"),
+        requester_display_name=item.get("requester_display_name"),
         device_id=item.get("device_id"),
+        device_hostname=item.get("device_hostname"),
+        device_label=item.get("device_label"),
         operation_id=item.get("operation_id"),
+        operation_label=item.get("operation_label"),
+        latest_error_label=item.get("latest_error_label"),
+        latest_error_stage=item.get("latest_error_stage"),
+        primary_tool_name=item.get("primary_tool_name"),
+        primary_module_name=item.get("primary_module_name"),
+        display_title=item.get("display_title"),
+        display_subtitle=item.get("display_subtitle"),
         job_id=item.get("job_id"),
         duration_ms=item.get("duration_ms"),
         error_count=int(item.get("error_count") or 0),
@@ -1318,6 +1505,10 @@ async def _build_admin_observer_quick_payload(
                 degradation_limit=4,
                 flow_limit=4,
             )
+            raw_payload["hot_traces"] = await _enrich_admin_observer_trace_items(
+                session,
+                [item for item in raw_payload.get("hot_traces") or [] if isinstance(item, dict)],
+            )
             await session.commit()
     except Exception as exc:
         logger.warning(
@@ -1499,6 +1690,10 @@ async def _build_admin_observer_traces_payload(
         async with get_session() as session:
             service = ObserverOverlayService(session)
             raw_traces = await service.search_traces(filters, limit=limit)
+            raw_traces = await _enrich_admin_observer_trace_items(
+                session,
+                [item for item in raw_traces if isinstance(item, dict)],
+            )
             await session.commit()
     except Exception as exc:
         logger.warning(
@@ -1579,6 +1774,9 @@ async def _build_admin_observer_trace_detail_payload(
             if raw_detail is None:
                 await session.rollback()
                 raise LookupError("TRACE_NOT_FOUND")
+            trace_payload = raw_detail.get("trace") if isinstance(raw_detail.get("trace"), dict) else {}
+            enriched_traces = await _enrich_admin_observer_trace_items(session, [trace_payload])
+            raw_detail["trace"] = enriched_traces[0] if enriched_traces else trace_payload
             await session.commit()
     except LookupError:
         raise

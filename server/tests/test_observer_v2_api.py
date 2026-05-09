@@ -146,6 +146,24 @@ async def test_ticket_root_trace_canonicalizes_lifecycle_events_and_groups_ticke
     assert search_payload["count"] == 1
     assert search_payload["traces"][0]["trace_id"] == trace_id
     assert search_payload["traces"][0]["ticket_id"] == ticket_id
+    assert search_payload["traces"][0]["attrs_json"]["ticket_code"] == "T-OBSROOT01"
+
+    web_search_resp = await test_client.get(
+        "/api/web/admin/observer/traces?root_kind=ticket&q=T-OBSROOT01&limit=5",
+        headers=_auth(),
+    )
+    assert web_search_resp.status == 200
+    web_search_payload = await web_search_resp.json()
+    assert web_search_payload["status"] == "success"
+    assert web_search_payload["data"]["summary"]["visible_count"] == 1
+    web_trace = web_search_payload["data"]["traces"][0]
+    assert web_trace["trace_id"] == trace_id
+    assert web_trace["ticket_id"] == ticket_id
+    assert web_trace["ticket_code"] == "T-OBSROOT01"
+    assert web_trace["ticket_title"] == "Observer root trace"
+    assert web_trace["device_hostname"] == "observer-v2-root-host"
+    assert web_trace["display_title"] == "Тикет T-OBSROOT01"
+    assert "Observer root trace" in web_trace["display_subtitle"]
 
     detail_resp = await test_client.get(
         f"/api/admin/tech/traces/{trace_id}",

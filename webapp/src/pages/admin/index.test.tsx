@@ -473,6 +473,11 @@ function createTraceItem(params: {
   status: string;
   statusLabel: string;
   ticketId: string | null;
+  ticketCode?: string | null;
+  ticketTitle?: string | null;
+  deviceHostname?: string | null;
+  displayTitle?: string | null;
+  displaySubtitle?: string | null;
   deviceId: string;
   operationId: string;
   durationMs: number;
@@ -489,8 +494,24 @@ function createTraceItem(params: {
     status: params.status,
     status_label: params.statusLabel,
     ticket_id: params.ticketId,
+    ticket_code: params.ticketCode ?? null,
+    ticket_title: params.ticketTitle ?? null,
+    ticket_status: params.status,
+    ticket_status_label: params.statusLabel,
+    ticket_priority: "P3",
+    queue_name: "Support L1",
+    requester_display_name: null,
     device_id: params.deviceId,
+    device_hostname: params.deviceHostname ?? null,
+    device_label: params.deviceHostname ?? params.deviceId,
     operation_id: params.operationId,
+    operation_label: params.operationId ? `Операция ${params.operationId}` : null,
+    latest_error_label: null,
+    latest_error_stage: null,
+    primary_tool_name: null,
+    primary_module_name: null,
+    display_title: params.displayTitle ?? null,
+    display_subtitle: params.displaySubtitle ?? null,
     job_id: null,
     duration_ms: params.durationMs,
     error_count: params.errorCount,
@@ -575,6 +596,11 @@ describe("AdminWorkspacePage", () => {
       status: "failed",
       statusLabel: "Ошибка",
       ticketId: "ticket-1",
+      ticketCode: "T-000520",
+      ticketTitle: "Обновление агента на рабочей станции",
+      deviceHostname: "workstation-520",
+      displayTitle: "Тикет T-000520",
+      displaySubtitle: "Обновление агента на рабочей станции · workstation-520",
       deviceId: "device-1",
       operationId: "op-update-1",
       durationMs: 6400,
@@ -1597,6 +1623,9 @@ describe("AdminWorkspacePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Observer для WS-01" })).toBeInTheDocument();
     expect((await screen.findAllByText("Горячие traces")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Тикет T-000520")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Обновление агента на рабочей станции/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/workstation-520/)).length).toBeGreaterThan(0);
     expect(await screen.findByText("Launcher signature mismatch")).toBeInTheDocument();
     expect(await screen.findByText("Mass signatures и dangerous flows")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Конструктор форм заявок" })).toBeInTheDocument();

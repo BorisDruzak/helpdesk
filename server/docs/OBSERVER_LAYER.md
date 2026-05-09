@@ -138,6 +138,8 @@ Ticket-scoped API:
 - `GET /api/web/admin/observer/traces`
 - `GET /api/web/admin/observer/traces/{trace_id}`
 
+Typed admin observer trace rows expose operator-readable context in addition to raw identifiers: `ticket_code`, `ticket_title`, ticket status/priority/queue, requester label, `device_hostname`, `device_label`, operation/tool labels, latest error label/stage and `display_title` / `display_subtitle`. Raw `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id` and `error_signature` stay available for diagnostics and deep links, but UI must treat them as secondary metadata.
+
 Codex/live debugging entrypoints:
 
 - `GET /api/admin/tech/observer/search?q=...` correlates by trace, ticket, operation, device, tool, module or signature text and returns matching traces/signatures plus next checks.
@@ -196,6 +198,7 @@ New React workspaces:
 - `/app/admin` должен брать trace list и detail drilldown через typed endpoints `GET /api/web/admin/observer/traces` и `GET /api/web/admin/observer/traces/{trace_id}`, чтобы device-scoped выборка и span/error detail не зависели от raw legacy `/api/admin/tech/traces*`.
 - `/app/admin/observer` теперь считается полноценным observer workbench, а не просто quick-summary экраном: канонический набор вкладок для React surface — `quick`, `traces`, `signatures`, `degradations`, `runtime`; trace detail обязан быстро показывать spans, error occurrences и span links, а agent actions брать из diagnostic bundle, чтобы два параллельных запроса не конкурировали за materialized action sync.
 - `/app/admin/observer` trace search работает на сервере: typed traces принимают `q`, `trace_id`, `ticket_id`, `operation_id`, `tool_name`, `module_name`, `error_signature` и `min_duration_ms`, поэтому UI не ограничен фильтрацией первой загруженной страницы.
+- `/app/admin/observer` trace search must match familiar ticket numbers such as `T-000520` through trace `attrs_json.ticket_code` and typed enriched fields; support/admin handoff should prefer ticket numbers in labels while preserving UUID-like ids for copyable diagnostics.
 - `/app/admin/observer` trace detail показывает `GET /api/admin/tech/diagnostics/bundle` с next checks, logs/audit counters и компактными agent action rows; long `error_signature`, trace and operation identifiers must wrap inside drilldown cards; server-side action compaction обязан ограничивать большие `details` payloads, а materialized action-span sync включается только через `sync_agent_actions=1`, чтобы `tool response` traces не подвешивали detail/bundle UI.
 - `/app/admin/observer?trace_id=...` is the canonical deep link from support trace cards: it must switch to the traces tab, pass `trace_id` into the typed traces query, select the requested trace and load detail/bundle for that trace. `ticket_id` and `operation_id` query params are accepted as additional typed trace filters for support/admin handoff.
 - `/app/admin/observer` допускает гибрид transport model: быстрый список и фильтры идут через typed `/api/web/admin/observer/*`, а signature/degradation/runtime/settings/detail surfaces могут читать прямые tech/settings endpoints (`/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/admin/tech/traces/runtime`, `/api/admin/settings/observer`) пока они остаются canonical source of truth для observer backend.
