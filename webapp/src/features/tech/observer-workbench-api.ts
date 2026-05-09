@@ -11,6 +11,11 @@ type LegacyOkResponse<T> = {
   status: "ok";
 } & T;
 
+type TypedSuccessResponse<T> = {
+  status: "success";
+  data: T;
+};
+
 type LegacyErrorResponse = {
   status: "error";
   error?: string;
@@ -216,6 +221,18 @@ async function readLegacyOk<T>(response: Response, fallbackMessage: string): Pro
   return payload as T;
 }
 
+async function readTypedOrLegacyOk<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await readJson<TypedSuccessResponse<T> | LegacyOkResponse<T> | LegacyErrorResponse>(response);
+  if (!response.ok || !payload || payload.status === "error") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new ObserverWorkbenchApiError(errorPayload?.error ?? fallbackMessage, response.status);
+  }
+  if (payload.status === "success") {
+    return payload.data;
+  }
+  return payload as T;
+}
+
 function normalizeObserverTraceDetailPayload(
   payload: RawObserverTraceDetailPayload
 ): ObserverTraceDetailPayload {
@@ -352,7 +369,7 @@ export async function fetchObserverWorkbenchTraceDetail(
       credentials: "same-origin",
     }
   );
-  const payload = await readLegacyOk<RawObserverTraceDetailPayload>(
+  const payload = await readTypedOrLegacyOk<RawObserverTraceDetailPayload>(
     response,
     "Не удалось загрузить детали трассы."
   );

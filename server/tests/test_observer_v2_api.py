@@ -165,6 +165,16 @@ async def test_ticket_root_trace_canonicalizes_lifecycle_events_and_groups_ticke
     assert web_trace["display_title"] == "Тикет T-OBSROOT01"
     assert "Observer root trace" in web_trace["display_subtitle"]
 
+    web_detail_resp = await test_client.get(
+        f"/api/web/admin/observer/trace-detail/{trace_id}",
+        headers=_auth(),
+    )
+    assert web_detail_resp.status == 200
+    web_detail_payload = await web_detail_resp.json()
+    assert web_detail_payload["status"] == "success"
+    assert web_detail_payload["data"]["trace"]["ticket_code"] == "T-OBSROOT01"
+    assert web_detail_payload["data"]["trace"]["display_title"] == "Тикет T-OBSROOT01"
+
     detail_resp = await test_client.get(
         f"/api/admin/tech/traces/{trace_id}",
         headers=_auth(),

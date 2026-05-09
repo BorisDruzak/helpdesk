@@ -495,7 +495,7 @@ def setup_routes(app: web.Application) -> None:
         web.put('/api/web/admin/access/groups/{group_id}/queues', handle_web_admin_access_group_queues),
         web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),
-        web.get('/api/web/admin/observer/trace-detail/{trace_id}', handle_tech_trace_detail),
+        web.get('/api/web/admin/observer/trace-detail/{trace_id}', handle_web_admin_observer_trace_detail),
         web.get('/api/web/admin/observer/traces/{trace_id}', handle_web_admin_observer_trace_detail),
         web.get('/api/web/admin/observer/diagnostics/bundle', handle_tech_diagnostics_bundle),
         web.get('/api/web/admin/observer/runtime', handle_tech_traces_runtime),
