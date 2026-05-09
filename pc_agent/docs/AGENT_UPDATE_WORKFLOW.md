@@ -103,8 +103,9 @@ python pc_agent/build_windows_release_v2.py
 ### 3.5 Публикация на сервер
 
 1. Убедиться, что Linux server поднят.
-2. Загрузить новый build через admin UI или `POST /api/agent_builds/upload`.
-3. Проверить `GET /api/agent_builds` / список билдов в admin UI.
+2. Загрузить новый build через React admin UI `/app/admin/agent-updates` или `POST /api/agent_builds/upload`.
+3. Проверить `GET /api/agent_builds` / список билдов в `/app/admin/agent-updates`.
+4. Назначить target rollout policy через `/app/admin/agent-updates` или `PATCH /api/agent_updates/rollout_policy`.
 4. Не использовать overwrite старой версии как обычный путь релиза.
 
 ### 3.6 Rollout и верификация

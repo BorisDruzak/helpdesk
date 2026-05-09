@@ -257,6 +257,25 @@ export function AdminDevicePage() {
                 className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
                 onClick={() => {
                   startTransition(() => {
+                    const query = new URLSearchParams();
+                    if (selectedDevice?.device_id) {
+                      query.set("device", selectedDevice.device_id);
+                    }
+                    if (selectedDevice?.target) {
+                      query.set("target", selectedDevice.target);
+                    }
+                    navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
+                  });
+                }}
+                type="button"
+              >
+                <span className="font-medium text-slate-900">Обновления агента и rollout</span>
+                <ArrowUpRight className="h-4 w-4 text-brand-700" />
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
+                onClick={() => {
+                  startTransition(() => {
                     navigate("/app/admin/modules");
                   });
                 }}

@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Building2,
+  DownloadCloud,
   KeyRound,
   Layers3,
   MonitorCog,
@@ -81,6 +82,14 @@ export const appNavigation: AppNavItem[] = [
     icon: ShieldCheck,
     section: "admin",
     to: "/app/admin/device",
+    permission: "admin.inventory.view",
+  },
+  {
+    label: "Обновления агента",
+    description: "Build registry и rollout policy",
+    icon: DownloadCloud,
+    section: "admin",
+    to: "/app/admin/agent-updates",
     permission: "admin.inventory.view",
   },
   {

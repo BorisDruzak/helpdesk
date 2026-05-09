@@ -5,6 +5,7 @@ import {
   BellRing,
   CheckCircle2,
   ClipboardList,
+  DownloadCloud,
   KeyRound,
   Layers3,
   Monitor,
@@ -449,6 +450,16 @@ export function AdminInventoryPage() {
             {activePanel === "rollout" ? (
               <RolloutPanel
                 assignments={devicesQuery.data?.rollout ?? []}
+                onOpenAgentUpdates={() => {
+                  const query = new URLSearchParams();
+                  if (selectedDevice?.device_id) {
+                    query.set("device", selectedDevice.device_id);
+                  }
+                  if (selectedDevice?.target) {
+                    query.set("target", selectedDevice.target);
+                  }
+                  navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
+                }}
                 onOpenModules={() => navigate("/app/admin/modules")}
                 selectedDevice={selectedDevice}
               />
@@ -462,6 +473,16 @@ export function AdminInventoryPage() {
           device={selectedDevice}
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
+          onOpenAgentUpdates={() => {
+            const query = new URLSearchParams();
+            if (selectedDevice?.device_id) {
+              query.set("device", selectedDevice.device_id);
+            }
+            if (selectedDevice?.target) {
+              query.set("target", selectedDevice.target);
+            }
+            navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
+          }}
           onOpenDeviceCard={openDeviceCard}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
@@ -725,10 +746,12 @@ function TokensPanel({
 
 function RolloutPanel({
   assignments,
+  onOpenAgentUpdates,
   onOpenModules,
   selectedDevice,
 }: {
   assignments: AdminDevicesPayload["rollout"];
+  onOpenAgentUpdates: () => void;
   onOpenModules: () => void;
   selectedDevice: DeviceItem | null;
 }) {
@@ -739,9 +762,14 @@ function RolloutPanel({
           <p className="text-sm font-semibold text-slate-950">Rollout-назначения</p>
           <p className="mt-1 text-sm text-slate-500">Контекст обновления агента и target выбранного устройства.</p>
         </div>
-        <Button leadingIcon={<Layers3 className="h-4 w-4" />} onClick={onOpenModules} size="sm" variant="outline">
-          Модули
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button leadingIcon={<DownloadCloud className="h-4 w-4" />} onClick={onOpenAgentUpdates} size="sm">
+            Agent Updates
+          </Button>
+          <Button leadingIcon={<Layers3 className="h-4 w-4" />} onClick={onOpenModules} size="sm" variant="outline">
+            Модули
+          </Button>
+        </div>
       </div>
       <div className="divide-y divide-border">
         {selectedDevice ? (
@@ -786,6 +814,7 @@ function AgentDetailsPanel({
   device,
   onCleanupApply,
   onCleanupPreview,
+  onOpenAgentUpdates,
   onOpenDeviceCard,
   onOpenPlaybooks,
   request,
@@ -797,6 +826,7 @@ function AgentDetailsPanel({
   device: DeviceItem | null;
   onCleanupApply: () => void;
   onCleanupPreview: () => void;
+  onOpenAgentUpdates: () => void;
   onOpenDeviceCard: () => void;
   onOpenPlaybooks: () => void;
   request: AdminConnectionRequestItem | null;
@@ -906,6 +936,14 @@ function AgentDetailsPanel({
             {cleanupFeedback ? <p className="text-sm text-slate-600">{cleanupFeedback}</p> : null}
 
             <div className="space-y-2">
+              <Button
+                className="w-full justify-start"
+                leadingIcon={<DownloadCloud className="h-4 w-4" />}
+                onClick={onOpenAgentUpdates}
+                size="sm"
+              >
+                Обновления агента
+              </Button>
               <Button
                 className="w-full justify-start"
                 leadingIcon={<ArrowUpRight className="h-4 w-4" />}

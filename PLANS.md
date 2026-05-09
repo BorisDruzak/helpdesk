@@ -1,4 +1,4 @@
-# Remote Assist MVP Plan
+﻿# Remote Assist MVP Plan
 
 Created: 2026-05-09.
 
@@ -169,3 +169,102 @@ python scripts/manage_remote_stack.py stop server
 ## Handoff
 
 Next step: finish the `3.1.33` agent build/upload/canary. Do not start broad rollout until the launcher canary reports `AGENT_VERSION=3.1.33` after self-update.
+
+---
+
+# Agent Updates React UI Plan
+
+Created: 2026-05-10.
+
+Working mode: Execute / Boundary + Release-control.
+
+Change classification: boundary/release-control. The change exposes the existing agent build registry and rollout policy in the React `/app/admin` workspace, then uses the existing server-side rollout policy to make Windows stable `3.1.33` the preferred agent version on the live stand.
+
+## Goal
+
+Add a production-ready React admin page for agent builds and rollout policy:
+
+- `/app/admin/agent-updates` shows the agent build registry.
+- Admin can upload, download and delete builds.
+- Admin can assign or clear rollout policy per target.
+- Inventory and device pages have explicit navigation into Agent Updates.
+- Device/update context clearly shows current version, target rollout, recommended build and last update status.
+- The live stand should have `windows_amd64/stable/3.1.33` assigned as the preferred rollout version.
+
+## Scope
+
+- Reuse existing endpoints:
+  - `GET /api/agent_builds`
+  - `POST /api/agent_builds/upload`
+  - `DELETE /api/agent_builds/{target}/{channel}/{version}`
+  - `GET /api/agent_builds/{target}/{channel}/{version}/download`
+  - `GET /api/agent_updates/rollout_policy`
+  - `PATCH /api/agent_updates/rollout_policy`
+  - existing typed device update endpoints under `/api/web/admin/devices/{device_id}/updates`
+- Add frontend API adapter/types under `webapp/src/features/agent-updates`.
+- Add React page and route under `/app/admin/agent-updates`.
+- Add sidebar item and quick links from inventory/device pages.
+- No new DB schema unless an existing endpoint cannot satisfy the page.
+- No per-device persistent preferred version in this slice; current contract stays target-level rollout policy.
+
+## Constraints
+
+- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
+- Keep rollout source of truth in existing server policy by target.
+- Do not duplicate legacy `/admin` logic in backend; React uses existing API.
+- Do not delete builds assigned to rollout; backend already blocks this and UI must explain it.
+- Deploy through project release/deploy scripts only.
+
+## Current State
+
+Progress: 0%.
+
+Backend agent build and rollout endpoints already exist and are contract-tested. Legacy `/admin` has a working Agent Updates tab. New `/app/admin` only has a device-level update panel that can run the recommended build and read assigned rollout, but it lacks first-class build registry and rollout policy controls.
+
+## Implementation Plan
+
+1. Add typed agent update API client for builds, rollout policy, upload, delete and assign/clear policy.
+2. Add `AgentUpdatesPanel` with:
+   - build list grouped by target/channel;
+   - summary tiles for targets, assigned rollout and latest versions;
+   - upload form;
+   - assign rollout / clear rollout controls;
+   - download and guarded delete actions;
+   - loading, error and empty states.
+3. Add `/app/admin/agent-updates` route, lazy page and navigation item.
+4. Add quick links:
+   - inventory panel/button to Agent Updates;
+   - device page quick action to Agent Updates with selected target context when possible.
+5. Add focused tests for API serialization and route/sidebar visibility where practical.
+6. Run local checks:
+   - `python scripts/verify_workspace.py`
+   - `pnpm --dir webapp run build`
+   - focused webapp tests if touched.
+7. Commit locally.
+8. Deploy to Linux stand, run smoke and browser check at `http://192.168.100.17:8666/admin`.
+9. Upload or confirm `windows_amd64/stable/3.1.33`, then set rollout policy to `3.1.33`.
+10. Verify via API and React page that `3.1.33` is assigned.
+
+## Verification
+
+Pending:
+
+```powershell
+python scripts/verify_workspace.py
+pnpm --dir webapp run build
+python scripts/release_server_to_remote.py --leave-running
+python scripts/manage_remote_stack.py smoke server
+```
+
+Live browser verification:
+
+- Open `http://192.168.100.17:8666/admin`.
+- Navigate to `/app/admin/agent-updates`.
+- Confirm build registry loads.
+- Confirm `windows_amd64/stable/3.1.33` is visible.
+- Confirm rollout policy shows `3.1.33` assigned.
+- Open inventory and device page and confirm Agent Updates links.
+
+## Handoff
+
+Current next step: commit the React Agent Updates UI, deploy to the Linux stand, verify `/app/admin/agent-updates` in browser, then set `windows_amd64/stable/3.1.33` as live preferred rollout.
