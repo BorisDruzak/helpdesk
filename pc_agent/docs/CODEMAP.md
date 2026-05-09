@@ -204,5 +204,6 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 
 - Agent-side Remote Assist starts from `pc_agent/ws_agent.py` handling the server command `remote_assist.request`; it publishes a UI event instead of blocking the WebSocket loop.
 - UI entry points are `pc_agent/ui_gui/main_window.py` and `pc_agent/ui_gui/remote_assist_dialog.py`: the user gets a non-blocking consent dialog, an active-session banner, and a user-side end-session action. The consent dialog is retained by session id while open and raised as a topmost Qt dialog so it is not garbage-collected or hidden before the user can approve/deny.
+- Windows stable agent `3.1.33` carries the Remote Assist runtime fix set: command handling does not shadow `datetime`, and `main_window.py` retains/topmost consent dialogs by session id until the user decides.
 - WebRTC/capture runtime lives under `pc_agent/remote_assist/`: `thread.py` owns a dedicated `QThread` + asyncio loop, `webrtc_client.py` owns aiortc signaling/peer connection, `screen_track.py` captures one primary monitor through `mss`, and `input_controller.py` is an explicit disabled stub for future control mode.
 - MVP stays view-only: no keyboard/mouse injection, no file transfer, no audio, and no screen-frame persistence. Keep capture/WebRTC work outside the GUI thread.

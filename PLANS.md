@@ -44,16 +44,16 @@ ticket -> request remote assist -> user consent -> WebRTC view-only session -> a
 
 ## Current State
 
-Overall progress: 82%.
+Overall progress: 88%.
 
-Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and disabled control-channel architecture. Docs/CODEMAP/Protocol/navigation catalog are synced and local verification passed. Remaining work is deploy/migration on the Linux stand and live browser/WebRTC validation on real devices.
+Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and disabled control-channel architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Current stage is publishing the Remote Assist agent fixes as Windows stable `3.1.33`, uploading the build, and canarying it through the launcher update flow before any broader rollout.
 
 | Level | Scope | Progress | Status |
 |---|---|---:|---|
 | 0 | Project analysis and plan | 100% | Completed |
 | 1 | DB, API, lifecycle, consent, audit | 100% | Implemented and locally verified |
-| 2 | Signaling and view-only WebRTC stream | 85% | Implemented, needs live WebRTC validation |
-| 3 | Support workspace and Maria Agent UI polish | 80% | Implemented for MVP states, needs browser signoff |
+| 2 | Signaling and view-only WebRTC stream | 95% | Implemented and live WebRTC smoke validated |
+| 3 | Support workspace and Maria Agent UI polish | 90% | Implemented and live consent/viewer flow validated; release packaging in progress |
 | 4 | Hardening, TURN config, reconnect, timeout | 45% | Token/ICE config and expiry hooks added; reconnect/rate-limit polish remains |
 | 5 | Future control-mode architecture | 65% | Disabled data-channel/stub architecture added |
 
@@ -117,6 +117,30 @@ python scripts\verify_workspace.py
 python scripts\build_context_index.py --force
 ```
 
+Executed on 2026-05-10:
+
+```powershell
+python scripts/run_ci_suite.py --commit 5fbc0a6eee71f8fe36bf2b55ad5bde09d4c48fe1
+python -m py_compile pc_agent/ws_agent.py pc_agent/ui_gui/main_window.py
+python -m pytest pc_agent/tests/test_remote_assist_input_controller.py pc_agent/tests/test_main_window_runtime_windows.py
+python scripts/verify_workspace.py
+```
+
+Live validation on 2026-05-10:
+
+- Deployed the Remote Assist MVP to the Linux stand and applied migration `071`.
+- Started a local Maria Agent source instance, created a test ticket, delivered `remote_assist.request`, approved consent, completed WebRTC offer/answer/ICE exchange, received a browser video track, and ended the session cleanly.
+- Fixed and committed the two agent-side runtime issues found during smoke: `ws_agent.py` local `datetime` shadowing and retained/topmost Qt consent dialogs.
+
+Current release checkpoint:
+
+- Bump Windows agent to `3.1.33`.
+- Run `python scripts/verify_workspace.py`.
+- Run `python -m pytest pc_agent/tests/ -v --tb=short`.
+- Build with `python pc_agent/build_windows_release_v2.py` (done; ZIP SHA256 `c205a06ea4065a2af5ffae1cd972a21669bb6a34e046ea5ec8fac9f67c02c87e`).
+- Upload `pc_agent/dist/release/windows_amd64/stable/3.1.33/pc_agent-windows_amd64-3.1.33.zip`.
+- Canary one launcher-based local agent and verify handshake/update status before any bulk rollout.
+
 Minimum local checks before any completion claim:
 
 ```powershell
@@ -144,4 +168,4 @@ python scripts/manage_remote_stack.py stop server
 
 ## Handoff
 
-Next step: deploy through project scripts, apply migration `071`, run remote smoke/browser checks, then validate a real Maria Agent WebRTC session end to end.
+Next step: finish the `3.1.33` agent build/upload/canary. Do not start broad rollout until the launcher canary reports `AGENT_VERSION=3.1.33` after self-update.
