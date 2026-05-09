@@ -20,9 +20,12 @@ from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPixmap
 from loguru import logger
 
 from .consent_dialog import ConsentDialog
+from .remote_assist_dialog import RemoteAssistConsentDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
+from pc_agent.config.config_loader import get_config
+from pc_agent.remote_assist.thread import RemoteAssistThread
 from pc_agent.version import AGENT_VERSION
 
 
@@ -53,6 +56,8 @@ class MainWindow(QMainWindow):
         # Этап 4: запись экрана — operation_id для STOP и виджет кнопки
         self._recording_operation_id: Optional[str] = None
         self._stop_button_widget: Optional[QWidget] = None
+        self._remote_assist_threads: Dict[str, RemoteAssistThread] = {}
+        self._remote_assist_banners: Dict[str, QWidget] = {}
         
         # Текущий job_id активного чата (для привязки consent к чату)
         # session_key == текущий chat job_id, полученный из /api/chat_start
@@ -1937,6 +1942,9 @@ class MainWindow(QMainWindow):
             detail = str(data.get("message") or data.get("detail") or "подключение отклонено")
             self.set_connection_state("rejected", detail)
             return
+        if event_type == "remote_assist_request":
+            self._handle_remote_assist_request(data)
+            return
         
         # Этап 4: скриншот/запись — минимизация окна и STOP-кнопка
         if event_type == "prepare_screen_capture":
@@ -2037,6 +2045,142 @@ class MainWindow(QMainWindow):
                 dialog.open()  # Неблокирующий показ
             elif consent_token in self.open_dialogs:
                 logger.debug(f"Диалог для consent_token={consent_token[:8]}... уже открыт, пропускаем")
+
+    def _handle_remote_assist_request(self, data: dict) -> None:
+        session_id = str(data.get("session_id") or "").strip()
+        if not session_id:
+            logger.warning("Remote Assist request received without session_id")
+            return
+        dialog_key = f"remote_assist:{session_id}"
+        if dialog_key in self.open_dialogs:
+            logger.debug(f"Remote Assist dialog already open for session_id={session_id}")
+            return
+        self.open_dialogs.add(dialog_key)
+        dialog = RemoteAssistConsentDialog(data, self)
+
+        def cleanup() -> None:
+            self.open_dialogs.discard(dialog_key)
+
+        def approve() -> None:
+            self._spawn_gui_task(
+                self._post_remote_assist_decision(session_id, approve=True),
+                name="remote_assist.approve",
+            )
+
+        def deny() -> None:
+            self._spawn_gui_task(
+                self._post_remote_assist_decision(session_id, approve=False),
+                name="remote_assist.deny",
+            )
+
+        dialog.approved.connect(approve)
+        dialog.denied.connect(deny)
+        dialog.finished.connect(lambda _result: cleanup())
+        dialog.open()
+
+    async def _post_remote_assist_decision(self, session_id: str, *, approve: bool) -> None:
+        if not self.auth_token:
+            self._add_log("remote_assist | auth token missing", "error")
+            return
+        api_url = get_config().server.api_url.rstrip("/")
+        action = "approve" if approve else "deny"
+        url = f"{api_url}/remote-assist/{session_id}/{action}"
+        payload = {} if approve else {"reason": "user_denied"}
+        response_data: dict = {}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers={"Authorization": f"Bearer {self.auth_token}"}) as response:
+                    data = await response.json(content_type=None)
+                    if response.status < 200 or response.status >= 300:
+                        self._add_log(
+                            f"remote_assist | {action} failed | {response.status} | {data.get('error_code') or data.get('error')}",
+                            "error",
+                        )
+                        return
+                    response_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            self._add_log(
+                "Удалённая помощь разрешена" if approve else "Удалённая помощь отклонена",
+                "success" if approve else "warning",
+            )
+            if approve:
+                self._start_remote_assist_session(session_id, response_data)
+        except Exception as exc:
+            logger.exception(f"Remote Assist {action} failed: {exc}")
+            self._add_log(f"remote_assist | {action} failed | {exc}", "error")
+
+    def _start_remote_assist_session(self, session_id: str, data: dict) -> None:
+        signaling_url = str(data.get("agent_signaling_url") or "").strip()
+        token = str(data.get("agent_token") or "").strip()
+        if not signaling_url or not token:
+            self._add_log("remote_assist | signaling info missing", "error")
+            return
+        existing = self._remote_assist_threads.get(session_id)
+        if existing and existing.isRunning():
+            return
+        thread = RemoteAssistThread(
+            signaling_url=signaling_url,
+            token=token,
+            ice_servers=data.get("ice_servers") if isinstance(data.get("ice_servers"), list) else [],
+            parent=self,
+        )
+        thread.failed.connect(lambda message, sid=session_id: self._add_log(f"remote_assist | failed | {sid[:8]} | {message}", "error"))
+        thread.ended.connect(lambda sid=session_id: self._remote_assist_threads.pop(sid, None))
+        thread.ended.connect(lambda sid=session_id: self._hide_remote_assist_banner(sid))
+        self._remote_assist_threads[session_id] = thread
+        self._show_remote_assist_banner(session_id)
+        thread.start()
+
+    def _show_remote_assist_banner(self, session_id: str) -> None:
+        self._hide_remote_assist_banner(session_id)
+        banner = QWidget()
+        banner.setObjectName("RemoteAssistActiveBanner")
+        banner.setWindowTitle("Maria Agent remote assist")
+        banner.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        banner.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        banner.setStyleSheet("background-color: #111827; color: white; border: 1px solid #2563eb; border-radius: 10px;")
+        layout = QHBoxLayout(banner)
+        layout.setContentsMargins(12, 10, 12, 10)
+        label = QLabel("Удалённая помощь активна. Специалист видит ваш экран.")
+        stop_button = QPushButton("Завершить доступ")
+        stop_button.setStyleSheet("background-color: #b91c1c; color: white; font-weight: 600; padding: 6px 10px; border-radius: 6px;")
+        stop_button.clicked.connect(lambda: self._spawn_gui_task(self._end_remote_assist_from_user(session_id), name="remote_assist.user_end"))
+        layout.addWidget(label)
+        layout.addWidget(stop_button)
+        screen = QApplication.primaryScreen()
+        if screen:
+            geom = screen.availableGeometry()
+            banner.adjustSize()
+            banner.move(geom.x() + 24, geom.y() + 24)
+        banner.show()
+        self._remote_assist_banners[session_id] = banner
+
+    def _hide_remote_assist_banner(self, session_id: str) -> None:
+        banner = self._remote_assist_banners.pop(session_id, None)
+        if banner:
+            banner.close()
+            banner.deleteLater()
+
+    async def _end_remote_assist_from_user(self, session_id: str) -> None:
+        thread = self._remote_assist_threads.get(session_id)
+        if thread:
+            thread.stop()
+        if not self.auth_token:
+            return
+        api_url = get_config().server.api_url.rstrip("/")
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{api_url}/remote-assist/{session_id}/end",
+                    json={"reason": "user_finished"},
+                    headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+        except Exception as exc:
+            logger.debug(f"Remote Assist user end API call failed: {exc}")
     
     def _show_stop_button(self) -> None:
         """Показывает плавающую красную кнопку STOP (always-on-top, bottom-left)."""
@@ -2116,6 +2260,12 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.debug(f"closeEvent: stop polling failed: {e}")
         self._hide_stop_button()
+        for session_id, thread in list(self._remote_assist_threads.items()):
+            try:
+                thread.stop()
+            except Exception:
+                pass
+            self._hide_remote_assist_banner(session_id)
         super().closeEvent(event)
     
     def _load_device_uuid(self):

@@ -24,6 +24,7 @@
 |------|------------------|-------|
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md` |
+| Remote Assist / WebRTC | `server/remote_assist/service.py` | `server/remote_assist/handlers.py`, `server/remote_assist/signaling.py`, `server/app/repos/remote_access_repo.py`, `server/docs/PROTOCOL_V3.md` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
 | Модули / reconcile | `server/modules/service.py`, `server/modules/handlers.py`, `server/modules/workbench_service.py` | `server/websocket/modules_sync.py`, `server/docs/MODULE_CREATION_GUIDE.md`, `server/docs/MODULES_API.md` |
 | Admin / support / ticket UI | `server/admin.js`, `server/admin_modules_workbench.js`, `server/support.js`, `server/ticket.js`, `server/web_shared.js`, `server/control_plane.py`, `server/runtime_control.py` | `server/static_pages/`, `server/docs/SECURITY_AND_AUTH.md`, browser check на `http://192.168.100.17:8666/admin`; legacy admin queue fallback now keeps list refresh on polling and no longer subscribes `/ws_ui` to every visible ticket row |
@@ -383,3 +384,11 @@
 
 - `/app/tickets` (`webapp/src/pages/tickets/list-page.tsx`) consumes the existing typed realtime bridge from `webapp/src/shared/realtime/client.ts`, subscribes only to the selected ticket, and invalidates selected workspace, active standalone timeline tabs, queue data and passport evidence candidates on `ticket_event_committed` / `operation_updated`.
 - Backend producers remain the existing `server/web_api/support_handlers.py`, `server/tickets/handlers.py`, `server/tools/service.py` and websocket operation result publishers; do not add a second polling/SSE transport for this page.
+
+## 2026-05-09 Remote Assist MVP
+
+- Remote Assist server flow starts from `server/remote_assist/service.py`, `server/remote_assist/handlers.py`, `server/remote_assist/signaling.py`, `server/app/repos/remote_access_repo.py`, and routes registered in `server/routes.py`.
+- Schema is added by `server/app/db/migrations/versions/20260509_1200_071_remote_assist.py`: `remote_access_sessions` owns the ticket/device/operator-bound lifecycle, and `remote_access_events` owns audit events.
+- Requests are delivered to Maria Agent through the existing DeviceOutbox / Protocol V3 command path as `remote_assist.request`; the dedicated signaling endpoint is `/ws/remote-assist/{session_id}` and validates short-lived role tokens before relaying WebRTC envelopes.
+- Support-facing ticket timeline labels are projected in `server/web_api/support_handlers.py`; resolution passport summaries read `remote_access_sessions` in `server/tickets/passport_service.py`.
+- Policy/config entry points are `server/access_control/catalog.py` (`remote_assist.request`, `remote_assist.view`) and `server/config.py` (`REMOTE_ASSIST_*`, ICE/TURN settings). Do not log raw tokens, full SDP, or TURN static secrets.

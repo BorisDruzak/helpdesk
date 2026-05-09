@@ -1665,7 +1665,7 @@ class WSAgent:
 
     def _should_run_command_in_background(self, command: Optional[str]) -> bool:
         """Commands that can take noticeable time should not block the WS receive loop."""
-        return command in {"run_tool", "call_tool"}
+        return command in {"run_tool", "call_tool", "remote_assist.request"}
 
     async def _execute_command_and_send_result(
         self,
@@ -2353,6 +2353,25 @@ class WSAgent:
             # СТАТУС АГЕНТА (специфичная команда ws_agent)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
+            elif command == "remote_assist.request":
+                if self.event_bus:
+                    await self.event_bus.publish(
+                        {
+                            "event_type": "remote_assist_request",
+                            "data": dict(params or {}),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                return {
+                    "status": "success",
+                    "data": {
+                        "accepted": True,
+                        "session_id": params.get("session_id"),
+                    },
+                    "error": None,
+                    "meta": {"command": command, "request_id": request_id},
+                }
+
             elif command == "get_status":
                 """Получить расширенный статус агента"""
                 uptime = time.time() - self.start_time

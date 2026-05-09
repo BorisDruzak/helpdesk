@@ -218,6 +218,44 @@ WS_COMMAND_MAX_INFLIGHT_PER_DEVICE = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_
 WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
     os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
 )
+
+# ============================================================================
+# Remote Assist
+# ============================================================================
+
+REMOTE_ASSIST_ENABLED = os.getenv("REMOTE_ASSIST_ENABLED", "true").lower() == "true"
+REMOTE_ASSIST_DEFAULT_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_DEFAULT_DURATION_MINUTES", "15"))
+REMOTE_ASSIST_MAX_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_MAX_DURATION_MINUTES", "30"))
+REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES = int(os.getenv("REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES", "3"))
+REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES = (
+    os.getenv("REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES", "true").lower() == "true"
+)
+REMOTE_ASSIST_ALLOW_UNATTENDED = os.getenv("REMOTE_ASSIST_ALLOW_UNATTENDED", "false").lower() == "true"
+REMOTE_ASSIST_ALLOWED_MODES = {
+    mode.strip()
+    for mode in os.getenv("REMOTE_ASSIST_ALLOWED_MODES", "view_only").split(",")
+    if mode.strip()
+}
+REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS = int(os.getenv("REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS", "900"))
+
+
+def _parse_remote_assist_ice_servers() -> list[dict]:
+    raw = os.getenv("REMOTE_ASSIST_ICE_SERVERS_JSON", "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        logger.warning(f"Invalid REMOTE_ASSIST_ICE_SERVERS_JSON: {exc}")
+        return []
+    if not isinstance(parsed, list):
+        logger.warning("REMOTE_ASSIST_ICE_SERVERS_JSON must be a JSON list")
+        return []
+    return [item for item in parsed if isinstance(item, dict)]
+
+
+REMOTE_ASSIST_ICE_SERVERS = _parse_remote_assist_ice_servers()
+REMOTE_ASSIST_TURN_SHARED_SECRET = os.getenv("REMOTE_ASSIST_TURN_SHARED_SECRET", "")
 # Internal dispatch runtime mode for server->agent outbox delivery:
 # - poll: compatibility/rollback poll-all sender loop
 # - sharded: per-device queue + shard workers + reconcile sweep

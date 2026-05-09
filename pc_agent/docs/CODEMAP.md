@@ -199,3 +199,10 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 - `pc_agent/ui_gui/ticket_view_models.py::map_ticket_event_to_user_timeline_item()` now prefers server-provided `requester_timeline_text`, `requester_timeline_kind` and `requester_timeline_payload` from `GET /api/tickets/{ticket_id}`.
 - The local mapper remains only as an older-server fallback and must hide unknown/debug/internal events instead of showing generic `Обращение обновлено.` or raw `unknown` status text.
 - `pc_agent/ui_gui/chat_panel.py` and requester detail widgets consume the resulting `TimelineItem` model; they should not render raw `event_type`, raw tool payload, trace ids, internal notes or worklog data in requester-facing cards.
+
+## 2026-05-09 Remote Assist MVP
+
+- Agent-side Remote Assist starts from `pc_agent/ws_agent.py` handling the server command `remote_assist.request`; it publishes a UI event instead of blocking the WebSocket loop.
+- UI entry points are `pc_agent/ui_gui/main_window.py` and `pc_agent/ui_gui/remote_assist_dialog.py`: the user gets a non-blocking consent dialog, an active-session banner, and a user-side end-session action.
+- WebRTC/capture runtime lives under `pc_agent/remote_assist/`: `thread.py` owns a dedicated `QThread` + asyncio loop, `webrtc_client.py` owns aiortc signaling/peer connection, `screen_track.py` captures one primary monitor through `mss`, and `input_controller.py` is an explicit disabled stub for future control mode.
+- MVP stays view-only: no keyboard/mouse injection, no file transfer, no audio, and no screen-frame persistence. Keep capture/WebRTC work outside the GUI thread.

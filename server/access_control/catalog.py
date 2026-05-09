@@ -209,6 +209,22 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         risk="high",
     ),
     PermissionDefinition(
+        "remote_assist.request",
+        "Запрашивать удалённую помощь",
+        "Создание view-only Remote Assist сессии из тикета с обязательным согласием пользователя.",
+        "remote_assist",
+        "Удалённая помощь",
+        risk="high",
+    ),
+    PermissionDefinition(
+        "remote_assist.view",
+        "Открывать удалённую помощь",
+        "Просмотр статуса и подключение к разрешённой Remote Assist сессии.",
+        "remote_assist",
+        "Удалённая помощь",
+        risk="high",
+    ),
+    PermissionDefinition(
         "module.tool.run.low_risk",
         "Запускать low-risk tools",
         "Запуск безопасных диагностических команд.",
@@ -271,6 +287,8 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "ticket.passport.manage",
             "ticket.playbook.run",
             "ticket.tool.run",
+            "remote_assist.request",
+            "remote_assist.view",
             "module.tool.run.low_risk",
             "module.tool.run.high_risk",
             "observer.trace.view",
@@ -327,4 +345,3 @@ def get_available_workspaces(actor_role: str | None) -> list[str]:
 def get_default_workspace(actor_role: str | None) -> str | None:
     workspaces = get_available_workspaces(actor_role)
     return workspaces[0] if workspaces else None
-

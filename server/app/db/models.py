@@ -1310,6 +1310,82 @@ class DeviceOutbox(Base):
         )
 
 
+class RemoteAccessSession(Base):
+    """Remote Assist session lifecycle bound to a ticket, device and operator."""
+
+    __tablename__ = "remote_access_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    operator_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    requester_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mode: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    consent_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    consent_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    denied_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    max_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("900"))
+    signaling_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    operator_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    agent_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ice_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    close_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recording_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+    )
+
+    __table_args__ = (
+        Index("ix_remote_access_sessions_expires_at", "expires_at"),
+        Index("ix_remote_access_sessions_ticket_created", "ticket_id", "created_at"),
+    )
+
+
+class RemoteAccessEvent(Base):
+    """Audit trail for Remote Assist sessions."""
+
+    __tablename__ = "remote_access_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    actor_type: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+        index=True,
+    )
+
+
 class DispatchReadyDevice(Base):
     """
     Cross-instance coordination queue for device dispatch readiness.

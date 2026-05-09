@@ -1,0 +1,179 @@
+import { Maximize2, MonitorX, RotateCcw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+import { endRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
+
+type ViewerState = "loading" | "connecting" | "active" | "ended" | "failed";
+
+type RemoteAssistViewerProps = {
+  sessionId: string;
+  onClose: () => void;
+  onEnded?: () => void;
+};
+
+function buildSignalingUrl(baseUrl: string, token: string) {
+  const url = new URL(baseUrl, window.location.href);
+  url.searchParams.set("role", "operator");
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssistViewerProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [state, setState] = useState<ViewerState>("loading");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function connect() {
+      setState("loading");
+      setError(null);
+      try {
+        const info = await fetchRemoteAssistViewer(sessionId);
+        if (!info.token || !["approved", "starting", "active"].includes(info.status)) {
+          setState(info.status === "ended" ? "ended" : "failed");
+          setError("Сессия пока не готова к подключению.");
+          return;
+        }
+        const pc = new RTCPeerConnection({ iceServers: info.ice_servers ?? [] });
+        pcRef.current = pc;
+        pc.createDataChannel("control", { ordered: true });
+        pc.ontrack = (event) => {
+          const [stream] = event.streams;
+          if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+          }
+        };
+        pc.onicecandidate = (event) => {
+          if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "webrtc.ice_candidate",
+                payload: event.candidate.toJSON(),
+              }),
+            );
+          }
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === "connected") {
+            setState("active");
+          }
+          if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+            setState(pc.connectionState === "closed" ? "ended" : "failed");
+          }
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "webrtc.connection_state",
+                payload: { state: pc.connectionState },
+              }),
+            );
+          }
+        };
+
+        const ws = new WebSocket(buildSignalingUrl(info.signaling_url, info.token));
+        wsRef.current = ws;
+        ws.onopen = async () => {
+          if (disposed) {
+            return;
+          }
+          setState("connecting");
+          ws.send(JSON.stringify({ type: "session.ready", payload: { role: "operator" } }));
+          const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
+          await pc.setLocalDescription(offer);
+          ws.send(JSON.stringify({ type: "webrtc.offer", payload: pc.localDescription }));
+        };
+        ws.onmessage = async (event) => {
+          const message = JSON.parse(String(event.data || "{}"));
+          if (message.type === "webrtc.answer") {
+            await pc.setRemoteDescription(message.payload);
+          }
+          if (message.type === "webrtc.ice_candidate" && message.payload?.candidate) {
+            await pc.addIceCandidate(message.payload);
+          }
+          if (message.type === "session.end") {
+            setState("ended");
+          }
+          if (message.type === "session.error") {
+            setState("failed");
+            setError(message.payload?.error_code ?? "Ошибка signaling.");
+          }
+        };
+        ws.onerror = () => {
+          setState("failed");
+          setError("Не удалось установить signaling-соединение.");
+        };
+      } catch (exc) {
+        setState("failed");
+        setError(exc instanceof Error ? exc.message : "Не удалось открыть viewer.");
+      }
+    }
+
+    void connect();
+    return () => {
+      disposed = true;
+      wsRef.current?.close();
+      pcRef.current?.close();
+      wsRef.current = null;
+      pcRef.current = null;
+    };
+  }, [sessionId]);
+
+  const endSession = async () => {
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "session.end", payload: { reason: "operator_finished" } }));
+      await endRemoteAssistSession(sessionId);
+      setState("ended");
+      onEnded?.();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Не удалось завершить сессию.");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex bg-slate-950/90 text-slate-100 backdrop-blur-sm">
+      <section className="flex min-h-0 flex-1 flex-col">
+        <header className="flex h-14 items-center justify-between border-b border-white/10 px-4">
+          <div>
+            <p className="text-sm font-semibold">Удалённая помощь</p>
+            <p className="text-xs text-slate-400">
+              {state === "active" ? "Сессия активна" : state === "connecting" ? "Подключение..." : state === "ended" ? "Сессия завершена" : "Подготовка"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border border-white/10 p-2 text-slate-300 hover:text-white"
+              onClick={() => videoRef.current?.requestFullscreen()}
+              title="На весь экран"
+              type="button"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+            <button
+              className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100"
+              onClick={() => void endSession()}
+              type="button"
+            >
+              Завершить
+            </button>
+            <button className="rounded-lg border border-white/10 p-2 text-slate-300 hover:text-white" onClick={onClose} type="button">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-black">
+          <video ref={videoRef} autoPlay className="max-h-full max-w-full" playsInline />
+          {state !== "active" ? (
+            <div className="absolute flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-slate-950/75 px-5 py-4 text-center">
+              {state === "failed" ? <MonitorX className="h-8 w-8 text-rose-200" /> : <RotateCcw className="h-8 w-8 animate-spin text-blue-200" />}
+              <p className="text-sm font-semibold">{error ?? (state === "ended" ? "Сессия завершена" : "Ожидаем видео с устройства...")}</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}

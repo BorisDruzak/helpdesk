@@ -17,6 +17,7 @@ from app.db.models import (
     TicketEvent,
     TicketEvidenceItem,
     TicketRelatedObject,
+    RemoteAccessSession,
     TicketResolutionPassport,
     TicketWorklog,
 )
@@ -69,6 +70,32 @@ PASSPORT_REQUIREMENT_SOURCES = {
     "internal_result": "ticket.resolution_summary",
     "repeat_guidance": "passport.repeat_guidance",
 }
+
+
+def _remote_assist_summary(sessions: list[RemoteAccessSession]) -> dict[str, Any]:
+    used_sessions = [item for item in sessions if item.status in {"active", "ended"} or item.approved_at is not None]
+    total_duration = 0
+    modes: set[str] = set()
+    last_operator: str | None = None
+    consent_statuses: set[str] = set()
+    for item in sessions:
+        if item.mode:
+            modes.add(str(item.mode))
+        if item.consent_status:
+            consent_statuses.add(str(item.consent_status))
+        if item.operator_id:
+            last_operator = str(item.operator_id)
+        if item.started_at and item.ended_at:
+            total_duration += max(0, int((item.ended_at - item.started_at).total_seconds()))
+    return {
+        "remote_assist_used": bool(used_sessions),
+        "remote_assist_sessions_count": len(sessions),
+        "remote_assist_modes_used": sorted(modes),
+        "remote_assist_consent_status": sorted(consent_statuses),
+        "remote_assist_total_duration": total_duration,
+        "remote_assist_last_operator": last_operator,
+        "remote_assist_summary": "Удалённая помощь использовалась" if used_sessions else "Удалённая помощь не использовалась",
+    }
 
 PASSPORT_ACCEPTED_EVIDENCE_TYPES = {
     "requester": ["ticket_field", "chat_message"],
@@ -449,6 +476,17 @@ class TicketPassportService:
         evidence = await self.repo.list_evidence(ticket_id)
         source_candidates = await TicketEvidenceService(self.session).collect_candidates(ticket_id)
         approvals = await self.repo.list_approvals(ticket_id)
+        remote_assist_sessions = list(
+            (
+                await self.session.execute(
+                    select(RemoteAccessSession)
+                    .where(RemoteAccessSession.ticket_id == ticket_id)
+                    .order_by(RemoteAccessSession.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
         related_objects = self._related_objects_from_ticket(ticket)
 
         raw_sections = self._assemble_sections(
@@ -486,8 +524,10 @@ class TicketPassportService:
                 "worklogs": len(worklogs),
                 "evidence": len(evidence),
                 "approvals": len(approvals),
+                "remote_assist_sessions": len(remote_assist_sessions),
                 "related_objects": len(related_objects),
             },
+            "remote_assist": _remote_assist_summary(remote_assist_sessions),
             "generated_from": {
                 "ticket_updated_at": _iso(ticket.updated_at),
                 "status": ticket.status,

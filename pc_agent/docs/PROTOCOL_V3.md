@@ -358,6 +358,8 @@ Reconnect/runtime note:
 
 **Критично:** `request_id` используется как `command_id` (единый идентификатор).
 
+`remote_assist.request` is a Protocol V3 command delivered through the normal server device outbox. Maria Agent must handle it without blocking the WS loop: publish the request to the Qt UI, show the consent dialog, and call the backend approve/deny HTTP API. The WebRTC signaling itself does not run over `/ws`; after approval the agent connects to `/ws/remote-assist/{session_id}?role=agent&token=...` with a short-lived role token from the backend.
+
 ### Command Result (command_result)
 
 Результат выполнения команды от агента к серверу.

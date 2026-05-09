@@ -1204,9 +1204,10 @@ SUPPORT_TIMELINE_EVENT_PREFIXES = (
     "ola_",
     "passport_",
     "approval_",
+    "remote_assist_",
 )
 SUPPORT_TIMELINE_FILTERS = {"all", "messages", "message", "internal", "diagnostics", "history"}
-SUPPORT_TIMELINE_HISTORY_CATEGORIES = {"history", "sla", "ola", "passport", "approval"}
+SUPPORT_TIMELINE_HISTORY_CATEGORIES = {"history", "sla", "ola", "passport", "approval", "remote_assist"}
 
 SUPPORT_TIMELINE_DETAIL_KEYS = {
     "action",
@@ -1236,6 +1237,7 @@ SUPPORT_TIMELINE_DETAIL_KEYS = {
     "playbook_key",
     "previous_assignee_id",
     "reason",
+    "session_id",
     "run_id",
     "source_ref",
     "status",
@@ -1268,6 +1270,8 @@ def _timeline_event_category(event_type: str, payload: dict) -> str:
         return "passport"
     if event_type.startswith("approval_"):
         return "approval"
+    if event_type.startswith("remote_assist_"):
+        return "remote_assist"
     return "history"
 
 
@@ -1294,6 +1298,13 @@ def _timeline_event_label(event_type: str) -> str:
         "approval_reminder_due": "Approval reminder due",
         "approval_escalated": "Approval escalated",
         "approval_timed_out": "Approval timed out",
+        "remote_assist_requested": "Удалённая помощь запрошена",
+        "remote_assist_consent_approved": "Удалённая помощь разрешена",
+        "remote_assist_consent_denied": "Удалённая помощь отклонена",
+        "remote_assist_session_started": "Удалённая помощь началась",
+        "remote_assist_session_ended": "Удалённая помощь завершена",
+        "remote_assist_session_expired": "Удалённая помощь истекла",
+        "remote_assist_session_failed": "Удалённая помощь завершилась с ошибкой",
         "sla_started": "SLA started",
         "sla_first_response_stopped": "SLA first response stopped",
         "sla_resolution_stopped": "SLA resolution stopped",
@@ -1324,6 +1335,26 @@ def _timeline_event_text(event_type: str, payload: dict) -> str:
     summary = str(payload.get("summary") or "").strip()
     if summary:
         return summary
+    if event_type == "remote_assist_requested":
+        operator = str(payload.get("operator_id") or payload.get("actor_id") or "Оператор").strip()
+        return f"{operator} запросил удалённую помощь: Только просмотр."
+    if event_type == "remote_assist_consent_approved":
+        return "Пользователь разрешил удалённую помощь."
+    if event_type == "remote_assist_consent_denied":
+        return "Пользователь отклонил удалённую помощь."
+    if event_type == "remote_assist_session_started":
+        return "Удалённая помощь началась."
+    if event_type == "remote_assist_session_ended":
+        duration_sec = payload.get("duration_sec")
+        if isinstance(duration_sec, int) and duration_sec > 0:
+            minutes = duration_sec // 60
+            seconds = duration_sec % 60
+            return f"Удалённая помощь завершена. Длительность: {minutes:02d}:{seconds:02d}."
+        return "Удалённая помощь завершена."
+    if event_type == "remote_assist_session_expired":
+        return "Удалённая помощь истекла."
+    if event_type == "remote_assist_session_failed":
+        return "Удалённая помощь завершилась с ошибкой."
     if event_type == "status_changed":
         return " -> ".join(str(payload.get(key) or "").strip() for key in ("from_status", "to_status") if str(payload.get(key) or "").strip()) or "Status changed"
     if event_type == "assignee_changed":

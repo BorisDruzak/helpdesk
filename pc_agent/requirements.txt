@@ -4,6 +4,8 @@ aiosqlite
 aiohttp
 loguru
 mss
+aiortc
+Pillow
 # Запись экрана (screen.record): нужен ffmpeg — системный (apt install ffmpeg) или imageio-ffmpeg (бинарник в пакете)
 imageio-ffmpeg
 psutil
@@ -11,4 +13,3 @@ pynput
 requests
 PySide6
 qasync
-

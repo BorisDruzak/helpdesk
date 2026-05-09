@@ -46,6 +46,8 @@ from app.db.models import (  # noqa: F401 - Import to register models
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceOutbox,
+    RemoteAccessSession,
+    RemoteAccessEvent,
     Operation,
     Module,
     DeviceModule,
@@ -157,4 +159,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

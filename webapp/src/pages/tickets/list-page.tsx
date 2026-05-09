@@ -96,6 +96,7 @@ import type {
   SupportWorkspaceToolItem,
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
+import { RemoteAssistPanel } from "../../features/remote-assist/remote-assist-panel";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -2853,6 +2854,15 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
+                <RemoteAssistPanel
+                  deviceId={viewModel.right.context?.device.id ?? null}
+                  deviceOnline={viewModel.right.context?.device.online ?? false}
+                  onChanged={() => {
+                    void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
+                    void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
+                  }}
+                  ticketId={selectedTicket.id}
+                />
                 {viewModel.right.operations.length ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="flex items-center justify-between gap-3">
