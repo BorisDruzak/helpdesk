@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 
 from app.db import get_session
-from app.db.models import AgentRuntimeAudit, Device, Operation, Ticket, TicketEvent
+from app.db.models import AgentRuntimeAudit, Device, DeviceToolsetSnapshot, Operation, Ticket, TicketEvent
 from app.repos.ticket_events_repo import TicketEventsRepo
 
 
@@ -189,6 +189,148 @@ async def test_ticket_root_trace_canonicalizes_lifecycle_events_and_groups_ticke
         operation_id_1,
         operation_id_2,
     }
+
+
+@pytest.mark.asyncio
+async def test_trace_detail_explains_manual_offline_agent_failure_and_stage_semantics(test_client):
+    now = datetime.now(timezone.utc)
+    ticket_id = "00000000-0000-0000-0000-00000000e201"
+    device_id = "00000000-0000-0000-0000-00000000e202"
+    trace_id = "00000000-0000-0000-0000-00000000e203"
+    operation_id = "00000000-0000-0000-0000-00000000e204"
+
+    async with get_session() as session:
+        device = Device(
+            device_id=device_id,
+            protocol_version="ws_ticket_v3",
+            agent_version="3.1.18",
+            hostname="observer-offline-host",
+            os="windows",
+            capabilities=[],
+            tools_version="observer-offline",
+            device_metadata={},
+            last_seen_at=now - timedelta(hours=2),
+            last_handshake_at=now - timedelta(hours=2),
+            first_seen_at=now - timedelta(days=1),
+        )
+        session.add(device)
+        await session.flush()
+        snapshot = DeviceToolsetSnapshot(
+            device_id=device_id,
+            agent_version="3.1.18",
+            toolset_hash="observer-offline-tools",
+            toolset_json={
+                "tools": [
+                    {
+                        "tool": "system.collect",
+                        "module": "system",
+                        "label": "Сбор диагностики",
+                        "description": "Сбор базовых параметров устройства",
+                        "spec": {
+                            "presets": [
+                                {
+                                    "id": "minimal",
+                                    "name": "Minimal",
+                                    "description": "CPU and memory only",
+                                    "params": {"preset": "minimal"},
+                                }
+                            ]
+                        },
+                    }
+                ]
+            },
+            tool_count=1,
+        )
+        session.add(snapshot)
+        await session.flush()
+        device.current_toolset_snapshot_id = snapshot.snapshot_id
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-OBSFAIL01",
+                device_id=device_id,
+                title="Offline agent diagnostics",
+                description="Observer should explain an offline agent failure",
+                status="in_progress",
+                created_at=now - timedelta(minutes=15),
+                updated_at=now,
+                observer_root_trace_id=trace_id,
+            )
+        )
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id=device_id,
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="system.collect",
+                actor_role="admin",
+                trace_id=trace_id,
+                status="failed",
+                queued_at=now - timedelta(minutes=5),
+                finished_at=now - timedelta(minutes=5) + timedelta(milliseconds=7),
+                retry_count=0,
+                error_code="AGENT_NOT_CONNECTED",
+                error_message="Agent is offline",
+            )
+        )
+        repo = TicketEventsRepo(session)
+        await repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="tool_call_started",
+            payload={
+                "tool_name": "system.collect",
+                "call_id": "call-offline-1",
+                "actor_id": "admin",
+                "actor_role": "admin",
+                "actor_display_name": "admin",
+                "params": {"preset": "minimal"},
+                "preset_id": "minimal",
+            },
+            trace_id=trace_id,
+            operation_id=operation_id,
+        )
+        await session.commit()
+
+    detail_resp = await test_client.get(
+        f"/api/web/admin/observer/trace-detail/{trace_id}",
+        headers=_auth(),
+    )
+    assert detail_resp.status == 200
+    detail_payload = await detail_resp.json()
+    assert detail_payload["status"] == "success"
+    data = detail_payload["data"]
+
+    explanation = data["explanation"]
+    assert explanation["launch_source"] == "manual"
+    assert explanation["launch_source_label"] == "Ручной запуск"
+    assert explanation["actor_label"] == "Запустил: admin"
+    assert explanation["actor_id"] == "admin"
+    assert explanation["tool_label"] == "Сбор диагностики"
+    assert explanation["preset_id"] == "minimal"
+    assert explanation["preset_label"] == "Minimal"
+    assert explanation["preset_description"] == "CPU and memory only"
+    assert explanation["error_code"] == "AGENT_NOT_CONNECTED"
+    assert explanation["error_diagnosis"] == "Агент на устройстве не подключен. Команда не была отправлена."
+    assert "Проверить подключение агента" in explanation["next_actions"]
+    assert explanation["launch_path"] == [
+        "Тикет T-OBSFAIL01",
+        "ручной запуск инструмента",
+        "Сбор диагностики",
+        "агент offline",
+        "failed",
+    ]
+
+    queued_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.queued")
+    failed_stage = next(span for span in data["spans"] if span["name"] == "operation.stage.failed")
+    assert queued_stage["status"] == "ok"
+    assert queued_stage["stage_state"] == "passed_before_failure"
+    assert queued_stage["is_failure_stage"] is False
+    assert failed_stage["status"] == "error"
+    assert failed_stage["stage_state"] == "failed"
+    assert failed_stage["is_failure_stage"] is True
 
 
 @pytest.mark.asyncio

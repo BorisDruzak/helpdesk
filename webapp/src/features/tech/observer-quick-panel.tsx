@@ -435,6 +435,7 @@ function TraceDetailCard({
   const bundleEvidenceStats = buildBundleEvidenceStats(bundle);
   const traceSubtitle = traceDisplaySubtitle(detail.trace);
   const traceMeta = traceMetaParts(detail.trace);
+  const explanation = detail.explanation;
 
   return (
     <div className="space-y-4">
@@ -450,6 +451,70 @@ function TraceDetailCard({
         </div>
         {traceMeta.length ? <p className="mt-3 text-xs text-slate-500">{traceMeta.join(" · ")}</p> : null}
       </div>
+      {explanation ? (
+        <div className="rounded-[1.1rem] border border-border bg-white px-5 py-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+            <div className="min-w-0 space-y-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Причина ошибки</p>
+                <p className="mt-2 text-base font-semibold text-slate-950">
+                  {explanation.error_diagnosis ?? explanation.error_details ?? "Причина не определена"}
+                </p>
+                {explanation.error_code ? <p className="mt-1 text-sm text-slate-500">{explanation.error_code}</p> : null}
+              </div>
+              {explanation.launch_path?.length ? (
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Путь запуска</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {explanation.launch_path.map((item, index) => (
+                      <span
+                        key={`${item}-${index}`}
+                        className="rounded-full border border-border bg-surface-subtle px-3 py-1 text-xs font-medium text-slate-700"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-4">
+              <div className="grid gap-2 text-sm text-slate-600">
+                <p>
+                  <span className="font-medium text-slate-950">Запуск:</span> {explanation.launch_source_label}
+                </p>
+                {explanation.actor_label ? (
+                  <p>
+                    <span className="font-medium text-slate-950">Кто:</span> {explanation.actor_label}
+                  </p>
+                ) : null}
+                <p>
+                  <span className="font-medium text-slate-950">Инструмент:</span>{" "}
+                  {explanation.tool_label ?? explanation.tool_name ?? "не указан"}
+                  {explanation.preset_label ? ` / ${explanation.preset_label}` : ""}
+                </p>
+                {explanation.agent_status_label ? (
+                  <p>
+                    <span className="font-medium text-slate-950">Агент:</span> {explanation.agent_status_label}
+                  </p>
+                ) : null}
+              </div>
+              {explanation.next_actions?.length ? (
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Что делать дальше</p>
+                  <div className="mt-3 space-y-2">
+                    {explanation.next_actions.slice(0, 4).map((item) => (
+                      <p key={item} className="rounded-[0.9rem] border border-border bg-surface-subtle px-3 py-2 text-sm text-slate-600">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
           <p className="text-xs uppercase tracking-[0.22em] text-brand-700">Статус</p>
@@ -532,11 +597,18 @@ function TraceDetailCard({
                 <article key={span.span_id} className="rounded-[1rem] border border-border bg-white px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-950">{span.name}</p>
+                      <p className="font-semibold text-slate-950">{span.stage_label ?? span.name}</p>
+                      {span.stage_label ? <p className="mt-1 text-xs text-slate-500">{span.name}</p> : null}
                       <p className="mt-1 text-xs text-slate-500">{span.span_id}</p>
                     </div>
                     <Badge tone={getStatusTone(span.status)}>{span.status_label ?? span.status ?? "unknown"}</Badge>
                   </div>
+                  {span.stage_state ? (
+                    <p className="mt-3 text-sm text-slate-600">
+                      Состояние стадии: {span.stage_state}
+                      {span.is_failure_stage ? " / финальная ошибка" : ""}
+                    </p>
+                  ) : null}
                   <p className="mt-3 text-sm text-slate-600">
                     {span.component ?? "Компонент не указан"}
                     {span.tool_name ? ` • ${span.tool_name}` : ""}
@@ -839,15 +911,13 @@ export function ObserverQuickPanel({ deviceId, deviceLabel }: ObserverQuickPanel
     if (!urlTraceId && !urlTicketId && !urlOperationId) {
       return;
     }
-    startTransition(() => {
-      setActiveTab("traces");
-      setStatusFilter("all");
-      setRootKindFilter("all");
-      setSearch("");
-      if (urlTraceId) {
-        setSelectedTraceId(urlTraceId);
-      }
-    });
+    setActiveTab("traces");
+    setStatusFilter("all");
+    setRootKindFilter("all");
+    setSearch("");
+    if (urlTraceId) {
+      setSelectedTraceId(urlTraceId);
+    }
   }, [urlOperationId, urlTicketId, urlTraceId]);
 
   const visibleTraces = useMemo(

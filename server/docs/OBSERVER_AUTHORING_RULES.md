@@ -162,6 +162,12 @@ Spans нужны не “для галочки”, а чтобы человек 
 - tech API должен поддерживать быстрый drilldown, а не только сырой dump.
 - web bootstrap contracts (`/api/web/support/bootstrap`, `/api/web/admin/bootstrap`) должны отдавать capability links для observer surfaces, а не заставлять frontend разбрасывать raw trace URLs по коду.
 
+Additional API rules for explainable operation traces:
+
+- New operation/tool execution code must preserve explanation inputs for observer detail: `operation_id`, `ticket_id`, `tool_name`, `module_name`, `actor_role`, and, when available, `actor_id` / display name, `trigger_type`, `retry_of_operation_id`, `playbook_run_id`, `diagnostic_policy_id`, form trigger id and selected `preset_id` or params. Do not rely on span names alone to explain why an operation started.
+- Tool labels and preset summaries must come from toolset snapshots, manifests or catalog metadata when available. Observer UI must not hardcode labels for a single module such as `system.collect`.
+- Operation stage spans must separate intermediate progress from terminal failure: `queued` is not a separate error when a later `failed` stage carries the root cause. Trace-visible APIs should expose `stage_label`, `stage_state`, `stage_note` and `is_failure_stage` for stage rows.
+
 ## 7. Специальные правила для UI
 
 Если меняется admin/support observer UI:
@@ -175,6 +181,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 
 - `/app/admin/observer` считается полноценным workbench: вкладки `quick`, `traces`, `signatures`, `degradations`, `runtime` должны оставаться согласованными между собой, а trace detail обязан показывать spans, error occurrences, span links и agent actions в одном экране вместо деградации до "open raw payload".
 - Admin observer cards and details must lead with operator-readable fields (`ticket_code`, `ticket_title`, device hostname/label, operation/tool label, latest error label, `display_title`, `display_subtitle`) and keep raw UUID-like ids as secondary metadata. Search and handoff flows must accept familiar ticket numbers such as `T-000520`, not only `ticket_id`.
+- Admin observer trace detail must render the server-provided `explanation` projection before raw spans: launch source, actor, tool/module/preset, human diagnosis, launch path and next actions. Raw `operation.tool_call`, `operation.stage.*`, UUIDs and attrs belong in the technical/debug part of the page.
 - если React observer surface использует mix typed `/api/web/admin/observer/*` и canonical `/api/admin/tech/*` / `/api/admin/settings/observer`, это допустимо только при явной фиксации в docs и при сохранении единого operator flow без legacy iframe/tech-panel jump.
 
 ## 8. Минимальный набор проверок

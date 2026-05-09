@@ -152,6 +152,35 @@ export type AdminObserverTraceDetailPayload = {
     error_count: number;
     linked_trace_count: number;
   };
+  explanation?: {
+    launch_source: string;
+    launch_source_label: string;
+    actor_role?: string | null;
+    actor_id?: string | null;
+    actor_display_name?: string | null;
+    actor_label?: string | null;
+    tool_name?: string | null;
+    tool_label?: string | null;
+    tool_description?: string | null;
+    module_name?: string | null;
+    module_label?: string | null;
+    preset_id?: string | null;
+    preset_label?: string | null;
+    preset_description?: string | null;
+    error_code?: string | null;
+    error_diagnosis?: string | null;
+    error_details?: string | null;
+    failure_stage?: string | null;
+    failure_stage_label?: string | null;
+    agent_online?: boolean | null;
+    agent_status_label?: string | null;
+    agent_last_seen_at?: string | null;
+    agent_last_handshake_at?: string | null;
+    launch_path: string[];
+    next_actions: string[];
+    human_timeline: string[];
+    debug_refs: Record<string, unknown>;
+  } | null;
   spans: Array<{
     span_id: string;
     trace_id: string;
@@ -166,6 +195,10 @@ export type AdminObserverTraceDetailPayload = {
     tool_name: string | null;
     status: string | null;
     status_label: string;
+    stage_label?: string | null;
+    stage_state?: string | null;
+    stage_note?: string | null;
+    is_failure_stage?: boolean;
     started_at: string | null;
     finished_at: string | null;
     duration_ms: number | null;

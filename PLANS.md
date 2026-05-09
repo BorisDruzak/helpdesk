@@ -927,249 +927,382 @@ Next implementation checkpoint: run final workspace verification, then remote de
 
 ---
 
-# Admin Observer Human-Readable Workbench Modernization Plan
+# Admin Observer Explainable Trace Layer Plan
 
-> Active slice created 2026-05-09. Keep this as a separate observer modernization track. Do not mix it with the support tools catalog, requester timeline, or realtime support workspace slices unless implementation proves a shared typed DTO must change.
+> Active slice refreshed 2026-05-09. This replaces the previous observer modernization checklist. Earlier completed work (ticket-code search, trace cards with `T-000520`, typed trace-detail route) remains the baseline; this plan focuses on making every operation/error trace explainable for an operator.
 
-**Goal:** make `/app/admin/observer` understandable for operators by showing human-readable ticket, device, operation, error and next-action context first, while keeping raw trace/span ids available as secondary technical detail.
+**Goal:** make `/app/admin/observer` answer four questions without reading UUIDs: what started, who/what started it, why it failed, and what the operator should do next.
 
-**Scope:**
+**Architecture:** add a server-side explainability projection on top of existing observer traces/spans/operations/events. Keep raw trace/span data intact for debug mode, but expose compact typed fields for launch source, actor, tool/module labels, error diagnosis, launch path, next actions, and stage semantics. React should render those fields first and keep raw ids/details behind an advanced/debug affordance.
 
-- Observer backend typed web boundary for `/api/web/admin/observer/*`.
-- Observer search and quick/traces payload enrichment.
-- React observer workbench page at `/app/admin/observer`.
-- Ticket-bound trace handoff from `/app/tickets` and support diagnostic cards if link labels depend on the same observer DTO.
-- Observer docs/CODEMAP updates if DTO shape, search behavior or UI workflow changes.
+**Tech Stack:** Python 3, aiohttp typed web API, SQLAlchemy async models/repos, observer projection in `server/observer/service.py`, admin DTO/mapping in `server/web_api/*`, module/tool metadata from manifests/tool catalog, React/Vite admin UI in `webapp/src/features/tech/*`.
 
-**Non-goals:**
+---
 
-- Do not change ticket workflow state, SLA/OLA logic, operation dispatch, retry, consent, module execution or Protocol V3 semantics.
-- Do not replace observer trace ids; keep them for diagnostics, copy links and deep links.
-- Do not turn observer into a ticket-system source of truth. Ticket business data stays in ticket/support APIs and DB models.
-- Do not remove advanced/raw runtime stats; move them behind clearer labels or advanced sections.
+## Current Analysis
 
-## Current Findings
+- Baseline from the previous observer slice is partially done: `/api/web/admin/observer/*` already enriches traces with `ticket_code`, ticket title/status/priority/queue, device hostname/label, operation labels and `display_title` / `display_subtitle`.
+- Search by ticket number now works when `observer_traces.attrs_json.ticket_code` is present, including `T-000520`.
+- The current detail still exposes technical spans too directly: `operation.tool_call`, `operation.stage.queued`, `operation.stage.failed` are visible before a plain-language diagnosis.
+- `operation.stage.queued` currently inherits the terminal operation status through `_build_operation_stage_spans()`, so a queued stage can appear red even when the real failure happened later. For `T-000520`, that made `queued` look broken although the root cause was `AGENT_NOT_CONNECTED` before dispatch.
+- Operation source is inferable but not first-class: `actor_role` exists in `operations` and `tool_call_started.payload`, `playbook_run.trigger_type` exists for playbook paths, form triggers and diagnostic policy write `playbook_started` / `diagnostic_autorun_*`, retries have `retry_of_operation_id`, but the observer DTO does not normalize this into `launch_source`.
+- Human actor is incomplete: `actor_role=admin/support` is visible in raw attrs, but `actor_id` / display name is not consistently captured in operation or event payloads. The first implementation should surface what exists and add non-breaking fields where support/admin run handlers can provide them.
+- Tool/module labels should not be hardcoded for `system.collect`. Current sources include builtin tool specs (`pc_agent/modules/impl/*`), server module manifest JSON (`modules` table / `server/modules/workbench_service.py`), support tool catalog metadata, presets, params schema, output contract and risk metadata. The observer projection should resolve labels from these sources and fall back safely to `tool_name`.
+- Error signatures already contain machine fields (`error_kind`, `failure_stage`, `message_norm`) and operation rows contain `error_code` / `error_message`; there is no canonical human diagnosis layer yet.
+- The GUI has no clear separation between operator summary and raw technical data. It needs an explanation block above spans and a raw/debug mode below.
 
-- Ticket numbers already exist as `tickets.ticket_code` with values like `T-000520`.
-- Observer projection already stores `ticket_code` in ticket-root trace `attrs_json`, but top-level quick/traces DTOs expose only `ticket_id`.
-- `/app/admin/observer` currently labels ticket-root traces as `Тикет`, then shows a UUID-like trace id as the main card title.
-- Trace rows show `Тикет <ticket_id>` instead of the familiar `ticket_code`.
-- Server search can find traces by `ticket_id` and `trace_id`, but `q=T-000520` did not find the trace in the live check even though trace detail had `attrs_json.ticket_code`.
-- The page has real backend data: quick summary, traces, signatures, degradations, runtime, trace detail, diagnostic bundle, spans, errors, links and agent actions. The gap is mostly operator-facing context and DTO ergonomics, not absence of observer storage.
+## Scope
+
+- Backend observer explainability projection for operation-bound and ticket-root traces.
+- Typed admin observer DTOs and API responses.
+- React observer workbench trace list/detail/signature rows.
+- Tool/module metadata lookup from manifests/catalogs for generic module labels and presets.
+- Observer docs/CODEMAP updates because this changes trace-visible API semantics.
+- Tests for `T-000520`-style `AGENT_NOT_CONNECTED`, manual launch, auto/playbook/retry classification and stage coloring.
+
+## Non-Goals
+
+- Do not change operation dispatch, retry, consent, policy enforcement, Protocol V3, agent command payloads or ticket workflow state.
+- Do not delete raw ids, raw spans or raw attrs. Move them behind debug/technical sections.
+- Do not make observer mutate tickets/devices/modules.
+- Do not build a full CMDB/inventory replacement inside observer.
+- Do not hardcode `system.collect`; the label/preset mechanism must work for all tools/modules with metadata.
 
 ## Status
 
-Overall progress: **45%**.
+Overall progress: **65% for refreshed explainability slice**.
 
-Working mode: **Execute / Boundary / React UI**.
+Working mode: **Execute / Boundary / Observer UI**.
 
-Change classification: **boundary change inside observer typed web boundary**. Expected changes will likely touch server DTO mapping plus React UI. If search semantics or observer docs change, update canonical docs in the same slice.
+Change classification: **cross-cutting observer display contract**. The slice touches observer projection, typed web DTOs, React UI, docs and tests, but should not change runtime execution semantics.
 
 ## Phase Progress
 
 | Phase | Scope | Progress | Status |
 |---|---|---:|---|
-| O1 | Backend DTO enrichment for human-readable trace context | 100% | Done |
-| O2 | Search by ticket number and business context | 100% | Done |
-| O3 | Observer overview and traces UI redesign for operator readability | 55% | In progress |
-| O4 | Trace detail context panel and diagnostic explanation improvements | 45% | In progress |
-| O5 | Signatures/degradations readability pass | 0% | Pending |
-| O6 | Tests, docs and browser verification | 35% | In progress |
+| E0 | Replace stale observer plan with explainable trace-layer plan | 100% | Completed |
+| E1 | Backend launch-source and actor projection | 70% | Implemented for operation-bound/manual/retry/playbook/system heuristics; config refs remain later |
+| E2 | Generic tool/module metadata labels and preset summaries | 55% | Implemented from current device toolset snapshots with fallback; broader manifest/catalog backfill remains later |
+| E3 | Human error diagnosis and next-action catalog | 60% | Implemented initial catalog for agent offline, timeout and policy denied |
+| E4 | Stage semantics and span status correction | 100% | Implemented |
+| E5 | Typed DTO/API integration and search/list enrichments | 60% | Detail DTO implemented; list badges/latest human error remain later |
+| E6 | React trace list/detail UI and raw/debug mode | 55% | Explanation block implemented; dedicated raw/debug toggle remains later |
+| E7 | Filters, badges and human timeline | 0% | Pending |
+| E8 | Tests, docs, browser/live verification | 50% | Focused tests/docs in progress; full verify and live T-000520 check pending |
 
-## Execution Notes
+## Implementation Checkpoint 2026-05-09
 
-- 2026-05-09: backend typed observer trace payloads now enrich traces with `ticket_code`, `ticket_title`, ticket status/priority/queue, `device_hostname`, `device_label`, operation/tool labels and `display_title` / `display_subtitle`.
-- 2026-05-09: observer trace search now matches trace `attrs_json`, so `q=T-000520` can find ticket-root traces by the familiar ticket number when projection contains `ticket_code`.
-- 2026-05-09: `/app/admin/observer` trace list, hot traces and detail header now prefer human-readable display fields while keeping `trace_id` as secondary technical metadata.
-- 2026-05-09: targeted backend and React tests were added for ticket-code search and human-readable observer cards; broader verification and live `T-000520` check are still pending.
+Completed in the first execution slice:
 
-## Target User Experience
+- Added typed `explanation` to admin observer trace detail and compatibility `trace-detail` payloads.
+- Added launch-source, actor, tool/module/preset, human diagnosis, launch path, next-action, agent status and debug-ref fields.
+- Corrected operation stage projection so intermediate `queued` stages are not rendered as separate errors after a later terminal failure.
+- Added stage DTO fields: `stage_label`, `stage_state`, `stage_note`, `is_failure_stage`.
+- Updated `/app/admin/observer` trace detail to render the explanation block before technical spans.
+- Added backend regression coverage for a `T-000520`-style manual `AGENT_NOT_CONNECTED` operation and frontend coverage for the explanation block.
 
-Primary operator view should answer these questions without reading UUIDs:
+Still open for the next slice:
 
-- Which ticket is affected? Example: `T-000520 - Обращение: Поломка`.
-- Who/requester or which workplace/device is involved?
-- What failed? Example: `AGENT_NOT_CONNECTED` in `system.collect`.
-- Is this single-ticket, device-specific, or mass/systemic?
-- What should the operator open next: ticket, trace detail, operation, device, signature or degradation group?
-- What is the latest meaningful event and when did it happen?
-- Is runtime healthy, stale, backfilling, or losing projection coverage?
+- Trace-list badges/filters for launch source, autorun, retry and agent-offline.
+- Dedicated raw/debug mode toggle for UUIDs, attrs and span internals.
+- Broader auto-run configuration refs: form trigger, diagnostic policy and playbook trigger labels.
+- Broader tool metadata backfill from server module manifests when the device has no current toolset snapshot.
 
-Raw ids should still be present, but as secondary copyable metadata: `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id`, `error_signature`.
+## Required Product Behavior
 
-## Backend Tasks
+Observer detail must show, above technical spans:
 
-### O1: Add Typed Human-Readable Context To Observer DTOs
+- **Источник запуска:** `Ручной запуск`, `Автозапуск формы`, `Diagnostic policy`, `Playbook`, `Retry`, `System`.
+- **Запустил:** display name if available, otherwise `admin`, `support`, `system`, `playbook`, or `unknown` with role badge.
+- **Понятный диагноз:** examples: `Агент на устройстве не подключен. Команда не была отправлена.`, `Агент не ответил за N секунд.`, `Запуск запрещён политикой.`
+- **Путь запуска:** `Тикет T-000520 -> ручной запуск инструмента -> Сбор диагностики -> агент offline -> failed`.
+- **Что делать дальше:** contextual actions such as check agent connection, open inventory device, open ticket, inspect policy, open playbook run, retry if allowed.
+- **Tool/module label:** derive from manifest/catalog metadata for every tool/module, not only `system.collect`. Include preset/params summary when metadata allows it.
+- **Technical details:** raw `trace_id`, `operation_id`, `span_id`, `source_ref`, `attrs_json` remain available in raw/debug mode.
+
+## Backend Design
+
+### E1: Launch Source And Actor Projection
 
 **Files to inspect/modify:**
 
+- `server/observer/service.py`
 - `server/web_api/admin_handlers.py`
 - `server/web_api/dto/admin.py`
-- `server/observer/service.py`
+- `server/tools/service.py`
+- `server/web_api/support_handlers.py`
+- `server/api/operations.py`
+- `server/playbooks/form_triggers.py`
+- `server/app/services/playbook_engine.py`
 - `server/app/db/models.py`
-- `server/routes.py`
+- `server/tests/test_observer_v2_api.py`
+
+**Fields to add to typed trace/operation explanation DTOs:**
+
+- `launch_source: "manual" | "form_autorun" | "diagnostic_policy" | "playbook" | "retry" | "system" | "unknown"`
+- `launch_source_label: str`
+- `launch_trigger_type: str | null`
+- `launch_config_label: str | null`
+- `launch_config_ref: dict | null`
+- `actor_role: str | null`
+- `actor_id: str | null`
+- `actor_display_name: str | null`
+- `actor_label: str`
+- `is_autorun: bool`
+- `is_retry: bool`
+- `retry_of_operation_id: str | null`
+
+**Classification rules:**
+
+- `retry_of_operation_id` present -> `retry`.
+- `playbook_run_id` or matching `playbook_run.operation_id/context_json` -> `playbook`.
+- `playbook_started.payload.source == diagnostic_policy` or trigger `diagnostic_policy_auto_run` -> `diagnostic_policy`.
+- `playbook_started.payload.source == request_form` or `request_form_playbook_triggers` match -> `form_autorun`.
+- `tool_call_started.payload.actor_role in admin/support` without playbook/autopolicy markers -> `manual`.
+- server maintenance/runtime roots without ticket actor -> `system`.
+- Otherwise `unknown`, with raw hints preserved for debug.
+
+**Acceptance:**
+
+- `T-000520` operation `d2a8198f-...` is classified as `manual`, label `Ручной запуск`, actor `admin`, not auto.
+- Form/playbook auto-runs show which trigger/config started them.
+- Retries link back to source operation.
+- No N+1 queries: batch-load operations, events and playbook runs for visible traces.
+
+### E2: Generic Tool/Module Metadata Labels
+
+**Files to inspect/modify:**
+
+- `shared/tool_contracts.py`
+- `server/modules/workbench_service.py`
+- `server/modules/handlers.py`
+- `server/web_api/support_handlers.py`
+- `server/observer/service.py`
+- `server/web_api/admin_handlers.py`
+- `pc_agent/core/tools.py`
+- `pc_agent/modules/impl/system.py`
+- `server/tests/test_observer_v2_api.py`
+
+**Fields to add:**
+
+- `tool_label: str | null`
+- `module_label: str | null`
+- `tool_description: str | null`
+- `module_description: str | null`
+- `tool_risk_label: str | null`
+- `preset_id: str | null`
+- `preset_label: str | null`
+- `params_summary: list[str]`
+- `result_summary_human: str | null`
+
+**Metadata lookup order:**
+
+1. Tool catalog / support tools payload if available for the device/tool.
+2. Server module manifest JSON: `tools[].name`, `tools[].description`, `presets[]`, `params_schema`, `output_contract`, `risk_level`.
+3. Builtin agent tool specs from registered metadata when surfaced through toolset snapshots.
+4. Fallback: split `module.tool` into module and tool ids.
+
+**Acceptance:**
+
+- `system.collect` with `{preset_id: "minimal"}` renders as `Сбор диагностики: minimal` and summary like `CPU + память` based on preset metadata.
+- Other tools render labels/descriptions from their manifest/spec without hardcoded observer UI branches.
+- If metadata is missing, observer still shows stable `module.tool` fallback and does not break the trace detail.
+
+### E3: Human Error Diagnosis And Next Actions
+
+**Files to inspect/modify:**
+
+- `server/observer/service.py`
+- `server/web_api/admin_handlers.py`
+- `server/web_api/dto/admin.py`
+- `server/tools/handlers.py`
+- `server/api/operations.py`
 - `webapp/src/features/tech/api.ts`
 - `webapp/src/features/tech/observer-workbench-api.ts`
 
-**Required top-level fields for trace list/quick items:**
+**Fields to add:**
 
-- `ticket_code: str | null`
-- `ticket_title: str | null`
-- `ticket_status: str | null`
-- `ticket_status_label: str | null`
-- `ticket_priority: str | null`
-- `queue_name: str | null`
-- `requester_display_name: str | null`
-- `device_hostname: str | null`
-- `device_label: str | null`
-- `operation_label: str | null`
-- `latest_error_label: str | null`
-- `latest_error_stage: str | null`
-- `primary_tool_name: str | null`
-- `primary_module_name: str | null`
-- `display_title: str`
-- `display_subtitle: str | null`
+- `error_code: str | null`
+- `error_label: str | null`
+- `error_diagnosis: str | null`
+- `error_explanation: str | null`
+- `failure_stage_label: str | null`
+- `dispatch_state_label: str | null`
+- `next_actions: list[{label, kind, href?, disabled_reason?}]`
+- `agent_last_seen_at: str | null`
+- `agent_online_label: str | null`
 
-**Implementation notes:**
+**Minimum diagnosis catalog:**
 
-- Prefer joining ticket/device context server-side in observer query/mapping, not asking React to parse `attrs_json`.
-- For ticket-root traces, derive `display_title` from `ticket_code` first, then `ticket_title`, then trace kind.
-- For operation traces, derive `display_title` from operation/tool/module, then ticket code if present.
-- Keep `attrs_json` for advanced diagnostics, but do not make UI depend on it for common labels.
+- `AGENT_NOT_CONNECTED`: `Агент на устройстве не подключен. Команда не была отправлена.` Next actions: open device, check last handshake, start/connect agent, retry if policy allows.
+- `TIMEOUT` / `WS_COMMAND_TIMEOUT` / `MODULE_INSTALL_TIMEOUT`: `Агент не ответил за отведённое время.` Include timeout if known.
+- `POLICY_DENIED` / policy reason: `Запуск запрещён политикой.` Include required role/consent when available.
+- `MODULE_NOT_ON_SERVER`: `Модуль не найден на сервере.` Link module registry if possible.
+- `CONSENT_REQUIRED` / `waiting_consent`: `Нужно согласие пользователя перед запуском.` Link consent operation if available.
+- Unknown errors: show sanitized `error_message`, signature and debug link without leaking raw payloads.
 
-### O2: Make Observer Search Understand Ticket Numbers
+**Acceptance:**
+
+- Detail top card shows one clear reason line before span list.
+- Error list and trace list show `latest_error_label` / `error_diagnosis`, not just `error`.
+- Next actions are contextual and safe; no action bypasses existing permission/policy checks.
+
+### E4: Stage Semantics And Span Status Correction
 
 **Files to inspect/modify:**
 
 - `server/observer/service.py`
-- `server/tech/handlers.py`
+- `server/web_api/dto/admin.py`
 - `server/web_api/admin_handlers.py`
+- `webapp/src/features/tech/observer-quick-panel.tsx`
 - `server/tests/test_observer_v2_api.py`
-- Relevant typed web API tests if present.
+
+**Required behavior:**
+
+- Intermediate stages (`queued`, `sent`, `accepted`, `running`) should not automatically be `error` only because the operation terminal status is `failed`.
+- If an operation fails before dispatch, `queued` should render as `passed_before_failure` / `До ошибки`, while terminal `failed` and operation root are error.
+- Stage DTO should include `stage_label`, `stage_state`, `stage_note`, `is_failure_stage`.
 
 **Acceptance:**
 
-- `GET /api/web/admin/observer/traces?q=T-000520` finds the same trace as `q=<ticket_id>`.
-- `GET /api/web/admin/observer/traces?ticket_id=<ticket_id>` still works.
-- Search works for exact ticket code and partial ticket code where current query behavior supports partial matching.
-- Search can match ticket title/requester/device hostname when those fields are available.
-- No broad query should bypass auth or expose requester-private fields outside admin observer context.
+- For `T-000520`, `operation.stage.queued` is not presented as a separate failure; `operation.stage.failed` carries the failure.
+- Existing signatures/degradations still count the operation error once.
+- Tests cover queued->failed without sent/accepted/started.
 
-### O3: Enrich Diagnostic Bundle Context
+### E5: Typed API Shape And Backward Compatibility
 
 **Files to inspect/modify:**
 
-- `server/tech/handlers.py`
-- `server/observer/service.py`
+- `server/web_api/dto/admin.py`
+- `server/web_api/admin_handlers.py`
+- `webapp/src/features/tech/api.ts`
 - `webapp/src/features/tech/observer-workbench-api.ts`
+- `server/tests/test_web_admin_api.py`
+- `webapp/src/features/tech/observer-workbench-api.test.ts`
 
 **Acceptance:**
 
-- Diagnostic bundle includes compact ticket summary with `ticket_code`, title, status, queue, priority, requester and support link.
-- Device summary includes hostname, OS, online/last seen, agent version and device link.
-- Operation summary includes status, tool, module, duration, retry count, consent state and operation detail link when present.
-- Recommended next checks should be human-readable and specific, not just raw endpoint hints.
+- Existing fields remain backward-compatible.
+- New `explanation` object is present on trace detail and compact equivalent fields are present on trace list rows.
+- `readTypedOrLegacyOk` behavior remains valid for typed/legacy detail endpoints.
+- API tests assert manual/offline explanation for a synthetic operation.
 
-## UI Tasks
+## UI Design
 
-### O4: Redesign Overview And Hot Trace Cards
+### E6: Trace List And Detail Explanation UI
+
+**Files to inspect/modify:**
+
+- `webapp/src/features/tech/observer-quick-panel.tsx`
+- `webapp/src/features/tech/observer-trace-drilldown.tsx`
+- `webapp/src/features/tech/api.ts`
+- `webapp/src/pages/admin/index.test.tsx`
+- `webapp/src/features/tech/observer-quick-panel.test.tsx`
+
+**Required layout:**
+
+- Trace list row: title, ticket/device/tool, launch-source badge, actor badge, latest human error, duration/age, raw trace id secondary.
+- Detail hero: `Причина ошибки`, `Путь запуска`, `Запустил`, `Устройство/агент`, `Что делать дальше`.
+- Technical spans section below: grouped timeline with failure stage highlighted.
+- Raw/debug toggle: reveals UUIDs, `attrs_json`, `source_ref`, `span_id`, `error_signature`.
+
+**Acceptance:**
+
+- Operator can understand `T-000520` without opening raw attrs.
+- UUIDs are copyable but no longer the primary visual object.
+- Console has no new errors.
+
+### E7: Badges, Filters And Human Timeline
 
 **Files to inspect/modify:**
 
 - `webapp/src/features/tech/observer-quick-panel.tsx`
 - `webapp/src/features/tech/api.ts`
-- `webapp/src/features/tech/observer-workbench-api.ts`
-- `webapp/src/pages/admin/index.test.tsx`
+- `server/observer/service.py`
+- `server/web_api/admin_handlers.py`
+
+**Badges:**
+
+- `ручной`, `авто`, `diagnostic policy`, `playbook`, `retry`, `system`
+- `agent offline`, `не отправлено агенту`, `timeout`, `policy denied`
+- `debug/raw available`
+
+**Filters:**
+
+- errors only
+- manual launches
+- autoruns
+- offline agent
+- playbook
+- retry
+- system
+
+**Human timeline examples:**
+
+- `14:31 admin запустил диагностику.`
+- `14:31 сервер проверил подключение агента.`
+- `14:31 агент не подключен, команда не отправлена.`
+- `14:31 операция завершена ошибкой.`
 
 **Acceptance:**
 
-- Hot trace cards show `T-000520` or equivalent ticket code as the main label for ticket traces.
-- Cards show title/status/device/tool/latest error where available.
-- Trace id is visible only as compact secondary metadata with copy affordance.
-- Empty states explain whether no traces exist, filters hide them, or runtime is not ready.
-- Overview counters distinguish `recent traces`, `hot traces`, `ticket-root traces`, `operation traces`, `signatures`, `degradations`, and `runtime pending/backfill` with clearer labels.
-
-### O5: Make Trace List Operator-Readable
-
-**Acceptance:**
-
-- Trace list rows use `display_title` and `display_subtitle`.
-- Ticket-bound rows show `Тикет T-000520`, not `Тикет <uuid>`.
-- Operation-bound rows show tool/module/operation summary first.
-- Rows include badges for status, root kind, error count, duration/age semantics and source coverage.
-- Filters support quick chips: `Ошибки`, `Тикеты`, `Операции`, `Массовые`, `Без тикета`, `С agent actions`.
-
-### O6: Improve Trace Detail
-
-**Acceptance:**
-
-- Detail top section has separate cards: `Контекст обращения`, `Устройство`, `Операция`, `Последняя ошибка`, `Evidence sources`.
-- Ticket card links to `/app/tickets/<ticket_id>` and displays `ticket_code`.
-- Duration label distinguishes ticket lifecycle age from operation runtime.
-- Span timeline groups common event spam and highlights failure stage.
-- Raw IDs are copyable but not the first visual object.
-- Agent action unavailable state explains whether the agent is offline, RPC failed or action sync is disabled.
-
-### O7: Improve Signatures And Degradations
-
-**Acceptance:**
-
-- Signature cards show plain-language title, affected ticket/device count, last seen and top affected tool/module.
-- Occurrence rows show ticket code/device hostname when available.
-- Degradation groups show why it matters: slow rate, timeout rate, retry rate, sample affected tickets/devices.
-- Sample traces buttons use display labels like `T-000520 / system.collect`, with raw trace id secondary.
+- Filters are backed by typed query params where practical, or client-side only for already loaded detail lists if backend filtering would be too broad for the first slice.
+- Human timeline is generated from normalized explanation fields, not from brittle string parsing of raw span names.
 
 ## Verification Matrix
 
-Minimum local verification before claiming implementation complete:
+Minimum local verification:
 
 ```powershell
 python scripts/verify_workspace.py
 python scripts/bootstrap_web_toolchain.py
-pnpm --dir webapp exec vitest run src/pages/admin/index.test.tsx --run
-pnpm --dir webapp run build
 python -m pytest server/tests/test_observer_v2_api.py -q --tb=short
+python -m pytest server/tests/test_web_admin_api.py -k "observer" -q --tb=short
+pnpm --dir webapp exec vitest run src/pages/admin/index.test.tsx src/features/tech/observer-quick-panel.test.tsx src/features/tech/observer-workbench-api.test.ts --run
+pnpm --dir webapp run build
 ```
 
-If typed DTOs or handlers change:
+Targeted live/browser verification:
 
 ```powershell
-python -m pytest server/tests/test_web_admin_api.py -q --tb=short
-```
-
-Live/browser verification:
-
-```powershell
-python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py start server
 python scripts/manage_remote_stack.py smoke server
 pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
 ```
 
-Manual browser checklist:
+Manual live checklist:
 
 - Open `http://192.168.100.17:8666/admin`, navigate to `/app/admin/observer`.
-- Confirm overview cards are readable without UUID knowledge.
-- Search by a known ticket code such as `T-000520`.
-- Open the matching trace detail and confirm ticket/device/operation/error context appears above raw spans.
-- Open signatures and degradations tabs and confirm sample rows are human-readable.
-- Confirm trace deep links with `?trace_id=...`, `?ticket_id=...` and `?operation_id=...` still select the intended trace.
-- Confirm browser console has no new page errors.
+- Search `T-000520`.
+- Open trace `5bdd530e-c652-46b3-b307-15f05a580b34`.
+- Confirm failed operation `d2a8198f-69e1-47b0-a56b-4a438d176fe6` shows `Ручной запуск`, `Запустил: admin`, `Агент на устройстве не подключен. Команда не была отправлена.`
+- Confirm launch path reads like `Тикет T-000520 -> ручной запуск инструмента -> Сбор диагностики -> агент offline -> failed`.
+- Confirm `queued` is not shown as a separate red failure.
+- Confirm raw/debug mode still exposes `operation.tool_call`, `operation.stage.failed`, UUIDs and attrs.
 - Stop the remote server after checks unless explicitly asked to keep it running:
 
 ```powershell
 python scripts/manage_remote_stack.py stop server
 ```
 
+## Documentation Updates Required If Code Changes
+
+- `server/docs/OBSERVER_LAYER.md`: explain new explanation projection, launch source taxonomy, stage semantics and raw/debug layering.
+- `server/docs/OBSERVER_AUTHORING_RULES.md`: require future dangerous flows to provide enough actor/source/error context for observer explanation.
+- `server/docs/CODEMAP.md`: update observer/web API entries and module metadata lookup path.
+- `docs/QUICK_LOOKUP.md`: add operator checklist for observer incident triage.
+- `scripts/navigation_catalog.py`: update observer topic aliases/checks if new files/helpers are added.
+
 ## Risks And Guards
 
-- **DTO bloat:** keep enriched context compact; do not embed full ticket/workspace payloads in observer trace lists.
-- **Auth/privacy:** admin observer can show support context, but do not leak raw tokens, cookies, consent tokens or unredacted tool payloads.
-- **Performance:** avoid N+1 per trace; batch load tickets/devices/operations for visible trace ids.
-- **Wrong source of truth:** observer may display ticket context but must not mutate ticket business state.
-- **Search ambiguity:** ticket code search should be exact/partial but should not accidentally treat every short token as a broad expensive DB scan.
-- **UI regression:** keep raw trace workflow usable for developers while making operator labels primary.
+- **Incorrect source attribution:** use explicit markers first (`retry_of_operation_id`, `playbook_run_id`, `playbook_started`, diagnostic policy payload), then fallback to actor role. Never guess auto-run from tool name alone.
+- **Hardcoded tool labels:** use manifest/catalog metadata lookup; hardcoded labels are allowed only as fallback for missing metadata and should live in one backend helper, not in React.
+- **DTO bloat:** trace lists get compact explanation fields; full next actions/raw details live in detail endpoint.
+- **N+1 performance:** batch-load tickets, devices, operations, events, playbook runs and module/tool metadata.
+- **Privacy/security:** sanitize error messages and params summaries; do not expose raw tokens, file paths, consent tokens or internal auth data.
+- **Regression in developer diagnostics:** raw/debug mode must preserve IDs and attrs for engineers.
+- **Misleading stage colors:** stage status must reflect stage outcome, not blindly mirror terminal operation status.
 
 ## Handoff
 
-Next implementation checkpoint: start with O1/O2 backend tests and DTO enrichment, then update the React trace card/list/detail rendering. Do not start by only changing labels in React; the UI should receive explicit `ticket_code` and display fields from the typed observer boundary.
+Start implementation with backend tests for `T-000520`-style manual offline operation, auto/playbook/retry classification and queued-stage semantics. Then add the projection helpers and DTO fields, then update React rendering. Do not start by changing only CSS/labels; the UI must receive normalized explanation data from the typed observer boundary.

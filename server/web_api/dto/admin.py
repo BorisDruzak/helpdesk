@@ -248,6 +248,10 @@ class AdminObserverTraceSpanItem(BaseModel):
     tool_name: str | None = None
     status: str | None = None
     status_label: str
+    stage_label: str | None = None
+    stage_state: str | None = None
+    stage_note: str | None = None
+    is_failure_stage: bool = False
     started_at: str | None = None
     finished_at: str | None = None
     duration_ms: int | None = None
@@ -290,11 +294,44 @@ class AdminObserverTraceErrorOccurrenceItem(BaseModel):
     created_at: str | None = None
 
 
+class AdminObserverTraceExplanation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    launch_source: str
+    launch_source_label: str
+    actor_role: str | None = None
+    actor_id: str | None = None
+    actor_display_name: str | None = None
+    actor_label: str | None = None
+    tool_name: str | None = None
+    tool_label: str | None = None
+    tool_description: str | None = None
+    module_name: str | None = None
+    module_label: str | None = None
+    preset_id: str | None = None
+    preset_label: str | None = None
+    preset_description: str | None = None
+    error_code: str | None = None
+    error_diagnosis: str | None = None
+    error_details: str | None = None
+    failure_stage: str | None = None
+    failure_stage_label: str | None = None
+    agent_online: bool | None = None
+    agent_status_label: str | None = None
+    agent_last_seen_at: str | None = None
+    agent_last_handshake_at: str | None = None
+    launch_path: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    human_timeline: list[str] = Field(default_factory=list)
+    debug_refs: dict[str, Any] = Field(default_factory=dict)
+
+
 class AdminObserverTraceDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trace: AdminObserverTraceItem
     summary: AdminObserverTraceDetailSummary
+    explanation: AdminObserverTraceExplanation | None = None
     spans: list[AdminObserverTraceSpanItem]
     span_links: list[AdminObserverTraceSpanLinkItem]
     error_occurrences: list[AdminObserverTraceErrorOccurrenceItem]

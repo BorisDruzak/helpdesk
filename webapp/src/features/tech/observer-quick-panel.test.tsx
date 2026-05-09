@@ -88,7 +88,7 @@ describe("ObserverQuickPanel deep links", () => {
           },
         });
       }
-      if (url === "/api/web/admin/observer/traces?lookback_hours=24&limit=40&trace_id=trace-deep-1") {
+      if (url.startsWith("/api/web/admin/observer/traces")) {
         return jsonResponse({
           status: "success",
           data: {
@@ -133,7 +133,44 @@ describe("ObserverQuickPanel deep links", () => {
             error_count: 1,
             linked_trace_count: 0,
           },
-          spans: [],
+          explanation: {
+            launch_source: "manual",
+            launch_source_label: "Ручной запуск",
+            actor_id: "admin",
+            actor_role: "admin",
+            actor_display_name: "admin",
+            actor_label: "Запустил: admin",
+            tool_name: "system.collect",
+            tool_label: "Сбор диагностики",
+            module_name: "system",
+            module_label: "system",
+            preset_id: "minimal",
+            preset_label: "Minimal",
+            preset_description: "CPU and memory only",
+            error_code: "AGENT_NOT_CONNECTED",
+            error_diagnosis: "Агент на устройстве не подключен. Команда не была отправлена.",
+            failure_stage: "failed",
+            failure_stage_label: "Ошибка",
+            agent_online: false,
+            agent_status_label: "агент offline",
+            launch_path: ["Тикет T-000520", "ручной запуск инструмента", "Сбор диагностики", "агент offline", "failed"],
+            next_actions: ["Проверить подключение агента", "Открыть устройство в inventory"],
+            human_timeline: [],
+            debug_refs: { operation_id: "op-1" },
+          },
+          spans: [
+            {
+              span_id: "span-queued",
+              trace_id: "trace-deep-1",
+              name: "operation.stage.queued",
+              status: "ok",
+              status_label: "ОК",
+              stage_label: "Поставлена в очередь",
+              stage_state: "passed_before_failure",
+              is_failure_stage: false,
+              attrs_json: {},
+            },
+          ],
           span_links: [],
           error_occurrences: [],
           agent_actions: [],
@@ -186,7 +223,11 @@ describe("ObserverQuickPanel deep links", () => {
 
     renderObserver();
 
-    expect(await screen.findByText("trace-deep-1")).toBeInTheDocument();
+    expect(await screen.findByText(/trace-deep-1/)).toBeInTheDocument();
+    expect(await screen.findByText("Агент на устройстве не подключен. Команда не была отправлена.")).toBeInTheDocument();
+    expect(screen.getByText("Запустил: admin")).toBeInTheDocument();
+    expect(screen.getByText("Проверить подключение агента")).toBeInTheDocument();
+    expect(screen.getByText("Поставлена в очередь")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/admin/observer/traces?lookback_hours=24&limit=40&trace_id=trace-deep-1",

@@ -2489,8 +2489,36 @@ class ObserverOverlayService:
 
         spans: list[dict[str, Any]] = []
         module_name, tool_name = _split_tool_name(operation.tool_name)
+        terminal_status = str(operation.status or "").strip().lower()
+        terminal_is_error = terminal_status in ERROR_OPERATION_STATUSES
         for index, (stage, started_at) in enumerate(points):
             finished_at = points[index + 1][1] if index + 1 < len(points) else terminal_time or started_at
+            stage_is_terminal = stage in TERMINAL_OPERATION_STATUSES
+            is_failure_stage = stage_is_terminal and stage in ERROR_OPERATION_STATUSES
+            if is_failure_stage:
+                stage_status = "error"
+                stage_state = "failed"
+                stage_note = "terminal_failure"
+            elif stage_is_terminal:
+                stage_status = _span_status_from_operation(stage)
+                stage_state = stage
+                stage_note = "terminal"
+            elif terminal_is_error and terminal_time:
+                stage_status = "ok"
+                stage_state = "passed_before_failure"
+                stage_note = "completed_before_terminal_failure"
+            elif terminal_time:
+                stage_status = "ok"
+                stage_state = "completed"
+                stage_note = "completed"
+            elif index == len(points) - 1:
+                stage_status = "running"
+                stage_state = "current"
+                stage_note = "current"
+            else:
+                stage_status = "ok"
+                stage_state = "completed"
+                stage_note = "completed"
             spans.append(
                 {
                     "span_id": _trace_scoped_uuid(trace_id, f"operation_stage:{operation.operation_id}:{stage}"),
@@ -2504,13 +2532,16 @@ class ObserverOverlayService:
                     "event_type": stage,
                     "module_name": module_name,
                     "tool_name": tool_name,
-                    "status": _span_status_from_operation(stage if stage in TERMINAL_OPERATION_STATUSES else operation.status),
+                    "status": stage_status,
                     "started_at": started_at,
                     "finished_at": finished_at,
                     "duration_ms": _duration_ms(started_at, finished_at),
                     "attrs_json": {
                         "operation_id": operation.operation_id,
                         "stage": stage,
+                        "stage_state": stage_state,
+                        "stage_note": stage_note,
+                        "is_failure_stage": is_failure_stage,
                         "retry_count": operation.retry_count,
                     },
                 }

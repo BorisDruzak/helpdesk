@@ -19,7 +19,7 @@ from agents.agent_builds_handlers import (
     enqueue_device_agent_update,
 )
 from app.db import get_session
-from app.db.models import Device, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketQueue
+from app.db.models import Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
@@ -70,6 +70,7 @@ from web_api.dto.admin import (
     AdminObserverTraceDetailPayload,
     AdminObserverTraceDetailSummary,
     AdminObserverTraceErrorOccurrenceItem,
+    AdminObserverTraceExplanation,
     AdminObserverTraceItem,
     AdminObserverTraceSpanItem,
     AdminObserverTraceSpanLinkItem,
@@ -981,6 +982,301 @@ def _observer_display_subtitle(item: dict) -> str:
     return f"Trace {trace_id}" if trace_id else ""
 
 
+_OBSERVER_LAUNCH_SOURCE_LABELS = {
+    "manual": "Ручной запуск",
+    "form_autorun": "Автозапуск формы",
+    "diagnostic_policy": "Diagnostic policy",
+    "playbook": "Playbook",
+    "retry": "Retry",
+    "system": "System",
+}
+
+_OBSERVER_LAUNCH_PATH_LABELS = {
+    "manual": "ручной запуск инструмента",
+    "form_autorun": "автозапуск формы",
+    "diagnostic_policy": "diagnostic policy",
+    "playbook": "playbook",
+    "retry": "retry",
+    "system": "system",
+}
+
+_OBSERVER_ERROR_DIAGNOSES = {
+    "AGENT_NOT_CONNECTED": "Агент на устройстве не подключен. Команда не была отправлена.",
+    "POLICY_DENIED": "Запуск запрещён политикой.",
+}
+
+_OBSERVER_STAGE_LABELS = {
+    "queued": "Поставлена в очередь",
+    "sent": "Отправлена агенту",
+    "accepted": "Принята агентом",
+    "running": "Выполняется",
+    "succeeded": "Завершена успешно",
+    "failed": "Завершена ошибкой",
+    "timed_out": "Таймаут",
+    "canceled": "Отменена",
+    "denied": "Запрещена",
+}
+
+
+def _iter_tool_entries(value: object, *, depth: int = 0):
+    if depth > 4:
+        return
+    if isinstance(value, dict):
+        if _first_compact_value(value.get("tool"), value.get("tool_name"), value.get("name")):
+            yield value
+        for key in ("tools", "toolset", "available_tools", "items", "data", "payload"):
+            if key in value:
+                yield from _iter_tool_entries(value.get(key), depth=depth + 1)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_tool_entries(item, depth=depth + 1)
+
+
+async def _observer_tool_catalog_entry(
+    session,
+    *,
+    device: Device | None,
+    tool_name: str | None,
+) -> dict | None:
+    if not device or not tool_name or not device.current_toolset_snapshot_id:
+        return None
+    snapshot = await session.get(DeviceToolsetSnapshot, device.current_toolset_snapshot_id)
+    if snapshot is None:
+        return None
+    for raw_tool in _iter_tool_entries(snapshot.toolset_json):
+        if not isinstance(raw_tool, dict):
+            continue
+        current_tool = _first_compact_value(raw_tool.get("tool"), raw_tool.get("tool_name"), raw_tool.get("name"))
+        if current_tool != tool_name:
+            continue
+        try:
+            return normalize_tool_catalog_entry(raw_tool, source="device_toolset")
+        except Exception as exc:
+            logger.debug(f"[observer_explain] tool catalog normalize failed: tool={tool_name}, error={exc}")
+            return raw_tool
+    return None
+
+
+def _observer_preset_from_tool_entry(tool_entry: dict | None, preset_id: str | None) -> dict | None:
+    if not tool_entry or not preset_id:
+        return None
+    for preset in tool_entry.get("presets") or []:
+        if not isinstance(preset, dict):
+            continue
+        current_id = _first_compact_value(preset.get("preset_id"), preset.get("id"), preset.get("key"))
+        if current_id == preset_id:
+            return preset
+    return None
+
+
+def _observer_extract_params(start_payload: dict) -> dict:
+    params = start_payload.get("params")
+    if isinstance(params, dict):
+        return params
+    nested = start_payload.get("tool_params")
+    if isinstance(nested, dict):
+        return nested
+    return {}
+
+
+def _observer_launch_source(operation: Operation, start_payload: dict) -> str:
+    trigger_type = _first_compact_value(
+        start_payload.get("trigger_type"),
+        start_payload.get("launch_source"),
+        start_payload.get("source"),
+    )
+    normalized_trigger = str(trigger_type or "").strip().lower()
+    if operation.retry_of_operation_id:
+        return "retry"
+    if operation.playbook_run_id or normalized_trigger in {"playbook", "playbook_run", "support_playbook"}:
+        return "playbook"
+    if normalized_trigger in {"diagnostic_policy", "policy", "auto_diagnostic"}:
+        return "diagnostic_policy"
+    if normalized_trigger in {"form_autorun", "request_form", "request_template", "form"} or start_payload.get("form_id"):
+        return "form_autorun"
+    if str(operation.actor_role or "").strip().lower() in {"admin", "support", "specialist"}:
+        return "manual"
+    return "system"
+
+
+def _observer_error_diagnosis(operation: Operation, error_code: str | None) -> str | None:
+    normalized = str(error_code or "").strip().upper()
+    if normalized == "TIMEOUT":
+        timeout = operation.timeout_override_sec or None
+        if timeout:
+            return f"Агент не ответил за {timeout} секунд."
+        return "Агент не ответил вовремя."
+    return _OBSERVER_ERROR_DIAGNOSES.get(normalized)
+
+
+def _observer_agent_online(device: Device | None, operation: Operation, error_code: str | None) -> bool | None:
+    if str(error_code or "").strip().upper() == "AGENT_NOT_CONNECTED":
+        return False
+    if device is None:
+        return None
+    last_seen = getattr(device, "last_handshake_at", None) or getattr(device, "last_seen_at", None)
+    if not last_seen:
+        return None
+    now = datetime.now(timezone.utc)
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return (now - last_seen).total_seconds() <= 180
+
+
+def _observer_next_actions(*, error_code: str | None, device: Device | None) -> list[str]:
+    normalized = str(error_code or "").strip().upper()
+    if normalized == "AGENT_NOT_CONNECTED":
+        actions = ["Проверить подключение агента"]
+        last_handshake = _iso(getattr(device, "last_handshake_at", None)) if device else None
+        if last_handshake:
+            actions.append(f"Последний handshake: {last_handshake}")
+        actions.append("Открыть устройство в inventory")
+        return actions
+    if normalized == "TIMEOUT":
+        return ["Проверить нагрузку агента и повторить запуск", "Открыть trace agent actions"]
+    if normalized == "POLICY_DENIED":
+        return ["Проверить политику запуска инструмента", "Проверить роль и доступ пользователя"]
+    return ["Открыть технические детали trace", "Проверить operation.tool_call и terminal span"]
+
+
+def _observer_operation_id_from_detail(trace_payload: dict, raw_detail: dict) -> str | None:
+    operation_id = _first_compact_value(trace_payload.get("operation_id"))
+    if operation_id:
+        return operation_id
+    for occurrence in raw_detail.get("error_occurrences") or []:
+        if isinstance(occurrence, dict):
+            operation_id = _first_compact_value(occurrence.get("operation_id"))
+            if operation_id:
+                return operation_id
+    for span in raw_detail.get("spans") or []:
+        if not isinstance(span, dict):
+            continue
+        attrs = span.get("attrs_json") if isinstance(span.get("attrs_json"), dict) else {}
+        operation_id = _first_compact_value(span.get("source_ref") if span.get("source_type") == "operation" else None, attrs.get("operation_id"))
+        if operation_id:
+            return operation_id.split(":", 1)[0]
+    return None
+
+
+async def _build_admin_observer_trace_explanation(
+    session,
+    *,
+    trace_payload: dict,
+    raw_detail: dict,
+) -> AdminObserverTraceExplanation | None:
+    operation_id = _observer_operation_id_from_detail(trace_payload, raw_detail)
+    operation = await session.get(Operation, operation_id) if operation_id else None
+    if operation is None:
+        return None
+
+    ticket = await session.get(Ticket, operation.ticket_id) if operation.ticket_id else None
+    device = await session.get(Device, operation.device_id) if operation.device_id else None
+    event_rows = (
+        (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.operation_id == operation.operation_id)
+                .order_by(TicketEvent.created_at.asc(), TicketEvent.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    start_event = next((row for row in event_rows if row.event_type == "tool_call_started"), None)
+    start_payload = start_event.payload if start_event is not None and isinstance(start_event.payload, dict) else {}
+    params = _observer_extract_params(start_payload)
+
+    tool_name = _first_compact_value(
+        start_payload.get("tool_name"),
+        start_payload.get("tool"),
+        operation.tool_name,
+        trace_payload.get("primary_tool_name"),
+    )
+    module_name = _first_compact_value(trace_payload.get("primary_module_name"), tool_name.split(".", 1)[0] if tool_name and "." in tool_name else None)
+    tool_entry = await _observer_tool_catalog_entry(session, device=device, tool_name=tool_name)
+    preset_id = _first_compact_value(start_payload.get("preset_id"), params.get("preset_id"), params.get("preset"))
+    preset = _observer_preset_from_tool_entry(tool_entry, preset_id)
+
+    launch_source = _observer_launch_source(operation, start_payload)
+    actor_role = _first_compact_value(start_payload.get("actor_role"), operation.actor_role)
+    actor_id = _first_compact_value(start_payload.get("actor_id"), start_payload.get("triggered_by"))
+    actor_display_name = _first_compact_value(start_payload.get("actor_display_name"), start_payload.get("display_name"), actor_id, actor_role)
+    actor_label = f"Запустил: {actor_display_name}" if actor_display_name else None
+
+    error_code = _first_compact_value(operation.error_code)
+    error_diagnosis = _observer_error_diagnosis(operation, error_code)
+    failure_stage = _first_compact_value(operation.status)
+    agent_online = _observer_agent_online(device, operation, error_code)
+    agent_status_label = "агент online" if agent_online is True else "агент offline" if agent_online is False else None
+    tool_label = _first_compact_value(
+        tool_entry.get("label") if isinstance(tool_entry, dict) else None,
+        tool_entry.get("title") if isinstance(tool_entry, dict) else None,
+        tool_name,
+    )
+    preset_label = _first_compact_value(
+        preset.get("label") if isinstance(preset, dict) else None,
+        preset.get("name") if isinstance(preset, dict) else None,
+        preset_id,
+    )
+    preset_description = _first_compact_value(preset.get("description") if isinstance(preset, dict) else None)
+    ticket_label = f"Тикет {ticket.ticket_code}" if ticket is not None and ticket.ticket_code else None
+    launch_path = [
+        item
+        for item in [
+            ticket_label,
+            _OBSERVER_LAUNCH_PATH_LABELS.get(launch_source, launch_source),
+            tool_label,
+            agent_status_label,
+            failure_stage,
+        ]
+        if item
+    ]
+    human_timeline = [
+        item
+        for item in [
+            f"{_iso(operation.queued_at)} {actor_display_name} запустил диагностику" if operation.queued_at and actor_display_name else None,
+            f"{_iso(operation.queued_at)} сервер поставил операцию в очередь" if operation.queued_at else None,
+            f"{_iso(operation.finished_at)} {error_diagnosis}" if operation.finished_at and error_diagnosis else None,
+        ]
+        if item
+    ]
+    return AdminObserverTraceExplanation(
+        launch_source=launch_source,
+        launch_source_label=_OBSERVER_LAUNCH_SOURCE_LABELS.get(launch_source, launch_source),
+        actor_role=actor_role,
+        actor_id=actor_id,
+        actor_display_name=actor_display_name,
+        actor_label=actor_label,
+        tool_name=tool_name,
+        tool_label=tool_label,
+        tool_description=_first_compact_value(tool_entry.get("description") if isinstance(tool_entry, dict) else None),
+        module_name=module_name,
+        module_label=module_name,
+        preset_id=preset_id,
+        preset_label=preset_label,
+        preset_description=preset_description,
+        error_code=error_code,
+        error_diagnosis=error_diagnosis,
+        error_details=_first_compact_value(operation.error_message),
+        failure_stage=failure_stage,
+        failure_stage_label=_observer_status_label(failure_stage),
+        agent_online=agent_online,
+        agent_status_label=agent_status_label,
+        agent_last_seen_at=_iso(getattr(device, "last_seen_at", None)) if device else None,
+        agent_last_handshake_at=_iso(getattr(device, "last_handshake_at", None)) if device else None,
+        launch_path=launch_path,
+        next_actions=_observer_next_actions(error_code=error_code, device=device),
+        human_timeline=human_timeline,
+        debug_refs={
+            "trace_id": trace_payload.get("trace_id"),
+            "operation_id": operation.operation_id,
+            "ticket_id": operation.ticket_id,
+            "device_id": operation.device_id,
+            "tool_call_started_event_id": getattr(start_event, "id", None),
+        },
+    )
+
+
 async def _enrich_admin_observer_trace_items(session, items: list[dict]) -> list[dict]:
     if not items:
         return []
@@ -1180,6 +1476,8 @@ def _map_admin_observer_trace_item(item: dict) -> AdminObserverTraceItem:
 
 
 def _map_admin_observer_trace_span(item: dict) -> AdminObserverTraceSpanItem:
+    attrs = item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {}
+    stage = _first_compact_value(attrs.get("stage"), item.get("event_type"))
     return AdminObserverTraceSpanItem(
         span_id=str(item.get("span_id") or ""),
         trace_id=str(item.get("trace_id") or ""),
@@ -1194,10 +1492,14 @@ def _map_admin_observer_trace_span(item: dict) -> AdminObserverTraceSpanItem:
         tool_name=item.get("tool_name"),
         status=item.get("status"),
         status_label=_observer_status_label(item.get("status")),
+        stage_label=_OBSERVER_STAGE_LABELS.get(stage or "") if stage else None,
+        stage_state=_first_compact_value(attrs.get("stage_state")),
+        stage_note=_first_compact_value(attrs.get("stage_note")),
+        is_failure_stage=bool(attrs.get("is_failure_stage")),
         started_at=item.get("started_at"),
         finished_at=item.get("finished_at"),
         duration_ms=item.get("duration_ms"),
-        attrs_json=item.get("attrs_json") if isinstance(item.get("attrs_json"), dict) else {},
+        attrs_json=attrs,
     )
 
 
@@ -1777,6 +2079,11 @@ async def _build_admin_observer_trace_detail_payload(
             trace_payload = raw_detail.get("trace") if isinstance(raw_detail.get("trace"), dict) else {}
             enriched_traces = await _enrich_admin_observer_trace_items(session, [trace_payload])
             raw_detail["trace"] = enriched_traces[0] if enriched_traces else trace_payload
+            raw_detail["explanation"] = await _build_admin_observer_trace_explanation(
+                session,
+                trace_payload=raw_detail["trace"],
+                raw_detail=raw_detail,
+            )
             await session.commit()
     except LookupError:
         raise
@@ -1809,6 +2116,7 @@ async def _build_admin_observer_trace_detail_payload(
             error_count=len(error_occurrences),
             linked_trace_count=linked_trace_count,
         ),
+        explanation=raw_detail.get("explanation") if isinstance(raw_detail.get("explanation"), AdminObserverTraceExplanation) else None,
         spans=spans,
         span_links=span_links,
         error_occurrences=error_occurrences,
