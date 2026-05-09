@@ -162,7 +162,7 @@ Self-update через agent token не является bypass админско
 
 Возвращает текущие server-side назначения preferred build по `target`. Эти назначения используются как единый source of truth для UI, `update_recommendation`, `POST /api/devices/{device_id}/agent/update` без явной версии и `POST /api/agents/update_bulk`, если версия не указана.
 
-React admin surface: `/app/admin/agent-updates` uses this endpoint together with `GET/POST/DELETE /api/agent_builds*` to show the build registry, upload/download/delete builds, assign or clear target rollout policy, and display selected-device `current_version`, target rollout, recommended build and last update result via the typed device update payload.
+React admin surface: `/app/admin/agent-updates` uses web-session aliases `/api/web/admin/agent-updates/rollout-policy` and `/api/web/admin/agent-builds*`, backed by these legacy handlers, to show the build registry, upload/download/delete builds, assign or clear target rollout policy, and display selected-device `current_version`, target rollout, recommended build and last update result via the typed device update payload.
 
 `PATCH /api/agent_updates/rollout_policy`
 

@@ -17,6 +17,12 @@ from agents.agent_builds_handlers import (
     _resolve_target_for_device,
     _sanitize_update_reason,
     enqueue_device_agent_update,
+    handle_delete_agent_build as _handle_legacy_delete_agent_build,
+    handle_download_agent_build as _handle_legacy_download_agent_build,
+    handle_get_agent_rollout_policy as _handle_legacy_get_agent_rollout_policy,
+    handle_list_agent_builds as _handle_legacy_list_agent_builds,
+    handle_patch_agent_rollout_policy as _handle_legacy_patch_agent_rollout_policy,
+    handle_upload_agent_build as _handle_legacy_upload_agent_build,
 )
 from app.db import get_session
 from app.db.models import Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
@@ -3746,6 +3752,36 @@ async def handle_web_admin_modules(request: web.Request):
         payload = _empty_admin_modules_payload(query=query)
 
     return json_model_response(SuccessResponse[AdminModulesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_builds(request: web.Request):
+    return await _handle_legacy_list_agent_builds(request)
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_build_upload(request: web.Request):
+    return await _handle_legacy_upload_agent_build(request)
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_build_delete(request: web.Request):
+    return await _handle_legacy_delete_agent_build(request)
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_build_download(request: web.Request):
+    return await _handle_legacy_download_agent_build(request)
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_rollout_policy(request: web.Request):
+    return await _handle_legacy_get_agent_rollout_policy(request)
+
+
+@require_auth("admin")
+async def handle_web_admin_agent_rollout_policy_patch(request: web.Request):
+    return await _handle_legacy_patch_agent_rollout_policy(request)
 
 
 @require_auth("admin")

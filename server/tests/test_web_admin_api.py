@@ -1343,6 +1343,50 @@ async def test_web_admin_device_update_run_requires_reason(web_admin_client):
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_admin_agent_builds_alias_uses_web_auth_boundary(web_admin_client, monkeypatch):
+    async def fake_list_handler(request):
+        assert request["auth_context"].actor_role == "admin"
+        assert request.query.get("limit") == "10"
+        return web.json_response({"status": "ok", "builds": [], "count": 0})
+
+    monkeypatch.setattr(admin_handlers, "_handle_legacy_list_agent_builds", fake_list_handler)
+
+    response = await web_admin_client.get("/api/web/admin/agent-builds?limit=10")
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload == {"status": "ok", "builds": [], "count": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_agent_rollout_policy_alias_uses_web_auth_boundary(web_admin_client, monkeypatch):
+    async def fake_patch_handler(request):
+        assert request["auth_context"].actor_role == "admin"
+        data = await request.json()
+        assert data["target"] == "windows_amd64"
+        return web.json_response(
+            {
+                "status": "ok",
+                "target": "windows_amd64",
+                "assignment": {"target": "windows_amd64", "channel": "stable", "version": "3.1.33"},
+            }
+        )
+
+    monkeypatch.setattr(admin_handlers, "_handle_legacy_patch_agent_rollout_policy", fake_patch_handler)
+
+    response = await web_admin_client.patch(
+        "/api/web/admin/agent-updates/rollout-policy",
+        json={"target": "windows_amd64", "channel": "stable", "version": "3.1.33"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["assignment"]["version"] == "3.1.33"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_admin_device_update_run_returns_queued_action_payload(web_admin_client, monkeypatch):
     async def fake_run_update(*, state, auth_context, device_id: str, reason: str, restart_delay_sec: int | None):
         assert state is None

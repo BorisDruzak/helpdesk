@@ -208,6 +208,27 @@ export type AgentBuildUploadPayload = {
   download_path: string;
 };
 
+function webAgentBuildDownloadPath(build: Pick<AgentBuildItem, "target" | "channel" | "version">): string {
+  return `/api/web/admin/agent-builds/${encodeURIComponent(build.target)}/${encodeURIComponent(build.channel)}/${encodeURIComponent(build.version)}/download`;
+}
+
+function mapAgentBuildItem(build: AgentBuildItem): AgentBuildItem {
+  return {
+    ...build,
+    download_path: webAgentBuildDownloadPath(build)
+  };
+}
+
+function mapAgentRolloutAssignment(assignment: AgentRolloutAssignment): AgentRolloutAssignment {
+  const build = assignment.build
+    ? {
+        ...assignment.build,
+        download_path: webAgentBuildDownloadPath(assignment.build)
+      }
+    : assignment.build;
+  return { ...assignment, build };
+}
+
 export async function fetchAgentBuilds(params: {
   target?: string | null;
   channel?: string | null;
@@ -221,17 +242,22 @@ export async function fetchAgentBuilds(params: {
     searchParams.set("channel", params.channel);
   }
   searchParams.set("limit", String(params.limit ?? 200));
-  const response = await fetch(`/api/agent_builds?${searchParams.toString()}`, {
+  const response = await fetch(`/api/web/admin/agent-builds?${searchParams.toString()}`, {
     credentials: "same-origin"
   });
-  return readOkResponse(response, "Не удалось загрузить реестр сборок агента");
+  const payload = await readOkResponse<AgentBuildsPayload>(response, "Не удалось загрузить реестр сборок агента");
+  return { ...payload, builds: payload.builds.map(mapAgentBuildItem) };
 }
 
 export async function fetchAgentRolloutPolicy(): Promise<AgentRolloutPolicyPayload> {
-  const response = await fetch("/api/agent_updates/rollout_policy", {
+  const response = await fetch("/api/web/admin/agent-updates/rollout-policy", {
     credentials: "same-origin"
   });
-  return readOkResponse(response, "Не удалось загрузить rollout policy агента");
+  const payload = await readOkResponse<AgentRolloutPolicyPayload>(
+    response,
+    "Не удалось загрузить rollout policy агента"
+  );
+  return { ...payload, assignments: payload.assignments.map(mapAgentRolloutAssignment) };
 }
 
 export async function uploadAgentBuild(payload: {
@@ -251,12 +277,13 @@ export async function uploadAgentBuild(payload: {
   if (payload.notes?.trim()) {
     formData.set("notes", payload.notes.trim());
   }
-  const response = await fetch("/api/agent_builds/upload", {
+  const response = await fetch("/api/web/admin/agent-builds/upload", {
     method: "POST",
     credentials: "same-origin",
     body: formData
   });
-  return readUploadResponse(response, "Не удалось загрузить build агента");
+  const result = await readUploadResponse<AgentBuildUploadPayload>(response, "Не удалось загрузить build агента");
+  return { ...result, download_path: webAgentBuildDownloadPath(result) };
 }
 
 export async function setAgentRolloutPolicy(payload: {
@@ -264,7 +291,7 @@ export async function setAgentRolloutPolicy(payload: {
   channel: string;
   version: string;
 }): Promise<{ target: string; assignment: AgentRolloutAssignment; build: AgentBuildIdentity }> {
-  const response = await fetch("/api/agent_updates/rollout_policy", {
+  const response = await fetch("/api/web/admin/agent-updates/rollout-policy", {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -272,11 +299,22 @@ export async function setAgentRolloutPolicy(payload: {
     },
     body: JSON.stringify(payload)
   });
-  return readOkResponse(response, "Не удалось назначить rollout policy");
+  const result = await readOkResponse<{ target: string; assignment: AgentRolloutAssignment; build: AgentBuildIdentity }>(
+    response,
+    "Не удалось назначить rollout policy"
+  );
+  return {
+    ...result,
+    assignment: mapAgentRolloutAssignment(result.assignment),
+    build: {
+      ...result.build,
+      download_path: webAgentBuildDownloadPath(result.build)
+    }
+  };
 }
 
 export async function clearAgentRolloutPolicy(target: string): Promise<{ target: string; cleared: boolean }> {
-  const response = await fetch("/api/agent_updates/rollout_policy", {
+  const response = await fetch("/api/web/admin/agent-updates/rollout-policy", {
     method: "PATCH",
     credentials: "same-origin",
     headers: {
@@ -293,7 +331,7 @@ export async function deleteAgentBuild(build: Pick<AgentBuildItem, "target" | "c
   version: string;
 }> {
   const response = await fetch(
-    `/api/agent_builds/${encodeURIComponent(build.target)}/${encodeURIComponent(build.channel)}/${encodeURIComponent(build.version)}`,
+    `/api/web/admin/agent-builds/${encodeURIComponent(build.target)}/${encodeURIComponent(build.channel)}/${encodeURIComponent(build.version)}`,
     {
       method: "DELETE",
       credentials: "same-origin"

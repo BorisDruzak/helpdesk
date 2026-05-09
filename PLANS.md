@@ -193,7 +193,14 @@ Add a production-ready React admin page for agent builds and rollout policy:
 
 ## Scope
 
-- Reuse existing endpoints:
+- Reuse existing endpoint implementations through web-session aliases:
+  - `GET /api/web/admin/agent-builds`
+  - `POST /api/web/admin/agent-builds/upload`
+  - `DELETE /api/web/admin/agent-builds/{target}/{channel}/{version}`
+  - `GET /api/web/admin/agent-builds/{target}/{channel}/{version}/download`
+  - `GET /api/web/admin/agent-updates/rollout-policy`
+  - `PATCH /api/web/admin/agent-updates/rollout-policy`
+- Keep legacy token endpoints available for agents/scripts/legacy admin:
   - `GET /api/agent_builds`
   - `POST /api/agent_builds/upload`
   - `DELETE /api/agent_builds/{target}/{channel}/{version}`
@@ -211,43 +218,50 @@ Add a production-ready React admin page for agent builds and rollout policy:
 
 - Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
 - Keep rollout source of truth in existing server policy by target.
-- Do not duplicate legacy `/admin` logic in backend; React uses existing API.
+- Do not duplicate legacy `/admin` business logic in backend; React uses typed web aliases that delegate to the existing build/rollout handlers and accept the web cookie session.
 - Do not delete builds assigned to rollout; backend already blocks this and UI must explain it.
 - Deploy through project release/deploy scripts only.
 
 ## Current State
 
-Progress: 0%.
+Progress: 85%.
 
-Backend agent build and rollout endpoints already exist and are contract-tested. Legacy `/admin` has a working Agent Updates tab. New `/app/admin` only has a device-level update panel that can run the recommended build and read assigned rollout, but it lacks first-class build registry and rollout policy controls.
+The React page, route, navigation and inventory/device deep links are implemented and committed once. First live check after deploy found that direct legacy `/api/agent_builds*` and `/api/agent_updates/rollout_policy` reject the React web cookie session with 401. The fix is in progress: `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy` aliases now delegate to the existing handlers under `@require_auth("admin")`, and the frontend has been moved to those aliases.
 
 ## Implementation Plan
 
-1. Add typed agent update API client for builds, rollout policy, upload, delete and assign/clear policy.
-2. Add `AgentUpdatesPanel` with:
+1. [done] Add typed agent update API client for builds, rollout policy, upload, delete and assign/clear policy.
+2. [done] Add `AgentUpdatesPanel` with:
    - build list grouped by target/channel;
    - summary tiles for targets, assigned rollout and latest versions;
    - upload form;
    - assign rollout / clear rollout controls;
    - download and guarded delete actions;
    - loading, error and empty states.
-3. Add `/app/admin/agent-updates` route, lazy page and navigation item.
-4. Add quick links:
+3. [done] Add `/app/admin/agent-updates` route, lazy page and navigation item.
+4. [done] Add quick links:
    - inventory panel/button to Agent Updates;
    - device page quick action to Agent Updates with selected target context when possible.
-5. Add focused tests for API serialization and route/sidebar visibility where practical.
-6. Run local checks:
+5. [done] Add focused tests for API aliases and route/sidebar visibility where practical.
+6. [in progress] Run local checks:
    - `python scripts/verify_workspace.py`
    - `pnpm --dir webapp run build`
    - focused webapp tests if touched.
-7. Commit locally.
-8. Deploy to Linux stand, run smoke and browser check at `http://192.168.100.17:8666/admin`.
-9. Upload or confirm `windows_amd64/stable/3.1.33`, then set rollout policy to `3.1.33`.
-10. Verify via API and React page that `3.1.33` is assigned.
+7. [pending] Commit the web-session alias fix locally.
+8. [pending] Deploy the fix to Linux stand, run smoke and browser check at `http://192.168.100.17:8666/admin`.
+9. [pending] Upload or confirm `windows_amd64/stable/3.1.33`, then set rollout policy to `3.1.33`.
+10. [pending] Verify via API and React page that `3.1.33` is assigned.
 
 ## Verification
 
-Pending:
+Latest local checks:
+
+```powershell
+python -m pytest server/tests/test_web_admin_api.py -k "agent_builds_alias or agent_rollout_policy_alias" -q
+pnpm --dir webapp run build
+```
+
+Pending after alias fix:
 
 ```powershell
 python scripts/verify_workspace.py
@@ -267,4 +281,4 @@ Live browser verification:
 
 ## Handoff
 
-Current next step: commit the React Agent Updates UI, deploy to the Linux stand, verify `/app/admin/agent-updates` in browser, then set `windows_amd64/stable/3.1.33` as live preferred rollout.
+Current next step: run full workspace verification, commit the web-session alias fix, deploy the new commit to Linux, verify `/app/admin/agent-updates` loads builds/policy without 401, then set `windows_amd64/stable/3.1.33` as live preferred rollout.
