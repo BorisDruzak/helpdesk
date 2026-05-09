@@ -1057,7 +1057,9 @@ describe("TicketListPage", () => {
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
     expect(screen.getByText("Право: запуск безопасных инструментов")).toBeInTheDocument();
     expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
-    expect(screen.getByText("Диагностика сайта")).toBeInTheDocument();
+    expect(screen.getAllByText("Диагностика сайта").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Extra playbook 7")).toBeInTheDocument();
+    expect(screen.getByText(/Показано 10 из 10/)).toBeInTheDocument();
     expect(screen.getAllByText("Нет инструмента: http.check").length).toBeGreaterThan(0);
     expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Запустить" })).toBeDisabled();

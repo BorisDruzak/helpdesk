@@ -1,3 +1,84 @@
+# Support Workspace Tools Catalog and Layout Polish Plan
+
+> Active slice created 2026-05-09. Execute in small UI-only steps first; do not change operation dispatch or backend policy unless verification shows the typed endpoint itself lacks required catalog data.
+
+**Goal:** make `/app/tickets` show the full ticket-scoped tools/playbooks catalog clearly, let the operator resize the three workspace columns, and make dark-theme scrollbars visually consistent with the SaaS workspace.
+
+**Scope:**
+
+- `/app/tickets` support workspace React page.
+- Support tools/playbooks rendering and launcher selection UX.
+- Column sizing state and drag handles for left/center/right layout.
+- Dark/light scrollbar styling in `webapp/src/styles.css`.
+
+**Constraints:**
+
+- Do not bypass existing backend policy, consent, permission, device-online, or operation-run checks.
+- Do not turn the support tools card into an admin module registry; it must remain ticket/device-scoped.
+- Preserve existing topbar, navigation, archive/hide controls, realtime refresh, and composer behavior.
+- Keep layout usable at desktop widths from 1366px.
+
+## Current Slice Status
+
+Overall progress: **90%**.
+
+| Phase | Scope | Progress | Status |
+|---|---|---:|---|
+| P6.1 | Analyze tools/modules mismatch and define UI correction | 100% | Completed |
+| P6.2 | Replace compact 8-item tools preview with searchable full ticket-scoped catalog | 100% | Completed |
+| P6.3 | Add resizable left/right workspace columns with persisted widths | 100% | Completed |
+| P6.4 | Add dark-theme scrollbar styling and light-theme safe fallback | 100% | Completed |
+| P6.5 | Run focused tests/build and browser checks on `/app/tickets` | 70% | Focused tests, build and workspace verify completed; browser signoff remains after stand deploy/start |
+
+## Findings
+
+- Backend `GET /api/web/support/tickets/{ticket_id}/tools` and aggregate `/workspace` return a ticket/device-scoped tool payload, not the admin-wide module registry.
+- The current page additionally limits visible automation entries to `4 playbooks + 4 tools`, or `8` total when only one kind exists.
+- This makes the right-side tools card look incomplete even when the API has more tools/playbooks.
+- The three-column shell currently uses fixed grid columns: left `320px`, center flexible, right `390px`; there are no resize handles.
+- Dark scrollbars are still browser/default colored in several scroll containers.
+
+## Implementation Plan
+
+1. **Full catalog UI**
+   - Build a single `allAutomationItems` collection from `viewModel.right.playbooks` and `viewModel.right.tools`.
+   - Add catalog filters: all, runnable, playbooks, tools, disabled.
+   - Add search by title, subtitle, id, and meta labels.
+   - Show counts: displayed count vs total, plus playbook/tool totals.
+   - Keep disabled cards visible with reason; only disable the run/select button.
+
+2. **Resizable columns**
+   - Add persisted column width state with safe defaults: left `320px`, right `390px`.
+   - Add two drag handles between left/center and center/right.
+   - Clamp widths so the center keeps a practical minimum.
+   - Store values in `localStorage`; allow resize without changing routing or data flow.
+
+3. **Scrollbar styling**
+   - Add scoped CSS under `.support-workspace[data-theme="dark"]`.
+   - Use dark track/thumb colors for Firefox and WebKit.
+   - Keep light theme readable and unobtrusive.
+
+4. **Verification**
+   - Run focused web tests where available.
+   - Run web build.
+   - Open `/app/tickets` in browser and check: full tools list, search/filter, resize handles, dark scrollbars, no console errors.
+
+## Expected User-Facing Improvements
+
+- Operators can find every ticket-available module/tool/playbook without guessing why only eight items are shown.
+- The right tools panel explains unavailable actions instead of silently hiding them.
+- Operators can widen ticket timeline or right context depending on the task.
+- Scrollbars match the dark SaaS theme and stop drawing bright visual noise.
+
+## Verification Log
+
+- 2026-05-09: `pnpm --dir webapp test -- src/pages/tickets/list-page.test.tsx src/features/queues/support-workspace-mappers.test.ts` passed, 47 tests.
+- 2026-05-09: `pnpm --dir webapp build` passed.
+- 2026-05-09: `python scripts/verify_workspace.py` passed.
+- Browser signoff is pending because the remote server at `192.168.100.17:8666` is currently stopped; run after deploy/start so `/app/tickets` serves the updated bundle.
+
+---
+
 # Requester Timeline Projection Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` or the project safe workflow to execute this plan task by task. Keep this file current after each checkpoint.
@@ -841,3 +922,245 @@ python -m pytest server\tests\test_web_support_api.py -k "message or timeline or
 Note: an earlier parallel backend pytest attempt produced DB deadlock/connection-closed errors because two DB-backed suites cleaned the shared test database concurrently. The same suites passed when rerun sequentially.
 
 Next implementation checkpoint: run final workspace verification, then remote deploy/browser live check if the user wants this shipped to the stand in the same slice.
+
+---
+
+# Admin Observer Human-Readable Workbench Modernization Plan
+
+> Active slice created 2026-05-09. Keep this as a separate observer modernization track. Do not mix it with the support tools catalog, requester timeline, or realtime support workspace slices unless implementation proves a shared typed DTO must change.
+
+**Goal:** make `/app/admin/observer` understandable for operators by showing human-readable ticket, device, operation, error and next-action context first, while keeping raw trace/span ids available as secondary technical detail.
+
+**Scope:**
+
+- Observer backend typed web boundary for `/api/web/admin/observer/*`.
+- Observer search and quick/traces payload enrichment.
+- React observer workbench page at `/app/admin/observer`.
+- Ticket-bound trace handoff from `/app/tickets` and support diagnostic cards if link labels depend on the same observer DTO.
+- Observer docs/CODEMAP updates if DTO shape, search behavior or UI workflow changes.
+
+**Non-goals:**
+
+- Do not change ticket workflow state, SLA/OLA logic, operation dispatch, retry, consent, module execution or Protocol V3 semantics.
+- Do not replace observer trace ids; keep them for diagnostics, copy links and deep links.
+- Do not turn observer into a ticket-system source of truth. Ticket business data stays in ticket/support APIs and DB models.
+- Do not remove advanced/raw runtime stats; move them behind clearer labels or advanced sections.
+
+## Current Findings
+
+- Ticket numbers already exist as `tickets.ticket_code` with values like `T-000520`.
+- Observer projection already stores `ticket_code` in ticket-root trace `attrs_json`, but top-level quick/traces DTOs expose only `ticket_id`.
+- `/app/admin/observer` currently labels ticket-root traces as `Тикет`, then shows a UUID-like trace id as the main card title.
+- Trace rows show `Тикет <ticket_id>` instead of the familiar `ticket_code`.
+- Server search can find traces by `ticket_id` and `trace_id`, but `q=T-000520` did not find the trace in the live check even though trace detail had `attrs_json.ticket_code`.
+- The page has real backend data: quick summary, traces, signatures, degradations, runtime, trace detail, diagnostic bundle, spans, errors, links and agent actions. The gap is mostly operator-facing context and DTO ergonomics, not absence of observer storage.
+
+## Status
+
+Overall progress: **0%**.
+
+Working mode: **Plan / Boundary / React UI**.
+
+Change classification: **boundary change inside observer typed web boundary**. Expected changes will likely touch server DTO mapping plus React UI. If search semantics or observer docs change, update canonical docs in the same slice.
+
+## Phase Progress
+
+| Phase | Scope | Progress | Status |
+|---|---|---:|---|
+| O1 | Backend DTO enrichment for human-readable trace context | 0% | Pending |
+| O2 | Search by ticket number and business context | 0% | Pending |
+| O3 | Observer overview and traces UI redesign for operator readability | 0% | Pending |
+| O4 | Trace detail context panel and diagnostic explanation improvements | 0% | Pending |
+| O5 | Signatures/degradations readability pass | 0% | Pending |
+| O6 | Tests, docs and browser verification | 0% | Pending |
+
+## Target User Experience
+
+Primary operator view should answer these questions without reading UUIDs:
+
+- Which ticket is affected? Example: `T-000520 - Обращение: Поломка`.
+- Who/requester or which workplace/device is involved?
+- What failed? Example: `AGENT_NOT_CONNECTED` in `system.collect`.
+- Is this single-ticket, device-specific, or mass/systemic?
+- What should the operator open next: ticket, trace detail, operation, device, signature or degradation group?
+- What is the latest meaningful event and when did it happen?
+- Is runtime healthy, stale, backfilling, or losing projection coverage?
+
+Raw ids should still be present, but as secondary copyable metadata: `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id`, `error_signature`.
+
+## Backend Tasks
+
+### O1: Add Typed Human-Readable Context To Observer DTOs
+
+**Files to inspect/modify:**
+
+- `server/web_api/admin_handlers.py`
+- `server/web_api/dto/admin.py`
+- `server/observer/service.py`
+- `server/app/db/models.py`
+- `server/routes.py`
+- `webapp/src/features/tech/api.ts`
+- `webapp/src/features/tech/observer-workbench-api.ts`
+
+**Required top-level fields for trace list/quick items:**
+
+- `ticket_code: str | null`
+- `ticket_title: str | null`
+- `ticket_status: str | null`
+- `ticket_status_label: str | null`
+- `ticket_priority: str | null`
+- `queue_name: str | null`
+- `requester_display_name: str | null`
+- `device_hostname: str | null`
+- `device_label: str | null`
+- `operation_label: str | null`
+- `latest_error_label: str | null`
+- `latest_error_stage: str | null`
+- `primary_tool_name: str | null`
+- `primary_module_name: str | null`
+- `display_title: str`
+- `display_subtitle: str | null`
+
+**Implementation notes:**
+
+- Prefer joining ticket/device context server-side in observer query/mapping, not asking React to parse `attrs_json`.
+- For ticket-root traces, derive `display_title` from `ticket_code` first, then `ticket_title`, then trace kind.
+- For operation traces, derive `display_title` from operation/tool/module, then ticket code if present.
+- Keep `attrs_json` for advanced diagnostics, but do not make UI depend on it for common labels.
+
+### O2: Make Observer Search Understand Ticket Numbers
+
+**Files to inspect/modify:**
+
+- `server/observer/service.py`
+- `server/tech/handlers.py`
+- `server/web_api/admin_handlers.py`
+- `server/tests/test_observer_v2_api.py`
+- Relevant typed web API tests if present.
+
+**Acceptance:**
+
+- `GET /api/web/admin/observer/traces?q=T-000520` finds the same trace as `q=<ticket_id>`.
+- `GET /api/web/admin/observer/traces?ticket_id=<ticket_id>` still works.
+- Search works for exact ticket code and partial ticket code where current query behavior supports partial matching.
+- Search can match ticket title/requester/device hostname when those fields are available.
+- No broad query should bypass auth or expose requester-private fields outside admin observer context.
+
+### O3: Enrich Diagnostic Bundle Context
+
+**Files to inspect/modify:**
+
+- `server/tech/handlers.py`
+- `server/observer/service.py`
+- `webapp/src/features/tech/observer-workbench-api.ts`
+
+**Acceptance:**
+
+- Diagnostic bundle includes compact ticket summary with `ticket_code`, title, status, queue, priority, requester and support link.
+- Device summary includes hostname, OS, online/last seen, agent version and device link.
+- Operation summary includes status, tool, module, duration, retry count, consent state and operation detail link when present.
+- Recommended next checks should be human-readable and specific, not just raw endpoint hints.
+
+## UI Tasks
+
+### O4: Redesign Overview And Hot Trace Cards
+
+**Files to inspect/modify:**
+
+- `webapp/src/features/tech/observer-quick-panel.tsx`
+- `webapp/src/features/tech/api.ts`
+- `webapp/src/features/tech/observer-workbench-api.ts`
+- `webapp/src/pages/admin/index.test.tsx`
+
+**Acceptance:**
+
+- Hot trace cards show `T-000520` or equivalent ticket code as the main label for ticket traces.
+- Cards show title/status/device/tool/latest error where available.
+- Trace id is visible only as compact secondary metadata with copy affordance.
+- Empty states explain whether no traces exist, filters hide them, or runtime is not ready.
+- Overview counters distinguish `recent traces`, `hot traces`, `ticket-root traces`, `operation traces`, `signatures`, `degradations`, and `runtime pending/backfill` with clearer labels.
+
+### O5: Make Trace List Operator-Readable
+
+**Acceptance:**
+
+- Trace list rows use `display_title` and `display_subtitle`.
+- Ticket-bound rows show `Тикет T-000520`, not `Тикет <uuid>`.
+- Operation-bound rows show tool/module/operation summary first.
+- Rows include badges for status, root kind, error count, duration/age semantics and source coverage.
+- Filters support quick chips: `Ошибки`, `Тикеты`, `Операции`, `Массовые`, `Без тикета`, `С agent actions`.
+
+### O6: Improve Trace Detail
+
+**Acceptance:**
+
+- Detail top section has separate cards: `Контекст обращения`, `Устройство`, `Операция`, `Последняя ошибка`, `Evidence sources`.
+- Ticket card links to `/app/tickets/<ticket_id>` and displays `ticket_code`.
+- Duration label distinguishes ticket lifecycle age from operation runtime.
+- Span timeline groups common event spam and highlights failure stage.
+- Raw IDs are copyable but not the first visual object.
+- Agent action unavailable state explains whether the agent is offline, RPC failed or action sync is disabled.
+
+### O7: Improve Signatures And Degradations
+
+**Acceptance:**
+
+- Signature cards show plain-language title, affected ticket/device count, last seen and top affected tool/module.
+- Occurrence rows show ticket code/device hostname when available.
+- Degradation groups show why it matters: slow rate, timeout rate, retry rate, sample affected tickets/devices.
+- Sample traces buttons use display labels like `T-000520 / system.collect`, with raw trace id secondary.
+
+## Verification Matrix
+
+Minimum local verification before claiming implementation complete:
+
+```powershell
+python scripts/verify_workspace.py
+python scripts/bootstrap_web_toolchain.py
+pnpm --dir webapp exec vitest run src/pages/admin/index.test.tsx --run
+pnpm --dir webapp run build
+python -m pytest server/tests/test_observer_v2_api.py -q --tb=short
+```
+
+If typed DTOs or handlers change:
+
+```powershell
+python -m pytest server/tests/test_web_admin_api.py -q --tb=short
+```
+
+Live/browser verification:
+
+```powershell
+python scripts/manage_remote_stack.py status control
+python scripts/manage_remote_stack.py start server
+python scripts/manage_remote_stack.py smoke server
+pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+```
+
+Manual browser checklist:
+
+- Open `http://192.168.100.17:8666/admin`, navigate to `/app/admin/observer`.
+- Confirm overview cards are readable without UUID knowledge.
+- Search by a known ticket code such as `T-000520`.
+- Open the matching trace detail and confirm ticket/device/operation/error context appears above raw spans.
+- Open signatures and degradations tabs and confirm sample rows are human-readable.
+- Confirm trace deep links with `?trace_id=...`, `?ticket_id=...` and `?operation_id=...` still select the intended trace.
+- Confirm browser console has no new page errors.
+- Stop the remote server after checks unless explicitly asked to keep it running:
+
+```powershell
+python scripts/manage_remote_stack.py stop server
+```
+
+## Risks And Guards
+
+- **DTO bloat:** keep enriched context compact; do not embed full ticket/workspace payloads in observer trace lists.
+- **Auth/privacy:** admin observer can show support context, but do not leak raw tokens, cookies, consent tokens or unredacted tool payloads.
+- **Performance:** avoid N+1 per trace; batch load tickets/devices/operations for visible trace ids.
+- **Wrong source of truth:** observer may display ticket context but must not mutate ticket business state.
+- **Search ambiguity:** ticket code search should be exact/partial but should not accidentally treat every short token as a broad expensive DB scan.
+- **UI regression:** keep raw trace workflow usable for developers while making operator labels primary.
+
+## Handoff
+
+Next implementation checkpoint: start with O1/O2 backend tests and DTO enrichment, then update the React trace card/list/detail rendering. Do not start by only changing labels in React; the UI should receive explicit `ticket_code` and display fields from the typed observer boundary.

@@ -17,6 +17,7 @@ import {
   EyeOff,
   FileCheck2,
   Fingerprint,
+  GripVertical,
   Inbox,
   Lock,
   LogOut,
@@ -46,7 +47,7 @@ import {
   UsersRound,
   Wrench,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -106,6 +107,15 @@ type SidebarTab = "context" | "sla" | "tools" | "knowledge" | "passport";
 type TimelineFilter = "all" | SupportWorkspaceTimelineKind;
 type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
+type AutomationCatalogFilter = "all" | "runnable" | "playbook" | "tool" | "disabled";
+type WorkspaceResizePane = "left" | "right";
+type WorkspaceColumnSizes = { left: number; right: number };
+type WorkspaceResizeState = {
+  pane: WorkspaceResizePane;
+  startX: number;
+  startLeft: number;
+  startRight: number;
+};
 type AutomationLaunchDraft =
   | { kind: "tool"; id: string }
   | { kind: "playbook"; id: string }
@@ -131,12 +141,63 @@ type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 
 const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
+const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
+const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 320, right: 390 };
+const WORKSPACE_COLUMN_LIMITS = {
+  leftMin: 260,
+  leftMax: 460,
+  rightMin: 320,
+  rightMax: 560,
+  centerMin: 560,
+};
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
   if (typeof window === "undefined") {
     return "dark";
   }
   return window.localStorage.getItem(SUPPORT_WORKSPACE_THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+function normalizeWorkspaceColumns(sizes: WorkspaceColumnSizes, viewportWidth: number): WorkspaceColumnSizes {
+  let left = clampNumber(sizes.left, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax);
+  let right = clampNumber(sizes.right, WORKSPACE_COLUMN_LIMITS.rightMin, WORKSPACE_COLUMN_LIMITS.rightMax);
+  const maxSidebarsWidth = Math.max(
+    WORKSPACE_COLUMN_LIMITS.leftMin + WORKSPACE_COLUMN_LIMITS.rightMin,
+    viewportWidth - WORKSPACE_COLUMN_LIMITS.centerMin,
+  );
+  if (left + right > maxSidebarsWidth) {
+    const rightReduction = Math.min(right - WORKSPACE_COLUMN_LIMITS.rightMin, left + right - maxSidebarsWidth);
+    right -= rightReduction;
+    const remainingOverflow = left + right - maxSidebarsWidth;
+    if (remainingOverflow > 0) {
+      left = clampNumber(left - remainingOverflow, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax);
+    }
+  }
+  return { left, right };
+}
+
+function getInitialWorkspaceColumns(): WorkspaceColumnSizes {
+  if (typeof window === "undefined") {
+    return DEFAULT_WORKSPACE_COLUMNS;
+  }
+  const viewportWidth = window.innerWidth || 1366;
+  try {
+    const raw = window.localStorage.getItem(SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY);
+    if (!raw) {
+      return normalizeWorkspaceColumns(DEFAULT_WORKSPACE_COLUMNS, viewportWidth);
+    }
+    const parsed = JSON.parse(raw) as Partial<WorkspaceColumnSizes>;
+    return normalizeWorkspaceColumns({
+      left: clampNumber(Number(parsed.left) || DEFAULT_WORKSPACE_COLUMNS.left, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax),
+      right: clampNumber(Number(parsed.right) || DEFAULT_WORKSPACE_COLUMNS.right, WORKSPACE_COLUMN_LIMITS.rightMin, WORKSPACE_COLUMN_LIMITS.rightMax),
+    }, viewportWidth);
+  } catch {
+    return normalizeWorkspaceColumns(DEFAULT_WORKSPACE_COLUMNS, viewportWidth);
+  }
 }
 
 function workspaceHasLiveOperations(payload: SupportTicketWorkspacePayload | undefined): boolean {
@@ -180,6 +241,25 @@ const timelineTabs: Array<{ value: TimelineFilter; label: string }> = [
   { value: "diagnostics", label: "Диагностика" },
   { value: "history", label: "История" },
 ];
+
+const automationCatalogFilters: Array<{ value: AutomationCatalogFilter; label: string }> = [
+  { value: "all", label: "Все" },
+  { value: "runnable", label: "Можно запустить" },
+  { value: "playbook", label: "Playbooks" },
+  { value: "tool", label: "Инструменты" },
+  { value: "disabled", label: "Недоступные" },
+];
+
+function matchesAutomationSearch(item: SupportWorkspaceToolItem, search: string): boolean {
+  if (!search) {
+    return true;
+  }
+  const haystack = [item.id, item.title, item.subtitle, item.riskLabel, item.disabledReason, ...item.metaLabels]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(search);
+}
 
 type WorkspaceErrorState = {
   title: string;
@@ -1021,9 +1101,15 @@ export function TicketListPage() {
   const [worklogNote, setWorklogNote] = useState("");
   const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
+  const [workspaceColumns, setWorkspaceColumns] = useState<WorkspaceColumnSizes>(() => getInitialWorkspaceColumns());
+  const [resizingPane, setResizingPane] = useState<WorkspaceResizePane | null>(null);
+  const [automationCatalogFilter, setAutomationCatalogFilter] = useState<AutomationCatalogFilter>("all");
+  const [automationCatalogSearch, setAutomationCatalogSearch] = useState("");
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
+  const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
+  const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
 
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
@@ -1032,6 +1118,77 @@ export function TicketListPage() {
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
   }, [selectedTicketId]);
+
+  useEffect(() => {
+    const handleViewportResize = () => {
+      setWorkspaceColumns((current) => normalizeWorkspaceColumns(current, window.innerWidth || 1366));
+    };
+    window.addEventListener("resize", handleViewportResize);
+    return () => window.removeEventListener("resize", handleViewportResize);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY, JSON.stringify(workspaceColumns));
+    } catch {
+      // Layout persistence is best-effort; the workspace stays usable without localStorage.
+    }
+  }, [workspaceColumns]);
+
+  useEffect(() => {
+    if (!resizingPane) {
+      return;
+    }
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState) {
+        return;
+      }
+      const delta = event.clientX - resizeState.startX;
+      const viewportWidth = window.innerWidth || 1366;
+      setWorkspaceColumns((current) => {
+        if (resizeState.pane === "left") {
+          const maxLeft = Math.min(
+            WORKSPACE_COLUMN_LIMITS.leftMax,
+            viewportWidth - current.right - WORKSPACE_COLUMN_LIMITS.centerMin,
+          );
+          return {
+            ...current,
+            left: clampNumber(resizeState.startLeft + delta, WORKSPACE_COLUMN_LIMITS.leftMin, maxLeft),
+          };
+        }
+        const maxRight = Math.min(
+          WORKSPACE_COLUMN_LIMITS.rightMax,
+          viewportWidth - current.left - WORKSPACE_COLUMN_LIMITS.centerMin,
+        );
+        return {
+          ...current,
+          right: clampNumber(resizeState.startRight - delta, WORKSPACE_COLUMN_LIMITS.rightMin, maxRight),
+        };
+      });
+    };
+
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      setResizingPane(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [resizingPane]);
 
   const queueQuery = useQuery({
     queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch, showArchive],
@@ -1123,10 +1280,33 @@ export function TicketListPage() {
   const timelineEmptyState = visibleTimeline.length === 0 ? getTimelineEmptyState(timelineFilter) : null;
   const firstRunnableTool = viewModel.right.tools.find((item) => item.enabled);
   const firstRunnablePlaybook = viewModel.right.playbooks.find((item) => item.enabled);
-  const visibleAutomationItems =
-    viewModel.right.playbooks.length && viewModel.right.tools.length
-      ? [...viewModel.right.playbooks.slice(0, 4), ...viewModel.right.tools.slice(0, 4)]
-      : [...viewModel.right.playbooks, ...viewModel.right.tools].slice(0, 8);
+  const allAutomationItems = useMemo(
+    () => [...viewModel.right.playbooks, ...viewModel.right.tools],
+    [viewModel.right.playbooks, viewModel.right.tools],
+  );
+  const automationSearchValue = deferredAutomationCatalogSearch.trim().toLowerCase();
+  const automationCatalogCounts = useMemo(
+    () => ({
+      all: allAutomationItems.length,
+      runnable: allAutomationItems.filter((item) => item.enabled).length,
+      playbook: viewModel.right.playbooks.length,
+      tool: viewModel.right.tools.length,
+      disabled: allAutomationItems.filter((item) => !item.enabled).length,
+    }),
+    [allAutomationItems, viewModel.right.playbooks.length, viewModel.right.tools.length],
+  );
+  const visibleAutomationItems = useMemo(
+    () =>
+      allAutomationItems.filter((item) => {
+        const filterMatches =
+          automationCatalogFilter === "all" ||
+          (automationCatalogFilter === "runnable" && item.enabled) ||
+          (automationCatalogFilter === "disabled" && !item.enabled) ||
+          item.kind === automationCatalogFilter;
+        return filterMatches && matchesAutomationSearch(item, automationSearchValue);
+      }),
+    [allAutomationItems, automationCatalogFilter, automationSearchValue],
+  );
   const activeOperations = viewModel.right.operations.filter((operation) => operation.active);
   const statusActionOptions = workspaceQuery.data?.detail.actions.status_options ?? [];
   const queueActionOptions = (queueQuery.data?.summary.queue_counts ?? []).filter((queue) => queue.id !== null);
@@ -1566,6 +1746,17 @@ export function TicketListPage() {
     });
   }
 
+  function startColumnResize(pane: WorkspaceResizePane, event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    resizeStateRef.current = {
+      pane,
+      startX: event.clientX,
+      startLeft: workspaceColumns.left,
+      startRight: workspaceColumns.right,
+    };
+    setResizingPane(pane);
+  }
+
   return (
     <section
       className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
@@ -1586,7 +1777,38 @@ export function TicketListPage() {
         userRole={session?.actor_role === "admin" ? "Администратор" : "Оператор L1"}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(520px,1fr)_390px] overflow-hidden">
+      <div
+        className="relative grid min-h-0 flex-1 overflow-hidden"
+        style={{ gridTemplateColumns: `${workspaceColumns.left}px minmax(520px,1fr) ${workspaceColumns.right}px` }}
+      >
+        <button
+          aria-label="Изменить ширину левой колонки"
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 -translate-x-1/2 cursor-col-resize ${
+            resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
+          }`}
+          onPointerDown={(event) => startColumnResize("left", event)}
+          style={{ left: `${workspaceColumns.left}px` }}
+          title="Потяните, чтобы изменить ширину списка тикетов"
+          type="button"
+        >
+          <span className="support-workspace__column-resizer-line">
+            <GripVertical className="h-4 w-4" />
+          </span>
+        </button>
+        <button
+          aria-label="Изменить ширину правой колонки"
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 translate-x-1/2 cursor-col-resize ${
+            resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
+          }`}
+          onPointerDown={(event) => startColumnResize("right", event)}
+          style={{ right: `${workspaceColumns.right}px` }}
+          title="Потяните, чтобы изменить ширину контекстной панели"
+          type="button"
+        >
+          <span className="support-workspace__column-resizer-line">
+            <GripVertical className="h-4 w-4" />
+          </span>
+        </button>
         <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
           <div className="border-b border-white/10 px-4 py-4">
             <div className="grid grid-cols-2 gap-2 rounded-xl bg-white/[0.04] p-1">
@@ -2655,15 +2877,52 @@ export function TicketListPage() {
                 ) : null}
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-white">Инструменты / Playbook</p>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-white">Инструменты / Playbook</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Показано {visibleAutomationItems.length} из {automationCatalogCounts.all} · Playbooks {automationCatalogCounts.playbook} · Инструменты {automationCatalogCounts.tool}
+                      </p>
+                    </div>
                     <button
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                      className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                       disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
                       onClick={() => openAutomationLauncher()}
                       type="button"
                     >
                       Запустить
                     </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <label className="relative block">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                      <input
+                        className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1828] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400/60 focus:ring-2 focus:ring-blue-500/20"
+                        onChange={(event) => setAutomationCatalogSearch(event.currentTarget.value)}
+                        placeholder="Поиск по модулю, команде, playbook..."
+                        type="search"
+                        value={automationCatalogSearch}
+                      />
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {automationCatalogFilters.map((filter) => {
+                        const count = automationCatalogCounts[filter.value];
+                        return (
+                          <button
+                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                              automationCatalogFilter === filter.value
+                                ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                                : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-white"
+                            }`}
+                            key={filter.value}
+                            onClick={() => setAutomationCatalogFilter(filter.value)}
+                            type="button"
+                          >
+                            {filter.label}
+                            <span className="ml-1 text-[11px] opacity-75">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   {automationLaunchDraft ? (
                     <div className="mt-4 rounded-xl border border-blue-400/30 bg-blue-500/10 p-3">
@@ -2774,9 +3033,14 @@ export function TicketListPage() {
                         </div>
                       );
                     })}
-                    {!viewModel.right.playbooks.length && !viewModel.right.tools.length ? (
+                    {!allAutomationItems.length ? (
                       <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-slate-400">
                         Доступные инструменты не найдены или устройство offline.
+                      </p>
+                    ) : null}
+                    {allAutomationItems.length && !visibleAutomationItems.length ? (
+                      <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-slate-400">
+                        По текущему поиску и фильтру ничего не найдено. Измените запрос или покажите все элементы каталога.
                       </p>
                     ) : null}
                   </div>
