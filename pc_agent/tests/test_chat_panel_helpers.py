@@ -1775,6 +1775,34 @@ def test_map_ticket_event_to_user_timeline_item_uses_clear_status_messages_and_h
     )
     assert queued_update is None
 
+    debug_event = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "raw_tool_log",
+            "created_at": "2026-05-08T13:52:00+05:00",
+            "payload": {"text": "event_type=raw_tool_log status=unknown token=secret"},
+        }
+    )
+    assert debug_event is None
+
+
+def test_map_ticket_event_to_user_timeline_item_prefers_server_projection():
+    item = map_ticket_event_to_user_timeline_item(
+        {
+            "event_type": "status_changed",
+            "created_at": "2026-05-08T13:53:00+05:00",
+            "to_status": "unknown",
+            "requester_timeline_text": "Статус обращения обновлён.",
+            "requester_timeline_kind": "system_event",
+            "requester_timeline_payload": {"source": "server"},
+        }
+    )
+
+    assert item is not None
+    assert item.kind == "system_event"
+    assert item.text == "Статус обращения обновлён."
+    assert item.payload == {"source": "server"}
+    assert "unknown" not in item.text.lower()
+
 
 def test_next_action_card_renders_only_next_action_without_duplicate_due_dates():
     from ui_gui.ticket_detail_widgets import NextActionCard

@@ -14,7 +14,7 @@ import {
   sendPublicTicketConfirmation,
   sendPublicTicketMessage,
 } from "../../features/requester/api";
-import type { PublicTicketConfirmationRequest, PublicTicketMessage } from "../../features/requester/types";
+import type { PublicTicketConfirmationRequest, PublicTicketEvent, PublicTicketMessage } from "../../features/requester/types";
 
 function tokenStorageKey(ticketId: string): string {
   return `public_ticket_token:${ticketId}`;
@@ -49,6 +49,43 @@ function confirmationRequest(message: PublicTicketMessage): PublicTicketConfirma
   }
   return request;
 }
+
+function requesterEventType(event: PublicTicketEvent): string {
+  return event.event_type ?? event.type ?? "";
+}
+
+function requesterEventAuthor(event: PublicTicketEvent): string {
+  switch (event.requester_timeline_kind) {
+    case "support_message":
+      return "Поддержка";
+    case "user_message":
+      return "Вы";
+    case "diagnostic_result":
+      return "Диагностика";
+    case "attachment":
+      return "Вложение";
+    default:
+      return "Система";
+  }
+}
+
+type RequesterTimelineRow =
+  | {
+      kind: "message";
+      key: string;
+      author: string;
+      text: string;
+      ts?: string | null;
+      message: PublicTicketMessage;
+    }
+  | {
+      kind: "event";
+      key: string;
+      author: string;
+      text: string;
+      ts?: string | null;
+      event: PublicTicketEvent;
+    };
 
 export function RequesterTicketPage() {
   const params = useParams();
@@ -143,6 +180,46 @@ export function RequesterTicketPage() {
 
   const ticket = ticketQuery.data?.ticket;
   const messages = useMemo(() => ticketQuery.data?.messages ?? [], [ticketQuery.data?.messages]);
+  const requesterEvents = useMemo(
+    () =>
+      (ticketQuery.data?.events ?? []).filter((event) => {
+        const eventType = requesterEventType(event);
+        return eventType !== "chat_message" && Boolean(event.requester_timeline_text?.trim());
+      }),
+    [ticketQuery.data?.events],
+  );
+  const timelineRows = useMemo<RequesterTimelineRow[]>(() => {
+    const rows: Array<RequesterTimelineRow & { order: number }> = [
+      ...messages.map((item, index) => ({
+        kind: "message" as const,
+        key: String(item.message_id ?? item.event_id ?? `message-${index}`),
+        author: messageAuthor(item),
+        text: item.text ?? "",
+        ts: item.ts ?? item.created_at,
+        message: item,
+        order: index,
+      })),
+      ...requesterEvents.map((event, index) => ({
+        kind: "event" as const,
+        key: String(event.id ?? event.event_id ?? `event-${index}`),
+        author: requesterEventAuthor(event),
+        text: event.requester_timeline_text ?? "",
+        ts: event.ts ?? event.created_at,
+        event,
+        order: messages.length + index,
+      })),
+    ];
+    return rows
+      .sort((left, right) => {
+        const leftTime = left.ts ? new Date(left.ts).getTime() : Number.NaN;
+        const rightTime = right.ts ? new Date(right.ts).getTime() : Number.NaN;
+        if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+          return left.order - right.order;
+        }
+        return leftTime - rightTime || left.order - right.order;
+      })
+      .map(({ order: _order, ...row }) => row);
+  }, [messages, requesterEvents]);
   const activeConfirmationRequest = useMemo(
     () => messages.map(confirmationRequest).find(Boolean) ?? null,
     [messages],
@@ -245,18 +322,18 @@ export function RequesterTicketPage() {
             ) : null}
 
             <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-2">
-              {messages.length ? (
-                messages.map((item, index) => {
-                  const request = confirmationRequest(item);
+              {timelineRows.length ? (
+                timelineRows.map((row) => {
+                  const request = row.kind === "message" ? confirmationRequest(row.message) : null;
                   const canAnswerConfirmation =
                     showResolutionConfirmation && request?.request_id === activeConfirmationRequest?.request_id;
                   return (
-                    <article key={item.message_id ?? item.event_id ?? index} className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                    <article key={row.key} className="rounded-[1rem] border border-border bg-white px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="font-semibold text-slate-950">{messageAuthor(item)}</p>
-                        <p className="text-xs text-slate-400">{formatDateTime(item.ts ?? item.created_at)}</p>
+                        <p className="font-semibold text-slate-950">{row.author}</p>
+                        <p className="text-xs text-slate-400">{formatDateTime(row.ts)}</p>
                       </div>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{item.text}</p>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{row.text}</p>
                       {canAnswerConfirmation && request?.request_id ? (
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button

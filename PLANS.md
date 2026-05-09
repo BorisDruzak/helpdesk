@@ -16,11 +16,27 @@ Created: 2026-05-09.
 
 Working mode: **Plan / Contract**.
 
+Overall progress: **100%**.
+
 Change classification: **cross-cutting typed display contract**. The server will add projection fields consumed by desktop agent and web/requester surfaces. No DB schema, workflow state machine, SLA timers, assignment logic, WebSocket protocol, or operation dispatch semantics should change.
 
-Current instruction from user: analysis first, clear current `PLANS.md`, write new plan. No implementation code has been changed in this checkpoint.
+Current instruction from user: execute the plan by phases, test changes, do live checks where relevant, and report completion percentage on each checkpoint.
 
 Dirty worktree note: before this plan update the worktree already had many modified/untracked files in server, agent, docs, tests, and web-related zones. This plan update intentionally touches only `PLANS.md`.
+
+## Phase Progress
+
+| Phase | Scope | Progress | Status |
+|---|---|---:|---|
+| 0. Intake and plan | Read canonical docs, find event producers/renderers, classify contract surface, write implementation plan | 100% | Completed |
+| 1. Server projection core | Tests and `server/tickets/requester_timeline.py` with safe Russian projection and hidden-event rules | 100% | Completed |
+| 2. Server API integration | Add projection fields to requester/agent serializers and support timeline DTOs | 100% | Completed |
+| 3. Web requester/support integration | React requester page, support workspace mapping and legacy ticket page prefer projection text | 100% | Completed |
+| 4. Desktop agent integration | Qt GUI consumes server projection first and keeps safe fallback for older servers | 100% | Completed |
+| 5. Documentation sync | Update ticket/chat/CODEMAP/quick lookup docs and rebuild context index | 100% | Completed |
+| 6. Verification and signoff | Focused server/agent/web tests, compileall, web build and browser check if visible UI changed | 100% | Completed |
+
+Progress rule: update the overall percentage after every completed phase. Current 100% reflects completed analysis/planning, server projection core, server API integration, web integration, desktop agent integration, documentation sync and verification.
 
 ## Analysis Summary
 
@@ -208,9 +224,13 @@ Required Russian text examples:
 - `approval_timed_out`: `Срок согласования истёк.`
 - `passport_generated`: `Подготовлены материалы по решению.`
 
-## Implementation Tasks
+## Implementation Phases
 
-### Task 1: Server Projection Tests
+### Phase 1: Server Projection Core
+
+Progress: **100%**.
+
+#### Task 1.1: Server Projection Tests
 
 Files:
 
@@ -219,13 +239,13 @@ Files:
 
 Steps:
 
-- [ ] Add tests for `status_changed` to `in_progress`.
-- [ ] Add tests for `status_changed` with unknown status returning no raw `unknown`.
-- [ ] Add tests proving unknown technical events are hidden by default.
-- [ ] Add tests for `chat_message` public user/support/system access-code mapping.
-- [ ] Add tests for hidden `internal_note`, `worklog_added`, `message_read`, workspace hide/archive events and notification/policy audit events.
-- [ ] Add tests for `tool_call_result` compact diagnostic payload without raw JSON, token-like text, trace ids or full result blobs.
-- [ ] Keep or extend first-response tests proving public access-code message is system notice and not first response.
+- [x] Add tests for `status_changed` to `in_progress`.
+- [x] Add tests for `status_changed` with unknown status returning no raw `unknown`.
+- [x] Add tests proving unknown technical events are hidden by default.
+- [x] Add tests for `chat_message` public user/support/system access-code mapping.
+- [x] Add tests for hidden `internal_note`, `worklog_added`, `message_read`, workspace hide/archive events and notification/policy audit events.
+- [x] Add tests for `tool_call_result` compact diagnostic payload without raw JSON, token-like text, trace ids or full result blobs.
+- [x] Keep or extend first-response tests proving public access-code message is system notice and not first response.
 
 Expected command:
 
@@ -233,7 +253,7 @@ Expected command:
 python -m pytest server\tests\test_requester_timeline_projection.py server\tests\test_ticket_first_response_classification.py -q
 ```
 
-### Task 2: Server Projection Module
+#### Task 1.2: Server Projection Module
 
 Files:
 
@@ -241,13 +261,13 @@ Files:
 
 Steps:
 
-- [ ] Implement the dataclass and helpers described above.
-- [ ] Implement payload extraction that accepts both ORM `TicketEvent` objects and dict-like events.
-- [ ] Implement status alias handling for top-level, `payload`, and `event_details` forms.
-- [ ] Implement assignee display extraction from `assignee_display_name`, `new_assignee_display_name`, `new_value`, and safe fallback ids.
-- [ ] Implement compact diagnostic check extraction compatible with current agent/web logic: `checks`, `steps`, `result.checks`, `result.steps`, `diagnostics`.
-- [ ] Implement hidden-event allow/deny sets in one place.
-- [ ] Do not import web DTOs or Qt/client code; keep the module domain-level and dependency-light.
+- [x] Implement the dataclass and helpers described above.
+- [x] Implement payload extraction that accepts both ORM `TicketEvent` objects and dict-like events.
+- [x] Implement status alias handling for top-level, `payload`, and `event_details` forms.
+- [x] Implement assignee display extraction from `assignee_display_name`, `new_assignee_display_name`, `new_value`, and safe fallback ids.
+- [x] Implement compact diagnostic check extraction compatible with current agent/web logic: `checks`, `steps`, `result.checks`, `result.steps`, `diagnostics`.
+- [x] Implement hidden-event allow/deny sets in one place.
+- [x] Do not import web DTOs or Qt/client code; keep the module domain-level and dependency-light.
 
 Expected command:
 
@@ -255,7 +275,11 @@ Expected command:
 python -m pytest server\tests\test_requester_timeline_projection.py -q
 ```
 
-### Task 3: Server Serializers And Requester Filtering
+### Phase 2: Server API Integration
+
+Progress: **100%**.
+
+#### Task 2.1: Server Serializers And Requester Filtering
 
 Files:
 
@@ -263,17 +287,17 @@ Files:
 
 Steps:
 
-- [ ] Replace `_event_visible_to_requester()` internals with `build_requester_timeline_projection(...) is not None` for non-chat events, while preserving public chat visibility rules.
-- [ ] Add projection fields in `_serialize_event_raw()`:
+- [x] Replace `_event_visible_to_requester()` internals with `build_requester_timeline_projection(...) is not None` for non-chat events, while preserving public chat visibility rules.
+- [x] Add projection fields in `_serialize_event_raw()`:
   - `requester_timeline_text`
   - `requester_timeline_kind`
   - `requester_timeline_payload`
   - optional `requester_timeline_icon`
   - optional `requester_timeline_style`
-- [ ] Add the same projection fields in `_serialize_event_for_agent()` so the desktop GUI receives them in `events`.
-- [ ] Ensure `_serialize_message()` remains chat-compatible and does not change first-response logic.
-- [ ] Ensure `GET /api/tickets/{ticket_id}` requester visibility no longer returns hidden internal/debug events.
-- [ ] Ensure `GET /api/tickets/{ticket_id}/snapshot` history uses the same projection and does not reintroduce raw event labels.
+- [x] Add the same projection fields in `_serialize_event_for_agent()` so the desktop GUI receives them in `events`.
+- [x] Ensure `_serialize_message()` remains chat-compatible and does not change first-response logic.
+- [x] Ensure `GET /api/tickets/{ticket_id}` requester visibility no longer returns hidden internal/debug events.
+- [x] Ensure `GET /api/tickets/{ticket_id}/snapshot` history uses the same projection and does not reintroduce raw event labels.
 
 Expected command:
 
@@ -282,7 +306,7 @@ python -m pytest server\tests\test_ticket_first_response_classification.py -q
 python -m pytest server\tests\test_web_support_api.py -k "timeline or requester" -q --tb=short
 ```
 
-### Task 4: Support Timeline DTO Integration
+#### Task 2.2: Support Timeline DTO Integration
 
 Files:
 
@@ -291,12 +315,12 @@ Files:
 
 Steps:
 
-- [ ] Add nullable requester projection fields to `SupportTicketMessage`.
-- [ ] Make `_build_timeline_message()` and `_build_timeline_entry()` call `build_requester_timeline_projection()`.
-- [ ] Preserve support-only fields such as operation actions, retry/cancel URLs, event details and internal filters for staff views.
-- [ ] For requester/public views, prefer projection `text` and `kind`; for support internal timeline, keep support details but expose projection fields for parity.
-- [ ] Stop using raw fallback labels as requester text.
-- [ ] Decide whether support timeline should continue to include `worklog_added` and internal notes for staff filters only. Requester projection must still be `None`.
+- [x] Add nullable requester projection fields to `SupportTicketMessage`.
+- [x] Make `_build_timeline_message()` and `_build_timeline_entry()` call `build_requester_timeline_projection()`.
+- [x] Preserve support-only fields such as operation actions, retry/cancel URLs, event details and internal filters for staff views.
+- [x] For requester/public views, prefer projection `text` and `kind`; for support internal timeline, keep support details but expose projection fields for parity.
+- [x] Stop using raw fallback labels as requester text.
+- [x] Decide whether support timeline should continue to include `worklog_added` and internal notes for staff filters only. Requester projection must still be `None`.
 
 Expected command:
 
@@ -304,7 +328,11 @@ Expected command:
 python -m pytest server\tests\test_web_support_api.py -k "timeline" -q --tb=short
 ```
 
-### Task 5: Public Requester Web Timeline
+### Phase 3: Web Requester And Support Integration
+
+Progress: **100%**.
+
+#### Task 3.1: Public Requester Web Timeline
 
 Files:
 
@@ -315,11 +343,11 @@ Files:
 
 Steps:
 
-- [ ] Extend public ticket detail types to accept `events` or requester timeline items from `GET /api/tickets/{ticket_id}`.
-- [ ] Render requester-safe system events alongside messages when projection fields are present.
-- [ ] Never render raw `event_type`, raw status, queue ids, trace ids, tool params or internal logs.
-- [ ] Keep access-code messages as system messages, not support replies.
-- [ ] Add a test that requester page displays `requester_timeline_text` and does not display raw `status_changed`, `unknown`, or `tool_call_result`.
+- [x] Extend public ticket detail types to accept `events` or requester timeline items from `GET /api/tickets/{ticket_id}`.
+- [x] Render requester-safe system events alongside messages when projection fields are present.
+- [x] Never render raw `event_type`, raw status, queue ids, trace ids, tool params or internal logs.
+- [x] Keep access-code messages as system messages, not support replies.
+- [x] Add a test that requester page displays `requester_timeline_text` and does not display raw `status_changed`, `unknown`, or `tool_call_result`.
 
 Expected commands:
 
@@ -328,7 +356,7 @@ python scripts/bootstrap_web_toolchain.py
 pnpm --dir webapp exec vitest run src/pages/requester-ticket/index.test.tsx src/pages/requester-ticket/index.status.test.tsx --run
 ```
 
-### Task 6: Support React Workspace Mapping
+#### Task 3.2: Support React Workspace Mapping
 
 Files:
 
@@ -339,10 +367,10 @@ Files:
 
 Steps:
 
-- [ ] Add TS fields for requester timeline projection on support timeline entries.
-- [ ] In requester/public-facing sections, use `requester_timeline_text`.
-- [ ] Keep staff support workspace diagnostic/history details available, but ensure the displayed primary body uses safe text where appropriate.
-- [ ] Add a mapper test that raw event type/status does not become visible when projection exists.
+- [x] Add TS fields for requester timeline projection on support timeline entries.
+- [x] In requester/public-facing sections, use `requester_timeline_text`.
+- [x] Keep staff support workspace diagnostic/history details available, but ensure the displayed primary body uses safe text where appropriate.
+- [x] Add a mapper test that raw event type/status does not become visible when projection exists.
 
 Expected commands:
 
@@ -352,7 +380,7 @@ pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.
 pnpm --dir webapp run build
 ```
 
-### Task 7: Legacy Ticket Page Compatibility
+#### Task 3.3: Legacy Ticket Page Compatibility
 
 Files:
 
@@ -360,10 +388,10 @@ Files:
 
 Steps:
 
-- [ ] In `renderSystemEvent()` or equivalent event rendering path, prefer `requester_timeline_text` and `requester_timeline_kind`.
-- [ ] Hide events where projection is absent for requester mode.
-- [ ] Remove visible raw fallback `item.event_type` from requester-facing rows.
-- [ ] Keep support/admin-only history panel behavior intact if that page is used by staff.
+- [x] In `renderSystemEvent()` or equivalent event rendering path, prefer `requester_timeline_text` and `requester_timeline_kind`.
+- [x] Hide events where projection is absent for requester mode.
+- [x] Remove visible raw fallback `item.event_type` from requester-facing rows.
+- [x] Keep support/admin-only history panel behavior intact if that page is used by staff.
 
 Expected check:
 
@@ -371,7 +399,11 @@ Expected check:
 python -m compileall -q server\tickets\handlers.py server\tickets\requester_timeline.py server\web_api\support_handlers.py
 ```
 
-### Task 8: Desktop Agent Fallback And Server Projection Consumption
+### Phase 4: Desktop Agent Integration
+
+Progress: **100%**.
+
+#### Task 4.1: Desktop Agent Fallback And Server Projection Consumption
 
 Files:
 
@@ -381,17 +413,17 @@ Files:
 
 Steps:
 
-- [ ] Make `map_ticket_event_to_user_timeline_item()` first read server fields:
+- [x] Make `map_ticket_event_to_user_timeline_item()` first read server fields:
   - `requester_timeline_text`
   - `requester_timeline_kind`
   - `requester_timeline_payload`
   - optional style/icon fields
-- [ ] If server projection exists, return a `TimelineItem` directly from it.
-- [ ] Keep local fallback for older servers, but remove the generic raw fallback.
-- [ ] Ensure fallback never returns `Обращение обновлено.`.
-- [ ] Ensure fallback never returns `Статус обновлён: unknown.`.
-- [ ] Hide unknown/debug/internal events instead of showing raw text.
-- [ ] Preserve attachment/user/support/diagnostic rendering already covered by `TimelineItemWidget`.
+- [x] If server projection exists, return a `TimelineItem` directly from it.
+- [x] Keep local fallback for older servers, but remove the generic raw fallback.
+- [x] Ensure fallback never returns `Обращение обновлено.`.
+- [x] Ensure fallback never returns `Статус обновлён: unknown.`.
+- [x] Hide unknown/debug/internal events instead of showing raw text.
+- [x] Preserve attachment/user/support/diagnostic rendering already covered by `TimelineItemWidget`.
 
 Expected command:
 
@@ -399,7 +431,11 @@ Expected command:
 python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q
 ```
 
-### Task 9: Documentation Sync
+### Phase 5: Documentation Sync
+
+Progress: **100%**.
+
+#### Task 5.1: Documentation Sync
 
 Files:
 
@@ -408,16 +444,16 @@ Files:
 - Modify: `server/docs/CODEMAP.md`
 - Modify: `pc_agent/docs/CODEMAP.md`
 - Modify: `docs/QUICK_LOOKUP.md`
-- Modify if needed: `scripts/navigation_catalog.py`
+- Modify: `scripts/navigation_catalog.py`
 
 Steps:
 
-- [ ] Document requester timeline projection fields and safety rules.
-- [ ] Document hidden internal/debug event categories.
-- [ ] Document that public access-code `chat_message` is a system notice and not first response.
-- [ ] Add `server/tickets/requester_timeline.py` to server CODEMAP.
-- [ ] Update agent CODEMAP to state that Qt GUI prefers server projection and only uses local fallback for older servers.
-- [ ] Rebuild context index after doc/navigation changes.
+- [x] Document requester timeline projection fields and safety rules.
+- [x] Document hidden internal/debug event categories.
+- [x] Document that public access-code `chat_message` is a system notice and not first response.
+- [x] Add `server/tickets/requester_timeline.py` to server CODEMAP.
+- [x] Update agent CODEMAP to state that Qt GUI prefers server projection and only uses local fallback for older servers.
+- [x] Rebuild context index after doc/navigation changes.
 
 Expected command:
 
@@ -426,7 +462,11 @@ python scripts/build_context_index.py --force
 python scripts/verify_workspace.py
 ```
 
-### Task 10: Final Verification And Browser Check
+### Phase 6: Final Verification And Browser Check
+
+Progress: **100%**.
+
+#### Task 6.1: Final Verification And Browser Check
 
 Minimum local commands:
 
@@ -453,6 +493,14 @@ Browser signoff if web UI changes are visible:
 - Check `/app/tickets` timeline rows for support workspace.
 - Check `/app/ticket/:ticketId` requester/public page if accessible with a public token/code fixture.
 - Verify no raw `event_type`, `unknown` status, raw queue/status/tool log, trace id or token-like value is visible in requester-facing timeline.
+
+Verification notes from 2026-05-09:
+
+- `python scripts/verify_workspace.py` passed.
+- Agent/server focused pytest and compileall passed.
+- `pnpm --dir webapp run test` passed: 30 files, 162 tests.
+- `pnpm --dir webapp run build` passed.
+- Remote browser/login at `http://192.168.100.17:8666/admin` loaded the webapp shell and admin inventory without page/console errors. `pnpm --dir webapp run check:remote:webapp` reached `/app/tickets` but returned exit 1 because its support-page expected text list is stale relative to the current remote UI labels; no local deploy was performed in this task.
 
 ## Acceptance Criteria
 

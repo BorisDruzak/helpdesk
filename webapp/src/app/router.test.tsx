@@ -131,7 +131,7 @@ describe("appRoutes", () => {
     renderApp(["/app"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Тикеты" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
+    expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 

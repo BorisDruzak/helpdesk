@@ -22,6 +22,7 @@ import type {
   SupportWorkspaceQueue,
   SupportWorkspaceSlice,
   SupportWorkspaceTicketItem,
+  SupportWorkspaceTimelineKind,
   SupportWorkspaceTimelineItem,
   SupportWorkspaceTimer,
   SupportWorkspaceToolItem,
@@ -582,9 +583,10 @@ export function mapSupportTimelineEntries(
 ): SupportWorkspaceTimelineItem[] {
   return (entries ?? []).map((entry, index) => {
     const category = entry.event_category ?? null;
+    const requesterKind = entry.requester_timeline_kind ?? null;
     const isInternal = category === "internal" || entry.visibility === "internal";
-    const isDiagnostic = category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
-    const kind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
+    const isDiagnostic = requesterKind === "diagnostic_result" || category === "diagnostics" || entry.event_type === "tool_call_started" || entry.event_type === "tool_call_result" || entry.event_type === "playbook_started";
+    const kind: SupportWorkspaceTimelineKind = isDiagnostic ? "diagnostics" : isInternal ? "internal" : entry.event_type === "chat_message" ? "message" : "history";
     const operationStatus = entry.tool_status ?? "";
     const operationTone = operationStatusTone(operationStatus);
     const historyTone =
@@ -618,6 +620,24 @@ export function mapSupportTimelineEntries(
         : undefined,
       attachments: entry.attachments,
     };
+  }).map((item, index) => {
+    const entry = entries?.[index];
+    const requesterText = entry?.requester_timeline_text?.trim();
+    if (!requesterText) {
+      return item;
+    }
+    const requesterKind = entry?.requester_timeline_kind ?? null;
+    const title =
+      requesterKind === "diagnostic_result"
+        ? "Диагностика"
+        : requesterKind === "support_message"
+          ? "Поддержка"
+          : requesterKind === "user_message"
+            ? "Сообщение пользователя"
+            : requesterKind === "attachment"
+              ? "Вложение"
+              : "Системное событие";
+    return { ...item, title, body: requesterText };
   });
 }
 

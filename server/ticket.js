@@ -832,12 +832,68 @@
 </div>`;
     }
 
+    function requesterProjectionText(ev, payload) {
+        return (ev && ev.requester_timeline_text) || (payload && payload.requester_timeline_text) || '';
+    }
+
+    function requesterProjectionKind(ev, payload) {
+        return (ev && ev.requester_timeline_kind) || (payload && payload.requester_timeline_kind) || 'system_event';
+    }
+
+    function renderRequesterProjectionCard(id, ts, text, kind) {
+        const titleMap = {
+            diagnostic_result: 'Диагностика',
+            attachment: 'Вложение',
+            support_message: 'Поддержка',
+            user_message: 'Сообщение пользователя',
+            system_event: 'Системное событие'
+        };
+        const avatarMap = {
+            diagnostic_result: '✓',
+            attachment: '↧',
+            support_message: 'S',
+            user_message: 'U',
+            system_event: '•'
+        };
+        const title = titleMap[kind] || titleMap.system_event;
+        const avatar = avatarMap[kind] || avatarMap.system_event;
+        return `<div class="timeline-item system" data-event-id="${escapeHtml(String(id || ''))}">
+  <div class="ti-avatar">${escapeHtml(avatar)}</div>
+  <div class="ti-body">
+    <div class="ti-bubble success">
+      <div class="ti-system-card">
+        <div class="ti-system-title">${escapeHtml(title)}</div>
+        <div class="ti-system-details">${escapeHtml(text)}</div>
+      </div>
+    </div>
+    <div class="ti-time">${escapeHtml(formatTime(ts))}</div>
+  </div>
+</div>`;
+    }
+
     function eventToItem(ev) {
         const id = ev.id || ev.event_id;
         const type = ev.event_type || ev.type || 'unknown';
         const ts = ev.ts || ev.created_at;
         const payload = ev.payload || ev;
         if (HIDDEN_TIMELINE_EVENT_TYPES.has(type)) {
+            return null;
+        }
+        const projectionText = requesterProjectionText(ev, payload);
+        if (projectionText && type !== 'chat_message') {
+            return {
+                id,
+                type: 'system',
+                html: renderRequesterProjectionCard(id, ts, projectionText, requesterProjectionKind(ev, payload))
+            };
+        }
+        if (type === 'tool_call_started') {
+            return { id, type: 'system', html: renderRequesterProjectionCard(id, ts, 'Специалист запустил диагностику.', 'system_event') };
+        }
+        if (type === 'tool_call_result') {
+            return { id, type: 'system', html: renderRequesterProjectionCard(id, ts, 'Диагностика выполнена', 'diagnostic_result') };
+        }
+        if (!['chat_message', 'system_message_local', 'message_read', 'status_changed', 'queue_changed', 'assignee_changed', 'priority_changed', 'requester_profile_changed', 'device_changed'].includes(type)) {
             return null;
         }
         if (type === 'chat_message') {

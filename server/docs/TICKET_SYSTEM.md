@@ -587,3 +587,17 @@ WHERE custom_fields ? 'priority_class'
 ## Проверка is_active очереди при take_self
 
 При "взятии" тикета оператором (take_self) с переносом в целевую очередь: если `target_queue.is_active == False`, перенос не выполняется (тикет остаётся в текущей очереди). Это защитная проверка на случай изменения состояния очереди в репозитории.
+## Requester timeline projection
+
+Сервер формирует единое пользовательское представление событий тикета в `server/tickets/requester_timeline.py`. Для каждого requester-visible `ticket_event` сериализаторы добавляют поля:
+
+- `requester_timeline_text` — готовый русский текст для пользователя;
+- `requester_timeline_kind` — `system_event`, `diagnostic_result`, `attachment`, `user_message` или `support_message`;
+- `requester_timeline_payload` — компактные безопасные данные для UI без raw JSON, токенов, trace id, внутренних заметок, worklog и параметров инструментов;
+- `requester_timeline_icon` / `requester_timeline_style` — опциональные UI-подсказки.
+
+Проекция покрывает жизненный цикл заявки (`ticket_created`, `status_changed`, назначение, очередь, routing, priority/classification/profile/device), SLA (`sla_started`, `sla_warning`, `sla_breached`, остановки first response/resolution), диагностику (`tool_call_started`, `tool_call_result`, `diagnostic_result_classified`, `playbook_started`), согласования, паспорт решения и безопасные вложения. `tool_call_result` отдаётся как `diagnostic_result` только с компактными `checks`, без полного результата инструмента.
+
+В requester timeline по умолчанию не попадают `internal_note`, `worklog_added`, `message_read`, `external_notification_delivery`, `policy_action_dispatched`, hide/archive workspace events, внутренние OLA/SLA pause/resume/reminder события, raw observer/tool/internal/debug/protocol/auth/module logs. Passport evidence и retry/consent события видны requester только если payload явно помечен как requester-visible.
+
+`chat_message` с `visibility="internal"` скрывается. Публичный код доступа к заявке остаётся системным сообщением `Код доступа к заявке сформирован.` и не считается ответом поддержки для first-response SLA. Публичные сообщения support/admin отображаются как `support_message`, requester/agent/client сообщения — как `user_message`.

@@ -45,6 +45,7 @@ from tickets.public_access import (
     mark_public_ticket_unbound,
 )
 from tickets.queue_position_service import QueuePositionService
+from tickets.requester_timeline import build_requester_timeline_projection, projection_to_fields
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
@@ -343,7 +344,7 @@ def _serialize_event_raw(event: Any, ticket: Any | None = None) -> Dict[str, Any
     reply_to = _extract_reply_to_from_payload(payload)
     if reply_to:
         payload["reply_to"] = reply_to
-    return {
+    data = {
         "id": getattr(event, "id", None),
         "ticket_id": getattr(event, "ticket_id", None),
         "device_id": getattr(event, "device_id", None),
@@ -356,10 +357,18 @@ def _serialize_event_raw(event: Any, ticket: Any | None = None) -> Dict[str, Any
         "ts": ts.isoformat() if ts else None,
         "created_at": ts.isoformat() if ts else None,
     }
+    projection = build_requester_timeline_projection(
+        {"event_type": getattr(event, "event_type", None), "payload": payload},
+        ticket=ticket,
+    )
+    data.update(projection_to_fields(projection))
+    return data
 
 
-def _serialize_event_for_agent(event: Any) -> Dict[str, Any]:
+def _serialize_event_for_agent(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
+    if ticket is not None and getattr(event, "event_type", None) == "chat_message":
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
     data = {
         "id": getattr(event, "id", None),
         "type": getattr(event, "event_type", None),
@@ -368,6 +377,11 @@ def _serialize_event_for_agent(event: Any) -> Dict[str, Any]:
     }
     if isinstance(payload, dict):
         data.update(payload)
+    projection = build_requester_timeline_projection(
+        {"event_type": getattr(event, "event_type", None), "payload": payload},
+        ticket=ticket,
+    )
+    data.update(projection_to_fields(projection))
     return data
 
 
@@ -404,13 +418,7 @@ REQUESTER_HIDDEN_EVENT_TYPES = frozenset(
 
 
 def _event_visible_to_requester(event: Any) -> bool:
-    event_type = getattr(event, "event_type", None)
-    if event_type in REQUESTER_HIDDEN_EVENT_TYPES:
-        return False
-    if event_type != "chat_message":
-        return True
-    payload = getattr(event, "payload", None) or {}
-    return (payload.get("visibility") or "public") != "internal"
+    return build_requester_timeline_projection(event) is not None
 
 
 async def _queue_code_map(session: Any, queue_ids: Iterable[Optional[int]]) -> Dict[int, str]:
@@ -1265,7 +1273,7 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
             ticket=ticket_data,
             session={"ticket_id": ticket.ticket_id, "actor_role": auth_context.actor_role},
             messages=[_serialize_message(event, ticket=ticket) for event in messages],
-            events=[_serialize_event_for_agent(event) for event in visible_events],
+            events=[_serialize_event_for_agent(event, ticket=ticket) for event in visible_events],
             agent_online=presence["agent_online"],
             presence=presence,
             incremental=incremental,

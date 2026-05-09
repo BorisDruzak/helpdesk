@@ -347,6 +347,11 @@ class SupportTicketMessage(BaseModel):
     event_category: str = "message"
     event_label: str | None = None
     event_details: dict[str, Any] = Field(default_factory=dict)
+    requester_timeline_text: str | None = None
+    requester_timeline_kind: str | None = None
+    requester_timeline_payload: dict[str, Any] | None = None
+    requester_timeline_icon: str | None = None
+    requester_timeline_style: str | None = None
     from_role: str
     sender_display_name: str | None = None
     text: str

@@ -679,3 +679,16 @@ Intended usage:
 - `requester_unread_messages` / `requester_unread_tool_calls` — badge counters in requester/agent GUI.
 - `support_pending_user_messages` — operator queue indicator for unanswered requester messages.
 - `last_user_message_text` — compact preview in queue rows/cards.
+## Requester timeline projection for chat messages
+
+`chat_message` участвует в общей серверной проекции requester timeline через `server/tickets/requester_timeline.py`. В ответах ticket/detail/timeline рядом с событием могут приходить `requester_timeline_text`, `requester_timeline_kind` и `requester_timeline_payload`; requester UI должен использовать эти поля вместо локального вывода raw `sender_role`, `event_type` или технического payload.
+
+Правила видимости:
+
+- `visibility="internal"` скрывается из requester timeline;
+- публичный `sender_role=support|admin|operator|staff` становится `support_message`;
+- `sender_role=user|requester|agent|device|client` становится `user_message`;
+- сообщение с вложениями может получить kind `attachment`, payload содержит только безопасные descriptors вложений;
+- сообщение с кодом публичного доступа к заявке отображается как `system_event` с текстом `Код доступа к заявке сформирован.` и не раскрывает сам код в projection payload.
+
+First-response SLA закрывается только публичным сообщением реального support/admin. Internal notes, requester/client-agent messages и системное сообщение с кодом доступа не считаются первым ответом.

@@ -266,3 +266,7 @@ Windows note:
 - статус canonical vs historical docs.
 - observer quick diagnosis, trace APIs, dangerous-flow coverage или обязательные observer docs/skills.
 
+## 2026-05-09 requester timeline projection
+
+- Requester-facing ticket event text now starts from `server/tickets/requester_timeline.py`. Server serializers add `requester_timeline_text`, `requester_timeline_kind` and `requester_timeline_payload` in `server/tickets/handlers.py` and `server/web_api/support_handlers.py`; desktop Qt (`pc_agent/ui_gui/ticket_view_models.py`), React requester page and support workspace mappers must prefer these fields over raw `event_type`, status, queue, tool or observer payloads.
+- Hidden from requester timeline by default: `internal_note`, `worklog_added`, `message_read`, workspace hide/archive events, external notification delivery, policy dispatch audit, internal SLA/OLA noise and raw observer/tool/internal/debug/protocol/auth/module logs. Public access-code chat messages remain system notices and do not count as first-response support replies.

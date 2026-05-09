@@ -67,6 +67,20 @@ export type PublicTicketMessage = {
   } | null;
 };
 
+export type PublicTicketEvent = {
+  id?: string | number | null;
+  event_id?: string | number | null;
+  type?: string | null;
+  event_type?: string | null;
+  ts?: string | null;
+  created_at?: string | null;
+  requester_timeline_text?: string | null;
+  requester_timeline_kind?: string | null;
+  requester_timeline_payload?: Record<string, unknown> | null;
+  requester_timeline_icon?: string | null;
+  requester_timeline_style?: string | null;
+};
+
 export type PublicTicketCreatePayload = {
   title: string;
   description: string;
@@ -104,4 +118,5 @@ export type PublicTicketAuthorizeResult = {
 export type PublicTicketDetail = {
   ticket: PublicTicket;
   messages: PublicTicketMessage[];
+  events?: PublicTicketEvent[];
 };

@@ -193,3 +193,8 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 - если change затрагивает agent-side observer coverage, action trace bridge, module breadcrumbs или dangerous flow instrumentation — синхронно обновлять и `server/docs/OBSERVER_LAYER.md` + `server/docs/OBSERVER_AUTHORING_RULES.md`.
 
 Проверка: ключевые термины и файлы из раздела «Быстрый поиск» и «Структура каталогов» должны соответствовать коду.
+## 2026-05-09 requester timeline projection
+
+- `pc_agent/ui_gui/ticket_view_models.py::map_ticket_event_to_user_timeline_item()` now prefers server-provided `requester_timeline_text`, `requester_timeline_kind` and `requester_timeline_payload` from `GET /api/tickets/{ticket_id}`.
+- The local mapper remains only as an older-server fallback and must hide unknown/debug/internal events instead of showing generic `Обращение обновлено.` or raw `unknown` status text.
+- `pc_agent/ui_gui/chat_panel.py` and requester detail widgets consume the resulting `TimelineItem` model; they should not render raw `event_type`, raw tool payload, trace ids, internal notes or worklog data in requester-facing cards.

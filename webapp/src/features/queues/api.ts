@@ -298,6 +298,11 @@ export type SupportTicketDetailPayload = {
     event_category?: string | null;
     event_label?: string | null;
     event_details?: Record<string, unknown>;
+    requester_timeline_text?: string | null;
+    requester_timeline_kind?: string | null;
+    requester_timeline_payload?: Record<string, unknown> | null;
+    requester_timeline_icon?: string | null;
+    requester_timeline_style?: string | null;
     from_role: string;
     sender_display_name?: string | null;
     text: string;

@@ -518,7 +518,7 @@ def _status_change_text(status: Any) -> str:
         return "Обращение отменено."
     if normalized in {"new", "queued", "triaged"}:
         return "Заявка принята."
-    return f"Статус обновлён: {human_ticket_status_label(normalized)}."
+    return "Статус обращения обновлён."
 
 
 def _format_file_size(value: Any) -> str:
@@ -558,7 +558,48 @@ def map_ticket_event_to_user_timeline_item(event: dict[str, Any]) -> TimelineIte
     event_kind = str(payload.get("event") or event_type).strip().lower()
     time_label = _time_label(event.get("created_at") or event.get("ts") or payload.get("created_at"))
 
-    if event_kind in {"internal_note", "message_read", "ticket_updated", "ticket_refreshed", "presence_updated"}:
+    projection_text = _first_text(event.get("requester_timeline_text"), payload.get("requester_timeline_text"))
+    if projection_text:
+        projection_payload = event.get("requester_timeline_payload")
+        if not isinstance(projection_payload, dict):
+            projection_payload = payload.get("requester_timeline_payload")
+        return TimelineItem(
+            _event_id(event),
+            _first_text(event.get("requester_timeline_kind"), payload.get("requester_timeline_kind"), "system_event"),
+            _first_text(payload.get("actor_label"), payload.get("sender_display_name"), "Система"),
+            time_label,
+            projection_text,
+            dict(projection_payload) if isinstance(projection_payload, dict) else {},
+        )
+
+    hidden_events = {
+        "internal_note",
+        "worklog_added",
+        "message_read",
+        "external_notification_delivery",
+        "policy_action_dispatched",
+        "ticket_updated",
+        "ticket_refreshed",
+        "presence_updated",
+        "ticket_hidden_from_workspace",
+        "ticket_unhidden_from_workspace",
+        "ticket_archived_from_workspace",
+        "ticket_unarchived_from_workspace",
+        "sla_paused",
+        "sla_resumed",
+        "sla_reminder_sent",
+        "ola_started",
+        "ola_ack_stopped",
+        "ola_processing_stopped",
+        "ola_paused",
+        "ola_resumed",
+        "ola_breached",
+        "operation_timed_out",
+    }
+    hidden_prefixes = ("raw_", "debug_", "observer_", "internal_", "tool_log", "protocol_", "auth_")
+    if event_kind in hidden_events or event_type in hidden_events:
+        return None
+    if any(event_kind.startswith(prefix) or event_type.startswith(prefix) for prefix in hidden_prefixes):
         return None
     if event_kind == "ticket_created":
         return TimelineItem(_event_id(event), "system_event", "Система", time_label, "Заявка зарегистрирована.")
@@ -635,6 +676,8 @@ def map_ticket_event_to_user_timeline_item(event: dict[str, Any]) -> TimelineIte
             _first_text(payload.get("text"), payload.get("message")),
             payload,
         )
+    if event_kind != "system_message_local":
+        return None
     user_text = _first_text(event.get("message"), payload.get("message"), payload.get("description"), payload.get("text"))
     if not user_text:
         return None

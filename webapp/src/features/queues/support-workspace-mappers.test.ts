@@ -473,6 +473,38 @@ describe("support workspace mappers", () => {
     });
   });
 
+  it("prefers requester timeline projection over raw backend event text", () => {
+    const detail = detailPayload();
+    detail.timeline = [
+      {
+        message_id: null,
+        event_id: 6,
+        event_type: "status_changed",
+        event_category: "history",
+        event_label: "Status changed",
+        event_details: { status: "unknown" },
+        requester_timeline_text: "Статус обращения обновлён.",
+        requester_timeline_kind: "system_event",
+        requester_timeline_payload: {},
+        from_role: "system",
+        sender_display_name: "System",
+        text: "status_changed unknown",
+        ts: "2026-05-05T09:25:00+05:00",
+        visibility: "system",
+        direction: "system",
+        attachments: [],
+        reply_to: null,
+      },
+    ];
+
+    const timeline = mapWorkspaceTimeline(detail);
+
+    expect(timeline[0].body).toBe("Статус обращения обновлён.");
+    expect(timeline[0].title).toBe("Системное событие");
+    expect(timeline[0].body).not.toContain("status_changed");
+    expect(timeline[0].body).not.toContain("unknown");
+  });
+
   it("maps operation summaries and unavailable tool/playbook reasons", () => {
     const detail = detailPayload();
     detail.snapshot.device.online = false;

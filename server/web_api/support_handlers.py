@@ -59,6 +59,7 @@ from tickets.handlers import (
 from tickets.assignment_service import MAX_ACTIVE_TICKETS_PER_OPERATOR, TicketAssignmentError, TicketAssignmentService
 from tickets.ola_service import close_ola_processing, start_ola_for_ticket
 from tickets.public_access import is_public_support_reply_payload
+from tickets.requester_timeline import build_requester_timeline_projection, projection_to_fields
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.statuses import (
     CANONICAL_STATUSES,
@@ -1453,6 +1454,26 @@ def _summarize_playbook_facts(facts_package: object) -> str | None:
     return ", ".join(rows[:3])
 
 
+def _requester_timeline_projection_fields(
+    event: object,
+    ticket: object | None = None,
+    payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+    event_type = None
+    if isinstance(event, dict):
+        event_type = event.get("event_type") or event.get("type")
+    else:
+        event_type = getattr(event, "event_type", None)
+    event_payload = payload if payload is not None else getattr(event, "payload", None)
+    if not isinstance(event_payload, dict):
+        event_payload = {}
+    projection = build_requester_timeline_projection(
+        {"event_type": event_type, "payload": event_payload},
+        ticket=ticket,
+    )
+    return projection_to_fields(projection)
+
+
 def _build_timeline_message(event: object, ticket: object | None = None) -> SupportTicketMessage:
     raw_message = _serialize_message(event, ticket=ticket)
     metadata = raw_message.get("metadata") or {}
@@ -1483,6 +1504,7 @@ def _build_timeline_message(event: object, ticket: object | None = None) -> Supp
         result_summary=None,
         result_preview=None,
         operation_steps=[],
+        **_requester_timeline_projection_fields(event, ticket=ticket, payload=payload if isinstance(payload, dict) else None),
     )
 
 
@@ -1534,6 +1556,7 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             retry_disabled_reason=_operation_retry_disabled_reason("running", None, None),
             cancel_disabled_reason=_operation_cancel_disabled_reason("running"),
             details_url=_operation_details_url(operation_id),
+            **_requester_timeline_projection_fields(event, ticket=ticket, payload=payload),
         )
 
     if event_type == "tool_call_started":
@@ -1567,6 +1590,7 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             retry_disabled_reason=_operation_retry_disabled_reason("accepted", None, None),
             cancel_disabled_reason=_operation_cancel_disabled_reason("accepted"),
             details_url=_operation_details_url(operation_id),
+            **_requester_timeline_projection_fields(event, ticket=ticket, payload=payload),
         )
 
     if event_type == "tool_call_result":
@@ -1614,6 +1638,7 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             error_code=error_code,
             error_category=_operation_error_category(status, error_code, str(payload.get("error") or "")),
             details_url=_operation_details_url(operation_id),
+            **_requester_timeline_projection_fields(event, ticket=ticket, payload=payload),
         )
 
     return SupportTicketMessage(
@@ -1635,6 +1660,7 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
         tool_status=None,
         result_summary=None,
         result_preview=None,
+        **_requester_timeline_projection_fields(event, ticket=ticket, payload=payload),
     )
 
 
@@ -3907,6 +3933,7 @@ async def handle_web_support_send_message(request: web.Request):
             direction="to_agent",
             attachments=[],
             reply_to=None,
+            **_requester_timeline_projection_fields({"event_type": "chat_message", "payload": payload}, ticket=ticket, payload=payload),
         )
         return json_model_response(
             SuccessResponse[SupportMessageActionResult](

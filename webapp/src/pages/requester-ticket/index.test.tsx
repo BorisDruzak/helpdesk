@@ -92,6 +92,40 @@ describe("RequesterTicketPage", () => {
     expect(screen.getByLabelText("Код доступа")).toBeInTheDocument();
   });
 
+  it("renders requester timeline projection and hides raw system event values", async () => {
+    sessionStorage.setItem("public_ticket_token:T-4", "token-4");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/tickets/T-4") {
+        return jsonResponse({
+          status: "ok",
+          ticket: { ticket_id: "T-4", ticket_code: "HD-4", status: "in_progress" },
+          messages: [],
+          events: [
+            {
+              id: 7,
+              type: "status_changed",
+              event_type: "status_changed",
+              status: "unknown",
+              requester_timeline_text: "Статус обращения обновлён.",
+              requester_timeline_kind: "system_event",
+              requester_timeline_payload: {},
+              ts: "2026-05-05T09:25:00+05:00",
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderRequesterTicket("/app/ticket/T-4");
+
+    expect(await screen.findByText("Статус обращения обновлён.")).toBeInTheDocument();
+    expect(screen.queryByText("status_changed")).not.toBeInTheDocument();
+    expect(screen.queryByText("unknown")).not.toBeInTheDocument();
+  });
+
   it("renders requester resolution actions from confirmation metadata", async () => {
     sessionStorage.setItem("public_ticket_token:T-3", "token-3");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
