@@ -82,6 +82,7 @@ import {
   mapSupportWorkspaceViewModel,
 } from "../../features/queues/support-workspace-mappers";
 import { operationActionReasonSentence } from "../../features/queues/support-workspace-labels";
+import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import type {
   SupportWorkspacePassport,
   SupportWorkspaceClosurePlan,
@@ -97,6 +98,7 @@ import { useSession } from "../../features/auth/session-provider";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
+const SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS = 15_000;
 const LIVE_OPERATION_STATUSES = new Set(["accepted", "queued", "running", "sent", "in_progress", "waiting_consent"]);
 
 type ComposerMode = "public" | "internal";
@@ -1020,11 +1022,16 @@ export function TicketListPage() {
   const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedTicketIdRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
   }, [params.ticketId]);
+
+  useEffect(() => {
+    selectedTicketIdRef.current = selectedTicketId;
+  }, [selectedTicketId]);
 
   const queueQuery = useQuery({
     queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch, showArchive],
@@ -1057,8 +1064,10 @@ export function TicketListPage() {
     queryFn: () => fetchSupportTicketWorkspace(selectedTicketId!),
     enabled: Boolean(selectedTicketId),
     retry: false,
-    refetchInterval: (query) =>
-      workspaceHasLiveOperations(query.state.data as SupportTicketWorkspacePayload | undefined) ? SUPPORT_OPERATION_REFRESH_MS : false,
+    refetchInterval: (query) => {
+      const payload = query.state.data as SupportTicketWorkspacePayload | undefined;
+      return workspaceHasLiveOperations(payload) ? SUPPORT_OPERATION_REFRESH_MS : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS;
+    },
   });
 
   const timelineApiFilter: SupportTicketTimelineFilter =
@@ -1069,7 +1078,9 @@ export function TicketListPage() {
     queryFn: () => fetchSupportTicketTimeline(selectedTicketId!, timelineApiFilter),
     enabled: Boolean(selectedTicketId) && timelineFilter !== "all",
     retry: false,
-    refetchInterval: workspaceHasLiveOperations(workspaceQuery.data) ? SUPPORT_OPERATION_REFRESH_MS : false,
+    refetchInterval: workspaceHasLiveOperations(workspaceQuery.data)
+      ? SUPPORT_OPERATION_REFRESH_MS
+      : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
   });
 
   const evidenceCandidatesQuery = useQuery({
@@ -1132,6 +1143,29 @@ export function TicketListPage() {
       queryClient.refetchQueries({ queryKey: ["tickets-workspace-queue"], type: "active" }),
     ]);
   };
+
+  useEffect(() => {
+    if (!selectedTicketId) {
+      return undefined;
+    }
+
+    const realtimeClient = getSharedWebRealtimeClient();
+    return realtimeClient.subscribeTicket(selectedTicketId, (message) => {
+      const currentSelectedTicketId = selectedTicketIdRef.current;
+      if (!currentSelectedTicketId || message.ticketId !== currentSelectedTicketId) {
+        return;
+      }
+
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", currentSelectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", currentSelectedTicketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["tickets-workspace-passport-evidence-candidates", currentSelectedTicketId],
+        }),
+      ]);
+    });
+  }, [queryClient, selectedTicketId]);
 
   const focusComposer = (mode: ComposerMode) => {
     setComposerMode(mode);

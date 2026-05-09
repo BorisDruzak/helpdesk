@@ -376,3 +376,8 @@
 - `server/tickets/handlers.py` attaches those fields to requester/agent ticket event serialization and uses the same projection to filter internal/debug/noise events out of requester history.
 - `server/web_api/support_handlers.py` and `server/web_api/dto/support.py` carry the same projection fields through typed support timeline DTOs so React support/requester surfaces can render the same text without raw event/status/tool payloads.
 - Legacy requester page code in `server/ticket.js` must prefer `requester_timeline_text` and hide events with no requester projection in requester-facing history.
+
+## 2026-05-09 support workspace realtime updates
+
+- `/app/tickets` (`webapp/src/pages/tickets/list-page.tsx`) consumes the existing typed realtime bridge from `webapp/src/shared/realtime/client.ts`, subscribes only to the selected ticket, and invalidates selected workspace, active standalone timeline tabs, queue data and passport evidence candidates on `ticket_event_committed` / `operation_updated`.
+- Backend producers remain the existing `server/web_api/support_handlers.py`, `server/tickets/handlers.py`, `server/tools/service.py` and websocket operation result publishers; do not add a second polling/SSE transport for this page.

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -30,6 +30,26 @@ import {
 import { TicketListPage } from "./list-page";
 
 const logoutMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
+const ticketRealtimeListeners = vi.hoisted(
+  () => new Map<string, Set<(message: { kind: "ticket_event" | "operation_updated"; ticketId: string }) => void>>(),
+);
+const realtimeClientMock = vi.hoisted(() => ({
+  subscribeTicket: vi.fn(
+    (ticketId: string, listener: (message: { kind: "ticket_event" | "operation_updated"; ticketId: string }) => void) => {
+      const listeners = ticketRealtimeListeners.get(ticketId) ?? new Set<typeof listener>();
+      listeners.add(listener);
+      ticketRealtimeListeners.set(ticketId, listeners);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          ticketRealtimeListeners.delete(ticketId);
+        }
+      };
+    },
+  ),
+  subscribeDevice: vi.fn(() => () => {}),
+  dispose: vi.fn(),
+}));
 
 vi.mock("../../features/queues/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../features/queues/api")>();
@@ -55,6 +75,10 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     postSupportWorkspaceCleanupNoise: vi.fn(),
   };
 });
+
+vi.mock("../../shared/realtime/client", () => ({
+  getSharedWebRealtimeClient: () => realtimeClientMock,
+}));
 
 vi.mock("../../features/auth/session-provider", () => ({
   useSession: () => ({
@@ -350,10 +374,119 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  ticketRealtimeListeners.clear();
   window.localStorage.clear();
 });
 
 describe("TicketListPage", () => {
+  it("subscribes to realtime for the selected ticket and refreshes workspace data on ticket events", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await waitFor(() => {
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
+    });
+    expect(Array.from(ticketRealtimeListeners.keys())).toEqual(["ticket-1"]);
+
+    fetchSupportQueueMock.mockClear();
+    fetchSupportTicketWorkspaceMock.mockClear();
+
+    await act(async () => {
+      for (const listener of ticketRealtimeListeners.get("ticket-1") ?? []) {
+        listener({ kind: "ticket_event", ticketId: "ticket-2" });
+      }
+    });
+    expect(fetchSupportTicketWorkspaceMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      for (const listener of ticketRealtimeListeners.get("ticket-1") ?? []) {
+        listener({ kind: "ticket_event", ticketId: "ticket-1" });
+      }
+    });
+
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+      expect(fetchSupportQueueMock).toHaveBeenCalled();
+    });
+  });
+
+  it("refreshes the active standalone timeline tab when operation realtime events arrive", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Диагностика" }));
+
+    await waitFor(() => {
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
+    });
+
+    fetchSupportTicketWorkspaceMock.mockClear();
+    fetchSupportTicketTimelineMock.mockClear();
+
+    await act(async () => {
+      for (const listener of ticketRealtimeListeners.get("ticket-1") ?? []) {
+        listener({ kind: "operation_updated", ticketId: "ticket-1" });
+      }
+    });
+
+    await waitFor(() => {
+      expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
+      expect(fetchSupportTicketTimelineMock).toHaveBeenCalledWith("ticket-1", "diagnostics");
+    });
+  });
+
+  it("unsubscribes from the previous ticket when the selected ticket changes", async () => {
+    const baseQueuePayload = queuePayload();
+    fetchSupportQueueMock.mockResolvedValue(
+      queuePayload({
+        summary: { ...baseQueuePayload.summary, selected_ticket_id: "ticket-1" },
+        tickets: [
+          baseQueuePayload.tickets[0],
+          {
+            ...baseQueuePayload.tickets[0],
+            ticket_id: "ticket-2",
+            ticket_code: "T-000002",
+            title: "Второй realtime тикет",
+          },
+        ],
+      }),
+    );
+    fetchSupportTicketWorkspaceMock.mockImplementation(async (ticketId: string) => {
+      const baseWorkspacePayload = workspacePayload();
+      return workspacePayload({
+        detail: {
+          ...baseWorkspacePayload.detail,
+          ticket: {
+            ...baseWorkspacePayload.detail.ticket,
+            ticket_id: ticketId,
+            ticket_code: ticketId === "ticket-2" ? "T-000002" : "T-000001",
+            title: ticketId === "ticket-2" ? "Второй realtime тикет" : "Проверить OLA очередь",
+          },
+        },
+      });
+    });
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await waitFor(() => {
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-1", expect.any(Function));
+    });
+    expect(Array.from(ticketRealtimeListeners.keys())).toEqual(["ticket-1"]);
+
+    fireEvent.click(await screen.findByText("Второй realtime тикет"));
+
+    await waitFor(() => {
+      expect(realtimeClientMock.subscribeTicket).toHaveBeenCalledWith("ticket-2", expect.any(Function));
+      expect(Array.from(ticketRealtimeListeners.keys())).toEqual(["ticket-2"]);
+    });
+  });
+
   it("shows support workspace navigation and logs out from the isolated ticket topbar", async () => {
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     fetchSupportQueueMock.mockResolvedValue(queuePayload());

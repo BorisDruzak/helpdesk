@@ -523,3 +523,314 @@ Next implementation checkpoint: start with Task 1 and Task 2. Write server proje
 Current changed file from this checkpoint:
 
 - `PLANS.md`
+
+---
+
+# Support Workspace Realtime Updates Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` or the project safe workflow to execute this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** make `/app/tickets` update selected-ticket messages, timeline, SLA/OLA, next action, queue counts and operation results without requiring the operator to click refresh or reload the page.
+
+**Architecture:** reuse the existing typed web realtime bridge (`GET /api/web/realtime/bootstrap` -> `/ws_ui`) and subscribe the new `/app/tickets` page only to the currently selected ticket. Treat WebSocket push as the primary invalidation channel and keep bounded polling as fallback for disconnected/reconnecting states and active operations.
+
+**Tech Stack:** React/Vite, TanStack Query, existing `webapp/src/shared/realtime/client.ts`, aiohttp `/ws_ui`, typed support APIs in `server/web_api/support_handlers.py`, Vitest, server pytest, remote browser signoff.
+
+---
+
+## Status
+
+Created: 2026-05-09.
+
+Working mode: **Plan / Debug / Typed Web Boundary**.
+
+Overall progress: **75% implementation for this new slice**.
+
+Change classification: **boundary change inside typed web boundary**. The work changes how `/app/tickets` consumes existing realtime events and query invalidation, but it should not change ticket workflow, SLA calculation, message persistence, operation dispatch, DB schema, Protocol V3 frames, or requester-visible semantics.
+
+Current instruction from user: keep the current plan content, add a new plan part for seamless support workspace refresh, and do not clear the existing update plan.
+
+## Root Cause / Analysis
+
+Observed behavior:
+
+- In `/app/tickets`, incoming support workspace messages and some operation/timeline updates become visible only after manual refresh or full page reload.
+- Own outgoing messages call `refreshSelectedTicketData()` after mutation success, so the sender path looks fresher than external incoming messages.
+- Operation polling exists only while selected-ticket operations are live, so ordinary `chat_message` events do not trigger an automatic selected-ticket refresh.
+
+Evidence from code:
+
+- `webapp/src/pages/tickets/list-page.tsx` has `workspaceQuery`, `timelineQuery` and `refreshSelectedTicketData()`, but currently does not import or call `getSharedWebRealtimeClient()`.
+- `workspaceQuery` short-polls only when `workspaceHasLiveOperations(...)` is true.
+- `timelineQuery` short-polls only for non-`all` filters and only while `workspaceHasLiveOperations(workspaceQuery.data)` is true.
+- `webapp/src/features/queues/support-workspace.tsx` already has the desired pattern: `getSharedWebRealtimeClient().subscribeTicket(selectedTicketId, ...)` and query invalidation.
+- `webapp/src/pages/tickets/detail-page.tsx` also subscribes selected ticket realtime and invalidates related ticket queries.
+- `webapp/src/shared/realtime/client.ts` already normalizes `/ws_ui` frames:
+  - `ticket_event_committed` -> `{ kind: "ticket_event", ticketId, eventId, eventType, payload }`
+  - `operation_updated` -> `{ kind: "operation_updated", ticketId, operationId, deviceId, status, updatedAt }`
+- Server message path `server/web_api/support_handlers.py::handle_web_support_send_message()` writes `chat_message`, commits, then calls `_push_ticket_event(...)`.
+- `_push_ticket_event(...)` delegates to `push_ticket_event_committed(...)`, so the transport path already exists for support messages.
+- Existing tests cover the bridge and older support workspace subscription behavior:
+  - `webapp/src/shared/realtime/client.test.ts`
+  - `webapp/src/features/queues/support-workspace.test.tsx`
+  - `server/tests/test_web_realtime_api.py`
+  - `server/tests/test_ui_transport_v3.py`
+
+Conclusion:
+
+- The likely gap is frontend consumption in the new `/app/tickets` page, not missing core backend transport.
+- Backend verification is still required for all message producers, especially requester/public reply paths and operation completion paths, but the first implementation should avoid adding duplicate realtime infrastructure.
+
+## Non-Goals
+
+- Do not add a second SSE or polling-only realtime stack.
+- Do not subscribe to every visible ticket row in the left list; subscribe only to the selected ticket to avoid websocket burst and stale subscription leaks.
+- Do not optimistically append external messages from WS payload unless the payload contract is explicitly sufficient; prefer query invalidation/refetch for correctness.
+- Do not change SLA/OLA business rules or first-response calculation.
+- Do not change operation dispatch or retry semantics.
+- Do not expose raw WebSocket tokens or raw event payloads in the UI.
+
+## Target Behavior
+
+- When another user/requester sends a message to the selected ticket, `/app/tickets` refreshes the selected timeline/workspace automatically.
+- If the operator is on `Все`, messages appear in the central timeline from aggregate workspace payload after invalidation.
+- If the operator is on `Сообщения`, `Внутреннее`, `Диагностика` or `История`, the active standalone timeline endpoint is invalidated/refetched.
+- Next action, SLA/OLA timers, first-response state, unread/requester reply indicators and queue counts refresh from server truth.
+- Operation rows update from `operation_updated` and `ticket_event_committed` without page reload.
+- On reconnect after a socket outage, the page does a catch-up refetch of selected workspace/timeline/queue.
+- If realtime is unavailable, selected-ticket fallback polling keeps the page eventually consistent.
+- Manual refresh remains available.
+
+## Phase Progress
+
+| Phase | Scope | Progress | Status |
+|---|---|---:|---|
+| P14.1 | Frontend realtime hook and selected-ticket subscription design | 100% | Completed |
+| P14.2 | `/app/tickets` query invalidation and fallback polling | 100% | Completed |
+| P14.3 | Backend producer audit for all message/operation event paths | 100% | Completed |
+| P14.4 | Unit/integration tests for realtime invalidation | 100% | Completed |
+| P14.5 | Remote browser/live checks with T-000520-style scenario | 0% | Planned |
+| P14.6 | Docs/CODEMAP sync and deploy signoff if code changes | 50% | In progress |
+
+## Implementation Tasks
+
+### P14.1: Create A Focused Realtime Invalidation Layer For `/app/tickets`
+
+**Files:**
+
+- Modify: `webapp/src/pages/tickets/list-page.tsx`
+- Optional create if the effect gets too large: `webapp/src/pages/tickets/use-ticket-workspace-realtime.ts`
+- Test: `webapp/src/pages/tickets/list-page.test.tsx`
+
+- [ ] Add `getSharedWebRealtimeClient` import to the `/app/tickets` page or encapsulate it in a local hook.
+- [ ] Subscribe only when `selectedTicketId` is non-empty.
+- [ ] Store the current selected ticket in a ref, mirroring the safe pattern from `webapp/src/features/queues/support-workspace.tsx`.
+- [ ] On ticket change, unsubscribe the previous ticket before subscribing the next one.
+- [ ] On unmount, unsubscribe cleanly.
+- [ ] Ignore messages whose `message.ticketId` does not match the currently selected ticket.
+- [ ] Treat both `ticket_event` and `operation_updated` as invalidation signals.
+
+Expected invalidated/refetched query keys:
+
+```ts
+["tickets-workspace", selectedTicketId]
+["tickets-workspace-timeline", selectedTicketId]
+["tickets-workspace-queue"]
+["tickets-workspace-passport-evidence-candidates", selectedTicketId]
+```
+
+Notes:
+
+- `["tickets-workspace-timeline", selectedTicketId]` should be invalidated by prefix so the active filter (`messages`, `diagnostics`, etc.) refreshes without knowing the exact selected tab.
+- Evidence candidate refresh can be limited to active candidate/passport query state; invalidating the key is safe because disabled queries will not fetch.
+- Keep manual `refreshSelectedTicketData()` as the common forced refresh helper where useful.
+
+### P14.2: Add Realtime-Aware Fallback Polling Without Creating Excess Load
+
+**Files:**
+
+- Modify: `webapp/src/pages/tickets/list-page.tsx`
+- Optional modify: `webapp/src/shared/realtime/client.ts` if connection-state exposure is needed
+- Test: `webapp/src/pages/tickets/list-page.test.tsx`
+
+- [ ] Keep existing `SUPPORT_OPERATION_REFRESH_MS = 2_500` for active operations.
+- [ ] Add a slower selected-ticket fallback interval, recommended `SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS = 15_000`.
+- [ ] Apply fallback polling to selected `workspaceQuery` when a ticket is selected and there are no live operations.
+- [ ] Apply fallback polling to active `timelineQuery` when a non-`all` filter is active and there are no live operations.
+- [ ] Avoid polling disabled queries.
+- [ ] If realtime client connection state is exposed later, use fallback only while disconnected/degraded; first implementation may use bounded always-on selected-ticket fallback for simplicity.
+
+Acceptance:
+
+- Incoming messages appear without manual refresh even if WS is temporarily unavailable, with at most fallback interval delay.
+- Active operations still refresh quickly.
+- Queue polling remains at the existing `SUPPORT_QUEUE_REFRESH_MS` cadence.
+
+### P14.3: Audit Backend Producers Instead Of Adding Duplicate Endpoints
+
+**Files:**
+
+- Inspect/possibly modify: `server/web_api/support_handlers.py`
+- Inspect/possibly modify: `server/tickets/handlers.py`
+- Inspect/possibly modify: `server/tickets/events.py`
+- Inspect/possibly modify: operation result producers in `server/websocket/command_result_components.py`, `server/websocket/outbox_ingest_components.py`, `server/tools/service.py`
+- Test: `server/tests/test_web_support_api.py`
+- Test: `server/tests/test_web_realtime_api.py`
+- Test: `server/tests/test_ui_transport_v3.py`
+
+- [ ] Confirm typed support message route emits `ticket_event_committed` after commit.
+- [ ] Confirm requester/public message route emits `ticket_event_committed` after commit for the same ticket.
+- [ ] Confirm internal note route emits `ticket_event_committed` after commit when it creates a timeline-visible event for support.
+- [ ] Confirm operation started/result/completed paths emit either `ticket_event_committed`, `operation_updated`, or both where expected.
+- [ ] If a producer writes `ticket_events` without push, add `_push_ticket_event(...)` or the existing appropriate publisher after commit.
+- [ ] Do not change event payload shape unless a failing test proves the bridge cannot route the event.
+
+Acceptance:
+
+- Server producers that affect `/app/tickets` central timeline have a push path.
+- No double-push for the same event from the same producer.
+- Existing server websocket tests still pass.
+
+### P14.4: Add Tests Around New `/app/tickets` Realtime Behavior
+
+**Files:**
+
+- Modify: `webapp/src/pages/tickets/list-page.test.tsx`
+- Possibly reuse patterns from: `webapp/src/features/queues/support-workspace.test.tsx`
+
+- [ ] Mock `getSharedWebRealtimeClient()` in `list-page.test.tsx`.
+- [ ] Assert selected ticket subscription is created for `/app/tickets/ticket-1`.
+- [ ] Assert the page unsubscribes when route changes from `ticket-1` to `ticket-2`.
+- [ ] Assert `ticket_event` with `eventType: "chat_message"` invalidates/refetches selected workspace, active timeline filter and queue data.
+- [ ] Assert `operation_updated` invalidates/refetches selected workspace/timeline and keeps diagnostics visible after tool result.
+- [ ] Assert realtime event for a non-selected ticket does not refetch selected workspace.
+- [ ] Assert own `postSupportTicketMessage` path still clears composer and triggers explicit refresh.
+
+Expected command:
+
+```powershell
+python scripts/bootstrap_web_toolchain.py
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/shared/realtime/client.test.ts --run
+```
+
+### P14.5: Live Browser Verification Scenario
+
+**Files:**
+
+- No source changes required unless checks expose bugs.
+
+- [ ] Deploy only after local tests/build pass and a commit exists.
+- [ ] Start the remote server through canonical scripts.
+- [ ] Open `http://192.168.100.17:8666/admin` and navigate to `/app/tickets`.
+- [ ] Open ticket `T-000520` or a fresh equivalent test ticket.
+- [ ] From a second browser/API/session, create a public/requester-visible message.
+- [ ] Verify the message appears in the timeline without pressing refresh.
+- [ ] Verify the next action/SLA block updates if the message affects first-response/next-action state.
+- [ ] Run a safe low-risk diagnostic/tool on an online test device.
+- [ ] Verify `Tool Call Started` and result/final status replace `Нет результата` without page reload.
+- [ ] Switch timeline tabs and verify active tab refreshes correctly.
+- [ ] Temporarily interrupt/reconnect WS if practical, then verify catch-up refetch after reconnect or fallback polling.
+
+Expected remote/browser checks:
+
+```powershell
+python scripts/release_server_to_remote.py --leave-running
+python scripts/manage_remote_stack.py smoke server
+pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+```
+
+Browser canonical URL:
+
+```text
+http://192.168.100.17:8666/admin
+```
+
+### P14.6: Documentation, Plan Status And Final Signoff
+
+**Files:**
+
+- Modify if code changes realtime behavior: `server/docs/TICKET_SYSTEM.md`
+- Modify if typed web realtime docs need a note: `server/docs/CODEMAP.md`
+- Modify if navigation/check docs change: `docs/QUICK_LOOKUP.md`
+- Modify: `PLANS.md`
+
+- [ ] Update this P14 progress table after every implementation checkpoint.
+- [ ] If `/app/tickets` becomes the canonical support realtime consumer, note it in `server/docs/CODEMAP.md`.
+- [ ] If browser/live check steps become reusable, add a compact note to `docs/QUICK_LOOKUP.md`.
+- [ ] Run `python scripts/verify_workspace.py`.
+- [ ] Run targeted server realtime/support tests if backend producer code changes.
+- [ ] Run webapp tests and build.
+- [ ] Commit only the files touched by this slice.
+- [ ] Deploy and perform browser signoff if the user asks to ship it to the stand.
+
+## Verification Matrix
+
+Minimum before implementation completion:
+
+```powershell
+python scripts/verify_workspace.py
+python scripts/bootstrap_web_toolchain.py
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/shared/realtime/client.test.ts --run
+pnpm --dir webapp run build
+```
+
+If backend producer paths are changed:
+
+```powershell
+python -m pytest server/tests/test_web_realtime_api.py server/tests/test_ui_transport_v3.py -q --tb=short
+python -m pytest server/tests/test_web_support_api.py -k "message or timeline or operation" -q --tb=short
+```
+
+Remote/live signoff after commit/deploy:
+
+```powershell
+python scripts/release_server_to_remote.py --leave-running
+python scripts/manage_remote_stack.py smoke server
+pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+```
+
+Manual browser checklist:
+
+- `/app/tickets` selected ticket receives external message without manual refresh.
+- Composer still clears and refreshes after own public reply/internal note.
+- First-response SLA/next action stops or changes after a qualifying public support reply.
+- Diagnostic started/result cards move from accepted/running/no-result to final result without page reload.
+- Queue row count/unread/requester reply indicator updates after incoming message.
+- Realtime subscription does not subscribe to every visible row.
+- Route change from one ticket to another does not leak old subscription.
+
+## Risks And Guards
+
+- **Duplicate refetch storms:** invalidate by selected-ticket keys and avoid all-row subscriptions.
+- **Stale closure over selected ticket:** use `selectedTicketIdRef` or local hook state to compare current route before invalidating selected-ticket detail.
+- **Timeline tab mismatch:** invalidate timeline query by prefix, not only the current exact filter.
+- **Lost events during reconnect:** first implementation uses refetch-after-reconnect or fallback polling; later improvement can add event-id catch-up if needed.
+- **Backend double push:** audit before modifying producers; do not add push where an existing service already publishes after commit.
+- **Manual-refresh regression:** keep existing refresh button and `refreshSelectedTicketData()` path intact.
+
+## Handoff
+
+## P14 Execution Notes
+
+Completed locally:
+
+- Added selected-ticket realtime subscription to `webapp/src/pages/tickets/list-page.tsx`.
+- Reused `getSharedWebRealtimeClient().subscribeTicket(...)`; no new transport was added.
+- Invalidates selected workspace, active timeline queries, queue data and passport evidence candidates on selected-ticket `ticket_event` / `operation_updated`.
+- Keeps existing fast polling for active operations and adds bounded selected-ticket fallback polling for non-operation message catch-up.
+- Added tests in `webapp/src/pages/tickets/list-page.test.tsx` for selected-ticket subscription, selected-only invalidation, active standalone timeline refresh and unsubscribe on ticket change.
+- Backend producer audit found existing push paths in `server/web_api/support_handlers.py`, `server/tickets/handlers.py`, `server/tools/service.py`, `server/websocket/command_result_components.py`, `server/websocket/outbox_ingest_components.py` and `server/app/services/operation_service.py`; no backend code change was needed.
+
+Verification completed:
+
+```powershell
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx --run
+pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/shared/realtime/client.test.ts --run
+pnpm --dir webapp run build
+python -m pytest server\tests\test_web_realtime_api.py server\tests\test_ui_transport_v3.py -q --tb=short
+python -m pytest server\tests\test_web_support_api.py -k "message or timeline or operation" -q --tb=short
+```
+
+Note: an earlier parallel backend pytest attempt produced DB deadlock/connection-closed errors because two DB-backed suites cleaned the shared test database concurrently. The same suites passed when rerun sequentially.
+
+Next implementation checkpoint: run final workspace verification, then remote deploy/browser live check if the user wants this shipped to the stand in the same slice.

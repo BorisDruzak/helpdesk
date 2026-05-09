@@ -307,7 +307,7 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 - **Миграция 031:** поле `ticket_code` (T-000001), последовательность `ticket_code_seq`.
 - **API:** ticket_code в list/get; фильтры ticket_code, unassigned; POST assign, queue, reroute; GET /api/admin/tickets/queues.
 - **Admin Queue UI (/admin):** вкладка Ticket Queue, KPI-лента, фильтры и пресеты, таблица с колонками Pin, Ticket, Title, Queue, Status, Priority, Assignee, Requester, Created, Age, SLA, OLA, Actions. Inline: Status, Assign, Очередь, Reroute, Open; локальный порядок (pin, manual_rank) в localStorage; режим Compact.
-- **Realtime:** WebSocket /ws_ui, subscribe_ticket/unsubscribe_ticket, ticket_event_committed с debounce/reload, Live/Degraded, polling 25/60 с.
+- **Realtime:** WebSocket /ws_ui, subscribe_ticket/unsubscribe_ticket, ticket_event_committed с debounce/reload, Live/Degraded, polling 25/60 с. Новый `/app/tickets` использует typed realtime bridge `/api/web/realtime/bootstrap` -> `/ws_ui`, подписывается только на выбранный тикет и инвалидирует workspace/timeline/queue по `ticket_event_committed` / `operation_updated`; bounded fallback polling остаётся для selected-ticket catch-up.
 - **RBAC:** auditor — read-only (только «Открыть»); admin/support — полные действия.
 
 ---
