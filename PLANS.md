@@ -20,7 +20,7 @@
 
 ## Current Slice Status
 
-Overall progress: **90%**.
+Overall progress: **100%**.
 
 | Phase | Scope | Progress | Status |
 |---|---|---:|---|
@@ -28,7 +28,7 @@ Overall progress: **90%**.
 | P6.2 | Replace compact 8-item tools preview with searchable full ticket-scoped catalog | 100% | Completed |
 | P6.3 | Add resizable left/right workspace columns with persisted widths | 100% | Completed |
 | P6.4 | Add dark-theme scrollbar styling and light-theme safe fallback | 100% | Completed |
-| P6.5 | Run focused tests/build and browser checks on `/app/tickets` | 70% | Focused tests, build and workspace verify completed; browser signoff remains after stand deploy/start |
+| P6.5 | Run focused tests/build and browser checks on `/app/tickets` | 100% | Completed |
 
 ## Findings
 
@@ -75,7 +75,9 @@ Overall progress: **90%**.
 - 2026-05-09: `pnpm --dir webapp test -- src/pages/tickets/list-page.test.tsx src/features/queues/support-workspace-mappers.test.ts` passed, 47 tests.
 - 2026-05-09: `pnpm --dir webapp build` passed.
 - 2026-05-09: `python scripts/verify_workspace.py` passed.
-- Browser signoff is pending because the remote server at `192.168.100.17:8666` is currently stopped; run after deploy/start so `/app/tickets` serves the updated bundle.
+- 2026-05-09: committed `7fb2a57 webapp: improve support workspace tools layout`.
+- 2026-05-09: `python scripts/release_server_to_remote.py --skip-ci-check --leave-running` completed; remote smoke passed at `http://192.168.100.17:8666`.
+- 2026-05-09: browser signoff on `/app/tickets` passed: resize handles are visible, tools catalog shows the full ticket-scoped list (`103 из 103` on the checked ticket), search filters to `1 из 103`, and browser console reported 0 errors / 0 warnings.
 
 ---
 
