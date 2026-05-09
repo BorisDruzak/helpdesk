@@ -144,7 +144,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="remote_assist",
         title="Remote Assist / WebRTC",
-        summary="Ticket-bound WebRTC Remote Assist MVP: operator request, mandatory user consent through Maria Agent, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing, audit rows, ticket timeline events and resolution passport summary.",
+        summary="Ticket-bound WebRTC Remote Assist MVP: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing, audit rows, ticket timeline events and resolution passport summary.",
         aliases=(
             "remote assist",
             "remote_assist",
@@ -161,6 +161,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/remote_assist/handlers.py",
             "server/remote_assist/signaling.py",
             "server/app/repos/remote_access_repo.py",
+            "pc_agent/ws_agent.py",
+            "pc_agent/ui_gui/main_window.py",
             "pc_agent/remote_assist/webrtc_client.py",
             "pc_agent/remote_assist/thread.py",
             "pc_agent/ui_gui/remote_assist_dialog.py",

@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self._stop_button_widget: Optional[QWidget] = None
         self._remote_assist_threads: Dict[str, RemoteAssistThread] = {}
         self._remote_assist_banners: Dict[str, QWidget] = {}
+        self._remote_assist_dialogs: Dict[str, RemoteAssistConsentDialog] = {}
         
         # Текущий job_id активного чата (для привязки consent к чату)
         # session_key == текущий chat job_id, полученный из /api/chat_start
@@ -2057,9 +2058,13 @@ class MainWindow(QMainWindow):
             return
         self.open_dialogs.add(dialog_key)
         dialog = RemoteAssistConsentDialog(data, self)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        self._remote_assist_dialogs[session_id] = dialog
+        logger.info(f"Remote Assist consent dialog opened for session_id={session_id}")
 
         def cleanup() -> None:
             self.open_dialogs.discard(dialog_key)
+            self._remote_assist_dialogs.pop(session_id, None)
 
         def approve() -> None:
             self._spawn_gui_task(
@@ -2077,6 +2082,8 @@ class MainWindow(QMainWindow):
         dialog.denied.connect(deny)
         dialog.finished.connect(lambda _result: cleanup())
         dialog.open()
+        dialog.raise_()
+        dialog.activateWindow()
 
     async def _post_remote_assist_decision(self, session_id: str, *, approve: bool) -> None:
         if not self.auth_token:

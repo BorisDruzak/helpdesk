@@ -2378,7 +2378,6 @@ class WSAgent:
                 
                 # Возвращаем в формате ToolResponse
                 from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
-                from datetime import datetime, timezone
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2414,7 +2413,6 @@ class WSAgent:
             elif command == "search_action_trace":
                 """Поиск action trace для tech/observer drilldown."""
                 from core.tool_response import ToolMeta, ToolData, ok
-                from datetime import datetime, timezone
 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2458,7 +2456,6 @@ class WSAgent:
             elif command == "get_info":
                 """Получить системную информацию (быстрый запрос без модулей)"""
                 from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
-                from datetime import datetime, timezone
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2487,7 +2484,6 @@ class WSAgent:
             elif command == "get_history":
                 """Получить историю событий из БД"""
                 from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
-                from datetime import datetime, timezone
                 
                 limit = params.get("limit", 10)
                 module = params.get("module")
@@ -2522,7 +2518,6 @@ class WSAgent:
             
             else:
                 from core.tool_response import ToolResponse, ToolMeta, fail
-                from datetime import datetime, timezone
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2560,7 +2555,6 @@ class WSAgent:
             logger.error(f"❌ Ошибка выполнения команды {command}: {e}")
             logger.exception(e)
             from core.tool_response import ToolResponse, ToolMeta, fail
-            from datetime import datetime, timezone
             
             meta = ToolMeta(
                 timestamp_iso=datetime.now(timezone.utc).isoformat(),
