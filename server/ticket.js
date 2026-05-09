@@ -891,7 +891,7 @@
             return { id, type: 'system', html: renderRequesterProjectionCard(id, ts, 'Специалист запустил диагностику.', 'system_event') };
         }
         if (type === 'tool_call_result') {
-            return { id, type: 'system', html: renderRequesterProjectionCard(id, ts, 'Диагностика выполнена', 'diagnostic_result') };
+            return { id, type: 'system', html: renderRequesterProjectionCard(id, ts, 'Выполнена диагностика', 'diagnostic_result') };
         }
         if (!['chat_message', 'system_message_local', 'message_read', 'status_changed', 'queue_changed', 'assignee_changed', 'priority_changed', 'requester_profile_changed', 'device_changed'].includes(type)) {
             return null;

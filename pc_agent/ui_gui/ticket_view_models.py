@@ -646,7 +646,7 @@ def map_ticket_event_to_user_timeline_item(event: dict[str, Any]) -> TimelineIte
             "diagnostic_result",
             "Система",
             time_label,
-            "Диагностика выполнена",
+            "Выполнена диагностика",
             {"checks": _normalize_diagnostic_checks(payload)},
         )
     if event_kind in {"attachment_uploaded", "attachment_added", "file_uploaded", "file_attached"}:

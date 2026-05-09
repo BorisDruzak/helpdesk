@@ -35,6 +35,7 @@
 - `3.1.29` is the Windows stable agent release for follow-up requester GUI fixes after `3.1.28`: required diagnostic-consent hint, clearer confirmation card, diagnostics/deadline/assignment summaries, and Russian system event text. Publish it as a new build/upload/rollout target; do not overwrite existing artifacts.
 - `3.1.30` is the next Windows agent release for the GUI taskbar-window fix: the recording STOP overlay uses a `Qt.Tool` window and no longer creates extra `pc_agent` Taskbar/Alt-Tab entries. Publish it as a new build/upload/rollout target; do not overwrite `3.1.29` artifacts.
 - `3.1.31` is the Windows stable agent release for requester timeline projection support: the GUI uses server-provided `requester_timeline_*` fields and keeps the local fallback requester-safe. Publish it as a new build/upload/rollout target; do not overwrite `3.1.30` artifacts.
+- `3.1.32` is the Windows stable agent release for the requester diagnostics timeline wording fix: diagnostic result cards show only `Выполнена диагностика` without resource-specific filler text. Publish it as a new build/upload/rollout target; do not overwrite `3.1.31` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 

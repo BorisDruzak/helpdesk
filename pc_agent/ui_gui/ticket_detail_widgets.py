@@ -366,7 +366,7 @@ class TimelineItemWidget(QFrame):
         if not is_message:
             self.message_actor_label.hide()
 
-        subtitle = "Результат проверки вашего подключения к ресурсу." if item.kind == "diagnostic_result" else ("" if is_message else item.actor_label)
+        subtitle = "" if item.kind == "diagnostic_result" else ("" if is_message else item.actor_label)
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setObjectName("TimelineSubtitle")
         self.subtitle_label.setWordWrap(True)

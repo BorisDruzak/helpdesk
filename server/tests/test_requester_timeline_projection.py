@@ -121,7 +121,7 @@ def test_tool_call_result_uses_compact_diagnostic_payload_without_raw_blob():
 
     assert projection is not None
     assert projection.kind == "diagnostic_result"
-    assert projection.text == "Диагностика выполнена"
+    assert projection.text == "Выполнена диагностика"
     assert projection.payload == {
         "checks": [
             {"label": "Служба печати", "status": "failed", "summary": "Служба остановлена"},
@@ -170,6 +170,6 @@ def test_support_timeline_entry_exposes_same_requester_projection_fields():
 
     entry = _build_timeline_entry(event)
 
-    assert entry.requester_timeline_text == "Диагностика выполнена"
+    assert entry.requester_timeline_text == "Выполнена диагностика"
     assert entry.requester_timeline_kind == "diagnostic_result"
     assert entry.requester_timeline_payload == {"checks": [{"label": "DNS", "status": "ok", "summary": "Готово"}]}

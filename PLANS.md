@@ -214,7 +214,7 @@ Required Russian text examples:
 - `sla_first_response_stopped`: `Первый ответ получен.`
 - `sla_resolution_stopped`: `Срок решения остановлен.`
 - `tool_call_started`: `Специалист запустил диагностику.`
-- `tool_call_result`: `Диагностика выполнена`
+- `tool_call_result`: `Выполнена диагностика`
 - `diagnostic_result_classified`: `Результат диагностики обработан.`
 - `playbook_started`: `Запущена диагностика по обращению.`
 - `approval_approved`: `Согласование получено.`

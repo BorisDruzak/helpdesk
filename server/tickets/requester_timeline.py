@@ -241,7 +241,7 @@ def _project_assignee_changed(event: object | dict[str, Any], payload: Mapping[s
 def _project_tool_call_result(event: object | dict[str, Any], payload: Mapping[str, Any]) -> RequesterTimelineProjection:
     checks = _compact_diagnostic_checks(payload)
     safe_payload = {"checks": checks} if checks else {}
-    return RequesterTimelineProjection("Диагностика выполнена", "diagnostic_result", safe_payload)
+    return RequesterTimelineProjection("Выполнена диагностика", "diagnostic_result", safe_payload)
 
 
 def _project_attachment_event(event: object | dict[str, Any], payload: Mapping[str, Any]) -> RequesterTimelineProjection:

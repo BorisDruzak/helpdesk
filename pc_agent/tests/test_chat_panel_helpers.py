@@ -1731,7 +1731,7 @@ def test_map_ticket_event_to_user_timeline_item_hides_internal_and_maps_diagnost
     )
     assert result is not None
     assert result.kind == "diagnostic_result"
-    assert result.text == "Диагностика выполнена"
+    assert result.text == "Выполнена диагностика"
     assert result.payload["checks"][1]["label"] == "HTTP"
     assert result.payload["checks"][1]["summary"] == "502 Bad Gateway"
 
@@ -2110,7 +2110,7 @@ def test_timeline_item_widget_renders_diagnostic_result_without_raw_event_type()
             kind="diagnostic_result",
             actor_label="Система",
             time_label="13:48",
-            text="Диагностика выполнена",
+            text="Выполнена диагностика",
             payload={
                 "checks": [
                     {"label": "DNS", "status": "ok", "summary": "OK"},
@@ -2122,8 +2122,9 @@ def test_timeline_item_widget_renders_diagnostic_result_without_raw_event_type()
 
     assert app is not None
     assert widget.objectName() == "TimelineDiagnosticResult"
-    assert widget.title_label.text() == "Диагностика выполнена"
-    assert widget.subtitle_label.text() == "Результат проверки вашего подключения к ресурсу."
+    assert widget.title_label.text() == "Выполнена диагностика"
+    assert widget.subtitle_label.text() == ""
+    assert not widget.subtitle_label.isVisible()
     rendered = " ".join(label.text() for label in widget.check_labels)
     assert "DNS" in rendered
     assert "HTTP" in rendered
@@ -2222,9 +2223,9 @@ def test_chat_panel_build_timeline_items_uses_requester_safe_event_mapper():
     texts = [payload["text"] for _sort, _kind, payload in items]
     assert len(items) == 2
     assert "Специалист запустил диагностику." in texts
-    assert "Диагностика выполнена" in texts
+    assert "Выполнена диагностика" in texts
     assert all("tool_call" not in text for text in texts)
-    diagnostic_payload = next(payload for _sort, _kind, payload in items if payload["text"] == "Диагностика выполнена")
+    diagnostic_payload = next(payload for _sort, _kind, payload in items if payload["text"] == "Выполнена диагностика")
     assert diagnostic_payload["timeline_item"]["kind"] == "diagnostic_result"
     assert diagnostic_payload["timeline_item"]["payload"]["checks"][0]["summary"] == "502 Bad Gateway"
 
