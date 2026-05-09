@@ -544,7 +544,7 @@ Created: 2026-05-09.
 
 Working mode: **Plan / Debug / Typed Web Boundary**.
 
-Overall progress: **90% implementation for this new slice**.
+Overall progress: **95% implementation for this new slice**.
 
 Change classification: **boundary change inside typed web boundary**. The work changes how `/app/tickets` consumes existing realtime events and query invalidation, but it should not change ticket workflow, SLA calculation, message persistence, operation dispatch, DB schema, Protocol V3 frames, or requester-visible semantics.
 
@@ -823,6 +823,8 @@ Completed locally:
 - Remote live check showed public support messages now appear in the selected ticket without manual refresh in under one second.
 - Remote operation check found a second root cause for diagnostics: the central `Все` timeline used the aggregate `/workspace` timeline, while fresh operation results were present in the typed `/timeline?filter=diagnostics` endpoint. The page now loads `filter=all` through the typed timeline endpoint as well, with aggregate timeline as loading fallback.
 - Added a regression test that the `Все` timeline calls `fetchSupportTicketTimeline(ticketId, "all")` and refreshes it on `operation_updated`.
+- Follow-up remote check found the server `filter=all` timeline could still truncate fresh server-side operation events on tickets with long agent history. `_build_support_timeline_payload()` now uses expanded prefetch for every filter and returns the latest `limit` matching support events in chronological order.
+- Added a backend regression test for long agent history plus a fresh `tool_call_result` server event.
 
 Verification completed:
 
@@ -831,6 +833,7 @@ pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx --run -t 
 pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx --run
 pnpm --dir webapp exec vitest run src/pages/tickets/list-page.test.tsx src/shared/realtime/client.test.ts --run
 pnpm --dir webapp run build
+python -m pytest server\tests\test_web_support_api.py -k "all_timeline_keeps_recent or ticket_timeline_endpoint_filters_normalized_events" -q --tb=short
 python -m pytest server\tests\test_web_realtime_api.py server\tests\test_ui_transport_v3.py -q --tb=short
 python -m pytest server\tests\test_web_support_api.py -k "message or timeline or operation" -q --tb=short
 ```

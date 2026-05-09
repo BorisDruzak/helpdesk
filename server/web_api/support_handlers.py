@@ -1693,7 +1693,7 @@ async def _build_support_timeline_payload(
     limit: int = 80,
 ) -> SupportTicketTimelinePayload:
     normalized_filter = _normalize_support_timeline_filter(timeline_filter)
-    event_limit = min(max(limit * 3, limit), 1000) if normalized_filter != "all" else limit
+    event_limit = min(max(limit * 3, limit), 1000)
     events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=event_limit)
     items = [
         _build_timeline_entry(event, ticket=ticket)
@@ -1704,12 +1704,13 @@ async def _build_support_timeline_payload(
         item
         for item in items
         if _support_timeline_entry_matches_filter(item, normalized_filter)
-    ][:limit]
+    ]
+    visible_items = filtered_items[-limit:]
     return SupportTicketTimelinePayload(
         ticket_id=str(ticket.ticket_id),
         filter=normalized_filter,
-        items=filtered_items,
-        total=len(filtered_items),
+        items=visible_items,
+        total=len(visible_items),
         limit=limit,
     )
 

@@ -2138,6 +2138,64 @@ async def test_web_support_ticket_timeline_endpoint_filters_normalized_events(te
 
 
 @pytest.mark.asyncio
+async def test_web_support_all_timeline_keeps_recent_server_events_after_agent_history(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="timeline_recent_all", name="Timeline recent all", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-timeline-recent-all",
+            title="Timeline recent all contract ticket",
+            description="All timeline must not hide fresh server-side operation events behind long agent history.",
+            status="in_progress",
+            requester_id="requester-timeline-recent-all",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P1",
+        )
+        session.add(ticket)
+        await session.flush()
+
+        repo = TicketEventsRepo(session)
+        for seq in range(1, 91):
+            await repo.add_event(
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                agent_seq=seq,
+                event_type="status_changed",
+                payload={"from_status": "queued", "to_status": "in_progress", "actor_id": "support-test", "seq": seq},
+                event_id=f"timeline-recent-agent-{seq}",
+            )
+        await repo.add_event(
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="tool_call_result",
+            payload={
+                "tool_name": "system.collect",
+                "status": "succeeded",
+                "summary": "Fresh diagnostic result after long history",
+                "operation_id": "op-recent-all",
+            },
+            event_id="timeline-recent-server-result",
+        )
+        ticket_id = ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=all&limit=80",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    data = (await response.json())["data"]
+    assert data["total"] == 80
+    assert data["items"][-1]["event_type"] == "tool_call_result"
+    assert data["items"][-1]["operation_id"] == "op-recent-all"
+    assert data["items"][-1]["result_summary"] == "Fresh diagnostic result after long history"
+
+
+@pytest.mark.asyncio
 async def test_web_support_timeline_extracts_nested_diagnostic_steps(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
