@@ -12,6 +12,7 @@ from .webrtc_client import RemoteAssistWebRTCClient
 class RemoteAssistThread(QThread):
     failed = Signal(str)
     ended = Signal()
+    state_changed = Signal(str)
 
     def __init__(
         self,
@@ -23,7 +24,13 @@ class RemoteAssistThread(QThread):
         parent=None,
     ):
         super().__init__(parent)
-        self.client = RemoteAssistWebRTCClient(signaling_url=signaling_url, token=token, ice_servers=ice_servers, mode=mode)
+        self.client = RemoteAssistWebRTCClient(
+            signaling_url=signaling_url,
+            token=token,
+            ice_servers=ice_servers,
+            mode=mode,
+            on_state_change=self.state_changed.emit,
+        )
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def run(self) -> None:

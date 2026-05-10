@@ -2,7 +2,7 @@ import { Maximize2, MonitorX, MousePointer2, RotateCcw, X } from "lucide-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { endRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
+import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
 
 type ViewerState = "loading" | "connecting" | "active" | "ended" | "failed";
 
@@ -34,6 +34,39 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   useEffect(() => {
     let disposed = false;
     let connectTimer: number | null = null;
+    let terminalState = false;
+
+    const clearConnectTimer = () => {
+      if (connectTimer !== null) {
+        window.clearTimeout(connectTimer);
+        connectTimer = null;
+      }
+    };
+
+    const closeTransport = () => {
+      wsRef.current?.close();
+      pcRef.current?.close();
+      wsRef.current = null;
+      pcRef.current = null;
+      controlChannelRef.current = null;
+    };
+
+    const failConnection = (message: string, errorCode = "WEBRTC_FAILED") => {
+      if (disposed || terminalState) {
+        return;
+      }
+      terminalState = true;
+      clearConnectTimer();
+      try {
+        wsRef.current?.send(JSON.stringify({ type: "session.error", payload: { error_code: errorCode, error: message } }));
+      } catch {
+        // Best-effort notification; the HTTP fail endpoint below is authoritative for audit.
+      }
+      closeTransport();
+      setState("failed");
+      setError(message);
+      void failRemoteAssistSession(sessionId, { errorCode, errorMessage: message }).catch(() => undefined);
+    };
 
     async function connect() {
       setState("loading");
@@ -48,6 +81,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
         setMode(info.mode ?? "view_only");
         const pc = new RTCPeerConnection({ iceServers: info.ice_servers ?? [] });
         pcRef.current = pc;
+        pc.addTransceiver("video", { direction: "recvonly" });
         const controlChannel = pc.createDataChannel("control", { ordered: true });
         controlChannelRef.current = controlChannel;
         controlChannel.onmessage = (event) => {
@@ -67,6 +101,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           const [stream] = event.streams;
           if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
+            void videoRef.current.play().catch(() => undefined);
           }
         };
         pc.onicecandidate = (event) => {
@@ -81,10 +116,14 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
         };
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === "connected") {
+            clearConnectTimer();
             setState("active");
           }
-          if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
-            setState(pc.connectionState === "closed" ? "ended" : "failed");
+          if (pc.connectionState === "failed") {
+            failConnection("Не удалось установить WebRTC-соединение.", "WEBRTC_FAILED");
+          }
+          if (pc.connectionState === "closed" && !terminalState) {
+            setState("ended");
           }
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(
@@ -104,24 +143,13 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           }
           setState("connecting");
           ws.send(JSON.stringify({ type: "session.ready", payload: { role: "operator" } }));
-          const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
+          const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           ws.send(JSON.stringify({ type: "webrtc.offer", payload: pc.localDescription }));
           connectTimer = window.setTimeout(() => {
-            void fetchRemoteAssistViewer(sessionId)
-              .then((latest) => {
-                if (disposed || pc.connectionState === "connected") {
-                  return;
-                }
-                setState(latest.status === "failed" ? "failed" : latest.status === "ended" ? "ended" : "failed");
-                setError(latest.error_message || latest.error_code || "Не удалось получить видео от агента.");
-              })
-              .catch(() => {
-                if (!disposed && pc.connectionState !== "connected") {
-                  setState("failed");
-                  setError("Не удалось получить видео от агента.");
-                }
-              });
+            if (!disposed && pc.connectionState !== "connected") {
+              failConnection("Не удалось получить видео от агента.", "SIGNALING_TIMEOUT");
+            }
           }, 25000);
         };
         ws.onmessage = async (event) => {
@@ -133,19 +161,19 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
             await pc.addIceCandidate(message.payload);
           }
           if (message.type === "session.end") {
+            terminalState = true;
+            clearConnectTimer();
             setState("ended");
             setControlEnabled(false);
             onEnded?.();
             onClose();
           }
           if (message.type === "session.error") {
-            setState("failed");
-            setError(message.payload?.error_code ?? "Ошибка signaling.");
+            failConnection(message.payload?.error ?? message.payload?.error_code ?? "Ошибка signaling.", message.payload?.error_code);
           }
         };
         ws.onerror = () => {
-          setState("failed");
-          setError("Не удалось установить signaling-соединение.");
+          failConnection("Не удалось установить signaling-соединение.", "SIGNALING_TIMEOUT");
         };
       } catch (exc) {
         setState("failed");
@@ -156,14 +184,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     void connect();
     return () => {
       disposed = true;
-      wsRef.current?.close();
-      pcRef.current?.close();
-      if (connectTimer !== null) {
-        window.clearTimeout(connectTimer);
-      }
-      wsRef.current = null;
-      pcRef.current = null;
-      controlChannelRef.current = null;
+      clearConnectTimer();
+      closeTransport();
     };
   }, [sessionId, connectNonce]);
 

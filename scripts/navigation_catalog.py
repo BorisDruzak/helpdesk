@@ -144,7 +144,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="remote_assist",
         title="Remote Assist / WebRTC",
-        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing by default, policy-gated interactive control over the WebRTC control data channel, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
+        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing by default, explicit recvonly browser offers, failed WebRTC timeout cleanup, policy-gated interactive control over the WebRTC control data channel, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
         aliases=(
             "remote assist",
             "remote_assist",
@@ -168,6 +168,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/remote_assist/input_controller.py",
             "pc_agent/remote_assist/webrtc_client.py",
             "pc_agent/remote_assist/thread.py",
+            "pc_agent/remote_assist/screen_track.py",
             "pc_agent/ui_gui/remote_assist_dialog.py",
             "webapp/src/features/remote-assist/remote-assist-panel.tsx",
             "webapp/src/features/remote-assist/remote-assist-viewer.tsx",
@@ -1681,7 +1682,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.35 for Remote Assist SendInput/Linux interactive-control testing after 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.36 for Remote Assist WebRTC timeout/capture cleanup after 3.1.35 SendInput/Linux interactive-control testing, 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",

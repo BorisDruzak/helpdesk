@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RemoteAssistViewer } from "./remote-assist-viewer";
-import { endRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
+import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
 
 vi.mock("./api", () => ({
   endRemoteAssistSession: vi.fn(),
+  failRemoteAssistSession: vi.fn(),
   fetchRemoteAssistViewer: vi.fn(),
 }));
 
@@ -37,6 +38,7 @@ describe("RemoteAssistViewer", () => {
   it("returns to the ticket when the operator ends a session", async () => {
     vi.mocked(fetchRemoteAssistViewer).mockResolvedValue(viewerInfo);
     vi.mocked(endRemoteAssistSession).mockResolvedValue(viewerInfo);
+    vi.mocked(failRemoteAssistSession).mockResolvedValue(viewerInfo);
     const onClose = vi.fn();
     const onEnded = vi.fn();
 

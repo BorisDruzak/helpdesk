@@ -116,3 +116,22 @@ export async function endRemoteAssistSession(sessionId: string, reason = "operat
   const result = await readJson<ApiOkResponse<RemoteAssistSession> | ApiErrorResponse>(response);
   return assertOk(result, response, "Не удалось завершить сессию удалённой помощи");
 }
+
+export async function failRemoteAssistSession(
+  sessionId: string,
+  payload: { errorCode?: string; errorMessage?: string } = {},
+): Promise<RemoteAssistSession> {
+  const response = await fetch(`/api/web/remote-assist/${encodeURIComponent(sessionId)}/fail`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      error_code: payload.errorCode ?? "WEBRTC_FAILED",
+      error_message: payload.errorMessage ?? "Не удалось установить WebRTC-соединение.",
+    }),
+  });
+  const result = await readJson<ApiOkResponse<RemoteAssistSession> | ApiErrorResponse>(response);
+  return assertOk(result, response, "Не удалось зафиксировать ошибку удалённой помощи");
+}

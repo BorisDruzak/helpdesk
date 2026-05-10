@@ -58,6 +58,8 @@ class MainWindow(QMainWindow):
         self._stop_button_widget: Optional[QWidget] = None
         self._remote_assist_threads: Dict[str, RemoteAssistThread] = {}
         self._remote_assist_banners: Dict[str, QWidget] = {}
+        self._remote_assist_banner_labels: Dict[str, QLabel] = {}
+        self._remote_assist_modes: Dict[str, str] = {}
         self._remote_assist_dialogs: Dict[str, RemoteAssistConsentDialog] = {}
         
         # Текущий job_id активного чата (для привязки consent к чату)
@@ -2132,11 +2134,28 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         thread.failed.connect(lambda message, sid=session_id: self._handle_remote_assist_thread_failed(sid, message))
+        thread.state_changed.connect(lambda state, sid=session_id: self._handle_remote_assist_state_changed(sid, state))
         thread.ended.connect(lambda sid=session_id: self._remote_assist_threads.pop(sid, None))
         thread.ended.connect(lambda sid=session_id: self._hide_remote_assist_banner(sid))
         self._remote_assist_threads[session_id] = thread
-        self._show_remote_assist_banner(session_id, mode=str(data.get("mode") or "view_only"))
+        self._show_remote_assist_banner(session_id, mode=str(data.get("mode") or "view_only"), state="connecting")
         thread.start()
+
+    def _handle_remote_assist_state_changed(self, session_id: str, state: str) -> None:
+        normalized = (state or "").strip().lower()
+        label = self._remote_assist_banner_labels.get(session_id)
+        if label is None:
+            return
+        mode = self._remote_assist_modes.get(session_id, "view_only")
+        if normalized in {"connected", "completed"}:
+            if mode == "interactive_control":
+                label.setText("Удалённая помощь активна. Специалист видит экран и может управлять мышью/клавиатурой.")
+            else:
+                label.setText("Удалённая помощь активна. Специалист видит ваш экран.")
+        elif normalized in {"failed", "closed", "disconnected"}:
+            label.setText("Удалённая помощь прервана. Подключение не установлено.")
+        else:
+            label.setText("Подключение удалённой помощи. Специалист пока не видит экран.")
 
     def _handle_remote_assist_thread_failed(self, session_id: str, message: str) -> None:
         self._add_log(f"remote_assist | failed | {session_id[:8]} | {message}", "error")
@@ -2145,7 +2164,7 @@ class MainWindow(QMainWindow):
             name="remote_assist.fail",
         )
 
-    def _show_remote_assist_banner(self, session_id: str, *, mode: str = "view_only") -> None:
+    def _show_remote_assist_banner(self, session_id: str, *, mode: str = "view_only", state: str = "active") -> None:
         self._hide_remote_assist_banner(session_id)
         banner = QWidget()
         banner.setObjectName("RemoteAssistActiveBanner")
@@ -2160,7 +2179,9 @@ class MainWindow(QMainWindow):
         banner.setStyleSheet("background-color: #111827; color: white; border: 1px solid #2563eb; border-radius: 10px;")
         layout = QHBoxLayout(banner)
         layout.setContentsMargins(12, 10, 12, 10)
-        if mode == "interactive_control":
+        if state != "active":
+            label = QLabel("Подключение удалённой помощи. Специалист пока не видит экран.")
+        elif mode == "interactive_control":
             label = QLabel("Удалённая помощь активна. Специалист видит экран и может управлять мышью/клавиатурой.")
         else:
             label = QLabel("Удалённая помощь активна. Специалист видит ваш экран.")
@@ -2176,9 +2197,13 @@ class MainWindow(QMainWindow):
             banner.move(geom.x() + 24, geom.y() + 24)
         banner.show()
         self._remote_assist_banners[session_id] = banner
+        self._remote_assist_banner_labels[session_id] = label
+        self._remote_assist_modes[session_id] = mode
 
     def _hide_remote_assist_banner(self, session_id: str) -> None:
         banner = self._remote_assist_banners.pop(session_id, None)
+        self._remote_assist_banner_labels.pop(session_id, None)
+        self._remote_assist_modes.pop(session_id, None)
         if banner:
             banner.close()
             banner.deleteLater()

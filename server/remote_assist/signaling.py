@@ -159,12 +159,23 @@ async def _handle_signal_message(
 
 async def _mark_connection_state(session_id: str, role: str, payload: dict[str, Any]) -> None:
     state = str(payload.get("state") or "").strip().lower()
-    if state not in {"connected", "completed"}:
+    if state not in {"connected", "completed", "failed"}:
         return
     async with get_session() as db_session:
         service = RemoteAssistService(db_session)
         remote_session = await service.repo.get(session_id)
         if remote_session is None:
+            return
+        actor_id = remote_session.operator_id if role == "operator" else remote_session.device_id
+        if state == "failed":
+            await service.fail_session(
+                session_id=session_id,
+                actor_type=role,
+                actor_id=actor_id,
+                error_code="WEBRTC_FAILED",
+                error_message=f"{role} peer connection failed",
+            )
+            await db_session.commit()
             return
         if remote_session.status != "active":
             await service.repo.set_status(remote_session, status="active")
@@ -172,7 +183,7 @@ async def _mark_connection_state(session_id: str, role: str, payload: dict[str, 
                 remote_session,
                 "session_started",
                 actor_type=role,
-                actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
+                actor_id=actor_id,
                 payload={"state": state},
                 write_timeline=True,
             )
@@ -180,7 +191,7 @@ async def _mark_connection_state(session_id: str, role: str, payload: dict[str, 
             remote_session,
             "ice_connected",
             actor_type=role,
-            actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
+            actor_id=actor_id,
             payload={"state": state},
             write_timeline=False,
         )

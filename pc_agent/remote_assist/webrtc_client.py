@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any
+from typing import Any, Callable
 
 import aiohttp
 from loguru import logger
@@ -18,20 +19,31 @@ class RemoteAssistWebRTCClient:
         token: str,
         ice_servers: list[dict[str, Any]] | None = None,
         mode: str = "view_only",
+        connection_timeout_sec: int = 30,
+        on_state_change: Callable[[str], None] | None = None,
     ):
         self.signaling_url = signaling_url
         self.token = token
         self.ice_servers = ice_servers or []
         self.mode = mode
+        self.connection_timeout_sec = max(5, int(connection_timeout_sec))
+        self.on_state_change = on_state_change
         self.input_controller = InputController(mode_enabled=mode == "interactive_control")
         self._closed = False
         self._pc = None
         self._ws = None
+        self._failure_message: str | None = None
+        self._session_ended = False
 
     async def run(self) -> None:
         from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
         from aiortc.sdp import candidate_from_sdp
 
+        logger.info(
+            "Remote Assist WebRTC starting: mode={} ice_servers={}",
+            self.mode,
+            len(self.ice_servers),
+        )
         ice = [
             RTCIceServer(urls=item.get("urls"), username=item.get("username"), credential=item.get("credential"))
             for item in self.ice_servers
@@ -39,15 +51,38 @@ class RemoteAssistWebRTCClient:
         ]
         self._pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice))
         self._pc.addTrack(ScreenCaptureTrack.create())
+        connected_event = asyncio.Event()
+        timeout_task: asyncio.Task | None = None
+
+        async def fail_and_close(message: str) -> None:
+            if self._closed:
+                return
+            self._failure_message = message
+            logger.warning("Remote Assist WebRTC closing as failed: {}", message)
+            try:
+                if self._ws is not None and not self._ws.closed:
+                    await self._ws.send_json({"type": "session.error", "payload": {"error_code": "WEBRTC_FAILED", "error": message}})
+            except Exception as exc:
+                logger.debug(f"Remote Assist failure signal failed: {exc}")
+            await self.stop()
+
+        async def wait_for_connection() -> None:
+            try:
+                await asyncio.wait_for(connected_event.wait(), timeout=self.connection_timeout_sec)
+            except asyncio.TimeoutError:
+                await fail_and_close(f"WebRTC connection timeout after {self.connection_timeout_sec}s")
 
         async with aiohttp.ClientSession() as session:
             ws_url = self._with_query(self.signaling_url, role="agent", token=self.token)
+            logger.info("Remote Assist signaling connecting as agent")
             async with session.ws_connect(ws_url, heartbeat=20, max_msg_size=256 * 1024) as ws:
                 self._ws = ws
+                logger.info("Remote Assist signaling connected as agent")
 
                 @self._pc.on("icecandidate")
                 async def on_icecandidate(candidate):
                     if candidate is not None and not self._closed:
+                        logger.debug("Remote Assist local ICE candidate gathered")
                         candidate_sdp = candidate.to_sdp()
                         if not candidate_sdp.startswith("candidate:"):
                             candidate_sdp = f"candidate:{candidate_sdp}"
@@ -65,7 +100,18 @@ class RemoteAssistWebRTCClient:
                 @self._pc.on("connectionstatechange")
                 async def on_connectionstatechange():
                     if not self._closed:
-                        await ws.send_json({"type": "webrtc.connection_state", "payload": {"state": self._pc.connectionState}})
+                        state = self._pc.connectionState
+                        logger.info("Remote Assist peer connection state: {}", state)
+                        self._emit_state(state)
+                        await ws.send_json({"type": "webrtc.connection_state", "payload": {"state": state}})
+                        if state in {"connected", "completed"}:
+                            connected_event.set()
+                        elif state == "failed":
+                            await fail_and_close("WebRTC peer connection failed")
+
+                @self._pc.on("iceconnectionstatechange")
+                async def on_iceconnectionstatechange():
+                    logger.info("Remote Assist ICE connection state: {}", self._pc.iceConnectionState)
 
                 @self._pc.on("datachannel")
                 def on_datachannel(channel):
@@ -92,6 +138,7 @@ class RemoteAssistWebRTCClient:
                             channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
 
                 await ws.send_json({"type": "session.ready", "payload": {"role": "agent", "mode": self.mode}})
+                self._emit_state("signaling_connected")
                 async for msg in ws:
                     if self._closed:
                         break
@@ -101,12 +148,17 @@ class RemoteAssistWebRTCClient:
                     message_type = message.get("type")
                     payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
                     if message_type == "webrtc.offer":
+                        logger.info("Remote Assist offer received")
                         offer = RTCSessionDescription(sdp=payload["sdp"], type=payload["type"])
                         await self._pc.setRemoteDescription(offer)
                         answer = await self._pc.createAnswer()
                         await self._pc.setLocalDescription(answer)
                         await ws.send_json({"type": "webrtc.answer", "payload": {"sdp": self._pc.localDescription.sdp, "type": self._pc.localDescription.type}})
+                        logger.info("Remote Assist answer sent")
+                        if timeout_task is None or timeout_task.done():
+                            timeout_task = asyncio.create_task(wait_for_connection())
                     elif message_type == "webrtc.ice_candidate" and payload.get("candidate"):
+                        logger.debug("Remote Assist remote ICE candidate received")
                         candidate_text = str(payload["candidate"])
                         if candidate_text.startswith("candidate:"):
                             candidate_text = candidate_text.split(":", 1)[1]
@@ -115,7 +167,17 @@ class RemoteAssistWebRTCClient:
                         candidate.sdpMLineIndex = payload.get("sdpMLineIndex")
                         await self._pc.addIceCandidate(candidate)
                     elif message_type == "session.end":
+                        self._session_ended = True
                         break
+                    elif message_type == "session.error":
+                        logger.warning("Remote Assist signaling error from peer: {}", payload)
+                        if not self._failure_message:
+                            self._failure_message = str(payload.get("error") or payload.get("error_code") or "Remote Assist signaling error")
+                        break
+        if timeout_task is not None:
+            timeout_task.cancel()
+        if self._failure_message and not self._session_ended:
+            raise RuntimeError(self._failure_message)
 
     async def stop(self) -> None:
         self._closed = True
@@ -129,6 +191,14 @@ class RemoteAssistWebRTCClient:
                 await self._pc.close()
         except Exception as exc:
             logger.debug(f"Remote Assist peer close failed: {exc}")
+
+    def _emit_state(self, state: str) -> None:
+        if self.on_state_change is None:
+            return
+        try:
+            self.on_state_change(state)
+        except Exception as exc:
+            logger.debug(f"Remote Assist state callback failed: {exc}")
 
     @staticmethod
     def _with_query(url: str, **params: str) -> str:

@@ -44,17 +44,17 @@ ticket -> request remote assist -> user consent -> WebRTC view-only session -> a
 
 ## Current State
 
-Overall progress: 95%.
+Overall progress: 96%.
 
-Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and policy-gated interactive-control architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`; Windows stable `3.1.34` fixed WebRTC packaging and video startup. Current stage is Windows stable `3.1.35`: interactive control uses Windows `SendInput`, Linux has a `pynput` backend, support viewer returns to the ticket after operator end, and control state changes are written as human-readable timeline events.
+Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and policy-gated interactive-control architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`; Windows stable `3.1.34` fixed WebRTC packaging and video startup. Windows stable `3.1.35` added interactive-control testing with Windows `SendInput`, Linux `pynput`, ticket return after operator end, and timeline control events. Current stage is Windows stable `3.1.36`: field test on agent `15c8f029-bd7d-533b-a11e-dcd6c2ff48ab` showed offer/answer succeeds but ICE never reaches connected; local fixes now add explicit video transceiver setup, viewer/agent WebRTC connection timeouts, failed-session audit, agent-side state logs, and lower-leak cleanup so the agent stops capture after failed negotiation.
 
 | Level | Scope | Progress | Status |
 |---|---|---:|---|
 | 0 | Project analysis and plan | 100% | Completed |
 | 1 | DB, API, lifecycle, consent, audit | 100% | Implemented and locally verified |
-| 2 | Signaling and view-only WebRTC stream | 95% | Implemented and live source smoke validated; 3.1.34 release packaging hotfix in progress |
-| 3 | Support workspace and Maria Agent UI polish | 90% | Implemented and live consent/viewer flow validated; release packaging in progress |
-| 4 | Hardening, TURN config, reconnect, timeout | 50% | Token/ICE config, expiry hooks, viewer timeout and agent failure reporting added; reconnect/rate-limit polish remains |
+| 2 | Signaling and view-only WebRTC stream | 96% | Offer/answer path verified in field; ICE failure now fails cleanly instead of hanging |
+| 3 | Support workspace and Maria Agent UI polish | 92% | Agent banner now distinguishes connecting from active screen visibility |
+| 4 | Hardening, TURN config, reconnect, timeout | 58% | Token/ICE config, expiry hooks, viewer and agent timeouts, failed-state audit and cleanup added; reconnect/rate-limit polish remains |
 | 5 | Future control-mode architecture | 85% | Policy-gated interactive control added for testing; file/clipboard/elevated/unattended remain gated |
 
 ## Implementation Plan
@@ -158,6 +158,27 @@ Interactive-control release checkpoint on 2026-05-10:
 - Build Windows release `3.1.35`; ZIP SHA256 `770283c156dc6247fa4c3e1941991dd4831560a67846c579e1df9e823fadf508`.
 - Upload `windows_amd64/stable/3.1.35` and assign rollout policy.
 - Local launcher agent `remote-assist-fulltest-3135b` started on device `7a3429ec-1c0b-5495-9aad-b284f08ae965` and received `handshake_ack` as `3.1.35`.
+
+Connection-hardening release checkpoint on 2026-05-10:
+
+- Bump Windows agent to `3.1.36`.
+- Add explicit browser recvonly video transceiver before WebRTC offer.
+- Add viewer timeout cleanup that closes signaling/peer connection and calls `/fail`.
+- Add agent WebRTC connection timeout and state logs.
+- Keep Maria Agent banner in connecting state until ICE connected.
+- Reuse `mss` capture context across frames to reduce capture overhead.
+- Mark backend session failed when peer connection reports failed.
+- Build Windows release `3.1.36`; ZIP SHA256 `05d757ed07ffa3d79a8fc836b008a6c48b5afb22320ab5248542b510c8e7ca58`.
+- Upload `windows_amd64/stable/3.1.36` and assign rollout policy.
+- Confirm update recommendation for device `15c8f029-bd7d-533b-a11e-dcd6c2ff48ab` returns `recommended_version=3.1.36`.
+
+Field bug checkpoint on 2026-05-10:
+
+- Agent `15c8f029-bd7d-533b-a11e-dcd6c2ff48ab`, session `d0ab7df5-9ba7-4072-a876-98049487ed64`: `remote_access_events` contain `signaling_connected_agent`, `signaling_connected_operator`, `offer_received`, two operator `ice_candidate_received`, and `answer_received`.
+- The same session stays `status=starting`, `started_at=null`, with no `ice_connected` or `session_started`; viewer reports no video.
+- Root-cause boundary: consent and signaling delivery work, but WebRTC ICE/media never reaches connected. Current deployment also has `ice_servers=[]`, so direct host-candidate connectivity is the only path and can fail through firewall/NAT.
+- Secondary CPU issue: before this fix, viewer timeout did not close `RTCPeerConnection`/signaling or mark the session failed, so the agent could keep screen capture/VP8 work after the operator UI had already shown an error.
+- Local fix in progress: explicit recvonly video transceiver in browser offer, viewer fail cleanup and `/fail`, agent connection timeout/failure reporting, server failed-state handling, more agent WebRTC logs, and persistent `mss` capture context to reduce per-frame overhead.
 
 Minimum local checks before any completion claim:
 
