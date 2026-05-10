@@ -2221,7 +2221,7 @@ class MainWindow(QMainWindow):
     async def _end_remote_assist_from_user(self, session_id: str) -> None:
         thread = self._remote_assist_threads.get(session_id)
         if thread:
-            thread.stop()
+            thread.stop(reason="user_finished", notify_peer=True)
         if not self.auth_token:
             return
         api_url = get_config().server.api_url.rstrip("/")

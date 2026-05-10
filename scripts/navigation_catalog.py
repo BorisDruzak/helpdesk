@@ -144,7 +144,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="remote_assist",
         title="Remote Assist / WebRTC",
-        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing by default, explicit recvonly browser offers, failed WebRTC timeout cleanup, policy-gated interactive control over the WebRTC control data channel, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
+        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing by default, smooth 1280x720@15fps profile for responsive control, explicit recvonly browser offers, failed WebRTC timeout cleanup, policy-gated interactive control over the WebRTC control data channel with sequential input processing and explicit single/double-click commands, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
         aliases=(
             "remote assist",
             "remote_assist",
@@ -197,7 +197,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest pc_agent/tests/test_remote_assist_input_controller.py -q --tb=short",
             "python scripts/bootstrap_web_toolchain.py",
             "pnpm --dir webapp run build",
-            "Live WebRTC/browser signoff at http://192.168.100.17:8666/admin after deploy and DB migration",
+            "Live WebRTC/browser signoff at https://192.168.100.17:9443/app/tickets after deploy and DB migration",
         ),
         plan_required=True,
         docs_to_update=(
@@ -1683,7 +1683,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.48 for Remote Assist stalled-video recovery and RDP/virtual-display mouse reliability after 3.1.47 HTTPS/WSS stand trust, 3.1.46 clipboard/control hotfixes, 3.1.45 quality/control/clipboard auto-sync, 3.1.43 focused-window GUI CPU spikes from `action_trace.jsonl` recounts after 3.1.42 loading `diag_logs` as a core built-in module, 3.1.41 remote retrieval of `[gui-profiler]` logs through `diag.logs.collect`, 3.1.40 field GUI CPU diagnostics, 3.1.39 focused-window mitigation, 3.1.38 launcher version retention and soft-shadow opt-in, 3.1.37 idle CPU/WMI reduction, 3.1.36 Remote Assist WebRTC timeout/capture cleanup, 3.1.35 SendInput/Linux interactive-control testing, 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.49 for Remote Assist explicit double-click, sequential control input and user-end viewer notification after 3.1.48 stalled-video recovery and RDP/virtual-display mouse reliability, 3.1.47 HTTPS/WSS stand trust, 3.1.46 clipboard/control hotfixes, 3.1.45 quality/control/clipboard auto-sync, 3.1.43 focused-window GUI CPU spikes from `action_trace.jsonl` recounts after 3.1.42 loading `diag_logs` as a core built-in module, 3.1.41 remote retrieval of `[gui-profiler]` logs through `diag.logs.collect`, 3.1.40 field GUI CPU diagnostics, 3.1.39 focused-window mitigation, 3.1.38 launcher version retention and soft-shadow opt-in, 3.1.37 idle CPU/WMI reduction, 3.1.36 Remote Assist WebRTC timeout/capture cleanup, 3.1.35 SendInput/Linux interactive-control testing, 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",

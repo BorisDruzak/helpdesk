@@ -9,6 +9,7 @@ from app.db import get_session
 from remote_assist.features import wants_clipboard_auto_sync
 from remote_assist.policy import get_remote_assist_mode_permission, normalize_remote_assist_mode
 from remote_assist.service import RemoteAssistError, RemoteAssistService, remote_session_to_dict
+from remote_assist.signaling import notify_remote_assist_session_end
 
 
 def _error_response(exc: RemoteAssistError) -> web.Response:
@@ -259,6 +260,12 @@ async def handle_remote_assist_end(request: web.Request) -> web.Response:
                 reason=reason,
             )
             await session.commit()
+            await notify_remote_assist_session_end(
+                request.app,
+                session_id,
+                reason=reason,
+                actor_role=auth_context.actor_role,
+            )
             return web.json_response({"status": "ok", "data": remote_session_to_dict(remote_session)})
     except RemoteAssistError as exc:
         return _error_response(exc)

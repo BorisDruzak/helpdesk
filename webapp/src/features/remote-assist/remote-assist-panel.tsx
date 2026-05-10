@@ -58,6 +58,15 @@ const QUALITY_PRESETS: Record<string, RemoteAssistMediaOptions & { label: string
     fps: 8,
     monitor_id: "primary",
   },
+  smooth: {
+    label: "Плавное",
+    description: "1280x720, 15 fps",
+    quality_profile: "smooth",
+    max_width: 1280,
+    max_height: 720,
+    fps: 15,
+    monitor_id: "primary",
+  },
   sharp: {
     label: "Чёткое",
     description: "1920x1080, 12 fps",
@@ -99,7 +108,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
   const [reason, setReason] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(15);
   const [mode, setMode] = useState("view_only");
-  const [qualityProfile, setQualityProfile] = useState("balanced");
+  const [qualityProfile, setQualityProfile] = useState("smooth");
   const [clipboardAutoSync, setClipboardAutoSync] = useState(false);
   const modeRef = useRef(mode);
   const qualityProfileRef = useRef(qualityProfile);
@@ -142,8 +151,8 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
       setReason("");
       setMode("view_only");
       modeRef.current = "view_only";
-      setQualityProfile("balanced");
-      qualityProfileRef.current = "balanced";
+      setQualityProfile("smooth");
+      qualityProfileRef.current = "smooth";
       setClipboardAutoSync(false);
       clipboardAutoSyncRef.current = false;
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });

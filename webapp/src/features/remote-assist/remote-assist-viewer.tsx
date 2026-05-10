@@ -101,6 +101,15 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const controlChannelRef = useRef<RTCDataChannel | null>(null);
   const lastMouseMoveRef = useRef(0);
+  const pendingClickTimerRef = useRef<number | null>(null);
+  const pointerDownRef = useRef<{
+    button: string;
+    xRatio: number;
+    yRatio: number;
+    clientX: number;
+    clientY: number;
+    dragging: boolean;
+  } | null>(null);
   const clipboardPollRef = useRef<number | null>(null);
   const clipboardHashRef = useRef<string | null>(null);
   const clipboardApplyingRemoteRef = useRef(false);
@@ -148,6 +157,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
         window.clearInterval(clipboardPollRef.current);
         clipboardPollRef.current = null;
       }
+      if (pendingClickTimerRef.current !== null) {
+        window.clearTimeout(pendingClickTimerRef.current);
+        pendingClickTimerRef.current = null;
+      }
+      pointerDownRef.current = null;
       wsRef.current?.close();
       pcRef.current?.close();
       wsRef.current = null;
@@ -484,6 +498,28 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     if (!controlEnabled) {
       return;
     }
+    const pointerDown = pointerDownRef.current;
+    if (pointerDown) {
+      const payload = pointerPayload(event);
+      if (!payload) {
+        return;
+      }
+      if (!pointerDown.dragging) {
+        const moved = Math.hypot(event.clientX - pointerDown.clientX, event.clientY - pointerDown.clientY);
+        if (moved < 4) {
+          return;
+        }
+        pointerDown.dragging = true;
+        sendControl({
+          type: "mouse_down",
+          button: pointerDown.button,
+          x_ratio: pointerDown.xRatio,
+          y_ratio: pointerDown.yRatio,
+        });
+      }
+      sendControl({ type: "mouse_move", ...payload });
+      return;
+    }
     const now = window.performance.now();
     if (now - lastMouseMoveRef.current < 33) {
       return;
@@ -502,8 +538,66 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     event.preventDefault();
     event.currentTarget.focus();
     const payload = pointerPayload(event);
+    if (!payload) {
+      pointerDownRef.current = null;
+      return;
+    }
+    if (type === "mouse_down") {
+      pointerDownRef.current = {
+        button: pointerButton(event.button),
+        xRatio: payload.x_ratio,
+        yRatio: payload.y_ratio,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        dragging: false,
+      };
+      return;
+    }
+    const pointerDown = pointerDownRef.current;
+    pointerDownRef.current = null;
+    if (pointerDown?.dragging) {
+      sendControl({ type: "mouse_up", button: pointerDown.button, ...payload });
+      return;
+    }
+    if (event.button !== 0) {
+      sendControl({ type: "mouse_click", button: pointerButton(event.button), click_count: 1, ...payload });
+    }
+  };
+
+  const handleClick = (event: MouseEvent<HTMLElement>) => {
+    if (!controlEnabled || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const payload = pointerPayload(event);
+    if (!payload) {
+      return;
+    }
+    if (pendingClickTimerRef.current !== null) {
+      window.clearTimeout(pendingClickTimerRef.current);
+      pendingClickTimerRef.current = null;
+    }
+    if (event.detail > 1) {
+      return;
+    }
+    pendingClickTimerRef.current = window.setTimeout(() => {
+      pendingClickTimerRef.current = null;
+      sendControl({ type: "mouse_click", button: "left", click_count: 1, ...payload });
+    }, 220);
+  };
+
+  const handleDoubleClick = (event: MouseEvent<HTMLElement>) => {
+    if (!controlEnabled) {
+      return;
+    }
+    event.preventDefault();
+    if (pendingClickTimerRef.current !== null) {
+      window.clearTimeout(pendingClickTimerRef.current);
+      pendingClickTimerRef.current = null;
+    }
+    const payload = pointerPayload(event);
     if (payload) {
-      sendControl({ type, button: pointerButton(event.button), ...payload });
+      sendControl({ type: "mouse_click", button: "left", click_count: 2, ...payload });
     }
   };
 
@@ -630,6 +724,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
         <div
           className="flex min-h-0 flex-1 items-center justify-center bg-black outline-none"
           onContextMenu={(event) => event.preventDefault()}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
           onKeyDown={(event) => handleKey(event, "key_down")}
           onKeyUp={(event) => handleKey(event, "key_up")}
           onMouseDown={(event) => handleMouseButton(event, "mouse_down")}

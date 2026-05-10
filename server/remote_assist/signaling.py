@@ -35,6 +35,31 @@ def _peer_store(app: web.Application) -> dict[str, dict[str, web.WebSocketRespon
     return store
 
 
+async def notify_remote_assist_session_end(app: web.Application, session_id: str, *, reason: str, actor_role: str) -> None:
+    """Best-effort push for sessions ended through HTTP rather than signaling."""
+    peers = _peer_store(app).get(session_id, {})
+    if not peers:
+        return
+    message = {
+        "type": "session.end",
+        "session_id": session_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "payload": {"reason": reason, "actor_role": actor_role},
+    }
+    for peer_role, peer in list(peers.items()):
+        if peer.closed:
+            continue
+        try:
+            await peer.send_json(message)
+        except Exception as exc:
+            logger.debug(
+                "[remote_assist.signaling] session.end notify failed: session_id={} peer_role={} error={}",
+                session_id,
+                peer_role,
+                exc,
+            )
+
+
 async def _reject(code: str, message: str, *, status: int = 403) -> web.Response:
     return web.json_response({"status": "error", "error_code": code, "error": message}, status=status)
 

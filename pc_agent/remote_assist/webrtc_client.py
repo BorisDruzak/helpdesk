@@ -60,6 +60,7 @@ class RemoteAssistWebRTCClient:
         self._ws = None
         self._failure_message: str | None = None
         self._session_ended = False
+        self._control_worker_tasks: set[asyncio.Task] = set()
 
     async def run(self) -> None:
         from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
@@ -183,10 +184,11 @@ class RemoteAssistWebRTCClient:
                         ),
                         send=send_channel,
                     )
+                    control_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=500)
 
-                    @channel.on("message")
-                    def on_control_message(raw_message):
-                        async def handle_async(message: dict[str, Any]) -> None:
+                    async def process_control_messages() -> None:
+                        while True:
+                            message = await control_queue.get()
                             try:
                                 message_type = str(message.get("type") or "")
                                 if is_clipboard_channel_message(message_type):
@@ -208,12 +210,36 @@ class RemoteAssistWebRTCClient:
                             except Exception as exc:
                                 logger.exception(f"Remote Assist control message failed: {exc}")
                                 channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
+                            finally:
+                                control_queue.task_done()
 
+                    worker_task = asyncio.create_task(process_control_messages())
+                    self._control_worker_tasks.add(worker_task)
+                    worker_task.add_done_callback(self._control_worker_tasks.discard)
+
+                    @channel.on("close")
+                    def on_control_close():
+                        worker_task.cancel()
+
+                    @channel.on("message")
+                    def on_control_message(raw_message):
                         try:
                             if isinstance(raw_message, bytes):
                                 raw_message = raw_message.decode("utf-8")
                             message = json.loads(str(raw_message))
-                            asyncio.create_task(handle_async(message))
+                            control_queue.put_nowait(message)
+                        except asyncio.QueueFull:
+                            channel.send(
+                                json.dumps(
+                                    {
+                                        "type": "control.error",
+                                        "payload": {
+                                            "error_code": "CONTROL_RATE_LIMITED",
+                                            "error": "Remote Assist control queue is full",
+                                        },
+                                    }
+                                )
+                            )
                         except Exception as exc:
                             logger.exception(f"Remote Assist control message failed: {exc}")
                             channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
@@ -279,8 +305,14 @@ class RemoteAssistWebRTCClient:
         if self._failure_message and not self._session_ended:
             raise RuntimeError(self._failure_message)
 
-    async def stop(self) -> None:
+    async def stop(self, *, reason: str | None = None, notify_peer: bool = False) -> None:
         self._closed = True
+        if notify_peer and self._ws is not None and not self._ws.closed:
+            try:
+                await self._ws.send_json({"type": "session.end", "payload": {"reason": reason or "agent_finished"}})
+                await asyncio.sleep(0.05)
+            except Exception as exc:
+                logger.debug(f"Remote Assist session.end signal failed: {exc}")
         try:
             if self._ws is not None:
                 await self._ws.close()
@@ -296,6 +328,9 @@ class RemoteAssistWebRTCClient:
                 await self.clipboard_bridge.stop()
         except Exception as exc:
             logger.debug(f"Remote Assist clipboard stop failed: {exc}")
+        for task in list(self._control_worker_tasks):
+            task.cancel()
+        self._control_worker_tasks.clear()
 
     def _emit_state(self, state: str) -> None:
         if self.on_state_change is None:

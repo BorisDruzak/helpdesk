@@ -49,12 +49,12 @@ def test_mouse_click_and_keyboard_messages_are_validated() -> None:
     )
     controller.handle_message({"type": "control_enable"})
 
-    controller.handle_message({"type": "mouse_click", "x_ratio": 1, "y_ratio": 0, "button": "right"})
+    controller.handle_message({"type": "mouse_click", "x_ratio": 1, "y_ratio": 0, "button": "right", "click_count": 2})
     controller.handle_message({"type": "key_down", "key": "Enter"})
     controller.handle_message({"type": "key_up", "key": "Enter"})
 
     assert sent == [
-        {"kind": "mouse_click", "x": 1919, "y": 0, "button": "right"},
+        {"kind": "mouse_click", "x": 1919, "y": 0, "button": "right", "click_count": 2},
         {"kind": "key_down", "key": "Enter"},
         {"kind": "key_up", "key": "Enter"},
     ]
@@ -124,7 +124,7 @@ def test_linux_control_uses_pynput_backend() -> None:
 
     controller.handle_message({"type": "control_enable"})
     controller.handle_message({"type": "mouse_move", "x_ratio": 0.25, "y_ratio": 0.5})
-    controller.handle_message({"type": "mouse_click", "x_ratio": 0.25, "y_ratio": 0.5, "button": "left"})
+    controller.handle_message({"type": "mouse_click", "x_ratio": 0.25, "y_ratio": 0.5, "button": "left", "click_count": 2})
     controller.handle_message({"type": "mouse_wheel", "x_ratio": 0.25, "y_ratio": 0.5, "delta_y": -120})
     controller.handle_message({"type": "key_down", "key": "Enter"})
     controller.handle_message({"type": "key_up", "key": "Enter"})
@@ -132,7 +132,7 @@ def test_linux_control_uses_pynput_backend() -> None:
     controller.handle_message({"type": "text_input", "text": "test"})
 
     assert mouse.position == (200, 300)
-    assert mouse.clicks == [("left", 1)]
+    assert mouse.clicks == [("left", 2)]
     assert mouse.scrolled == [(0, -120)]
     assert keyboard.pressed == [("down", "enter"), ("up", "enter"), ("down", "ctrl"), ("down", "v"), ("up", "v"), ("up", "ctrl")]
     assert keyboard.typed == ["test"]
@@ -182,13 +182,15 @@ def test_windows_backend_uses_sendinput() -> None:
     backend = WindowsSendInputBackend(user32=user32, kernel32=FakeKernel32())
 
     backend.send({"kind": "mouse_click", "x": 100, "y": 200, "button": "left"})
+    backend.send({"kind": "mouse_click", "x": 100, "y": 200, "button": "left", "click_count": 2})
     backend.send({"kind": "key_down", "key": "Enter"})
     backend.send({"kind": "key_up", "key": "Enter"})
     backend.send({"kind": "text_input", "text": "я"})
 
-    assert len(user32.calls) == 4
+    assert len(user32.calls) == 5
     assert all(count >= 1 for count, _size in user32.calls)
-    assert user32.cursor_positions == [(100, 200)]
+    assert user32.calls[1][0] == 4
+    assert user32.cursor_positions == [(100, 200), (100, 200)]
     assert user32.attached[0] == (10, 20, True)
     assert user32.attached[1] == (10, 20, False)
 

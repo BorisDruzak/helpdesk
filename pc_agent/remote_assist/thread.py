@@ -52,6 +52,6 @@ class RemoteAssistThread(QThread):
                 self._loop.close()
                 self.ended.emit()
 
-    def stop(self) -> None:
+    def stop(self, *, reason: str | None = None, notify_peer: bool = False) -> None:
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.client.stop()))
+            self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.client.stop(reason=reason, notify_peer=notify_peer)))

@@ -78,6 +78,18 @@ def test_remote_assist_media_options_default_to_balanced_profile() -> None:
     }
 
 
+def test_remote_assist_media_options_include_smooth_profile() -> None:
+    options = build_remote_assist_media_options({"quality_profile": "smooth"})
+
+    assert options == {
+        "quality_profile": "smooth",
+        "max_width": 1280,
+        "max_height": 720,
+        "fps": 15,
+        "monitor_id": "primary",
+    }
+
+
 def test_remote_assist_media_options_clamp_custom_values() -> None:
     options = build_remote_assist_media_options(
         {

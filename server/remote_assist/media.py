@@ -16,6 +16,12 @@ QUALITY_PROFILES: dict[str, dict[str, int | str]] = {
         "max_height": 900,
         "fps": 8,
     },
+    "smooth": {
+        "quality_profile": "smooth",
+        "max_width": 1280,
+        "max_height": 720,
+        "fps": 15,
+    },
     "sharp": {
         "quality_profile": "sharp",
         "max_width": 1920,

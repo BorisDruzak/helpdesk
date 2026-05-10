@@ -80,7 +80,11 @@ class WindowsSendInputBackend:
         elif kind == "mouse_click":
             down, up = _mouse_button_flags(action["button"])
             self._set_cursor_position(int(action["x"]), int(action["y"]))
-            self._send_inputs([self._mouse_input(0, 0, down, absolute=False), self._mouse_input(0, 0, up, absolute=False)])
+            inputs: list[_INPUT] = []
+            for _ in range(_click_count(action.get("click_count"))):
+                inputs.append(self._mouse_input(0, 0, down, absolute=False))
+                inputs.append(self._mouse_input(0, 0, up, absolute=False))
+            self._send_inputs(inputs)
         elif kind == "mouse_wheel":
             self._set_cursor_position(int(action["x"]), int(action["y"]))
             self._send_inputs([_mouse_input(dx=0, dy=0, mouse_data=int(action["delta_y"]), flags=_MOUSEEVENTF_WHEEL)])
@@ -225,7 +229,7 @@ class LinuxPynputInputBackend:
             self._mouse.position = (int(action["x"]), int(action["y"]))
             self._mouse.release(self._button(action["button"]))
         if kind == "mouse_click":
-            self._mouse.click(self._button(action["button"]), 1)
+            self._mouse.click(self._button(action["button"]), _click_count(action.get("click_count")))
         elif kind == "mouse_wheel":
             self._mouse.scroll(int(action.get("delta_x", 0)), int(action.get("delta_y", 0)))
         elif kind == "key_down":
@@ -332,6 +336,8 @@ class InputController:
             action_name = message_type.removeprefix("mouse_")
             action = self._mouse_action(message, action=action_name)
             action["button"] = self._button(message.get("button"))
+            if message_type == "mouse_click":
+                action["click_count"] = self._click_count(message.get("click_count"))
         elif message_type == "mouse_wheel":
             action = self._mouse_action(message, action="wheel")
             action["delta_x"] = self._wheel_delta(message.get("delta_x"))
@@ -412,6 +418,10 @@ class InputController:
         if button not in {"left", "right", "middle"}:
             raise InputControllerError("CONTROL_BUTTON_INVALID", "Mouse button is invalid")
         return button
+
+    @staticmethod
+    def _click_count(value: Any) -> int:
+        return _click_count(value)
 
     @staticmethod
     def _wheel_delta(value: Any) -> int:
@@ -522,6 +532,14 @@ def _mouse_button_down_flag(button: str) -> int:
 
 def _mouse_button_up_flag(button: str) -> int:
     return _mouse_button_flags(button)[1]
+
+
+def _click_count(value: Any) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        count = 1
+    return max(1, min(3, count))
 
 
 def _utf16_code_units(text: str) -> list[int]:
