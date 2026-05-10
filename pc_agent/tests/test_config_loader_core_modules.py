@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.config_loader import ConfigLoader
+from pc_agent.config.config_loader import ConfigLoader
 
 
 def _reset_config_loader_singleton() -> None:
@@ -16,7 +16,8 @@ def test_load_always_keeps_core_modules_enabled(tmp_path):
     config_path = tmp_path / "settings.yaml"
     config_path.write_text(
         "enabled_modules:\n"
-        "  - diag_logs\n",
+        "  - system\n"
+        "  - screen\n",
         encoding="utf-8",
     )
 

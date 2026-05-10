@@ -27,6 +27,7 @@ logging:
 enabled_modules:
   - "system"
   - "screen"
+  - "diag_logs"
 
 ui:
   enabled: True

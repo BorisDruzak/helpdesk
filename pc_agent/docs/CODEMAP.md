@@ -74,7 +74,7 @@
 | Файл/каталог | Назначение |
 |--------------|------------|
 | `pc_agent/modules/base_module.py` | Базовый контракт модуля + mandatory observer SDK (`bind_trace`, `trace_event`, `trace_span`) для новых tool methods; dangerous module steps обязаны следовать `server/docs/OBSERVER_AUTHORING_RULES.md` |
-| `pc_agent/modules/impl/` | Встроенные реализации модулей; `diag_logs.py` collects system logs and agent runtime logs (`data/logs`) through `diag.logs.collect`, so field diagnostics such as `[gui-profiler]` can be retrieved remotely as an artifact |
+| `pc_agent/modules/impl/` | Встроенные реализации модулей; core enabled modules are `system`, `screen` and `diag_logs`; `diag_logs.py` collects system logs and agent runtime logs (`data/logs`) through `diag.logs.collect`, so field diagnostics such as `[gui-profiler]` can be retrieved remotely as an artifact |
 | `pc_agent/modules/dynamic/` | Legacy (загрузчик использует только пакеты из modules_store) |
 | `pc_agent/modules/__init__.py` | extra_paths, поддержка test_<name> для тестов |
 
