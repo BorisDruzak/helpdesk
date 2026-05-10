@@ -49,6 +49,7 @@
 - `3.1.43` is the Windows stable agent release for fixing focused-window GUI CPU spikes caused by synchronous `action_trace.jsonl` recounts on every GUI API trace record. Publish it as a new build/upload/rollout target; do not overwrite `3.1.42` artifacts.
 - `3.1.44` is the Windows stable agent release for Remote Assist ICE negotiation: the browser viewer and agent wait briefly for ICE gathering so host candidates are embedded in offer/answer SDP, and the agent logs safe candidate counts/types without raw SDP. Publish it as a new build/upload/rollout target; do not overwrite `3.1.43` artifacts.
 - `3.1.45` is the Windows stable agent release for Remote Assist quality/control/clipboard: approved interactive sessions auto-enable control without a second consent prompt, support drag/wheel/shortcut input, honor requested screen quality, and support policy-gated text clipboard auto-sync. Publish it as a new build/upload/rollout target; do not overwrite `3.1.44` artifacts.
+- `3.1.46` supersedes `3.1.45` for Remote Assist clipboard/control fixes: the agent routes `clipboard_enable` / `clipboard_disable` to the clipboard bridge instead of the input controller, logs sanitized control/clipboard accept/reject decisions, and the Windows `SendInput` backend attaches to the foreground input queue with `GetLastError` diagnostics. Publish it as a new build/upload/rollout target; do not overwrite `3.1.45` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 

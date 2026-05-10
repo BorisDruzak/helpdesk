@@ -181,17 +181,22 @@ class RemoteAssistWebRTCClient:
                     def on_control_message(raw_message):
                         async def handle_async(message: dict[str, Any]) -> None:
                             try:
-                                if str(message.get("type") or "").startswith("clipboard."):
+                                message_type = str(message.get("type") or "")
+                                if is_clipboard_channel_message(message_type):
                                     if self.clipboard_bridge is None:
                                         raise ClipboardError("CLIPBOARD_UNAVAILABLE", "Clipboard bridge is not available")
                                     result = await self.clipboard_bridge.handle_message(message)
                                     channel.send(json.dumps({"type": "clipboard.ack", "payload": result}))
+                                    logger.info("Remote Assist clipboard message accepted: type={} result={}", message_type, result.get("type"))
                                     return
                                 result = self.input_controller.handle_message(message)
                                 channel.send(json.dumps({"type": "control.ack", "payload": result}))
+                                logger.debug("Remote Assist control message accepted: type={} result={}", message_type, result.get("type"))
                             except ClipboardError as exc:
+                                logger.warning("Remote Assist clipboard message rejected: type={} code={}", message.get("type"), exc.code)
                                 channel.send(json.dumps({"type": "clipboard.error", "payload": {"error_code": exc.code, "error": exc.message}}))
                             except InputControllerError as exc:
+                                logger.warning("Remote Assist control message rejected: type={} code={}", message.get("type"), exc.code)
                                 channel.send(json.dumps({"type": "control.error", "payload": {"error_code": exc.code, "error": exc.message}}))
                             except Exception as exc:
                                 logger.exception(f"Remote Assist control message failed: {exc}")
@@ -324,3 +329,7 @@ def _normalize_feature_options(features: dict[str, Any] | None) -> dict[str, Any
         "clipboard_auto_sync": bool(raw.get("clipboard_auto_sync")),
         "clipboard_max_bytes": _bounded_int(raw.get("clipboard_max_bytes"), default=256 * 1024, minimum=1024, maximum=1024 * 1024),
     }
+
+
+def is_clipboard_channel_message(message_type: str) -> bool:
+    return message_type in {"clipboard_enable", "clipboard_disable"} or message_type.startswith("clipboard.")

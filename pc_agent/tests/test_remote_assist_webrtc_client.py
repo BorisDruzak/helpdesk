@@ -1,4 +1,10 @@
-from pc_agent.remote_assist.webrtc_client import _normalize_feature_options, _normalize_media_options, candidate_summary, count_sdp_candidates
+from pc_agent.remote_assist.webrtc_client import (
+    _normalize_feature_options,
+    _normalize_media_options,
+    candidate_summary,
+    count_sdp_candidates,
+    is_clipboard_channel_message,
+)
 
 
 def test_count_sdp_candidates_counts_only_candidate_lines() -> None:
@@ -34,3 +40,10 @@ def test_normalize_feature_options_clamps_clipboard_limits() -> None:
         "clipboard_auto_sync": True,
         "clipboard_max_bytes": 1024 * 1024,
     }
+
+
+def test_clipboard_channel_routing_accepts_enable_alias() -> None:
+    assert is_clipboard_channel_message("clipboard_enable") is True
+    assert is_clipboard_channel_message("clipboard_disable") is True
+    assert is_clipboard_channel_message("clipboard.update") is True
+    assert is_clipboard_channel_message("control_enable") is False

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -45,14 +46,22 @@ class WindowsSendInputBackend:
         self,
         *,
         user32: Any | None = None,
+        kernel32: Any | None = None,
         screen_size_provider: ScreenSizeProvider | None = None,
+        attach_to_foreground: bool = True,
     ):
         if user32 is None:
             import ctypes
 
             user32 = ctypes.windll.user32
+        if kernel32 is None:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
         self._user32 = user32
+        self._kernel32 = kernel32
         self._screen_size_provider = screen_size_provider
+        self._attach_to_foreground = attach_to_foreground
 
     def screen_size(self) -> tuple[int, int]:
         if self._screen_size_provider is not None:
@@ -130,9 +139,44 @@ class WindowsSendInputBackend:
 
         array_type = _INPUT * len(inputs)
         array = array_type(*inputs)
-        sent = int(self._user32.SendInput(len(inputs), array, ctypes.sizeof(_INPUT)))
+        with self._foreground_input_queue():
+            sent = int(self._user32.SendInput(len(inputs), array, ctypes.sizeof(_INPUT)))
         if sent != len(inputs):
-            raise InputControllerError("CONTROL_INJECTION_FAILED", "Windows SendInput did not accept all input events")
+            error_code = self._last_error()
+            raise InputControllerError(
+                "CONTROL_INJECTION_FAILED",
+                f"Windows SendInput did not accept all input events; sent={sent}/{len(inputs)} last_error={error_code}",
+            )
+
+    @contextmanager
+    def _foreground_input_queue(self):
+        attached = False
+        current_thread_id = 0
+        foreground_thread_id = 0
+        try:
+            if self._attach_to_foreground:
+                foreground_window = int(getattr(self._user32, "GetForegroundWindow", lambda: 0)() or 0)
+                if foreground_window:
+                    import ctypes
+
+                    process_id = ctypes.c_ulong(0)
+                    foreground_thread_id = int(self._user32.GetWindowThreadProcessId(foreground_window, ctypes.byref(process_id)) or 0)
+                    current_thread_id = int(getattr(self._kernel32, "GetCurrentThreadId", lambda: 0)() or 0)
+                    if foreground_thread_id and current_thread_id and foreground_thread_id != current_thread_id:
+                        attached = bool(self._user32.AttachThreadInput(current_thread_id, foreground_thread_id, True))
+            yield
+        finally:
+            if attached:
+                try:
+                    self._user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+                except Exception:
+                    pass
+
+    def _last_error(self) -> int:
+        try:
+            return int(self._kernel32.GetLastError())
+        except Exception:
+            return 0
 
 
 class LinuxPynputInputBackend:
@@ -299,7 +343,7 @@ class InputController:
             if not text or len(text) > self._limits.max_text_chars:
                 raise InputControllerError("CONTROL_TEXT_INVALID", "Text input is empty or too large")
             action = {"kind": "text_input", "text": text}
-        elif message_type.startswith("clipboard.") or message_type.startswith("file."):
+        elif message_type in {"clipboard_enable", "clipboard_disable"} or message_type.startswith("clipboard.") or message_type.startswith("file."):
             raise InputControllerError("FEATURE_NOT_ENABLED", "This Remote Assist channel is not enabled")
         else:
             raise InputControllerError("CONTROL_TYPE_NOT_ALLOWED", "Control message type is not allowed")

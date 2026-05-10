@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Monitor, ShieldCheck, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   fetchRemoteAssistSessions,
@@ -85,6 +85,12 @@ type RemoteAssistPanelProps = {
   onChanged?: () => void;
 };
 
+export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboardAutoSync: boolean) {
+  return {
+    clipboard_auto_sync: requestedMode === "interactive_control" && clipboardAutoSync,
+  };
+}
+
 export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged }: RemoteAssistPanelProps) {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -94,6 +100,9 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
   const [mode, setMode] = useState("view_only");
   const [qualityProfile, setQualityProfile] = useState("balanced");
   const [clipboardAutoSync, setClipboardAutoSync] = useState(false);
+  const modeRef = useRef(mode);
+  const qualityProfileRef = useRef(qualityProfile);
+  const clipboardAutoSyncRef = useRef(clipboardAutoSync);
 
   const sessionsQuery = useQuery({
     queryKey: ["remote-assist", ticketId],
@@ -115,23 +124,26 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
       if (!deviceId) {
         throw new Error("Устройство для тикета не указано.");
       }
+      const requestedMode = modeRef.current;
+      const requestedClipboard = requestedMode === "interactive_control" && clipboardAutoSyncRef.current;
       return requestRemoteAssist(ticketId, {
         deviceId,
-        mode,
+        mode: requestedMode,
         reason: reason.trim(),
         durationMinutes,
-        media: QUALITY_PRESETS[qualityProfile] ?? QUALITY_PRESETS.balanced,
-        features: {
-          clipboard_auto_sync: mode === "interactive_control" && clipboardAutoSync,
-        },
+        media: QUALITY_PRESETS[qualityProfileRef.current] ?? QUALITY_PRESETS.balanced,
+        features: buildRemoteAssistFeatureOptions(requestedMode, requestedClipboard),
       });
     },
     onSuccess: () => {
       setModalOpen(false);
       setReason("");
       setMode("view_only");
+      modeRef.current = "view_only";
       setQualityProfile("balanced");
+      qualityProfileRef.current = "balanced";
       setClipboardAutoSync(false);
+      clipboardAutoSyncRef.current = false;
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
       onChanged?.();
     },
@@ -227,8 +239,10 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                   className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
                   onChange={(event) => {
                     const nextMode = event.currentTarget.value;
+                    modeRef.current = nextMode;
                     setMode(nextMode);
                     if (nextMode !== "interactive_control") {
+                      clipboardAutoSyncRef.current = false;
                       setClipboardAutoSync(false);
                     }
                   }}
@@ -249,7 +263,10 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                   <input
                     checked={clipboardAutoSync}
                     className="mt-1"
-                    onChange={(event) => setClipboardAutoSync(event.currentTarget.checked)}
+                    onChange={(event) => {
+                      clipboardAutoSyncRef.current = event.currentTarget.checked;
+                      setClipboardAutoSync(event.currentTarget.checked);
+                    }}
                     type="checkbox"
                   />
                   <span>
@@ -264,7 +281,10 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                 Качество видео
                 <select
                   className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
-                  onChange={(event) => setQualityProfile(event.currentTarget.value)}
+                  onChange={(event) => {
+                    qualityProfileRef.current = event.currentTarget.value;
+                    setQualityProfile(event.currentTarget.value);
+                  }}
                   value={qualityProfile}
                 >
                   {Object.entries(QUALITY_PRESETS).map(([value, preset]) => (

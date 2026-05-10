@@ -142,6 +142,7 @@ def test_windows_backend_uses_sendinput() -> None:
     class FakeUser32:
         def __init__(self) -> None:
             self.calls: list[tuple[int, int]] = []
+            self.attached: list[tuple[int, int, bool]] = []
 
         def SendInput(self, count: int, inputs: object, size: int) -> int:
             self.calls.append((count, size))
@@ -154,8 +155,26 @@ def test_windows_backend_uses_sendinput() -> None:
         def VkKeyScanW(self, codepoint: int) -> int:
             return codepoint
 
+        def GetForegroundWindow(self) -> int:
+            return 100
+
+        def GetWindowThreadProcessId(self, window: int, process_id: object) -> int:
+            assert window == 100
+            return 20
+
+        def AttachThreadInput(self, current_thread_id: int, foreground_thread_id: int, attach: bool) -> bool:
+            self.attached.append((current_thread_id, foreground_thread_id, attach))
+            return True
+
+    class FakeKernel32:
+        def GetCurrentThreadId(self) -> int:
+            return 10
+
+        def GetLastError(self) -> int:
+            return 0
+
     user32 = FakeUser32()
-    backend = WindowsSendInputBackend(user32=user32)
+    backend = WindowsSendInputBackend(user32=user32, kernel32=FakeKernel32())
 
     backend.send({"kind": "mouse_click", "x": 100, "y": 200, "button": "left"})
     backend.send({"kind": "key_down", "key": "Enter"})
@@ -164,6 +183,8 @@ def test_windows_backend_uses_sendinput() -> None:
 
     assert len(user32.calls) == 4
     assert all(count >= 1 for count, _size in user32.calls)
+    assert user32.attached[0] == (10, 20, True)
+    assert user32.attached[1] == (10, 20, False)
 
 
 def test_control_rejects_unenabled_features() -> None:
@@ -171,5 +192,5 @@ def test_control_rejects_unenabled_features() -> None:
 
     controller.handle_message({"type": "control_enable"})
     with pytest.raises(InputControllerError) as exc:
-        controller.handle_message({"type": "clipboard.read"})
+        controller.handle_message({"type": "clipboard_enable"})
     assert exc.value.code == "FEATURE_NOT_ENABLED"
