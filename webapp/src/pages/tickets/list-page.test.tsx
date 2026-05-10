@@ -1121,10 +1121,6 @@ describe("TicketListPage", () => {
     renderTicketListPage("/app/tickets/ticket-1");
 
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
-    expect(screen.getByRole("button", { name: "Запустить диагностику" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
-
     fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
 
     expect(await screen.findByText("Операции выполняются")).toBeInTheDocument();
@@ -1224,9 +1220,8 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Ещё" }));
-    const diagnosticsButton = await screen.findByRole("button", { name: /диагностику/i });
-    fireEvent.click(diagnosticsButton);
+    fireEvent.click(await screen.findByRole("button", { name: "Инструменты" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Запустить" }));
 
     expect(await screen.findByText("Запуск диагностики")).toBeInTheDocument();
     expect(postSupportTicketToolRunMock).not.toHaveBeenCalled();
@@ -1244,22 +1239,16 @@ describe("TicketListPage", () => {
     });
   });
 
-  it("uses the top reply control only to focus the composer and refreshes after send", async () => {
+  it("sends a public reply from the composer and refreshes after send", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
     postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-1", message: {} } as any);
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Ещё" }));
-    const replyButton = await screen.findByRole("button", { name: "Ответить пользователю" });
-    fireEvent.click(replyButton);
     expect(postSupportTicketMessageMock).not.toHaveBeenCalled();
 
-    const composer = screen.getByTestId("support-reply-composer");
-    await waitFor(() => {
-      expect(composer).toHaveFocus();
-    });
+    const composer = await screen.findByTestId("support-reply-composer");
     fireEvent.change(composer, { target: { value: "public reply" } });
     fireEvent.click(screen.getByRole("button", { name: /РћС‚РїСЂР°РІРёС‚СЊ|Отправить/ }));
 

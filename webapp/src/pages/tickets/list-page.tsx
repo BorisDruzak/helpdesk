@@ -157,19 +157,12 @@ const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
 const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 300, right: 340 };
-const WORKSPACE_MODE_GRID_PRESETS: Record<WorkspaceMode, WorkspaceGridPreset> = {
-  ticket: { left: `${DEFAULT_WORKSPACE_COLUMNS.left}px`, center: "minmax(620px, 1fr)", right: `${DEFAULT_WORKSPACE_COLUMNS.right}px` },
-  queue: { left: "minmax(780px, 1.65fr)", center: "minmax(340px, 0.62fr)", right: "92px" },
-  tools: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(560px, 1fr)" },
-  sla: { left: "320px", center: "minmax(400px, 460px)", right: "minmax(560px, 1fr)" },
-  passport: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(620px, 1fr)" },
-};
 const WORKSPACE_COLUMN_LIMITS = {
   leftMin: 260,
   leftMax: 460,
   rightMin: 320,
   rightMax: 560,
-  centerMin: 640,
+  centerMin: 520,
 };
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
@@ -221,19 +214,38 @@ function getInitialWorkspaceColumns(): WorkspaceColumnSizes {
   }
 }
 
-function getWorkspaceGridPreset(mode: WorkspaceMode, columns: WorkspaceColumnSizes): WorkspaceGridPreset {
+function getWorkspaceGridPreset(mode: WorkspaceMode, columns: WorkspaceColumnSizes, viewportWidth: number): WorkspaceGridPreset {
+  const isNarrow = viewportWidth < 1366;
+  const isCompact = viewportWidth < 1200;
   if (mode === "ticket") {
     return {
-      left: `${columns.left}px`,
-      center: "minmax(620px, 1fr)",
-      right: `${columns.right}px`,
+      left: `${isNarrow ? Math.min(columns.left, 280) : columns.left}px`,
+      center: `minmax(${isCompact ? 520 : isNarrow ? 560 : 620}px, 1fr)`,
+      right: `${isNarrow ? Math.min(columns.right, 300) : columns.right}px`,
     };
   }
-  return WORKSPACE_MODE_GRID_PRESETS[mode];
+  if (mode === "queue") {
+    return isCompact
+      ? { left: "minmax(660px, 1.8fr)", center: "minmax(300px, 0.55fr)", right: "56px" }
+      : { left: "minmax(720px, 1.75fr)", center: "minmax(320px, 0.6fr)", right: "64px" };
+  }
+  if (mode === "tools") {
+    return isNarrow
+      ? { left: "280px", center: "minmax(320px, 360px)", right: "minmax(520px, 1fr)" }
+      : { left: "320px", center: "minmax(380px, 420px)", right: "minmax(680px, 1fr)" };
+  }
+  if (mode === "sla") {
+    return isNarrow
+      ? { left: "280px", center: "minmax(320px, 380px)", right: "minmax(520px, 1fr)" }
+      : { left: "320px", center: "minmax(400px, 460px)", right: "minmax(680px, 1fr)" };
+  }
+  return isNarrow
+    ? { left: "280px", center: "minmax(320px, 360px)", right: "minmax(560px, 1fr)" }
+    : { left: "320px", center: "minmax(380px, 420px)", right: "minmax(720px, 1fr)" };
 }
 
-function getWorkspaceGridStyle(mode: WorkspaceMode, columns: WorkspaceColumnSizes): CSSProperties {
-  const preset = getWorkspaceGridPreset(mode, columns);
+function getWorkspaceGridStyle(mode: WorkspaceMode, columns: WorkspaceColumnSizes, viewportWidth: number): CSSProperties {
+  const preset = getWorkspaceGridPreset(mode, columns, viewportWidth);
   return {
     "--support-left": preset.left,
     "--support-center": preset.center,
@@ -1122,6 +1134,7 @@ export function TicketListPage() {
   const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
   const [workspaceColumns, setWorkspaceColumns] = useState<WorkspaceColumnSizes>(() => getInitialWorkspaceColumns());
+  const [workspaceViewportWidth, setWorkspaceViewportWidth] = useState(() => (typeof window === "undefined" ? 1366 : window.innerWidth || 1366));
   const [resizingPane, setResizingPane] = useState<WorkspaceResizePane | null>(null);
   const [automationCatalogFilter, setAutomationCatalogFilter] = useState<AutomationCatalogFilter>("all");
   const [automationCatalogSearch, setAutomationCatalogSearch] = useState("");
@@ -1186,6 +1199,12 @@ export function TicketListPage() {
       // Layout persistence is best-effort; the workspace stays usable without localStorage.
     }
   }, [workspaceColumns]);
+
+  useEffect(() => {
+    const handleResize = () => setWorkspaceViewportWidth(window.innerWidth || 1366);
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (!resizingPane) {
@@ -1398,15 +1417,6 @@ export function TicketListPage() {
       ]);
     });
   }, [queryClient, selectedTicketId]);
-
-  const focusComposer = (mode: ComposerMode) => {
-    setWorkspaceMode("ticket");
-    setComposerMode(mode);
-    window.requestAnimationFrame(() => {
-      composerTextareaRef.current?.scrollIntoView?.({ block: "center" });
-      composerTextareaRef.current?.focus();
-    });
-  };
 
   function selectRightTab(tab: SidebarTab) {
     setSidebarTab(tab);
@@ -1723,6 +1733,17 @@ export function TicketListPage() {
 
   const selectedTicket = viewModel.selectedTicket;
   const selectedTicketIsUnassigned = Boolean(selectedTicket?.assigneeLabel.toLowerCase().includes("не назнач"));
+  const getCompactTicketSlaLabel = (ticket: (typeof visibleTickets)[number]) => {
+    if (selectedTicket?.id === ticket.id && selectedTicket.nextAction.timerType !== "none") {
+      return selectedTicket.nextAction.remainingLabel;
+    }
+    return ticket.nextDueLabel.toLowerCase().includes("нет") ? "SLA не рассчитан" : ticket.nextDueLabel;
+  };
+  const getCompactTicketSlaClassName = (label: string, ticket: (typeof visibleTickets)[number]) => {
+    if (label.toLowerCase().includes("не рассчитан") || label.toLowerCase().includes("нет")) return "text-slate-400";
+    if (label.toLowerCase().includes("просроч")) return "text-red-300";
+    return ticket.slaRisk ? "text-red-300" : "text-emerald-300";
+  };
   const orderedClosureBlockers = useMemo(
     () => orderClosureBlockers(selectedTicket?.closurePlan.blockers ?? []),
     [selectedTicket?.closurePlan.blockers],
@@ -1844,7 +1865,7 @@ export function TicketListPage() {
 
       <div
         className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
-        style={getWorkspaceGridStyle(workspaceMode, workspaceColumns)}
+        style={getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth)}
       >
         {workspaceMode === "ticket" ? <button
           aria-label="Изменить ширину левой колонки"
@@ -1964,7 +1985,9 @@ export function TicketListPage() {
             ) : null}
 
             <div className="space-y-2">
-              {visibleTickets.map((ticket) => (
+              {visibleTickets.map((ticket) => {
+                const slaLabel = getCompactTicketSlaLabel(ticket);
+                return (
                 <button
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     ticket.active
@@ -1998,12 +2021,13 @@ export function TicketListPage() {
                         Скрыт
                       </span>
                     ) : null}
-                    <span className={`ml-auto text-xs font-semibold ${ticket.nextDueLabel.toLowerCase().includes("нет") ? "text-slate-400" : ticket.slaRisk ? "text-red-300" : "text-emerald-300"}`}>
-                      {ticket.nextDueLabel.toLowerCase().includes("нет") ? "SLA не рассчитан" : ticket.nextDueLabel}
+                    <span className={`ml-auto text-xs font-semibold ${getCompactTicketSlaClassName(slaLabel, ticket)}`}>
+                      {slaLabel}
                     </span>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
           </>
@@ -2076,7 +2100,7 @@ export function TicketListPage() {
 
           {workspaceMode !== "queue" && selectedTicket ? (
             <>
-              <div className="border-b border-white/10 bg-[#0b1624]/70 px-5 py-4">
+              <div className="border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="mb-2 flex items-center gap-3 text-sm text-slate-400">
@@ -2085,7 +2109,7 @@ export function TicketListPage() {
                       <span>{selectedTicket.code}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <h2 className="truncate text-2xl font-semibold tracking-tight text-white">
+                      <h2 className="truncate text-xl font-semibold tracking-tight text-white min-[1600px]:text-2xl">
                         {selectedTicket.code} {selectedTicket.subject}
                       </h2>
                     </div>
@@ -2105,8 +2129,8 @@ export function TicketListPage() {
                   </div>
                 </div>
 
-                <section className={`mt-5 grid grid-cols-[auto_minmax(0,1fr)_260px] items-center gap-5 rounded-xl border p-4 ${toneClasses(selectedTicket.nextAction.tone)}`}>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
+                <section className={`mt-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(180px,240px)] items-center gap-4 rounded-xl border p-3 ${toneClasses(selectedTicket.nextAction.tone)}`}>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
                     <Play className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
@@ -2114,14 +2138,14 @@ export function TicketListPage() {
                     <p className="mt-1 text-base font-semibold text-white">{selectedTicket.nextAction.label}</p>
                     <p className="mt-1 truncate text-sm text-slate-300">{selectedTicket.nextAction.hint}</p>
                   </div>
-                  <div className="border-l border-white/10 pl-5">
+                  <div className="border-l border-white/10 pl-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Осталось времени</p>
-                    <p className="mt-1 text-2xl font-semibold text-white">{selectedTicket.nextAction.remainingLabel}</p>
+                    <p className="mt-1 text-xl font-semibold text-white">{selectedTicket.nextAction.remainingLabel}</p>
                     <p className="mt-1 text-xs text-slate-400">до контрольного срока</p>
                   </div>
                 </section>
 
-                <div className="mt-4 flex items-center justify-end">
+                <div className="mt-3 flex items-center justify-end">
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <button
@@ -2134,34 +2158,7 @@ export function TicketListPage() {
                         Ещё
                       </button>
                       {moreOpen ? (
-                        <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => focusComposer("public")}
-                            type="button"
-                          >
-                            <Send className="h-4 w-4" />
-                            Ответить пользователю
-                          </button>
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!internalNoteAllowed}
-                            onClick={() => focusComposer("internal")}
-                            type="button"
-                          >
-                            <Lock className="h-4 w-4" />
-                            Внутренняя заметка
-                          </button>
-                          <button
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
-                            onClick={() => openAutomationLauncher()}
-                            type="button"
-                          >
-                            <Wrench className="h-4 w-4" />
-                            Запустить диагностику
-                          </button>
-                          <div className="my-1 border-t border-white/10" />
+                        <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
                           <button
                             className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
                               selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
@@ -2608,7 +2605,7 @@ export function TicketListPage() {
                 <div className="flex items-center gap-5 border-b border-white/10 px-5">
                   {timelineTabs.map((tab) => (
                     <button
-                      className={`border-b-2 px-1 py-4 text-sm font-semibold transition ${
+                      className={`border-b-2 px-1 py-3 text-sm font-semibold transition ${
                         timelineFilter === tab.value ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400 hover:text-white"
                       }`}
                       key={tab.value}
@@ -2623,7 +2620,7 @@ export function TicketListPage() {
                   </button>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
                   {timelineEmptyState ? (
                     <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center text-sm text-slate-400">
                       <Inbox className="mx-auto h-9 w-9 text-slate-500" />
@@ -2717,12 +2714,12 @@ export function TicketListPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-white/10 bg-[#0b1624] p-4">
+                <div className="border-t border-white/10 bg-[#0b1624] p-3">
                   <div className="rounded-xl border border-white/10 bg-[#0d1828]">
                     <div className="flex items-center gap-4 border-b border-white/10 px-4">
                       {(["public", "internal"] as const).map((mode) => (
                         <button
-                          className={`border-b-2 py-3 text-sm font-semibold ${
+                          className={`border-b-2 py-2.5 text-sm font-semibold ${
                             composerMode === mode ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400"
                           }`}
                           disabled={mode === "internal" && !internalNoteAllowed}
@@ -2736,14 +2733,14 @@ export function TicketListPage() {
                       ))}
                     </div>
                     <textarea
-                      className="h-24 w-full resize-none bg-transparent px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      className="h-20 min-h-16 max-h-44 w-full resize-y bg-transparent px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
                       data-testid="support-reply-composer"
                       onChange={(event) => setComposerText(event.currentTarget.value)}
                       placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Напишите внутреннюю заметку для команды..."}
                       value={composerText}
                       ref={composerTextareaRef}
                     />
-                    <div className="flex items-center gap-2 px-4 pb-4">
+                    <div className="flex items-center gap-2 px-4 pb-3">
                       <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400" type="button">
                         <Paperclip className="h-4 w-4" />
                       </button>
@@ -2769,12 +2766,12 @@ export function TicketListPage() {
 
         <aside className="flex min-h-0 flex-col bg-[#0b1624]">
           {workspaceMode === "queue" ? (
-            <div className="flex min-h-0 flex-1 items-start justify-center border-l border-white/10 px-2 py-4">
+            <div className="flex min-h-0 flex-1">
               <button
-                className={`min-h-32 w-full rounded-xl border px-2 py-3 text-xs font-semibold leading-5 transition [writing-mode:vertical-rl] ${
+                className={`flex h-full w-full items-center justify-center px-1 text-xs font-semibold leading-5 transition [writing-mode:vertical-rl] ${
                   selectedTicket
-                    ? "border-blue-400/60 bg-blue-500/15 text-blue-100 hover:bg-blue-500/25"
-                    : "cursor-not-allowed border-white/10 bg-white/[0.03] text-slate-600"
+                    ? "bg-blue-500/10 text-blue-100 hover:bg-blue-500/20"
+                    : "cursor-not-allowed bg-white/[0.02] text-slate-600"
                 }`}
                 disabled={!selectedTicket}
                 onClick={() => {

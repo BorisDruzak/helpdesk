@@ -9,7 +9,7 @@ import type {
 } from "../../../features/queues/support-workspace-model";
 import { toneClasses } from "./workspace-component-utils";
 
-type QueueExplorerTab = "mine" | "queues" | "slices" | "search";
+type QueueExplorerTab = "mine" | "queues" | "slices";
 
 type QueueExplorerProps = {
   activeQueueId: string | null;
@@ -43,9 +43,16 @@ function ticketActionScore(ticket: SupportWorkspaceTicketItem): number {
   return score;
 }
 
-function slaClassName(ticket: SupportWorkspaceTicketItem): string {
-  if (ticket.nextDueLabel.toLowerCase().includes("нет")) return "text-slate-400";
-  if (ticket.nextDueLabel.toLowerCase().includes("просроч")) return "text-red-300";
+function getTicketSlaLabel(ticket: SupportWorkspaceTicketItem, selectedTicket: SupportWorkspaceSelectedTicket | null): string {
+  if (selectedTicket?.id === ticket.id && selectedTicket.nextAction.timerType !== "none") {
+    return selectedTicket.nextAction.remainingLabel;
+  }
+  return ticket.nextDueLabel.toLowerCase().includes("нет") ? "SLA не рассчитан" : ticket.nextDueLabel;
+}
+
+function slaClassName(label: string, ticket: SupportWorkspaceTicketItem): string {
+  if (label.toLowerCase().includes("не рассчитан") || label.toLowerCase().includes("нет")) return "text-slate-400";
+  if (label.toLowerCase().includes("просроч")) return "text-red-300";
   return ticket.slaRisk ? "text-amber-300" : "text-emerald-300";
 }
 
@@ -193,12 +200,11 @@ export function QueueExplorer({
       </div>
 
       <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-[#0d1828] p-3">
-        <div className="grid grid-cols-4 gap-2 rounded-xl bg-white/[0.04] p-1">
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-white/[0.04] p-1">
           {[
             ["mine", "Мои"],
             ["queues", "Очереди"],
             ["slices", "Срезы"],
-            ["search", "Поиск"],
           ].map(([value, label]) => (
             <button
               className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
@@ -331,7 +337,9 @@ export function QueueExplorer({
             </tr>
           </thead>
           <tbody className="divide-y divide-white/10">
-            {sortedTickets.map((ticket, index) => (
+            {sortedTickets.map((ticket, index) => {
+              const slaLabel = getTicketSlaLabel(ticket, selectedTicket);
+              return (
               <tr
                 className={`cursor-pointer transition ${ticket.active ? "bg-blue-600/15 text-white" : "text-slate-300 hover:bg-white/[0.04]"}`}
                 data-ticket-row-index={index}
@@ -380,15 +388,16 @@ export function QueueExplorer({
                 <td className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-blue-200">
                   {ticket.unread ? "Requester reply" : ticket.slaRisk ? "Support" : "Queue"}
                 </td>
-                <td className={`whitespace-nowrap px-3 py-3 text-xs font-semibold ${slaClassName(ticket)}`}>
-                  {ticket.nextDueLabel.toLowerCase().includes("нет") ? "SLA не рассчитан" : ticket.nextDueLabel}
+                <td className={`whitespace-nowrap px-3 py-3 text-xs font-semibold ${slaClassName(slaLabel, ticket)}`}>
+                  {slaLabel}
                 </td>
                 <td className="px-3 py-3">{ticket.queueLabel}</td>
                 <td className="px-3 py-3">{ticket.assigneeLabel}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-slate-400">{ticket.updatedLabel}</td>
                 <td className="px-3 py-3">{ticket.unread ? <span className="rounded-full bg-blue-500 px-2 py-0.5 text-xs font-bold text-white">да</span> : <span className="text-slate-600">—</span>}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
