@@ -206,7 +206,7 @@ class RemoteAssistWebRTCClient:
                                     result = await self.clipboard_bridge.handle_message(message)
                                     channel.send(json.dumps({"type": "clipboard.ack", "payload": result}))
                                     logger.info("Remote Assist clipboard message accepted: type={} result={}", message_type, result.get("type"))
-                                    return
+                                    continue
                                 result = self.input_controller.handle_message(message)
                                 channel.send(json.dumps({"type": "control.ack", "payload": result}))
                                 logger.debug("Remote Assist control message accepted: type={} result={}", message_type, result.get("type"))

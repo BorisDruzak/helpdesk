@@ -32,7 +32,7 @@ def test_support_role_can_request_and_view_remote_assist() -> None:
     assert "remote_assist.view" in permissions
     assert "remote_assist.control" in permissions
     assert "remote_assist.file_transfer" in permissions
-    assert "remote_assist.elevated" not in permissions
+    assert "remote_assist.elevated" in permissions
     assert "remote_assist.unattended" not in permissions
 
 

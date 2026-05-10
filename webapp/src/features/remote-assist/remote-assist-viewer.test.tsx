@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { RemoteAssistViewer } from "./remote-assist-viewer";
+import { RemoteAssistViewer, extractClipboardFiles } from "./remote-assist-viewer";
 import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer, requestRemoteAssist } from "./api";
 
 vi.mock("./api", () => ({
@@ -36,6 +36,19 @@ const viewerInfo = {
 };
 
 describe("RemoteAssistViewer", () => {
+  it("extracts files pasted by browsers that expose clipboard items instead of clipboard files", () => {
+    const file = new File(["content"], "report.txt", { type: "text/plain", lastModified: 10 });
+    const data = {
+      files: [],
+      items: [
+        { kind: "string", getAsFile: () => null },
+        { kind: "file", getAsFile: () => file },
+      ],
+    } as unknown as DataTransfer;
+
+    expect(extractClipboardFiles(data)).toEqual([file]);
+  });
+
   it("returns to the ticket when the operator ends a session", async () => {
     vi.mocked(fetchRemoteAssistViewer).mockResolvedValue(viewerInfo);
     vi.mocked(endRemoteAssistSession).mockResolvedValue(viewerInfo);

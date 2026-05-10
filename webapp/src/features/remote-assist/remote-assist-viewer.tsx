@@ -99,6 +99,32 @@ function browserClipboardAvailable() {
   );
 }
 
+export function extractClipboardFiles(data: DataTransfer | null) {
+  if (!data) {
+    return [];
+  }
+  const files: File[] = [];
+  for (const file of Array.from(data.files ?? [])) {
+    files.push(file);
+  }
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file") {
+      continue;
+    }
+    const file = item.getAsFile();
+    if (!file) {
+      continue;
+    }
+    const duplicate = files.some(
+      (existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified,
+    );
+    if (!duplicate) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
 export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElevated = false, onElevatedRequested }: RemoteAssistViewerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -122,6 +148,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
   const pendingFilesRef = useRef<Map<string, { name: string; size: number }>>(new Map());
   const lastVideoFrameAtRef = useRef(0);
   const lastVideoTimeRef = useRef(0);
+  const videoStalledRef = useRef(false);
   const [state, setState] = useState<ViewerState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState("view_only");
@@ -137,6 +164,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
   const [sessionInfo, setSessionInfo] = useState<RemoteAssistViewerInfo | null>(null);
   const [elevating, setElevating] = useState(false);
   const [connectNonce, setConnectNonce] = useState(0);
+  const [videoStalled, setVideoStalled] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -203,6 +231,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
     const noteVideoFrame = () => {
       lastVideoFrameAtRef.current = window.performance.now();
       lastVideoTimeRef.current = videoRef.current?.currentTime ?? 0;
+      if (videoStalledRef.current) {
+        videoStalledRef.current = false;
+        setVideoStalled(false);
+        setError(null);
+      }
     };
 
     const scheduleVideoFrameCallback = () => {
@@ -242,8 +275,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
           lastVideoTimeRef.current = currentTime;
           return;
         }
-        if (window.performance.now() - lastVideoFrameAtRef.current > 8000) {
-          failConnection("Video stream stalled while the control channel stayed active.", "VIDEO_STALLED");
+        if (window.performance.now() - lastVideoFrameAtRef.current > 8000 && !videoStalledRef.current) {
+          videoStalledRef.current = true;
+          setVideoStalled(true);
+          setError("Видео временно не обновляется. Сессия не завершена, можно переподключиться.");
+          wsRef.current?.send(JSON.stringify({ type: "webrtc.connection_state", payload: { state: "video_stalled" } }));
         }
       }, 2000);
     };
@@ -251,6 +287,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
     async function connect() {
       setState("loading");
       setError(null);
+      videoStalledRef.current = false;
+      setVideoStalled(false);
       try {
         const info = await fetchRemoteAssistViewer(sessionId);
         setSessionInfo(info);
@@ -615,12 +653,26 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
-    if (fileTransferState === "off" || event.clipboardData.files.length === 0) {
+    const files = extractClipboardFiles(event.clipboardData);
+    if (fileTransferState === "off" || files.length === 0) {
       return;
     }
     event.preventDefault();
-    sendFilesToAgent(event.clipboardData.files);
+    sendFilesToAgent(files);
   };
+
+  useEffect(() => {
+    const onPaste = (event: globalThis.ClipboardEvent) => {
+      const files = extractClipboardFiles(event.clipboardData);
+      if (fileTransferState === "off" || files.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      sendFilesToAgent(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
 
   const sendControl = (payload: Record<string, unknown>) => {
     const channel = controlChannelRef.current;
@@ -692,11 +744,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
   };
 
   const handleMouseButton = (event: MouseEvent<HTMLElement>, type: "mouse_down" | "mouse_up") => {
+    event.currentTarget.focus();
     if (!controlEnabled) {
       return;
     }
     event.preventDefault();
-    event.currentTarget.focus();
     const payload = pointerPayload(event);
     if (!payload) {
       pointerDownRef.current = null;
@@ -779,6 +831,9 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
 
   const handleKey = (event: KeyboardEvent<HTMLElement>, type: "key_down" | "key_up") => {
     if (!controlEnabled) {
+      return;
+    }
+    if (fileTransferState !== "off" && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
       return;
     }
     event.preventDefault();
@@ -879,12 +934,12 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
                 </button>
               </>
             ) : null}
-            {canRequestElevated && sessionInfo && mode !== "elevated_admin" ? (
+            {sessionInfo && mode !== "elevated_admin" ? (
               <button
                 className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={elevating}
+                disabled={elevating || !canRequestElevated}
                 onClick={() => void requestElevatedAccess()}
-                title="Request a separate elevated/admin Remote Assist session"
+                title={canRequestElevated ? "Запросить отдельную elevated/admin сессию" : "У оператора нет права remote_assist.elevated"}
                 type="button"
               >
                 <ShieldCheck className="mr-2 inline h-4 w-4" />
@@ -983,6 +1038,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElev
           {state === "active" && fileTransferMessage ? (
             <div className="absolute bottom-4 right-4 rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-300">
               {fileTransferMessage}
+            </div>
+          ) : null}
+          {state === "active" && videoStalled ? (
+            <div className="absolute top-20 rounded-xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold text-amber-100">
+              Видео временно не обновляется. Управление и буфер не отключены, попробуйте переподключиться.
             </div>
           ) : null}
           {state !== "active" ? (
