@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Small TLS reverse proxy for the pc_client stand.
 
 This is intentionally narrow: it terminates HTTPS/WSS for a test stand and
@@ -202,7 +202,7 @@ def create_app(args: argparse.Namespace) -> web.Application:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run pc_client stand HTTPS reverse proxy.")
     parser.add_argument("--listen-host", default="0.0.0.0")
-    parser.add_argument("--listen-port", type=int, default=8443)
+    parser.add_argument("--listen-port", type=int, default=9443)
     parser.add_argument("--target", default="http://127.0.0.1:8666")
     parser.add_argument("--cert-file", required=True)
     parser.add_argument("--key-file", required=True)
@@ -238,3 +238,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
