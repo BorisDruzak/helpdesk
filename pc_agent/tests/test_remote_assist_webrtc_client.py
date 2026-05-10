@@ -1,4 +1,5 @@
 from pc_agent.remote_assist.webrtc_client import (
+    RemoteAssistWebRTCClient,
     _normalize_feature_options,
     _normalize_media_options,
     candidate_summary,
@@ -48,6 +49,13 @@ def test_clipboard_channel_routing_accepts_enable_alias() -> None:
     assert is_clipboard_channel_message("clipboard_disable") is True
     assert is_clipboard_channel_message("clipboard.update") is True
     assert is_clipboard_channel_message("control_enable") is False
+
+
+def test_elevated_admin_mode_enables_elevated_input_controller() -> None:
+    client = RemoteAssistWebRTCClient(signaling_url="ws://127.0.0.1/ws", token="token", mode="elevated_admin")
+
+    assert client.input_controller.mode_enabled is True
+    assert client.input_controller.elevated is True
 
 
 def test_remote_assist_tls_context_only_for_secure_urls() -> None:

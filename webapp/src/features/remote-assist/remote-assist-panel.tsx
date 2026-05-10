@@ -96,8 +96,9 @@ type RemoteAssistPanelProps = {
 };
 
 export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboardAutoSync: boolean) {
+  const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
   return {
-    clipboard_auto_sync: requestedMode === "interactive_control" && clipboardAutoSync,
+    clipboard_auto_sync: controlMode && clipboardAutoSync,
   };
 }
 
@@ -129,6 +130,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
   const activeOrWaiting = latestSession && ["waiting_consent", "approved", "starting", "active"].includes(latestSession.status);
   const reasonReady = reason.trim().length >= 3;
   const hasClipboardPermission = permissions.includes("remote_assist.clipboard");
+  const hasElevatedPermission = permissions.includes("remote_assist.elevated");
 
   const requestMutation = useMutation({
     mutationFn: () => {
@@ -136,7 +138,8 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
         throw new Error("Устройство для тикета не указано.");
       }
       const requestedMode = modeRef.current;
-      const requestedClipboard = requestedMode === "interactive_control" && clipboardAutoSyncRef.current && hasClipboardPermission;
+      const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
+      const requestedClipboard = controlMode && clipboardAutoSyncRef.current && hasClipboardPermission;
       return requestRemoteAssist(ticketId, {
         deviceId,
         mode: requestedMode,
@@ -176,7 +179,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
             <Monitor className="h-4 w-4 text-blue-200" />
             <p className="font-semibold text-white">Удалённая помощь</p>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Только просмотр экрана, с обязательным согласием пользователя.</p>
+          <p className="mt-1 text-xs text-slate-400">Просмотр или управление экраном только с обязательным согласием пользователя.</p>
         </div>
         <button
           className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -252,7 +255,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                     const nextMode = event.currentTarget.value;
                     modeRef.current = nextMode;
                     setMode(nextMode);
-                    if (nextMode !== "interactive_control") {
+                    if (nextMode !== "interactive_control" && nextMode !== "elevated_admin") {
                       clipboardAutoSyncRef.current = false;
                       setClipboardAutoSync(false);
                     }
@@ -264,12 +267,17 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                   <option value="file_transfer" disabled>
                     Передача файлов (policy gate)
                   </option>
-                  <option value="elevated_admin" disabled>
-                    Admin mode (policy gate)
+                  <option value="elevated_admin" disabled={!hasElevatedPermission}>
+                    Админ-доступ с UAC
                   </option>
                 </select>
               </label>
-              {mode === "interactive_control" ? (
+              {mode === "elevated_admin" ? (
+                <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-3 text-xs leading-5 text-amber-100">
+                  Пользователь увидит обычное согласие Maria Agent и отдельное системное UAC-подтверждение. Без UAC этот режим не сможет управлять админскими окнами.
+                </div>
+              ) : null}
+              {mode === "interactive_control" || mode === "elevated_admin" ? (
                 <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
                   <input
                     checked={clipboardAutoSync}

@@ -7,6 +7,7 @@ from remote_assist.ice import build_remote_assist_ice_servers
 from remote_assist.media import build_remote_assist_media_options
 from remote_assist.policy import (
     get_remote_assist_mode_permission,
+    get_remote_assist_mode_policy,
     is_remote_assist_mode_enabled,
 )
 from remote_assist.service import issue_short_lived_token, verify_token_hash
@@ -40,6 +41,14 @@ def test_remote_assist_mode_permissions_are_explicit() -> None:
     assert get_remote_assist_mode_permission("interactive_control") == "remote_assist.control"
     assert get_remote_assist_mode_permission("file_transfer") == "remote_assist.file_transfer"
     assert get_remote_assist_mode_permission("elevated_admin") == "remote_assist.elevated"
+
+
+def test_elevated_admin_mode_is_control_capable_but_policy_gated() -> None:
+    policy = get_remote_assist_mode_policy("elevated_admin")
+
+    assert policy is not None
+    assert policy.control_channel is True
+    assert policy.elevated is True
 
 
 def test_post_mvp_remote_assist_modes_are_disabled_by_default() -> None:

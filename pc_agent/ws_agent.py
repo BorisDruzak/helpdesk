@@ -3626,7 +3626,22 @@ def main():
     parser.add_argument("--gui", action="store_true", help="Запустить GUI (альтернатива: config.ui.autostart_gui)")
     parser.add_argument("--no-gui", action="store_true", help="Запустить агент без GUI, игнорируя config.ui.autostart_gui")
     parser.add_argument("--verify", action="store_true", help="Режим проверки: только init + миграции БД, без WS/GUI (для launcher)")
+    parser.add_argument("--remote-assist-elevated-helper", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--host", type=str, default="127.0.0.1", help=argparse.SUPPRESS)
+    parser.add_argument("--port", type=int, default=0, help=argparse.SUPPRESS)
+    parser.add_argument("--token", type=str, default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.remote_assist_elevated_helper:
+        from pc_agent.remote_assist.elevated_helper import run_elevated_helper_client
+
+        raise SystemExit(
+            run_elevated_helper_client(
+                host=args.host,
+                port=args.port,
+                token=args.token,
+            )
+        )
 
     data_root = runtime_paths.resolve_data_root(cli_value=args.data_dir)
     install_root = runtime_paths.resolve_install_root(cli_value=args.install_root) if args.install_root else None

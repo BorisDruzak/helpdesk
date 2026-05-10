@@ -2158,7 +2158,9 @@ class MainWindow(QMainWindow):
             return
         mode = self._remote_assist_modes.get(session_id, "view_only")
         if normalized in {"connected", "completed"}:
-            if mode == "interactive_control":
+            if mode == "elevated_admin":
+                label.setText("Административная удалённая помощь активна. Специалист видит экран и может управлять админскими окнами после UAC.")
+            elif mode == "interactive_control":
                 label.setText("Удалённая помощь активна. Специалист видит экран и может управлять мышью/клавиатурой.")
             else:
                 label.setText("Удалённая помощь активна. Специалист видит ваш экран.")
@@ -2191,6 +2193,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(12, 10, 12, 10)
         if state != "active":
             label = QLabel("Подключение удалённой помощи. Специалист пока не видит экран.")
+        elif mode == "elevated_admin":
+            label = QLabel("Административная удалённая помощь активна. Специалист видит экран и может управлять админскими окнами после UAC.")
         elif mode == "interactive_control":
             label = QLabel("Удалённая помощь активна. Специалист видит экран и может управлять мышью/клавиатурой.")
         else:

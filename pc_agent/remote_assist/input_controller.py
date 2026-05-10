@@ -295,6 +295,7 @@ class InputController:
         self,
         *,
         mode_enabled: bool = False,
+        elevated: bool = False,
         platform: str | None = None,
         sender: InputSender | None = None,
         screen_size_provider: ScreenSizeProvider | None = None,
@@ -302,6 +303,7 @@ class InputController:
         limits: ControlLimits | None = None,
     ):
         self.mode_enabled = bool(mode_enabled)
+        self.elevated = bool(elevated)
         self.control_active = False
         self.platform = platform or sys.platform
         self._screen_size_provider = screen_size_provider
@@ -383,7 +385,12 @@ class InputController:
         platform = self.platform.lower()
         try:
             if platform.startswith("win"):
-                self._backend = WindowsSendInputBackend(screen_size_provider=self._screen_size_provider)
+                if self.elevated:
+                    from .elevated_helper import ElevatedInputProxyBackend
+
+                    self._backend = ElevatedInputProxyBackend(screen_size_provider=self._screen_size_provider)
+                else:
+                    self._backend = WindowsSendInputBackend(screen_size_provider=self._screen_size_provider)
             elif platform.startswith("linux"):
                 self._backend = LinuxPynputInputBackend(screen_size_provider=self._screen_size_provider)
             else:
@@ -393,6 +400,14 @@ class InputController:
         except Exception as exc:
             raise InputControllerError("CONTROL_UNSUPPORTED", "Remote Assist control backend is unavailable") from exc
         return self._backend
+
+    def close(self) -> None:
+        backend = self._backend
+        if backend is not None and hasattr(backend, "close"):
+            try:
+                getattr(backend, "close")()
+            except Exception:
+                pass
 
     def _mouse_action(self, message: dict[str, Any], *, action: str) -> dict[str, Any]:
         x_ratio = self._ratio(message.get("x_ratio"))

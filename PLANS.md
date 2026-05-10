@@ -315,6 +315,15 @@ Execution slices, in order:
 - On Windows, request elevation only through visible OS/User approval; do not bypass UAC.
 - Surface unsupported state clearly when agent is not running elevated or the platform cannot elevate.
 
+Current Windows helper slice:
+
+- [x] Enable `elevated_admin` as a control-capable Remote Assist mode behind `remote_assist.elevated` and `REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED`.
+- [x] Add a Windows-only elevated helper path inside `pc_agent.exe` via `--remote-assist-elevated-helper`; launch it with UAC through `ShellExecuteW(..., "runas", ...)`.
+- [x] Keep the helper session-scoped: one loopback connection, one high-entropy token, no server connectivity, no hidden unattended start.
+- [x] Route `elevated_admin` input through the helper while leaving normal `interactive_control` unchanged.
+- [x] Surface the mode in support UI only to operators with `remote_assist.elevated`; Maria Agent consent text must explicitly mention UAC/admin windows.
+- [ ] Verify with unit tests, webapp build, package build, then roll out as Windows stable `3.1.50`.
+
 ### Phase E: Managed Unattended
 
 - Add server-side enrollment/policy gate for managed devices.

@@ -38,6 +38,7 @@ MODE_POLICIES: dict[str, RemoteAssistModePolicy] = {
         mode="elevated_admin",
         permission="remote_assist.elevated",
         enabled_config="REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED",
+        control_channel=True,
         elevated=True,
     ),
 }

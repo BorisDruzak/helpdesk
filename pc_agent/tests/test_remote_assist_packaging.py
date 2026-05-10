@@ -11,3 +11,4 @@ def test_windows_agent_specs_collect_remote_assist_webrtc_dependencies() -> None
         assert '"aioice"' in text
         assert '"av"' in text
         assert '"pylibsrtp"' in text
+        assert '"pc_agent.remote_assist.elevated_helper"' in text

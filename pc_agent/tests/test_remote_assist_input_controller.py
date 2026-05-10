@@ -39,6 +39,23 @@ def test_control_requires_explicit_enable_message() -> None:
     assert sent == [{"kind": "mouse_move", "x": 500, "y": 125}]
 
 
+def test_elevated_control_can_use_injected_backend() -> None:
+    sent: list[dict] = []
+    controller = InputController(
+        mode_enabled=True,
+        elevated=True,
+        platform="win32",
+        sender=sent.append,
+        screen_size_provider=lambda: (1000, 500),
+    )
+
+    controller.handle_message({"type": "control_enable"})
+    result = controller.handle_message({"type": "mouse_click", "x_ratio": 0.25, "y_ratio": 0.5, "button": "left", "click_count": 2})
+
+    assert result == {"type": "control.accepted", "action": "mouse_click"}
+    assert sent == [{"kind": "mouse_click", "x": 250, "y": 250, "button": "left", "click_count": 2}]
+
+
 def test_mouse_click_and_keyboard_messages_are_validated() -> None:
     sent: list[dict] = []
     controller = InputController(

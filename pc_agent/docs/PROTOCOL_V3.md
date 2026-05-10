@@ -358,7 +358,7 @@ Reconnect/runtime note:
 
 **Критично:** `request_id` используется как `command_id` (единый идентификатор).
 
-`remote_assist.request` is a Protocol V3 command delivered through the normal server device outbox. Maria Agent must handle it without blocking the WS loop: publish the request to the Qt UI, show the consent dialog, and call the backend approve/deny HTTP API. The WebRTC signaling itself does not run over `/ws`; after approval the agent connects to `/ws/remote-assist/{session_id}?role=agent&token=...` with a short-lived role token from the backend.
+`remote_assist.request` is a Protocol V3 command delivered through the normal server device outbox. Maria Agent must handle it without blocking the WS loop: publish the request to the Qt UI, show the consent dialog, and call the backend approve/deny HTTP API. The WebRTC signaling itself does not run over `/ws`; after approval the agent connects to `/ws/remote-assist/{session_id}?role=agent&token=...` with a short-lived role token from the backend. For `mode=elevated_admin`, the command still requires visible user consent and a local Windows UAC helper before elevated input can work; Protocol V3 never grants hidden administrative access by itself.
 
 ### Command Result (command_result)
 

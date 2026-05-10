@@ -53,7 +53,10 @@ class RemoteAssistWebRTCClient:
         self.features = _normalize_feature_options(features)
         self.connection_timeout_sec = max(5, int(connection_timeout_sec))
         self.on_state_change = on_state_change
-        self.input_controller = InputController(mode_enabled=mode == "interactive_control")
+        self.input_controller = InputController(
+            mode_enabled=mode in {"interactive_control", "elevated_admin"},
+            elevated=mode == "elevated_admin",
+        )
         self.clipboard_bridge: ClipboardSyncBridge | None = None
         self._closed = False
         self._pc = None
@@ -328,6 +331,10 @@ class RemoteAssistWebRTCClient:
                 await self.clipboard_bridge.stop()
         except Exception as exc:
             logger.debug(f"Remote Assist clipboard stop failed: {exc}")
+        try:
+            self.input_controller.close()
+        except Exception as exc:
+            logger.debug(f"Remote Assist input controller close failed: {exc}")
         for task in list(self._control_worker_tasks):
             task.cancel()
         self._control_worker_tasks.clear()
