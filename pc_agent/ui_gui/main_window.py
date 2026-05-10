@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+import os
 import time
 from typing import Set, Optional, Dict, Any
 import aiohttp
@@ -27,6 +28,11 @@ from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
 from pc_agent.remote_assist.thread import RemoteAssistThread
 from pc_agent.version import AGENT_VERSION
+
+
+def gui_soft_shadows_enabled() -> bool:
+    raw = os.environ.get("PC_AGENT_ENABLE_GUI_SHADOWS", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 class MainWindow(QMainWindow):
@@ -125,6 +131,8 @@ class MainWindow(QMainWindow):
                 w.setPlaceholderText(self._repair_text(w.placeholderText()))
 
     def _apply_soft_shadow(self, widget: QWidget, *, blur: int = 24, alpha: int = 28, y: int = 8) -> None:
+        if not gui_soft_shadows_enabled():
+            return
         effect = QGraphicsDropShadowEffect(widget)
         effect.setBlurRadius(blur)
         effect.setOffset(0, y)

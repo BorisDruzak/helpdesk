@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pc_agent.ui_gui.main_window import MainWindow
+from pc_agent.ui_gui.main_window import MainWindow, gui_soft_shadows_enabled
 from pc_agent.ui_gui.window_chrome import CustomTitleBar, FramelessResizeHandler
 
 
@@ -73,6 +73,14 @@ def test_main_window_keeps_sidebar_agent_status_card_for_version_and_update_stat
     assert "self.title_bar = CustomTitleBar" in setup_source
     assert "self.footer_status_block.hide()" not in setup_source
     assert "set_connection_status" not in render_source
+
+
+def test_main_window_soft_shadows_are_opt_in_for_low_cpu_default(monkeypatch):
+    monkeypatch.delenv("PC_AGENT_ENABLE_GUI_SHADOWS", raising=False)
+    assert gui_soft_shadows_enabled() is False
+
+    monkeypatch.setenv("PC_AGENT_ENABLE_GUI_SHADOWS", "1")
+    assert gui_soft_shadows_enabled() is True
 
 
 def test_main_window_collapses_sidebar_for_focused_ticket_and_create_workspaces():

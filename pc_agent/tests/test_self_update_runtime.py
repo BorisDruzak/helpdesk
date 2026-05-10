@@ -137,6 +137,57 @@ def test_apply_update_failure_removes_pending_and_writes_history(tmp_path):
     assert failed_pending["pending_payload"]["version"] == "2.0.0"
 
 
+def test_apply_update_prunes_old_version_directories_after_success(tmp_path, monkeypatch):
+    install_root = tmp_path / "install"
+    data_root = tmp_path / "data"
+    updates_dir = data_root / "updates"
+    downloads_dir = updates_dir / "downloads"
+    versions_dir = install_root / "versions"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    for version in ("3.1.33", "3.1.34", "3.1.35", "3.1.36", "3.1.37"):
+        version_dir = versions_dir / version
+        version_dir.mkdir()
+        (version_dir / "marker.txt").write_text(version, encoding="utf-8")
+    (install_root / "current.json").write_text(
+        json.dumps({"version": "3.1.37", "previous": "3.1.36"}),
+        encoding="utf-8",
+    )
+
+    artifact_path = downloads_dir / "build.zip"
+    with zipfile.ZipFile(artifact_path, "w") as zf:
+        zf.writestr("pc_agent.exe", "new binary")
+
+    pending_path = updates_dir / "pending_update.json"
+    pending_path.write_text(
+        json.dumps(
+            {
+                "version": "3.1.38",
+                "archive_type": "zip",
+                "artifact_path": str(artifact_path),
+                "operation_id": "op-prune-versions",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(installer_module, "run_verify", lambda *_args, **_kwargs: (True, "verify ok"))
+
+    ok, message = apply_update(install_root=install_root, data_root=data_root, pending_path=pending_path)
+
+    assert ok is True
+    assert message == "3.1.38"
+    assert sorted(path.name for path in versions_dir.iterdir() if path.is_dir()) == ["3.1.37", "3.1.38"]
+    assert (versions_dir / "3.1.37" / "marker.txt").read_text(encoding="utf-8") == "3.1.37"
+    assert (versions_dir / "3.1.38" / "pc_agent.exe").exists()
+    assert json.loads((install_root / "current.json").read_text(encoding="utf-8")) == {
+        "version": "3.1.38",
+        "previous": "3.1.37",
+    }
+
+
 def test_apply_update_publish_failure_restores_existing_version(tmp_path, monkeypatch):
     install_root = tmp_path / "install"
     data_root = tmp_path / "data"

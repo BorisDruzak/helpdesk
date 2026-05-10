@@ -17,7 +17,7 @@ import sys
 # Без зависимостей от pc_agent при импорте (launcher может быть отдельным бинарем)
 
 UPDATE_HISTORY_LIMIT = 100
-DOWNLOAD_RETENTION_LIMIT = 8
+DOWNLOAD_RETENTION_LIMIT = 2
 DB_BACKUP_RETENTION_LIMIT = 10
 
 
@@ -243,6 +243,29 @@ def _cleanup_update_artifacts(updates_dir: Path, artifact_path: Optional[Path]) 
         _prune_paths(list(downloads_dir.glob("*")), keep=DOWNLOAD_RETENTION_LIMIT)
     if db_backups_dir.exists():
         _prune_paths(list(db_backups_dir.glob("storage.db.*")), keep=DB_BACKUP_RETENTION_LIMIT)
+
+
+def _cleanup_old_versions(
+    versions_dir: Path,
+    *,
+    current_version: str,
+    previous_version: Optional[str],
+) -> None:
+    versions_dir = versions_dir.resolve()
+    keep_names = {name for name in (current_version, previous_version) if name}
+    if not versions_dir.exists():
+        return
+    for child in versions_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name in keep_names:
+            continue
+        try:
+            child.resolve().relative_to(versions_dir)
+        except ValueError:
+            continue
+        if child.name in {"_staging", "_backup_publish"} or not child.name.startswith("_"):
+            shutil.rmtree(child, ignore_errors=True)
 
 
 def _decode_subprocess_output(raw: Any) -> str:
@@ -490,6 +513,7 @@ def apply_update(
     except Exception as e:
         log(f"Publish failed: {e}")
         return fail_update("publish_failed", f"Publish failed: {e}")
+    _cleanup_old_versions(versions_dir, current_version=str(version), previous_version=previous)
     _append_history(
         history_path,
         {
