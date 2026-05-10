@@ -71,6 +71,7 @@ export function AppShell({ children }: AppShellProps) {
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <AppTopbar
+            canViewAdminConnectionRequests={hasAdmin}
             onLogout={() => void handleLogout()}
             onWorkspaceChange={handleWorkspaceChange}
             searchPlaceholder={getSearchPlaceholder(location.pathname)}

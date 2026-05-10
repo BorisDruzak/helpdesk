@@ -928,6 +928,45 @@ class SupportTicketMutationActionResult(BaseModel):
     archive_reason: str | None = None
 
 
+class SupportQueueMassActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str
+    ticket_ids: list[str] = Field(default_factory=list)
+    reason: str | None = None
+    comment: str | None = None
+    assignee_id: str | None = None
+    queue_id: int | None = None
+    priority: str | None = None
+    internal_note: str | None = None
+    tool_name: str | None = None
+    preset_id: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    mass_problem_key: str | None = None
+
+
+class SupportQueueMassActionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    ticket_code: str | None = None
+    status: str
+    action: str
+    message: str
+    result: SupportTicketMutationActionResult | SupportToolActionResult | None = None
+
+
+class SupportQueueMassActionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str
+    requested_count: int
+    success_count: int
+    skipped_count: int
+    error_count: int
+    results: list[SupportQueueMassActionItem] = Field(default_factory=list)
+
+
 class SupportWorkspaceCleanupResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

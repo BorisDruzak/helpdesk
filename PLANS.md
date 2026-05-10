@@ -108,7 +108,14 @@ Improve the existing support workspace without replacing the current interface o
   - ticket header actions move into `Ещё`, with `Взять себе` highlighted only for unassigned tickets;
   - remove inactive top/header buttons and move ticket search out of the global topbar;
   - improve ticket/chat grid sizing for narrow monitors.
-- Add deeper SLA policy details and passport edit forms when backend exposes more normalized workspace data.
+- [ ] Current cross-cutting slice:
+  - root-cause and fix the support-shell 403 on `/api/web/admin/connection_requests`;
+  - add real support queue mass-action handlers with per-ticket permission-safe results;
+  - persist queue table columns and saved workspace views without widening ticket access;
+  - finish drag-resize persistence by mode with constrained CSS-variable updates;
+  - add an overlay/drawer fallback for expanded queue/tools/SLA/passport modes below 1200px;
+  - update focused server/webapp tests and browser-check the deployed workspace.
+- [ ] Add deeper SLA policy details and passport edit forms when backend exposes more normalized workspace data.
 
 ## Manual Check After Deploy
 

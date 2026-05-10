@@ -116,6 +116,24 @@
     transition: grid-template-columns 180ms ease;
   }
 
+  .support-workspace__right-panel--drawer {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 40;
+    width: min(92vw, 760px);
+    max-width: calc(100vw - 2rem);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: -24px 0 60px rgba(0, 0, 0, 0.42);
+  }
+
+  .support-workspace[data-compact-layout="true"][data-mode="ticket"] .support-workspace__right-panel--drawer {
+    display: none;
+  }
+
+  .support-workspace[data-compact-layout="true"][data-mode="queue"] .support-workspace__mode-grid {
+    grid-template-columns: minmax(0, 1fr) 0 0 !important;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .support-workspace__mode-grid {
       transition: none;

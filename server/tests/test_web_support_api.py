@@ -95,6 +95,120 @@ async def test_web_support_queue_returns_empty_payload_when_db_is_unavailable(we
     assert payload["data"]["filters"]["status_options"] == [{"value": "all", "label": "Все статусы"}]
 
 
+@pytest.mark.asyncio
+async def test_web_support_queue_mass_action_adds_internal_notes(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code=f"mass_note_{uuid.uuid4().hex[:8]}", name="Mass note", members=["support-test"])
+        tickets = [
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                device_id=f"device-mass-note-{index}",
+                title=f"Mass note target {index}",
+                description="bulk note target",
+                status="queued",
+                requester_id=f"user-mass-note-{index}",
+                queue_id=queue.id,
+            )
+            for index in range(2)
+        ]
+        session.add_all(tickets)
+        ticket_ids = [ticket.ticket_id for ticket in tickets]
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/support/queue/mass-action",
+        headers=_support_headers(),
+        json={
+            "action": "internal_note",
+            "ticket_ids": ticket_ids,
+            "internal_note": "Проверили очередь массовым действием",
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["success_count"] == 2
+    assert payload["data"]["error_count"] == 0
+
+    async with session_maker() as session:
+        events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id.in_(ticket_ids))
+                .where(TicketEvent.event_type == "chat_message")
+            )
+        ).scalars().all()
+
+    assert len(events) == 2
+    assert {event.payload["visibility"] for event in events} == {"internal"}
+    assert {event.payload["bulk_action"] for event in events} == {True}
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_mass_action_skips_inaccessible_ticket(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        visible_queue = await _seed_queue(session, code=f"mass_visible_{uuid.uuid4().hex[:8]}", name="Mass visible", members=["support-test"])
+        hidden_queue = await _seed_queue(session, code=f"mass_hidden_{uuid.uuid4().hex[:8]}", name="Mass hidden", members=["other-support"])
+        visible_ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-mass-visible",
+            title="Visible mass target",
+            description="visible",
+            status="queued",
+            requester_id="user-visible",
+            queue_id=visible_queue.id,
+        )
+        hidden_ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-mass-hidden",
+            title="Hidden mass target",
+            description="hidden",
+            status="queued",
+            requester_id="user-hidden",
+            queue_id=hidden_queue.id,
+        )
+        session.add_all([visible_ticket, hidden_ticket])
+        visible_ticket_id = visible_ticket.ticket_id
+        hidden_ticket_id = hidden_ticket.ticket_id
+        await session.commit()
+
+    response = await test_client.post(
+            "/api/web/support/queue/mass-action",
+            headers=_support_headers(),
+            json={
+                "action": "assign_self",
+                "ticket_ids": [visible_ticket_id, hidden_ticket_id],
+                "reason": "triage",
+            },
+        )
+
+    assert response.status == 200, await response.text()
+    payload = (await response.json())["data"]
+    assert payload["success_count"] == 1
+    assert payload["skipped_count"] == 1
+    statuses = {item["ticket_id"]: item["status"] for item in payload["results"]}
+    assert statuses[visible_ticket_id] == "success"
+    assert statuses[hidden_ticket_id] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_mass_action_priority_requires_reason(test_client):
+    response = await test_client.post(
+        "/api/web/support/queue/mass-action",
+        headers=_support_headers(),
+        json={"action": "change_priority", "ticket_ids": [str(uuid.uuid4())], "priority": "P1", "reason": ""},
+    )
+
+    assert response.status == 400
+    payload = await response.json()
+    assert payload["error_code"] == "VALIDATION_ERROR"
+
+
 def _support_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}
 

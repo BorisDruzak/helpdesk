@@ -15,6 +15,7 @@ type WorkspaceOption = {
 };
 
 type AppTopbarProps = {
+  canViewAdminConnectionRequests: boolean;
   onLogout: () => void;
   onWorkspaceChange: (event: ChangeEvent<HTMLSelectElement>) => void;
   searchPlaceholder: string;
@@ -39,6 +40,7 @@ async function fetchUnreadNotificationCount(): Promise<number> {
 }
 
 export function AppTopbar({
+  canViewAdminConnectionRequests,
   onLogout,
   onWorkspaceChange,
   searchPlaceholder,
@@ -62,7 +64,7 @@ export function AppTopbar({
   const pendingConnectionsQuery = useQuery({
     queryKey: ["shell-pending-connection-requests"],
     queryFn: fetchAdminConnectionRequests,
-    enabled: isAdminWorkspace,
+    enabled: isAdminWorkspace && canViewAdminConnectionRequests,
     retry: false,
     refetchInterval: 5_000
   });

@@ -95,6 +95,39 @@ export type SupportWorkspaceSummaryPayload = {
   smart_view_options: SupportFilterOption[];
 };
 
+export type SupportQueueMassAction = "assign_self" | "assign" | "change_queue" | "change_priority" | "internal_note" | "run_diagnostics" | "link_mass_problem";
+
+export type SupportQueueMassActionRequest = {
+  action: SupportQueueMassAction;
+  ticket_ids: string[];
+  reason?: string | null;
+  comment?: string | null;
+  assignee_id?: string | null;
+  queue_id?: number | null;
+  priority?: string | null;
+  internal_note?: string | null;
+  tool_name?: string | null;
+  preset_id?: string | null;
+  params?: Record<string, unknown>;
+  mass_problem_key?: string | null;
+};
+
+export type SupportQueueMassActionResult = {
+  action: SupportQueueMassAction;
+  requested_count: number;
+  success_count: number;
+  skipped_count: number;
+  error_count: number;
+  results: Array<{
+    ticket_id: string;
+    ticket_code: string | null;
+    status: "success" | "skipped" | "error";
+    action: string;
+    message: string;
+    result?: unknown;
+  }>;
+};
+
 export type SupportTicketDetailPayload = {
   ticket: {
     ticket_id: string;
@@ -995,6 +1028,29 @@ export async function fetchSupportQueue(params: SupportQueueParams): Promise<Sup
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить очередь поддержки",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function postSupportQueueMassAction(request: SupportQueueMassActionRequest): Promise<SupportQueueMassActionResult> {
+  const response = await fetch("/api/web/support/queue/mass-action", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+  const payload = await readJson<SuccessResponse<SupportQueueMassActionResult> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось выполнить массовое действие",
       response.status,
       errorPayload?.error_code
     );

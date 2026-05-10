@@ -67,7 +67,9 @@ import {
   postSupportTicketUnarchive,
   postSupportTicketUnhide,
   postSupportTicketWorklog,
+  postSupportQueueMassAction,
   postSupportWorkspaceCleanupNoise,
+  type SupportQueueMassActionRequest,
   type SupportQueueScope,
   type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
@@ -123,6 +125,7 @@ type ToolsWorkspaceTab = "quick" | "playbook" | "remote" | "operations" | "histo
 type SlaWorkspaceTab = "overview" | "ola" | "escalations" | "history";
 type PassportWorkspaceTab = "sections" | "evidence" | "operations" | "readiness";
 type WorkspaceColumnSizes = { left: number; right: number };
+type WorkspaceColumnsByMode = Partial<Record<WorkspaceMode, WorkspaceColumnSizes>>;
 type WorkspaceGridPreset = { left: string; center: string; right: string };
 type WorkspaceResizeState = {
   pane: WorkspaceResizePane;
@@ -156,13 +159,22 @@ type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
-const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 300, right: 340 };
-const WORKSPACE_COLUMN_LIMITS = {
-  leftMin: 260,
-  leftMax: 460,
-  rightMin: 320,
-  rightMax: 560,
-  centerMin: 520,
+const DEFAULT_WORKSPACE_COLUMNS_BY_MODE: Record<WorkspaceMode, WorkspaceColumnSizes> = {
+  ticket: { left: 300, right: 340 },
+  queue: { left: 760, right: 72 },
+  tools: { left: 300, right: 760 },
+  sla: { left: 300, right: 760 },
+  passport: { left: 300, right: 820 },
+};
+const WORKSPACE_COLUMN_LIMITS_BY_MODE: Record<
+  WorkspaceMode,
+  { leftMin: number; leftMax: number; rightMin: number; rightMax: number; centerMin: number }
+> = {
+  ticket: { leftMin: 260, leftMax: 420, rightMin: 300, rightMax: 460, centerMin: 560 },
+  queue: { leftMin: 620, leftMax: 940, rightMin: 56, rightMax: 220, centerMin: 320 },
+  tools: { leftMin: 260, leftMax: 360, rightMin: 560, rightMax: 980, centerMin: 360 },
+  sla: { leftMin: 260, leftMax: 360, rightMin: 580, rightMax: 980, centerMin: 380 },
+  passport: { leftMin: 260, leftMax: 360, rightMin: 620, rightMax: 1040, centerMin: 360 },
 };
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
@@ -176,72 +188,100 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
-function normalizeWorkspaceColumns(sizes: WorkspaceColumnSizes, viewportWidth: number): WorkspaceColumnSizes {
-  let left = clampNumber(sizes.left, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax);
-  let right = clampNumber(sizes.right, WORKSPACE_COLUMN_LIMITS.rightMin, WORKSPACE_COLUMN_LIMITS.rightMax);
+function normalizeWorkspaceColumnsForMode(mode: WorkspaceMode, sizes: WorkspaceColumnSizes, viewportWidth: number): WorkspaceColumnSizes {
+  const limits = WORKSPACE_COLUMN_LIMITS_BY_MODE[mode];
+  let left = clampNumber(sizes.left, limits.leftMin, limits.leftMax);
+  let right = clampNumber(sizes.right, limits.rightMin, limits.rightMax);
   const maxSidebarsWidth = Math.max(
-    WORKSPACE_COLUMN_LIMITS.leftMin + WORKSPACE_COLUMN_LIMITS.rightMin,
-    viewportWidth - WORKSPACE_COLUMN_LIMITS.centerMin,
+    limits.leftMin + limits.rightMin,
+    viewportWidth - limits.centerMin,
   );
   if (left + right > maxSidebarsWidth) {
-    const rightReduction = Math.min(right - WORKSPACE_COLUMN_LIMITS.rightMin, left + right - maxSidebarsWidth);
+    const rightReduction = Math.min(right - limits.rightMin, left + right - maxSidebarsWidth);
     right -= rightReduction;
     const remainingOverflow = left + right - maxSidebarsWidth;
     if (remainingOverflow > 0) {
-      left = clampNumber(left - remainingOverflow, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax);
+      left = clampNumber(left - remainingOverflow, limits.leftMin, limits.leftMax);
     }
   }
   return { left, right };
 }
 
-function getInitialWorkspaceColumns(): WorkspaceColumnSizes {
+function normalizeWorkspaceColumnsByMode(columnsByMode: WorkspaceColumnsByMode, viewportWidth: number): WorkspaceColumnsByMode {
+  return (Object.keys(DEFAULT_WORKSPACE_COLUMNS_BY_MODE) as WorkspaceMode[]).reduce<WorkspaceColumnsByMode>((accumulator, mode) => {
+    accumulator[mode] = normalizeWorkspaceColumnsForMode(
+      mode,
+      columnsByMode[mode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[mode],
+      viewportWidth,
+    );
+    return accumulator;
+  }, {});
+}
+
+function getInitialWorkspaceColumnsByMode(): WorkspaceColumnsByMode {
   if (typeof window === "undefined") {
-    return DEFAULT_WORKSPACE_COLUMNS;
+    return DEFAULT_WORKSPACE_COLUMNS_BY_MODE;
   }
   const viewportWidth = window.innerWidth || 1366;
   try {
     const raw = window.localStorage.getItem(SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY);
     if (!raw) {
-      return normalizeWorkspaceColumns(DEFAULT_WORKSPACE_COLUMNS, viewportWidth);
+      return normalizeWorkspaceColumnsByMode(DEFAULT_WORKSPACE_COLUMNS_BY_MODE, viewportWidth);
     }
-    const parsed = JSON.parse(raw) as Partial<WorkspaceColumnSizes>;
-    return normalizeWorkspaceColumns({
-      left: clampNumber(Number(parsed.left) || DEFAULT_WORKSPACE_COLUMNS.left, WORKSPACE_COLUMN_LIMITS.leftMin, WORKSPACE_COLUMN_LIMITS.leftMax),
-      right: clampNumber(Number(parsed.right) || DEFAULT_WORKSPACE_COLUMNS.right, WORKSPACE_COLUMN_LIMITS.rightMin, WORKSPACE_COLUMN_LIMITS.rightMax),
-    }, viewportWidth);
+    const parsed = JSON.parse(raw) as Partial<WorkspaceColumnSizes & WorkspaceColumnsByMode>;
+    if (typeof parsed.left === "number" || typeof parsed.right === "number") {
+      return normalizeWorkspaceColumnsByMode(
+        {
+          ...DEFAULT_WORKSPACE_COLUMNS_BY_MODE,
+          ticket: {
+            left: Number(parsed.left) || DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket.left,
+            right: Number(parsed.right) || DEFAULT_WORKSPACE_COLUMNS_BY_MODE.ticket.right,
+          },
+        },
+        viewportWidth,
+      );
+    }
+    return normalizeWorkspaceColumnsByMode(parsed as WorkspaceColumnsByMode, viewportWidth);
   } catch {
-    return normalizeWorkspaceColumns(DEFAULT_WORKSPACE_COLUMNS, viewportWidth);
+    return normalizeWorkspaceColumnsByMode(DEFAULT_WORKSPACE_COLUMNS_BY_MODE, viewportWidth);
   }
 }
 
 function getWorkspaceGridPreset(mode: WorkspaceMode, columns: WorkspaceColumnSizes, viewportWidth: number): WorkspaceGridPreset {
   const isNarrow = viewportWidth < 1366;
   const isCompact = viewportWidth < 1200;
+  if (isCompact) {
+    if (mode === "queue") {
+      return { left: "minmax(0, 1fr)", center: "0px", right: "0px" };
+    }
+    if (mode === "ticket") {
+      return { left: "260px", center: "minmax(480px, 1fr)", right: "0px" };
+    }
+    return { left: "260px", center: "minmax(480px, 1fr)", right: "0px" };
+  }
   if (mode === "ticket") {
     return {
       left: `${isNarrow ? Math.min(columns.left, 280) : columns.left}px`,
-      center: `minmax(${isCompact ? 520 : isNarrow ? 560 : 620}px, 1fr)`,
+      center: `minmax(${isNarrow ? 560 : 620}px, 1fr)`,
       right: `${isNarrow ? Math.min(columns.right, 300) : columns.right}px`,
     };
   }
   if (mode === "queue") {
-    return isCompact
-      ? { left: "minmax(660px, 1.8fr)", center: "minmax(300px, 0.55fr)", right: "56px" }
-      : { left: "minmax(720px, 1.75fr)", center: "minmax(320px, 0.6fr)", right: "64px" };
+    return { left: `${columns.left}px`, center: "minmax(320px, 1fr)", right: `${columns.right}px` };
   }
   if (mode === "tools") {
     return isNarrow
-      ? { left: "280px", center: "minmax(320px, 360px)", right: "minmax(520px, 1fr)" }
-      : { left: "320px", center: "minmax(380px, 420px)", right: "minmax(680px, 1fr)" };
+      ? { left: `${Math.min(columns.left, 280)}px`, center: "minmax(320px, 1fr)", right: `${Math.min(columns.right, 720)}px` }
+      : { left: `${columns.left}px`, center: "minmax(380px, 1fr)", right: `${columns.right}px` };
   }
   if (mode === "sla") {
     return isNarrow
-      ? { left: "280px", center: "minmax(320px, 380px)", right: "minmax(520px, 1fr)" }
-      : { left: "320px", center: "minmax(400px, 460px)", right: "minmax(680px, 1fr)" };
+      ? { left: `${Math.min(columns.left, 280)}px`, center: "minmax(340px, 1fr)", right: `${Math.min(columns.right, 720)}px` }
+      : { left: `${columns.left}px`, center: "minmax(400px, 1fr)", right: `${columns.right}px` };
   }
   return isNarrow
-    ? { left: "280px", center: "minmax(320px, 360px)", right: "minmax(560px, 1fr)" }
-    : { left: "320px", center: "minmax(380px, 420px)", right: "minmax(720px, 1fr)" };
+    ? { left: `${Math.min(columns.left, 280)}px`, center: "minmax(320px, 1fr)", right: `${Math.min(columns.right, 740)}px` }
+    : { left: `${columns.left}px`, center: "minmax(380px, 1fr)", right: `${columns.right}px` };
 }
 
 function getWorkspaceGridStyle(mode: WorkspaceMode, columns: WorkspaceColumnSizes, viewportWidth: number): CSSProperties {
@@ -1133,7 +1173,7 @@ export function TicketListPage() {
   const [worklogNote, setWorklogNote] = useState("");
   const [showArchive, setShowArchive] = useState(false);
   const [workspaceTheme, setWorkspaceTheme] = useState<SupportWorkspaceTheme>(() => getInitialSupportWorkspaceTheme());
-  const [workspaceColumns, setWorkspaceColumns] = useState<WorkspaceColumnSizes>(() => getInitialWorkspaceColumns());
+  const [workspaceColumnsByMode, setWorkspaceColumnsByMode] = useState<WorkspaceColumnsByMode>(() => getInitialWorkspaceColumnsByMode());
   const [workspaceViewportWidth, setWorkspaceViewportWidth] = useState(() => (typeof window === "undefined" ? 1366 : window.innerWidth || 1366));
   const [resizingPane, setResizingPane] = useState<WorkspaceResizePane | null>(null);
   const [automationCatalogFilter, setAutomationCatalogFilter] = useState<AutomationCatalogFilter>("all");
@@ -1143,6 +1183,10 @@ export function TicketListPage() {
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
+  const workspaceColumns = workspaceColumnsByMode[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
+  const isCompactWorkspace = workspaceViewportWidth < 1200;
+  const rightPanelInDrawer = isCompactWorkspace && workspaceMode !== "queue";
+  const canResizeWorkspace = workspaceViewportWidth >= 1200;
 
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
@@ -1186,7 +1230,7 @@ export function TicketListPage() {
 
   useEffect(() => {
     const handleViewportResize = () => {
-      setWorkspaceColumns((current) => normalizeWorkspaceColumns(current, window.innerWidth || 1366));
+      setWorkspaceColumnsByMode((current) => normalizeWorkspaceColumnsByMode(current, window.innerWidth || 1366));
     };
     window.addEventListener("resize", handleViewportResize);
     return () => window.removeEventListener("resize", handleViewportResize);
@@ -1194,11 +1238,11 @@ export function TicketListPage() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY, JSON.stringify(workspaceColumns));
+      window.localStorage.setItem(SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY, JSON.stringify(workspaceColumnsByMode));
     } catch {
       // Layout persistence is best-effort; the workspace stays usable without localStorage.
     }
-  }, [workspaceColumns]);
+  }, [workspaceColumnsByMode]);
 
   useEffect(() => {
     const handleResize = () => setWorkspaceViewportWidth(window.innerWidth || 1366);
@@ -1222,24 +1266,32 @@ export function TicketListPage() {
       }
       const delta = event.clientX - resizeState.startX;
       const viewportWidth = window.innerWidth || 1366;
-      setWorkspaceColumns((current) => {
+      setWorkspaceColumnsByMode((current) => {
+        const currentSizes = current[workspaceMode] ?? DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode];
+        const limits = WORKSPACE_COLUMN_LIMITS_BY_MODE[workspaceMode];
         if (resizeState.pane === "left") {
           const maxLeft = Math.min(
-            WORKSPACE_COLUMN_LIMITS.leftMax,
-            viewportWidth - current.right - WORKSPACE_COLUMN_LIMITS.centerMin,
+            limits.leftMax,
+            viewportWidth - currentSizes.right - limits.centerMin,
           );
           return {
             ...current,
-            left: clampNumber(resizeState.startLeft + delta, WORKSPACE_COLUMN_LIMITS.leftMin, maxLeft),
+            [workspaceMode]: {
+              ...currentSizes,
+              left: clampNumber(resizeState.startLeft + delta, limits.leftMin, maxLeft),
+            },
           };
         }
         const maxRight = Math.min(
-          WORKSPACE_COLUMN_LIMITS.rightMax,
-          viewportWidth - current.left - WORKSPACE_COLUMN_LIMITS.centerMin,
+          limits.rightMax,
+          viewportWidth - currentSizes.left - limits.centerMin,
         );
         return {
           ...current,
-          right: clampNumber(resizeState.startRight - delta, WORKSPACE_COLUMN_LIMITS.rightMin, maxRight),
+          [workspaceMode]: {
+            ...currentSizes,
+            right: clampNumber(resizeState.startRight - delta, limits.rightMin, maxRight),
+          },
         };
       });
     };
@@ -1259,7 +1311,7 @@ export function TicketListPage() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [resizingPane]);
+  }, [resizingPane, workspaceMode]);
 
   const queueQuery = useQuery({
     queryKey: ["tickets-workspace-queue", scope, smartView, deferredSearch, showArchive],
@@ -1580,6 +1632,18 @@ export function TicketListPage() {
     },
   });
 
+  const queueMassActionMutation = useMutation({
+    mutationFn: (request: SupportQueueMassActionRequest) => postSupportQueueMassAction(request),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["support-workspace-summary"] }),
+        selectedTicketId ? queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }) : Promise.resolve(),
+        selectedTicketId ? queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }) : Promise.resolve(),
+      ]);
+    },
+  });
+
   const resolutionCloseMutation = useMutation({
     mutationFn: async (draft: ResolutionCloseDraft) => {
       if (!selectedTicketId) {
@@ -1844,10 +1908,22 @@ export function TicketListPage() {
     setResizingPane(pane);
   }
 
+  function resetWorkspaceColumnsForCurrentMode() {
+    setWorkspaceColumnsByMode((current) => ({
+      ...current,
+      [workspaceMode]: normalizeWorkspaceColumnsForMode(
+        workspaceMode,
+        DEFAULT_WORKSPACE_COLUMNS_BY_MODE[workspaceMode],
+        workspaceViewportWidth,
+      ),
+    }));
+  }
+
   return (
     <section
       className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
       data-testid="support-workspace-root"
+      data-compact-layout={isCompactWorkspace ? "true" : "false"}
       data-mode={workspaceMode}
       data-theme={workspaceTheme}
     >
@@ -1865,14 +1941,16 @@ export function TicketListPage() {
 
       <div
         className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
+        data-overlay-right={rightPanelInDrawer ? "true" : "false"}
         style={getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth)}
       >
-        {workspaceMode === "ticket" ? <button
+        {canResizeWorkspace ? <button
           aria-label="Изменить ширину левой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 -translate-x-1/2 cursor-col-resize ${
             resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
           }`}
           onPointerDown={(event) => startColumnResize("left", event)}
+          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
           style={{ left: `${workspaceColumns.left}px` }}
           title="Потяните, чтобы изменить ширину списка тикетов"
           type="button"
@@ -1881,12 +1959,13 @@ export function TicketListPage() {
             <GripVertical className="h-4 w-4" />
           </span>
         </button> : null}
-        {workspaceMode === "ticket" ? <button
+        {canResizeWorkspace ? <button
           aria-label="Изменить ширину правой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 translate-x-1/2 cursor-col-resize ${
             resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
           }`}
           onPointerDown={(event) => startColumnResize("right", event)}
+          onDoubleClick={resetWorkspaceColumnsForCurrentMode}
           style={{ right: `${workspaceColumns.right}px` }}
           title="Потяните, чтобы изменить ширину контекстной панели"
           type="button"
@@ -1900,8 +1979,11 @@ export function TicketListPage() {
             <QueueExplorer
               activeQueueId={activeQueueId}
               cleanupNoisePending={cleanupNoiseMutation.isPending}
+              massActionPending={queueMassActionMutation.isPending}
+              massActionResult={queueMassActionMutation.data ?? null}
               onActiveQueueChange={setActiveQueueId}
               onCleanupNoise={() => cleanupNoiseMutation.mutate()}
+              onMassAction={(request) => queueMassActionMutation.mutate(request)}
               onOpenTicket={openTicket}
               onScopeChange={setScope}
               onSearchChange={setSearch}
@@ -2764,7 +2846,11 @@ export function TicketListPage() {
           ) : null}
         </main>
 
-        <aside className="flex min-h-0 flex-col bg-[#0b1624]">
+        <aside
+          className={`flex min-h-0 flex-col bg-[#0b1624] ${
+            rightPanelInDrawer ? "support-workspace__right-panel--drawer" : ""
+          }`}
+        >
           {workspaceMode === "queue" ? (
             <div className="flex min-h-0 flex-1">
               <button

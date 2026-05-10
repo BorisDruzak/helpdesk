@@ -88,6 +88,9 @@ from web_api.dto.support import (
     SupportFilterOption,
     SupportMessageActionResult,
     SupportObserverCapabilities,
+    SupportQueueMassActionItem,
+    SupportQueueMassActionRequest,
+    SupportQueueMassActionResult,
     SupportQueueFilters,
     SupportQueueCountItem,
     SupportQueuePayload,
@@ -3066,6 +3069,311 @@ async def handle_web_support_unarchive_ticket(request: web.Request):
         event_type="ticket_unarchived_from_workspace",
         admin_only=True,
     )
+
+
+def _mass_action_item(
+    *,
+    ticket_id: str,
+    action: str,
+    status: str,
+    message: str,
+    ticket_code: str | None = None,
+    result: SupportTicketMutationActionResult | SupportToolActionResult | None = None,
+) -> SupportQueueMassActionItem:
+    return SupportQueueMassActionItem(
+        ticket_id=ticket_id,
+        ticket_code=ticket_code,
+        status=status,
+        action=action,
+        message=message,
+        result=result,
+    )
+
+
+def _normalize_mass_action_ids(raw_ids: list[str]) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for raw_id in raw_ids:
+        ticket_id = str(raw_id or "").strip()
+        if not ticket_id or ticket_id in seen:
+            continue
+        seen.add(ticket_id)
+        ids.append(ticket_id)
+    return ids
+
+
+async def _support_mass_action_internal_note(
+    *,
+    repo: TicketEventsRepo,
+    ticket: Any,
+    auth_context: Any,
+    text: str,
+) -> tuple[Any, dict[str, Any]]:
+    message_id = str(uuid.uuid4())
+    payload = {
+        "message_id": message_id,
+        "sender_role": _message_role_from_auth(auth_context),
+        "sender_display_name": auth_context.actor_id,
+        "from": _message_role_from_auth(auth_context),
+        "text": text,
+        "visibility": "internal",
+        "bulk_action": True,
+    }
+    payload = enrich_chat_payload_with_requester_name(ticket, payload)
+    result = await repo.add_event(
+        ticket_id=ticket.ticket_id,
+        device_id=ticket.device_id,
+        agent_seq=None,
+        event_type="chat_message",
+        payload=payload,
+        event_id=message_id,
+    )
+    return result, payload
+
+
+@require_auth("admin", "support")
+async def handle_web_support_queue_mass_action(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        payload = SupportQueueMassActionRequest.model_validate(data)
+    except Exception as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+
+    action = payload.action.strip().lower()
+    ticket_ids = _normalize_mass_action_ids(payload.ticket_ids)
+    supported_actions = {
+        "assign_self",
+        "assign",
+        "change_queue",
+        "change_priority",
+        "internal_note",
+        "run_diagnostics",
+        "link_mass_problem",
+    }
+    if action not in supported_actions:
+        return _support_json_error("Неподдерживаемое массовое действие", status=400, error_code="VALIDATION_ERROR")
+    if not ticket_ids:
+        return _support_json_error("Нужно выбрать хотя бы один тикет", status=400, error_code="VALIDATION_ERROR")
+    if len(ticket_ids) > 100:
+        return _support_json_error("За один раз можно обработать не больше 100 тикетов", status=400, error_code="VALIDATION_ERROR")
+    raw_reason = (payload.reason or "").strip()
+    reason = raw_reason or "support_queue_mass_action"
+    if action == "change_priority" and len(raw_reason) < 3:
+        return _support_json_error("Для смены приоритета нужна причина", status=400, error_code="VALIDATION_ERROR")
+    if action == "change_queue" and payload.queue_id is None:
+        return _support_json_error("Для смены очереди нужен queue_id", status=400, error_code="VALIDATION_ERROR")
+    if action == "internal_note" and not (payload.internal_note or "").strip():
+        return _support_json_error("Для внутренней заметки нужен текст", status=400, error_code="VALIDATION_ERROR")
+    if action == "run_diagnostics" and not (payload.tool_name or "").strip():
+        return _support_json_error("Для массовой диагностики нужно имя инструмента", status=400, error_code="VALIDATION_ERROR")
+
+    permission_by_action = {
+        "assign_self": "ticket.assign",
+        "assign": "ticket.assign",
+        "change_queue": "ticket.queue.change",
+        "change_priority": "ticket.status.change",
+        "internal_note": "ticket.comment.internal",
+        "run_diagnostics": "ticket.tool.run",
+        "link_mass_problem": "ticket.comment.internal",
+    }
+    auth_context = request["auth_context"]
+    results: list[SupportQueueMassActionItem] = []
+    pushed_events: list[tuple[str, Any, str, dict[str, Any]]] = []
+    requested_set = set(ticket_ids)
+
+    try:
+        async with get_session() as session:
+            denied = await _require_permission(session, auth_context, permission_by_action[action])
+            if denied:
+                return denied
+            state = await _load_support_queue_state(
+                session,
+                auth_context,
+                limit=2000,
+                include_hidden=False,
+                include_archived=False,
+            )
+            accessible_ids = {
+                str(ticket_data.get("ticket_id") or "")
+                for ticket_data, _item in state.accessible_entries
+                if str(ticket_data.get("ticket_id") or "") in requested_set
+            }
+            repo = TicketEventsRepo(session)
+            tool_service = ToolExecutionService(request.app["state"])
+
+            for ticket_id in ticket_ids:
+                if ticket_id not in accessible_ids:
+                    results.append(_mass_action_item(ticket_id=ticket_id, action=action, status="skipped", message="Тикет недоступен текущей роли или очередям"))
+                    continue
+                ticket = await repo.get_ticket(ticket_id)
+                if ticket is None:
+                    results.append(_mass_action_item(ticket_id=ticket_id, action=action, status="skipped", message="Тикет не найден"))
+                    continue
+                ticket_code = getattr(ticket, "ticket_code", None)
+                try:
+                    if action in {"assign_self", "assign"}:
+                        assignment_service = TicketAssignmentService(repo)
+                        requested_assignee_id = auth_context.actor_id if action == "assign_self" else payload.assignee_id
+                        auto_assign = action == "assign" and not requested_assignee_id
+                        selection = await assignment_service.resolve_assignee(ticket, requested_assignee_id=requested_assignee_id, auto_assign=auto_assign)
+                        assignee_id = selection["assignee_id"]
+                        event_result = await assignment_service.assign_ticket(
+                            ticket.ticket_id,
+                            ticket.device_id,
+                            assignee_id,
+                            actor_id=auth_context.actor_id,
+                            actor_role=auth_context.actor_role,
+                            reason=reason,
+                            comment=payload.comment,
+                            old_assignee=getattr(ticket, "assignee_id", None),
+                            auto_assigned=auto_assign,
+                            active_count=selection["active_count"],
+                            limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
+                            db_session=session,
+                            close_ola=True,
+                        )
+                        await session.commit()
+                        event_payload = {
+                            "field_name": "assignee_id",
+                            "old_value": getattr(ticket, "assignee_id", None),
+                            "new_value": assignee_id,
+                            "assignee_id": assignee_id,
+                            "actor_id": auth_context.actor_id,
+                            "actor_role": auth_context.actor_role,
+                            "bulk_action": True,
+                            "reason": reason,
+                            "auto_assigned": auto_assign,
+                        }
+                        pushed_events.append((ticket.ticket_id, event_result, "assignee_changed", event_payload))
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Исполнитель назначен", result=await _support_mutation_result(session, refreshed, action="assign", auto_assigned=auto_assign)))
+                        continue
+
+                    if action == "change_queue":
+                        old_queue_id = ticket.queue_id
+                        queue_id = int(payload.queue_id)
+                        await repo.update_ticket(ticket.ticket_id, queue_id=queue_id, custom_fields=set_routing_lock(getattr(ticket, "custom_fields", None), reason), manual_rank=None, manual_rank_updated_at=None, manual_rank_updated_by=None)
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        try:
+                            await close_ola_processing(session, ticket.ticket_id, trigger="queue_changed")
+                            await start_ola_for_ticket(session, refreshed, trigger="queue_changed")
+                        except Exception as exc:
+                            logger.warning(f"[web_support_queue_mass_action] OLA update failed ticket_id={ticket.ticket_id} err={exc}")
+                        event_payload = {"queue_id": queue_id, "previous_queue_id": old_queue_id, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "reason": reason, "bulk_action": True}
+                        event_result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="queue_changed", payload=event_payload)
+                        await session.commit()
+                        pushed_events.append((ticket.ticket_id, event_result, "queue_changed", event_payload))
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Очередь изменена", result=await _support_mutation_result(session, refreshed, action="queue")))
+                        continue
+
+                    if action == "change_priority":
+                        normalized = normalize_ticket_priority_inputs(*_priority_request_to_inputs({"priority": payload.priority, "reason": reason}))
+                        custom_fields = merge_requester_custom_fields(getattr(ticket, "custom_fields", None), priority_class=normalized["priority_class"])
+                        await repo.update_ticket(ticket.ticket_id, urgency=normalized["urgency"], importance=normalized["importance"], urgency_reason=normalized["urgency_reason"], importance_reason=normalized["importance_reason"], priority=normalized["legacy_priority"], custom_fields=custom_fields)
+                        await TicketSlaService(session, repo).recalc_due_for_priority(ticket.ticket_id, normalized["legacy_priority"])
+                        event_payload = {"priority_class": normalized["priority_class"], "priority": normalized["legacy_priority"], "reason": reason, "actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role, "bulk_action": True}
+                        event_result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="priority_changed", payload=event_payload)
+                        await session.commit()
+                        pushed_events.append((ticket.ticket_id, event_result, "priority_changed", event_payload))
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Приоритет изменён", result=await _support_mutation_result(session, refreshed, action="priority")))
+                        continue
+
+                    if action == "internal_note":
+                        event_result, event_payload = await _support_mass_action_internal_note(repo=repo, ticket=ticket, auth_context=auth_context, text=(payload.internal_note or "").strip())
+                        await session.commit()
+                        pushed_events.append((ticket.ticket_id, event_result, "chat_message", event_payload))
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Внутренняя заметка добавлена", result=await _support_mutation_result(session, refreshed, action="internal_note")))
+                        continue
+
+                    if action == "link_mass_problem":
+                        event_payload = {
+                            "mass_problem_key": (payload.mass_problem_key or "").strip() or f"mass-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+                            "related_ticket_ids": ticket_ids,
+                            "actor_id": auth_context.actor_id,
+                            "actor_role": auth_context.actor_role,
+                            "reason": reason,
+                            "bulk_action": True,
+                        }
+                        event_result = await repo.add_event(ticket_id=ticket.ticket_id, device_id=ticket.device_id, agent_seq=None, event_type="mass_problem_linked", payload=event_payload)
+                        await session.commit()
+                        pushed_events.append((ticket.ticket_id, event_result, "mass_problem_linked", event_payload))
+                        refreshed = await repo.get_ticket(ticket.ticket_id)
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Связь с массовой проблемой добавлена", result=await _support_mutation_result(session, refreshed, action="link_mass_problem")))
+                        continue
+
+                    if action == "run_diagnostics":
+                        device_id = str(getattr(ticket, "device_id", "") or "").strip()
+                        if not device_id:
+                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="skipped", message="Тикет не привязан к устройству"))
+                            continue
+                        tool_name = (payload.tool_name or "").strip()
+                        risk_level = await _resolve_tool_risk_level(tool_service=tool_service, device_id=device_id, tool_name=tool_name)
+                        if not await can(session, auth_context, _tool_risk_permission(risk_level)):
+                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="skipped", message=f"Недостаточно прав для инструмента: {_tool_risk_permission(risk_level)}"))
+                            continue
+                        operation_id = str(uuid.uuid4())
+                        params = await _build_tool_params_for_dispatch(
+                            tool_service=tool_service,
+                            device_id=device_id,
+                            tool_name=tool_name,
+                            params=payload.params,
+                            preset_id=payload.preset_id,
+                            operation_id=operation_id,
+                        )
+                        dispatch = await tool_service.run_tool(
+                            device_id=device_id,
+                            ticket_id=ticket.ticket_id,
+                            tool_name=tool_name,
+                            params=params,
+                            call_id=str(uuid.uuid4()),
+                            auth_context=auth_context,
+                            wait_for_result=False,
+                        )
+                        dispatch_status = str(dispatch.get("status") or "accepted")
+                        if dispatch_status != "accepted":
+                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="error", message=str(dispatch.get("error") or "Инструмент не поставлен в очередь")))
+                            continue
+                        resolved_operation_id = str(dispatch.get("operation_id") or operation_id)
+                        tool_result = SupportToolActionResult(
+                            ticket_id=ticket.ticket_id,
+                            device_id=device_id,
+                            tool_name=tool_name,
+                            dispatch_status=dispatch_status,
+                            operation_id=resolved_operation_id,
+                            poll_url=str(dispatch.get("poll_url") or f"/api/operations/{resolved_operation_id}"),
+                            trace_id=dispatch.get("trace_id"),
+                            message="Инструмент поставлен в очередь выполнения",
+                        )
+                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Диагностика запущена", result=tool_result))
+                        continue
+                except Exception as exc:
+                    await session.rollback()
+                    logger.warning(f"[web_support_queue_mass_action] item failed: ticket_id={ticket_id} action={action} error={exc}")
+                    results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="error", message=str(exc) or "Действие не выполнено"))
+
+        for ticket_id, event_result, event_type, event_payload in pushed_events:
+            await _push_ticket_event(request, ticket_id, event_result, event_type, event_payload)
+    except Exception as exc:
+        logger.warning(f"[web_support_queue_mass_action] failed: action={action} error={exc}")
+        return _support_json_error("Не удалось выполнить массовое действие", status=503, error_code="MASS_ACTION_FAILED")
+
+    success_count = sum(1 for item in results if item.status == "success")
+    skipped_count = sum(1 for item in results if item.status == "skipped")
+    error_count = sum(1 for item in results if item.status == "error")
+    result_payload = SupportQueueMassActionResult(
+        action=action,
+        requested_count=len(ticket_ids),
+        success_count=success_count,
+        skipped_count=skipped_count,
+        error_count=error_count,
+        results=results,
+    )
+    return json_model_response(SuccessResponse[SupportQueueMassActionResult](data=result_payload))
 
 
 @require_auth("admin", "support")
