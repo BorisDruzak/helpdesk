@@ -2861,6 +2861,7 @@ export function TicketListPage() {
                     void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
                     void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
                   }}
+                  permissions={session?.permissions ?? []}
                   ticketId={selectedTicket.id}
                 />
                 {viewModel.right.operations.length ? (

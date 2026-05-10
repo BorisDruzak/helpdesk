@@ -82,6 +82,7 @@ type RemoteAssistPanelProps = {
   ticketId: string;
   deviceId: string | null;
   deviceOnline: boolean;
+  permissions?: string[];
   onChanged?: () => void;
 };
 
@@ -91,7 +92,7 @@ export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboard
   };
 }
 
-export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged }: RemoteAssistPanelProps) {
+export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permissions = [], onChanged }: RemoteAssistPanelProps) {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [viewerSessionId, setViewerSessionId] = useState<string | null>(null);
@@ -118,6 +119,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
   const latestSession = useMemo<RemoteAssistSession | null>(() => sessionsQuery.data?.[0] ?? null, [sessionsQuery.data]);
   const activeOrWaiting = latestSession && ["waiting_consent", "approved", "starting", "active"].includes(latestSession.status);
   const reasonReady = reason.trim().length >= 3;
+  const hasClipboardPermission = permissions.includes("remote_assist.clipboard");
 
   const requestMutation = useMutation({
     mutationFn: () => {
@@ -125,7 +127,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
         throw new Error("Устройство для тикета не указано.");
       }
       const requestedMode = modeRef.current;
-      const requestedClipboard = requestedMode === "interactive_control" && clipboardAutoSyncRef.current;
+      const requestedClipboard = requestedMode === "interactive_control" && clipboardAutoSyncRef.current && hasClipboardPermission;
       return requestRemoteAssist(ticketId, {
         deviceId,
         mode: requestedMode,
@@ -263,6 +265,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                   <input
                     checked={clipboardAutoSync}
                     className="mt-1"
+                    disabled={!hasClipboardPermission}
                     onChange={(event) => {
                       clipboardAutoSyncRef.current = event.currentTarget.checked;
                       setClipboardAutoSync(event.currentTarget.checked);

@@ -14,4 +14,10 @@ describe("RemoteAssistPanel request options", () => {
       clipboard_auto_sync: false,
     });
   });
+
+  it("keeps clipboard auto-sync disabled when the permission gate clears it", () => {
+    expect(buildRemoteAssistFeatureOptions("interactive_control", false)).toEqual({
+      clipboard_auto_sync: false,
+    });
+  });
 });
