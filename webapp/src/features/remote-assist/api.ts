@@ -30,6 +30,21 @@ export type RemoteAssistSession = {
   close_reason: string | null;
   error_code: string | null;
   error_message: string | null;
+  media?: RemoteAssistMediaOptions;
+  features?: RemoteAssistFeatureOptions;
+};
+
+export type RemoteAssistMediaOptions = {
+  quality_profile?: string;
+  max_width?: number;
+  max_height?: number;
+  fps?: number;
+  monitor_id?: string;
+};
+
+export type RemoteAssistFeatureOptions = {
+  clipboard_auto_sync?: boolean;
+  clipboard_max_bytes?: number;
 };
 
 export type RemoteAssistRequestResult = {
@@ -77,6 +92,8 @@ export async function requestRemoteAssist(
     mode?: string;
     reason: string;
     durationMinutes: number;
+    media?: RemoteAssistMediaOptions;
+    features?: RemoteAssistFeatureOptions;
   },
 ): Promise<RemoteAssistRequestResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/remote-assist/request`, {
@@ -90,6 +107,8 @@ export async function requestRemoteAssist(
       mode: payload.mode ?? "view_only",
       reason: payload.reason,
       duration_minutes: payload.durationMinutes,
+      media: payload.media,
+      features: payload.features,
     }),
   });
   const result = await readJson<ApiOkResponse<RemoteAssistRequestResult> | ApiErrorResponse>(response);

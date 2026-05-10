@@ -6,6 +6,7 @@ from loguru import logger
 import config
 from access_control.service import can
 from app.db import get_session
+from remote_assist.features import wants_clipboard_auto_sync
 from remote_assist.policy import get_remote_assist_mode_permission, normalize_remote_assist_mode
 from remote_assist.service import RemoteAssistError, RemoteAssistService, remote_session_to_dict
 
@@ -67,6 +68,8 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
     mode = normalize_remote_assist_mode(str(data.get("mode") or "view_only"))
     reason = str(data.get("reason") or "").strip() or None
     duration_minutes = data.get("duration_minutes")
+    media_options = data.get("media") if isinstance(data.get("media"), dict) else {}
+    feature_options = data.get("features") if isinstance(data.get("features"), dict) else {}
     if not device_id:
         return _server_error("DEVICE_REQUIRED", "device_id is required", status=400)
     try:
@@ -84,6 +87,14 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
                 denied = await _require_remote_permission(session, auth_context, mode_permission)
                 if denied is not None:
                     return denied
+            if wants_clipboard_auto_sync(feature_options):
+                if not config.REMOTE_ASSIST_CLIPBOARD_ENABLED:
+                    return _server_error("CLIPBOARD_NOT_ENABLED", "Remote Assist clipboard sync is disabled by policy", status=403)
+                if mode != "interactive_control":
+                    return _server_error("MODE_NOT_ALLOWED", "Clipboard sync requires interactive_control mode", status=403)
+                denied = await _require_remote_permission(session, auth_context, "remote_assist.clipboard")
+                if denied is not None:
+                    return denied
             service = RemoteAssistService(session)
             remote_session = await service.request_session(
                 state=request.app["state"],
@@ -94,6 +105,8 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
                 mode=mode,
                 reason=reason,
                 duration_minutes=duration_value,
+                media_options=media_options,
+                feature_options=feature_options,
             )
             await session.commit()
             try:
@@ -149,6 +162,8 @@ async def handle_remote_assist_approve(request: web.Request) -> web.Response:
                         "agent_signaling_url": _signaling_url(request, remote_session.id),
                         "agent_token": agent_token,
                         "ice_servers": (remote_session.ice_config or {}).get("ice_servers", []),
+                        "media": (remote_session.ice_config or {}).get("media", {}),
+                        "features": (remote_session.ice_config or {}).get("features", {}),
                         "mode": remote_session.mode,
                     },
                 }

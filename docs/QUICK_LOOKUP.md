@@ -27,7 +27,8 @@
 - 2026-05-10 agent release check: Windows stable `3.1.41` supersedes `3.1.40` for remote GUI CPU log retrieval: `diag.logs.collect` app preset includes the agent runtime logs directory so `[gui-profiler]` samples can be collected as an artifact. Upload and rollout must target a new `3.1.41` build, not overwrite existing artifacts.
 - 2026-05-10 agent release check: Windows stable `3.1.42` supersedes `3.1.41` for making `diag_logs` a core enabled module, so `diag.logs.collect` is loaded into the agent registry after upgrade. Upload and rollout must target a new `3.1.42` build, not overwrite existing artifacts.
 - 2026-05-10 agent release check: Windows stable `3.1.43` supersedes `3.1.42` for focused-window GUI CPU spikes: `ActionTraceRecorder` no longer rescans `action_trace.jsonl` on every trace record, avoiding 10-second ticket-list poll stalls in the qasync GUI thread. Upload and rollout must target a new `3.1.43` build, not overwrite existing artifacts.
-- 2026-05-10 Remote Assist post-MVP foundation: mode policy lives in `server/remote_assist/policy.py`, coturn REST-style ICE credentials in `server/remote_assist/ice.py`, and new RBAC permissions are `remote_assist.control`, `remote_assist.file_transfer`, `remote_assist.clipboard`, `remote_assist.elevated`, `remote_assist.unattended`. Interactive control uses WebRTC data channel `control` with agent-side validation in `pc_agent/remote_assist/input_controller.py`; default config keeps post-MVP modes disabled unless explicitly enabled.
+- 2026-05-10 agent release check: Windows stable `3.1.45` supersedes `3.1.44` for Remote Assist quality/control/clipboard: requested quality profiles are honored by capture, interactive control auto-enables after the initial mode consent, drag/wheel/shortcuts are supported, and text clipboard auto-sync is available behind policy. Upload and rollout must target a new `3.1.45` build, not overwrite existing artifacts.
+- 2026-05-10 Remote Assist post-MVP foundation: mode policy lives in `server/remote_assist/policy.py`, quality/session media options in `server/remote_assist/media.py`, session capabilities in `server/remote_assist/features.py`, coturn REST-style ICE credentials in `server/remote_assist/ice.py`, and new RBAC permissions are `remote_assist.control`, `remote_assist.file_transfer`, `remote_assist.clipboard`, `remote_assist.elevated`, `remote_assist.unattended`. Interactive control and text clipboard auto-sync use WebRTC data channel `control` with agent-side validation in `pc_agent/remote_assist/input_controller.py` and `pc_agent/remote_assist/clipboard.py`; default config keeps post-MVP modes/features disabled unless explicitly enabled.
 - 2026-05-05/2026-05-06 support workspace P2.1/P2.9: `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` still prefers manual KB links, but the catalog fallback now lives in `server/tickets/knowledge_provider.py` with a JSON-backed source at `server/tickets/knowledge_catalog.json` for common incidents such as HTTP 502, DNS, printer offline, account access and offline agent; the same payload is embedded in aggregate `/workspace`.
 - 2026-05-06 support workspace P2.2: `GET /api/web/support/tickets/{ticket_id}/timeline?filter=all|messages|internal|diagnostics|history` exposes standalone typed timeline filtering through the same normalized support timeline serializer used by detail/workspace payloads; `/app/tickets` uses it for tab-specific timeline refreshes with aggregate fallback.
 - 2026-05-06 support workspace P2.3-P2.5: support timeline diagnostic rows now extract structured steps from nested result/check payloads and preserve optional `details`; `SupportTicketRegistrySnapshot` includes requester phone/email/source plus location floor from registry people/locations; `/app/tickets` has a localStorage-backed light/dark theme toggle on the workspace shell.
@@ -76,6 +77,7 @@
 
 - Canonical testing rules live in `docs/TESTING_RULES.md`.
 - `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, `server_pytest_db_api`, and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
+- Deploy/release scripts use `--gate full` by default and require a green CI artifact for the current commit. Use explicit `--gate quick` only for staging/iteration on the Linux stand; quick gate skips the full-CI artifact requirement but not focused verification, remote smoke, or browser/live checks.
 - `server/tests/conftest.py` auto-marks tests that use `test_agent` as `agent_ws`/`integration` and prints all Python thread stacks when a watched test exceeds the watchdog threshold.
 
 ## 2026-04-26 diagnostic playbooks
@@ -216,6 +218,7 @@ Historical docs больше не канон:
 Если задача затрагивает release/deploy:
 
 - `python scripts/run_ci_suite.py`
+- `python scripts/release_server_to_remote.py --gate quick` for staging iteration, then full CI before final release/push
 
 Если задача затрагивает `webapp/` или frontend bundle pipeline:
 

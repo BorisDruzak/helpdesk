@@ -20,6 +20,7 @@ class RemoteAssistConsentDialog(QDialog):
         reason = str(payload.get("reason") or "Не указана")
         duration = str(payload.get("duration_minutes") or "15")
         mode = str(payload.get("mode") or "view_only")
+        session_features = payload.get("session_features") if isinstance(payload.get("session_features"), dict) else {}
         if mode == "interactive_control":
             mode_label = "Просмотр и управление"
             mode_note = "В этом режиме специалист будет видеть ваш экран и сможет управлять мышью и клавиатурой после вашего разрешения."
@@ -32,6 +33,10 @@ class RemoteAssistConsentDialog(QDialog):
         else:
             mode_label = "Только просмотр"
             mode_note = "В этом режиме специалист будет видеть ваш экран, но не сможет управлять мышью или клавиатурой."
+        feature_notes: list[str] = []
+        if session_features.get("clipboard_auto_sync"):
+            feature_notes.append("Буфер обмена будет синхронизироваться автоматически между вами и специалистом.")
+        feature_text = "\n".join(feature_notes)
 
         layout = QVBoxLayout(self)
         title = QLabel("Запрос удалённой помощи")
@@ -45,6 +50,7 @@ class RemoteAssistConsentDialog(QDialog):
             f"Режим: {mode_label}\n"
             f"Длительность: до {duration} минут\n\n"
             f"{mode_note}"
+            + (f"\n{feature_text}" if feature_text else "")
         )
         text.setWordWrap(True)
         layout.addWidget(text)

@@ -2139,6 +2139,8 @@ class MainWindow(QMainWindow):
             token=token,
             ice_servers=data.get("ice_servers") if isinstance(data.get("ice_servers"), list) else [],
             mode=str(data.get("mode") or "view_only"),
+            media=data.get("media") if isinstance(data.get("media"), dict) else {},
+            features=data.get("features") if isinstance(data.get("features"), dict) else {},
             parent=self,
         )
         thread.failed.connect(lambda message, sid=session_id: self._handle_remote_assist_thread_failed(sid, message))

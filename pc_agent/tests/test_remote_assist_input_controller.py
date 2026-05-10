@@ -60,14 +60,48 @@ def test_mouse_click_and_keyboard_messages_are_validated() -> None:
     ]
 
 
+def test_drag_wheel_and_shortcuts_are_validated() -> None:
+    sent: list[dict] = []
+    controller = InputController(
+        mode_enabled=True,
+        platform="win32",
+        sender=sent.append,
+        screen_size_provider=lambda: (1000, 500),
+    )
+    controller.handle_message({"type": "control_enable"})
+
+    controller.handle_message({"type": "mouse_down", "x_ratio": 0.1, "y_ratio": 0.2, "button": "left"})
+    controller.handle_message({"type": "mouse_up", "x_ratio": 0.3, "y_ratio": 0.4, "button": "left"})
+    controller.handle_message({"type": "mouse_wheel", "x_ratio": 0.5, "y_ratio": 0.5, "delta_y": -240})
+    controller.handle_message({"type": "key_press", "key": "c", "modifiers": ["Control"]})
+
+    assert sent == [
+        {"kind": "mouse_down", "x": 100, "y": 100, "button": "left"},
+        {"kind": "mouse_up", "x": 300, "y": 200, "button": "left"},
+        {"kind": "mouse_wheel", "x": 500, "y": 250, "delta_x": 0, "delta_y": -240},
+        {"kind": "key_press", "key": "c", "modifiers": ["Control"]},
+    ]
+
+
 def test_linux_control_uses_pynput_backend() -> None:
     class FakeMouse:
         def __init__(self) -> None:
             self.position = (0, 0)
             self.clicks: list[tuple[str, int]] = []
+            self.pressed: list[tuple[str, str]] = []
+            self.scrolled: list[tuple[int, int]] = []
 
         def click(self, button: str, count: int = 1) -> None:
             self.clicks.append((button, count))
+
+        def press(self, button: str) -> None:
+            self.pressed.append(("down", button))
+
+        def release(self, button: str) -> None:
+            self.pressed.append(("up", button))
+
+        def scroll(self, delta_x: int, delta_y: int) -> None:
+            self.scrolled.append((delta_x, delta_y))
 
     class FakeKeyboard:
         def __init__(self) -> None:
@@ -91,13 +125,16 @@ def test_linux_control_uses_pynput_backend() -> None:
     controller.handle_message({"type": "control_enable"})
     controller.handle_message({"type": "mouse_move", "x_ratio": 0.25, "y_ratio": 0.5})
     controller.handle_message({"type": "mouse_click", "x_ratio": 0.25, "y_ratio": 0.5, "button": "left"})
+    controller.handle_message({"type": "mouse_wheel", "x_ratio": 0.25, "y_ratio": 0.5, "delta_y": -120})
     controller.handle_message({"type": "key_down", "key": "Enter"})
     controller.handle_message({"type": "key_up", "key": "Enter"})
+    controller.handle_message({"type": "key_press", "key": "v", "modifiers": ["Control"]})
     controller.handle_message({"type": "text_input", "text": "test"})
 
     assert mouse.position == (200, 300)
     assert mouse.clicks == [("left", 1)]
-    assert keyboard.pressed == [("down", "enter"), ("up", "enter")]
+    assert mouse.scrolled == [(0, -120)]
+    assert keyboard.pressed == [("down", "enter"), ("up", "enter"), ("down", "ctrl"), ("down", "v"), ("up", "v"), ("up", "ctrl")]
     assert keyboard.typed == ["test"]
 
 

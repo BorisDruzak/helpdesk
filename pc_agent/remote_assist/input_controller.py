@@ -64,6 +64,14 @@ class WindowsSendInputBackend:
         kind = action["kind"]
         if kind == "mouse_move":
             self._send_inputs([self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE)])
+        elif kind in {"mouse_down", "mouse_up"}:
+            flag = _mouse_button_down_flag(action["button"]) if kind == "mouse_down" else _mouse_button_up_flag(action["button"])
+            self._send_inputs(
+                [
+                    self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE),
+                    self._mouse_input(0, 0, flag, absolute=False),
+                ]
+            )
         elif kind == "mouse_click":
             down, up = _mouse_button_flags(action["button"])
             self._send_inputs(
@@ -73,10 +81,14 @@ class WindowsSendInputBackend:
                     self._mouse_input(0, 0, up, absolute=False),
                 ]
             )
+        elif kind == "mouse_wheel":
+            self._send_inputs([_mouse_input(dx=0, dy=0, mouse_data=int(action["delta_y"]), flags=_MOUSEEVENTF_WHEEL)])
         elif kind in {"key_down", "key_up"}:
             vk = _virtual_key(action["key"], self._user32)
             flags = 0 if kind == "key_down" else _KEYEVENTF_KEYUP
             self._send_inputs([_keyboard_input(vk=vk, flags=flags)])
+        elif kind == "key_press":
+            self._send_inputs(_keyboard_shortcut_inputs(action["key"], action.get("modifiers", []), self._user32))
         elif kind == "text_input":
             inputs: list[_INPUT] = []
             for unit in _utf16_code_units(str(action["text"])):
@@ -156,12 +168,31 @@ class LinuxPynputInputBackend:
         kind = action["kind"]
         if kind in {"mouse_move", "mouse_click"}:
             self._mouse.position = (int(action["x"]), int(action["y"]))
+        if kind == "mouse_down":
+            self._mouse.position = (int(action["x"]), int(action["y"]))
+            self._mouse.press(self._button(action["button"]))
+        elif kind == "mouse_up":
+            self._mouse.position = (int(action["x"]), int(action["y"]))
+            self._mouse.release(self._button(action["button"]))
         if kind == "mouse_click":
             self._mouse.click(self._button(action["button"]), 1)
+        elif kind == "mouse_wheel":
+            self._mouse.scroll(int(action.get("delta_x", 0)), int(action.get("delta_y", 0)))
         elif kind == "key_down":
             self._keyboard.press(self._key(action["key"]))
         elif kind == "key_up":
             self._keyboard.release(self._key(action["key"]))
+        elif kind == "key_press":
+            modifiers = [self._key(item) for item in action.get("modifiers", [])]
+            key = self._key(action["key"])
+            for modifier in modifiers:
+                self._keyboard.press(modifier)
+            try:
+                self._keyboard.press(key)
+                self._keyboard.release(key)
+            finally:
+                for modifier in reversed(modifiers):
+                    self._keyboard.release(modifier)
         elif kind == "text_input":
             self._keyboard.type(str(action["text"]))
 
@@ -172,6 +203,10 @@ class LinuxPynputInputBackend:
 
     def _key(self, key: str) -> Any:
         special = {
+            "Control": "ctrl",
+            "Alt": "alt",
+            "Shift": "shift",
+            "Meta": "cmd",
             "Enter": "enter",
             "Tab": "tab",
             "Escape": "esc",
@@ -243,11 +278,22 @@ class InputController:
 
         if message_type == "mouse_move":
             action = self._mouse_action(message, action="move")
-        elif message_type == "mouse_click":
-            action = self._mouse_action(message, action="click")
+        elif message_type in {"mouse_click", "mouse_down", "mouse_up"}:
+            action_name = message_type.removeprefix("mouse_")
+            action = self._mouse_action(message, action=action_name)
             action["button"] = self._button(message.get("button"))
+        elif message_type == "mouse_wheel":
+            action = self._mouse_action(message, action="wheel")
+            action["delta_x"] = self._wheel_delta(message.get("delta_x"))
+            action["delta_y"] = self._wheel_delta(message.get("delta_y"))
         elif message_type in {"key_down", "key_up"}:
             action = {"kind": message_type, "key": self._key(message.get("key"))}
+        elif message_type == "key_press":
+            action = {
+                "kind": "key_press",
+                "key": self._key(message.get("key")),
+                "modifiers": self._modifiers(message.get("modifiers")),
+            }
         elif message_type == "text_input":
             text = str(message.get("text") or "")
             if not text or len(text) > self._limits.max_text_chars:
@@ -318,6 +364,26 @@ class InputController:
         return button
 
     @staticmethod
+    def _wheel_delta(value: Any) -> int:
+        try:
+            delta = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(-1200, min(1200, delta))
+
+    @staticmethod
+    def _modifiers(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        allowed = {"Control", "Alt", "Shift", "Meta"}
+        result: list[str] = []
+        for item in value:
+            modifier = str(item or "").strip()
+            if modifier in allowed and modifier not in result:
+                result.append(modifier)
+        return result
+
+    @staticmethod
     def _key(value: Any) -> str:
         key = str(value or "").strip()
         if not key or len(key) > 32:
@@ -341,6 +407,7 @@ _MOUSEEVENTF_RIGHTDOWN = 0x0008
 _MOUSEEVENTF_RIGHTUP = 0x0010
 _MOUSEEVENTF_MIDDLEDOWN = 0x0020
 _MOUSEEVENTF_MIDDLEUP = 0x0040
+_MOUSEEVENTF_WHEEL = 0x0800
 _MOUSEEVENTF_ABSOLUTE = 0x8000
 _MOUSEEVENTF_VIRTUALDESK = 0x4000
 _KEYEVENTF_KEYUP = 0x0002
@@ -383,8 +450,8 @@ class _INPUT(ctypes.Structure):
     ]
 
 
-def _mouse_input(*, dx: int, dy: int, flags: int) -> _INPUT:
-    return _INPUT(type=_INPUT_MOUSE, u=_INPUT_UNION(mi=_MOUSEINPUT(dx, dy, 0, flags, 0, 0)))
+def _mouse_input(*, dx: int, dy: int, flags: int, mouse_data: int = 0) -> _INPUT:
+    return _INPUT(type=_INPUT_MOUSE, u=_INPUT_UNION(mi=_MOUSEINPUT(dx, dy, mouse_data, flags, 0, 0)))
 
 
 def _keyboard_input(*, vk: int = 0, scan: int = 0, flags: int = 0) -> _INPUT:
@@ -397,6 +464,14 @@ def _mouse_button_flags(button: str) -> tuple[int, int]:
         "right": (_MOUSEEVENTF_RIGHTDOWN, _MOUSEEVENTF_RIGHTUP),
         "middle": (_MOUSEEVENTF_MIDDLEDOWN, _MOUSEEVENTF_MIDDLEUP),
     }[button]
+
+
+def _mouse_button_down_flag(button: str) -> int:
+    return _mouse_button_flags(button)[0]
+
+
+def _mouse_button_up_flag(button: str) -> int:
+    return _mouse_button_flags(button)[1]
 
 
 def _utf16_code_units(text: str) -> list[int]:
@@ -417,6 +492,10 @@ def _get_linux_primary_screen_size() -> tuple[int, int]:
 
 def _virtual_key(key: str, user32: Any) -> int:
     special = {
+        "Control": 0x11,
+        "Alt": 0x12,
+        "Shift": 0x10,
+        "Meta": 0x5B,
         "Enter": 0x0D,
         "Tab": 0x09,
         "Escape": 0x1B,
@@ -439,3 +518,16 @@ def _virtual_key(key: str, user32: Any) -> int:
         if vk != 0xFF:
             return int(vk)
     raise InputControllerError("CONTROL_KEY_UNSUPPORTED", "Keyboard key is unsupported")
+
+
+def _keyboard_shortcut_inputs(key: str, modifiers: list[str], user32: Any) -> list[_INPUT]:
+    inputs: list[_INPUT] = []
+    modifier_vks = [_virtual_key(modifier, user32) for modifier in modifiers]
+    for vk in modifier_vks:
+        inputs.append(_keyboard_input(vk=vk, flags=0))
+    key_vk = _virtual_key(key, user32)
+    inputs.append(_keyboard_input(vk=key_vk, flags=0))
+    inputs.append(_keyboard_input(vk=key_vk, flags=_KEYEVENTF_KEYUP))
+    for vk in reversed(modifier_vks):
+        inputs.append(_keyboard_input(vk=vk, flags=_KEYEVENTF_KEYUP))
+    return inputs

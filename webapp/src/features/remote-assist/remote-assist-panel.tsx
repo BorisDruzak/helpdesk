@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   fetchRemoteAssistSessions,
   requestRemoteAssist,
+  type RemoteAssistMediaOptions,
   type RemoteAssistSession,
 } from "./api";
 import { RemoteAssistViewer } from "./remote-assist-viewer";
@@ -47,6 +48,36 @@ function statusTone(status: string) {
   return "border-white/10 bg-white/[0.04] text-slate-300";
 }
 
+const QUALITY_PRESETS: Record<string, RemoteAssistMediaOptions & { label: string; description: string }> = {
+  balanced: {
+    label: "Сбалансированное",
+    description: "1600x900, 8 fps",
+    quality_profile: "balanced",
+    max_width: 1600,
+    max_height: 900,
+    fps: 8,
+    monitor_id: "primary",
+  },
+  sharp: {
+    label: "Чёткое",
+    description: "1920x1080, 12 fps",
+    quality_profile: "sharp",
+    max_width: 1920,
+    max_height: 1080,
+    fps: 12,
+    monitor_id: "primary",
+  },
+  fast: {
+    label: "Быстрое",
+    description: "1024x576, 5 fps",
+    quality_profile: "fast",
+    max_width: 1024,
+    max_height: 576,
+    fps: 5,
+    monitor_id: "primary",
+  },
+};
+
 type RemoteAssistPanelProps = {
   ticketId: string;
   deviceId: string | null;
@@ -61,6 +92,8 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
   const [reason, setReason] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(15);
   const [mode, setMode] = useState("view_only");
+  const [qualityProfile, setQualityProfile] = useState("balanced");
+  const [clipboardAutoSync, setClipboardAutoSync] = useState(false);
 
   const sessionsQuery = useQuery({
     queryKey: ["remote-assist", ticketId],
@@ -87,12 +120,18 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
         mode,
         reason: reason.trim(),
         durationMinutes,
+        media: QUALITY_PRESETS[qualityProfile] ?? QUALITY_PRESETS.balanced,
+        features: {
+          clipboard_auto_sync: mode === "interactive_control" && clipboardAutoSync,
+        },
       });
     },
     onSuccess: () => {
       setModalOpen(false);
       setReason("");
       setMode("view_only");
+      setQualityProfile("balanced");
+      setClipboardAutoSync(false);
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
       onChanged?.();
     },
@@ -186,7 +225,13 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                 Режим
                 <select
                   className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
-                  onChange={(event) => setMode(event.currentTarget.value)}
+                  onChange={(event) => {
+                    const nextMode = event.currentTarget.value;
+                    setMode(nextMode);
+                    if (nextMode !== "interactive_control") {
+                      setClipboardAutoSync(false);
+                    }
+                  }}
                   value={mode}
                 >
                   <option value="view_only">Только просмотр</option>
@@ -197,6 +242,36 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
                   <option value="elevated_admin" disabled>
                     Admin mode (policy gate)
                   </option>
+                </select>
+              </label>
+              {mode === "interactive_control" ? (
+                <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
+                  <input
+                    checked={clipboardAutoSync}
+                    className="mt-1"
+                    onChange={(event) => setClipboardAutoSync(event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="block font-semibold text-slate-100">Автосинхронизация буфера обмена</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-400">
+                      Текстовый буфер обмена будет синхронизироваться между оператором и устройством во время сессии.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+              <label className="block text-sm font-medium text-slate-300">
+                Качество видео
+                <select
+                  className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                  onChange={(event) => setQualityProfile(event.currentTarget.value)}
+                  value={qualityProfile}
+                >
+                  {Object.entries(QUALITY_PRESETS).map(([value, preset]) => (
+                    <option key={value} value={value}>
+                      {preset.label} - {preset.description}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-300">

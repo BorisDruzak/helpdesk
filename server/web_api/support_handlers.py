@@ -1308,6 +1308,8 @@ def _timeline_event_label(event_type: str) -> str:
         "remote_assist_control_enabled": "Удалённое управление включено",
         "remote_assist_control_disabled": "Удалённое управление выключено",
         "remote_assist_control_rejected": "Команда управления отклонена",
+        "remote_assist_clipboard_sync_enabled": "Буфер обмена синхронизируется",
+        "remote_assist_clipboard_sync_disabled": "Синхронизация буфера обмена выключена",
         "sla_started": "SLA started",
         "sla_first_response_stopped": "SLA first response stopped",
         "sla_resolution_stopped": "SLA resolution stopped",
@@ -1364,6 +1366,10 @@ def _timeline_event_text(event_type: str, payload: dict) -> str:
         return "Оператор выключил управление мышью и клавиатурой."
     if event_type == "remote_assist_control_rejected":
         return "Команда удалённого управления отклонена агентом."
+    if event_type == "remote_assist_clipboard_sync_enabled":
+        return "Автосинхронизация буфера обмена включена."
+    if event_type == "remote_assist_clipboard_sync_disabled":
+        return "Автосинхронизация буфера обмена выключена."
     if event_type == "status_changed":
         return " -> ".join(str(payload.get(key) or "").strip() for key in ("from_status", "to_status") if str(payload.get(key) or "").strip()) or "Status changed"
     if event_type == "assignee_changed":

@@ -21,6 +21,8 @@ class RemoteAssistThread(QThread):
         token: str,
         ice_servers: list[dict[str, Any]] | None = None,
         mode: str = "view_only",
+        media: dict[str, Any] | None = None,
+        features: dict[str, Any] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -29,6 +31,8 @@ class RemoteAssistThread(QThread):
             token=token,
             ice_servers=ice_servers,
             mode=mode,
+            media=media,
+            features=features,
             on_state_change=self.state_changed.emit,
         )
         self._loop: asyncio.AbstractEventLoop | None = None

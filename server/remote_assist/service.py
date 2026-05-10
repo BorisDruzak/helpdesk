@@ -14,7 +14,9 @@ from app.db.models import Device, RemoteAccessSession, Ticket
 from app.repos.devices_repo import DevicesRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from remote_assist.features import build_remote_assist_features
 from remote_assist.ice import build_remote_assist_ice_servers
+from remote_assist.media import build_remote_assist_media_options
 from remote_assist.policy import (
     get_remote_assist_feature_flags,
     get_remote_assist_mode_policy,
@@ -83,6 +85,8 @@ def remote_session_to_dict(session: RemoteAccessSession) -> dict[str, Any]:
         "error_code": session.error_code,
         "error_message": session.error_message,
         "ice_servers": (session.ice_config or {}).get("ice_servers", []),
+        "media": (session.ice_config or {}).get("media", build_remote_assist_media_options()),
+        "features": (session.ice_config or {}).get("features", build_remote_assist_features()),
     }
 
 
@@ -102,6 +106,8 @@ class RemoteAssistService:
         mode: str,
         reason: str | None,
         duration_minutes: int | None,
+        media_options: dict[str, Any] | None = None,
+        feature_options: dict[str, Any] | None = None,
     ) -> RemoteAccessSession:
         if not config.REMOTE_ASSIST_ENABLED:
             raise RemoteAssistError("REMOTE_ASSIST_DISABLED", "Remote Assist is disabled", status=403)
@@ -148,7 +154,11 @@ class RemoteAssistService:
             consent_status="pending" if consent_required else "not_required",
             expires_at=expires_at,
             max_duration_sec=duration * 60,
-            ice_config={"ice_servers": build_remote_assist_ice_servers()},
+            ice_config={
+                "ice_servers": build_remote_assist_ice_servers(),
+                "media": build_remote_assist_media_options(media_options),
+                "features": build_remote_assist_features(feature_options),
+            },
         )
         await self.log_event(
             remote_session,
@@ -182,6 +192,8 @@ class RemoteAssistService:
                 "duration_minutes": max(1, int(remote_session.max_duration_sec / 60)),
                 "expires_at": remote_session.expires_at.isoformat(),
                 "features": get_remote_assist_feature_flags(),
+                "session_features": (remote_session.ice_config or {}).get("features", build_remote_assist_features()),
+                "media": (remote_session.ice_config or {}).get("media", build_remote_assist_media_options()),
             },
             actor_role="support",
             ticket_id=remote_session.ticket_id,

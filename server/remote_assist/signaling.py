@@ -22,6 +22,8 @@ ALLOWED_SIGNALING_TYPES = {
     "webrtc.connection_state",
     "control.state",
     "control.error",
+    "clipboard.state",
+    "clipboard.error",
 }
 
 
@@ -150,6 +152,8 @@ async def _handle_signal_message(
         await _log_signaling_event(session_id, role, message_type)
     elif message_type in {"control.state", "control.error"}:
         await _log_control_event(session_id, role, message_type, message.get("payload") if isinstance(message.get("payload"), dict) else {})
+    elif message_type in {"clipboard.state", "clipboard.error"}:
+        await _log_clipboard_event(session_id, role, message_type, message.get("payload") if isinstance(message.get("payload"), dict) else {})
 
     target_role = "agent" if role == "operator" else "operator"
     peer = _peer_store(request.app).get(session_id, {}).get(target_role)
@@ -239,6 +243,31 @@ async def _log_control_event(session_id: str, role: str, message_type: str, payl
             actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
             payload=payload,
             write_timeline=event_type in {"control_enabled", "control_disabled", "control_rejected"},
+        )
+        await db_session.commit()
+
+
+async def _log_clipboard_event(session_id: str, role: str, message_type: str, payload: dict[str, Any]) -> None:
+    if message_type == "clipboard.state":
+        event_type = "clipboard_sync_enabled" if bool(payload.get("enabled")) else "clipboard_sync_disabled"
+    else:
+        event_type = "clipboard_sync_failed"
+    sanitized_payload = {
+        "enabled": bool(payload.get("enabled")) if "enabled" in payload else None,
+        "error_code": str(payload.get("error_code") or "")[:80] or None,
+    }
+    async with get_session() as db_session:
+        service = RemoteAssistService(db_session)
+        remote_session = await service.repo.get(session_id)
+        if remote_session is None:
+            return
+        await service.log_event(
+            remote_session,
+            event_type,
+            actor_type=role,
+            actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
+            payload={key: value for key, value in sanitized_payload.items() if value is not None},
+            write_timeline=event_type != "clipboard_sync_failed",
         )
         await db_session.commit()
 

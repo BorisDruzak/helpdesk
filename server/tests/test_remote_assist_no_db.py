@@ -1,12 +1,18 @@
+import pytest
+
 from access_control.catalog import get_role_permission_codes
 import config
+from remote_assist.features import build_remote_assist_features, wants_clipboard_auto_sync
 from remote_assist.ice import build_remote_assist_ice_servers
+from remote_assist.media import build_remote_assist_media_options
 from remote_assist.policy import (
     get_remote_assist_mode_permission,
     is_remote_assist_mode_enabled,
 )
 from remote_assist.service import issue_short_lived_token, verify_token_hash
 from web_api.support_handlers import _timeline_event_label, _timeline_event_text
+
+pytestmark = pytest.mark.no_db
 
 
 def test_remote_assist_tokens_are_hashed_and_validated() -> None:
@@ -60,8 +66,49 @@ def test_turn_credentials_are_generated_from_server_secret(monkeypatch) -> None:
     assert "credential_mode" not in servers[0]
 
 
+def test_remote_assist_media_options_default_to_balanced_profile() -> None:
+    options = build_remote_assist_media_options({})
+
+    assert options == {
+        "quality_profile": "balanced",
+        "max_width": 1600,
+        "max_height": 900,
+        "fps": 8,
+        "monitor_id": "primary",
+    }
+
+
+def test_remote_assist_media_options_clamp_custom_values() -> None:
+    options = build_remote_assist_media_options(
+        {
+            "quality_profile": "sharp",
+            "max_width": 9999,
+            "max_height": 9999,
+            "fps": 120,
+            "monitor_id": "primary",
+        }
+    )
+
+    assert options["quality_profile"] == "sharp"
+    assert options["max_width"] == 1920
+    assert options["max_height"] == 1080
+    assert options["fps"] == 15
+    assert options["monitor_id"] == "primary"
+
+
+def test_remote_assist_clipboard_features_are_policy_gated(monkeypatch) -> None:
+    assert wants_clipboard_auto_sync({"clipboard_auto_sync": True})
+    monkeypatch.setattr(config, "REMOTE_ASSIST_CLIPBOARD_ENABLED", False)
+    assert build_remote_assist_features({"clipboard_auto_sync": True})["clipboard_auto_sync"] is False
+    monkeypatch.setattr(config, "REMOTE_ASSIST_CLIPBOARD_ENABLED", True)
+    features = build_remote_assist_features({"clipboard_auto_sync": True})
+    assert features["clipboard_auto_sync"] is True
+    assert features["clipboard_max_bytes"] == config.REMOTE_ASSIST_CLIPBOARD_MAX_BYTES
+
+
 def test_remote_assist_control_events_have_timeline_system_messages() -> None:
     assert _timeline_event_label("remote_assist_control_enabled") == "Удалённое управление включено"
     assert _timeline_event_text("remote_assist_control_enabled", {}) == "Оператор включил управление мышью и клавиатурой."
     assert _timeline_event_text("remote_assist_control_disabled", {}) == "Оператор выключил управление мышью и клавиатурой."
     assert _timeline_event_text("remote_assist_control_rejected", {}) == "Команда удалённого управления отклонена агентом."
+    assert _timeline_event_text("remote_assist_clipboard_sync_enabled", {}) == "Автосинхронизация буфера обмена включена."

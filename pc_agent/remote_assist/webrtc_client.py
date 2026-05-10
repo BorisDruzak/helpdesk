@@ -7,6 +7,7 @@ from typing import Any, Callable
 import aiohttp
 from loguru import logger
 
+from .clipboard import ClipboardConfig, ClipboardError, ClipboardSyncBridge
 from .input_controller import InputController, InputControllerError
 from .screen_track import ScreenCaptureTrack
 
@@ -38,6 +39,8 @@ class RemoteAssistWebRTCClient:
         token: str,
         ice_servers: list[dict[str, Any]] | None = None,
         mode: str = "view_only",
+        media: dict[str, Any] | None = None,
+        features: dict[str, Any] | None = None,
         connection_timeout_sec: int = 30,
         on_state_change: Callable[[str], None] | None = None,
     ):
@@ -45,9 +48,12 @@ class RemoteAssistWebRTCClient:
         self.token = token
         self.ice_servers = ice_servers or []
         self.mode = mode
+        self.media = _normalize_media_options(media)
+        self.features = _normalize_feature_options(features)
         self.connection_timeout_sec = max(5, int(connection_timeout_sec))
         self.on_state_change = on_state_change
         self.input_controller = InputController(mode_enabled=mode == "interactive_control")
+        self.clipboard_bridge: ClipboardSyncBridge | None = None
         self._closed = False
         self._pc = None
         self._ws = None
@@ -59,9 +65,13 @@ class RemoteAssistWebRTCClient:
         from aiortc.sdp import candidate_from_sdp
 
         logger.info(
-            "Remote Assist WebRTC starting: mode={} ice_servers={}",
+            "Remote Assist WebRTC starting: mode={} ice_servers={} media={}x{}@{} clipboard={}",
             self.mode,
             len(self.ice_servers),
+            self.media["max_width"],
+            self.media["max_height"],
+            self.media["fps"],
+            self.features["clipboard_auto_sync"],
         )
         ice = [
             RTCIceServer(urls=item.get("urls"), username=item.get("username"), credential=item.get("credential"))
@@ -69,7 +79,13 @@ class RemoteAssistWebRTCClient:
             if item.get("urls")
         ]
         self._pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice))
-        self._pc.addTrack(ScreenCaptureTrack.create())
+        self._pc.addTrack(
+            ScreenCaptureTrack.create(
+                max_width=self.media["max_width"],
+                max_height=self.media["max_height"],
+                fps=self.media["fps"],
+            )
+        )
         connected_event = asyncio.Event()
         ice_gathering_complete = asyncio.Event()
         timeout_task: asyncio.Task | None = None
@@ -150,16 +166,42 @@ class RemoteAssistWebRTCClient:
                             pass
                         return
 
+                    def send_channel(message: dict[str, Any]) -> None:
+                        channel.send(json.dumps(message))
+
+                    self.clipboard_bridge = ClipboardSyncBridge(
+                        config=ClipboardConfig(
+                            enabled=bool(self.features["clipboard_auto_sync"]),
+                            max_bytes=int(self.features["clipboard_max_bytes"]),
+                        ),
+                        send=send_channel,
+                    )
+
                     @channel.on("message")
                     def on_control_message(raw_message):
+                        async def handle_async(message: dict[str, Any]) -> None:
+                            try:
+                                if str(message.get("type") or "").startswith("clipboard."):
+                                    if self.clipboard_bridge is None:
+                                        raise ClipboardError("CLIPBOARD_UNAVAILABLE", "Clipboard bridge is not available")
+                                    result = await self.clipboard_bridge.handle_message(message)
+                                    channel.send(json.dumps({"type": "clipboard.ack", "payload": result}))
+                                    return
+                                result = self.input_controller.handle_message(message)
+                                channel.send(json.dumps({"type": "control.ack", "payload": result}))
+                            except ClipboardError as exc:
+                                channel.send(json.dumps({"type": "clipboard.error", "payload": {"error_code": exc.code, "error": exc.message}}))
+                            except InputControllerError as exc:
+                                channel.send(json.dumps({"type": "control.error", "payload": {"error_code": exc.code, "error": exc.message}}))
+                            except Exception as exc:
+                                logger.exception(f"Remote Assist control message failed: {exc}")
+                                channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
+
                         try:
                             if isinstance(raw_message, bytes):
                                 raw_message = raw_message.decode("utf-8")
                             message = json.loads(str(raw_message))
-                            result = self.input_controller.handle_message(message)
-                            channel.send(json.dumps({"type": "control.ack", "payload": result}))
-                        except InputControllerError as exc:
-                            channel.send(json.dumps({"type": "control.error", "payload": {"error_code": exc.code, "error": exc.message}}))
+                            asyncio.create_task(handle_async(message))
                         except Exception as exc:
                             logger.exception(f"Remote Assist control message failed: {exc}")
                             channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
@@ -235,6 +277,11 @@ class RemoteAssistWebRTCClient:
                 await self._pc.close()
         except Exception as exc:
             logger.debug(f"Remote Assist peer close failed: {exc}")
+        try:
+            if self.clipboard_bridge is not None:
+                await self.clipboard_bridge.stop()
+        except Exception as exc:
+            logger.debug(f"Remote Assist clipboard stop failed: {exc}")
 
     def _emit_state(self, state: str) -> None:
         if self.on_state_change is None:
@@ -252,3 +299,28 @@ class RemoteAssistWebRTCClient:
         query = dict(parse_qsl(parts.query))
         query.update(params)
         return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _normalize_media_options(media: dict[str, Any] | None) -> dict[str, int]:
+    raw = media if isinstance(media, dict) else {}
+    return {
+        "max_width": _bounded_int(raw.get("max_width"), default=1600, minimum=320, maximum=1920),
+        "max_height": _bounded_int(raw.get("max_height"), default=900, minimum=240, maximum=1080),
+        "fps": _bounded_int(raw.get("fps"), default=8, minimum=1, maximum=15),
+    }
+
+
+def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+def _normalize_feature_options(features: dict[str, Any] | None) -> dict[str, Any]:
+    raw = features if isinstance(features, dict) else {}
+    return {
+        "clipboard_auto_sync": bool(raw.get("clipboard_auto_sync")),
+        "clipboard_max_bytes": _bounded_int(raw.get("clipboard_max_bytes"), default=256 * 1024, minimum=1024, maximum=1024 * 1024),
+    }

@@ -44,9 +44,9 @@ ticket -> request remote assist -> user consent -> WebRTC view-only session -> a
 
 ## Current State
 
-Overall progress: 96%.
+Overall progress: 98%.
 
-Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and policy-gated interactive-control architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`; Windows stable `3.1.34` fixed WebRTC packaging and video startup. Windows stable `3.1.35` added interactive-control testing with Windows `SendInput`, Linux `pynput`, ticket return after operator end, and timeline control events. Current stage is Windows stable `3.1.36`: field test on agent `15c8f029-bd7d-533b-a11e-dcd6c2ff48ab` showed offer/answer succeeds but ICE never reaches connected; local fixes now add explicit video transceiver setup, viewer/agent WebRTC connection timeouts, failed-session audit, agent-side state logs, and lower-leak cleanup so the agent stops capture after failed negotiation.
+Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and policy-gated interactive-control architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`; Windows stable `3.1.34` fixed WebRTC packaging and video startup. Windows stable `3.1.35` added interactive-control testing with Windows `SendInput`, Linux `pynput`, ticket return after operator end, and timeline control events. Windows stable `3.1.36` added explicit video transceiver setup, viewer/agent WebRTC connection timeouts, failed-session audit, agent-side state logs, and lower-leak cleanup after failed negotiation. Windows stable `3.1.44` adds ICE gathering diagnostics and waits for ICE gathering before sending browser offer / agent answer. Field ticket `T-000531` failed without TURN because the deployed server returned `ice_servers=[]`; coturn is now installed on the Linux stand and backend `.env` returns STUN/TURN entries with short-lived HMAC credentials for new sessions. The next local slice adds selectable quality profiles, actual-size viewer mode, automatic interactive-control activation for approved `interactive_control` sessions, drag/wheel/shortcut input messages, and policy-gated text clipboard auto-sync over the WebRTC data channel.
 
 | Level | Scope | Progress | Status |
 |---|---|---:|---|
@@ -54,8 +54,8 @@ Implemented locally: DB models/migration, backend repo/service/API/signaling, RB
 | 1 | DB, API, lifecycle, consent, audit | 100% | Implemented and locally verified |
 | 2 | Signaling and view-only WebRTC stream | 96% | Offer/answer path verified in field; ICE failure now fails cleanly instead of hanging |
 | 3 | Support workspace and Maria Agent UI polish | 92% | Agent banner now distinguishes connecting from active screen visibility |
-| 4 | Hardening, TURN config, reconnect, timeout | 58% | Token/ICE config, expiry hooks, viewer and agent timeouts, failed-state audit and cleanup added; reconnect/rate-limit polish remains |
-| 5 | Future control-mode architecture | 85% | Policy-gated interactive control added for testing; file/clipboard/elevated/unattended remain gated |
+| 4 | Hardening, TURN config, reconnect, timeout | 75% | Token/ICE config, coturn on stand, short-lived TURN credentials, expiry hooks, viewer and agent timeouts, failed-state audit and cleanup added; reconnect/rate-limit polish remains |
+| 5 | Full assist features | 62% | Quality profiles, production mouse/keyboard UX and text clipboard auto-sync are implemented locally; file transfer, elevated/admin and managed unattended remain policy-gated but not transport-complete |
 
 ## Implementation Plan
 
@@ -212,19 +212,46 @@ Goal: move Remote Assist from view-only MVP to a controlled support tool without
 
 Non-negotiable safety rule: no hidden unattended access. Any unattended capability must be explicit, policy-backed, enrolled per device, visible in audit, scoped to ticket/device/operator, and revocable. User PCs keep consent by default.
 
+Post-MVP consent model update:
+
+- The operator chooses the requested session mode before creating the request.
+- Maria Agent shows one consent dialog that describes the exact requested mode and capabilities.
+- `view_only` consent text says the specialist can see the screen.
+- `interactive_control` consent text says the specialist can see the screen and control mouse/keyboard.
+- Clipboard auto-sync and file transfer must be declared in the initial request when enabled for the session.
+- Escalating an active `view_only` session to control, clipboard, file transfer or elevated/admin is not allowed without ending the session and requesting a new mode.
+
+Execution slices, in order:
+
+1. Quality/settings slice: selectable quality profile (`balanced`, `sharp`, `fast`), max resolution, FPS, scale-to-fit vs actual-size viewer, and monitor metadata groundwork.
+2. Control slice: production mouse/keyboard UX for `interactive_control`, focus capture, drag/select, wheel, common shortcuts, control status/audit and clear user banner text.
+3. Clipboard auto-sync slice: bidirectional clipboard sync over the WebRTC data channel for text payloads first, enabled only when the initial session policy allows it, with size limits, loop prevention, privacy indicator and audit counters/events.
+4. File transfer slice: explicit file channel, size limits, checksum, filename sanitization, progress UI and ticket audit.
+5. Elevated/admin slice: explicit `elevated_admin` mode with visible user consent, no silent UAC bypass, and clear failure states when elevation is unavailable.
+6. Managed unattended slice: enrollment-only policy for managed devices, disabled by default for ordinary user PCs.
+7. Reconnect/production slice: bounded reconnect/resume, quality downgrade on packet loss, TURN health warnings and rate-limit watchdogs.
+
 ### Phase A: Policy And Contracts
 
 - [x] Add mode permissions: `remote_assist.control`, `remote_assist.file_transfer`, `remote_assist.clipboard`, `remote_assist.elevated`, `remote_assist.unattended`.
 - [x] Replace hard-coded `mode == view_only` checks with a mode policy table.
 - [x] Add per-mode consent semantics:
   - `view_only`: consent required for user devices.
-  - `interactive_control`: consent required and dialog text must say mouse/keyboard control.
-  - `file_transfer`: separate explicit consent before any transfer.
-  - `clipboard`: separate explicit consent before read/write.
-  - `elevated_admin`: separate explicit consent and no silent UAC bypass.
+  - `interactive_control`: consent required before session start and dialog text must say mouse/keyboard control.
+  - `file_transfer`: must be declared in the initial requested mode/capability set before any transfer is available.
+  - `clipboard`: must be declared in the initial requested mode/capability set before auto-sync or manual clipboard actions are available.
+  - `elevated_admin`: consent required before session start and no silent UAC bypass.
   - `unattended`: only for enrolled managed devices when server policy allows it; never for ordinary user PCs by default.
 - [x] Extend Remote Assist event taxonomy for `control_enabled`, `control_disabled`, and `control_rejected`.
 - [ ] Extend Remote Assist event taxonomy for `file_transfer_*`, `clipboard_*`, `elevation_*`, `unattended_policy_*`, `reconnect_*`, `turn_credentials_issued`.
+
+### Phase B0: Quality And Viewer Ergonomics
+
+- [x] Add session request fields for quality profile: `quality_profile`, `max_width`, `max_height`, `fps`, and `monitor_id`.
+- [x] Keep defaults conservative: `balanced`, 1600x900, 8 fps.
+- [x] Add support viewer controls: fit to window, actual size, fullscreen, reconnect, quality selector.
+- [x] Add agent-side `ScreenCaptureTrack` options from approved session metadata instead of hard-coded 1280x720/5 fps.
+- [ ] Add audit event `quality_changed` when the operator changes quality during a session.
 
 ### Phase B: Interactive Control
 
@@ -234,13 +261,20 @@ Non-negotiable safety rule: no hidden unattended access. Any unattended capabili
 - [x] Windows input injection uses a small isolated `InputController` backed by `SendInput`; Linux uses `pynput` when an interactive-control session is policy-enabled.
 - [x] Add active banner text that distinguishes viewing from controlling.
 - [x] Audit `control_enabled`, `control_disabled`, and rejected control messages.
+- [x] Remove the extra in-session "enable control" consent concept: control is available when the approved session mode is `interactive_control`; the viewer may still have a local pause/resume toggle for operator ergonomics.
+- [x] Add drag/select, right/middle click, mouse wheel and common keyboard shortcuts. Double click is represented by normal down/up pairs for now.
+- [x] Preserve native remote `Ctrl+C` / `Ctrl+V` behavior through keyboard control even when clipboard auto-sync is disabled.
 
 ### Phase C: File Transfer And Clipboard
 
-- Add dedicated `file` data channel or typed `file.*` messages with size limits, filename sanitization, destination policy and checksum.
-- Add per-transfer consent in Maria Agent before saving any file.
-- Add clipboard request/write messages with separate consent and payload limits.
-- Do not expose clipboard/file actions in UI until the corresponding session mode is approved.
+- [ ] Add dedicated `file` data channel or typed `file.*` messages with size limits, filename sanitization, destination policy and checksum.
+- [ ] Add per-transfer confirmation in Maria Agent before saving any file unless session policy explicitly enables trusted transfer.
+- [x] Add clipboard auto-sync for text payloads over the control/data channel when the initial session capability includes clipboard.
+- [x] Add clipboard loop prevention with origin ids/content hash debounce.
+- [x] Add clipboard limits from config, defaulting to text-only and `REMOTE_ASSIST_CLIPBOARD_MAX_BYTES`.
+- [x] Show clipboard sync state in the support viewer and consent text in Maria Agent.
+- [x] Write audit events for clipboard sync enabled/disabled and sync error; never log clipboard contents. Direction counters remain a follow-up.
+- [x] Do not expose clipboard/file actions in UI until the corresponding session capability is approved.
 
 ### Phase D: Elevated/Admin Mode
 
@@ -264,7 +298,7 @@ Non-negotiable safety rule: no hidden unattended access. Any unattended capabili
 
 ## Handoff
 
-Current checkpoint: Phase A server policy/contracts and Phase B interactive mouse/keyboard control are implemented locally behind explicit config/RBAC gates. `view_only` remains the only enabled mode by default. File transfer, clipboard, elevated/admin and managed unattended remain policy-gated but not transport-complete. Reconnection hardening still needs bounded resume tokens, UI reconnect state, and rate-limit watchdog work.
+Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX and Phase C text clipboard auto-sync are implemented locally and verified by focused tests/build. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is file transfer, then elevated/admin, then managed unattended and reconnect/rate-limit hardening. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
 
 ---
 
@@ -378,3 +412,126 @@ Live browser verification:
 ## Handoff
 
 Current next step: run full workspace verification, commit the web-session alias fix and Remote Assist WebRTC hotfix, deploy the new commit to Linux, verify `/app/admin/agent-updates` loads builds/policy without 401, then set `windows_amd64/stable/3.1.34` as live preferred rollout.
+
+---
+
+# Release Gate Acceleration Plan
+
+Created: 2026-05-10.
+
+Working mode: Release-control.
+
+Change classification: release-control. The change formalizes a fast staging deploy gate while keeping the existing full CI artifact requirement for final release/push.
+
+## Goal
+
+Make deploy iterations faster without normalizing unverified releases:
+
+- `--gate full` remains the default and requires a green CI artifact for the current commit.
+- `--gate quick` is an explicit staging/iteration mode that skips only the full-CI artifact gate.
+- Project rules document that GitHub push/final release still require full CI.
+
+## Implementation Plan
+
+1. [done] Add failing tests for quick/full gate behavior in release/deploy scripts.
+2. [done] Add `--gate full|quick` to `scripts/release_server_to_remote.py`.
+3. [done] Add `--gate full|quick` to `scripts/deploy_workspace_to_remote.py`.
+4. [done] Keep `--skip-ci-check` as an emergency compatibility alias for quick gate.
+5. [done] Update AGENTS/workflow/testing/navigation docs with quick-vs-full rules.
+6. [done] Run focused script tests and workspace verification.
+
+## Verification
+
+Required before completion:
+
+```powershell
+python -m pytest scripts/test_release_server_to_remote.py scripts/test_deploy_workspace_to_remote.py scripts/test_task_intake.py -q
+python scripts/verify_workspace.py
+```
+
+Latest local checks:
+
+```powershell
+python -m pytest scripts/test_release_server_to_remote.py scripts/test_deploy_workspace_to_remote.py scripts/test_task_intake.py scripts/test_run_ci_suite.py -q
+python scripts/verify_workspace.py
+```
+
+---
+
+# DB Fixture Optimization Plan
+
+Created: 2026-05-10.
+
+Working mode: Test / release-control.
+
+Change classification: local test harness with release-control impact. The goal is to reduce `server_pytest_db_api` wall time without weakening DB test isolation.
+
+## Goal
+
+Reduce full CI time in layers:
+
+- Move pure server tests out of the DB/API layer with explicit `pytest.mark.no_db`.
+- Avoid repeated failed `pg_terminate_backend` attempts when shared test DB admin privileges are unavailable.
+- Treat scoped DB cleanup as the next planned layer, not as an opportunistic same-change refactor.
+
+## Current Findings
+
+Latest green CI artifact `e47215ceb4e8b9bb386a985a3fc383a13ae3f177`:
+
+- Full CI wall time: about 49.6 minutes.
+- `server_pytest_db_api`: `2522.8s`, about 42 minutes.
+- DB/API layer: 525 tests.
+- 145 tests in that layer had no explicit DB fixture and totaled about `328s`.
+
+## Implementation Plan
+
+1. [done] Add coverage that selected pure server test modules must be module-level `no_db`.
+2. [done] Mark the first safe pure modules as `pytestmark = pytest.mark.no_db`.
+3. [done] Add coverage that shared DB terminate-backend failures are cached.
+4. [done] Cache shared test DB terminate-backend unavailability in `server/tests/conftest.py`.
+5. [pending] Next layer: design scoped cleanup markers/profiles before changing per-test `TRUNCATE`.
+
+## Next Layer: Scoped Cleanup Design
+
+Do not replace global cleanup blindly. First introduce explicit cleanup profiles and prove each profile covers all tables touched by its tests.
+
+Candidate profiles:
+
+- `tickets_db`: tickets, ticket_events, ticket queues/policies/passport/worklogs/evidence.
+- `observer_db`: observer_traces/spans/signatures/occurrences, operations, device/ticket events used as trace sources.
+- `modules_db`: modules, device_modules, desired modules, toolset snapshots, server_config preferred assignments.
+- `auth_registry_db`: devices, agent_tokens, connection_requests, registry tables, access-control tables.
+
+Required safety work before implementation:
+
+- Add a marker such as `@pytest.mark.db_profile("tickets")`.
+- Make unprofiled DB tests keep the current full cleanup.
+- Add a guard test that every profile's table list includes foreign-key dependents needed for `TRUNCATE ... CASCADE`.
+- Roll out profile by profile, measuring wall time after each batch.
+
+## Verification
+
+Required for this phase:
+
+```powershell
+python -m pytest server/tests/test_ci_pytest_layers_no_db.py server/tests/test_shared_test_db_harness.py -q
+python -m pytest server/tests/test_tech_alert_rules_unit.py server/tests/test_ticket_notification_policy.py server/tests/test_requester_timeline_projection.py server/tests/test_runtime_control.py server/tests/test_remote_assist_no_db.py server/tests/test_support_knowledge_provider.py -q
+python scripts/verify_workspace.py
+```
+
+Latest local checks:
+
+```powershell
+python -m pytest server/tests/test_ci_pytest_layers_no_db.py server/tests/test_shared_test_db_harness.py -q
+python -m pytest server/tests/test_tech_alert_rules_unit.py server/tests/test_ticket_notification_policy.py server/tests/test_requester_timeline_projection.py server/tests/test_runtime_control.py server/tests/test_remote_assist_no_db.py server/tests/test_support_knowledge_provider.py -q
+python -m pytest server/tests/test_tech_alert_rules_unit.py server/tests/test_ticket_notification_policy.py server/tests/test_requester_timeline_projection.py server/tests/test_runtime_control.py server/tests/test_remote_assist_no_db.py server/tests/test_support_knowledge_provider.py -m no_db --collect-only -q
+python -m pytest server/tests -m "not manual and no_db" -q
+python -m pytest server/tests -m "not manual and not no_db and not agent_ws" --collect-only -q
+python scripts/verify_workspace.py
+```
+
+Measured effect after this phase:
+
+- Selected pure files: 52 tests collect under `-m no_db`.
+- Server `no_db` layer: 208 passed, 503 deselected in 1.46s.
+- DB/API collection: 473 selected, down from 525 in the latest green CI artifact.
