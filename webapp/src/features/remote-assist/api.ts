@@ -45,6 +45,8 @@ export type RemoteAssistMediaOptions = {
 export type RemoteAssistFeatureOptions = {
   clipboard_auto_sync?: boolean;
   clipboard_max_bytes?: number;
+  file_transfer?: boolean;
+  file_transfer_max_bytes?: number;
 };
 
 export type RemoteAssistRequestResult = {

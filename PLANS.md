@@ -55,7 +55,7 @@ Implemented locally: DB models/migration, backend repo/service/API/signaling, RB
 | 2 | Signaling and view-only WebRTC stream | 96% | Offer/answer path verified in field; ICE failure now fails cleanly instead of hanging |
 | 3 | Support workspace and Maria Agent UI polish | 92% | Agent banner now distinguishes connecting from active screen visibility |
 | 4 | Hardening, TURN config, reconnect, timeout | 75% | Token/ICE config, coturn on stand, short-lived TURN credentials, expiry hooks, viewer and agent timeouts, failed-state audit and cleanup added; reconnect/rate-limit polish remains |
-| 5 | Full assist features | 70% | Quality profiles, production mouse/keyboard UX, text clipboard auto-sync and Windows elevated/admin helper are implemented and rolled out to the stand; file transfer and managed unattended remain policy-gated but not transport-complete |
+| 5 | Full assist features | 78% | Quality profiles, production mouse/keyboard UX, text clipboard auto-sync, Windows elevated/admin helper and operator-to-device file transfer are implemented locally; managed unattended remains policy-gated but not transport-complete |
 
 ## Implementation Plan
 
@@ -300,7 +300,8 @@ Execution slices, in order:
 
 ### Phase C: File Transfer And Clipboard
 
-- [ ] Add dedicated `file` data channel or typed `file.*` messages with size limits, filename sanitization, destination policy and checksum.
+- [x] Add dedicated `file-transfer` data channel with typed `file.*` messages, size limits, filename sanitization, destination policy and checksum.
+- [x] Add operator-to-device transfer through viewer file picker, drag-and-drop and browser paste-file handling.
 - [ ] Add per-transfer confirmation in Maria Agent before saving any file unless session policy explicitly enables trusted transfer.
 - [x] Add clipboard auto-sync for text payloads over the control/data channel when the initial session capability includes clipboard.
 - [x] Add clipboard loop prevention with origin ids/content hash debounce.
@@ -340,7 +341,7 @@ Current Windows helper slice:
 
 ## Handoff
 
-Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX, Phase C text clipboard auto-sync and Phase D Windows `elevated_admin` helper are implemented, committed, deployed to the stand and rolled out as agent `3.1.50` to `AD-MAIN`. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is file transfer, then managed unattended and reconnect/rate-limit hardening. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
+Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX, Phase C text clipboard auto-sync, Phase D Windows `elevated_admin` helper and Phase C operator-to-device file transfer are implemented locally. The latest deployed stand agent before this slice is `3.1.50`; file transfer requires packaging and rollout as `3.1.51`. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is managed unattended and reconnect/rate-limit hardening, plus device-to-operator file transfer if needed. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
 
 ---
 

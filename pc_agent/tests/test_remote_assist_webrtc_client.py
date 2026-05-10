@@ -5,6 +5,7 @@ from pc_agent.remote_assist.webrtc_client import (
     candidate_summary,
     count_sdp_candidates,
     is_clipboard_channel_message,
+    is_file_transfer_channel_message,
 )
 from pc_agent.remote_assist.tls import build_remote_assist_ssl_context, tls_error_hint
 
@@ -38,9 +39,11 @@ def test_normalize_media_options_clamps_agent_capture_limits() -> None:
 
 
 def test_normalize_feature_options_clamps_clipboard_limits() -> None:
-    assert _normalize_feature_options({"clipboard_auto_sync": True, "clipboard_max_bytes": 99_999_999}) == {
+    assert _normalize_feature_options({"clipboard_auto_sync": True, "clipboard_max_bytes": 99_999_999, "file_transfer": True, "file_transfer_max_bytes": 999_999_999}) == {
         "clipboard_auto_sync": True,
         "clipboard_max_bytes": 1024 * 1024,
+        "file_transfer": True,
+        "file_transfer_max_bytes": 100 * 1024 * 1024,
     }
 
 
@@ -49,6 +52,13 @@ def test_clipboard_channel_routing_accepts_enable_alias() -> None:
     assert is_clipboard_channel_message("clipboard_disable") is True
     assert is_clipboard_channel_message("clipboard.update") is True
     assert is_clipboard_channel_message("control_enable") is False
+
+
+def test_file_transfer_channel_routing_accepts_file_messages() -> None:
+    assert is_file_transfer_channel_message("file.offer") is True
+    assert is_file_transfer_channel_message("file.chunk") is True
+    assert is_file_transfer_channel_message("file.complete") is True
+    assert is_file_transfer_channel_message("clipboard.update") is False
 
 
 def test_elevated_admin_mode_enables_elevated_input_controller() -> None:

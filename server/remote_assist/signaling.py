@@ -24,6 +24,8 @@ ALLOWED_SIGNALING_TYPES = {
     "control.error",
     "clipboard.state",
     "clipboard.error",
+    "file.transfer",
+    "file.error",
 }
 
 
@@ -179,6 +181,8 @@ async def _handle_signal_message(
         await _log_control_event(session_id, role, message_type, message.get("payload") if isinstance(message.get("payload"), dict) else {})
     elif message_type in {"clipboard.state", "clipboard.error"}:
         await _log_clipboard_event(session_id, role, message_type, message.get("payload") if isinstance(message.get("payload"), dict) else {})
+    elif message_type in {"file.transfer", "file.error"}:
+        await _log_file_event(session_id, role, message_type, message.get("payload") if isinstance(message.get("payload"), dict) else {})
 
     target_role = "agent" if role == "operator" else "operator"
     peer = _peer_store(request.app).get(session_id, {}).get(target_role)
@@ -293,6 +297,38 @@ async def _log_clipboard_event(session_id: str, role: str, message_type: str, pa
             actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
             payload={key: value for key, value in sanitized_payload.items() if value is not None},
             write_timeline=event_type != "clipboard_sync_failed",
+        )
+        await db_session.commit()
+
+
+async def _log_file_event(session_id: str, role: str, message_type: str, payload: dict[str, Any]) -> None:
+    status = str(payload.get("status") or "").strip().lower()
+    if message_type == "file.error":
+        event_type = "file_transfer_failed"
+    elif status == "completed":
+        event_type = "file_transfer_completed"
+    elif status == "started":
+        event_type = "file_transfer_started"
+    else:
+        event_type = "file_transfer_progress"
+    sanitized_payload = {
+        "status": status or None,
+        "name": str(payload.get("name") or "")[:180] or None,
+        "size": int(payload.get("size")) if isinstance(payload.get("size"), int) and payload.get("size") >= 0 else None,
+        "error_code": str(payload.get("error_code") or "")[:80] or None,
+    }
+    async with get_session() as db_session:
+        service = RemoteAssistService(db_session)
+        remote_session = await service.repo.get(session_id)
+        if remote_session is None:
+            return
+        await service.log_event(
+            remote_session,
+            event_type,
+            actor_type=role,
+            actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
+            payload={key: value for key, value in sanitized_payload.items() if value is not None},
+            write_timeline=event_type in {"file_transfer_started", "file_transfer_completed", "file_transfer_failed"},
         )
         await db_session.commit()
 

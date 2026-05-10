@@ -8,6 +8,7 @@ import aiohttp
 from loguru import logger
 
 from .clipboard import ClipboardConfig, ClipboardError, ClipboardSyncBridge
+from .file_transfer import FileTransferBridge, FileTransferConfig, FileTransferError
 from .input_controller import InputController, InputControllerError
 from .screen_track import ScreenCaptureTrack
 from .tls import build_remote_assist_ssl_context, tls_error_hint
@@ -58,6 +59,7 @@ class RemoteAssistWebRTCClient:
             elevated=mode == "elevated_admin",
         )
         self.clipboard_bridge: ClipboardSyncBridge | None = None
+        self.file_transfer_bridge: FileTransferBridge | None = None
         self._closed = False
         self._pc = None
         self._ws = None
@@ -70,13 +72,14 @@ class RemoteAssistWebRTCClient:
         from aiortc.sdp import candidate_from_sdp
 
         logger.info(
-            "Remote Assist WebRTC starting: mode={} ice_servers={} media={}x{}@{} clipboard={}",
+            "Remote Assist WebRTC starting: mode={} ice_servers={} media={}x{}@{} clipboard={} file_transfer={}",
             self.mode,
             len(self.ice_servers),
             self.media["max_width"],
             self.media["max_height"],
             self.media["fps"],
             self.features["clipboard_auto_sync"],
+            self.features["file_transfer"],
         )
         ice = [
             RTCIceServer(urls=item.get("urls"), username=item.get("username"), credential=item.get("credential"))
@@ -169,6 +172,9 @@ class RemoteAssistWebRTCClient:
 
                 @self._pc.on("datachannel")
                 def on_datachannel(channel):
+                    if channel.label == "file-transfer":
+                        self._setup_file_transfer_channel(channel)
+                        return
                     if channel.label != "control":
                         logger.warning(f"Remote Assist rejected data channel: label={channel.label}")
                         try:
@@ -332,6 +338,11 @@ class RemoteAssistWebRTCClient:
         except Exception as exc:
             logger.debug(f"Remote Assist clipboard stop failed: {exc}")
         try:
+            if self.file_transfer_bridge is not None:
+                await self.file_transfer_bridge.stop()
+        except Exception as exc:
+            logger.debug(f"Remote Assist file transfer stop failed: {exc}")
+        try:
             self.input_controller.close()
         except Exception as exc:
             logger.debug(f"Remote Assist input controller close failed: {exc}")
@@ -346,6 +357,71 @@ class RemoteAssistWebRTCClient:
             self.on_state_change(state)
         except Exception as exc:
             logger.debug(f"Remote Assist state callback failed: {exc}")
+
+    def _setup_file_transfer_channel(self, channel: Any) -> None:
+        def send_channel(message: dict[str, Any]) -> None:
+            channel.send(json.dumps(message))
+
+        self.file_transfer_bridge = FileTransferBridge(
+            config=FileTransferConfig(
+                enabled=bool(self.features["file_transfer"]),
+                max_bytes=int(self.features["file_transfer_max_bytes"]),
+            ),
+            send=send_channel,
+        )
+        file_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1000)
+
+        async def process_file_messages() -> None:
+            while True:
+                message = await file_queue.get()
+                try:
+                    message_type = str(message.get("type") or "")
+                    if not is_file_transfer_channel_message(message_type):
+                        raise FileTransferError("FILE_MESSAGE_UNSUPPORTED", "File transfer message is unsupported")
+                    if self.file_transfer_bridge is None:
+                        raise FileTransferError("FILE_TRANSFER_UNAVAILABLE", "File transfer bridge is not available")
+                    result = await self.file_transfer_bridge.handle_message(message)
+                    channel.send(json.dumps({"type": "file.ack", "payload": result}))
+                    logger.info("Remote Assist file message accepted: type={} result={}", message_type, result.get("type"))
+                except FileTransferError as exc:
+                    logger.warning("Remote Assist file message rejected: type={} code={}", message.get("type"), exc.code)
+                    channel.send(json.dumps({"type": "file.error", "payload": {"error_code": exc.code, "error": exc.message}}))
+                except Exception as exc:
+                    logger.exception(f"Remote Assist file message failed: {exc}")
+                    channel.send(json.dumps({"type": "file.error", "payload": {"error_code": "FILE_TRANSFER_FAILED", "error": str(exc)}}))
+                finally:
+                    file_queue.task_done()
+
+        worker_task = asyncio.create_task(process_file_messages())
+        self._control_worker_tasks.add(worker_task)
+        worker_task.add_done_callback(self._control_worker_tasks.discard)
+
+        @channel.on("close")
+        def on_file_close():
+            worker_task.cancel()
+
+        @channel.on("message")
+        def on_file_message(raw_message):
+            try:
+                if isinstance(raw_message, bytes):
+                    raw_message = raw_message.decode("utf-8")
+                message = json.loads(str(raw_message))
+                file_queue.put_nowait(message)
+            except asyncio.QueueFull:
+                channel.send(
+                    json.dumps(
+                        {
+                            "type": "file.error",
+                            "payload": {
+                                "error_code": "FILE_RATE_LIMITED",
+                                "error": "Remote Assist file queue is full",
+                            },
+                        }
+                    )
+                )
+            except Exception as exc:
+                logger.exception(f"Remote Assist file message failed: {exc}")
+                channel.send(json.dumps({"type": "file.error", "payload": {"error_code": "FILE_TRANSFER_FAILED", "error": str(exc)}}))
 
     @staticmethod
     def _with_query(url: str, **params: str) -> str:
@@ -379,8 +455,14 @@ def _normalize_feature_options(features: dict[str, Any] | None) -> dict[str, Any
     return {
         "clipboard_auto_sync": bool(raw.get("clipboard_auto_sync")),
         "clipboard_max_bytes": _bounded_int(raw.get("clipboard_max_bytes"), default=256 * 1024, minimum=1024, maximum=1024 * 1024),
+        "file_transfer": bool(raw.get("file_transfer")),
+        "file_transfer_max_bytes": _bounded_int(raw.get("file_transfer_max_bytes"), default=25 * 1024 * 1024, minimum=1024, maximum=100 * 1024 * 1024),
     }
 
 
 def is_clipboard_channel_message(message_type: str) -> bool:
     return message_type in {"clipboard_enable", "clipboard_disable"} or message_type.startswith("clipboard.")
+
+
+def is_file_transfer_channel_message(message_type: str) -> bool:
+    return message_type.startswith("file.")

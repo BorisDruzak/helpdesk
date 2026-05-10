@@ -6,7 +6,7 @@ from loguru import logger
 import config
 from access_control.service import can
 from app.db import get_session
-from remote_assist.features import wants_clipboard_auto_sync
+from remote_assist.features import wants_clipboard_auto_sync, wants_file_transfer
 from remote_assist.policy import get_remote_assist_mode_permission, normalize_remote_assist_mode
 from remote_assist.service import RemoteAssistError, RemoteAssistService, remote_session_to_dict
 from remote_assist.signaling import notify_remote_assist_session_end
@@ -91,9 +91,19 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
             if wants_clipboard_auto_sync(feature_options):
                 if not config.REMOTE_ASSIST_CLIPBOARD_ENABLED:
                     return _server_error("CLIPBOARD_NOT_ENABLED", "Remote Assist clipboard sync is disabled by policy", status=403)
-                if mode != "interactive_control":
+                if mode not in {"interactive_control", "elevated_admin"}:
                     return _server_error("MODE_NOT_ALLOWED", "Clipboard sync requires interactive_control mode", status=403)
                 denied = await _require_remote_permission(session, auth_context, "remote_assist.clipboard")
+                if denied is not None:
+                    return denied
+            if mode == "file_transfer":
+                feature_options = {**feature_options, "file_transfer": True}
+            if wants_file_transfer(feature_options):
+                if not config.REMOTE_ASSIST_FILE_TRANSFER_ENABLED:
+                    return _server_error("FILE_TRANSFER_NOT_ENABLED", "Remote Assist file transfer is disabled by policy", status=403)
+                if mode not in {"interactive_control", "elevated_admin", "file_transfer"}:
+                    return _server_error("MODE_NOT_ALLOWED", "File transfer requires a control or file_transfer session", status=403)
+                denied = await _require_remote_permission(session, auth_context, "remote_assist.file_transfer")
                 if denied is not None:
                     return denied
             service = RemoteAssistService(session)

@@ -95,10 +95,12 @@ type RemoteAssistPanelProps = {
   onChanged?: () => void;
 };
 
-export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboardAutoSync: boolean) {
+export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboardAutoSync: boolean, fileTransfer: boolean) {
   const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
+  const fileMode = controlMode || requestedMode === "file_transfer";
   return {
     clipboard_auto_sync: controlMode && clipboardAutoSync,
+    file_transfer: fileMode && fileTransfer,
   };
 }
 
@@ -111,9 +113,11 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
   const [mode, setMode] = useState("view_only");
   const [qualityProfile, setQualityProfile] = useState("smooth");
   const [clipboardAutoSync, setClipboardAutoSync] = useState(false);
+  const [fileTransfer, setFileTransfer] = useState(false);
   const modeRef = useRef(mode);
   const qualityProfileRef = useRef(qualityProfile);
   const clipboardAutoSyncRef = useRef(clipboardAutoSync);
+  const fileTransferRef = useRef(fileTransfer);
 
   const sessionsQuery = useQuery({
     queryKey: ["remote-assist", ticketId],
@@ -130,6 +134,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
   const activeOrWaiting = latestSession && ["waiting_consent", "approved", "starting", "active"].includes(latestSession.status);
   const reasonReady = reason.trim().length >= 3;
   const hasClipboardPermission = permissions.includes("remote_assist.clipboard");
+  const hasFileTransferPermission = permissions.includes("remote_assist.file_transfer");
   const hasElevatedPermission = permissions.includes("remote_assist.elevated");
 
   const requestMutation = useMutation({
@@ -140,13 +145,14 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
       const requestedMode = modeRef.current;
       const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
       const requestedClipboard = controlMode && clipboardAutoSyncRef.current && hasClipboardPermission;
+      const requestedFileTransfer = (controlMode || requestedMode === "file_transfer") && fileTransferRef.current && hasFileTransferPermission;
       return requestRemoteAssist(ticketId, {
         deviceId,
         mode: requestedMode,
         reason: reason.trim(),
         durationMinutes,
         media: QUALITY_PRESETS[qualityProfileRef.current] ?? QUALITY_PRESETS.balanced,
-        features: buildRemoteAssistFeatureOptions(requestedMode, requestedClipboard),
+        features: buildRemoteAssistFeatureOptions(requestedMode, requestedClipboard, requestedFileTransfer),
       });
     },
     onSuccess: () => {
@@ -158,6 +164,8 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
       qualityProfileRef.current = "smooth";
       setClipboardAutoSync(false);
       clipboardAutoSyncRef.current = false;
+      setFileTransfer(false);
+      fileTransferRef.current = false;
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
       onChanged?.();
     },
@@ -259,13 +267,17 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                       clipboardAutoSyncRef.current = false;
                       setClipboardAutoSync(false);
                     }
+                    if (nextMode === "view_only") {
+                      fileTransferRef.current = false;
+                      setFileTransfer(false);
+                    }
                   }}
                   value={mode}
                 >
                   <option value="view_only">Только просмотр</option>
                   <option value="interactive_control">Просмотр и управление</option>
-                  <option value="file_transfer" disabled>
-                    Передача файлов (policy gate)
+                  <option value="file_transfer" disabled={!hasFileTransferPermission}>
+                    Только передача файлов
                   </option>
                   <option value="elevated_admin" disabled={!hasElevatedPermission}>
                     Админ-доступ с UAC
@@ -293,6 +305,26 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                     <span className="block font-semibold text-slate-100">Автосинхронизация буфера обмена</span>
                     <span className="mt-1 block text-xs leading-5 text-slate-400">
                       Текстовый буфер обмена будет синхронизироваться между оператором и устройством во время сессии.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+              {mode === "interactive_control" || mode === "elevated_admin" || mode === "file_transfer" ? (
+                <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
+                  <input
+                    checked={fileTransfer}
+                    className="mt-1"
+                    disabled={!hasFileTransferPermission}
+                    onChange={(event) => {
+                      fileTransferRef.current = event.currentTarget.checked;
+                      setFileTransfer(event.currentTarget.checked);
+                    }}
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="block font-semibold text-slate-100">Передача файлов</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-400">
+                      Оператор сможет отправлять файлы через кнопку, drag-and-drop или вставку файла в viewer.
                     </span>
                   </span>
                 </label>

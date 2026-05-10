@@ -1310,6 +1310,9 @@ def _timeline_event_label(event_type: str) -> str:
         "remote_assist_control_rejected": "Команда управления отклонена",
         "remote_assist_clipboard_sync_enabled": "Буфер обмена синхронизируется",
         "remote_assist_clipboard_sync_disabled": "Синхронизация буфера обмена выключена",
+        "remote_assist_file_transfer_started": "Передача файла началась",
+        "remote_assist_file_transfer_completed": "Файл передан",
+        "remote_assist_file_transfer_failed": "Передача файла завершилась с ошибкой",
         "sla_started": "SLA started",
         "sla_first_response_stopped": "SLA first response stopped",
         "sla_resolution_stopped": "SLA resolution stopped",
@@ -1370,6 +1373,14 @@ def _timeline_event_text(event_type: str, payload: dict) -> str:
         return "Автосинхронизация буфера обмена включена."
     if event_type == "remote_assist_clipboard_sync_disabled":
         return "Автосинхронизация буфера обмена выключена."
+    if event_type == "remote_assist_file_transfer_started":
+        name = str(payload.get("name") or "файл").strip()
+        return f"Начата передача файла: {name}."
+    if event_type == "remote_assist_file_transfer_completed":
+        name = str(payload.get("name") or "файл").strip()
+        return f"Файл передан на устройство: {name}."
+    if event_type == "remote_assist_file_transfer_failed":
+        return "Передача файла завершилась с ошибкой."
     if event_type == "status_changed":
         return " -> ".join(str(payload.get(key) or "").strip() for key in ("from_status", "to_status") if str(payload.get(key) or "").strip()) or "Status changed"
     if event_type == "assignee_changed":

@@ -39,6 +39,8 @@ class RemoteAssistConsentDialog(QDialog):
         feature_notes: list[str] = []
         if session_features.get("clipboard_auto_sync"):
             feature_notes.append("Буфер обмена будет синхронизироваться автоматически между вами и специалистом.")
+        if session_features.get("file_transfer"):
+            feature_notes.append("Специалист сможет передавать файлы на этот компьютер; файлы будут сохранены в папку загрузок Maria Remote Assist.")
         feature_text = "\n".join(feature_notes)
 
         layout = QVBoxLayout(self)

@@ -2,7 +2,7 @@ import pytest
 
 from access_control.catalog import get_role_permission_codes
 import config
-from remote_assist.features import build_remote_assist_features, wants_clipboard_auto_sync
+from remote_assist.features import build_remote_assist_features, wants_clipboard_auto_sync, wants_file_transfer
 from remote_assist.ice import build_remote_assist_ice_servers
 from remote_assist.media import build_remote_assist_media_options
 from remote_assist.policy import (
@@ -31,7 +31,7 @@ def test_support_role_can_request_and_view_remote_assist() -> None:
     assert "remote_assist.request" in permissions
     assert "remote_assist.view" in permissions
     assert "remote_assist.control" in permissions
-    assert "remote_assist.file_transfer" not in permissions
+    assert "remote_assist.file_transfer" in permissions
     assert "remote_assist.elevated" not in permissions
     assert "remote_assist.unattended" not in permissions
 
@@ -127,9 +127,24 @@ def test_remote_assist_clipboard_features_are_policy_gated(monkeypatch) -> None:
     assert features["clipboard_max_bytes"] == config.REMOTE_ASSIST_CLIPBOARD_MAX_BYTES
 
 
+def test_remote_assist_file_transfer_features_are_policy_gated(monkeypatch) -> None:
+    assert wants_file_transfer({"file_transfer": True})
+
+    monkeypatch.setattr(config, "REMOTE_ASSIST_FILE_TRANSFER_ENABLED", False)
+    assert build_remote_assist_features({"file_transfer": True})["file_transfer"] is False
+
+    monkeypatch.setattr(config, "REMOTE_ASSIST_FILE_TRANSFER_ENABLED", True)
+    monkeypatch.setattr(config, "REMOTE_ASSIST_FILE_TRANSFER_MAX_BYTES", 12345)
+    features = build_remote_assist_features({"file_transfer": True})
+    assert features["file_transfer"] is True
+    assert features["file_transfer_max_bytes"] == 12345
+
+
 def test_remote_assist_control_events_have_timeline_system_messages() -> None:
     assert _timeline_event_label("remote_assist_control_enabled") == "Удалённое управление включено"
     assert _timeline_event_text("remote_assist_control_enabled", {}) == "Оператор включил управление мышью и клавиатурой."
     assert _timeline_event_text("remote_assist_control_disabled", {}) == "Оператор выключил управление мышью и клавиатурой."
     assert _timeline_event_text("remote_assist_control_rejected", {}) == "Команда удалённого управления отклонена агентом."
     assert _timeline_event_text("remote_assist_clipboard_sync_enabled", {}) == "Автосинхронизация буфера обмена включена."
+    assert _timeline_event_label("remote_assist_file_transfer_completed") == "Файл передан"
+    assert _timeline_event_text("remote_assist_file_transfer_completed", {"name": "report.txt"}) == "Файл передан на устройство: report.txt."

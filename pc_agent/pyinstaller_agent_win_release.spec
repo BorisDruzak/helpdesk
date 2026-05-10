@@ -31,7 +31,8 @@ a = Analysis(
         "modules.impl.screen",
         "modules.impl.input",
         "modules.impl.diag_logs",
-        "pc_agent.remote_assist.elevated_helper",
+    "pc_agent.remote_assist.elevated_helper",
+    "pc_agent.remote_assist.file_transfer",
     ] + remote_assist_hiddenimports,
     datas=[
         (str(pc_agent_root / "config" / "settings.default.yaml"), "pc_agent/config"),

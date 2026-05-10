@@ -330,6 +330,7 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "remote_assist.request",
             "remote_assist.view",
             "remote_assist.control",
+            "remote_assist.file_transfer",
             "remote_assist.clipboard",
             "module.tool.run.low_risk",
             "module.tool.run.high_risk",

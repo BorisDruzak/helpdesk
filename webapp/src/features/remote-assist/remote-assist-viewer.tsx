@@ -1,5 +1,5 @@
-import { Maximize2, MonitorX, MousePointer2, RotateCcw, Scaling, X } from "lucide-react";
-import type { KeyboardEvent, MouseEvent, WheelEvent } from "react";
+import { Maximize2, MonitorX, MousePointer2, RotateCcw, Scaling, Upload, X } from "lucide-react";
+import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, WheelEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
@@ -7,6 +7,7 @@ import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewe
 type ViewerState = "loading" | "connecting" | "active" | "ended" | "failed";
 type ScaleMode = "fit" | "actual";
 type ClipboardState = "off" | "syncing" | "unavailable" | "error";
+type FileTransferState = "off" | "ready" | "transferring" | "done" | "error";
 
 type RemoteAssistViewerProps = {
   sessionId: string;
@@ -100,6 +101,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const controlChannelRef = useRef<RTCDataChannel | null>(null);
+  const fileChannelRef = useRef<RTCDataChannel | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastMouseMoveRef = useRef(0);
   const pendingClickTimerRef = useRef<number | null>(null);
   const pointerDownRef = useRef<{
@@ -113,6 +116,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const clipboardPollRef = useRef<number | null>(null);
   const clipboardHashRef = useRef<string | null>(null);
   const clipboardApplyingRemoteRef = useRef(false);
+  const pendingFilesRef = useRef<Map<string, { name: string; size: number }>>(new Map());
   const lastVideoFrameAtRef = useRef(0);
   const lastVideoTimeRef = useRef(0);
   const [state, setState] = useState<ViewerState>("loading");
@@ -124,6 +128,9 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const [controlEnabled, setControlEnabled] = useState(false);
   const [clipboardState, setClipboardState] = useState<ClipboardState>("off");
   const [clipboardError, setClipboardError] = useState<string | null>(null);
+  const [fileTransferState, setFileTransferState] = useState<FileTransferState>("off");
+  const [fileTransferMessage, setFileTransferMessage] = useState<string | null>(null);
+  const [fileTransferMaxBytes, setFileTransferMaxBytes] = useState(0);
   const [connectNonce, setConnectNonce] = useState(0);
 
   useEffect(() => {
@@ -167,6 +174,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
       wsRef.current = null;
       pcRef.current = null;
       controlChannelRef.current = null;
+      fileChannelRef.current = null;
+      pendingFilesRef.current.clear();
     };
 
     const failConnection = (message: string, errorCode = "WEBRTC_FAILED") => {
@@ -256,8 +265,27 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
         pc.addTransceiver("video", { direction: "recvonly" });
         const controlChannel = pc.createDataChannel("control", { ordered: true });
         controlChannelRef.current = controlChannel;
+        if (info.features?.file_transfer) {
+          const fileChannel = pc.createDataChannel("file-transfer", { ordered: true });
+          fileChannelRef.current = fileChannel;
+          setFileTransferState("off");
+          setFileTransferMaxBytes(info.features.file_transfer_max_bytes ?? 25 * 1024 * 1024);
+          fileChannel.onopen = () => {
+            setFileTransferState("ready");
+            setFileTransferMessage("Файлы можно перетащить в окно, выбрать кнопкой или вставить через Ctrl+V.");
+          };
+          fileChannel.onmessage = (event) => {
+            handleFileChannelMessage(event.data);
+          };
+          fileChannel.onclose = () => {
+            setFileTransferState("off");
+          };
+        } else {
+          setFileTransferState("off");
+          setFileTransferMaxBytes(0);
+        }
         controlChannel.onopen = () => {
-          if ((info.mode ?? "view_only") === "interactive_control") {
+          if (["interactive_control", "elevated_admin"].includes(info.mode ?? "view_only")) {
             controlChannel.send(JSON.stringify({ type: "control_enable" }));
             setControlEnabled(true);
             wsRef.current?.send(JSON.stringify({ type: "control.state", payload: { enabled: true } }));
@@ -462,6 +490,132 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     }
   };
 
+  const handleFileChannelMessage = (rawMessage: unknown) => {
+    try {
+      const message = JSON.parse(String(rawMessage || "{}"));
+      const payload = message.payload ?? {};
+      if (message.type === "file.progress") {
+        const name = String(payload.name || pendingFilesRef.current.get(String(payload.transfer_id))?.name || "файл");
+        const received = Number(payload.received || 0);
+        const size = Number(payload.size || 0);
+        const percent = size > 0 ? Math.min(100, Math.round((received / size) * 100)) : 0;
+        setFileTransferState("transferring");
+        setFileTransferMessage(`${name}: ${percent}%`);
+      }
+      if (message.type === "file.saved") {
+        const transferId = String(payload.transfer_id || "");
+        const pending = pendingFilesRef.current.get(transferId);
+        pendingFilesRef.current.delete(transferId);
+        const name = String(payload.name || pending?.name || "файл");
+        const size = Number(payload.size || pending?.size || 0);
+        setFileTransferState("done");
+        setFileTransferMessage(`Файл передан: ${name}`);
+        wsRef.current?.send(JSON.stringify({ type: "file.transfer", payload: { status: "completed", name, size } }));
+      }
+      if (message.type === "file.error") {
+        setFileTransferState("error");
+        setFileTransferMessage(payload.error ?? payload.error_code ?? "Ошибка передачи файла.");
+        wsRef.current?.send(
+          JSON.stringify({ type: "file.error", payload: { error_code: payload.error_code ?? "FILE_TRANSFER_FAILED" } }),
+        );
+      }
+    } catch {
+      setFileTransferState("error");
+      setFileTransferMessage("Получено некорректное сообщение канала файлов.");
+    }
+  };
+
+  const waitForFileBackpressure = (channel: RTCDataChannel) => {
+    if (channel.bufferedAmount < 4 * 1024 * 1024) {
+      return Promise.resolve();
+    }
+    channel.bufferedAmountLowThreshold = 512 * 1024;
+    return new Promise<void>((resolve) => {
+      const finish = () => {
+        channel.removeEventListener("bufferedamountlow", finish);
+        resolve();
+      };
+      channel.addEventListener("bufferedamountlow", finish, { once: true });
+    });
+  };
+
+  const sendFileToAgent = async (file: File) => {
+    const channel = fileChannelRef.current;
+    if (!channel || channel.readyState !== "open") {
+      setFileTransferState("error");
+      setFileTransferMessage("Канал передачи файлов ещё не готов.");
+      return;
+    }
+    if (fileTransferMaxBytes > 0 && file.size > fileTransferMaxBytes) {
+      setFileTransferState("error");
+      setFileTransferMessage(`Файл больше лимита сессии: ${file.name}`);
+      wsRef.current?.send(JSON.stringify({ type: "file.error", payload: { error_code: "FILE_TOO_LARGE", name: file.name, size: file.size } }));
+      return;
+    }
+    const transferId = crypto.randomUUID();
+    pendingFilesRef.current.set(transferId, { name: file.name, size: file.size });
+    setFileTransferState("transferring");
+    setFileTransferMessage(`Передача файла: ${file.name}`);
+    wsRef.current?.send(JSON.stringify({ type: "file.transfer", payload: { status: "started", name: file.name, size: file.size } }));
+    const buffer = await file.arrayBuffer();
+    const digestBytes = await crypto.subtle.digest("SHA-256", buffer);
+    const sha256 = Array.from(new Uint8Array(digestBytes))
+      .map((item) => item.toString(16).padStart(2, "0"))
+      .join("");
+    channel.send(JSON.stringify({ type: "file.offer", payload: { transfer_id: transferId, name: file.name, size: file.size, sha256 } }));
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 32 * 1024;
+    for (let offset = 0, seq = 0; offset < bytes.length; offset += chunkSize, seq += 1) {
+      const chunk = bytes.slice(offset, offset + chunkSize);
+      let binary = "";
+      for (const value of chunk) {
+        binary += String.fromCharCode(value);
+      }
+      channel.send(JSON.stringify({ type: "file.chunk", payload: { transfer_id: transferId, seq, data: btoa(binary) } }));
+      await waitForFileBackpressure(channel);
+    }
+    channel.send(JSON.stringify({ type: "file.complete", payload: { transfer_id: transferId } }));
+  };
+
+  const sendFilesToAgent = (files: FileList | File[]) => {
+    const items = Array.from(files).filter((file) => file.size >= 0);
+    if (!items.length) {
+      return;
+    }
+    void items.reduce(
+      (chain, file) =>
+        chain.then(async () => {
+          await sendFileToAgent(file);
+        }),
+      Promise.resolve(),
+    );
+  };
+
+  const handleFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.currentTarget.files) {
+      sendFilesToAgent(event.currentTarget.files);
+      event.currentTarget.value = "";
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    if (fileTransferState === "off") {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer.files.length > 0) {
+      sendFilesToAgent(event.dataTransfer.files);
+    }
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
+    if (fileTransferState === "off" || event.clipboardData.files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    sendFilesToAgent(event.clipboardData.files);
+  };
+
   const sendControl = (payload: Record<string, unknown>) => {
     const channel = controlChannelRef.current;
     if (!channel || channel.readyState !== "open") {
@@ -473,7 +627,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   };
 
   const setControl = (enabled: boolean) => {
-    if (mode !== "interactive_control") {
+    if (!["interactive_control", "elevated_admin"].includes(mode)) {
       return;
     }
     if (sendControl({ type: enabled ? "control_enable" : "control_disable" })) {
@@ -669,7 +823,26 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
                 Буфер: {clipboardState === "syncing" ? "авто" : "недоступен"}
               </span>
             ) : null}
-            {mode === "interactive_control" ? (
+            {fileTransferState !== "off" ? (
+              <>
+                <input className="hidden" multiple onChange={handleFileInput} ref={fileInputRef} type="file" />
+                <button
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    fileTransferState === "error"
+                      ? "border-rose-300/40 bg-rose-400/10 text-rose-100"
+                      : "border-white/10 text-slate-300 hover:text-white"
+                  }`}
+                  disabled={fileTransferState === "transferring"}
+                  onClick={() => fileInputRef.current?.click()}
+                  title={fileTransferMessage ?? "Передать файл на устройство"}
+                  type="button"
+                >
+                  <Upload className="mr-2 inline h-4 w-4" />
+                  {fileTransferState === "transferring" ? "Передача..." : "Файл"}
+                </button>
+              </>
+            ) : null}
+            {mode === "interactive_control" || mode === "elevated_admin" ? (
               <button
                 className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
                   controlEnabled ? "border-amber-300/40 bg-amber-400/15 text-amber-100" : "border-white/10 text-slate-300 hover:text-white"
@@ -726,14 +899,21 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           onContextMenu={(event) => event.preventDefault()}
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
+          onDragOver={(event) => {
+            if (fileTransferState !== "off") {
+              event.preventDefault();
+            }
+          }}
+          onDrop={handleDrop}
           onKeyDown={(event) => handleKey(event, "key_down")}
           onKeyUp={(event) => handleKey(event, "key_up")}
           onMouseDown={(event) => handleMouseButton(event, "mouse_down")}
           onMouseMove={handleMouseMove}
           onMouseUp={(event) => handleMouseButton(event, "mouse_up")}
+          onPaste={handlePaste}
           onWheel={handleWheel}
           style={scaleMode === "actual" ? { overflow: "auto" } : undefined}
-          tabIndex={mode === "interactive_control" ? 0 : -1}
+          tabIndex={mode === "interactive_control" || mode === "elevated_admin" || fileTransferState !== "off" ? 0 : -1}
         >
           <video
             ref={videoRef}
@@ -749,6 +929,11 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           {state === "active" && mediaLabel ? (
             <div className="absolute bottom-4 left-4 rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-300">
               {mediaLabel}
+            </div>
+          ) : null}
+          {state === "active" && fileTransferMessage ? (
+            <div className="absolute bottom-4 right-4 rounded-lg border border-white/10 bg-slate-950/75 px-3 py-2 text-xs text-slate-300">
+              {fileTransferMessage}
             </div>
           ) : null}
           {state !== "active" ? (

@@ -85,7 +85,7 @@
 - Для sync transport-path `send_ws_command(..., wait_for_result=True)` waiter теперь хранится в state-level runtime registry по `command_id`, а не в metadata текущего websocket, и регистрируется до wake-up dispatch, поэтому reconnect и быстрый `command_result` не должны терять ожидание.
 - `send_ws_command` и `ToolService.run_tool` копируют caller params перед чтением internal `_operation_id`; вызывающий код может безопасно переиспользовать исходный dict для retry/log/audit.
 - Если агент и сервер оба объявили capability `outbox_batch_v1`, агент может присылать несколько `outbox_item` в одном WS frame как `outbox_items_batch`; сервер при этом всё равно ACK/NACK-ит каждую запись отдельно.
-- Remote Assist consent requests reuse the same device outbox path with command `remote_assist.request`. The command is ticket/device-bound and only tells Maria Agent to show consent UI; the actual WebRTC signaling uses the separate short-lived-token endpoint `/ws/remote-assist/{session_id}`. For `mode=elevated_admin`, the protocol command still does not grant hidden access: Maria Agent must show consent and then use its local Windows UAC helper path before elevated input can work.
+- Remote Assist consent requests reuse the same device outbox path with command `remote_assist.request`. The command is ticket/device-bound and only tells Maria Agent to show consent UI; the actual WebRTC signaling uses the separate short-lived-token endpoint `/ws/remote-assist/{session_id}`. For `mode=elevated_admin`, the protocol command still does not grant hidden access: Maria Agent must show consent and then use its local Windows UAC helper path before elevated input can work. Approved file-transfer sessions use a separate WebRTC data channel named `file-transfer`; file bytes stay peer-to-peer, while signaling may relay only sanitized `file.transfer` / `file.error` audit envelopes.
 
 ### 7. Deduplication
 
@@ -162,7 +162,7 @@ Wire-contract Protocol V3 при этом не меняется: формат en
 
 - **/ws** — агенты (Protocol V3). Handshake с `protocol_version`, capabilities и token обязательны.
 - **/ws_ui** — UI клиенты. Первое сообщение — `ui_hello` с токеном; см. [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md).
-- **/ws/remote-assist/{session_id}** — Remote Assist signaling relay for `role=operator|agent&token=...`. This endpoint is outside the agent `/ws` Protocol V3 transport, validates short-lived role tokens against `remote_access_sessions`, relays only approved WebRTC/session envelope types, and must not log full SDP or static TURN secrets.
+- **/ws/remote-assist/{session_id}** — Remote Assist signaling relay for `role=operator|agent&token=...`. This endpoint is outside the agent `/ws` Protocol V3 transport, validates short-lived role tokens against `remote_access_sessions`, relays only approved WebRTC/session/control/clipboard/file audit envelope types, and must not log full SDP, file bytes, clipboard contents or static TURN secrets.
 
 ---
 
