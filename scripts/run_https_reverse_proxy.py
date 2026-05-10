@@ -96,9 +96,6 @@ async def handle_websocket(request: web.Request) -> web.StreamResponse:
     target_base: str = request.app["target_base"]
     target_url = _target_url(target_base, request, websocket=True)
 
-    client_ws = web.WebSocketResponse(max_msg_size=request.app["max_ws_msg_size"])
-    await client_ws.prepare(request)
-
     headers = _filtered_headers(request.headers.items())
     headers["X-Forwarded-Proto"] = "https"
     headers["X-Forwarded-Host"] = request.host
@@ -110,6 +107,8 @@ async def handle_websocket(request: web.Request) -> web.StreamResponse:
             max_msg_size=request.app["max_ws_msg_size"],
             heartbeat=request.app["ws_heartbeat"],
         ) as upstream_ws:
+            client_ws = web.WebSocketResponse(max_msg_size=request.app["max_ws_msg_size"])
+            await client_ws.prepare(request)
             to_target = asyncio.create_task(_bridge_ws_to_target(client_ws, upstream_ws))
             to_client = asyncio.create_task(_bridge_ws_to_client(upstream_ws, client_ws))
             done, pending = await asyncio.wait(
@@ -124,14 +123,19 @@ async def handle_websocket(request: web.Request) -> web.StreamResponse:
                 exc = task.exception()
                 if exc:
                     raise exc
+            with suppress(Exception):
+                await client_ws.close()
+            return client_ws
+    except aiohttp.WSServerHandshakeError as exc:
+        LOG.info(
+            "upstream websocket rejected: status=%s path=%s",
+            exc.status,
+            request.rel_url,
+        )
+        return web.Response(status=exc.status, text=exc.message)
     except Exception:
         LOG.exception("websocket proxy failed: %s", request.rel_url)
-        with suppress(Exception):
-            await client_ws.close(code=1011, message=b"upstream websocket failed")
-    finally:
-        with suppress(Exception):
-            await client_ws.close()
-    return client_ws
+        return web.Response(status=502, text="upstream websocket failed")
 
 
 async def handle_http(request: web.Request) -> web.StreamResponse:
