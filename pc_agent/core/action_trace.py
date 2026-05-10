@@ -145,10 +145,21 @@ class ActionTraceRecorder:
         logs_dir.mkdir(parents=True, exist_ok=True)
         self._path = logs_dir / "action_trace.jsonl"
         self._lock = threading.Lock()
+        self._next_seq = self._load_next_seq()
 
     @property
     def path(self) -> Path:
         return self._path
+
+    def _load_next_seq(self) -> int:
+        if not self._path.exists():
+            return 1
+        seq = 1
+        with self._path.open("r", encoding="utf-8", errors="replace") as existing:
+            for line in existing:
+                if line.strip():
+                    seq += 1
+        return seq
 
     def context(
         self,
@@ -193,10 +204,8 @@ class ActionTraceRecorder:
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         with self._lock:
-            seq = 1
-            if self._path.exists():
-                with self._path.open("r", encoding="utf-8", errors="replace") as existing:
-                    seq = sum(1 for line in existing if line.strip()) + 1
+            seq = self._next_seq
+            self._next_seq += 1
             payload = {
                 "seq": seq,
                 "ts": _utc_now(),

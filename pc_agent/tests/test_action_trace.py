@@ -32,6 +32,20 @@ def test_action_trace_recorder_writes_and_filters(tmp_path: Path) -> None:
     assert all(row["ticket_id"] == "ticket-1" for row in tool_rows)
 
 
+def test_action_trace_recorder_reuses_in_memory_sequence(tmp_path: Path, monkeypatch) -> None:
+    recorder = ActionTraceRecorder(tmp_path)
+    context = recorder.context(source="gui", action="ticket.list", category="ticket")
+    recorder.record(context, stage="request")
+
+    def fail_if_recounted(*_args, **_kwargs):
+        raise AssertionError("record() must not rescan action_trace.jsonl")
+
+    monkeypatch.setattr(recorder, "_load_next_seq", fail_if_recounted)
+    second = recorder.record(context, stage="response")
+
+    assert second["seq"] == 2
+
+
 def test_action_trace_text_filter_matches_serialized_details(tmp_path: Path) -> None:
     recorder = ActionTraceRecorder(tmp_path)
     context = recorder.context(

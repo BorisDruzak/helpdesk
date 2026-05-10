@@ -46,6 +46,7 @@
 - `3.1.40` is the Windows stable agent release for field GUI CPU diagnostics: the agent logs `[gui-profiler]` samples with process CPU, Qt event counters, hot receivers, focus/active widgets and top thread CPU deltas. Disable after diagnosis with `PC_AGENT_GUI_PROFILER=0`. Publish it as a new build/upload/rollout target; do not overwrite `3.1.39` artifacts.
 - `3.1.41` is the Windows stable agent release for remote GUI CPU log retrieval: `diag.logs.collect` app preset includes the agent runtime logs directory so `[gui-profiler]` samples can be collected as an artifact. Publish it as a new build/upload/rollout target; do not overwrite `3.1.40` artifacts.
 - `3.1.42` is the Windows stable agent release for enabling `diag_logs` as a core built-in module so `diag.logs.collect` is present in the runtime registry on upgraded agents. Publish it as a new build/upload/rollout target; do not overwrite `3.1.41` artifacts.
+- `3.1.43` is the Windows stable agent release for fixing focused-window GUI CPU spikes caused by synchronous `action_trace.jsonl` recounts on every GUI API trace record. Publish it as a new build/upload/rollout target; do not overwrite `3.1.42` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 
