@@ -130,6 +130,7 @@ class FramelessResizeHandler(QWidget):
         self._press_pos = QPoint()
         self._press_geometry = window.geometry()
         self._pressed_edges = Qt.Edge(0)
+        self._last_cursor_shape: Qt.CursorShape | None = None
         window.installEventFilter(self)
         window.setMouseTracking(True)
 
@@ -154,7 +155,7 @@ class FramelessResizeHandler(QWidget):
             self._pressed_edges = Qt.Edge(0)
             self._update_cursor(event.position().toPoint())
         if event.type() == QEvent.Type.Leave and not self._pressed_edges:
-            self._window.unsetCursor()
+            self._set_cursor_shape(None)
         return False
 
     def _edges_at(self, pos: QPoint) -> Qt.Edge:
@@ -173,15 +174,24 @@ class FramelessResizeHandler(QWidget):
     def _update_cursor(self, pos: QPoint) -> None:
         edges = self._edges_at(pos)
         if edges in (Qt.Edge.LeftEdge | Qt.Edge.TopEdge, Qt.Edge.RightEdge | Qt.Edge.BottomEdge):
-            self._window.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            self._set_cursor_shape(Qt.CursorShape.SizeFDiagCursor)
         elif edges in (Qt.Edge.RightEdge | Qt.Edge.TopEdge, Qt.Edge.LeftEdge | Qt.Edge.BottomEdge):
-            self._window.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            self._set_cursor_shape(Qt.CursorShape.SizeBDiagCursor)
         elif edges & (Qt.Edge.LeftEdge | Qt.Edge.RightEdge):
-            self._window.setCursor(Qt.CursorShape.SizeHorCursor)
+            self._set_cursor_shape(Qt.CursorShape.SizeHorCursor)
         elif edges & (Qt.Edge.TopEdge | Qt.Edge.BottomEdge):
-            self._window.setCursor(Qt.CursorShape.SizeVerCursor)
+            self._set_cursor_shape(Qt.CursorShape.SizeVerCursor)
         else:
+            self._set_cursor_shape(None)
+
+    def _set_cursor_shape(self, shape: Qt.CursorShape | None) -> None:
+        if self._last_cursor_shape == shape:
+            return
+        self._last_cursor_shape = shape
+        if shape is None:
             self._window.unsetCursor()
+            return
+        self._window.setCursor(shape)
 
     def _resize_manually(self, global_pos: QPoint) -> None:
         delta = global_pos - self._press_pos

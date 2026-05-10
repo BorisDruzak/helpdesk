@@ -72,6 +72,33 @@ def test_message_visual_role_treats_agent_messages_as_outgoing_for_gui():
     assert message_visual_role({"from_role": "system"}) == "neutral"
 
 
+def test_ticket_detail_refresh_fingerprint_tracks_meaningful_changes():
+    panel = ChatPanel.__new__(ChatPanel)
+    panel._last_detail_event_id = 10
+
+    ticket = {
+        "ticket_id": "ticket-1",
+        "ticket_code": "T-1",
+        "status": "open",
+        "updated_at": "2026-05-10T10:00:00Z",
+        "chat_counters": {"requester_unread_messages": 0},
+    }
+    messages = [{"message_id": "m1", "event_id": 10, "ts": "2026-05-10T10:00:00Z"}]
+    events = [{"id": 10, "event_type": "chat_message", "created_at": "2026-05-10T10:00:00Z"}]
+
+    first = ChatPanel._ticket_detail_refresh_fingerprint(panel, ticket, messages, events)
+    second = ChatPanel._ticket_detail_refresh_fingerprint(panel, dict(ticket), list(messages), list(events))
+    changed = ChatPanel._ticket_detail_refresh_fingerprint(
+        panel,
+        {**ticket, "chat_counters": {"requester_unread_messages": 1}},
+        messages,
+        events,
+    )
+
+    assert first == second
+    assert changed != first
+
+
 def test_can_user_confirm_close_only_for_resolved_ticket():
     assert can_user_confirm_close({"status": "resolved"}) is True
     assert can_user_confirm_close({"status": "in_progress"}) is False

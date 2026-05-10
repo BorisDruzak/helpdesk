@@ -3830,6 +3830,7 @@ class ChatPanel(QWidget):
         self._reply_target: Optional[dict] = None
         self._last_timeline_html: Optional[str] = None
         self._last_timeline_item_signatures: List[str] = []
+        self._last_ticket_detail_fingerprint: Optional[str] = None
         self._pending_ticket_snapshot: Optional[tuple[dict, List[dict], List[dict]]] = None
         self._active_ticket_messages: List[dict] = []
         self._active_ticket_events: List[dict] = []
@@ -4767,6 +4768,7 @@ class ChatPanel(QWidget):
         self._active_ticket_messages = []
         self._active_ticket_events = []
         self._last_detail_event_id = 0
+        self._last_ticket_detail_fingerprint = None
         self._oldest_loaded_event_id = 0
         self._has_older_history = False
         self._loading_older_history = False
@@ -4869,6 +4871,10 @@ class ChatPanel(QWidget):
             if result.get("status") != "ok":
                 return
             ticket, messages, events = self._consume_ticket_detail_payload(result, mode=consume_mode)
+            detail_fp = self._ticket_detail_refresh_fingerprint(ticket, messages, events)
+            if detail_fp == self._last_ticket_detail_fingerprint:
+                return
+            self._last_ticket_detail_fingerprint = detail_fp
             self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
@@ -4913,6 +4919,7 @@ class ChatPanel(QWidget):
             if self._is_closing or result.get("status") != "ok":
                 return
             ticket, messages, events = self._consume_ticket_detail_payload(result, mode="prepend")
+            self._last_ticket_detail_fingerprint = self._ticket_detail_refresh_fingerprint(ticket, messages, events)
             self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
@@ -4936,6 +4943,42 @@ class ChatPanel(QWidget):
                 "extracted_code": self._extract_public_access_code(ticket, messages),
                 "meta_html": self._build_ticket_meta_html(ticket),
                 "optimistic_read_until": self._optimistic_read_event_id.get(str(ticket.get("ticket_id") or ""), 0),
+            },
+            sort_keys=True,
+            default=str,
+        )
+
+    def _ticket_detail_refresh_fingerprint(self, ticket: dict, messages: List[dict], events: List[dict]) -> str:
+        message_tail = [
+            (
+                message.get("message_id"),
+                message.get("event_id"),
+                message.get("updated_at") or message.get("ts") or message.get("created_at"),
+            )
+            for message in messages[-8:]
+        ]
+        event_tail = [
+            (
+                event.get("id") or event.get("event_id"),
+                event.get("type") or event.get("event_type"),
+                event.get("updated_at") or event.get("ts") or event.get("created_at"),
+            )
+            for event in events[-8:]
+        ]
+        return json.dumps(
+            {
+                "ticket_id": ticket.get("ticket_id"),
+                "code": ticket.get("ticket_code"),
+                "status": ticket.get("status"),
+                "updated_at": ticket.get("updated_at"),
+                "resolved_at": ticket.get("resolved_at"),
+                "closed_at": ticket.get("closed_at"),
+                "counters": ticket.get("chat_counters"),
+                "last_event_id": int(self._last_detail_event_id or 0),
+                "message_count": len(messages),
+                "event_count": len(events),
+                "message_tail": message_tail,
+                "event_tail": event_tail,
             },
             sort_keys=True,
             default=str,

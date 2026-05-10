@@ -43,6 +43,35 @@ def test_frameless_chrome_avoids_qt_native_helper_windows():
     assert "startSystemResize" not in source
 
 
+def test_frameless_resize_handler_deduplicates_cursor_updates():
+    class _FakeWindow:
+        def __init__(self):
+            self.calls = []
+
+        def setCursor(self, shape):
+            self.calls.append(("set", shape))
+
+        def unsetCursor(self):
+            self.calls.append(("unset", None))
+
+    fake = _FakeWindow()
+    handler = FramelessResizeHandler.__new__(FramelessResizeHandler)
+    handler._window = fake
+    handler._last_cursor_shape = None
+
+    handler._set_cursor_shape(Qt.CursorShape.SizeHorCursor)
+    handler._set_cursor_shape(Qt.CursorShape.SizeHorCursor)
+    handler._set_cursor_shape(None)
+    handler._set_cursor_shape(None)
+    handler._set_cursor_shape(Qt.CursorShape.SizeVerCursor)
+
+    assert fake.calls == [
+        ("set", Qt.CursorShape.SizeHorCursor),
+        ("unset", None),
+        ("set", Qt.CursorShape.SizeVerCursor),
+    ]
+
+
 def test_sidebar_header_does_not_create_unparented_blank_top_level_labels():
     source = "\n".join(
         (

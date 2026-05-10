@@ -42,6 +42,7 @@
 - `3.1.36` is the Windows stable agent release for Remote Assist connection hardening: viewer and agent fail stalled WebRTC negotiations cleanly, Maria Agent no longer says the specialist sees the screen before ICE connects, and failed negotiation stops capture work instead of leaving CPU usage high. Publish it as a new build/upload/rollout target; do not overwrite `3.1.35` artifacts.
 - `3.1.37` is the Windows stable agent release for idle CPU/WMI reduction: Windows fingerprint collection avoids default PowerShell/WMI calls, WMI baseboard lookup is opt-in through `PC_AGENT_ENABLE_WMI_FINGERPRINT=1`, and GUI idle update status checks reuse cache longer. Publish it as a new build/upload/rollout target; do not overwrite `3.1.36` artifacts.
 - `3.1.38` is the Windows stable agent release for launcher disk retention and focused-window CPU reduction: after a successful update the launcher keeps only the current and previous version directories, retains fewer downloaded ZIP artifacts, and GUI soft shadows are opt-in through `PC_AGENT_ENABLE_GUI_SHADOWS=1`. Publish it as a new build/upload/rollout target; do not overwrite `3.1.37` artifacts.
+- `3.1.39` is the Windows stable agent release for deeper focused-window CPU reduction on Windows/RDP/Proxmox graphics stacks: frameless resize cursor updates are deduplicated and unchanged ticket detail polls skip UI rebuilds before repaint. Publish it as a new build/upload/rollout target; do not overwrite `3.1.38` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 
