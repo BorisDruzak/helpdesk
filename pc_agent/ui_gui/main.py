@@ -15,6 +15,7 @@ from pc_agent.core import runtime_paths
 from . import theme
 from .main_window import MainWindow
 from .automation_controller import GuiAutomationController
+from .performance_probe import GuiPerformanceProbe, gui_performance_probe_enabled
 from .sse_client import SseClient
 from .token_dialog import TokenDialog
 from .tray_manager import TrayManager
@@ -502,6 +503,13 @@ async def run_gui(
     # Создаем главное окно ТОЛЬКО после успешной авторизации
     # Передаем токен в MainWindow для использования в API клиенте
     window = MainWindow(host, port, auth_token=valid_token)
+    gui_performance_probe: Optional[GuiPerformanceProbe] = None
+    if gui_performance_probe_enabled() and app is not None:
+        try:
+            gui_performance_probe = GuiPerformanceProbe(app, window)
+            gui_performance_probe.start()
+        except Exception as exc:
+            logger.warning(f"Не удалось запустить GUI profiler: {exc}")
     
     # Не включаем quit при закрытии окна — завершение через stop_event и main_async cleanup,
     # затем app.quit() в ws_agent.main(), чтобы не останавливать event loop до завершения main_async
@@ -784,6 +792,8 @@ async def run_gui(
                 logger.debug("Ожидание завершения SSE задачи превысило таймаут")
         if tray_manager:
             tray_manager.cleanup()
+        if gui_performance_probe is not None:
+            gui_performance_probe.stop()
     
     logger.success(f"GUI запущен на {host}:{port}")
     

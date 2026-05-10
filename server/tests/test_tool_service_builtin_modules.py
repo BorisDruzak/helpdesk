@@ -15,6 +15,16 @@ async def test_builtin_screen_module_skips_auto_install():
     assert result is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_builtin_diag_module_skips_auto_install():
+    service = ToolService(SimpleNamespace())
+
+    result = await service._ensure_module_installed("device-1", "diag.logs.collect")
+
+    assert result is None
+
+
 @pytest.mark.no_db
 def test_manifest_tool_match_supports_aliases():
     entry = {

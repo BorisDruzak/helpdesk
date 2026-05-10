@@ -3,12 +3,17 @@ import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pc_agent.ui_gui.main_window import MainWindow, gui_soft_shadows_enabled
+from pc_agent.ui_gui.performance_probe import (
+    GuiPerformanceProbe,
+    gui_performance_probe_enabled,
+    gui_performance_probe_interval_ms,
+)
 from pc_agent.ui_gui.window_chrome import CustomTitleBar, FramelessResizeHandler
 
 
@@ -110,6 +115,36 @@ def test_main_window_soft_shadows_are_opt_in_for_low_cpu_default(monkeypatch):
 
     monkeypatch.setenv("PC_AGENT_ENABLE_GUI_SHADOWS", "1")
     assert gui_soft_shadows_enabled() is True
+
+
+def test_gui_performance_probe_is_enabled_with_bounded_default_interval(monkeypatch):
+    monkeypatch.delenv("PC_AGENT_GUI_PROFILER", raising=False)
+    monkeypatch.delenv("PC_AGENT_GUI_PROFILER_INTERVAL_MS", raising=False)
+    assert gui_performance_probe_enabled() is True
+    assert gui_performance_probe_interval_ms() == 5000
+
+    monkeypatch.setenv("PC_AGENT_GUI_PROFILER", "0")
+    assert gui_performance_probe_enabled() is False
+
+    monkeypatch.setenv("PC_AGENT_GUI_PROFILER_INTERVAL_MS", "50")
+    assert gui_performance_probe_interval_ms() == 1000
+
+    monkeypatch.setenv("PC_AGENT_GUI_PROFILER_INTERVAL_MS", "90000")
+    assert gui_performance_probe_interval_ms() == 60000
+
+
+def test_gui_performance_probe_counts_qt_events_without_consuming_them():
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow.__new__(MainWindow)
+    window.isActiveWindow = lambda: True
+    window.isVisible = lambda: True
+
+    probe = GuiPerformanceProbe(app, window, interval_ms=1000)
+    event = QEvent(QEvent.Type.MouseMove)
+
+    assert probe.eventFilter(window, event) is False
+    assert probe._event_counts[int(QEvent.Type.MouseMove)] == 1
+    assert any(key.startswith("MouseMove@") for key in probe._receiver_counts)
 
 
 def test_main_window_collapses_sidebar_for_focused_ticket_and_create_workspaces():

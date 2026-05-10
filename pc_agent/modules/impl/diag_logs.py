@@ -18,9 +18,28 @@ from typing import Dict, Any, Literal, List
 from pydantic import BaseModel
 from loguru import logger
 
-from modules.base_module import BaseCollector
 from pc_agent.config.config_loader import get_config
-from core.registry import exposed_tool
+from pc_agent.core.runtime_paths import resolve_data_root, resolve_logs_dir
+
+try:
+    from modules.base_module import BaseCollector
+except ImportError:
+    from pc_agent.modules.base_module import BaseCollector
+
+try:
+    from core.registry import exposed_tool
+except ImportError:
+    from pc_agent.core.registry import exposed_tool
+
+
+def _agent_app_log_sources() -> List[str]:
+    try:
+        from pc_agent.config.config_loader import get_config_base
+
+        data_root = get_config_base() or resolve_data_root()
+    except Exception:
+        data_root = resolve_data_root()
+    return [str(resolve_logs_dir(Path(data_root)).resolve())]
 
 
 class DiagLogsCollectParams(BaseModel):
@@ -113,7 +132,7 @@ class DiagLogsModule(BaseCollector):
             else:
                 system_paths = []
             
-            app_paths = []  # preset="app" оставляем пустым
+            app_paths = _agent_app_log_sources()
             
             if preset == "system":
                 sources = system_paths
@@ -130,12 +149,13 @@ class DiagLogsModule(BaseCollector):
         
         # Определяем allowlist dirs
         if os_name == "linux":
-            allowlist_dirs = ["/var/log"]
+            allowlist_dirs = ["/var/log", *_agent_app_log_sources()]
         elif os_name == "windows":
             allowlist_dirs = [
                 "C:\\Windows\\Logs",
                 "C:\\Windows\\System32\\LogFiles",
-                "C:\\ProgramData"
+                "C:\\ProgramData",
+                *_agent_app_log_sources(),
             ]
         else:
             allowlist_dirs = []
