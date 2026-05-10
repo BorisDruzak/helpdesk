@@ -42,7 +42,7 @@ class ElevatedInputProxyBackend:
         self._request_timeout_sec = max(2.0, float(request_timeout_sec))
         self._server: socket.socket | None = None
         self._conn: socket.socket | None = None
-        self._reader = None
+        self._reader: _SocketLineReader | None = None
         self._writer = None
 
     def screen_size(self) -> tuple[int, int]:
@@ -94,7 +94,7 @@ class ElevatedInputProxyBackend:
             raise InputControllerError("ELEVATION_PEER_INVALID", "Elevated helper connected from an unexpected address")
         conn.settimeout(self._request_timeout_sec)
         self._conn = conn
-        self._reader = conn.makefile("r", encoding="utf-8", newline="\n")
+        self._reader = _SocketLineReader(conn)
         self._writer = conn.makefile("w", encoding="utf-8", newline="\n")
         hello = self._read_json()
         if hello.get("type") != "hello" or not secrets.compare_digest(str(hello.get("token") or ""), token):
@@ -102,8 +102,12 @@ class ElevatedInputProxyBackend:
             raise InputControllerError("ELEVATION_TOKEN_INVALID", "Elevated helper token validation failed")
 
     def _request(self, message: dict[str, Any]) -> dict[str, Any]:
-        self._write_json(message)
-        return self._read_json()
+        try:
+            self._write_json(message)
+            return self._read_json()
+        except InputControllerError:
+            self._drop_connection()
+            raise
 
     def _write_json(self, message: dict[str, Any]) -> None:
         if self._writer is None:
@@ -111,13 +115,18 @@ class ElevatedInputProxyBackend:
         text = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
         if len(text.encode("utf-8")) > _MAX_MESSAGE_BYTES:
             raise InputControllerError("ELEVATION_MESSAGE_TOO_LARGE", "Elevated helper message is too large")
-        self._writer.write(text + "\n")
-        self._writer.flush()
+        try:
+            self._writer.write(text + "\n")
+            self._writer.flush()
+        except OSError as exc:
+            raise InputControllerError("ELEVATION_DISCONNECTED", "Elevated helper disconnected") from exc
 
     def _read_json(self) -> dict[str, Any]:
         if self._reader is None:
             raise InputControllerError("ELEVATION_NOT_CONNECTED", "Elevated helper is not connected")
         line = self._reader.readline(_MAX_MESSAGE_BYTES + 1)
+        if line is None:
+            raise InputControllerError("ELEVATION_RESPONSE_TIMEOUT", "Elevated helper did not respond in time")
         if not line:
             raise InputControllerError("ELEVATION_DISCONNECTED", "Elevated helper disconnected")
         if len(line.encode("utf-8")) > _MAX_MESSAGE_BYTES:
@@ -129,6 +138,17 @@ class ElevatedInputProxyBackend:
         if not isinstance(message, dict):
             raise InputControllerError("ELEVATION_MESSAGE_INVALID", "Elevated helper response must be an object")
         return message
+
+    def _drop_connection(self) -> None:
+        for item in (self._writer, self._conn):
+            try:
+                if item is not None:
+                    item.close()
+            except Exception:
+                pass
+        self._reader = None
+        self._writer = None
+        self._conn = None
 
 
 def launch_elevated_helper(port: int, token: str) -> None:
@@ -160,13 +180,12 @@ def run_elevated_helper_client(*, host: str, port: int, token: str, idle_timeout
     deadline = time.monotonic() + max(30, int(idle_timeout_sec))
     with socket.create_connection((host, int(port)), timeout=30) as conn:
         conn.settimeout(2.0)
-        reader = conn.makefile("r", encoding="utf-8", newline="\n")
+        reader = _SocketLineReader(conn)
         writer = conn.makefile("w", encoding="utf-8", newline="\n")
         _helper_write(writer, {"type": "hello", "token": token})
         while time.monotonic() < deadline:
-            try:
-                line = reader.readline(_MAX_MESSAGE_BYTES + 1)
-            except socket.timeout:
+            line = reader.readline(_MAX_MESSAGE_BYTES + 1)
+            if line is None:
                 continue
             if not line:
                 return 0
@@ -202,3 +221,42 @@ def run_elevated_helper_client(*, host: str, port: int, token: str, idle_timeout
 def _helper_write(writer: Any, message: dict[str, Any]) -> None:
     writer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
     writer.flush()
+
+
+class _SocketLineReader:
+    """Timeout-safe newline reader for sockets.
+
+    `socket.makefile().readline()` becomes unusable after a socket timeout on
+    some Python versions and then raises `OSError: cannot read from timed out
+    object`. Remote Assist elevated helper uses short idle timeouts, so read
+    directly from the socket and keep the partial line buffer ourselves.
+    """
+
+    def __init__(self, conn: socket.socket):
+        self._conn = conn
+        self._buffer = bytearray()
+
+    def readline(self, limit: int) -> str | None:
+        while b"\n" not in self._buffer:
+            if len(self._buffer) > limit:
+                break
+            try:
+                chunk = self._conn.recv(min(4096, max(1, limit + 1 - len(self._buffer))))
+            except (socket.timeout, TimeoutError):
+                return None
+            if not chunk:
+                if not self._buffer:
+                    return ""
+                line = bytes(self._buffer)
+                self._buffer.clear()
+                return line.decode("utf-8", errors="replace")
+            self._buffer.extend(chunk)
+
+        if b"\n" in self._buffer:
+            index = self._buffer.index(b"\n") + 1
+            line = bytes(self._buffer[:index])
+            del self._buffer[:index]
+        else:
+            line = bytes(self._buffer)
+            self._buffer.clear()
+        return line.decode("utf-8", errors="replace")
