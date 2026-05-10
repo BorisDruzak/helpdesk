@@ -6,6 +6,7 @@ from remote_assist.policy import (
     is_remote_assist_mode_enabled,
 )
 from remote_assist.service import issue_short_lived_token, verify_token_hash
+from web_api.support_handlers import _timeline_event_label, _timeline_event_text
 
 
 def test_remote_assist_tokens_are_hashed_and_validated() -> None:
@@ -57,3 +58,10 @@ def test_turn_credentials_are_generated_from_server_secret(monkeypatch) -> None:
     assert servers[0]["credential"]
     assert servers[0]["credential"] != "server-only-secret"
     assert "credential_mode" not in servers[0]
+
+
+def test_remote_assist_control_events_have_timeline_system_messages() -> None:
+    assert _timeline_event_label("remote_assist_control_enabled") == "Удалённое управление включено"
+    assert _timeline_event_text("remote_assist_control_enabled", {}) == "Оператор включил управление мышью и клавиатурой."
+    assert _timeline_event_text("remote_assist_control_disabled", {}) == "Оператор выключил управление мышью и клавиатурой."
+    assert _timeline_event_text("remote_assist_control_rejected", {}) == "Команда удалённого управления отклонена агентом."

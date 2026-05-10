@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 
 class InputControllerError(RuntimeError):
@@ -17,9 +17,182 @@ InputSender = Callable[[dict[str, Any]], None]
 ScreenSizeProvider = Callable[[], tuple[int, int]]
 
 
+class InputBackend(Protocol):
+    def send(self, action: dict[str, Any]) -> None: ...
+
+    def screen_size(self) -> tuple[int, int]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ControlLimits:
     max_text_chars: int = 256
+
+
+@dataclass(slots=True)
+class CallbackInputBackend:
+    sender: InputSender
+    screen_size_provider: ScreenSizeProvider
+
+    def send(self, action: dict[str, Any]) -> None:
+        self.sender(action)
+
+    def screen_size(self) -> tuple[int, int]:
+        return self.screen_size_provider()
+
+
+class WindowsSendInputBackend:
+    def __init__(
+        self,
+        *,
+        user32: Any | None = None,
+        screen_size_provider: ScreenSizeProvider | None = None,
+    ):
+        if user32 is None:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+        self._user32 = user32
+        self._screen_size_provider = screen_size_provider
+
+    def screen_size(self) -> tuple[int, int]:
+        if self._screen_size_provider is not None:
+            return self._screen_size_provider()
+        _left, _top, width, height = self._virtual_bounds()
+        return width, height
+
+    def send(self, action: dict[str, Any]) -> None:
+        kind = action["kind"]
+        if kind == "mouse_move":
+            self._send_inputs([self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE)])
+        elif kind == "mouse_click":
+            down, up = _mouse_button_flags(action["button"])
+            self._send_inputs(
+                [
+                    self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE),
+                    self._mouse_input(0, 0, down, absolute=False),
+                    self._mouse_input(0, 0, up, absolute=False),
+                ]
+            )
+        elif kind in {"key_down", "key_up"}:
+            vk = _virtual_key(action["key"], self._user32)
+            flags = 0 if kind == "key_down" else _KEYEVENTF_KEYUP
+            self._send_inputs([_keyboard_input(vk=vk, flags=flags)])
+        elif kind == "text_input":
+            inputs: list[_INPUT] = []
+            for unit in _utf16_code_units(str(action["text"])):
+                inputs.append(_keyboard_input(scan=unit, flags=_KEYEVENTF_UNICODE))
+                inputs.append(_keyboard_input(scan=unit, flags=_KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP))
+            self._send_inputs(inputs)
+
+    def _mouse_input(self, x: int, y: int, flags: int, *, absolute: bool = True) -> "_INPUT":
+        if absolute:
+            dx, dy = self._absolute_coordinates(x, y)
+            flags |= _MOUSEEVENTF_ABSOLUTE | _MOUSEEVENTF_VIRTUALDESK
+        else:
+            dx, dy = x, y
+        return _mouse_input(dx=dx, dy=dy, flags=flags)
+
+    def _absolute_coordinates(self, x: int, y: int) -> tuple[int, int]:
+        left, top, width, height = self._virtual_bounds()
+        actual_x = left + max(0, min(width - 1, x))
+        actual_y = top + max(0, min(height - 1, y))
+        dx = int(round((actual_x - left) * 65535 / max(1, width - 1)))
+        dy = int(round((actual_y - top) * 65535 / max(1, height - 1)))
+        return dx, dy
+
+    def _virtual_bounds(self) -> tuple[int, int, int, int]:
+        left = int(self._user32.GetSystemMetrics(76))
+        top = int(self._user32.GetSystemMetrics(77))
+        width = int(self._user32.GetSystemMetrics(78))
+        height = int(self._user32.GetSystemMetrics(79))
+        if width <= 0 or height <= 0:
+            left, top = 0, 0
+            width = int(self._user32.GetSystemMetrics(0))
+            height = int(self._user32.GetSystemMetrics(1))
+        return left, top, max(1, width), max(1, height)
+
+    def _send_inputs(self, inputs: list["_INPUT"]) -> None:
+        if not inputs:
+            return
+        import ctypes
+
+        array_type = _INPUT * len(inputs)
+        array = array_type(*inputs)
+        sent = int(self._user32.SendInput(len(inputs), array, ctypes.sizeof(_INPUT)))
+        if sent != len(inputs):
+            raise InputControllerError("CONTROL_INJECTION_FAILED", "Windows SendInput did not accept all input events")
+
+
+class LinuxPynputInputBackend:
+    def __init__(
+        self,
+        *,
+        mouse: Any | None = None,
+        keyboard: Any | None = None,
+        button_module: Any | None = None,
+        key_module: Any | None = None,
+        screen_size_provider: ScreenSizeProvider | None = None,
+    ):
+        if mouse is None or keyboard is None:
+            try:
+                from pynput import keyboard as pynput_keyboard
+                from pynput import mouse as pynput_mouse
+            except Exception as exc:
+                raise InputControllerError("CONTROL_UNSUPPORTED", "Linux Remote Assist control requires pynput") from exc
+            mouse = mouse or pynput_mouse.Controller()
+            keyboard = keyboard or pynput_keyboard.Controller()
+            button_module = button_module or pynput_mouse.Button
+            key_module = key_module or pynput_keyboard.Key
+        self._mouse = mouse
+        self._keyboard = keyboard
+        self._button_module = button_module
+        self._key_module = key_module
+        self._screen_size_provider = screen_size_provider or _get_linux_primary_screen_size
+
+    def screen_size(self) -> tuple[int, int]:
+        return self._screen_size_provider()
+
+    def send(self, action: dict[str, Any]) -> None:
+        kind = action["kind"]
+        if kind in {"mouse_move", "mouse_click"}:
+            self._mouse.position = (int(action["x"]), int(action["y"]))
+        if kind == "mouse_click":
+            self._mouse.click(self._button(action["button"]), 1)
+        elif kind == "key_down":
+            self._keyboard.press(self._key(action["key"]))
+        elif kind == "key_up":
+            self._keyboard.release(self._key(action["key"]))
+        elif kind == "text_input":
+            self._keyboard.type(str(action["text"]))
+
+    def _button(self, button: str) -> Any:
+        if self._button_module is None:
+            return button
+        return getattr(self._button_module, button)
+
+    def _key(self, key: str) -> Any:
+        special = {
+            "Enter": "enter",
+            "Tab": "tab",
+            "Escape": "esc",
+            "Backspace": "backspace",
+            "Delete": "delete",
+            "ArrowLeft": "left",
+            "ArrowUp": "up",
+            "ArrowRight": "right",
+            "ArrowDown": "down",
+            "Home": "home",
+            "End": "end",
+            "PageUp": "page_up",
+            "PageDown": "page_down",
+            "Space": "space",
+        }
+        mapped = special.get(key)
+        if mapped is None:
+            return key
+        if self._key_module is None:
+            return mapped
+        return getattr(self._key_module, mapped)
 
 
 class InputController:
@@ -36,13 +209,19 @@ class InputController:
         platform: str | None = None,
         sender: InputSender | None = None,
         screen_size_provider: ScreenSizeProvider | None = None,
+        backend: InputBackend | None = None,
         limits: ControlLimits | None = None,
     ):
         self.mode_enabled = bool(mode_enabled)
         self.control_active = False
         self.platform = platform or sys.platform
-        self._sender = sender or self._send_windows_input
-        self._screen_size_provider = screen_size_provider or self._get_primary_screen_size
+        self._screen_size_provider = screen_size_provider
+        if backend is not None:
+            self._backend: InputBackend | None = backend
+        elif sender is not None:
+            self._backend = CallbackInputBackend(sender=sender, screen_size_provider=screen_size_provider or self._default_screen_size)
+        else:
+            self._backend = None
         self._limits = limits or ControlLimits()
 
     @property
@@ -80,7 +259,7 @@ class InputController:
             raise InputControllerError("CONTROL_TYPE_NOT_ALLOWED", "Control message type is not allowed")
 
         self._assert_supported()
-        self._sender(action)
+        self._get_backend().send(action)
         return {"type": "control.accepted", "action": action["kind"]}
 
     def _assert_mode_enabled(self) -> None:
@@ -94,13 +273,29 @@ class InputController:
             raise InputControllerError("CONTROL_NOT_ACTIVE", "Remote Assist control is not active")
 
     def _assert_supported(self) -> None:
-        if not self.platform.startswith("win"):
-            raise InputControllerError("CONTROL_UNSUPPORTED", "Remote Assist control is supported only on Windows")
+        self._get_backend()
+
+    def _get_backend(self) -> InputBackend:
+        if self._backend is not None:
+            return self._backend
+        platform = self.platform.lower()
+        try:
+            if platform.startswith("win"):
+                self._backend = WindowsSendInputBackend(screen_size_provider=self._screen_size_provider)
+            elif platform.startswith("linux"):
+                self._backend = LinuxPynputInputBackend(screen_size_provider=self._screen_size_provider)
+            else:
+                raise InputControllerError("CONTROL_UNSUPPORTED", "Remote Assist control is not supported on this platform")
+        except InputControllerError:
+            raise
+        except Exception as exc:
+            raise InputControllerError("CONTROL_UNSUPPORTED", "Remote Assist control backend is unavailable") from exc
+        return self._backend
 
     def _mouse_action(self, message: dict[str, Any], *, action: str) -> dict[str, Any]:
         x_ratio = self._ratio(message.get("x_ratio"))
         y_ratio = self._ratio(message.get("y_ratio"))
-        width, height = self._screen_size_provider()
+        width, height = self._get_backend().screen_size()
         x = max(0, min(width - 1, int(round(x_ratio * max(1, width - 1)))))
         y = max(0, min(height - 1, int(round(y_ratio * max(1, height - 1)))))
         return {"kind": f"mouse_{action}", "x": x, "y": y}
@@ -129,38 +324,95 @@ class InputController:
             raise InputControllerError("CONTROL_KEY_INVALID", "Keyboard key is invalid")
         return key
 
-    @staticmethod
-    def _get_primary_screen_size() -> tuple[int, int]:
-        import ctypes
+    def _default_screen_size(self) -> tuple[int, int]:
+        return self._get_backend().screen_size()
 
-        user32 = ctypes.windll.user32
-        return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
 
-    @staticmethod
-    def _send_windows_input(action: dict[str, Any]) -> None:
-        import ctypes
+import ctypes
+from ctypes import wintypes
 
-        user32 = ctypes.windll.user32
-        kind = action["kind"]
-        if kind in {"mouse_move", "mouse_click"}:
-            user32.SetCursorPos(int(action["x"]), int(action["y"]))
-        if kind == "mouse_click":
-            flags = {
-                "left": (0x0002, 0x0004),
-                "right": (0x0008, 0x0010),
-                "middle": (0x0020, 0x0040),
-            }[action["button"]]
-            user32.mouse_event(flags[0], 0, 0, 0, 0)
-            user32.mouse_event(flags[1], 0, 0, 0, 0)
-        elif kind in {"key_down", "key_up"}:
-            vk = _virtual_key(action["key"], user32)
-            flags = 0 if kind == "key_down" else 0x0002
-            user32.keybd_event(vk, 0, flags, 0)
-        elif kind == "text_input":
-            for char in action["text"]:
-                vk = _virtual_key(char, user32)
-                user32.keybd_event(vk, 0, 0, 0)
-                user32.keybd_event(vk, 0, 0x0002, 0)
+
+_INPUT_MOUSE = 0
+_INPUT_KEYBOARD = 1
+_MOUSEEVENTF_MOVE = 0x0001
+_MOUSEEVENTF_LEFTDOWN = 0x0002
+_MOUSEEVENTF_LEFTUP = 0x0004
+_MOUSEEVENTF_RIGHTDOWN = 0x0008
+_MOUSEEVENTF_RIGHTUP = 0x0010
+_MOUSEEVENTF_MIDDLEDOWN = 0x0020
+_MOUSEEVENTF_MIDDLEUP = 0x0040
+_MOUSEEVENTF_ABSOLUTE = 0x8000
+_MOUSEEVENTF_VIRTUALDESK = 0x4000
+_KEYEVENTF_KEYUP = 0x0002
+_KEYEVENTF_UNICODE = 0x0004
+_ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", _ULONG_PTR),
+    ]
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", _ULONG_PTR),
+    ]
+
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("mi", _MOUSEINPUT),
+        ("ki", _KEYBDINPUT),
+    ]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type", wintypes.DWORD),
+        ("u", _INPUT_UNION),
+    ]
+
+
+def _mouse_input(*, dx: int, dy: int, flags: int) -> _INPUT:
+    return _INPUT(type=_INPUT_MOUSE, u=_INPUT_UNION(mi=_MOUSEINPUT(dx, dy, 0, flags, 0, 0)))
+
+
+def _keyboard_input(*, vk: int = 0, scan: int = 0, flags: int = 0) -> _INPUT:
+    return _INPUT(type=_INPUT_KEYBOARD, u=_INPUT_UNION(ki=_KEYBDINPUT(vk, scan, flags, 0, 0)))
+
+
+def _mouse_button_flags(button: str) -> tuple[int, int]:
+    return {
+        "left": (_MOUSEEVENTF_LEFTDOWN, _MOUSEEVENTF_LEFTUP),
+        "right": (_MOUSEEVENTF_RIGHTDOWN, _MOUSEEVENTF_RIGHTUP),
+        "middle": (_MOUSEEVENTF_MIDDLEDOWN, _MOUSEEVENTF_MIDDLEUP),
+    }[button]
+
+
+def _utf16_code_units(text: str) -> list[int]:
+    encoded = text.encode("utf-16-le")
+    return [int.from_bytes(encoded[index : index + 2], "little") for index in range(0, len(encoded), 2)]
+
+
+def _get_linux_primary_screen_size() -> tuple[int, int]:
+    try:
+        import mss
+
+        with mss.mss() as sct:
+            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            return int(monitor["width"]), int(monitor["height"])
+    except Exception as exc:
+        raise InputControllerError("CONTROL_UNSUPPORTED", "Linux screen size detection requires an available display") from exc
 
 
 def _virtual_key(key: str, user32: Any) -> int:

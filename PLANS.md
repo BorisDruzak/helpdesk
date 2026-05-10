@@ -44,9 +44,9 @@ ticket -> request remote assist -> user consent -> WebRTC view-only session -> a
 
 ## Current State
 
-Overall progress: 90%.
+Overall progress: 95%.
 
-Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and disabled control-channel architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`, so the viewer waited without video. Current stage is publishing the Remote Assist WebRTC packaging hotfix as Windows stable `3.1.34`, uploading the build, and canarying it through the launcher update flow before any broader rollout.
+Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and policy-gated interactive-control architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`; Windows stable `3.1.34` fixed WebRTC packaging and video startup. Current stage is Windows stable `3.1.35`: interactive control uses Windows `SendInput`, Linux has a `pynput` backend, support viewer returns to the ticket after operator end, and control state changes are written as human-readable timeline events.
 
 | Level | Scope | Progress | Status |
 |---|---|---:|---|
@@ -55,7 +55,7 @@ Implemented locally: DB models/migration, backend repo/service/API/signaling, RB
 | 2 | Signaling and view-only WebRTC stream | 95% | Implemented and live source smoke validated; 3.1.34 release packaging hotfix in progress |
 | 3 | Support workspace and Maria Agent UI polish | 90% | Implemented and live consent/viewer flow validated; release packaging in progress |
 | 4 | Hardening, TURN config, reconnect, timeout | 50% | Token/ICE config, expiry hooks, viewer timeout and agent failure reporting added; reconnect/rate-limit polish remains |
-| 5 | Future control-mode architecture | 65% | Disabled data-channel/stub architecture added |
+| 5 | Future control-mode architecture | 85% | Policy-gated interactive control added for testing; file/clipboard/elevated/unattended remain gated |
 
 ## Implementation Plan
 
@@ -148,12 +148,24 @@ Current release checkpoint:
 - Upload `pc_agent/dist/release/windows_amd64/stable/3.1.34/pc_agent-windows_amd64-3.1.34.zip`.
 - Canary one launcher-based local agent and verify handshake/update status before any bulk rollout.
 
+Interactive-control release checkpoint on 2026-05-10:
+
+- Bump Windows agent to `3.1.35`.
+- Replace Windows Remote Assist control injection with `SendInput`; remove `mouse_event`/`keybd_event` usage from the Remote Assist path.
+- Add Linux `pynput` input backend behind the same `interactive_control` policy gate.
+- Add support viewer behavior: operator "Завершить" ends the session, refreshes ticket data and closes the viewer back to the ticket.
+- Add timeline/system messages for `control_enabled`, `control_disabled`, `control_rejected`.
+- Build Windows release `3.1.35`; ZIP SHA256 `770283c156dc6247fa4c3e1941991dd4831560a67846c579e1df9e823fadf508`.
+- Upload `windows_amd64/stable/3.1.35` and assign rollout policy.
+- Local launcher agent `remote-assist-fulltest-3135b` started on device `7a3429ec-1c0b-5495-9aad-b284f08ae965` and received `handshake_ack` as `3.1.35`.
+
 Minimum local checks before any completion claim:
 
 ```powershell
 python scripts/verify_workspace.py
 python -m pytest server/tests/test_remote_assist_no_db.py -q --tb=short
 python -m pytest pc_agent/tests/test_remote_assist_input_controller.py -q --tb=short
+pnpm -C webapp test -- remote-assist-viewer
 python scripts/bootstrap_web_toolchain.py
 pnpm --dir webapp run build
 ```
@@ -198,7 +210,7 @@ Non-negotiable safety rule: no hidden unattended access. Any unattended capabili
 - [x] Enable RTCDataChannel `control` only for `interactive_control` sessions.
 - [x] Browser sends normalized mouse/keyboard messages only when operator explicitly enables control.
 - [x] Maria Agent validates mode/session/control state before injecting input.
-- [x] Windows input injection uses a small isolated `InputController`; non-Windows returns `CONTROL_UNSUPPORTED`.
+- [x] Windows input injection uses a small isolated `InputController` backed by `SendInput`; Linux uses `pynput` when an interactive-control session is policy-enabled.
 - [x] Add active banner text that distinguishes viewing from controlling.
 - [x] Audit `control_enabled`, `control_disabled`, and rejected control messages.
 

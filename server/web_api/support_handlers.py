@@ -1305,6 +1305,9 @@ def _timeline_event_label(event_type: str) -> str:
         "remote_assist_session_ended": "Удалённая помощь завершена",
         "remote_assist_session_expired": "Удалённая помощь истекла",
         "remote_assist_session_failed": "Удалённая помощь завершилась с ошибкой",
+        "remote_assist_control_enabled": "Удалённое управление включено",
+        "remote_assist_control_disabled": "Удалённое управление выключено",
+        "remote_assist_control_rejected": "Команда управления отклонена",
         "sla_started": "SLA started",
         "sla_first_response_stopped": "SLA first response stopped",
         "sla_resolution_stopped": "SLA resolution stopped",
@@ -1355,6 +1358,12 @@ def _timeline_event_text(event_type: str, payload: dict) -> str:
         return "Удалённая помощь истекла."
     if event_type == "remote_assist_session_failed":
         return "Удалённая помощь завершилась с ошибкой."
+    if event_type == "remote_assist_control_enabled":
+        return "Оператор включил управление мышью и клавиатурой."
+    if event_type == "remote_assist_control_disabled":
+        return "Оператор выключил управление мышью и клавиатурой."
+    if event_type == "remote_assist_control_rejected":
+        return "Команда удалённого управления отклонена агентом."
     if event_type == "status_changed":
         return " -> ".join(str(payload.get(key) or "").strip() for key in ("from_status", "to_status") if str(payload.get(key) or "").strip()) or "Status changed"
     if event_type == "assignee_changed":

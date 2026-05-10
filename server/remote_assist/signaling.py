@@ -227,7 +227,7 @@ async def _log_control_event(session_id: str, role: str, message_type: str, payl
             actor_type=role,
             actor_id=remote_session.operator_id if role == "operator" else remote_session.device_id,
             payload=payload,
-            write_timeline=False,
+            write_timeline=event_type in {"control_enabled", "control_disabled", "control_rejected"},
         )
         await db_session.commit()
 

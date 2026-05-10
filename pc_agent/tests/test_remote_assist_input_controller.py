@@ -1,6 +1,11 @@
 import pytest
 
-from pc_agent.remote_assist.input_controller import InputController, InputControllerError
+from pc_agent.remote_assist.input_controller import (
+    InputController,
+    InputControllerError,
+    LinuxPynputInputBackend,
+    WindowsSendInputBackend,
+)
 
 
 def test_remote_assist_input_controller_is_disabled_by_default() -> None:
@@ -55,14 +60,78 @@ def test_mouse_click_and_keyboard_messages_are_validated() -> None:
     ]
 
 
-def test_control_rejects_unsupported_platform_and_unenabled_features() -> None:
-    controller = InputController(mode_enabled=True, platform="linux")
+def test_linux_control_uses_pynput_backend() -> None:
+    class FakeMouse:
+        def __init__(self) -> None:
+            self.position = (0, 0)
+            self.clicks: list[tuple[str, int]] = []
 
-    with pytest.raises(InputControllerError) as exc:
-        controller.handle_message({"type": "control_enable"})
-    assert exc.value.code == "CONTROL_UNSUPPORTED"
+        def click(self, button: str, count: int = 1) -> None:
+            self.clicks.append((button, count))
 
+    class FakeKeyboard:
+        def __init__(self) -> None:
+            self.pressed: list[tuple[str, str]] = []
+            self.typed: list[str] = []
+
+        def press(self, key: str) -> None:
+            self.pressed.append(("down", key))
+
+        def release(self, key: str) -> None:
+            self.pressed.append(("up", key))
+
+        def type(self, text: str) -> None:
+            self.typed.append(text)
+
+    mouse = FakeMouse()
+    keyboard = FakeKeyboard()
+    backend = LinuxPynputInputBackend(mouse=mouse, keyboard=keyboard, screen_size_provider=lambda: (800, 600))
+    controller = InputController(mode_enabled=True, platform="linux", backend=backend)
+
+    controller.handle_message({"type": "control_enable"})
+    controller.handle_message({"type": "mouse_move", "x_ratio": 0.25, "y_ratio": 0.5})
+    controller.handle_message({"type": "mouse_click", "x_ratio": 0.25, "y_ratio": 0.5, "button": "left"})
+    controller.handle_message({"type": "key_down", "key": "Enter"})
+    controller.handle_message({"type": "key_up", "key": "Enter"})
+    controller.handle_message({"type": "text_input", "text": "test"})
+
+    assert mouse.position == (200, 300)
+    assert mouse.clicks == [("left", 1)]
+    assert keyboard.pressed == [("down", "enter"), ("up", "enter")]
+    assert keyboard.typed == ["test"]
+
+
+def test_windows_backend_uses_sendinput() -> None:
+    class FakeUser32:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int]] = []
+
+        def SendInput(self, count: int, inputs: object, size: int) -> int:
+            self.calls.append((count, size))
+            return count
+
+        def GetSystemMetrics(self, index: int) -> int:
+            values = {76: 0, 77: 0, 78: 1920, 79: 1080, 0: 1920, 1: 1080}
+            return values[index]
+
+        def VkKeyScanW(self, codepoint: int) -> int:
+            return codepoint
+
+    user32 = FakeUser32()
+    backend = WindowsSendInputBackend(user32=user32)
+
+    backend.send({"kind": "mouse_click", "x": 100, "y": 200, "button": "left"})
+    backend.send({"kind": "key_down", "key": "Enter"})
+    backend.send({"kind": "key_up", "key": "Enter"})
+    backend.send({"kind": "text_input", "text": "я"})
+
+    assert len(user32.calls) == 4
+    assert all(count >= 1 for count, _size in user32.calls)
+
+
+def test_control_rejects_unenabled_features() -> None:
     controller = InputController(mode_enabled=True, platform="win32", sender=lambda _action: None)
+
     controller.handle_message({"type": "control_enable"})
     with pytest.raises(InputControllerError) as exc:
         controller.handle_message({"type": "clipboard.read"})

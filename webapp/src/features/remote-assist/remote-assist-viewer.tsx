@@ -134,6 +134,9 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           }
           if (message.type === "session.end") {
             setState("ended");
+            setControlEnabled(false);
+            onEnded?.();
+            onClose();
           }
           if (message.type === "session.error") {
             setState("failed");
@@ -234,7 +237,9 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
       wsRef.current?.send(JSON.stringify({ type: "session.end", payload: { reason: "operator_finished" } }));
       await endRemoteAssistSession(sessionId);
       setState("ended");
+      setControlEnabled(false);
       onEnded?.();
+      onClose();
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Не удалось завершить сессию.");
     }

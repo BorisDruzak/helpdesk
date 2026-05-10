@@ -244,6 +244,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
         <RemoteAssistViewer
           onClose={() => setViewerSessionId(null)}
           onEnded={() => {
+            setViewerSessionId(null);
             void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
             onChanged?.();
           }}
