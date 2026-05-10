@@ -11,6 +11,25 @@ from .input_controller import InputController, InputControllerError
 from .screen_track import ScreenCaptureTrack
 
 
+def count_sdp_candidates(sdp: str | None) -> int:
+    if not sdp:
+        return 0
+    return sum(1 for line in str(sdp).splitlines() if line.startswith("a=candidate:"))
+
+
+def candidate_summary(candidate: str | None) -> dict[str, str | None]:
+    if not candidate:
+        return {"type": None, "protocol": None}
+    parts = str(candidate).removeprefix("candidate:").split()
+    protocol = parts[2].lower() if len(parts) > 2 else None
+    candidate_type = None
+    if "typ" in parts:
+        index = parts.index("typ")
+        if index + 1 < len(parts):
+            candidate_type = parts[index + 1]
+    return {"type": candidate_type, "protocol": protocol}
+
+
 class RemoteAssistWebRTCClient:
     def __init__(
         self,
@@ -52,6 +71,7 @@ class RemoteAssistWebRTCClient:
         self._pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice))
         self._pc.addTrack(ScreenCaptureTrack.create())
         connected_event = asyncio.Event()
+        ice_gathering_complete = asyncio.Event()
         timeout_task: asyncio.Task | None = None
 
         async def fail_and_close(message: str) -> None:
@@ -113,6 +133,13 @@ class RemoteAssistWebRTCClient:
                 async def on_iceconnectionstatechange():
                     logger.info("Remote Assist ICE connection state: {}", self._pc.iceConnectionState)
 
+                @self._pc.on("icegatheringstatechange")
+                async def on_icegatheringstatechange():
+                    state = self._pc.iceGatheringState
+                    logger.info("Remote Assist ICE gathering state: {}", state)
+                    if state == "complete":
+                        ice_gathering_complete.set()
+
                 @self._pc.on("datachannel")
                 def on_datachannel(channel):
                     if channel.label != "control":
@@ -153,12 +180,29 @@ class RemoteAssistWebRTCClient:
                         await self._pc.setRemoteDescription(offer)
                         answer = await self._pc.createAnswer()
                         await self._pc.setLocalDescription(answer)
+                        if self._pc.iceGatheringState == "complete":
+                            ice_gathering_complete.set()
+                        try:
+                            await asyncio.wait_for(ice_gathering_complete.wait(), timeout=5)
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "Remote Assist ICE gathering timed out before answer: local_candidates={}",
+                                count_sdp_candidates(self._pc.localDescription.sdp if self._pc.localDescription else None),
+                            )
                         await ws.send_json({"type": "webrtc.answer", "payload": {"sdp": self._pc.localDescription.sdp, "type": self._pc.localDescription.type}})
-                        logger.info("Remote Assist answer sent")
+                        logger.info(
+                            "Remote Assist answer sent: local_candidates={}",
+                            count_sdp_candidates(self._pc.localDescription.sdp if self._pc.localDescription else None),
+                        )
                         if timeout_task is None or timeout_task.done():
                             timeout_task = asyncio.create_task(wait_for_connection())
                     elif message_type == "webrtc.ice_candidate" and payload.get("candidate"):
-                        logger.debug("Remote Assist remote ICE candidate received")
+                        summary = candidate_summary(str(payload.get("candidate") or ""))
+                        logger.info(
+                            "Remote Assist remote ICE candidate received: type={} protocol={}",
+                            summary["type"],
+                            summary["protocol"],
+                        )
                         candidate_text = str(payload["candidate"])
                         if candidate_text.startswith("candidate:"):
                             candidate_text = candidate_text.split(":", 1)[1]

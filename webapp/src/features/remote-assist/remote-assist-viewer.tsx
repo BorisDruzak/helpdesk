@@ -19,6 +19,31 @@ function buildSignalingUrl(baseUrl: string, token: string) {
   return url.toString();
 }
 
+function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 5000) {
+  if (pc.iceGatheringState === "complete") {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) {
+        return;
+      }
+      done = true;
+      window.clearTimeout(timer);
+      pc.removeEventListener("icegatheringstatechange", onStateChange);
+      resolve();
+    };
+    const onStateChange = () => {
+      if (pc.iceGatheringState === "complete") {
+        finish();
+      }
+    };
+    const timer = window.setTimeout(finish, timeoutMs);
+    pc.addEventListener("icegatheringstatechange", onStateChange);
+  });
+}
+
 export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssistViewerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -145,6 +170,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           ws.send(JSON.stringify({ type: "session.ready", payload: { role: "operator" } }));
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
+          await waitForIceGatheringComplete(pc);
           ws.send(JSON.stringify({ type: "webrtc.offer", payload: pc.localDescription }));
           connectTimer = window.setTimeout(() => {
             if (!disposed && pc.connectionState !== "connected") {
