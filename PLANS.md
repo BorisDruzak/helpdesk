@@ -55,7 +55,7 @@ Implemented locally: DB models/migration, backend repo/service/API/signaling, RB
 | 2 | Signaling and view-only WebRTC stream | 96% | Offer/answer path verified in field; ICE failure now fails cleanly instead of hanging |
 | 3 | Support workspace and Maria Agent UI polish | 92% | Agent banner now distinguishes connecting from active screen visibility |
 | 4 | Hardening, TURN config, reconnect, timeout | 75% | Token/ICE config, coturn on stand, short-lived TURN credentials, expiry hooks, viewer and agent timeouts, failed-state audit and cleanup added; reconnect/rate-limit polish remains |
-| 5 | Full assist features | 62% | Quality profiles, production mouse/keyboard UX and text clipboard auto-sync are implemented locally; file transfer, elevated/admin and managed unattended remain policy-gated but not transport-complete |
+| 5 | Full assist features | 70% | Quality profiles, production mouse/keyboard UX, text clipboard auto-sync and Windows elevated/admin helper are implemented and rolled out to the stand; file transfer and managed unattended remain policy-gated but not transport-complete |
 
 ## Implementation Plan
 
@@ -311,7 +311,7 @@ Execution slices, in order:
 
 ### Phase D: Elevated/Admin Mode
 
-- Add `elevated_admin` as a requested support mode with separate consent.
+- Add `elevated_admin` as a requested support mode declared in the initial consent prompt.
 - On Windows, request elevation only through visible OS/User approval; do not bypass UAC.
 - Surface unsupported state clearly when agent is not running elevated or the platform cannot elevate.
 
@@ -322,7 +322,7 @@ Current Windows helper slice:
 - [x] Keep the helper session-scoped: one loopback connection, one high-entropy token, no server connectivity, no hidden unattended start.
 - [x] Route `elevated_admin` input through the helper while leaving normal `interactive_control` unchanged.
 - [x] Surface the mode in support UI only to operators with `remote_assist.elevated`; Maria Agent consent text must explicitly mention UAC/admin windows.
-- [ ] Verify with unit tests, webapp build, package build, then roll out as Windows stable `3.1.50`.
+- [x] Verify with unit tests, webapp build, package build, then roll out as Windows stable `3.1.50`.
 
 ### Phase E: Managed Unattended
 
@@ -340,7 +340,7 @@ Current Windows helper slice:
 
 ## Handoff
 
-Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX and Phase C text clipboard auto-sync are implemented locally and verified by focused tests/build. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is file transfer, then elevated/admin, then managed unattended and reconnect/rate-limit hardening. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
+Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX, Phase C text clipboard auto-sync and Phase D Windows `elevated_admin` helper are implemented, committed, deployed to the stand and rolled out as agent `3.1.50` to `AD-MAIN`. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is file transfer, then managed unattended and reconnect/rate-limit hardening. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
 
 ---
 
