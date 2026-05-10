@@ -101,8 +101,14 @@ Improve the existing support workspace without replacing the current interface o
 
 ## Remaining TODO
 
+- [x] Review feedback slice:
+  - compact ticket list keeps chat mode focused and moves heavy queue navigation into Queue Mode;
+  - Queue Mode gets My/Queues/Slices/Search navigation, visible filters, mass-action menu and richer SLA rows;
+  - queue context rail becomes one selected-ticket-aware `Развернуть контекст` button;
+  - ticket header actions move into `Ещё`, with `Взять себе` highlighted only for unassigned tickets;
+  - remove inactive top/header buttons and move ticket search out of the global topbar;
+  - improve ticket/chat grid sizing for narrow monitors.
 - Add deeper SLA policy details and passport edit forms when backend exposes more normalized workspace data.
-- Add browser verification after the user asks to deploy this branch to the remote stand.
 
 ## Manual Check After Deploy
 

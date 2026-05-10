@@ -446,9 +446,12 @@ describe("TicketListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
     expect(window.localStorage.getItem("support-workspace-active-right-tab")).toBe("tools");
 
+    fireEvent.click(screen.getByRole("button", { name: "Развернуть очередь" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Очереди" }));
     fireEvent.click(screen.getByRole("button", { name: /networks/i }));
     expect(window.localStorage.getItem("support-workspace-selected-queue")).toBe("networks");
 
+    fireEvent.click(screen.getByRole("button", { name: "Срезы" }));
     fireEvent.click(screen.getByRole("button", { name: /SLA риск/i }));
     expect(window.localStorage.getItem("support-workspace-selected-view")).toBe("sla_risk");
   });
@@ -668,14 +671,16 @@ describe("TicketListPage", () => {
 
     renderTicketListPage();
 
-    expect(await screen.findByText("Рабочие срезы")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Развернуть очередь" }));
+    expect(await screen.findByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Срезы" }));
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /SLA риск\s*1/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Риск внутренней очереди\s*2/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Региональный VIP риск\s*4/ })).toBeInTheDocument();
-    expect(screen.getByText("networks")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /SLA риск.*1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Риск внутренней очереди.*2/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Региональный VIP риск.*4/ })).toBeInTheDocument();
+    expect(screen.getAllByText("networks").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /Региональный VIP риск\s*4/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Региональный VIP риск.*4/ }));
 
     await waitFor(() => {
       expect(fetchSupportQueueMock).toHaveBeenCalledWith(
@@ -710,7 +715,7 @@ describe("TicketListPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
 
-    expect(screen.getByRole("button", { name: "Назначить на себя" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Взять себе" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Сменить статус" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сменить очередь" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Изменить приоритет" })).toBeInTheDocument();
@@ -791,7 +796,9 @@ describe("TicketListPage", () => {
         },
       }),
     );
-    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    const unassignedPayload = workspacePayload();
+    unassignedPayload.detail.ticket.assignee_id = null;
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(unassignedPayload);
     postSupportTicketStatusMock.mockResolvedValue({ ticket_id: "ticket-1", status: "waiting_on_user", status_label: "Ждёт пользователя" });
     postSupportTicketQueueMock.mockResolvedValue({
       ticket_id: "ticket-1",
@@ -872,7 +879,7 @@ describe("TicketListPage", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
-    fireEvent.click(screen.getByRole("button", { name: "Назначить на себя" }));
+    fireEvent.click(screen.getByRole("button", { name: "Взять себе" }));
     fireEvent.change(screen.getByPlaceholderText("Например: ручная корректировка по диагностике"), {
       target: { value: "assign reason" },
     });
@@ -914,7 +921,8 @@ describe("TicketListPage", () => {
       expect(fetchSupportTicketWorkspaceMock).toHaveBeenCalledWith("ticket-1");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Показывать архив" }));
+    fireEvent.click(screen.getByRole("button", { name: "Развернуть очередь" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Показывать архив" }));
     await waitFor(() => {
       expect(fetchSupportQueueMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: true }));
     });
@@ -924,6 +932,7 @@ describe("TicketListPage", () => {
       expect(postSupportWorkspaceCleanupNoiseMock).toHaveBeenCalled();
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "К чату" }));
     fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
     fireEvent.click(screen.getByRole("button", { name: "Скрыть у всех" }));
     await waitFor(() => {
@@ -1112,7 +1121,9 @@ describe("TicketListPage", () => {
     renderTicketListPage("/app/tickets/ticket-1");
 
     expect(await screen.findByText("Проверить OLA очередь")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
     expect(screen.getByRole("button", { name: "Запустить диагностику" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
 
@@ -1213,6 +1224,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
+    fireEvent.click(await screen.findByRole("button", { name: "Ещё" }));
     const diagnosticsButton = await screen.findByRole("button", { name: /диагностику/i });
     fireEvent.click(diagnosticsButton);
 
@@ -1239,7 +1251,8 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    const replyButton = await screen.findByRole("button", { name: "К ответу" });
+    fireEvent.click(await screen.findByRole("button", { name: "Ещё" }));
+    const replyButton = await screen.findByRole("button", { name: "Ответить пользователю" });
     fireEvent.click(replyButton);
     expect(postSupportTicketMessageMock).not.toHaveBeenCalled();
 

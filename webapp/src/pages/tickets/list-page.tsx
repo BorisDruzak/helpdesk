@@ -9,7 +9,6 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  CircleHelp,
   ClipboardList,
   Clock3,
   Cpu,
@@ -25,21 +24,17 @@ import {
   MapPin,
   MessageSquare,
   Monitor,
-  MoreHorizontal,
   Moon,
   Network,
   Paperclip,
   Phone,
   Play,
-  Printer,
   RefreshCcw,
   Search,
   Send,
-  Server,
   Settings2,
   ShieldCheck,
   Sparkles,
-  Star,
   Sun,
   Tags,
   type LucideIcon,
@@ -89,8 +84,6 @@ import type {
   SupportWorkspaceClosurePlan,
   SupportWorkspaceOperationSummary,
   SupportWorkspaceObserverDiagnostic,
-  SupportWorkspaceQueue,
-  SupportWorkspaceSlice,
   SupportWorkspaceTimer,
   SupportWorkspaceTimelineKind,
   SupportWorkspaceToolItem,
@@ -163,10 +156,10 @@ type ClosurePlanBlocker = SupportWorkspaceClosurePlan["blockers"][number];
 const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
-const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 320, right: 390 };
+const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 300, right: 340 };
 const WORKSPACE_MODE_GRID_PRESETS: Record<WorkspaceMode, WorkspaceGridPreset> = {
-  ticket: { left: `${DEFAULT_WORKSPACE_COLUMNS.left}px`, center: "minmax(520px, 1fr)", right: `${DEFAULT_WORKSPACE_COLUMNS.right}px` },
-  queue: { left: "minmax(680px, 1.45fr)", center: "minmax(360px, 0.7fr)", right: "96px" },
+  ticket: { left: `${DEFAULT_WORKSPACE_COLUMNS.left}px`, center: "minmax(620px, 1fr)", right: `${DEFAULT_WORKSPACE_COLUMNS.right}px` },
+  queue: { left: "minmax(780px, 1.65fr)", center: "minmax(340px, 0.62fr)", right: "92px" },
   tools: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(560px, 1fr)" },
   sla: { left: "320px", center: "minmax(400px, 460px)", right: "minmax(560px, 1fr)" },
   passport: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(620px, 1fr)" },
@@ -176,7 +169,7 @@ const WORKSPACE_COLUMN_LIMITS = {
   leftMax: 460,
   rightMin: 320,
   rightMax: 560,
-  centerMin: 560,
+  centerMin: 640,
 };
 
 function getInitialSupportWorkspaceTheme(): SupportWorkspaceTheme {
@@ -232,7 +225,7 @@ function getWorkspaceGridPreset(mode: WorkspaceMode, columns: WorkspaceColumnSiz
   if (mode === "ticket") {
     return {
       left: `${columns.left}px`,
-      center: "minmax(520px, 1fr)",
+      center: "minmax(620px, 1fr)",
       right: `${columns.right}px`,
     };
   }
@@ -257,23 +250,6 @@ function workspaceHasLiveOperations(payload: SupportTicketWorkspacePayload | und
     }),
   );
 }
-
-const sliceIcons: Record<SupportWorkspaceSlice["icon"], typeof Inbox> = {
-  alert: AlertTriangle,
-  inbox: Inbox,
-  message: MessageSquare,
-  spark: Sparkles,
-  user: UserRound,
-};
-
-const queueIcons: Record<SupportWorkspaceQueue["icon"], typeof Inbox> = {
-  layers: ClipboardList,
-  monitor: Wrench,
-  network: Network,
-  printer: Printer,
-  server: Server,
-  shield: ShieldCheck,
-};
 
 const sidebarTabs: Array<{ value: SidebarTab; label: string }> = [
   { value: "context", label: "Контекст" },
@@ -995,8 +971,6 @@ function SupportWorkspaceTopbar({
   notificationCount,
   onRefresh,
   refreshing,
-  search,
-  setSearch,
   userLogin,
   userRole,
 }: {
@@ -1006,8 +980,6 @@ function SupportWorkspaceTopbar({
   notificationCount: number;
   onRefresh: () => void;
   refreshing: boolean;
-  search: string;
-  setSearch: (value: string) => void;
   userLogin: string;
   userRole: string;
 }) {
@@ -1054,17 +1026,6 @@ function SupportWorkspaceTopbar({
         })}
       </nav>
 
-      <label className={`flex h-10 min-w-[220px] max-w-[420px] flex-1 items-center gap-3 rounded-xl border px-3 text-sm ${isLightTheme ? "border-slate-200 bg-slate-100 text-slate-500" : "border-white/10 bg-white/[0.04] text-slate-400"}`}>
-        <Search className="h-4 w-4 shrink-0" />
-        <input
-          className={`min-w-0 flex-1 bg-transparent outline-none ${isLightTheme ? "text-slate-950 placeholder:text-slate-500" : "text-slate-100 placeholder:text-slate-500"}`}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          placeholder="Поиск по тикетам, пользователям, устройствам..."
-          type="search"
-          value={search}
-        />
-      </label>
-
       <div className="ml-auto flex items-center gap-1.5">
         <Link
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500"
@@ -1105,22 +1066,6 @@ function SupportWorkspaceTopbar({
               {notificationCount > 99 ? "99+" : notificationCount}
             </span>
           ) : null}
-        </button>
-        <button
-          aria-label="Сообщения"
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
-          title="Сообщения и комментарии"
-          type="button"
-        >
-          <MessageSquare className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Помощь"
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300"
-          title="Справка по рабочему месту оператора"
-          type="button"
-        >
-          <CircleHelp className="h-4 w-4" />
         </button>
         <div className="hidden items-center gap-3 pl-2 md:flex">
           <div className={`flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl ${isLightTheme ? "bg-slate-200" : "bg-slate-700"}`}>
@@ -1467,6 +1412,10 @@ export function TicketListPage() {
     setSidebarTab(tab);
     if (tab === "tools" || tab === "sla" || tab === "passport") {
       setWorkspaceMode(tab);
+      return;
+    }
+    if (workspaceMode !== "ticket") {
+      setWorkspaceMode("ticket");
     }
   }
 
@@ -1773,6 +1722,7 @@ export function TicketListPage() {
   }
 
   const selectedTicket = viewModel.selectedTicket;
+  const selectedTicketIsUnassigned = Boolean(selectedTicket?.assigneeLabel.toLowerCase().includes("не назнач"));
   const orderedClosureBlockers = useMemo(
     () => orderClosureBlockers(selectedTicket?.closurePlan.blockers ?? []),
     [selectedTicket?.closurePlan.blockers],
@@ -1888,8 +1838,6 @@ export function TicketListPage() {
         notificationCount={workspaceQuery.data?.detail.snapshot.notification_unread ?? 0}
         onRefresh={refreshAll}
         refreshing={queueQuery.isFetching || workspaceQuery.isFetching}
-        search={search}
-        setSearch={setSearch}
         userLogin={session?.user_login ?? "operator"}
         userRole={session?.actor_role === "admin" ? "Администратор" : "Оператор L1"}
       />
@@ -1929,125 +1877,72 @@ export function TicketListPage() {
         <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
           {workspaceMode === "queue" ? (
             <QueueExplorer
+              activeQueueId={activeQueueId}
+              cleanupNoisePending={cleanupNoiseMutation.isPending}
+              onActiveQueueChange={setActiveQueueId}
+              onCleanupNoise={() => cleanupNoiseMutation.mutate()}
               onOpenTicket={openTicket}
+              onScopeChange={setScope}
+              onSearchChange={setSearch}
+              onShowArchiveChange={setShowArchive}
               onSelectTicket={(ticketId) => {
                 setWorkspaceMode("queue");
                 startTransition(() => {
                   navigate(`/app/tickets/${ticketId}`);
                 });
               }}
+              onSmartViewChange={setSmartView}
+              queues={viewModel.left.queues}
+              scope={scope}
+              search={search}
               selectedTicket={selectedTicket}
+              selectedViewId={smartView}
+              showArchive={showArchive}
+              slices={viewModel.left.slices}
               tickets={visibleTickets}
             />
           ) : (
           <>
           <div className="border-b border-white/10 px-4 py-4">
-            <div className="grid grid-cols-2 gap-2 rounded-xl bg-white/[0.04] p-1">
-              {(["all", "mine"] as const).map((value) => (
-                <button
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                    scope === value ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
-                  }`}
-                  key={value}
-                  onClick={() => setScope(value)}
-                  type="button"
-                >
-                  {value === "all" ? "Все" : "Мои"}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex items-center gap-2">
+            <button
+              className="mb-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-500"
+              onClick={() => setWorkspaceMode("queue")}
+              type="button"
+            >
+              Развернуть очередь
+            </button>
+            <label className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-400">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none placeholder:text-slate-500"
+                onChange={(event) => setSearch(event.currentTarget.value)}
+                placeholder="Поиск по моим тикетам..."
+                type="search"
+                value={search}
+              />
+            </label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <button
-                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                  showArchive ? "border-blue-400/60 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
-                }`}
-                onClick={() => setShowArchive((value) => !value)}
-                title="Показывать архивные тикеты в рабочем списке"
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${scope === "mine" ? "border-blue-400/60 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
+                onClick={() => setScope("mine")}
                 type="button"
               >
-                <Archive className="h-3.5 w-3.5" />
-                Показывать архив
+                Мои тикеты
               </button>
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={cleanupNoiseMutation.isPending}
-                onClick={() => cleanupNoiseMutation.mutate()}
-                title="Скрыть очевидные live/stage/test тикеты из общего рабочего списка"
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${smartView === "sla_risk" ? "border-amber-400/60 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.04] text-slate-300"}`}
+                onClick={() => setSmartView("sla_risk")}
                 type="button"
               >
-                <EyeOff className="h-3.5 w-3.5" />
-                Скрыть test
+                SLA риск
               </button>
             </div>
-            {cleanupNoiseMutation.data ? (
-              <p className="mt-2 px-1 text-xs text-slate-400">
-                Скрыто test/live: {cleanupNoiseMutation.data.hidden_count}
-              </p>
-            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-            <div className="mb-4">
-              <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <span>Рабочие срезы</span>
-                <Wrench className="h-4 w-4" />
-              </div>
-              <div className="space-y-1">
-                {viewModel.left.slices.map((slice) => {
-                  const Icon = sliceIcons[slice.icon];
-                  return (
-                    <button
-                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                        slice.active ? "bg-blue-600/25 text-white ring-1 ring-blue-500/40" : "text-slate-300 hover:bg-white/[0.04]"
-                      }`}
-                      key={slice.id}
-                      onClick={() => setSmartView(slice.id)}
-                      type="button"
-                    >
-                      <Icon className="h-4 w-4 shrink-0 text-slate-400" />
-                      <span className="min-w-0 flex-1 truncate">{slice.label}</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200">{slice.count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <span>Очереди</span>
-                <span className="text-base leading-none text-slate-400">+</span>
-              </div>
-              <div className="space-y-1">
-                {viewModel.left.queues.map((queue) => {
-                  const Icon = queueIcons[queue.icon];
-                  return (
-                    <button
-                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                        queue.active ? "bg-blue-600/25 text-white ring-1 ring-blue-500/40" : "text-slate-300 hover:bg-white/[0.04]"
-                      }`}
-                      key={queue.id}
-                      onClick={() => setActiveQueueId(queue.active ? null : queue.id)}
-                      type="button"
-                    >
-                      <Icon className="h-4 w-4 shrink-0 text-slate-400" />
-                      <span className="min-w-0 flex-1 truncate">{queue.label}</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-slate-200">{queue.count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              <span>Тикеты в очереди</span>
-              <button
-                className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-semibold normal-case tracking-normal text-slate-300 hover:text-white"
-                onClick={() => setWorkspaceMode("queue")}
-                type="button"
-              >
-                Развернуть очередь
-              </button>
+              <span>Мой рабочий список</span>
+              <span>{visibleTickets.length}</span>
             </div>
 
             {queueQuery.isLoading ? (
@@ -2103,8 +1998,8 @@ export function TicketListPage() {
                         Скрыт
                       </span>
                     ) : null}
-                    <span className={`ml-auto text-xs font-semibold ${ticket.slaRisk ? "text-red-300" : "text-amber-200"}`}>
-                      {ticket.nextDueLabel}
+                    <span className={`ml-auto text-xs font-semibold ${ticket.nextDueLabel.toLowerCase().includes("нет") ? "text-slate-400" : ticket.slaRisk ? "text-red-300" : "text-emerald-300"}`}>
+                      {ticket.nextDueLabel.toLowerCase().includes("нет") ? "SLA не рассчитан" : ticket.nextDueLabel}
                     </span>
                   </div>
                 </button>
@@ -2117,7 +2012,13 @@ export function TicketListPage() {
 
         <main className="flex min-h-0 flex-col border-r border-white/10 bg-[#07111f]">
           {workspaceMode === "queue" ? (
-            <TicketPreviewPanel onOpenTicket={openTicket} selectedTicket={selectedTicket} />
+            <TicketPreviewPanel
+              canTakeTicket={selectedTicketIsUnassigned}
+              onAssignTicket={() => openOperatorAction("assign_self")}
+              onOpenTicket={openTicket}
+              onTakeTicket={() => openOperatorAction("assign_self")}
+              selectedTicket={selectedTicket}
+            />
           ) : null}
 
           {workspaceMode !== "queue" && !selectedTicketId ? (
@@ -2202,14 +2103,6 @@ export function TicketListPage() {
                       <span>SLA: {selectedTicket.nextAction.remainingLabel}</span>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300" type="button">
-                      <Star className="h-4 w-4" />
-                    </button>
-                    <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300" type="button">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  </div>
                 </div>
 
                 <section className={`mt-5 grid grid-cols-[auto_minmax(0,1fr)_260px] items-center gap-5 rounded-xl border p-4 ${toneClasses(selectedTicket.nextAction.tone)}`}>
@@ -2228,34 +2121,8 @@ export function TicketListPage() {
                   </div>
                 </section>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    className="inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500"
-                    onClick={() => focusComposer("public")}
-                    type="button"
-                  >
-                    <Send className="h-4 w-4" />
-                    К ответу
-                  </button>
-                  <button
-                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!internalNoteAllowed}
-                    onClick={() => focusComposer("internal")}
-                    type="button"
-                  >
-                    <Lock className="h-4 w-4" />
-                    Внутренняя заметка
-                  </button>
-                  <button
-                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                    disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
-                    onClick={() => openAutomationLauncher()}
-                    type="button"
-                  >
-                    <Wrench className="h-4 w-4" />
-                    Запустить диагностику
-                  </button>
-                  <div className="ml-auto flex items-center gap-2">
+                <div className="mt-4 flex items-center justify-end">
+                  <div className="flex items-center gap-2">
                     <div className="relative">
                       <button
                         aria-expanded={moreOpen}
@@ -2267,7 +2134,45 @@ export function TicketListPage() {
                         Ещё
                       </button>
                       {moreOpen ? (
-                        <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                        <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                            onClick={() => focusComposer("public")}
+                            type="button"
+                          >
+                            <Send className="h-4 w-4" />
+                            Ответить пользователю
+                          </button>
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!internalNoteAllowed}
+                            onClick={() => focusComposer("internal")}
+                            type="button"
+                          >
+                            <Lock className="h-4 w-4" />
+                            Внутренняя заметка
+                          </button>
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={toolRunMutation.isPending || playbookRunMutation.isPending || (!firstRunnableTool && !firstRunnablePlaybook)}
+                            onClick={() => openAutomationLauncher()}
+                            type="button"
+                          >
+                            <Wrench className="h-4 w-4" />
+                            Запустить диагностику
+                          </button>
+                          <div className="my-1 border-t border-white/10" />
+                          <button
+                            className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                              selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
+                            }`}
+                            disabled={!session?.user_login || !selectedTicketIsUnassigned}
+                            onClick={() => openOperatorAction("assign_self")}
+                            type="button"
+                          >
+                            Взять себе
+                          </button>
+                          <div className="my-1 border-t border-white/10" />
                           {selectedTicket.hiddenFromWorkspace ? (
                             <button
                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2311,15 +2216,6 @@ export function TicketListPage() {
                               Архивировать
                             </button>
                           ) : null}
-                          <div className="my-1 border-t border-white/10" />
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!session?.user_login}
-                            onClick={() => openOperatorAction("assign_self")}
-                            type="button"
-                          >
-                            Назначить на себя
-                          </button>
                           <button
                             className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={statusActionOptions.length === 0}
@@ -2872,6 +2768,26 @@ export function TicketListPage() {
         </main>
 
         <aside className="flex min-h-0 flex-col bg-[#0b1624]">
+          {workspaceMode === "queue" ? (
+            <div className="flex min-h-0 flex-1 items-start justify-center border-l border-white/10 px-2 py-4">
+              <button
+                className={`min-h-32 w-full rounded-xl border px-2 py-3 text-xs font-semibold leading-5 transition [writing-mode:vertical-rl] ${
+                  selectedTicket
+                    ? "border-blue-400/60 bg-blue-500/15 text-blue-100 hover:bg-blue-500/25"
+                    : "cursor-not-allowed border-white/10 bg-white/[0.03] text-slate-600"
+                }`}
+                disabled={!selectedTicket}
+                onClick={() => {
+                  setSidebarTab("context");
+                  setWorkspaceMode("ticket");
+                }}
+                type="button"
+              >
+                Развернуть контекст
+              </button>
+            </div>
+          ) : (
+            <>
           {workspaceMode === "tools" ? (
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Инструменты" />
           ) : workspaceMode === "sla" ? (
@@ -3871,6 +3787,8 @@ export function TicketListPage() {
               </section>
             ) : null}
           </div>
+            </>
+          )}
         </aside>
       </div>
     </section>

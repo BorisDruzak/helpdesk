@@ -3,11 +3,20 @@ import type { SupportWorkspaceSelectedTicket } from "../../../features/queues/su
 import { toneClasses } from "./workspace-component-utils";
 
 type TicketPreviewPanelProps = {
-  selectedTicket: SupportWorkspaceSelectedTicket | null;
+  canTakeTicket?: boolean;
+  onAssignTicket?: () => void;
   onOpenTicket: (ticketId: string) => void;
+  onTakeTicket?: () => void;
+  selectedTicket: SupportWorkspaceSelectedTicket | null;
 };
 
-export function TicketPreviewPanel({ selectedTicket, onOpenTicket }: TicketPreviewPanelProps) {
+export function TicketPreviewPanel({
+  canTakeTicket = false,
+  onAssignTicket,
+  onOpenTicket,
+  onTakeTicket,
+  selectedTicket,
+}: TicketPreviewPanelProps) {
   if (!selectedTicket) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-400">
@@ -37,6 +46,31 @@ export function TicketPreviewPanel({ selectedTicket, onOpenTicket }: TicketPrevi
           <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-slate-300">{selectedTicket.queueLabel}</span>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-300">{selectedTicket.description}</p>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <button
+            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:text-slate-500"
+            disabled={!canTakeTicket}
+            onClick={onTakeTicket}
+            type="button"
+          >
+            Взять
+          </button>
+          <button
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200 hover:text-white disabled:cursor-not-allowed disabled:text-slate-500"
+            disabled={!onAssignTicket}
+            onClick={onAssignTicket}
+            type="button"
+          >
+            Назначить
+          </button>
+          <button
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200 hover:text-white"
+            onClick={() => onOpenTicket(selectedTicket.id)}
+            type="button"
+          >
+            К чату
+          </button>
+        </div>
       </div>
       <section className={`rounded-xl border p-4 ${toneClasses(selectedTicket.nextAction.tone)}`}>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Следующее действие</p>
