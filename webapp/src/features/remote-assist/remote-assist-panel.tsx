@@ -96,11 +96,10 @@ type RemoteAssistPanelProps = {
 };
 
 export function buildRemoteAssistFeatureOptions(requestedMode: string, clipboardAutoSync: boolean, fileTransfer: boolean) {
-  const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
-  const fileMode = controlMode || requestedMode === "file_transfer";
+  const screenMode = requestedMode !== "file_transfer";
   return {
-    clipboard_auto_sync: controlMode && clipboardAutoSync,
-    file_transfer: fileMode && fileTransfer,
+    clipboard_auto_sync: screenMode && clipboardAutoSync,
+    file_transfer: fileTransfer,
   };
 }
 
@@ -137,15 +136,25 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
   const hasFileTransferPermission = permissions.includes("remote_assist.file_transfer");
   const hasElevatedPermission = permissions.includes("remote_assist.elevated");
 
+  const applyDefaultFeatureSelection = (nextMode: string) => {
+    const nextClipboard = nextMode !== "file_transfer" && hasClipboardPermission;
+    const nextFileTransfer = hasFileTransferPermission;
+    modeRef.current = nextMode;
+    setMode(nextMode);
+    clipboardAutoSyncRef.current = nextClipboard;
+    setClipboardAutoSync(nextClipboard);
+    fileTransferRef.current = nextFileTransfer;
+    setFileTransfer(nextFileTransfer);
+  };
+
   const requestMutation = useMutation({
     mutationFn: () => {
       if (!deviceId) {
         throw new Error("Устройство для тикета не указано.");
       }
       const requestedMode = modeRef.current;
-      const controlMode = requestedMode === "interactive_control" || requestedMode === "elevated_admin";
-      const requestedClipboard = controlMode && clipboardAutoSyncRef.current && hasClipboardPermission;
-      const requestedFileTransfer = (controlMode || requestedMode === "file_transfer") && fileTransferRef.current && hasFileTransferPermission;
+      const requestedClipboard = requestedMode !== "file_transfer" && clipboardAutoSyncRef.current && hasClipboardPermission;
+      const requestedFileTransfer = fileTransferRef.current && hasFileTransferPermission;
       return requestRemoteAssist(ticketId, {
         deviceId,
         mode: requestedMode,
@@ -162,10 +171,10 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
       modeRef.current = "view_only";
       setQualityProfile("smooth");
       qualityProfileRef.current = "smooth";
-      setClipboardAutoSync(false);
-      clipboardAutoSyncRef.current = false;
-      setFileTransfer(false);
-      fileTransferRef.current = false;
+      clipboardAutoSyncRef.current = hasClipboardPermission;
+      setClipboardAutoSync(hasClipboardPermission);
+      fileTransferRef.current = hasFileTransferPermission;
+      setFileTransfer(hasFileTransferPermission);
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
       onChanged?.();
     },
@@ -192,7 +201,10 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
         <button
           className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           disabled={Boolean(disabledReason) || requestMutation.isPending}
-          onClick={() => setModalOpen(true)}
+          onClick={() => {
+            applyDefaultFeatureSelection("view_only");
+            setModalOpen(true);
+          }}
           title={disabledReason ?? "Запросить удалённую помощь"}
           type="button"
         >
@@ -261,16 +273,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                   className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
                   onChange={(event) => {
                     const nextMode = event.currentTarget.value;
-                    modeRef.current = nextMode;
-                    setMode(nextMode);
-                    if (nextMode !== "interactive_control" && nextMode !== "elevated_admin") {
-                      clipboardAutoSyncRef.current = false;
-                      setClipboardAutoSync(false);
-                    }
-                    if (nextMode === "view_only") {
-                      fileTransferRef.current = false;
-                      setFileTransfer(false);
-                    }
+                    applyDefaultFeatureSelection(nextMode);
                   }}
                   value={mode}
                 >
@@ -289,7 +292,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                   Пользователь увидит обычное согласие Maria Agent и отдельное системное UAC-подтверждение. Без UAC этот режим не сможет управлять админскими окнами.
                 </div>
               ) : null}
-              {mode === "interactive_control" || mode === "elevated_admin" ? (
+              {mode !== "file_transfer" ? (
                 <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
                   <input
                     checked={clipboardAutoSync}
@@ -309,7 +312,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
                   </span>
                 </label>
               ) : null}
-              {mode === "interactive_control" || mode === "elevated_admin" || mode === "file_transfer" ? (
+              {hasFileTransferPermission ? (
                 <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
                   <input
                     checked={fileTransfer}
@@ -389,8 +392,14 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, permission
       ) : null}
       {viewerSessionId ? (
         <RemoteAssistViewer
+          canRequestElevated={hasElevatedPermission}
           onClose={() => setViewerSessionId(null)}
           onEnded={() => {
+            setViewerSessionId(null);
+            void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
+            onChanged?.();
+          }}
+          onElevatedRequested={() => {
             setViewerSessionId(null);
             void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
             onChanged?.();

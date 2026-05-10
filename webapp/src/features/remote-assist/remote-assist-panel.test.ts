@@ -19,7 +19,7 @@ describe("RemoteAssistPanel request options", () => {
 
   it("does not request clipboard auto-sync for view-only sessions", () => {
     expect(buildRemoteAssistFeatureOptions("view_only", true, false)).toEqual({
-      clipboard_auto_sync: false,
+      clipboard_auto_sync: true,
       file_transfer: false,
     });
   });
@@ -33,6 +33,20 @@ describe("RemoteAssistPanel request options", () => {
 
   it("allows file transfer for control sessions when requested", () => {
     expect(buildRemoteAssistFeatureOptions("interactive_control", false, true)).toEqual({
+      clipboard_auto_sync: false,
+      file_transfer: true,
+    });
+  });
+
+  it("allows default file transfer for view-only sessions", () => {
+    expect(buildRemoteAssistFeatureOptions("view_only", true, true)).toEqual({
+      clipboard_auto_sync: true,
+      file_transfer: true,
+    });
+  });
+
+  it("keeps clipboard disabled for file-transfer-only sessions", () => {
+    expect(buildRemoteAssistFeatureOptions("file_transfer", true, true)).toEqual({
       clipboard_auto_sync: false,
       file_transfer: true,
     });

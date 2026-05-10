@@ -140,6 +140,16 @@ def test_remote_assist_file_transfer_features_are_policy_gated(monkeypatch) -> N
     assert features["file_transfer_max_bytes"] == 12345
 
 
+def test_remote_assist_default_features_can_combine_view_only_clipboard_and_files(monkeypatch) -> None:
+    monkeypatch.setattr(config, "REMOTE_ASSIST_CLIPBOARD_ENABLED", True)
+    monkeypatch.setattr(config, "REMOTE_ASSIST_FILE_TRANSFER_ENABLED", True)
+
+    features = build_remote_assist_features({"clipboard_auto_sync": True, "file_transfer": True})
+
+    assert features["clipboard_auto_sync"] is True
+    assert features["file_transfer"] is True
+
+
 def test_remote_assist_control_events_have_timeline_system_messages() -> None:
     assert _timeline_event_label("remote_assist_control_enabled") == "Удалённое управление включено"
     assert _timeline_event_text("remote_assist_control_enabled", {}) == "Оператор включил управление мышью и клавиатурой."

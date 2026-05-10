@@ -249,6 +249,7 @@ Post-MVP consent model update:
 - `view_only` consent text says the specialist can see the screen.
 - `interactive_control` consent text says the specialist can see the screen and control mouse/keyboard.
 - Clipboard auto-sync and file transfer must be declared in the initial request when enabled for the session.
+- Support UI defaults now request clipboard auto-sync for screen-sharing sessions and file transfer for all permitted sessions; operators can turn them off before sending the initial consent request.
 - Escalating an active `view_only` session to control, clipboard, file transfer or elevated/admin is not allowed without ending the session and requesting a new mode.
 
 Execution slices, in order:
@@ -309,6 +310,7 @@ Execution slices, in order:
 - [x] Show clipboard sync state in the support viewer and consent text in Maria Agent.
 - [x] Write audit events for clipboard sync enabled/disabled and sync error; never log clipboard contents. Direction counters remain a follow-up.
 - [x] Do not expose clipboard/file actions in UI until the corresponding session capability is approved.
+- [x] Default-enable clipboard auto-sync for screen-sharing requests and file transfer for all permitted Remote Assist modes in the support request UI.
 
 ### Phase D: Elevated/Admin Mode
 
@@ -323,6 +325,7 @@ Current Windows helper slice:
 - [x] Keep the helper session-scoped: one loopback connection, one high-entropy token, no server connectivity, no hidden unattended start.
 - [x] Route `elevated_admin` input through the helper while leaving normal `interactive_control` unchanged.
 - [x] Surface the mode in support UI only to operators with `remote_assist.elevated`; Maria Agent consent text must explicitly mention UAC/admin windows.
+- [x] Add an active-viewer `Повысить права` action that ends the current ordinary session and starts a separate `elevated_admin` request with its own consent/UAC flow.
 - [x] Verify with unit tests, webapp build, package build, then roll out as Windows stable `3.1.50`.
 
 ### Phase E: Managed Unattended
@@ -341,7 +344,7 @@ Current Windows helper slice:
 
 ## Handoff
 
-Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX, Phase C text clipboard auto-sync, Phase D Windows `elevated_admin` helper and Phase C operator-to-device file transfer are implemented locally. The latest deployed stand agent before this slice is `3.1.50`; file transfer requires packaging and rollout as `3.1.51`. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is managed unattended and reconnect/rate-limit hardening, plus device-to-operator file transfer if needed. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
+Current checkpoint: Phase B0 quality/viewer ergonomics, production interactive-control UX, Phase C text clipboard auto-sync, Phase D Windows `elevated_admin` helper and Phase C operator-to-device file transfer are implemented. The latest deployed stand agent before this slice is `3.1.51`; current `3.1.52` work changes Remote Assist defaults so clipboard auto-sync and file transfer are preselected when policy/permission allow them, and adds the active-viewer `Повысить права` flow that creates a separate `elevated_admin` request. TURN is configured on the Linux stand and `T-000531` successfully starts a session after coturn setup. Next execution slice is managed unattended and reconnect/rate-limit hardening, plus device-to-operator file transfer if needed. Clipboard auto-sync depends on browser Clipboard API availability, so full automatic operator-side OS clipboard sync requires a secure browser context/HTTPS and browser permission.
 
 ---
 

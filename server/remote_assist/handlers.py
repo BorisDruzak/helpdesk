@@ -91,8 +91,8 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
             if wants_clipboard_auto_sync(feature_options):
                 if not config.REMOTE_ASSIST_CLIPBOARD_ENABLED:
                     return _server_error("CLIPBOARD_NOT_ENABLED", "Remote Assist clipboard sync is disabled by policy", status=403)
-                if mode not in {"interactive_control", "elevated_admin"}:
-                    return _server_error("MODE_NOT_ALLOWED", "Clipboard sync requires interactive_control mode", status=403)
+                if mode == "file_transfer":
+                    return _server_error("MODE_NOT_ALLOWED", "Clipboard sync requires a screen-sharing session", status=403)
                 denied = await _require_remote_permission(session, auth_context, "remote_assist.clipboard")
                 if denied is not None:
                     return denied
@@ -101,8 +101,6 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
             if wants_file_transfer(feature_options):
                 if not config.REMOTE_ASSIST_FILE_TRANSFER_ENABLED:
                     return _server_error("FILE_TRANSFER_NOT_ENABLED", "Remote Assist file transfer is disabled by policy", status=403)
-                if mode not in {"interactive_control", "elevated_admin", "file_transfer"}:
-                    return _server_error("MODE_NOT_ALLOWED", "File transfer requires a control or file_transfer session", status=403)
                 denied = await _require_remote_permission(session, auth_context, "remote_assist.file_transfer")
                 if denied is not None:
                     return denied

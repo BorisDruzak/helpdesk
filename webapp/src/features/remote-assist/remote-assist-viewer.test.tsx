@@ -2,12 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RemoteAssistViewer } from "./remote-assist-viewer";
-import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
+import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer, requestRemoteAssist } from "./api";
 
 vi.mock("./api", () => ({
   endRemoteAssistSession: vi.fn(),
   failRemoteAssistSession: vi.fn(),
   fetchRemoteAssistViewer: vi.fn(),
+  requestRemoteAssist: vi.fn(),
 }));
 
 const viewerInfo = {
@@ -47,6 +48,47 @@ describe("RemoteAssistViewer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Завершить" }));
 
     await waitFor(() => expect(endRemoteAssistSession).toHaveBeenCalledWith("session-1"));
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests elevated admin from the viewer after ending the current session", async () => {
+    vi.mocked(fetchRemoteAssistViewer).mockResolvedValue({
+      ...viewerInfo,
+      mode: "interactive_control",
+      status: "active",
+      token: "",
+      features: { clipboard_auto_sync: true, file_transfer: true },
+    });
+    vi.mocked(endRemoteAssistSession).mockResolvedValue(viewerInfo);
+    vi.mocked(failRemoteAssistSession).mockResolvedValue(viewerInfo);
+    vi.mocked(requestRemoteAssist).mockResolvedValue({
+      session_id: "elevated-session",
+      status: "waiting_consent",
+      expires_at: "2026-05-10T00:00:00Z",
+      message: "ok",
+    });
+    const onClose = vi.fn();
+    const onEnded = vi.fn();
+
+    render(
+      <RemoteAssistViewer
+        canRequestElevated
+        onClose={onClose}
+        onEnded={onEnded}
+        onElevatedRequested={vi.fn()}
+        sessionId="session-1"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Повысить права" }));
+
+    await waitFor(() => expect(endRemoteAssistSession).toHaveBeenCalledWith("session-1", "elevated_requested"));
+    expect(requestRemoteAssist).toHaveBeenCalledWith("ticket-1", expect.objectContaining({
+      deviceId: "device-1",
+      mode: "elevated_admin",
+      features: { clipboard_auto_sync: true, file_transfer: true },
+    }));
     expect(onEnded).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

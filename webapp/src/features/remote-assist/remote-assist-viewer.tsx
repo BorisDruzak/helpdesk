@@ -1,8 +1,9 @@
-import { Maximize2, MonitorX, MousePointer2, RotateCcw, Scaling, Upload, X } from "lucide-react";
+import { Maximize2, MonitorX, MousePointer2, RotateCcw, Scaling, ShieldCheck, Upload, X } from "lucide-react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, MouseEvent, WheelEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer } from "./api";
+import { endRemoteAssistSession, failRemoteAssistSession, fetchRemoteAssistViewer, requestRemoteAssist } from "./api";
+import type { RemoteAssistViewerInfo } from "./api";
 
 type ViewerState = "loading" | "connecting" | "active" | "ended" | "failed";
 type ScaleMode = "fit" | "actual";
@@ -13,6 +14,8 @@ type RemoteAssistViewerProps = {
   sessionId: string;
   onClose: () => void;
   onEnded?: () => void;
+  canRequestElevated?: boolean;
+  onElevatedRequested?: (sessionId: string) => void;
 };
 
 function buildSignalingUrl(baseUrl: string, token: string) {
@@ -96,7 +99,7 @@ function browserClipboardAvailable() {
   );
 }
 
-export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssistViewerProps) {
+export function RemoteAssistViewer({ sessionId, onClose, onEnded, canRequestElevated = false, onElevatedRequested }: RemoteAssistViewerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -131,6 +134,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const [fileTransferState, setFileTransferState] = useState<FileTransferState>("off");
   const [fileTransferMessage, setFileTransferMessage] = useState<string | null>(null);
   const [fileTransferMaxBytes, setFileTransferMaxBytes] = useState(0);
+  const [sessionInfo, setSessionInfo] = useState<RemoteAssistViewerInfo | null>(null);
+  const [elevating, setElevating] = useState(false);
   const [connectNonce, setConnectNonce] = useState(0);
 
   useEffect(() => {
@@ -248,17 +253,18 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
       setError(null);
       try {
         const info = await fetchRemoteAssistViewer(sessionId);
-        if (!info.token || !["approved", "starting", "active"].includes(info.status)) {
-          setState(info.status === "ended" ? "ended" : "failed");
-          setError("Сессия пока не готова к подключению.");
-          return;
-        }
+        setSessionInfo(info);
         setMode(info.mode ?? "view_only");
         if (info.media) {
           const width = info.media.max_width ?? 0;
           const height = info.media.max_height ?? 0;
           const fps = info.media.fps ?? 0;
           setMediaLabel([width && height ? `${width}x${height}` : null, fps ? `${fps} fps` : null].filter(Boolean).join(" / "));
+        }
+        if (!info.token || !["approved", "starting", "active"].includes(info.status)) {
+          setState(info.status === "ended" ? "ended" : "failed");
+          setError("Сессия пока не готова к подключению.");
+          return;
         }
         const pc = new RTCPeerConnection({ iceServers: info.ice_servers ?? [] });
         pcRef.current = pc;
@@ -800,6 +806,37 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     }
   };
 
+  const requestElevatedAccess = async () => {
+    if (!sessionInfo || mode === "elevated_admin" || elevating) {
+      return;
+    }
+    setElevating(true);
+    setError(null);
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "session.end", payload: { reason: "elevated_requested" } }));
+      await endRemoteAssistSession(sessionId, "elevated_requested");
+      const nextSession = await requestRemoteAssist(sessionInfo.ticket_id, {
+        deviceId: sessionInfo.device_id,
+        mode: "elevated_admin",
+        reason: sessionInfo.reason?.trim() || "Elevated Remote Assist request",
+        durationMinutes: Math.max(1, Math.ceil((sessionInfo.max_duration_sec || 900) / 60)),
+        media: sessionInfo.media,
+        features: {
+          clipboard_auto_sync: Boolean(sessionInfo.features?.clipboard_auto_sync ?? true),
+          file_transfer: Boolean(sessionInfo.features?.file_transfer ?? true),
+        },
+      });
+      setState("ended");
+      setControlEnabled(false);
+      onElevatedRequested?.(nextSession.session_id);
+      onEnded?.();
+      onClose();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Failed to request elevated Remote Assist.");
+      setElevating(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex bg-slate-950/90 text-slate-100 backdrop-blur-sm">
       <section className="flex min-h-0 flex-1 flex-col">
@@ -841,6 +878,18 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
                   {fileTransferState === "transferring" ? "Передача..." : "Файл"}
                 </button>
               </>
+            ) : null}
+            {canRequestElevated && sessionInfo && mode !== "elevated_admin" ? (
+              <button
+                className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={elevating}
+                onClick={() => void requestElevatedAccess()}
+                title="Request a separate elevated/admin Remote Assist session"
+                type="button"
+              >
+                <ShieldCheck className="mr-2 inline h-4 w-4" />
+                {elevating ? "Повышаем..." : "Повысить права"}
+              </button>
             ) : null}
             {mode === "interactive_control" || mode === "elevated_admin" ? (
               <button
