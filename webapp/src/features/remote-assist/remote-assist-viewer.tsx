@@ -104,6 +104,8 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   const clipboardPollRef = useRef<number | null>(null);
   const clipboardHashRef = useRef<string | null>(null);
   const clipboardApplyingRemoteRef = useRef(false);
+  const lastVideoFrameAtRef = useRef(0);
+  const lastVideoTimeRef = useRef(0);
   const [state, setState] = useState<ViewerState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState("view_only");
@@ -118,6 +120,9 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
   useEffect(() => {
     let disposed = false;
     let connectTimer: number | null = null;
+    let videoWatchdogTimer: number | null = null;
+    let videoFrameCallbackHandle: number | null = null;
+    let videoFrameCallbackSupported = false;
     let terminalState = false;
 
     const clearConnectTimer = () => {
@@ -128,6 +133,17 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
     };
 
     const closeTransport = () => {
+      if (videoWatchdogTimer !== null) {
+        window.clearInterval(videoWatchdogTimer);
+        videoWatchdogTimer = null;
+      }
+      const currentVideo = videoRef.current as
+        | (HTMLVideoElement & { cancelVideoFrameCallback?: (handle: number) => void })
+        | null;
+      if (videoFrameCallbackHandle !== null && currentVideo?.cancelVideoFrameCallback) {
+        currentVideo.cancelVideoFrameCallback(videoFrameCallbackHandle);
+        videoFrameCallbackHandle = null;
+      }
       if (clipboardPollRef.current !== null) {
         window.clearInterval(clipboardPollRef.current);
         clipboardPollRef.current = null;
@@ -154,6 +170,54 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
       setState("failed");
       setError(message);
       void failRemoteAssistSession(sessionId, { errorCode, errorMessage: message }).catch(() => undefined);
+    };
+
+    const noteVideoFrame = () => {
+      lastVideoFrameAtRef.current = window.performance.now();
+      lastVideoTimeRef.current = videoRef.current?.currentTime ?? 0;
+    };
+
+    const scheduleVideoFrameCallback = () => {
+      const video = videoRef.current as
+        | (HTMLVideoElement & { requestVideoFrameCallback?: (callback: () => void) => number })
+        | null;
+      if (!video?.requestVideoFrameCallback) {
+        videoFrameCallbackSupported = false;
+        return;
+      }
+      videoFrameCallbackSupported = true;
+      videoFrameCallbackHandle = video.requestVideoFrameCallback(() => {
+        videoFrameCallbackHandle = null;
+        if (disposed || terminalState) {
+          return;
+        }
+        noteVideoFrame();
+        scheduleVideoFrameCallback();
+      });
+    };
+
+    const startVideoWatchdog = () => {
+      noteVideoFrame();
+      scheduleVideoFrameCallback();
+      if (videoWatchdogTimer !== null) {
+        window.clearInterval(videoWatchdogTimer);
+      }
+      videoWatchdogTimer = window.setInterval(() => {
+        const pc = pcRef.current;
+        const video = videoRef.current;
+        if (!pc || !video || pc.connectionState !== "connected" || terminalState || disposed) {
+          return;
+        }
+        const currentTime = video.currentTime;
+        if (!videoFrameCallbackSupported && currentTime > lastVideoTimeRef.current + 0.05) {
+          lastVideoFrameAtRef.current = window.performance.now();
+          lastVideoTimeRef.current = currentTime;
+          return;
+        }
+        if (window.performance.now() - lastVideoFrameAtRef.current > 8000) {
+          failConnection("Video stream stalled while the control channel stayed active.", "VIDEO_STALLED");
+        }
+      }, 2000);
     };
 
     async function connect() {
@@ -223,6 +287,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           const [stream] = event.streams;
           if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
+            noteVideoFrame();
             void videoRef.current.play().catch(() => undefined);
           }
         };
@@ -240,6 +305,7 @@ export function RemoteAssistViewer({ sessionId, onClose, onEnded }: RemoteAssist
           if (pc.connectionState === "connected") {
             clearConnectTimer();
             setState("active");
+            startVideoWatchdog();
           }
           if (pc.connectionState === "failed") {
             failConnection("Не удалось установить WebRTC-соединение.", "WEBRTC_FAILED");

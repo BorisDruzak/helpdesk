@@ -143,10 +143,15 @@ def test_windows_backend_uses_sendinput() -> None:
         def __init__(self) -> None:
             self.calls: list[tuple[int, int]] = []
             self.attached: list[tuple[int, int, bool]] = []
+            self.cursor_positions: list[tuple[int, int]] = []
 
         def SendInput(self, count: int, inputs: object, size: int) -> int:
             self.calls.append((count, size))
             return count
+
+        def SetCursorPos(self, x: int, y: int) -> bool:
+            self.cursor_positions.append((x, y))
+            return True
 
         def GetSystemMetrics(self, index: int) -> int:
             values = {76: 0, 77: 0, 78: 1920, 79: 1080, 0: 1920, 1: 1080}
@@ -183,6 +188,7 @@ def test_windows_backend_uses_sendinput() -> None:
 
     assert len(user32.calls) == 4
     assert all(count >= 1 for count, _size in user32.calls)
+    assert user32.cursor_positions == [(100, 200)]
     assert user32.attached[0] == (10, 20, True)
     assert user32.attached[1] == (10, 20, False)
 

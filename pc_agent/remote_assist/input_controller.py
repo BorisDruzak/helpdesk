@@ -72,25 +72,17 @@ class WindowsSendInputBackend:
     def send(self, action: dict[str, Any]) -> None:
         kind = action["kind"]
         if kind == "mouse_move":
-            self._send_inputs([self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE)])
+            self._set_cursor_position(int(action["x"]), int(action["y"]))
         elif kind in {"mouse_down", "mouse_up"}:
             flag = _mouse_button_down_flag(action["button"]) if kind == "mouse_down" else _mouse_button_up_flag(action["button"])
-            self._send_inputs(
-                [
-                    self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE),
-                    self._mouse_input(0, 0, flag, absolute=False),
-                ]
-            )
+            self._set_cursor_position(int(action["x"]), int(action["y"]))
+            self._send_inputs([self._mouse_input(0, 0, flag, absolute=False)])
         elif kind == "mouse_click":
             down, up = _mouse_button_flags(action["button"])
-            self._send_inputs(
-                [
-                    self._mouse_input(int(action["x"]), int(action["y"]), _MOUSEEVENTF_MOVE),
-                    self._mouse_input(0, 0, down, absolute=False),
-                    self._mouse_input(0, 0, up, absolute=False),
-                ]
-            )
+            self._set_cursor_position(int(action["x"]), int(action["y"]))
+            self._send_inputs([self._mouse_input(0, 0, down, absolute=False), self._mouse_input(0, 0, up, absolute=False)])
         elif kind == "mouse_wheel":
+            self._set_cursor_position(int(action["x"]), int(action["y"]))
             self._send_inputs([_mouse_input(dx=0, dy=0, mouse_data=int(action["delta_y"]), flags=_MOUSEEVENTF_WHEEL)])
         elif kind in {"key_down", "key_up"}:
             vk = _virtual_key(action["key"], self._user32)
@@ -120,6 +112,20 @@ class WindowsSendInputBackend:
         dx = int(round((actual_x - left) * 65535 / max(1, width - 1)))
         dy = int(round((actual_y - top) * 65535 / max(1, height - 1)))
         return dx, dy
+
+    def _screen_coordinates(self, x: int, y: int) -> tuple[int, int]:
+        left, top, width, height = self._virtual_bounds()
+        actual_x = left + max(0, min(width - 1, x))
+        actual_y = top + max(0, min(height - 1, y))
+        return actual_x, actual_y
+
+    def _set_cursor_position(self, x: int, y: int) -> None:
+        actual_x, actual_y = self._screen_coordinates(x, y)
+        with self._foreground_input_queue():
+            ok = bool(getattr(self._user32, "SetCursorPos")(actual_x, actual_y))
+        if not ok:
+            error_code = self._last_error()
+            raise InputControllerError("CONTROL_INJECTION_FAILED", f"Windows SetCursorPos failed; last_error={error_code}")
 
     def _virtual_bounds(self) -> tuple[int, int, int, int]:
         left = int(self._user32.GetSystemMetrics(76))
