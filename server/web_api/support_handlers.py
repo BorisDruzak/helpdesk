@@ -2703,7 +2703,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         chat_counters=chat_counters.get(ticket.ticket_id),
         include_assignment_context=True,
     )
-    observer_data = await ObserverOverlayService(session).get_ticket_observer_summary(ticket.ticket_id)
+    observer_data = await _safe_support_observer_summary(session, ticket.ticket_id)
     timeline_payload = await _build_support_timeline_payload(repo, ticket, timeline_filter="all", limit=80)
     timeline = timeline_payload.items
 
@@ -2821,6 +2821,34 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         snapshot=snapshot,
         actions=actions,
     )
+
+
+async def _safe_support_observer_summary(session, ticket_id: str) -> dict[str, Any]:
+    try:
+        return await ObserverOverlayService(session).get_ticket_observer_summary(ticket_id)
+    except Exception as exc:
+        logger.warning(
+            f"[support_observer_summary] degraded: ticket_id={ticket_id}, error={exc}"
+        )
+        summary = SupportTicketObserverSummary(
+            ticket_id=ticket_id,
+            trace_count=0,
+            active_trace_count=0,
+            error_trace_count=0,
+            signature_count=0,
+            health_label="degraded",
+            latest_error_label="Observer summary unavailable",
+            latest_error_stage="observer_projection",
+        )
+        return {
+            "summary": summary.model_dump(),
+            "root_trace_compact": None,
+            "related_traces_compact": [],
+            "active_traces_compact": [],
+            "error_traces_compact": [],
+            "signatures_compact": [],
+            "recent_occurrences_compact": [],
+        }
 
 
 async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) -> SupportTicketKnowledgeSuggestionsPayload:

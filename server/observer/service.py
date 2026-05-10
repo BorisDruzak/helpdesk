@@ -12,6 +12,7 @@ from weakref import WeakValueDictionary
 
 import sqlalchemy as sa
 from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -1224,10 +1225,8 @@ class ObserverOverlayService:
         trace.error_count = len(occurrence_payloads)
         trace.attrs_json = trace_meta["attrs_json"]
         await self.session.flush()
-        for payload in span_payloads:
-            self.session.add(ObserverSpan(**payload))
-        for payload in link_payloads:
-            self.session.add(ObserverSpanLink(**payload))
+        await self._store_span_payloads(span_payloads)
+        await self._store_span_link_payloads(link_payloads)
 
         touched_signatures = set(old_signatures)
         pending_placeholders: dict[str, dict[str, Any]] = {}
@@ -1269,6 +1268,45 @@ class ObserverOverlayService:
         await self.session.flush()
         await self._refresh_signatures(touched_signatures)
         return trace
+
+    async def _store_span_payloads(self, span_payloads: list[dict[str, Any]]) -> None:
+        if not span_payloads:
+            return
+        bind = self.session.get_bind()
+        if bind is not None and bind.dialect.name == "postgresql":
+            insert_stmt = pg_insert(ObserverSpan)
+            update_columns = {
+                column.name: getattr(insert_stmt.excluded, column.name)
+                for column in ObserverSpan.__table__.columns
+                if column.name != "span_id"
+            }
+            stmt = (
+                insert_stmt
+                .values(span_payloads)
+                .on_conflict_do_update(
+                    index_elements=[ObserverSpan.span_id],
+                    set_=update_columns,
+                )
+            )
+            await self.session.execute(stmt)
+            return
+        for payload in span_payloads:
+            self.session.add(ObserverSpan(**payload))
+
+    async def _store_span_link_payloads(self, link_payloads: list[dict[str, Any]]) -> None:
+        if not link_payloads:
+            return
+        bind = self.session.get_bind()
+        if bind is not None and bind.dialect.name == "postgresql":
+            stmt = (
+                pg_insert(ObserverSpanLink)
+                .values(link_payloads)
+                .on_conflict_do_nothing()
+            )
+            await self.session.execute(stmt)
+            return
+        for payload in link_payloads:
+            self.session.add(ObserverSpanLink(**payload))
 
     async def _ensure_projected(self, filters: TraceOverlayFilters, *, limit: int, force: bool) -> None:
         candidate_ids = await self._candidate_trace_ids(filters, limit=limit)
