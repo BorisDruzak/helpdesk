@@ -44,17 +44,17 @@ ticket -> request remote assist -> user consent -> WebRTC view-only session -> a
 
 ## Current State
 
-Overall progress: 88%.
+Overall progress: 90%.
 
-Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and disabled control-channel architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Current stage is publishing the Remote Assist agent fixes as Windows stable `3.1.33`, uploading the build, and canarying it through the launcher update flow before any broader rollout.
+Implemented locally: DB models/migration, backend repo/service/API/signaling, RBAC permissions, audit/timeline writing, resolution-passport summary payload, Maria Agent consent dialog/banner/WebRTC thread, view-only screen track, support workspace request panel/viewer and disabled control-channel architecture. Docs/CODEMAP/Protocol/navigation catalog are synced. Linux migration/smoke and a live browser/WebRTC validation through a local Maria Agent completed. Manual ticket `T-000520` testing on local agent `3.1.33` found the release package was missing `aiortc`, so the viewer waited without video. Current stage is publishing the Remote Assist WebRTC packaging hotfix as Windows stable `3.1.34`, uploading the build, and canarying it through the launcher update flow before any broader rollout.
 
 | Level | Scope | Progress | Status |
 |---|---|---:|---|
 | 0 | Project analysis and plan | 100% | Completed |
 | 1 | DB, API, lifecycle, consent, audit | 100% | Implemented and locally verified |
-| 2 | Signaling and view-only WebRTC stream | 95% | Implemented and live WebRTC smoke validated |
+| 2 | Signaling and view-only WebRTC stream | 95% | Implemented and live source smoke validated; 3.1.34 release packaging hotfix in progress |
 | 3 | Support workspace and Maria Agent UI polish | 90% | Implemented and live consent/viewer flow validated; release packaging in progress |
-| 4 | Hardening, TURN config, reconnect, timeout | 45% | Token/ICE config and expiry hooks added; reconnect/rate-limit polish remains |
+| 4 | Hardening, TURN config, reconnect, timeout | 50% | Token/ICE config, expiry hooks, viewer timeout and agent failure reporting added; reconnect/rate-limit polish remains |
 | 5 | Future control-mode architecture | 65% | Disabled data-channel/stub architecture added |
 
 ## Implementation Plan
@@ -132,13 +132,20 @@ Live validation on 2026-05-10:
 - Started a local Maria Agent source instance, created a test ticket, delivered `remote_assist.request`, approved consent, completed WebRTC offer/answer/ICE exchange, received a browser video track, and ended the session cleanly.
 - Fixed and committed the two agent-side runtime issues found during smoke: `ws_agent.py` local `datetime` shadowing and retained/topmost Qt consent dialogs.
 
+Manual failure checkpoint on 2026-05-10:
+
+- Ticket `T-000520` reached the viewer but stayed at "Ожидаем видео с устройства...".
+- Local agent `3.1.33` log showed `Remote Assist WebRTC failed: No module named 'aiortc'`.
+- Fix: package `aiortc`, `aioice`, `av` and `pylibsrtp` in both Windows PyInstaller specs, add `/remote-assist/{session_id}/fail`, have Maria Agent report WebRTC startup failure, and add a viewer timeout instead of indefinite waiting.
+
 Current release checkpoint:
 
-- Bump Windows agent to `3.1.33`.
+- Bump Windows agent to `3.1.34`.
 - Run `python scripts/verify_workspace.py`.
 - Run `python -m pytest pc_agent/tests/ -v --tb=short`.
-- Build with `python pc_agent/build_windows_release_v2.py` (done; ZIP SHA256 `c205a06ea4065a2af5ffae1cd972a21669bb6a34e046ea5ec8fac9f67c02c87e`).
-- Upload `pc_agent/dist/release/windows_amd64/stable/3.1.33/pc_agent-windows_amd64-3.1.33.zip`.
+- Build with `python pc_agent/build_windows_release_v2.py` (done after installing missing build-env WebRTC dependencies; ZIP SHA256 `cacdc328ab654c8bdf5b35b2a7a0cc07b574df2e60b09da2238944f5caf8ca1e`).
+- Confirm `pc_agent/dist/release/windows_amd64/stable/3.1.34/install/versions/3.1.34/pc_agent.exe` has bundled WebRTC/ICE/media dependencies (done: `av.libs`, `pylibsrtp`, `google_crc32c`, `python314.dll` present in ZIP; PyInstaller no longer reports missing `aiortc`, `av` or `pylibsrtp`).
+- Upload `pc_agent/dist/release/windows_amd64/stable/3.1.34/pc_agent-windows_amd64-3.1.34.zip`.
 - Canary one launcher-based local agent and verify handshake/update status before any bulk rollout.
 
 Minimum local checks before any completion claim:
@@ -166,9 +173,65 @@ Then verify through `http://192.168.100.17:8666/admin` and stop the server unles
 python scripts/manage_remote_stack.py stop server
 ```
 
+## Post-MVP Expansion
+
+Goal: move Remote Assist from view-only MVP to a controlled support tool without creating hidden access paths.
+
+Non-negotiable safety rule: no hidden unattended access. Any unattended capability must be explicit, policy-backed, enrolled per device, visible in audit, scoped to ticket/device/operator, and revocable. User PCs keep consent by default.
+
+### Phase A: Policy And Contracts
+
+- [x] Add mode permissions: `remote_assist.control`, `remote_assist.file_transfer`, `remote_assist.clipboard`, `remote_assist.elevated`, `remote_assist.unattended`.
+- [x] Replace hard-coded `mode == view_only` checks with a mode policy table.
+- [x] Add per-mode consent semantics:
+  - `view_only`: consent required for user devices.
+  - `interactive_control`: consent required and dialog text must say mouse/keyboard control.
+  - `file_transfer`: separate explicit consent before any transfer.
+  - `clipboard`: separate explicit consent before read/write.
+  - `elevated_admin`: separate explicit consent and no silent UAC bypass.
+  - `unattended`: only for enrolled managed devices when server policy allows it; never for ordinary user PCs by default.
+- [x] Extend Remote Assist event taxonomy for `control_enabled`, `control_disabled`, and `control_rejected`.
+- [ ] Extend Remote Assist event taxonomy for `file_transfer_*`, `clipboard_*`, `elevation_*`, `unattended_policy_*`, `reconnect_*`, `turn_credentials_issued`.
+
+### Phase B: Interactive Control
+
+- [x] Enable RTCDataChannel `control` only for `interactive_control` sessions.
+- [x] Browser sends normalized mouse/keyboard messages only when operator explicitly enables control.
+- [x] Maria Agent validates mode/session/control state before injecting input.
+- [x] Windows input injection uses a small isolated `InputController`; non-Windows returns `CONTROL_UNSUPPORTED`.
+- [x] Add active banner text that distinguishes viewing from controlling.
+- [x] Audit `control_enabled`, `control_disabled`, and rejected control messages.
+
+### Phase C: File Transfer And Clipboard
+
+- Add dedicated `file` data channel or typed `file.*` messages with size limits, filename sanitization, destination policy and checksum.
+- Add per-transfer consent in Maria Agent before saving any file.
+- Add clipboard request/write messages with separate consent and payload limits.
+- Do not expose clipboard/file actions in UI until the corresponding session mode is approved.
+
+### Phase D: Elevated/Admin Mode
+
+- Add `elevated_admin` as a requested support mode with separate consent.
+- On Windows, request elevation only through visible OS/User approval; do not bypass UAC.
+- Surface unsupported state clearly when agent is not running elevated or the platform cannot elevate.
+
+### Phase E: Managed Unattended
+
+- Add server-side enrollment/policy gate for managed devices.
+- Only allow unattended when `REMOTE_ASSIST_ALLOW_UNATTENDED=true`, device enrollment allows it, operator has `remote_assist.unattended`, and ticket/device/operator audit exists.
+- Show persistent agent-side visibility indicator when an unattended session is active if GUI/tray is available.
+- Keep unattended disabled by default in config and tests.
+
+### Phase F: Production TURN/Reconnection
+
+- [x] Implement coturn REST-style short-lived credentials from server-only shared secret.
+- [ ] Add signaling reconnect tokens with bounded resume windows.
+- [ ] Add connection health state and operator/agent reconnect UI.
+- [ ] Add rate limits for ICE/control/file messages and max active duration watchdog.
+
 ## Handoff
 
-Next step: finish the `3.1.33` agent build/upload/canary. Do not start broad rollout until the launcher canary reports `AGENT_VERSION=3.1.33` after self-update.
+Current checkpoint: Phase A server policy/contracts and Phase B interactive mouse/keyboard control are implemented locally behind explicit config/RBAC gates. `view_only` remains the only enabled mode by default. File transfer, clipboard, elevated/admin and managed unattended remain policy-gated but not transport-complete. Reconnection hardening still needs bounded resume tokens, UI reconnect state, and rate-limit watchdog work.
 
 ---
 
@@ -178,7 +241,7 @@ Created: 2026-05-10.
 
 Working mode: Execute / Boundary + Release-control.
 
-Change classification: boundary/release-control. The change exposes the existing agent build registry and rollout policy in the React `/app/admin` workspace, then uses the existing server-side rollout policy to make Windows stable `3.1.33` the preferred agent version on the live stand.
+Change classification: boundary/release-control. The change exposes the existing agent build registry and rollout policy in the React `/app/admin` workspace, then uses the existing server-side rollout policy to make Windows stable `3.1.34` the preferred agent version on the live stand.
 
 ## Goal
 
@@ -189,7 +252,7 @@ Add a production-ready React admin page for agent builds and rollout policy:
 - Admin can assign or clear rollout policy per target.
 - Inventory and device pages have explicit navigation into Agent Updates.
 - Device/update context clearly shows current version, target rollout, recommended build and last update status.
-- The live stand should have `windows_amd64/stable/3.1.33` assigned as the preferred rollout version.
+- The live stand should have `windows_amd64/stable/3.1.34` assigned as the preferred rollout version.
 
 ## Scope
 
@@ -249,8 +312,8 @@ The React page, route, navigation and inventory/device deep links are implemente
    - focused webapp tests if touched.
 7. [pending] Commit the web-session alias fix locally.
 8. [pending] Deploy the fix to Linux stand, run smoke and browser check at `http://192.168.100.17:8666/admin`.
-9. [pending] Upload or confirm `windows_amd64/stable/3.1.33`, then set rollout policy to `3.1.33`.
-10. [pending] Verify via API and React page that `3.1.33` is assigned.
+9. [pending] Upload or confirm `windows_amd64/stable/3.1.34`, then set rollout policy to `3.1.34`.
+10. [pending] Verify via API and React page that `3.1.34` is assigned.
 
 ## Verification
 
@@ -275,10 +338,10 @@ Live browser verification:
 - Open `http://192.168.100.17:8666/admin`.
 - Navigate to `/app/admin/agent-updates`.
 - Confirm build registry loads.
-- Confirm `windows_amd64/stable/3.1.33` is visible.
-- Confirm rollout policy shows `3.1.33` assigned.
+- Confirm `windows_amd64/stable/3.1.34` is visible.
+- Confirm rollout policy shows `3.1.34` assigned.
 - Open inventory and device page and confirm Agent Updates links.
 
 ## Handoff
 
-Current next step: run full workspace verification, commit the web-session alias fix, deploy the new commit to Linux, verify `/app/admin/agent-updates` loads builds/policy without 401, then set `windows_amd64/stable/3.1.33` as live preferred rollout.
+Current next step: run full workspace verification, commit the web-session alias fix and Remote Assist WebRTC hotfix, deploy the new commit to Linux, verify `/app/admin/agent-updates` loads builds/policy without 401, then set `windows_amd64/stable/3.1.34` as live preferred rollout.

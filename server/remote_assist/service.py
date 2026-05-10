@@ -14,6 +14,13 @@ from app.db.models import Device, RemoteAccessSession, Ticket
 from app.repos.devices_repo import DevicesRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from remote_assist.ice import build_remote_assist_ice_servers
+from remote_assist.policy import (
+    get_remote_assist_feature_flags,
+    get_remote_assist_mode_policy,
+    is_remote_assist_mode_enabled,
+    normalize_remote_assist_mode,
+)
 from tickets.statuses import TERMINAL_STATUSES
 
 
@@ -98,7 +105,9 @@ class RemoteAssistService:
     ) -> RemoteAccessSession:
         if not config.REMOTE_ASSIST_ENABLED:
             raise RemoteAssistError("REMOTE_ASSIST_DISABLED", "Remote Assist is disabled", status=403)
-        if mode not in config.REMOTE_ASSIST_ALLOWED_MODES or mode != "view_only":
+        mode = normalize_remote_assist_mode(mode)
+        mode_policy = get_remote_assist_mode_policy(mode)
+        if mode_policy is None or not is_remote_assist_mode_enabled(mode):
             raise RemoteAssistError("MODE_NOT_ALLOWED", "Remote Assist mode is not allowed", status=403)
 
         ticket = await self.session.get(Ticket, ticket_id)
@@ -122,8 +131,8 @@ class RemoteAssistService:
 
         duration = int(duration_minutes or config.REMOTE_ASSIST_DEFAULT_DURATION_MINUTES)
         duration = max(1, min(duration, config.REMOTE_ASSIST_MAX_DURATION_MINUTES))
-        consent_required = config.REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES or not config.REMOTE_ASSIST_ALLOW_UNATTENDED
-        if not consent_required and not config.REMOTE_ASSIST_ALLOW_UNATTENDED:
+        consent_required = True
+        if not consent_required:
             raise RemoteAssistError("UNATTENDED_NOT_ALLOWED", "Unattended access is not allowed", status=403)
 
         expires_at = _utcnow() + timedelta(minutes=config.REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES)
@@ -139,7 +148,7 @@ class RemoteAssistService:
             consent_status="pending" if consent_required else "not_required",
             expires_at=expires_at,
             max_duration_sec=duration * 60,
-            ice_config={"ice_servers": config.REMOTE_ASSIST_ICE_SERVERS},
+            ice_config={"ice_servers": build_remote_assist_ice_servers()},
         )
         await self.log_event(
             remote_session,
@@ -172,6 +181,7 @@ class RemoteAssistService:
                 "reason": remote_session.reason,
                 "duration_minutes": max(1, int(remote_session.max_duration_sec / 60)),
                 "expires_at": remote_session.expires_at.isoformat(),
+                "features": get_remote_assist_feature_flags(),
             },
             actor_role="support",
             ticket_id=remote_session.ticket_id,

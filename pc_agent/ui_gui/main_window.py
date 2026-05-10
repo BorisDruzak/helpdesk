@@ -2128,16 +2128,24 @@ class MainWindow(QMainWindow):
             signaling_url=signaling_url,
             token=token,
             ice_servers=data.get("ice_servers") if isinstance(data.get("ice_servers"), list) else [],
+            mode=str(data.get("mode") or "view_only"),
             parent=self,
         )
-        thread.failed.connect(lambda message, sid=session_id: self._add_log(f"remote_assist | failed | {sid[:8]} | {message}", "error"))
+        thread.failed.connect(lambda message, sid=session_id: self._handle_remote_assist_thread_failed(sid, message))
         thread.ended.connect(lambda sid=session_id: self._remote_assist_threads.pop(sid, None))
         thread.ended.connect(lambda sid=session_id: self._hide_remote_assist_banner(sid))
         self._remote_assist_threads[session_id] = thread
-        self._show_remote_assist_banner(session_id)
+        self._show_remote_assist_banner(session_id, mode=str(data.get("mode") or "view_only"))
         thread.start()
 
-    def _show_remote_assist_banner(self, session_id: str) -> None:
+    def _handle_remote_assist_thread_failed(self, session_id: str, message: str) -> None:
+        self._add_log(f"remote_assist | failed | {session_id[:8]} | {message}", "error")
+        self._spawn_gui_task(
+            self._fail_remote_assist_from_agent(session_id, message),
+            name="remote_assist.fail",
+        )
+
+    def _show_remote_assist_banner(self, session_id: str, *, mode: str = "view_only") -> None:
         self._hide_remote_assist_banner(session_id)
         banner = QWidget()
         banner.setObjectName("RemoteAssistActiveBanner")
@@ -2152,7 +2160,10 @@ class MainWindow(QMainWindow):
         banner.setStyleSheet("background-color: #111827; color: white; border: 1px solid #2563eb; border-radius: 10px;")
         layout = QHBoxLayout(banner)
         layout.setContentsMargins(12, 10, 12, 10)
-        label = QLabel("Удалённая помощь активна. Специалист видит ваш экран.")
+        if mode == "interactive_control":
+            label = QLabel("Удалённая помощь активна. Специалист видит экран и может управлять мышью/клавиатурой.")
+        else:
+            label = QLabel("Удалённая помощь активна. Специалист видит ваш экран.")
         stop_button = QPushButton("Завершить доступ")
         stop_button.setStyleSheet("background-color: #b91c1c; color: white; font-weight: 600; padding: 6px 10px; border-radius: 6px;")
         stop_button.clicked.connect(lambda: self._spawn_gui_task(self._end_remote_assist_from_user(session_id), name="remote_assist.user_end"))
@@ -2188,6 +2199,20 @@ class MainWindow(QMainWindow):
                 )
         except Exception as exc:
             logger.debug(f"Remote Assist user end API call failed: {exc}")
+
+    async def _fail_remote_assist_from_agent(self, session_id: str, message: str) -> None:
+        if not self.auth_token:
+            return
+        api_url = get_config().server.api_url.rstrip("/")
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{api_url}/remote-assist/{session_id}/fail",
+                    json={"error_code": "WEBRTC_FAILED", "error_message": message[:500]},
+                    headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+        except Exception as exc:
+            logger.debug(f"Remote Assist fail API call failed: {exc}")
     
     def _show_stop_button(self) -> None:
         """Показывает плавающую красную кнопку STOP (always-on-top, bottom-left)."""

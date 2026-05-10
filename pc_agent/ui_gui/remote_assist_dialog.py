@@ -19,6 +19,19 @@ class RemoteAssistConsentDialog(QDialog):
         ticket_code = str(payload.get("ticket_code") or payload.get("ticket_id") or "")
         reason = str(payload.get("reason") or "Не указана")
         duration = str(payload.get("duration_minutes") or "15")
+        mode = str(payload.get("mode") or "view_only")
+        if mode == "interactive_control":
+            mode_label = "Просмотр и управление"
+            mode_note = "В этом режиме специалист будет видеть ваш экран и сможет управлять мышью и клавиатурой после вашего разрешения."
+        elif mode == "file_transfer":
+            mode_label = "Передача файлов"
+            mode_note = "Передача каждого файла потребует отдельного подтверждения."
+        elif mode == "elevated_admin":
+            mode_label = "Административная помощь"
+            mode_note = "Повышение прав возможно только через видимое системное подтверждение."
+        else:
+            mode_label = "Только просмотр"
+            mode_note = "В этом режиме специалист будет видеть ваш экран, но не сможет управлять мышью или клавиатурой."
 
         layout = QVBoxLayout(self)
         title = QLabel("Запрос удалённой помощи")
@@ -29,9 +42,9 @@ class RemoteAssistConsentDialog(QDialog):
             f"Специалист {operator} хочет подключиться к вашему компьютеру.\n\n"
             f"Обращение: {ticket_code}\n"
             f"Цель: {reason}\n"
-            f"Режим: Только просмотр\n"
+            f"Режим: {mode_label}\n"
             f"Длительность: до {duration} минут\n\n"
-            "В этом режиме специалист будет видеть ваш экран, но не сможет управлять мышью или клавиатурой."
+            f"{mode_note}"
         )
         text.setWordWrap(True)
         layout.addWidget(text)

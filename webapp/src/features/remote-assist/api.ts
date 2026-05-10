@@ -74,6 +74,7 @@ export async function requestRemoteAssist(
   ticketId: string,
   payload: {
     deviceId: string;
+    mode?: string;
     reason: string;
     durationMinutes: number;
   },
@@ -86,7 +87,7 @@ export async function requestRemoteAssist(
     },
     body: JSON.stringify({
       device_id: payload.deviceId,
-      mode: "view_only",
+      mode: payload.mode ?? "view_only",
       reason: payload.reason,
       duration_minutes: payload.durationMinutes,
     }),

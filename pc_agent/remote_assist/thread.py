@@ -13,9 +13,17 @@ class RemoteAssistThread(QThread):
     failed = Signal(str)
     ended = Signal()
 
-    def __init__(self, *, signaling_url: str, token: str, ice_servers: list[dict[str, Any]] | None = None, parent=None):
+    def __init__(
+        self,
+        *,
+        signaling_url: str,
+        token: str,
+        ice_servers: list[dict[str, Any]] | None = None,
+        mode: str = "view_only",
+        parent=None,
+    ):
         super().__init__(parent)
-        self.client = RemoteAssistWebRTCClient(signaling_url=signaling_url, token=token, ice_servers=ice_servers)
+        self.client = RemoteAssistWebRTCClient(signaling_url=signaling_url, token=token, ice_servers=ice_servers, mode=mode)
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def run(self) -> None:

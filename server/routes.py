@@ -355,6 +355,7 @@ from remote_assist.handlers import (
     handle_remote_assist_approve,
     handle_remote_assist_deny,
     handle_remote_assist_end,
+    handle_remote_assist_fail,
     handle_remote_assist_request,
     handle_remote_assist_status,
     handle_remote_assist_ticket_sessions,
@@ -505,6 +506,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/remote-assist/{session_id}', handle_remote_assist_status),
         web.get('/api/web/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
         web.post('/api/web/remote-assist/{session_id}/end', handle_remote_assist_end),
+        web.post('/api/web/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.get('/api/web/admin/access/catalog', handle_web_admin_access_catalog),
         web.get('/api/web/admin/access/summary', handle_web_admin_access_summary),
@@ -739,6 +741,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/remote-assist/{session_id}/deny', handle_remote_assist_deny),
         web.get('/api/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
         web.post('/api/remote-assist/{session_id}/end', handle_remote_assist_end),
+        web.post('/api/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         
         # ============================================================================
         # Tools API

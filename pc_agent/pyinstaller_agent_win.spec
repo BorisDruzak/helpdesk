@@ -2,10 +2,18 @@
 # Output: dist/pc_agent/ (onedir, contains pc_agent.exe)
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 pc_agent_root = Path(SPECPATH)
 project_root = pc_agent_root.parent
 sys.path.insert(0, str(project_root))
+
+remote_assist_hiddenimports = []
+for package_name in ("aiortc", "aioice", "av", "pylibsrtp"):
+    try:
+        remote_assist_hiddenimports.extend(collect_submodules(package_name))
+    except Exception:
+        remote_assist_hiddenimports.append(package_name)
 
 a = Analysis(
     [str(pc_agent_root / "ws_agent.py")],
@@ -22,7 +30,7 @@ a = Analysis(
         "modules.impl.screen",
         "modules.impl.input",
         "modules.impl.diag_logs",
-    ],
+    ] + remote_assist_hiddenimports,
     datas=[
         (str(pc_agent_root / "config" / "settings.default.yaml"), "pc_agent/config"),
     ],

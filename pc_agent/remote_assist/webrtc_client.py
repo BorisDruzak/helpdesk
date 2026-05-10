@@ -6,14 +6,24 @@ from typing import Any
 import aiohttp
 from loguru import logger
 
+from .input_controller import InputController, InputControllerError
 from .screen_track import ScreenCaptureTrack
 
 
 class RemoteAssistWebRTCClient:
-    def __init__(self, *, signaling_url: str, token: str, ice_servers: list[dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        *,
+        signaling_url: str,
+        token: str,
+        ice_servers: list[dict[str, Any]] | None = None,
+        mode: str = "view_only",
+    ):
         self.signaling_url = signaling_url
         self.token = token
         self.ice_servers = ice_servers or []
+        self.mode = mode
+        self.input_controller = InputController(mode_enabled=mode == "interactive_control")
         self._closed = False
         self._pc = None
         self._ws = None
@@ -57,7 +67,31 @@ class RemoteAssistWebRTCClient:
                     if not self._closed:
                         await ws.send_json({"type": "webrtc.connection_state", "payload": {"state": self._pc.connectionState}})
 
-                await ws.send_json({"type": "session.ready", "payload": {"role": "agent"}})
+                @self._pc.on("datachannel")
+                def on_datachannel(channel):
+                    if channel.label != "control":
+                        logger.warning(f"Remote Assist rejected data channel: label={channel.label}")
+                        try:
+                            channel.close()
+                        except Exception:
+                            pass
+                        return
+
+                    @channel.on("message")
+                    def on_control_message(raw_message):
+                        try:
+                            if isinstance(raw_message, bytes):
+                                raw_message = raw_message.decode("utf-8")
+                            message = json.loads(str(raw_message))
+                            result = self.input_controller.handle_message(message)
+                            channel.send(json.dumps({"type": "control.ack", "payload": result}))
+                        except InputControllerError as exc:
+                            channel.send(json.dumps({"type": "control.error", "payload": {"error_code": exc.code, "error": exc.message}}))
+                        except Exception as exc:
+                            logger.exception(f"Remote Assist control message failed: {exc}")
+                            channel.send(json.dumps({"type": "control.error", "payload": {"error_code": "CONTROL_FAILED", "error": str(exc)}}))
+
+                await ws.send_json({"type": "session.ready", "payload": {"role": "agent", "mode": self.mode}})
                 async for msg in ws:
                     if self._closed:
                         break

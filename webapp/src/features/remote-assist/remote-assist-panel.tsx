@@ -60,6 +60,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
   const [viewerSessionId, setViewerSessionId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(15);
+  const [mode, setMode] = useState("view_only");
 
   const sessionsQuery = useQuery({
     queryKey: ["remote-assist", ticketId],
@@ -83,6 +84,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
       }
       return requestRemoteAssist(ticketId, {
         deviceId,
+        mode,
         reason: reason.trim(),
         durationMinutes,
       });
@@ -90,6 +92,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
     onSuccess: () => {
       setModalOpen(false);
       setReason("");
+      setMode("view_only");
       void queryClient.invalidateQueries({ queryKey: ["remote-assist", ticketId] });
       onChanged?.();
     },
@@ -167,7 +170,7 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold" id="remote-assist-title">Запрос удалённой помощи</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-400">MVP разрешает только view-only режим. Управление мышью и клавиатурой выключено.</p>
+                <p className="mt-1 text-sm leading-6 text-slate-400">Режим управления доступен только при включённой server policy и требует согласия пользователя.</p>
               </div>
               <button
                 aria-label="Закрыть"
@@ -179,6 +182,23 @@ export function RemoteAssistPanel({ ticketId, deviceId, deviceOnline, onChanged 
               </button>
             </div>
             <div className="mt-5 space-y-4">
+              <label className="block text-sm font-medium text-slate-300">
+                Режим
+                <select
+                  className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0d1828] px-3 text-sm text-slate-100 outline-none"
+                  onChange={(event) => setMode(event.currentTarget.value)}
+                  value={mode}
+                >
+                  <option value="view_only">Только просмотр</option>
+                  <option value="interactive_control">Просмотр и управление</option>
+                  <option value="file_transfer" disabled>
+                    Передача файлов (policy gate)
+                  </option>
+                  <option value="elevated_admin" disabled>
+                    Admin mode (policy gate)
+                  </option>
+                </select>
+              </label>
               <label className="block text-sm font-medium text-slate-300">
                 Причина
                 <textarea
