@@ -383,6 +383,94 @@ afterEach(() => {
 });
 
 describe("TicketListPage", () => {
+  it("switches between ticket, queue and expanded right-panel workspace modes", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const root = await screen.findByTestId("support-workspace-root");
+    expect(root).toHaveAttribute("data-mode", "ticket");
+
+    fireEvent.click(screen.getByRole("button", { name: /Развернуть очередь/i }));
+    expect(root).toHaveAttribute("data-mode", "queue");
+    expect(screen.getByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(root).toHaveAttribute("data-mode", "ticket");
+
+    fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
+    expect(root).toHaveAttribute("data-mode", "tools");
+    expect(screen.getByRole("heading", { name: "Инструменты" })).toBeInTheDocument();
+    const toolsTabs = screen.getByRole("tablist", { name: "Режим инструментов" });
+    fireEvent.click(within(toolsTabs).getByRole("tab", { name: "Операции" }));
+    expect(screen.getByText("Операций по тикету пока нет.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Вернуться к чату/i }));
+    expect(root).toHaveAttribute("data-mode", "ticket");
+
+    fireEvent.click(screen.getByRole("button", { name: "SLA" }));
+    expect(root).toHaveAttribute("data-mode", "sla");
+    expect(screen.getByRole("heading", { name: "SLA режим" })).toBeInTheDocument();
+    const slaTabs = screen.getByRole("tablist", { name: "SLA workspace" });
+    fireEvent.click(within(slaTabs).getByRole("tab", { name: "Эскалации" }));
+    expect(screen.getByText("Эскалационный контроль")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Паспорт" }));
+    expect(root).toHaveAttribute("data-mode", "passport");
+    expect(screen.getByRole("heading", { name: "Паспорт решения" })).toBeInTheDocument();
+    const passportTabs = screen.getByRole("tablist", { name: "Паспорт решения workspace" });
+    fireEvent.click(within(passportTabs).getByRole("tab", { name: "Готовность" }));
+    expect(screen.getByText("Готовность к закрытию")).toBeInTheDocument();
+  });
+
+  it("restores the last workspace mode from localStorage", async () => {
+    window.localStorage.setItem("support-workspace-last-mode", "queue");
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByTestId("support-workspace-root")).toHaveAttribute("data-mode", "queue");
+    expect(screen.getByRole("heading", { name: "Очередь тикетов" })).toBeInTheDocument();
+  });
+
+  it("persists the active right tab, smart view and selected queue", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    await screen.findByTestId("support-workspace-root");
+
+    fireEvent.click(screen.getByRole("button", { name: "Инструменты" }));
+    expect(window.localStorage.getItem("support-workspace-active-right-tab")).toBe("tools");
+
+    fireEvent.click(screen.getByRole("button", { name: /networks/i }));
+    expect(window.localStorage.getItem("support-workspace-selected-queue")).toBe("networks");
+
+    fireEvent.click(screen.getByRole("button", { name: /SLA риск/i }));
+    expect(window.localStorage.getItem("support-workspace-selected-view")).toBe("sla_risk");
+  });
+
+  it("restores persisted right tab and queue filters on load", async () => {
+    window.localStorage.setItem("support-workspace-last-mode", "tools");
+    window.localStorage.setItem("support-workspace-active-right-tab", "context");
+    window.localStorage.setItem("support-workspace-selected-view", "sla_risk");
+    window.localStorage.setItem("support-workspace-selected-queue", "networks");
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    const root = await screen.findByTestId("support-workspace-root");
+    expect(root).toHaveAttribute("data-mode", "tools");
+    expect(screen.getByRole("heading", { name: "Инструменты" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchSupportQueueMock).toHaveBeenCalledWith(expect.objectContaining({ smartView: "sla_risk" }));
+    });
+  });
+
   it("subscribes to realtime for the selected ticket and refreshes workspace data on ticket events", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());

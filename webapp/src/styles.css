@@ -112,6 +112,16 @@
     outline: none;
   }
 
+  .support-workspace__mode-grid {
+    transition: grid-template-columns 180ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .support-workspace__mode-grid {
+      transition: none;
+    }
+  }
+
   .support-workspace__column-resizer::before {
     position: absolute;
     inset: 0 auto 0 50%;

@@ -47,7 +47,7 @@ import {
   UsersRound,
   Wrench,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -97,6 +97,22 @@ import type {
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
 import { RemoteAssistPanel } from "../../features/remote-assist/remote-assist-panel";
+import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
+import { OperationsTable } from "./components/operations-table";
+import { QueueExplorer } from "./components/queue-explorer";
+import { TicketPreviewPanel } from "./components/ticket-preview-panel";
+import {
+  getInitialWorkspaceMode,
+  getInitialWorkspaceRightTab,
+  getInitialWorkspaceSelectedQueue,
+  getInitialWorkspaceSelectedView,
+  persistWorkspaceMode,
+  persistWorkspaceRightTab,
+  persistWorkspaceSelectedQueue,
+  persistWorkspaceSelectedView,
+  type WorkspaceMode,
+  type WorkspaceRightTab,
+} from "./workspace-types";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -104,13 +120,17 @@ const SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS = 15_000;
 const LIVE_OPERATION_STATUSES = new Set(["accepted", "queued", "running", "sent", "in_progress", "waiting_consent"]);
 
 type ComposerMode = "public" | "internal";
-type SidebarTab = "context" | "sla" | "tools" | "knowledge" | "passport";
+type SidebarTab = WorkspaceRightTab;
 type TimelineFilter = "all" | SupportWorkspaceTimelineKind;
 type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
 type AutomationCatalogFilter = "all" | "runnable" | "playbook" | "tool" | "disabled";
 type WorkspaceResizePane = "left" | "right";
+type ToolsWorkspaceTab = "quick" | "playbook" | "remote" | "operations" | "history";
+type SlaWorkspaceTab = "overview" | "ola" | "escalations" | "history";
+type PassportWorkspaceTab = "sections" | "evidence" | "operations" | "readiness";
 type WorkspaceColumnSizes = { left: number; right: number };
+type WorkspaceGridPreset = { left: string; center: string; right: string };
 type WorkspaceResizeState = {
   pane: WorkspaceResizePane;
   startX: number;
@@ -144,6 +164,13 @@ const CLOSURE_BLOCKER_VISIBLE_LIMIT = 4;
 const SUPPORT_WORKSPACE_THEME_STORAGE_KEY = "support-workspace-theme";
 const SUPPORT_WORKSPACE_COLUMNS_STORAGE_KEY = "support-workspace-columns";
 const DEFAULT_WORKSPACE_COLUMNS: WorkspaceColumnSizes = { left: 320, right: 390 };
+const WORKSPACE_MODE_GRID_PRESETS: Record<WorkspaceMode, WorkspaceGridPreset> = {
+  ticket: { left: `${DEFAULT_WORKSPACE_COLUMNS.left}px`, center: "minmax(520px, 1fr)", right: `${DEFAULT_WORKSPACE_COLUMNS.right}px` },
+  queue: { left: "minmax(680px, 1.45fr)", center: "minmax(360px, 0.7fr)", right: "96px" },
+  tools: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(560px, 1fr)" },
+  sla: { left: "320px", center: "minmax(400px, 460px)", right: "minmax(560px, 1fr)" },
+  passport: { left: "320px", center: "minmax(380px, 420px)", right: "minmax(620px, 1fr)" },
+};
 const WORKSPACE_COLUMN_LIMITS = {
   leftMin: 260,
   leftMax: 460,
@@ -201,6 +228,27 @@ function getInitialWorkspaceColumns(): WorkspaceColumnSizes {
   }
 }
 
+function getWorkspaceGridPreset(mode: WorkspaceMode, columns: WorkspaceColumnSizes): WorkspaceGridPreset {
+  if (mode === "ticket") {
+    return {
+      left: `${columns.left}px`,
+      center: "minmax(520px, 1fr)",
+      right: `${columns.right}px`,
+    };
+  }
+  return WORKSPACE_MODE_GRID_PRESETS[mode];
+}
+
+function getWorkspaceGridStyle(mode: WorkspaceMode, columns: WorkspaceColumnSizes): CSSProperties {
+  const preset = getWorkspaceGridPreset(mode, columns);
+  return {
+    "--support-left": preset.left,
+    "--support-center": preset.center,
+    "--support-right": preset.right,
+    gridTemplateColumns: "var(--support-left) var(--support-center) var(--support-right)",
+  } as CSSProperties;
+}
+
 function workspaceHasLiveOperations(payload: SupportTicketWorkspacePayload | undefined): boolean {
   return Boolean(
     payload?.detail.snapshot.latest_operations.some((operation) => {
@@ -249,6 +297,28 @@ const automationCatalogFilters: Array<{ value: AutomationCatalogFilter; label: s
   { value: "playbook", label: "Playbooks" },
   { value: "tool", label: "Инструменты" },
   { value: "disabled", label: "Недоступные" },
+];
+
+const toolsWorkspaceTabs: Array<{ value: ToolsWorkspaceTab; label: string }> = [
+  { value: "quick", label: "Быстрые" },
+  { value: "playbook", label: "Playbook" },
+  { value: "remote", label: "Удалённая помощь" },
+  { value: "operations", label: "Операции" },
+  { value: "history", label: "История" },
+];
+
+const slaWorkspaceTabs: Array<{ value: SlaWorkspaceTab; label: string }> = [
+  { value: "overview", label: "SLA обзор" },
+  { value: "ola", label: "OLA" },
+  { value: "escalations", label: "Эскалации" },
+  { value: "history", label: "История сроков" },
+];
+
+const passportWorkspaceTabs: Array<{ value: PassportWorkspaceTab; label: string }> = [
+  { value: "sections", label: "Секции" },
+  { value: "evidence", label: "Доказательства" },
+  { value: "operations", label: "Операции" },
+  { value: "readiness", label: "Готовность" },
 ];
 
 function matchesAutomationSearch(item: SupportWorkspaceToolItem, search: string): boolean {
@@ -1082,15 +1152,19 @@ export function TicketListPage() {
   const queryClient = useQueryClient();
   const { logout, session } = useSession();
   const [scope, setScope] = useState<SupportQueueScope>("all");
-  const [smartView, setSmartView] = useState("my_action");
-  const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
+  const [smartView, setSmartView] = useState(() => getInitialWorkspaceSelectedView("my_action"));
+  const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(params.ticketId ?? null);
   const [search, setSearch] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>("public");
   const [composerText, setComposerText] = useState("");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("context");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialWorkspaceMode());
   const [moreOpen, setMoreOpen] = useState(false);
+  const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
+  const [slaWorkspaceTab, setSlaWorkspaceTab] = useState<SlaWorkspaceTab>("overview");
+  const [passportWorkspaceTab, setPassportWorkspaceTab] = useState<PassportWorkspaceTab>("sections");
   const [operatorActionDraft, setOperatorActionDraft] = useState<OperatorActionDraft | null>(null);
   const [automationLaunchDraft, setAutomationLaunchDraft] = useState<AutomationLaunchDraft>(null);
   const [resolutionCloseDraft, setResolutionCloseDraft] = useState<ResolutionCloseDraft | null>(null);
@@ -1119,6 +1193,38 @@ export function TicketListPage() {
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
   }, [selectedTicketId]);
+
+  useEffect(() => {
+    persistWorkspaceMode(workspaceMode);
+  }, [workspaceMode]);
+
+  useEffect(() => {
+    if ((workspaceMode === "tools" || workspaceMode === "sla" || workspaceMode === "passport") && sidebarTab !== workspaceMode) {
+      setSidebarTab(workspaceMode);
+    }
+  }, [sidebarTab, workspaceMode]);
+
+  useEffect(() => {
+    persistWorkspaceRightTab(sidebarTab);
+  }, [sidebarTab]);
+
+  useEffect(() => {
+    persistWorkspaceSelectedView(smartView);
+  }, [smartView]);
+
+  useEffect(() => {
+    persistWorkspaceSelectedQueue(activeQueueId);
+  }, [activeQueueId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setWorkspaceMode((current) => (current === "ticket" ? current : "ticket"));
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const handleViewportResize = () => {
@@ -1349,6 +1455,7 @@ export function TicketListPage() {
   }, [queryClient, selectedTicketId]);
 
   const focusComposer = (mode: ComposerMode) => {
+    setWorkspaceMode("ticket");
     setComposerMode(mode);
     window.requestAnimationFrame(() => {
       composerTextareaRef.current?.scrollIntoView?.({ block: "center" });
@@ -1356,8 +1463,15 @@ export function TicketListPage() {
     });
   };
 
+  function selectRightTab(tab: SidebarTab) {
+    setSidebarTab(tab);
+    if (tab === "tools" || tab === "sla" || tab === "passport") {
+      setWorkspaceMode(tab);
+    }
+  }
+
   const openAutomationLauncher = (draft: AutomationLaunchDraft = null) => {
-    setSidebarTab("tools");
+    selectRightTab("tools");
     setAutomationLaunchDraft(draft ?? (firstRunnablePlaybook ? { kind: "playbook", id: firstRunnablePlaybook.id } : firstRunnableTool ? { kind: "tool", id: firstRunnableTool.id } : null));
   };
 
@@ -1635,6 +1749,7 @@ export function TicketListPage() {
   });
 
   function openTicket(ticketId: string) {
+    setWorkspaceMode("ticket");
     startTransition(() => {
       navigate(`/app/tickets/${ticketId}`);
     });
@@ -1716,7 +1831,7 @@ export function TicketListPage() {
     setManualEvidenceSummary(blocker.detail ?? "");
     setWorklogNote(blocker.detail ?? "");
     setWorklogMinutes("15");
-    setSidebarTab("passport");
+    selectRightTab("passport");
     if (blocker.actionKind === "edit_resolution") {
       setResolutionCloseDraft(makeResolutionCloseDraft(selectedTicket));
     }
@@ -1762,6 +1877,7 @@ export function TicketListPage() {
     <section
       className={`support-workspace flex h-screen min-h-screen flex-col overflow-hidden ${isLightTheme ? "bg-slate-100 text-slate-950" : "bg-[#07111f] text-slate-100"}`}
       data-testid="support-workspace-root"
+      data-mode={workspaceMode}
       data-theme={workspaceTheme}
     >
       <h1 className="sr-only">Тикеты</h1>
@@ -1779,10 +1895,10 @@ export function TicketListPage() {
       />
 
       <div
-        className="relative grid min-h-0 flex-1 overflow-hidden"
-        style={{ gridTemplateColumns: `${workspaceColumns.left}px minmax(520px,1fr) ${workspaceColumns.right}px` }}
+        className="relative grid min-h-0 flex-1 overflow-hidden support-workspace__mode-grid"
+        style={getWorkspaceGridStyle(workspaceMode, workspaceColumns)}
       >
-        <button
+        {workspaceMode === "ticket" ? <button
           aria-label="Изменить ширину левой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 -translate-x-1/2 cursor-col-resize ${
             resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
@@ -1795,8 +1911,8 @@ export function TicketListPage() {
           <span className="support-workspace__column-resizer-line">
             <GripVertical className="h-4 w-4" />
           </span>
-        </button>
-        <button
+        </button> : null}
+        {workspaceMode === "ticket" ? <button
           aria-label="Изменить ширину правой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 translate-x-1/2 cursor-col-resize ${
             resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
@@ -1809,8 +1925,22 @@ export function TicketListPage() {
           <span className="support-workspace__column-resizer-line">
             <GripVertical className="h-4 w-4" />
           </span>
-        </button>
+        </button> : null}
         <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#0b1624]">
+          {workspaceMode === "queue" ? (
+            <QueueExplorer
+              onOpenTicket={openTicket}
+              onSelectTicket={(ticketId) => {
+                setWorkspaceMode("queue");
+                startTransition(() => {
+                  navigate(`/app/tickets/${ticketId}`);
+                });
+              }}
+              selectedTicket={selectedTicket}
+              tickets={visibleTickets}
+            />
+          ) : (
+          <>
           <div className="border-b border-white/10 px-4 py-4">
             <div className="grid grid-cols-2 gap-2 rounded-xl bg-white/[0.04] p-1">
               {(["all", "mine"] as const).map((value) => (
@@ -1911,7 +2041,13 @@ export function TicketListPage() {
 
             <div className="mb-2 flex items-center justify-between px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
               <span>Тикеты в очереди</span>
-              <span>{visibleTickets.length}</span>
+              <button
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-semibold normal-case tracking-normal text-slate-300 hover:text-white"
+                onClick={() => setWorkspaceMode("queue")}
+                type="button"
+              >
+                Развернуть очередь
+              </button>
             </div>
 
             {queueQuery.isLoading ? (
@@ -1975,10 +2111,16 @@ export function TicketListPage() {
               ))}
             </div>
           </div>
+          </>
+          )}
         </aside>
 
         <main className="flex min-h-0 flex-col border-r border-white/10 bg-[#07111f]">
-          {!selectedTicketId ? (
+          {workspaceMode === "queue" ? (
+            <TicketPreviewPanel onOpenTicket={openTicket} selectedTicket={selectedTicket} />
+          ) : null}
+
+          {workspaceMode !== "queue" && !selectedTicketId ? (
             <div className="flex flex-1 items-center justify-center px-8 text-center">
               <div>
                 <Inbox className="mx-auto h-10 w-10 text-slate-500" />
@@ -1988,11 +2130,11 @@ export function TicketListPage() {
             </div>
           ) : null}
 
-          {selectedTicketId && workspaceQuery.isLoading ? (
+          {workspaceMode !== "queue" && selectedTicketId && workspaceQuery.isLoading ? (
             <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Загружаем тикет...</div>
           ) : null}
 
-          {selectedTicketId && workspaceErrorState ? (
+          {workspaceMode !== "queue" && selectedTicketId && workspaceErrorState ? (
             <div
               className={`m-6 rounded-2xl border px-5 py-5 text-sm ${
                 workspaceErrorState.tone === "warning"
@@ -2031,7 +2173,7 @@ export function TicketListPage() {
             </div>
           ) : null}
 
-          {selectedTicket ? (
+          {workspaceMode !== "queue" && selectedTicket ? (
             <>
               <div className="border-b border-white/10 bg-[#0b1624]/70 px-5 py-4">
                 <div className="flex items-start justify-between gap-4">
@@ -2509,7 +2651,7 @@ export function TicketListPage() {
                             ? "border border-amber-300 bg-white/80 text-amber-900 hover:bg-white"
                             : "border border-amber-300/30 bg-white/[0.06] text-amber-50 hover:bg-white/[0.1]"
                         }`}
-                        onClick={() => setSidebarTab("passport")}
+                        onClick={() => selectRightTab("passport")}
                         type="button"
                       >
                         <FileCheck2 className="mr-2 inline h-4 w-4" />
@@ -2730,6 +2872,13 @@ export function TicketListPage() {
         </main>
 
         <aside className="flex min-h-0 flex-col bg-[#0b1624]">
+          {workspaceMode === "tools" ? (
+            <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Инструменты" />
+          ) : workspaceMode === "sla" ? (
+            <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="SLA режим" />
+          ) : workspaceMode === "passport" ? (
+            <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Паспорт решения" />
+          ) : null}
           <div className="border-b border-white/10 p-3">
             <div className="grid grid-cols-[1.05fr_0.55fr_1.35fr_0.8fr_0.85fr] gap-1 rounded-xl bg-white/[0.04] p-1">
               {sidebarTabs.map((tab) => (
@@ -2738,7 +2887,7 @@ export function TicketListPage() {
                     sidebarTab === tab.value ? "bg-[#13233a] text-white shadow" : "text-slate-400 hover:text-white"
                   }`}
                   key={tab.value}
-                  onClick={() => setSidebarTab(tab.value)}
+                  onClick={() => selectRightTab(tab.value)}
                   type="button"
                 >
                   {tab.label}
@@ -2815,55 +2964,301 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "sla" ? (
               <div className="space-y-3">
-                {selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
-                  <section className={`rounded-xl border border-white/10 bg-[#111f33] p-4 ${timerStatusRing(timer.status)}`} key={timer.key}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-white">{timer.label}</p>
-                        <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
-                      </div>
-                      <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
-                        {timerStatusLabel(timer.status)}
-                      </span>
+                {workspaceMode === "sla" ? (
+                  <div aria-label="SLA workspace" className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[#111f33] p-3" role="tablist">
+                    {slaWorkspaceTabs.map((tab) => (
+                      <button
+                        aria-selected={slaWorkspaceTab === tab.value}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                          slaWorkspaceTab === tab.value
+                            ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                        }`}
+                        key={tab.value}
+                        onClick={() => setSlaWorkspaceTab(tab.value)}
+                        role="tab"
+                        type="button"
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {workspaceMode === "sla" && slaWorkspaceTab === "overview" ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {selectedTicket.timers.map((timer) => (
+                        <div className={`rounded-xl border border-white/10 bg-white/[0.03] p-4 ${timerStatusRing(timer.status)}`} key={`expanded:${timer.key}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-white">{timer.label}</p>
+                              <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                            </div>
+                            <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
+                              {timerStatusLabel(timer.status)}
+                            </span>
+                          </div>
+                          <p className="mt-4 text-2xl font-semibold text-white">{timer.remainingLabel}</p>
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                            <div className={`h-full rounded-full ${progressTone(timer.status)}`} style={{ width: `${Math.max(4, timer.progress)}%` }} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="mt-4 flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-2xl font-semibold tracking-tight text-white">{timer.remainingLabel}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {timer.status === "paused" ? "Отсчёт приостановлен" : timer.status === "unknown" ? "Контрольный срок неизвестен" : "До контрольного срока"}
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">OLA</p>
+                        <p className="mt-2 text-sm text-slate-300">Ack и Processing берутся из текущего SLA/OLA payload.</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-100/80">Эскалации</p>
+                        <p className="mt-2 text-sm text-amber-50">
+                          {selectedTicket.timers.some((timer) => timer.status === "breached" || timer.status === "at_risk")
+                            ? "Есть риск или нарушение срока."
+                            : "Активных эскалаций нет."}
                         </p>
                       </div>
-                      <span className="text-xs font-semibold text-slate-500">{timer.progress}%</span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        aria-label={`${timer.label}: ${timerStatusLabel(timer.status)}`}
-                        className={`h-full rounded-full ${progressTone(timer.status)}`}
-                        style={{ width: `${timer.status === "unknown" ? 100 : Math.max(4, timer.progress)}%` }}
-                      />
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">История сроков</p>
+                        <p className="mt-2 text-sm text-slate-300">События SLA/OLA доступны во вкладке истории timeline.</p>
+                      </div>
                     </div>
                   </section>
-                )) : (
+                ) : null}
+                {workspaceMode === "sla" && slaWorkspaceTab === "ola" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
-                    <p className="font-semibold text-white">SLA / OLA</p>
-                    <p className="mt-2 text-sm text-slate-400">Контрольные сроки для этого тикета не заданы.</p>
+                    <p className="font-semibold text-white">OLA по очереди</p>
+                    <p className="mt-1 text-sm text-slate-400">Внутренние сроки берутся из текущего SLA/OLA payload без нового API.</p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
+                        <div className={`rounded-xl border border-white/10 bg-white/[0.03] p-3 ${timerStatusRing(timer.status)}`} key={`ola:${timer.key}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="font-semibold text-white">{timer.label}</p>
+                            <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
+                              {timerStatusLabel(timer.status)}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-lg font-semibold text-white">{timer.remainingLabel}</p>
+                          <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                        </div>
+                      )) : (
+                        <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400 md:col-span-2">
+                          OLA данные для тикета пока не заданы.
+                        </p>
+                      )}
+                    </div>
                   </section>
-                )}
+                ) : null}
+                {workspaceMode === "sla" && slaWorkspaceTab === "escalations" ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <p className="font-semibold text-white">Эскалационный контроль</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {selectedTicket.timers.some((timer) => timer.status === "breached" || timer.status === "at_risk")
+                        ? "Есть риск или нарушение срока. Действия показаны безопасно и не обходят backend policy."
+                        : "Активных SLA/OLA эскалаций по текущим данным нет."}
+                    </p>
+                    <div className="mt-4 grid gap-2 md:grid-cols-3">
+                      <button className="rounded-xl border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 disabled:opacity-60" disabled type="button">
+                        Эскалировать
+                      </button>
+                      <button className="rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 disabled:opacity-60" disabled type="button">
+                        Сообщить руководителю
+                      </button>
+                      <button className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 disabled:opacity-60" disabled type="button">
+                        Добавить причину задержки
+                      </button>
+                    </div>
+                  </section>
+                ) : null}
+                {workspaceMode === "sla" && slaWorkspaceTab === "history" ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <p className="font-semibold text-white">История сроков</p>
+                    <div className="mt-3 space-y-2">
+                      {selectedTicket.timeline.filter((item) => item.kind === "history" || item.kind === "diagnostics").slice(0, 8).map((item) => (
+                        <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2" key={`sla-history:${item.id}`}>
+                          <div className="flex justify-between gap-3 text-xs text-slate-500">
+                            <span>{item.actor}</span>
+                            <span>{item.timestampLabel}</span>
+                          </div>
+                          <p className="mt-1 text-sm font-semibold text-white">{item.title}</p>
+                          {item.body ? <p className="mt-1 text-xs leading-5 text-slate-400">{item.body}</p> : null}
+                        </div>
+                      ))}
+                      {!selectedTicket.timeline.some((item) => item.kind === "history" || item.kind === "diagnostics") ? (
+                        <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
+                          Событий сроков пока нет.
+                        </p>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+                {workspaceMode !== "sla" ? (
+                  selectedTicket.timers.length ? selectedTicket.timers.map((timer) => (
+                    <section className={`rounded-xl border border-white/10 bg-[#111f33] p-4 ${timerStatusRing(timer.status)}`} key={timer.key}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-white">{timer.label}</p>
+                          <p className="mt-1 text-xs text-slate-500">{formatDueLabel(timer.dueAt)}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-semibold ${toneClasses(timerStatusToTone(timer.status))}`}>
+                          {timerStatusLabel(timer.status)}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-2xl font-semibold tracking-tight text-white">{timer.remainingLabel}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {timer.status === "paused" ? "Отсчёт приостановлен" : timer.status === "unknown" ? "Контрольный срок неизвестен" : "До контрольного срока"}
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-500">{timer.progress}%</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          aria-label={`${timer.label}: ${timerStatusLabel(timer.status)}`}
+                          className={`h-full rounded-full ${progressTone(timer.status)}`}
+                          style={{ width: `${timer.status === "unknown" ? 100 : Math.max(4, timer.progress)}%` }}
+                        />
+                      </div>
+                    </section>
+                  )) : (
+                    <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                      <p className="font-semibold text-white">SLA / OLA</p>
+                      <p className="mt-2 text-sm text-slate-400">Контрольные сроки для этого тикета не заданы.</p>
+                    </section>
+                  )
+                ) : null}
               </div>
             ) : null}
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
-                <RemoteAssistPanel
-                  deviceId={viewModel.right.context?.device.id ?? null}
-                  deviceOnline={viewModel.right.context?.device.online ?? false}
-                  onChanged={() => {
-                    void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
-                    void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
-                  }}
-                  permissions={session?.permissions ?? []}
-                  ticketId={selectedTicket.id}
-                />
+                {workspaceMode !== "tools" ? (
+                  <RemoteAssistPanel
+                    deviceId={viewModel.right.context?.device.id ?? null}
+                    deviceOnline={viewModel.right.context?.device.online ?? false}
+                    onChanged={() => {
+                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
+                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
+                    }}
+                    permissions={session?.permissions ?? []}
+                    ticketId={selectedTicket.id}
+                  />
+                ) : null}
+                {workspaceMode === "tools" ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div aria-label="Режим инструментов" className="mb-4 flex flex-wrap gap-2" role="tablist">
+                      {toolsWorkspaceTabs.map((tab) => (
+                        <button
+                          aria-selected={toolsWorkspaceTab === tab.value}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                            toolsWorkspaceTab === tab.value
+                              ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                              : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                          }`}
+                          key={tab.value}
+                          onClick={() => setToolsWorkspaceTab(tab.value)}
+                          role="tab"
+                          type="button"
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    {toolsWorkspaceTab === "quick" ? (
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {viewModel.right.tools.slice(0, 8).map((tool) => (
+                          <button
+                            className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-blue-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!tool.enabled}
+                            key={tool.id}
+                            onClick={() => setAutomationLaunchDraft({ kind: "tool", id: tool.id })}
+                            title={tool.disabledReason ?? tool.subtitle}
+                            type="button"
+                          >
+                            <p className="text-sm font-semibold text-white">{tool.title}</p>
+                            <p className="mt-1 line-clamp-2 text-xs text-slate-400">{tool.subtitle}</p>
+                            {tool.disabledReason ? <p className="mt-2 text-xs text-amber-200">Причина: {tool.disabledReason}</p> : null}
+                          </button>
+                        ))}
+                        {!viewModel.right.tools.length ? (
+                          <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400 md:col-span-2">
+                            Доступных быстрых инструментов пока нет.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {toolsWorkspaceTab === "playbook" ? (
+                      <div className="grid gap-2">
+                        {viewModel.right.playbooks.map((playbook) => (
+                          <button
+                            className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-blue-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!playbook.enabled}
+                            key={playbook.id}
+                            onClick={() => setAutomationLaunchDraft({ kind: "playbook", id: playbook.id })}
+                            title={playbook.disabledReason ?? playbook.subtitle}
+                            type="button"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">{playbook.title}</p>
+                              <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${playbook.enabled ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100" : "border-amber-400/30 bg-amber-500/10 text-amber-100"}`}>
+                                {playbook.enabled ? "Готов" : "Недоступен"}
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs text-slate-400">{playbook.subtitle}</p>
+                            {playbook.disabledReason ? <p className="mt-2 text-xs text-amber-200">Причина: {playbook.disabledReason}</p> : null}
+                          </button>
+                        ))}
+                        {!viewModel.right.playbooks.length ? (
+                          <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
+                            Playbook для этого тикета пока нет.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {toolsWorkspaceTab === "remote" ? (
+                      <RemoteAssistPanel
+                        deviceId={viewModel.right.context?.device.id ?? null}
+                        deviceOnline={viewModel.right.context?.device.online ?? false}
+                        onChanged={() => {
+                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
+                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
+                        }}
+                        permissions={session?.permissions ?? []}
+                        ticketId={selectedTicket.id}
+                      />
+                    ) : null}
+                    {toolsWorkspaceTab === "operations" ? (
+                      <OperationsTable
+                        onCancel={(operationId) => operationCancelMutation.mutate(operationId)}
+                        onRetry={(operationId) => operationRetryMutation.mutate(operationId)}
+                        operations={viewModel.right.operations}
+                      />
+                    ) : null}
+                    {toolsWorkspaceTab === "history" ? (
+                      <div className="space-y-2">
+                        {selectedTicket.timeline
+                          .filter((item) => item.kind === "diagnostics" || item.kind === "history")
+                          .slice(0, 8)
+                          .map((item) => (
+                            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2" key={item.id}>
+                              <div className="flex justify-between gap-3 text-xs text-slate-500">
+                                <span>{item.actor}</span>
+                                <span>{item.timestampLabel}</span>
+                              </div>
+                              <p className="mt-1 text-sm font-semibold text-white">{item.title}</p>
+                              {item.body ? <p className="mt-1 text-xs leading-5 text-slate-400">{item.body}</p> : null}
+                            </div>
+                          ))}
+                        {!selectedTicket.timeline.some((item) => item.kind === "diagnostics" || item.kind === "history") ? (
+                          <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
+                            Технических событий для истории пока нет.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
                 {viewModel.right.operations.length ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="flex items-center justify-between gap-3">
@@ -3175,6 +3570,98 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "passport" ? (
               <section className={`rounded-xl p-4 ${isLightTheme ? "border border-slate-200 bg-white text-slate-950 shadow-sm" : "border border-white/10 bg-[#111f33]"}`}>
+                {workspaceMode === "passport" ? (
+                  <div aria-label="Паспорт решения workspace" className="mb-4 flex flex-wrap gap-2" role="tablist">
+                    {passportWorkspaceTabs.map((tab) => (
+                      <button
+                        aria-selected={passportWorkspaceTab === tab.value}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                          passportWorkspaceTab === tab.value
+                            ? "border-blue-400/60 bg-blue-500/15 text-blue-100"
+                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:text-white"
+                        }`}
+                        key={tab.value}
+                        onClick={() => setPassportWorkspaceTab(tab.value)}
+                        role="tab"
+                        type="button"
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {workspaceMode === "passport" && passportWorkspaceTab === "sections" ? (
+                  <div className="mb-4 grid gap-3 md:grid-cols-3">
+                    {["Проблема", "Причина", "Решение", "Проверка результата", "Подтверждение пользователя", "Доказательства", "Удалённая помощь", "Операции и диагностика", "Готовность к закрытию"].map((label, index) => {
+                      const item = viewModel.right.passport.items[index % Math.max(1, viewModel.right.passport.items.length)];
+                      const done = Boolean(item?.done);
+                      return (
+                        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3" key={label}>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-semibold text-white">{label}</p>
+                            {done ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <Clock3 className="h-4 w-4 text-amber-200" />}
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">{done ? "Заполнено по текущему паспорту." : "Требует внимания перед закрытием."}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {workspaceMode === "passport" && passportWorkspaceTab === "evidence" ? (
+                  <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="font-semibold text-white">Доказательства</p>
+                    <p className="mt-1 text-sm text-slate-400">Evidence связывается только через существующий passport flow и closure policy.</p>
+                    <div className="mt-3 grid gap-2">
+                      {viewModel.right.passport.items.filter((item) => !item.done).slice(0, 4).map((item) => (
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={`passport-evidence:${item.key}`}>
+                          <p className="text-sm font-semibold text-white">{item.label}</p>
+                          <p className="mt-1 text-xs text-slate-400">Требует подтверждения или связанного события перед закрытием.</p>
+                        </div>
+                      ))}
+                      {!viewModel.right.passport.items.some((item) => !item.done) ? (
+                        <p className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                          Обязательные evidence-секции заполнены по текущему паспорту.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {workspaceMode === "passport" && passportWorkspaceTab === "operations" ? (
+                  <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="font-semibold text-white">Операции и диагностика</p>
+                    <p className="mt-1 text-sm text-slate-400">Связанные операции используются как доказательная база паспорта решения.</p>
+                    <OperationsTable
+                      onCancel={(operationId) => operationCancelMutation.mutate(operationId)}
+                      onRetry={(operationId) => operationRetryMutation.mutate(operationId)}
+                      operations={viewModel.right.operations}
+                    />
+                  </div>
+                ) : null}
+                {workspaceMode === "passport" && passportWorkspaceTab === "readiness" ? (
+                  <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="font-semibold text-white">Готовность к закрытию</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Заполнено {viewModel.right.passport.done} из {viewModel.right.passport.total}. Закрытие остаётся через существующую проверку прав и closure policy.
+                    </p>
+                    <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-emerald-400" style={{ width: `${passportProgress(viewModel.right.passport)}%` }} />
+                    </div>
+                    {selectedTicket.closurePlan.blockers.length ? (
+                      <div className="mt-4 grid gap-2">
+                        {selectedTicket.closurePlan.blockers.slice(0, 4).map((blocker) => (
+                          <div className="rounded-lg border border-amber-300/20 bg-amber-500/10 px-3 py-2" key={`passport-readiness:${blocker.key}`}>
+                            <p className="text-sm font-semibold text-amber-50">{blocker.label}</p>
+                            {blocker.detail ? <p className="mt-1 text-xs text-amber-100/80">{blocker.detail}</p> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                        Блокеров закрытия по текущему payload нет.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Паспорт решения</p>
