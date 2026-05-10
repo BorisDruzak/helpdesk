@@ -10,6 +10,7 @@ from loguru import logger
 from .clipboard import ClipboardConfig, ClipboardError, ClipboardSyncBridge
 from .input_controller import InputController, InputControllerError
 from .screen_track import ScreenCaptureTrack
+from .tls import build_remote_assist_ssl_context, tls_error_hint
 
 
 def count_sdp_candidates(sdp: str | None) -> int:
@@ -110,8 +111,14 @@ class RemoteAssistWebRTCClient:
 
         async with aiohttp.ClientSession() as session:
             ws_url = self._with_query(self.signaling_url, role="agent", token=self.token)
+            ssl_context = build_remote_assist_ssl_context(ws_url)
             logger.info("Remote Assist signaling connecting as agent")
-            async with session.ws_connect(ws_url, heartbeat=20, max_msg_size=256 * 1024) as ws:
+            try:
+                ws_cm = session.ws_connect(ws_url, heartbeat=20, max_msg_size=256 * 1024, ssl=ssl_context)
+                ws = await ws_cm.__aenter__()
+            except Exception as exc:
+                raise RuntimeError(tls_error_hint(exc)) from exc
+            try:
                 self._ws = ws
                 logger.info("Remote Assist signaling connected as agent")
 
@@ -265,6 +272,8 @@ class RemoteAssistWebRTCClient:
                         if not self._failure_message:
                             self._failure_message = str(payload.get("error") or payload.get("error_code") or "Remote Assist signaling error")
                         break
+            finally:
+                await ws_cm.__aexit__(None, None, None)
         if timeout_task is not None:
             timeout_task.cancel()
         if self._failure_message and not self._session_ended:

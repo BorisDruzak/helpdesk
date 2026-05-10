@@ -167,6 +167,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/ui_gui/main_window.py",
             "pc_agent/remote_assist/input_controller.py",
             "pc_agent/remote_assist/webrtc_client.py",
+            "pc_agent/remote_assist/tls.py",
             "pc_agent/remote_assist/thread.py",
             "pc_agent/remote_assist/screen_track.py",
             "pc_agent/ui_gui/remote_assist_dialog.py",
@@ -1935,7 +1936,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, quick/full deploy gates, layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
@@ -1973,7 +1974,8 @@ TOPICS: tuple[Topic, ...] = (
         ),
         suggested_commands=(
             "python scripts/verify_workspace.py",
-            "python scripts/release_server_to_remote.py",
+            "python scripts/release_server_to_remote.py --gate full",
+            "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
         ),
         mode="Release / deploy",
@@ -1982,6 +1984,7 @@ TOPICS: tuple[Topic, ...] = (
         checks=(
             "python scripts/verify_workspace.py",
             "python scripts/run_ci_suite.py",
+            "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
         ),
         plan_required=True,

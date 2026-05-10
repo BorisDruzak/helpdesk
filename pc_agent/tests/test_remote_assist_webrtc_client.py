@@ -5,6 +5,7 @@ from pc_agent.remote_assist.webrtc_client import (
     count_sdp_candidates,
     is_clipboard_channel_message,
 )
+from pc_agent.remote_assist.tls import build_remote_assist_ssl_context, tls_error_hint
 
 
 def test_count_sdp_candidates_counts_only_candidate_lines() -> None:
@@ -47,3 +48,15 @@ def test_clipboard_channel_routing_accepts_enable_alias() -> None:
     assert is_clipboard_channel_message("clipboard_disable") is True
     assert is_clipboard_channel_message("clipboard.update") is True
     assert is_clipboard_channel_message("control_enable") is False
+
+
+def test_remote_assist_tls_context_only_for_secure_urls() -> None:
+    assert build_remote_assist_ssl_context("ws://192.168.100.17/ws/remote-assist/session") is None
+    assert build_remote_assist_ssl_context("wss://192.168.100.17/ws/remote-assist/session") is not None
+
+
+def test_tls_error_hint_mentions_agent_ca_configuration() -> None:
+    message = tls_error_hint(RuntimeError("SSLCertVerificationError: CERTIFICATE_VERIFY_FAILED"))
+
+    assert "PC_AGENT_TLS_CA_FILE" in message
+    assert "Trusted Root Certification Authorities" in message
