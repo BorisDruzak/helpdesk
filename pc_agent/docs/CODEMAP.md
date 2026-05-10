@@ -55,7 +55,7 @@
 | `pc_agent/core/database.py` | SQLite (data/storage.db), outbox, seq, idempotency, consent, scheduled_tasks, DB_SCHEMA_VERSION |
 | `pc_agent/core/sender.py` | WSOutboxFlusher: доставка outbox, ACK/NACK, retries; если сервер объявил `outbox_batch_v1`, flusher может отправлять несколько `outbox_item` одним `outbox_items_batch` frame без изменения per-item ACK/NACK semantics |
 | `pc_agent/core/identity.py` | Каноническая identity агента: `machine_id` -> `device_id`, вторичный `install_id`, миграция legacy `identity.json`, handshake metadata включая `device_fingerprint` |
-| `pc_agent/core/device_fingerprint.py` | Best-effort hashed hardware proof для provisioning/handshake: system UUID, baseboard, CPU signature, boot volume и MAC hashes; raw serial/MAC не отправляются |
+| `pc_agent/core/device_fingerprint.py` | Best-effort hashed hardware proof для provisioning/handshake: Windows default path avoids WMI/PowerShell by using MachineGuid, WinAPI boot volume, CPU signature and MAC hashes; optional baseboard WMI is gated by `PC_AGENT_ENABLE_WMI_FINGERPRINT=1`; raw serial/MAC не отправляются |
 | `pc_agent/core/machine_identity.py` | Разрешение стабильного `machine_id` из OS/runtime (Windows MachineGuid, Linux machine-id, env override, fallback file) |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |

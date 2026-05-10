@@ -40,6 +40,7 @@
 - `3.1.34` is the Windows stable agent release for the Remote Assist WebRTC hotfix: PyInstaller now packages `aiortc`/ICE/media dependencies, and the GUI reports WebRTC startup failures back to the backend instead of leaving the operator viewer waiting forever. Publish it as a new build/upload/rollout target; do not overwrite `3.1.33` artifacts.
 - `3.1.35` is the Windows stable agent release for Remote Assist interactive-control testing: Windows mouse/keyboard injection uses `SendInput` instead of legacy `mouse_event`/`keybd_event`, and Linux control uses the platform `pynput` backend when policy enables `interactive_control`. Publish it as a new build/upload/rollout target; do not overwrite `3.1.34` artifacts.
 - `3.1.36` is the Windows stable agent release for Remote Assist connection hardening: viewer and agent fail stalled WebRTC negotiations cleanly, Maria Agent no longer says the specialist sees the screen before ICE connects, and failed negotiation stops capture work instead of leaving CPU usage high. Publish it as a new build/upload/rollout target; do not overwrite `3.1.35` artifacts.
+- `3.1.37` is the Windows stable agent release for idle CPU/WMI reduction: Windows fingerprint collection avoids default PowerShell/WMI calls, WMI baseboard lookup is opt-in through `PC_AGENT_ENABLE_WMI_FINGERPRINT=1`, and GUI idle update status checks reuse cache longer. Publish it as a new build/upload/rollout target; do not overwrite `3.1.36` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 

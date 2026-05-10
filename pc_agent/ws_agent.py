@@ -121,6 +121,8 @@ ALLOWED_MESSAGE_TYPES = {
     "ack"
 }
 
+UPDATE_STATUS_CACHE_TTL_SEC = 300
+
 # Методы требующие idempotency_key (Фаза 4.1, замечание 5)
 IDEMPOTENT_METHODS = {
     "ticket_open",
@@ -545,7 +547,7 @@ class WSAgent:
         ):
             try:
                 cached_at = datetime.fromisoformat(self._cached_update_checked_at)
-                if (datetime.now(timezone.utc) - cached_at).total_seconds() < 30:
+                if (datetime.now(timezone.utc) - cached_at).total_seconds() < UPDATE_STATUS_CACHE_TTL_SEC:
                     return self._merge_update_status(self._cached_update_status)
             except Exception:
                 pass

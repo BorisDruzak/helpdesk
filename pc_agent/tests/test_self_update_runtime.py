@@ -4,6 +4,7 @@ import sys
 import tarfile
 import zipfile
 from datetime import datetime, timezone
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -747,3 +748,36 @@ async def test_fetch_update_status_reports_plain_text_404_cleanly(tmp_path, monk
     assert status["update_available"] is False
     assert status["recommended_version"] is None
     assert status["update_status_error"] == "Update recommendation endpoint is unavailable on server (HTTP 404)"
+
+
+@pytest.mark.asyncio
+async def test_fetch_update_status_reuses_recent_cache_for_idle_gui_polling(tmp_path, monkeypatch):
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+    agent.device_id = "device-1"
+    agent.auth_token = "agent-token-1"
+    checked_at = (datetime.now(timezone.utc) - timedelta(minutes=4)).isoformat()
+    agent._cached_update_checked_at = checked_at
+    agent._cached_update_status = {
+        "status": "ok",
+        "update_available": False,
+        "recommended_version": "3.1.36",
+        "update_checked_at": checked_at,
+    }
+
+    class FailingSession:
+        closed = False
+
+        def get(self, url, headers=None):
+            raise AssertionError("idle GUI status polling should not hit update recommendation every few seconds")
+
+    monkeypatch.setattr(
+        "pc_agent.ws_agent.get_config",
+        lambda: SimpleNamespace(server=SimpleNamespace(api_url="http://example.test/api")),
+    )
+    agent._http_session = FailingSession()
+
+    status = await agent._fetch_update_status()
+
+    assert status["recommended_version"] == "3.1.36"
+    assert status["update_available"] is False
+    assert status["update_status_error"] is None
