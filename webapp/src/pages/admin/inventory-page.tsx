@@ -155,6 +155,7 @@ export function AdminInventoryPage() {
 
   const devices = devicesQuery.data?.devices ?? [];
   const requests = connectionRequestsQuery.data?.connection_requests ?? [];
+  const onlineCount = devicesQuery.data?.summary?.online_count ?? devices.filter((device) => device.online).length;
   const selectedDeviceId = searchParams.get("device");
   const selectedDevice = devices.find((item) => item.device_id === selectedDeviceId) ?? devices[0] ?? null;
   const selectedRequest =
@@ -179,7 +180,7 @@ export function AdminInventoryPage() {
       }).length,
     [devices]
   );
-  const offlineCount = Math.max(0, devices.length - (devicesQuery.data?.summary.online_count ?? 0));
+  const offlineCount = Math.max(0, devices.length - onlineCount);
 
   const cleanupMutation = useMutation({
     mutationFn: async (apply: boolean) => {
@@ -323,7 +324,7 @@ export function AdminInventoryPage() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <StatTile helper="Все найденные устройства" label="Всего агентов" value={String(devices.length)} />
-        <StatTile helper="По активному heartbeat" label="Онлайн" value={String(devicesQuery.data?.summary.online_count ?? 0)} />
+        <StatTile helper="По активному heartbeat" label="Онлайн" value={String(onlineCount)} />
         <StatTile helper="Ошибки, дубли и риски" label="С предупреждениями" value={String(alertCount)} />
         <StatTile helper="Нет активной сессии" label="Офлайн" value={String(offlineCount)} />
         <StatTile helper="Ждут решения администратора" label="Новые подключения" value={String(requests.length)} />
@@ -373,7 +374,7 @@ export function AdminInventoryPage() {
                   onChange={(event) => setStatusFilter(event.target.value as AdminStatusFilter)}
                   value={statusFilter}
                 >
-                  {(devicesQuery.data?.filters.status_options ?? [
+                  {(devicesQuery.data?.filters?.status_options ?? [
                     { value: "all", label: "Все устройства" },
                     { value: "online", label: "Только онлайн" },
                     { value: "offline", label: "Только офлайн" },

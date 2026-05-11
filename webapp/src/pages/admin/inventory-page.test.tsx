@@ -31,7 +31,7 @@ function renderInventory(initialPath = "/app/admin/inventory") {
   );
 }
 
-function installFetchMock() {
+function installFetchMock(options: { omitSummary?: boolean } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const method = init?.method ?? "GET";
@@ -42,13 +42,17 @@ function installFetchMock() {
         data: {
           query: "",
           status_filter: "all",
-          summary: {
-            visible_count: 2,
-            online_count: 1,
-            rollout_targets: 1,
-            duplicate_hosts: 0,
-            cleanup_candidates: 0,
-          },
+          ...(options.omitSummary
+            ? {}
+            : {
+                summary: {
+                  visible_count: 2,
+                  online_count: 1,
+                  rollout_targets: 1,
+                  duplicate_hosts: 0,
+                  cleanup_candidates: 0,
+                },
+              }),
           filters: {
             status_options: [
               { value: "all", label: "Все устройства" },
@@ -224,5 +228,14 @@ describe("AdminInventoryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Rollout/i }));
     expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1.2.3").length).toBeGreaterThan(0);
+  });
+
+  it("renders when the devices payload has no summary block", async () => {
+    installFetchMock({ omitSummary: true });
+
+    renderInventory();
+
+    expect((await screen.findAllByText("web-server-01")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1").length).toBeGreaterThan(0);
   });
 });
