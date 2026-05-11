@@ -39,6 +39,8 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 
 **Diagnostic Layer (migration 074):** `diagnostic_sessions`, `diagnostic_steps`, `diagnostic_evidence`, `diagnostic_findings`, `diagnostic_bundles`. These tables are ticket-scoped diagnostic state, not ticket workflow state. They normalize existing operations, playbook runs, observer root traces, remote assist sessions, artifacts and manual checks into support-facing evidence/findings/bundles while leaving `tickets.status`, playbook execution and `ToolExecutionService.run_tool` semantics unchanged. Main repo/service entrypoints: `server/app/repos/diagnostics_repo.py` and `server/diagnostics/*`.
 
+**Diagnostic Provider Config (migration 075):** `diagnostic_providers`, `diagnostic_capabilities`, `diagnostic_capability_versions`, `diagnostic_provider_configs`, `diagnostic_provider_credential_refs`, `diagnostic_provider_audit`. Capability descriptors still remain computed from manifests/providers for runtime compatibility, while these tables persist provider configuration lifecycle, credential references, redacted integration config and audit rows for server connectors such as Zabbix. Main entrypoints: `server/app/repos/diagnostic_provider_config_repo.py`, `server/diagnostics/provider_config.py`, and `/api/diagnostics/providers/configs*`.
+
 **Тикетная система (миграция 018):**  
 **ticket_queues** — очереди (ServiceDesk L1, SysAdmins, Network, 1C, Security).  
 **ticket_queue_members** — участники очередей.  

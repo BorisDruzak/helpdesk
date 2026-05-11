@@ -128,18 +128,20 @@ Acceptance for this slice:
 
 ### Phase 2: Persistent Capability Registry and Config
 
-- [ ] Decide whether persisted capability registry is needed now or whether descriptors remain computed from providers plus manifests.
-- [ ] If persistence is needed, add DB tables:
+- [x] Decide whether persisted capability registry is needed now or whether descriptors remain computed from providers plus manifests.
+- [x] If persistence is needed, add DB tables:
   - `diagnostic_providers`
   - `diagnostic_capabilities`
   - `diagnostic_capability_versions`
   - `diagnostic_provider_configs`
   - `diagnostic_provider_credentials_refs` or references into an existing secret/config store.
-- [ ] Add Alembic migration and migration tests.
-- [ ] Define provider config lifecycle: disabled, configured, credentials_missing, ready, degraded.
-- [ ] Add admin-safe CRUD/service APIs for provider config without logging secrets.
-- [ ] Add audit events for provider config changes.
-- [ ] Update `server/docs/DATABASE.md`, `server/docs/MODULES_API.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`.
+- [x] Add Alembic migration and migration tests.
+- [x] Define provider config lifecycle: disabled, configured, credentials_missing, ready, degraded.
+- [x] Add admin-safe CRUD/service APIs for provider config without logging secrets.
+- [x] Add audit events for provider config changes.
+- [x] Update `server/docs/DATABASE.md`, `server/docs/MODULES_API.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`.
+
+Decision: capability descriptors remain computed from manifest/provider sources for now, because agent builtin/managed tools are dynamic and must keep backward-compatible `run_tool` semantics. Migration `075` adds persisted provider/config tables plus capability snapshot tables for admin/config workflows; it does not make the DB the source of truth for agent tool descriptors.
 
 Verification:
 
@@ -147,6 +149,10 @@ Verification:
 - migration unit tests
 - DB-backed provider config tests
 - `python scripts/verify_workspace.py`
+- `python -m pytest server/tests/test_diagnostic_provider_config.py -q --tb=short`
+- `python -m pytest server/tests/test_diagnostic_provider_config.py server/tests/test_diagnostic_capabilities_no_db.py server/tests/test_diagnostic_layer.py -q --tb=short`
+- `python -m compileall -q server\diagnostics server\app\repos\diagnostic_provider_config_repo.py server\app\db\models.py server\routes.py`
+- `python -m alembic -c alembic.ini heads` from `server/` shows `075 (head)`.
 
 ### Phase 3: Real Readiness Model
 

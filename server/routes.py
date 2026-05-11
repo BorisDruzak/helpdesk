@@ -399,6 +399,9 @@ from tech.handlers import (
 )
 from diagnostics.handlers import (
     handle_diagnostics_capabilities,
+    handle_diagnostics_provider_config_get,
+    handle_diagnostics_provider_config_put,
+    handle_diagnostics_provider_configs,
     handle_diagnostics_profiles,
     handle_ticket_diagnostics_bundle_create,
     handle_ticket_diagnostics_bundle_get,
@@ -811,6 +814,9 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/tools', handle_get_tools),
         web.post('/api/tools/run', handle_tools_run),
         web.get('/api/diagnostics/capabilities', handle_diagnostics_capabilities),
+        web.get('/api/diagnostics/providers/configs', handle_diagnostics_provider_configs),
+        web.get('/api/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_get),
+        web.put('/api/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_put),
         web.get('/api/diagnostics/profiles', handle_diagnostics_profiles),
         
         # ============================================================================

@@ -41,6 +41,7 @@ Legacy aliases exist only as compatibility bridges.
 - capability projection through `GET /api/diagnostics/capabilities`
 - ticket-scoped readiness through `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
 - ticket-scoped capability execution through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`
+- admin-safe provider config through `GET /api/diagnostics/providers/configs`, `GET /api/diagnostics/providers/configs/{provider_id}` and `PUT /api/diagnostics/providers/configs/{provider_id}`
 - routing agent capabilities to existing `ToolExecutionService.run_tool` while routing server connectors, observer queries, remote assist and manual checks through server-side providers
 
 ## Diagnostic capability projection
@@ -75,8 +76,16 @@ Readiness input sources:
 - dependency status supplied by caller/service context
 - integration config, credential state and mapping state supplied by connector config context
 - effective RBAC permission set from the authenticated actor
+- persisted diagnostic provider config (`diagnostic_provider_configs`), credential references and mappings for server connectors
 - policy flags supplied by diagnostic/provider policy context
 - observer root trace and remote assist consent/policy metadata
+
+Provider config persistence starts at migration `075`. Runtime capability descriptors remain computed from module manifests and provider skeletons so dynamic agent toolsets do not depend on DB snapshots. The persisted tables hold provider/config lifecycle and audit data:
+
+- `diagnostic_provider_configs.status`: `disabled`, `configured`, `credentials_missing`, `ready`, `degraded`
+- `diagnostic_provider_credential_refs.secret_ref`: reference only; API responses redact it
+- config payloads are redacted before persistence for sensitive keys such as password, token, secret, api key and credentials
+- Zabbix readiness consumes persisted `integration_key=zabbix`, credential readiness and `mappings.zabbix.host`
 
 ## Admin workbench
 

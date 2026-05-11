@@ -845,7 +845,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness, provider projection and non-agent provider routes).",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness, provider projection, persisted provider config and non-agent provider routes).",
         aliases=(
             "module",
             "modules",
@@ -863,6 +863,8 @@ TOPICS: tuple[Topic, ...] = (
             "diagnostic finding",
             "diagnostic bundle",
             "capability registry",
+            "provider config",
+            "diagnostic provider config",
             "execution target",
             "readiness",
             "server_connector",
@@ -880,7 +882,9 @@ TOPICS: tuple[Topic, ...] = (
             "server/diagnostics/capability_registry.py",
             "server/diagnostics/service.py",
             "server/diagnostics/projection.py",
+            "server/diagnostics/provider_config.py",
             "server/diagnostics/readiness.py",
+            "server/app/repos/diagnostic_provider_config_repo.py",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/registry.py",
         ),

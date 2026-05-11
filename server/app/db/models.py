@@ -3113,6 +3113,134 @@ class DiagnosticBundle(Base):
     )
 
 
+class DiagnosticProvider(Base):
+    """Persisted diagnostic provider snapshot/config boundary."""
+
+    __tablename__ = "diagnostic_providers"
+
+    provider_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="computed", server_default="computed")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="available", server_default="available")
+    config_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_providers_type_status", "provider_type", "status"),
+    )
+
+
+class DiagnosticCapability(Base):
+    """Persisted capability descriptor snapshot for admin/config workflows."""
+
+    __tablename__ = "diagnostic_capabilities"
+
+    capability_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_providers.provider_id", ondelete="CASCADE"), nullable=False)
+    execution_target: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="available", server_default="available")
+    latest_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    descriptor_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_capabilities_provider", "provider_id"),
+        Index("ix_diag_capabilities_target_status", "execution_target", "status"),
+    )
+
+
+class DiagnosticCapabilityVersion(Base):
+    """Versioned persisted snapshot for a diagnostic capability descriptor."""
+
+    __tablename__ = "diagnostic_capability_versions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    capability_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_capabilities.capability_id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    descriptor_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    source_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_capability_versions_capability", "capability_id", "is_current"),
+        sa.UniqueConstraint("capability_id", "version", name="uq_diag_capability_versions_capability_version"),
+    )
+
+
+class DiagnosticProviderConfig(Base):
+    """Server-side provider integration config with redacted persisted config payloads."""
+
+    __tablename__ = "diagnostic_provider_configs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    integration_key: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="configured", server_default="configured")
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    redaction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    health_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_provider_configs_provider", "provider_id"),
+        Index("ix_diag_provider_configs_integration_status", "integration_key", "status"),
+    )
+
+
+class DiagnosticProviderCredentialRef(Base):
+    """Reference to a secret/config-store credential for a diagnostic provider."""
+
+    __tablename__ = "diagnostic_provider_credential_refs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider_config_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_provider_configs.id", ondelete="CASCADE"), nullable=False)
+    credential_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    secret_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="missing", server_default="missing")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_provider_credential_refs_config", "provider_config_id"),
+        Index("ix_diag_provider_credential_refs_status", "status"),
+        sa.UniqueConstraint("provider_config_id", "credential_key", name="uq_diag_provider_credential_key"),
+    )
+
+
+class DiagnosticProviderAudit(Base):
+    """Append-only audit trail for diagnostic provider config changes."""
+
+    __tablename__ = "diagnostic_provider_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    provider_id: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_config_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    before_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    after_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_provider_audit_provider_created", "provider_id", "created_at"),
+        Index("ix_diag_provider_audit_actor_created", "actor_id", "created_at"),
+    )
+
+
 class Playbook(Base):
     """Плейбук: ключ, имя, домен, владелец, архивный флаг."""
     __tablename__ = "playbook"

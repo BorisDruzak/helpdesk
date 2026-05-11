@@ -13,6 +13,7 @@ from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
+from diagnostics.provider_config import DiagnosticProviderConfigService
 from diagnostics.profiles import list_profiles, resolve_ticket_profile
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
 from diagnostics.projection import DiagnosticProjectionService
@@ -42,6 +43,14 @@ def _state_mapping(state, *names: str) -> dict:
             if isinstance(value, dict):
                 return value
     return {}
+
+
+def _merge_maps(*maps: dict) -> dict:
+    result = {}
+    for item in maps:
+        if isinstance(item, dict):
+            result.update(item)
+    return result
 
 
 def _device_platform(device: Device | None) -> str | None:
@@ -97,6 +106,71 @@ async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     )
 
 
+@require_auth("admin")
+async def handle_diagnostics_provider_configs(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        provider_configs = await DiagnosticProviderConfigService(session).list_provider_configs()
+    return web.json_response(
+        {
+            "status": "ok",
+            "provider_configs": provider_configs,
+            "count": len(provider_configs),
+        }
+    )
+
+
+@require_auth("admin")
+async def handle_diagnostics_provider_config_get(request: web.Request) -> web.Response:
+    provider_id = str(request.match_info.get("provider_id") or "").strip()
+    async with get_session() as session:
+        provider_config = await DiagnosticProviderConfigService(session).get_provider_config(provider_id)
+    if provider_config is None:
+        return web.json_response(
+            {"status": "error", "error_code": "PROVIDER_CONFIG_NOT_FOUND", "error": "Provider config not found"},
+            status=404,
+        )
+    return web.json_response({"status": "ok", "provider_config": provider_config})
+
+
+@require_auth("admin")
+async def handle_diagnostics_provider_config_put(request: web.Request) -> web.Response:
+    provider_id = str(request.match_info.get("provider_id") or "").strip()
+    if not provider_id:
+        return web.json_response(
+            {"status": "error", "error_code": "PROVIDER_ID_REQUIRED", "error": "provider_id is required"},
+            status=400,
+        )
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    auth_context = request.get("auth_context")
+    async with get_session() as session:
+        service = DiagnosticProviderConfigService(session)
+        try:
+            await service.upsert_provider_config(
+                provider_id=provider_id,
+                provider_type=str(payload.get("provider_type") or "server_connector"),
+                integration_key=payload.get("integration_key"),
+                enabled=bool(payload.get("enabled", True)),
+                config=payload.get("config") if isinstance(payload.get("config"), dict) else {},
+                credential_refs=payload.get("credential_refs") if isinstance(payload.get("credential_refs"), list) else [],
+                health=payload.get("health") if isinstance(payload.get("health"), dict) else {},
+                actor_id=getattr(auth_context, "actor_id", None),
+                actor_role=getattr(auth_context, "actor_role", None),
+            )
+        except ValueError as exc:
+            return web.json_response(
+                {"status": "error", "error_code": "PROVIDER_CONFIG_INVALID", "error": str(exc)},
+                status=400,
+            )
+        provider_config = await service.get_provider_config(provider_id)
+        await session.commit()
+    return web.json_response({"status": "ok", "provider_config": provider_config})
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Response:
     ticket_id = str(request.match_info.get("ticket_id") or "").strip()
@@ -142,6 +216,8 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         actor_id=getattr(auth_context, "actor_id", None),
         actor_role=getattr(auth_context, "actor_role", None),
     )
+    async with get_session() as session:
+        persisted_maps = await DiagnosticProviderConfigService(session).build_readiness_maps()
     context = ReadinessContext(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -149,10 +225,22 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         device_platform=_device_platform(device),
         installed_modules=_installed_module_map(installed_modules),
         desired_modules=_desired_module_map(desired_modules),
-        integration_configs=_state_mapping(state, "diagnostic_integration_configs", "integration_configs"),
-        credential_keys=_state_mapping(state, "diagnostic_credential_keys", "credential_keys"),
-        mappings=_state_mapping(state, "diagnostic_mappings", "integration_mappings"),
-        policy_flags=_state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
+        integration_configs=_merge_maps(
+            _state_mapping(state, "diagnostic_integration_configs", "integration_configs"),
+            persisted_maps.integration_configs,
+        ),
+        credential_keys=_merge_maps(
+            _state_mapping(state, "diagnostic_credential_keys", "credential_keys"),
+            persisted_maps.credential_keys,
+        ),
+        mappings=_merge_maps(
+            _state_mapping(state, "diagnostic_mappings", "integration_mappings"),
+            persisted_maps.mappings,
+        ),
+        policy_flags=_merge_maps(
+            _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
+            persisted_maps.policy_flags,
+        ),
         permissions=set(access.permissions),
         has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
     )
