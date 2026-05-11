@@ -24,6 +24,8 @@ Observer нужен для ответа на вопросы вида:
 
 Ключевой инвариант: observer не дублирует ticket business state и не становится source of truth для helpdesk-логики.
 
+Diagnostic Layer integration: ticket diagnostics may project the ticket `observer_root_trace_id` into `diagnostic_evidence` as `kind=observer.summary`, `domain=observer`, `perspective=observer`, and show it in `GET /api/tickets/{ticket_id}/diagnostics/overview`. This projection is a support-facing summary link; raw spans, signatures, bundles and action traces remain owned by observer services and admin/support observer workbenches.
+
 ## 3. Источники данных
 
 Observer сейчас проецируется поверх:

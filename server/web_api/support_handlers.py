@@ -2075,13 +2075,19 @@ def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportTo
     metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
     params_schema = spec.get("params_schema") if spec else raw_tool.get("params_schema")
     presets = spec.get("presets") if spec else raw_tool.get("presets")
+    execution = raw_tool.get("execution") if isinstance(raw_tool.get("execution"), dict) else spec.get("execution", {})
+    deployment = raw_tool.get("deployment") if isinstance(raw_tool.get("deployment"), dict) else spec.get("deployment", {})
+    safety = raw_tool.get("safety") if isinstance(raw_tool.get("safety"), dict) else spec.get("safety", {})
+    readiness = raw_tool.get("readiness") if isinstance(raw_tool.get("readiness"), dict) else spec.get("readiness", {})
+    evidence = raw_tool.get("evidence") if isinstance(raw_tool.get("evidence"), dict) else spec.get("evidence", {})
+    artifacts = raw_tool.get("artifacts") if isinstance(raw_tool.get("artifacts"), dict) else spec.get("artifacts", {})
     module_name = raw_tool.get("module")
     if not module_name and "." in tool_name:
         module_name = tool_name.split(".", 1)[0]
     metadata_model = _support_tool_metadata(raw_tool, tool_name)
     risk_level = str(spec.get("risk_level") or metadata_model.risk_level or "safe_read")
-    requires_consent = bool(metadata.get("requires_consent"))
-    install_required = bool(raw_tool.get("install_required"))
+    requires_consent = bool(safety.get("requires_consent", metadata.get("requires_consent")))
+    install_required = bool(raw_tool.get("install_required", deployment.get("install_required_on_agent", False)))
     required_permission = _tool_risk_permission(risk_level)
     return SupportToolItem(
         tool_name=tool_name,
@@ -2103,6 +2109,12 @@ def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportTo
         source=source,
         params_schema=_normalize_tool_schema(params_schema),
         presets=_normalize_tool_presets(presets),
+        execution=dict(execution or {}),
+        deployment=dict(deployment or {}),
+        safety=dict(safety or {}),
+        readiness=dict(readiness or {}),
+        evidence=dict(evidence or {}),
+        artifacts=dict(artifacts or {}),
     )
 
 

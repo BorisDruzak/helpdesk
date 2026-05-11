@@ -2968,6 +2968,151 @@ class Artifact(Base):
 # --- Playbook Engine (см. docs/PLAYBOOK_ENGINE_DESIGN.md) ---
 
 
+class DiagnosticSession(Base):
+    """Ticket-scoped diagnostic session independent from ticket status."""
+
+    __tablename__ = "diagnostic_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    profile_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    profile_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", server_default="draft", index=True)
+    trigger_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    started_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"), index=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(sa.Numeric(5, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_sessions_ticket_status", "ticket_id", "status"),
+        Index("ix_diag_sessions_started_at", "started_at"),
+    )
+
+
+class DiagnosticStep(Base):
+    """Single diagnostic step linked to an operation, playbook, observer, remote assist or manual check."""
+
+    __tablename__ = "diagnostic_steps"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    step_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    capability_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete="SET NULL"), nullable=True, index=True)
+    playbook_run_id: Mapped[Optional[int]] = mapped_column(BigInteger, sa.ForeignKey("playbook_run.id", ondelete="SET NULL"), nullable=True, index=True)
+    playbook_step_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    remote_assist_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("remote_access_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    observer_trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_steps_ticket_type", "ticket_id", "step_type"),
+        Index("ix_diag_steps_session_status", "session_id", "status"),
+    )
+
+
+class DiagnosticEvidence(Base):
+    """Normalized diagnostic fact that can later be selected for a passport."""
+
+    __tablename__ = "diagnostic_evidence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    capability_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    domain: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    perspective: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    severity: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    confidence: Mapped[Optional[float]] = mapped_column(sa.Numeric(5, 4), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"), index=True)
+    normalized_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    raw_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    artifact_refs: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    redaction_level: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    passport_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+    selected_for_passport: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.text("false"), index=True)
+    created_by: Mapped[str] = mapped_column(String(32), nullable=False, default="system", server_default="system")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_ev_ticket_observed", "ticket_id", "observed_at"),
+        Index("ix_diag_ev_source_identity", "ticket_id", "source_type", "source_id", "kind", unique=True),
+        Index("ix_diag_ev_ticket_status", "ticket_id", "status"),
+    )
+
+
+class DiagnosticFinding(Base):
+    """Rule-based or manual diagnostic conclusion linked to evidence ids."""
+
+    __tablename__ = "diagnostic_findings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    root_cause_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(sa.Numeric(5, 4), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="suspected", server_default="suspected", index=True)
+    evidence_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    recommended_actions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    created_by: Mapped[str] = mapped_column(String(32), nullable=False, default="system", server_default="system")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_find_ticket_code", "ticket_id", "root_cause_code"),
+        Index("ix_diag_find_ticket_status", "ticket_id", "status"),
+    )
+
+
+class DiagnosticBundle(Base):
+    """JSON diagnostic package that references selected evidence and existing artifacts."""
+
+    __tablename__ = "diagnostic_bundles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="building", server_default="building", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    artifact_refs: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    observer_trace_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    remote_assist_session_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_bundles_ticket_created", "ticket_id", "created_at"),
+        Index("ix_diag_bundles_ticket_status", "ticket_id", "status"),
+    )
+
+
 class Playbook(Base):
     """Плейбук: ключ, имя, домен, владелец, архивный флаг."""
     __tablename__ = "playbook"

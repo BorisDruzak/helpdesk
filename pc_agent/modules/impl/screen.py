@@ -164,6 +164,23 @@ class ScreenCollector(BaseCollector):
         artifact_types=[{"kind": "screenshot", "mime": "image/png", "sensitivity": "sensitive"}],
         redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
         resources={"max_runtime_sec": 30, "max_artifact_count": 1, "max_artifact_bytes": 52428800},
+        execution={
+            "target": "agent_builtin",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": False,
+            "requires_integration": False,
+        },
+        deployment={"provider_id": "screen", "install_required_on_agent": False, "package_type": "builtin"},
+        safety={"side_effects": False, "requires_consent": False, "idempotent": False},
+        evidence={
+            "produces_evidence": True,
+            "kind": "endpoint.screenshot",
+            "domain": "endpoint",
+            "perspective": "endpoint",
+            "passport_eligible": True,
+        },
+        artifacts={"may_produce_artifacts": True, "artifact_kinds": ["screenshot"]},
     )
     async def collect(
         self,
@@ -281,6 +298,23 @@ class ScreenCollector(BaseCollector):
         artifact_types=[{"kind": "screen_recording", "mime": "video/mp4", "sensitivity": "sensitive"}],
         redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
         resources={"max_runtime_sec": 360, "max_artifact_count": 1, "max_artifact_bytes": 209715200},
+        execution={
+            "target": "agent_builtin",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": False,
+            "requires_integration": False,
+        },
+        deployment={"provider_id": "screen", "install_required_on_agent": False, "package_type": "builtin"},
+        safety={"side_effects": False, "requires_consent": False, "idempotent": False},
+        evidence={
+            "produces_evidence": True,
+            "kind": "endpoint.screen_recording",
+            "domain": "endpoint",
+            "perspective": "endpoint",
+            "passport_eligible": True,
+        },
+        artifacts={"may_produce_artifacts": True, "artifact_kinds": ["screen_recording"]},
     )
     async def record(
         self,

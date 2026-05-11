@@ -117,6 +117,56 @@ class RegistryAliasTests(unittest.TestCase):
         self.assertEqual(flat_entry["spec"]["lifecycle"], "stable")
         self.assertEqual(flat_entry["spec"]["dependencies"], {})
 
+    def test_registry_exposes_capability_metadata_without_breaking_aliases(self):
+        class CapabilityCollector:
+            @property
+            def name(self) -> str:
+                return "network_tools"
+
+            @exposed_tool(
+                name="endpoint.http.request",
+                aliases=["http_request"],
+                description="HTTP request from endpoint",
+                risk_level="safe_readonly",
+                execution={
+                    "target": "agent_managed_module",
+                    "requires_device": True,
+                    "requires_agent_online": True,
+                    "supports_auto_install": True,
+                    "requires_integration": False,
+                },
+                deployment={
+                    "provider_id": "network_tools",
+                    "install_required_on_agent": True,
+                    "package_type": "zip",
+                },
+                safety={"side_effects": False, "requires_consent": False, "idempotent": True},
+                evidence={
+                    "produces_evidence": True,
+                    "kind": "network.http",
+                    "domain": "network",
+                    "perspective": "endpoint",
+                    "passport_eligible": True,
+                },
+                artifacts={"may_produce_artifacts": True, "artifact_kinds": ["http_trace"]},
+            )
+            async def run_http(self):
+                return {"ok": True}
+
+        self.registry.register(CapabilityCollector())
+
+        canonical = self.registry.get_tool("endpoint.http.request")
+        legacy_alias = self.registry.get_tool("network_tools.http_request")
+        flat_entry = next(item for item in self.registry.get_tools_flat() if item["tool"] == "endpoint.http.request")
+
+        self.assertIsNotNone(canonical)
+        self.assertIsNotNone(legacy_alias)
+        self.assertEqual(flat_entry["spec"]["execution"]["target"], "agent_managed_module")
+        self.assertEqual(flat_entry["spec"]["deployment"]["package_type"], "zip")
+        self.assertEqual(flat_entry["spec"]["safety"]["idempotent"], True)
+        self.assertEqual(flat_entry["spec"]["evidence"]["kind"], "network.http")
+        self.assertEqual(flat_entry["spec"]["artifacts"]["artifact_kinds"], ["http_trace"])
+
 
 class ModuleFactoryExtraPathsTests(unittest.TestCase):
     def _write_module(self, root: Path, filename: str, content: str = CUSTOM_MODULE_TEMPLATE) -> None:

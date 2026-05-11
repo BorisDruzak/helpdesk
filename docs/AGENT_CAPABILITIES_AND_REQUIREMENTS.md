@@ -25,7 +25,7 @@
 - **Локальная копия кода:** `C:\Users\admin-2\CodexProjects\pc_client` — все правки и коммиты только здесь.
 - **Скрипты в `scripts/`:** deploy, verify_workspace, manage_remote_stack, manage_local_agent — агент должен использовать их, а не ad-hoc команды.
 - **Документация и CODEMAP:** при изменении структуры/API/протокола — обновлять доки и CODEMAP (скилл **pc-client-docs-sync**).
-- **Браузер (GUI):** проверки веба только по `http://192.168.100.17:8666/admin` (скилл **pc-client-browser-check**).
+- **Браузер (GUI):** проверки веба только по `https://192.168.100.17:9443/admin` (скилл **pc-client-browser-check**).
 - **Секреты:** не логировать сырой токен; не хардкодить пароли в коде; при необходимости использовать `.env` (в .gitignore/.cursorignore).
 
 ## Скиллы проекта
@@ -35,7 +35,7 @@
 - **pc-client-plans** — ведение `PLANS.md` для длинных задач и handoff.
 - **pc-client-tests** — какие проверки, pytest, browser/smoke и live-сценарии запускать.
 - **pc-client-docs-sync** — синхронизация документации, CODEMAP и контрактов.
-- **pc-client-browser-check** — проверка веба только через `http://192.168.100.17:8666/admin`.
+- **pc-client-browser-check** — проверка веба только через `https://192.168.100.17:9443/admin`.
 - **pc-client-release** — чеклист перед commit/push/deploy и фиксация проверок.
 - **pc-client-migrations** — строгие правила миграций PostgreSQL и remote alembic.
 - **pc-client-commit-message** — формат сообщений коммитов.

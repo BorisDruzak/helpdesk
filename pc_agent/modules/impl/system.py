@@ -169,6 +169,22 @@ class SystemCollector(BaseCollector):
         error_codes=["VALIDATION_ERROR", "TIMEOUT"],
         redaction={"enabled": True, "allow_raw_sensitive_data": False, "redact_headers": True, "redact_env": True, "redact_fields": []},
         resources={"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+        execution={
+            "target": "agent_builtin",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": False,
+            "requires_integration": False,
+        },
+        deployment={"provider_id": "system", "install_required_on_agent": False, "package_type": "builtin"},
+        safety={"side_effects": False, "requires_consent": False, "idempotent": True},
+        evidence={
+            "produces_evidence": True,
+            "kind": "endpoint.system_snapshot",
+            "domain": "endpoint",
+            "perspective": "endpoint",
+            "passport_eligible": True,
+        },
     )
     async def collect(
         self,

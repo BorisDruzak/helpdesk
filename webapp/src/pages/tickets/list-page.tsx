@@ -46,6 +46,15 @@ import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  attachSelectedDiagnosticEvidenceToPassport,
+  buildDiagnosticBundle,
+  evaluateDiagnosticFindings,
+  getTicketDiagnosticsOverview,
+  runDiagnosticProfile,
+  type DiagnosticOverview,
+  type DiagnosticStatus,
+} from "../../features/diagnostics/api";
+import {
   createSupportTicketPassportEvidence,
   createSupportQueueSavedView,
   deleteSupportQueueSavedView,
@@ -126,7 +135,7 @@ type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
 type AutomationCatalogFilter = "all" | "runnable" | "playbook" | "tool" | "disabled";
 type WorkspaceResizePane = "left" | "right";
-type ToolsWorkspaceTab = "quick" | "playbook" | "remote" | "operations" | "history";
+type ToolsWorkspaceTab = "diagnostics" | "quick" | "playbook" | "remote" | "operations" | "history";
 type SlaWorkspaceTab = "overview" | "ola" | "escalations" | "history";
 type PassportWorkspaceTab = "sections" | "evidence" | "operations" | "readiness";
 type WorkspaceColumnSizes = { left: number; right: number };
@@ -333,6 +342,7 @@ const automationCatalogFilters: Array<{ value: AutomationCatalogFilter; label: s
 ];
 
 const toolsWorkspaceTabs: Array<{ value: ToolsWorkspaceTab; label: string }> = [
+  { value: "diagnostics", label: "Диагностика" },
   { value: "quick", label: "Быстрые" },
   { value: "playbook", label: "Playbook" },
   { value: "remote", label: "Удалённая помощь" },
@@ -760,6 +770,170 @@ function diagnosticStepTextClass(status: string) {
     return "text-red-200";
   }
   return "text-amber-200";
+}
+
+function diagnosticStatusClass(status: DiagnosticStatus) {
+  if (status === "ok") {
+    return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
+  }
+  if (status === "error") {
+    return "border-red-400/30 bg-red-500/10 text-red-100";
+  }
+  if (status === "warning") {
+    return "border-amber-400/30 bg-amber-500/10 text-amber-100";
+  }
+  return "border-white/10 bg-white/[0.04] text-slate-300";
+}
+
+function DiagnosticOverviewPanel({
+  isAttachingPassport,
+  isBuildingBundle,
+  isEvaluating,
+  isLoading,
+  isRunningProfile,
+  onAttachPassport,
+  onBuildBundle,
+  onEvaluateFindings,
+  onRunProfile,
+  overview,
+}: {
+  isAttachingPassport: boolean;
+  isBuildingBundle: boolean;
+  isEvaluating: boolean;
+  isLoading: boolean;
+  isRunningProfile: boolean;
+  onAttachPassport: () => void;
+  onBuildBundle: () => void;
+  onEvaluateFindings: () => void;
+  onRunProfile: () => void;
+  overview?: DiagnosticOverview;
+}) {
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
+        Загрузка диагностики...
+      </div>
+    );
+  }
+  if (!overview) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm text-slate-400">
+        Диагностические данные пока не собраны.
+      </div>
+    );
+  }
+  const evidenceTotal = Object.values(overview.evidence_counts).reduce((sum, value) => sum + value, 0);
+  const perspectives = ["endpoint", "server", "monitoring", "observer", "remote_assist", "manual"];
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{overview.profile?.title ?? "Diagnostics"}</p>
+            <p className="mt-1 text-sm font-semibold text-white">{overview.summary}</p>
+          </div>
+          <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${diagnosticStatusClass(overview.status)}`}>
+            {overview.status}
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-5">
+          {(["ok", "warning", "error", "info", "unknown"] as const).map((status) => (
+            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2" key={status}>
+              <p className="text-xs text-slate-500">{status}</p>
+              <p className="text-lg font-semibold text-white">{overview.evidence_counts[status] ?? 0}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Всего evidence: {evidenceTotal}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            className="rounded-lg border border-blue-400/30 bg-blue-500/10 px-3 py-2 text-xs font-semibold text-blue-100 transition hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isRunningProfile}
+            onClick={onRunProfile}
+            type="button"
+          >
+            {isRunningProfile ? "Запуск..." : "Запустить профиль"}
+          </button>
+          <button
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isEvaluating}
+            onClick={onEvaluateFindings}
+            type="button"
+          >
+            {isEvaluating ? "Расчёт..." : "Пересчитать вывод"}
+          </button>
+          <button
+            className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isBuildingBundle}
+            onClick={onBuildBundle}
+            type="button"
+          >
+            {isBuildingBundle ? "Сборка..." : "Собрать пакет"}
+          </button>
+          <button
+            className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isAttachingPassport || !overview.latest_evidence.some((item) => item.selected_for_passport)}
+            onClick={onAttachPassport}
+            type="button"
+          >
+            {isAttachingPassport ? "Отправка..." : "В паспорт"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        {perspectives.map((key) => {
+          const item = overview.perspectives[key];
+          return (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3" key={key}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-white">{key}</p>
+                <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${diagnosticStatusClass(item?.status ?? "unknown")}`}>
+                  {item?.count ?? 0}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-xs text-slate-400">{item?.latest?.summary ?? "Нет фактов"}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <p className="text-sm font-semibold text-white">Последние факты</p>
+          <div className="mt-2 space-y-2">
+            {overview.latest_evidence.slice(0, 5).map((item) => (
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2" key={item.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                  <span className={diagnosticStepTextClass(item.status)}>{item.status}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-400">{item.summary ?? item.kind}</p>
+              </div>
+            ))}
+            {!overview.latest_evidence.length ? <p className="py-4 text-center text-sm text-slate-400">Evidence пока нет.</p> : null}
+          </div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <p className="text-sm font-semibold text-white">Вывод и следующие действия</p>
+          <div className="mt-2 space-y-2">
+            {overview.findings.slice(0, 4).map((finding) => (
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2" key={finding.id}>
+                <p className="text-sm font-semibold text-white">{finding.title}</p>
+                <p className="mt-1 text-xs text-slate-400">{finding.description ?? finding.root_cause_code}</p>
+              </div>
+            ))}
+            {!overview.findings.length ? <p className="text-sm text-slate-400">Подтверждённых выводов пока нет.</p> : null}
+            {overview.recommended_actions.slice(0, 4).map((action) => (
+              <p className="rounded-lg border border-blue-400/20 bg-blue-500/10 px-3 py-2 text-xs font-semibold text-blue-100" key={action.id}>
+                {action.title}
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function OperationSummaryCard({
@@ -1379,6 +1553,56 @@ export function TicketListPage() {
     queryFn: () => fetchSupportTicketPassportEvidenceCandidates(selectedTicketId!),
     enabled: Boolean(selectedTicketId) && sidebarTab === "passport" && closureFocus?.actionKind === "attach_evidence",
     retry: false,
+  });
+
+  const diagnosticsOverviewQuery = useQuery({
+    queryKey: ["tickets-workspace-diagnostics-overview", selectedTicketId],
+    queryFn: () => getTicketDiagnosticsOverview(selectedTicketId!),
+    enabled: Boolean(selectedTicketId) && workspaceMode === "tools" && toolsWorkspaceTab === "diagnostics",
+    retry: false,
+    refetchInterval: workspaceHasLiveOperations(workspaceQuery.data)
+      ? SUPPORT_OPERATION_REFRESH_MS
+      : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
+  });
+
+  const invalidateDiagnostics = (ticketId: string) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["tickets-workspace-diagnostics-overview", ticketId] }),
+      queryClient.invalidateQueries({ queryKey: ["tickets-workspace", ticketId] }),
+      queryClient.invalidateQueries({ queryKey: ["tickets-workspace-passport-evidence-candidates", ticketId] }),
+    ]);
+
+  const diagnosticProfileRunMutation = useMutation({
+    mutationFn: (ticketId: string) =>
+      runDiagnosticProfile(ticketId, {
+        profile_id: diagnosticsOverviewQuery.data?.profile?.id ?? "generic",
+        params: {},
+        auto_select_evidence: true,
+      }),
+    onSuccess: (_result, ticketId) => {
+      void invalidateDiagnostics(ticketId);
+    },
+  });
+
+  const diagnosticFindingsMutation = useMutation({
+    mutationFn: (ticketId: string) => evaluateDiagnosticFindings(ticketId),
+    onSuccess: (_result, ticketId) => {
+      void invalidateDiagnostics(ticketId);
+    },
+  });
+
+  const diagnosticBundleMutation = useMutation({
+    mutationFn: (ticketId: string) => buildDiagnosticBundle(ticketId, { include_agent_actions: true }),
+    onSuccess: (_result, ticketId) => {
+      void invalidateDiagnostics(ticketId);
+    },
+  });
+
+  const diagnosticPassportAttachMutation = useMutation({
+    mutationFn: (ticketId: string) => attachSelectedDiagnosticEvidenceToPassport(ticketId),
+    onSuccess: (_result, ticketId) => {
+      void invalidateDiagnostics(ticketId);
+    },
   });
 
   const viewModel = useMemo(
@@ -3212,6 +3436,20 @@ export function TicketListPage() {
                         </button>
                       ))}
                     </div>
+                    {toolsWorkspaceTab === "diagnostics" ? (
+                      <DiagnosticOverviewPanel
+                        isAttachingPassport={diagnosticPassportAttachMutation.isPending}
+                        isBuildingBundle={diagnosticBundleMutation.isPending}
+                        isEvaluating={diagnosticFindingsMutation.isPending}
+                        isLoading={diagnosticsOverviewQuery.isFetching && !diagnosticsOverviewQuery.data}
+                        isRunningProfile={diagnosticProfileRunMutation.isPending}
+                        onAttachPassport={() => diagnosticPassportAttachMutation.mutate(selectedTicket.id)}
+                        onBuildBundle={() => diagnosticBundleMutation.mutate(selectedTicket.id)}
+                        onEvaluateFindings={() => diagnosticFindingsMutation.mutate(selectedTicket.id)}
+                        onRunProfile={() => diagnosticProfileRunMutation.mutate(selectedTicket.id)}
+                        overview={diagnosticsOverviewQuery.data}
+                      />
+                    ) : null}
                     {toolsWorkspaceTab === "quick" ? (
                       <div className="grid gap-2 md:grid-cols-2">
                         {viewModel.right.tools.slice(0, 8).map((tool) => (

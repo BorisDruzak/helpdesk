@@ -18,7 +18,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - cwd-dependent import fallback
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from shared.tool_contracts import normalize_risk_level, to_legacy_risk_level
-from utils.module_manifest import manifest_summary_from_manifest
+from utils.module_manifest import normalize_manifest
 
 MODULE_PY_TEMPLATE = """# Generated from admin create-module flow. Module: {module_name}
 from typing import Dict, Any
@@ -65,6 +65,12 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
         artifact_types={artifact_types_literal},
         redaction={redaction_literal},
         resources={resources_literal},
+        execution={execution_literal},
+        deployment={deployment_literal},
+        safety={safety_literal},
+        readiness={readiness_literal},
+        evidence={evidence_literal},
+        artifacts={artifacts_literal},
     )
     async def {method_name}(self, **kwargs) -> Dict[str, Any]:
         params = {{**{defaults_literal}, **kwargs}}
@@ -277,6 +283,26 @@ def _normalize_tool_specs(
             "max_artifact_count": 0,
             "max_artifact_bytes": 0,
         }
+        execution = raw_tool.get("execution") if isinstance(raw_tool.get("execution"), dict) else {
+            "target": "agent_managed_module",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": True,
+            "requires_integration": False,
+        }
+        deployment = raw_tool.get("deployment") if isinstance(raw_tool.get("deployment"), dict) else {
+            "provider_id": module_name,
+            "install_required_on_agent": True,
+            "package_type": "zip",
+        }
+        safety = raw_tool.get("safety") if isinstance(raw_tool.get("safety"), dict) else {}
+        readiness = raw_tool.get("readiness") if isinstance(raw_tool.get("readiness"), dict) else {
+            "requires_credentials": False,
+            "requires_mapping": False,
+            "requires_policy": False,
+        }
+        evidence = raw_tool.get("evidence") if isinstance(raw_tool.get("evidence"), dict) else {"produces_evidence": False}
+        artifacts = raw_tool.get("artifacts") if isinstance(raw_tool.get("artifacts"), dict) else {}
 
         normalized_tools.append(
             {
@@ -298,6 +324,12 @@ def _normalize_tool_specs(
                 "artifact_types": artifact_types,
                 "redaction": redaction,
                 "resources": resources,
+                "execution": execution,
+                "deployment": deployment,
+                "safety": safety,
+                "readiness": readiness,
+                "evidence": evidence,
+                "artifacts": artifacts,
                 "metadata": {
                     "domain": metadata_domain,
                     "platforms": effective_platforms,
@@ -349,6 +381,12 @@ def _render_tool_methods(tool_specs: List[Dict[str, Any]]) -> str:
                 artifact_types_literal=repr(tool["artifact_types"]),
                 redaction_literal=repr(tool["redaction"]),
                 resources_literal=repr(tool["resources"]),
+                execution_literal=repr(tool["execution"]),
+                deployment_literal=repr(tool["deployment"]),
+                safety_literal=repr(tool["safety"]),
+                readiness_literal=repr(tool["readiness"]),
+                evidence_literal=repr(tool["evidence"]),
+                artifacts_literal=repr(tool["artifacts"]),
                 method_name=tool["method"],
                 defaults_literal=repr(tool["defaults"]),
                 user_function_body=tool["user_function_body"],
@@ -449,14 +487,25 @@ def build_module_package(
                 "artifact_types": tool["artifact_types"],
                 "redaction": tool["redaction"],
                 "resources": tool["resources"],
+                "execution": tool["execution"],
+                "deployment": tool["deployment"],
+                "safety": tool["safety"],
+                "readiness": tool["readiness"],
+                "evidence": tool["evidence"],
+                "artifacts": tool["artifacts"],
             }
             for tool in tool_specs
         ],
     }
+    normalized_manifest, validation, manifest_summary = normalize_manifest(manifest)
+    if normalized_manifest is None or manifest_summary is None:
+        errors = validation.get("errors", {}) if isinstance(validation, dict) else {}
+        raise ValueError(f"generated manifest is invalid: {errors}")
+    manifest = normalized_manifest
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         zf.writestr("module.py", module_py)
 
-    return buf.getvalue(), manifest_summary_from_manifest(manifest)
+    return buf.getvalue(), manifest_summary

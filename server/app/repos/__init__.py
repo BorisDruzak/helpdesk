@@ -26,6 +26,7 @@ from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
+from app.repos.diagnostics_repo import DiagnosticRepo
 
 __all__ = [
     "JobEventsRepo",
@@ -53,4 +54,5 @@ __all__ = [
     "TicketFormPacksRepo",
     "RegistryRepo",
     "RemoteAccessRepo",
+    "DiagnosticRepo",
 ]

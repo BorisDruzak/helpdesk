@@ -8,14 +8,14 @@
 
 1. Получить токен админки:
    ```bash
-   TOKEN=$(curl -s -X POST http://192.168.100.17:8666/api/ui_login \
+   TOKEN=$(curl -s -X POST https://192.168.100.17:9443/api/ui_login \
      -H "Content-Type: application/json" \
      -d '{"login":"admin","password":"<пароль>"}' | jq -r '.token')
    ```
 
 2. Создать модуль из кода (единый шаблон на сервере):
    ```bash
-   curl -s -X POST http://192.168.100.17:8666/api/modules/create \
+   curl -s -X POST https://192.168.100.17:9443/api/modules/create \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TOKEN" \
      -d '{
@@ -32,7 +32,7 @@
 
 ### 1.2 Через веб-панель
 
-1. Открыть http://192.168.100.17:8666/admin → вкладка **Модули**.
+1. Открыть https://192.168.100.17:9443/admin → вкладка **Модули**.
 2. В блоке **Создать модуль из кода** заполнить:
    - Имя модуля, Версия, Имя инструмента, Описание инструмента
    - Уровень риска (safe_readonly / safe_write / dangerous)
@@ -50,7 +50,7 @@
 2. Узнать `device_id` агентов (из `GET /api/devices`).
 3. Вызвать массовую установку:
    ```bash
-   curl -s -X POST http://192.168.100.17:8666/api/modules/bulk_install \
+   curl -s -X POST https://192.168.100.17:9443/api/modules/bulk_install \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TOKEN" \
      -d '{
@@ -66,7 +66,7 @@
 
 ### 2.2 Массовая установка через веб-панель
 
-1. Открыть http://192.168.100.17:8666/admin → вкладка **Модули**.
+1. Открыть https://192.168.100.17:9443/admin → вкладка **Модули**.
 2. В блоке **Массовая установка**:
    - Отметить нужные устройства (чекбоксы; 🟢 — онлайн, 🔴 — офлайн).
    - Выбрать модуль из выпадающего списка.
@@ -76,7 +76,7 @@
 ### 2.3 Установка на одно устройство (API)
 
 ```bash
-curl -s -X POST "http://192.168.100.17:8666/api/devices/<device_id>/modules/install" \
+curl -s -X POST "https://192.168.100.17:9443/api/devices/<device_id>/modules/install" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"module_name": "my_tool", "version": "1.0.0"}'

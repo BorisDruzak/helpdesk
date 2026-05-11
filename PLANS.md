@@ -1,82 +1,451 @@
-# Remote Assist Runtime Module Plan
+# Diagnostic Capabilities Full Implementation Plan
 
 ## Goal
 
-Перевести Remote Assist из монолитной агентской реализации в обновляемый managed runtime module, чтобы исправления WebRTC, capture, control, clipboard, file-transfer и elevated mode можно было поставлять отдельным модулем без полного релиза Maria Agent.
+Build the full diagnostic capabilities model on top of the existing module/tool system:
 
-## Scope
+`Provider / Module -> Capability / Tool -> Execution Target -> Operation / Session / Query -> Artifacts + Evidence -> Diagnostic Session / Finding / Passport`.
 
-- Рабочая копия: `C:\Users\admin-2\CodexProjects\pc_client`.
-- Агент: `pc_agent/remote_assist/*`, `pc_agent/ui_gui/main_window.py`, module host/loader integration.
-- Модуль: managed package `remote_assist_runtime`, публикуемый через существующую серверную module registry.
-- Сервер: использовать существующие module upload/preferred/install/reconcile механизмы; не создавать отдельную систему доставки.
-- Remote Assist server lifecycle, DB schema, signaling API and support workspace viewer остаются текущими.
+The current work completed the backward-compatible foundation. This plan tracks the remaining full implementation, including persistent evidence, real providers, UI integration, policy/readiness depth, playbook integration, and release/deploy verification.
 
-## Constraints
+## Hard Constraints
 
-- Consent, ticket/device/operator binding, audit and timeline остаются серверным source of truth.
-- Базовый агент должен сохранять safe fallback на встроенный Remote Assist runtime, если managed module отсутствует, не установлен или не загрузился.
-- Managed module не имеет права обходить consent, RBAC, signaling token validation или запреты на hidden unattended access.
-- GUI Maria Agent нельзя блокировать: runtime module запускается через QThread/asyncio boundary.
-- Native dependencies, которые должны быть bundled в PyInstaller, всё ещё требуют full agent release.
-- Elevated helper entrypoint (`pc_agent.exe --remote-assist-elevated-helper`) остаётся в базовом агенте, пока нет отдельного подписанного helper delivery layer.
+- Do not break existing `ToolExecutionService.run_tool`.
+- Do not break managed ZIP modules, builtin modules, semantic tool ids, aliases, playbooks, observer traces, Protocol V3, DeviceOutbox, `command_result`, operations, passport/evidence, or remote assist.
+- Do not move `server_connector`, `observer_query`, `remote_assist`, or `manual` capabilities onto the agent.
+- Do not rename canonical ids unless a migration/alias strategy is explicit.
+- Keep installation-on-agent as one deployment option, not a universal capability property.
+- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
 
 ## Current State
 
-- Remote Assist сейчас был частью базового агента: команда `remote_assist.request` обрабатывается в `pc_agent/ws_agent.py`, затем GUI создаёт `RemoteAssistThread` из `pc_agent.remote_assist.thread`.
-- Сервер доставляет запрос через DeviceOutbox / Protocol V3, а signaling идёт через `/ws/remote-assist/{session_id}` с короткоживущими role tokens.
-- Текущая module system обслуживает ZIP + `manifest.json`, server preflight, preferred version, `install_module_package`, agent `ModuleManager`, `DynamicModuleLoader`, `ModuleRegistry`.
-- Для Remote Assist нужен слой поверх существующих modules: runtime-module host, который умеет загрузить активный module package и получить factory для long-lived Remote Assist thread.
+Stage 1 foundation is implemented:
 
-## Architecture Decisions
+- Manifest/tool contract accepts optional `execution`, `deployment`, `safety`, `evidence`, and `artifacts`.
+- Old managed ZIP manifests default to `agent_managed_module`.
+- Builtin agent tools default to `agent_builtin`.
+- Validation covers target enum, `server_connector` integration requirements, agent install semantics, evidence requirements, perspective enum, and safety bool fields.
+- Agent `@exposed_tool`, registry, `list_tools`, and `describe_tool` expose capability metadata for agent tools.
+- `system.collect`, `screen.collect`, `screen.record`, and `diag.logs.collect` have `agent_builtin` metadata.
+- `diag.logs.collect` is marked as `logs.bundle`, `domain=logs`, `perspective=endpoint`, `passport_eligible=true`, `artifacts.logs_zip`.
+- Server capability projection exists in `server/diagnostics/`.
+- Readiness foundation exists.
+- Execution router foundation routes only `agent_builtin` / `agent_managed_module` to existing `ToolExecutionService.run_tool`; non-agent targets return unsupported placeholders and do not touch DeviceOutbox.
+- Skeleton capabilities exist for Zabbix, observer, remote assist, and manual providers.
+- Endpoints exist:
+  - `GET /api/diagnostics/capabilities`
+  - `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
+- Support tool DTO can carry capability metadata.
+- Docs, CODEMAP, navigation catalog and boundary docs are updated.
 
-- Название runtime module: `remote_assist_runtime`.
-- Версия первого managed module: `1.0.0`.
-- Базовый агент получает `pc_agent.remote_assist.runtime_host`:
-  - ищет активную версию `remote_assist_runtime` в `modules_store`;
-  - загружает `module.py`;
-  - вызывает `create_remote_assist_thread(...)`;
-  - при любой ошибке пишет warning и использует встроенный `RemoteAssistThread`.
-- Managed package `pc_agent/modules_packages/remote_assist_runtime` в первом срезе поставляет совместимый runtime factory и диагностический tool `remote_assist_runtime.info`.
-- Runtime factory interface:
-  - вход: `signaling_url`, `token`, `ice_servers`, `mode`, `media`, `features`, `parent`;
-  - выход: объект с Qt-сигналами `failed`, `ended`, `state_changed`, методами `start()`, `stop()`, `isRunning()`.
-- Серверный default достигается существующим механизмом preferred modules + desired install на устройство, не отдельным remote-assist updater.
-- Нужен один bootstrap-релиз агента с `runtime_host`; следующие Remote Assist runtime исправления можно поставлять через module package.
+Active execution slice:
 
-## Implementation Steps
+- [x] Extend manifest/tool metadata with explicit readiness flags for credentials, mapping and policy while keeping old manifests valid.
+- [x] Replace placeholder readiness decisions with a real service context that can use device records, installed/desired module state, platform metadata, integration config, credentials, mapping, policy and permission checks.
+- [x] Replace unsupported provider placeholders for `observer_query`, `remote_assist` and `manual` with real server-side provider routes built on existing observer, remote assist and passport/evidence services.
+- [x] Keep Zabbix as a safe server connector implementation boundary: validate config/credentials/mapping and return bounded provider results without making external API calls until a real connector client/config store is present.
+- [x] Prove non-agent targets do not call `ToolExecutionService.run_tool` from the generic capability router.
 
-- [x] Очистить старый `PLANS.md` и заменить на этот план.
-- [x] Добавить regression tests для runtime host:
-  - fallback использует встроенный `RemoteAssistThread`;
-  - active `remote_assist_runtime` module factory получает параметры сессии.
-- [x] Добавить `pc_agent/remote_assist/runtime_host.py`.
-- [x] Переключить `pc_agent/ui_gui/main_window.py` на `create_remote_assist_thread(...)`.
-- [x] Добавить managed package `pc_agent/modules_packages/remote_assist_runtime`:
-  - `manifest.json`;
-  - `module.py`;
-  - `register()` для module smoke/list_tools;
-  - `create_remote_assist_thread()` для runtime host.
-- [x] Добавить package smoke tests.
-- [x] Обновить docs/CODEMAP/navigation catalog для новой runtime-module boundary.
-- [x] Собрать bootstrap agent release `3.1.55`.
-- [x] Собрать ZIP module package.
-- [x] Загрузить module package на сервер через `/api/modules/upload`.
-- [x] Назначить `remote_assist_runtime@1.0.0` preferred/default по правилам modules.
-- [x] Установить/проверить module на canary agent `AD-MAIN`.
-- [x] Проверить default path для агента: `AD-MAIN` на `3.1.55`, `remote_assist_runtime@1.0.0` active, desired diff `ok`.
+Verified:
 
-## Verification Plan
-
-- `python -m pytest pc_agent/tests/test_remote_assist_runtime_host.py pc_agent/tests/test_remote_assist_runtime_module_package.py -q --tb=short`
-- `python -m pytest pc_agent/tests/test_remote_assist_webrtc_client.py pc_agent/tests/test_remote_assist_input_controller.py pc_agent/tests/test_remote_assist_elevated_helper.py -q --tb=short`
 - `python scripts/verify_workspace.py`
-- [x] Server module upload response included `module_name=remote_assist_runtime`, `module_version=1.0.0`, `preflight_status=passed`.
-- [x] Preferred/default response showed `preferred_version=1.0.0`.
-- [x] Canary diagnostics showed `AD-MAIN` updated to `3.1.55`; module APIs showed installed/active `remote_assist_runtime@1.0.0` and desired diff `ok`.
+- `python -m pytest server/tests/test_modules_manifest_no_db.py server/tests/test_diagnostic_capabilities_no_db.py server/tests/test_module_observer_contract_no_db.py server/tests/test_modules_workbench_api.py server/tests/test_ticket_diagnostic_policy.py server/tests/test_tool_service_builtin_modules.py server/tests/test_tool_service_auto_install_no_db.py -q --tb=short`
+- `python -m pytest pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_diag_logs_module.py -q --tb=short`
+- `python -m pytest server/tests/test_web_support_api.py -k "tools" -q --tb=short`
+- Migration check: remote DB current is `073 (head)`; `run_remote_migrations.py upgrade head` is a no-op.
+- `python -m pytest server/tests/test_modules_manifest_no_db.py server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m pytest pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_diag_logs_module.py -q --tb=short`
+- `python -m compileall -q server\diagnostics server\utils\module_manifest.py server\utils\module_builder.py server\routes.py server\web_api\support_handlers.py server\web_api\dto\support.py pc_agent\core\registry.py pc_agent\core\orchestrator.py`
+- `python -m pytest server/tests/test_diagnostic_layer.py server/tests/test_ticket_passport_service.py -q --tb=short`
+- `python -m pytest server/tests/test_diagnostic_layer.py server/tests/test_ticket_passport_service.py server/tests/test_observer_diagnostics_api.py server/tests/test_ticket_diagnostic_policy.py server/tests/test_playbook_scenarios_no_db.py server/tests/test_remote_assist_no_db.py server/tests/test_agent_observer_events_repo.py pc_agent/tests/test_diag_logs_module.py -q --tb=short`
+- `python -m compileall -q server\diagnostics server\app\repos\diagnostics_repo.py server\app\db\models.py server\routes.py`
+- `pnpm --dir webapp build`
+- `python -m alembic -c alembic.ini heads` from `server/` shows `074 (head)`.
 
-## Handoff Notes
+## Active Diagnostic Layer MVP Slice
 
-- This first slice makes Remote Assist module-loadable. It does not remove the bundled fallback from the agent.
-- Future module versions can replace `module.py` with a self-contained implementation, but any new native dependency still requires a full agent build.
-- Do not remove fallback until at least one canary cycle proves module install, activation, Remote Assist consent, WebRTC video, control, clipboard, file transfer and elevated mode.
+Goal: build the separate ticket diagnostic layer on top of existing tickets, operations, playbooks, observer, remote assist, artifacts, passport/evidence and capability metadata. Diagnostics must not become a ticket status and must not rewrite tool/module/playbook/observer execution.
+
+Existing diagnostic data sources:
+
+- `operations` plus `tool_call_started` / `tool_call_result` ticket events.
+- `playbook_runs` and `playbook_step_runs`.
+- observer root trace, compact summary, signatures and bundles.
+- remote assist sessions/events.
+- artifacts, especially `diag.logs.collect` / `logs_zip`.
+- existing passport evidence and manual support context.
+- capability readiness and execution metadata from the foundation phase.
+
+Implementation plan:
+
+- [x] Add failing tests for diagnostic overview, operation/artifact/remote evidence projection, session lifecycle, finding rules, evidence passport selection and bundle creation.
+- [x] Add Alembic migration and ORM models for `diagnostic_sessions`, `diagnostic_steps`, `diagnostic_evidence`, `diagnostic_findings` and `diagnostic_bundles`.
+- [x] Add `DiagnosticRepo` and services in `server/diagnostics/`:
+  - `DiagnosticOverviewService`
+  - `DiagnosticProjectionService`
+  - `DiagnosticEvidenceService`
+  - `DiagnosticSessionService`
+  - `DiagnosticFindingService`
+  - `DiagnosticBundleService`
+  - profile registry skeleton.
+- [x] Add endpoints:
+  - `GET /api/tickets/{ticket_id}/diagnostics/overview`
+  - `GET /api/web/support/tickets/{ticket_id}/diagnostics/overview`
+  - session/evidence/finding/bundle/profile endpoints from the diagnostic layer spec.
+- [x] Add frontend typed API in `webapp/src/features/diagnostics/api.ts`.
+- [x] Add a unified Diagnostics panel/tab in the support workspace without removing existing tools/playbooks/observer/remote assist panels.
+- [x] Update CODEMAP/navigation/docs for the new diagnostic layer and routes.
+- [x] Run targeted backend tests, existing observer/playbook/remote/diag logs regressions, workspace verifier and targeted frontend checks.
+
+Next execution slice:
+
+- [x] Add passport bridge: selected `diagnostic_evidence` can be attached idempotently to existing `ticket_evidence_items` with provenance and artifact refs.
+- [x] Add `POST /api/tickets/{ticket_id}/diagnostics/passport/attach-selected`.
+- [x] Add `POST /api/tickets/{ticket_id}/diagnostics/run-profile` MVP: create diagnostic session, record recommended capability/playbook steps, project current ticket sources, evaluate findings and optionally auto-select passport-eligible evidence.
+- [x] Add frontend actions in the Diagnostics tab: run profile, evaluate findings, build bundle and attach selected evidence to passport.
+- [ ] Deploy to Linux, apply migration `074`, smoke the remote stack and browser-check the Diagnostics tab.
+
+Acceptance for this slice:
+
+- Level 1 read-only overview works with empty and populated tickets.
+- Level 2 persistent sessions/evidence/findings/bundles exists and can be exercised through services/API.
+- Existing operations, remote assist sessions and diag logs artifacts can be projected into normalized diagnostic evidence.
+- Observer summary appears in the overview without duplicating observer internals.
+- Finding engine provides deterministic rule-based suspected findings.
+- Evidence can be selected for passport later through `selected_for_passport`.
+- Bundle MVP returns JSON summary plus evidence/artifact/observer/remote references.
+- Existing tool, playbook, observer and remote assist flows continue to work unchanged.
+- Selected diagnostic evidence can be promoted into passport evidence without duplicating existing rows.
+
+## Full Implementation Phases
+
+### Phase 2: Persistent Capability Registry and Config
+
+- [ ] Decide whether persisted capability registry is needed now or whether descriptors remain computed from providers plus manifests.
+- [ ] If persistence is needed, add DB tables:
+  - `diagnostic_providers`
+  - `diagnostic_capabilities`
+  - `diagnostic_capability_versions`
+  - `diagnostic_provider_configs`
+  - `diagnostic_provider_credentials_refs` or references into an existing secret/config store.
+- [ ] Add Alembic migration and migration tests.
+- [ ] Define provider config lifecycle: disabled, configured, credentials_missing, ready, degraded.
+- [ ] Add admin-safe CRUD/service APIs for provider config without logging secrets.
+- [ ] Add audit events for provider config changes.
+- [ ] Update `server/docs/DATABASE.md`, `server/docs/MODULES_API.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`.
+
+Verification:
+
+- `python scripts/run_remote_migrations.py current`
+- migration unit tests
+- DB-backed provider config tests
+- `python scripts/verify_workspace.py`
+
+### Phase 3: Real Readiness Model
+
+- [ ] Replace placeholder readiness heuristics with real data sources:
+  - device exists / ticket bound to device
+  - agent online state
+  - platform compatibility from tool metadata, device OS and managed module manifest
+  - installed module version and preferred version
+  - desired/installing state
+  - dependency/preflight state
+  - consent requirements
+  - RBAC permission checks
+  - policy disabled states
+  - integration config and credentials state
+  - mapping requirements for server connectors
+  - observer root trace availability
+  - remote assist policy/user consent/device capability state
+- [ ] Return stable `reason_code` in addition to human-readable `reason`.
+- [ ] Return available actions with explicit action ids:
+  - `install`
+  - `run`
+  - `configure_integration`
+  - `add_credentials`
+  - `request_consent`
+  - `open_remote_assist`
+  - `create_manual_evidence`
+- [ ] Add no-db and DB-backed tests for each readiness status.
+- [ ] Ensure readiness cannot make support/admin UI leak devices or integration names outside caller permission.
+
+Verification:
+
+- readiness unit tests
+- support/admin permission tests
+- targeted API tests for both global and ticket-scoped capability endpoints
+
+### Phase 4: Execution Router Productionization
+
+- [ ] Add explicit operation/session/query model around capability runs without changing existing `run_tool`.
+- [ ] For `agent_builtin` and `agent_managed_module`, keep calling `ToolExecutionService.run_tool`.
+- [ ] For `server_builtin`, implement server-local command/query runner with operation records.
+- [ ] For `server_connector`, implement provider interface:
+  - `list_capabilities()`
+  - `get_readiness()`
+  - `run_query()`
+  - `normalize_result()`
+  - `map_evidence()`
+- [ ] For `observer_query`, route to existing observer services for summary/bundle.
+- [ ] For `remote_assist`, route to existing remote assist request/session APIs rather than `run_tool`.
+- [ ] For `manual`, create manual evidence/finding flows.
+- [ ] Add idempotency and timeout semantics per target.
+- [ ] Add structured error codes:
+  - `CAPABILITY_NOT_FOUND`
+  - `CAPABILITY_NOT_READY`
+  - `CAPABILITY_TARGET_UNSUPPORTED`
+  - `INTEGRATION_NOT_CONFIGURED`
+  - `CREDENTIALS_MISSING`
+  - `MAPPING_MISSING`
+  - `POLICY_DENIED`
+  - `CONSENT_REQUIRED`
+- [ ] Ensure non-agent targets never write DeviceOutbox rows.
+
+Verification:
+
+- router tests proving each target goes to the correct backend
+- operation lifecycle tests
+- negative tests proving server connector / observer / remote assist / manual do not call `ToolExecutionService.run_tool`
+
+### Phase 5: Zabbix Server Connector
+
+- [ ] Define config schema:
+  - endpoint URL
+  - auth method
+  - credentials reference
+  - TLS options
+  - host mapping strategy
+  - timeout/retry policy
+- [ ] Implement Zabbix provider capabilities:
+  - `zabbix.problems.lookup`
+  - `zabbix.host.health`
+  - `zabbix.item.history`
+- [ ] Add readiness:
+  - integration_not_configured
+  - credentials_missing
+  - mapping_missing
+  - available
+  - unavailable/degraded
+- [ ] Implement safe API client with redaction and bounded responses.
+- [ ] Map Zabbix results to evidence:
+  - `monitoring.problem`
+  - `monitoring.host_health`
+  - `monitoring.metric_history`
+- [ ] Add tests with fake HTTP server or mocked Zabbix API, not real external calls.
+- [ ] Add docs and admin config examples.
+
+Verification:
+
+- provider unit tests
+- readiness tests
+- redaction tests
+- no raw token/credential logging checks
+
+### Phase 6: Observer Query Capabilities
+
+- [ ] Implement `observer.ticket.summary` using existing observer ticket summary/root trace services.
+- [ ] Implement `observer.trace.bundle` using existing diagnostics bundle/export path.
+- [ ] Define output contracts for observer capabilities.
+- [ ] Convert observer query results into evidence preview:
+  - root trace health
+  - latest error
+  - top signature
+  - related traces
+  - degraded runtime signals
+- [ ] Ensure observer query capabilities are read-only and do not generate DeviceOutbox commands.
+- [ ] Add browser/API tests for support/admin deep links if UI consumes them.
+
+Verification:
+
+- observer no-db/DB tests
+- existing observer tests
+- support detail observer regression tests
+
+### Phase 7: Remote Assist Capabilities
+
+- [ ] Model remote assist as session capability, not command/tool.
+- [ ] Add capabilities:
+  - `remote_assist.request_view`
+  - `remote_assist.request_control`
+  - `remote_assist.session.summary`
+  - optional later: file transfer, clipboard, elevated/admin as policy-gated sub-capabilities.
+- [ ] Readiness must use:
+  - device online
+  - support permission
+  - remote assist policy
+  - user consent state
+  - session availability
+- [ ] Route execution to existing remote assist service/routes.
+- [ ] Map session summary to passport-eligible evidence where policy allows.
+- [ ] Preserve current Remote Assist consent/signaling flow.
+
+Verification:
+
+- remote assist policy tests
+- handler/router tests
+- no regression in current remote assist tests
+
+### Phase 8: Manual Capabilities
+
+- [ ] Add manual evidence creation capabilities:
+  - `manual.visual_check`
+  - `manual.vendor_response`
+  - `manual.operator_note`
+  - optional `manual.customer_confirmation`
+- [ ] Implement permission checks.
+- [ ] Add manual evidence DTOs and event payloads.
+- [ ] Link manual capabilities to ticket passport/evidence candidate flows.
+- [ ] Add audit trail and source attribution.
+
+Verification:
+
+- support passport/evidence tests
+- RBAC denial tests
+- timeline event tests
+
+### Phase 9: Evidence Persistence and Diagnostic Sessions
+
+- [ ] Add DB model if needed:
+  - `diagnostic_sessions`
+  - `diagnostic_session_capabilities`
+  - `diagnostic_evidence`
+  - `diagnostic_findings`
+  - `diagnostic_artifact_links`
+- [ ] Define how an operation/session/query result becomes evidence:
+  - raw operation result
+  - normalized evidence preview
+  - accepted evidence
+  - passport-linked evidence
+  - finding
+- [ ] Implement `normalize_tool_result_to_evidence_stub` as production mapper.
+- [ ] Preserve existing `TicketEvidenceService` and passport flows; extend them rather than replacing.
+- [ ] Add evidence provenance:
+  - capability id/version
+  - provider id/type
+  - operation/session/query id
+  - trace id
+  - artifact refs
+  - actor
+  - redaction policy
+- [ ] Add cleanup/retention policy.
+
+Verification:
+
+- migration tests
+- evidence service tests
+- passport linking tests
+- observer trace correlation tests
+
+### Phase 10: Playbook Integration
+
+- [ ] Allow playbooks to reference capability ids in addition to current tool ids.
+- [ ] Keep old playbooks working unchanged.
+- [ ] Add playbook step target resolution:
+  - agent tool
+  - server connector query
+  - observer query
+  - manual checkpoint
+  - remote assist session request
+- [ ] Add readiness preflight for capability-backed playbook steps.
+- [ ] Add output contracts for non-agent capability steps.
+- [ ] Add evidence attachment policy per step.
+- [ ] Add authoring UI/catalog updates for capabilities.
+
+Verification:
+
+- existing playbook tests
+- new mixed-target playbook tests
+- no regression in auto-install before tool-backed steps
+
+### Phase 11: Diagnostic Center UI
+
+- [ ] Add Diagnostic Center UI surfaces in the React webapp:
+  - ticket-scoped capability list
+  - readiness statuses and actions
+  - filters by domain/perspective/provider/target
+  - install/run/configure/request consent actions
+  - evidence preview and attach-to-passport
+  - session/finding view
+- [ ] Keep legacy support tool panel working.
+- [ ] Add admin/provider config UI for server connectors.
+- [ ] Add affordances for non-agent targets:
+  - server connector configuration
+  - observer summary/bundle
+  - remote assist request
+  - manual fact entry
+- [ ] Add browser checks at `http://192.168.100.17:8666/admin` per project browser canon after deploy.
+
+Verification:
+
+- `python scripts/bootstrap_web_toolchain.py`
+- webapp type/build/tests
+- Playwright/browser checks
+- server API tests
+
+### Phase 12: Operations, Observer and Audit Hardening
+
+- [ ] Ensure every capability execution writes trace-visible lifecycle events.
+- [ ] Add observer root kinds/spans for:
+  - capability run
+  - server connector query
+  - observer query
+  - manual evidence
+  - remote assist capability session
+- [ ] Add operation/session metrics:
+  - duration
+  - result status
+  - readiness failure count
+  - provider errors
+  - evidence created/linked
+- [ ] Add audit events for high-risk or externally integrated capabilities.
+- [ ] Add redaction for integration config, credentials, query params and evidence payloads.
+- [ ] Update observer docs if new trace-visible API/flows are added.
+
+Verification:
+
+- observer tests
+- dangerous-flow canary where applicable
+- redaction tests
+
+### Phase 13: Release, Migration and Deployment
+
+- [ ] If DB schema changes were added, run migrations only through canonical scripts:
+  - `python scripts/deploy_workspace_to_remote.py`
+  - `python scripts/run_remote_migrations.py current`
+  - `python scripts/run_remote_migrations.py upgrade head`
+- [ ] Run server release checks:
+  - `python scripts/verify_workspace.py`
+  - targeted pytest suites
+  - remote smoke
+  - browser checks for UI changes
+- [ ] Stop remote server after verification unless user asks to keep it running.
+- [ ] Do not publish to GitHub until verified.
+
+## Acceptance Criteria For Full Completion
+
+- [ ] Old module manifests still validate.
+- [ ] Old managed ZIP modules still auto-install and run through `ToolExecutionService.run_tool`.
+- [ ] Old builtin modules still run.
+- [ ] Old playbooks still run.
+- [ ] New manifest blocks are validated and surfaced.
+- [ ] Capability registry covers agent builtin, managed modules, server builtin/connector, observer, remote assist, manual and hybrid reserved target.
+- [ ] Readiness is accurate for device, online agent, install state, platform, dependencies, consent, RBAC, policy, integration config, credentials and mapping.
+- [ ] Non-agent targets never enqueue DeviceOutbox commands.
+- [ ] Server connector provider skeleton is replaced by at least one real connector implementation, starting with Zabbix.
+- [ ] Observer query capabilities return real observer data.
+- [ ] Remote assist capabilities route to existing remote assist service.
+- [ ] Manual capabilities create auditable manual evidence/facts.
+- [ ] Evidence is normalized, persisted where needed, traceable and passport-linkable.
+- [ ] Diagnostic sessions/findings can aggregate capability results.
+- [ ] UI can display capabilities, readiness, actions, evidence and findings.
+- [ ] Docs, CODEMAP, navigation catalog and architecture boundaries are current.
+- [ ] Targeted and cross-subsystem tests pass.
+- [ ] Migrations, if added, are linear, compile, apply on remote with `upgrade head`, and leave DB at head.
+
+## Current Limitations / Handoff
+
+- Stage 1 intentionally did not add DB schema for diagnostic provider config; connector config/credentials/mapping are read from service context until a persistent config store is added.
+- Zabbix provider validates config/credentials/mapping and routes through a bounded server connector provider, but it still does not call a real external Zabbix API client.
+- `observer_query`, `remote_assist` and `manual` targets now route through server providers. Remote Assist uses the existing session service and may enqueue its existing `remote_assist.request` command; it does not use ordinary `ToolExecutionService.run_tool`.
+- The support tools panel can carry metadata, but full Diagnostic Center UI is not implemented.
+- Existing unrelated dirty worktree files predate this task and must not be reverted as part of this plan.

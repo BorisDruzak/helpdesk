@@ -2461,6 +2461,12 @@ class AgentOrchestrator:
                     'artifact_types': spec.get('artifact_types', []),
                     'redaction': spec.get('redaction', {}),
                     'resources': spec.get('resources', {}),
+                    'execution': spec.get('execution', {}),
+                    'deployment': spec.get('deployment', {}),
+                    'safety': spec.get('safety', {}),
+                    'readiness': spec.get('readiness', {}),
+                    'evidence': spec.get('evidence', {}),
+                    'artifacts': spec.get('artifacts', {}),
                     'metadata': {
                         'domain': metadata.get('domain', module_name),
                         'platforms': metadata.get('platforms', ['any']),
@@ -2580,6 +2586,12 @@ class AgentOrchestrator:
                 'artifact_types': spec.get('artifact_types', []),
                 'redaction': spec.get('redaction', {}),
                 'resources': spec.get('resources', {}),
+                'execution': spec.get('execution', {}),
+                'deployment': spec.get('deployment', {}),
+                'safety': spec.get('safety', {}),
+                'readiness': spec.get('readiness', {}),
+                'evidence': spec.get('evidence', {}),
+                'artifacts': spec.get('artifacts', {}),
             }
             
             logger.success(f"Инструмент найден: {tool_name}")

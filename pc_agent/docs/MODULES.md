@@ -4,6 +4,13 @@
 
 ## Canonical model
 
+The server now projects agent tools as diagnostic capabilities, but the agent runtime still executes only local tools:
+
+- `capability` is the server-side universal projection of an agent tool, server connector, observer query, remote assist session action or manual check.
+- `execution target` declares where a capability runs.
+- Agent-side registry exposes `execution`, `deployment`, `safety`, `readiness`, `evidence` and `artifacts` for executable agent tools.
+- The agent must not execute `server_connector`, `observer_query`, `remote_assist` or `manual` targets through ordinary `run_tool`.
+
 - builtin module: first-class provider, доставка встроенная
 - managed module: ZIP pack из server registry
 - tool: атомарный semantic contract
@@ -34,6 +41,36 @@ Legacy aliases остаются только для compat resolution в registr
 - Любые `details` должны быть JSON-совместимыми и безопасными для redaction; сырые секреты в trace/event payload запрещены.
 
 ## Contract guarantees
+
+Additional capability metadata carried by `list_tools` and `describe_tool`:
+
+- `execution`
+- `deployment`
+- `safety`
+- `readiness`
+- `evidence`
+- `artifacts`
+
+Agent builtin defaults:
+
+- `execution.target=agent_builtin`
+- `execution.requires_device=true`
+- `execution.requires_agent_online=true`
+- `execution.supports_auto_install=false`
+- `deployment.install_required_on_agent=false`
+- `deployment.package_type=builtin`
+- `readiness.requires_credentials=false`
+- `readiness.requires_mapping=false`
+- `readiness.requires_policy=false`
+
+Managed ZIP packages may pass explicit `agent_managed_module` metadata through `@exposed_tool`; old packages remain executable and are still owned by server-side manifest/default projection.
+
+Builtin evidence markings:
+
+- `system.collect` produces endpoint system snapshot evidence.
+- `screen.collect` produces endpoint screenshot evidence and screenshot artifacts.
+- `screen.record` produces endpoint screen recording evidence and recording artifacts.
+- `diag.logs.collect` produces `logs.bundle` evidence from endpoint perspective, is passport-eligible and may produce `logs_zip` artifacts.
 
 Каждый tool spec должен нести:
 

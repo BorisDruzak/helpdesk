@@ -619,6 +619,12 @@ class SupportToolItem(BaseModel):
     source: str
     params_schema: list[SupportToolParameter] = Field(default_factory=list)
     presets: list[SupportToolPreset] = Field(default_factory=list)
+    execution: dict[str, Any] = Field(default_factory=dict)
+    deployment: dict[str, Any] = Field(default_factory=dict)
+    safety: dict[str, Any] = Field(default_factory=dict)
+    readiness: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, Any] = Field(default_factory=dict)
 
 
 class SupportTicketToolsPayload(BaseModel):

@@ -814,7 +814,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -v --tb=short",
             "pnpm --dir webapp run test",
             "pnpm --dir webapp run build",
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         plan_required=True,
         docs_to_update=(
@@ -845,7 +845,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, and mandatory observer SDK instrumentation.",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness, provider projection and non-agent provider routes).",
         aliases=(
             "module",
             "modules",
@@ -856,6 +856,17 @@ TOPICS: tuple[Topic, ...] = (
             "desired modules",
             "manifest",
             "module install",
+            "diagnostic capability",
+            "diagnostic layer",
+            "diagnostic evidence",
+            "diagnostic session",
+            "diagnostic finding",
+            "diagnostic bundle",
+            "capability registry",
+            "execution target",
+            "readiness",
+            "server_connector",
+            "observer_query",
             "модуль",
             "модули",
             "реестр модулей",
@@ -866,6 +877,10 @@ TOPICS: tuple[Topic, ...] = (
             "server/modules/service.py",
             "server/modules/reconcile.py",
             "server/websocket/modules_sync.py",
+            "server/diagnostics/capability_registry.py",
+            "server/diagnostics/service.py",
+            "server/diagnostics/projection.py",
+            "server/diagnostics/readiness.py",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/registry.py",
         ),
@@ -879,6 +894,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         suggested_commands=(
             'python scripts/agent_find.py "modules" --dir server',
+            'python scripts/agent_find.py "capability" --dir server',
             'python scripts/agent_find.py "module_manager" --dir pc_agent',
         ),
         mode="Modules / reconcile",
@@ -899,6 +915,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         path_prefixes=(
             "server/modules/",
+            "server/diagnostics/",
             "pc_agent/modules/",
         ),
         exact_paths=(
@@ -909,6 +926,18 @@ TOPICS: tuple[Topic, ...] = (
             "server/utils/module_preflight.py",
             "server/utils/module_observer_contract.py",
             "server/utils/module_builder.py",
+            "server/diagnostics/capability_registry.py",
+            "server/diagnostics/execution_router.py",
+            "server/diagnostics/readiness.py",
+            "server/diagnostics/evidence.py",
+            "server/diagnostics/service.py",
+            "server/diagnostics/projection.py",
+            "server/diagnostics/sessions.py",
+            "server/diagnostics/findings.py",
+            "server/diagnostics/bundle.py",
+            "server/diagnostics/profile_runner.py",
+            "server/diagnostics/passport_bridge.py",
+            "server/app/repos/diagnostics_repo.py",
             "server/docs/MODULE_AUTHORING_RULES.md",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/loader.py",
@@ -985,6 +1014,24 @@ TOPICS: tuple[Topic, ...] = (
             "forms builder",
             "ticket forms",
             "request forms",
+            "form builder drafts",
+            "form lifecycle",
+            "form business validation",
+            "business preflight",
+            "preflight report",
+            "diagnostic-safe playbook",
+            "preview samples",
+            "field aliases",
+            "field_migration_note",
+            "policy refs",
+            "priority_policy_ref",
+            "routing_policy_ref",
+            "publish-from-form policy refs",
+            "save-draft",
+            "api/web/admin/forms/save-draft",
+            "api/web/admin/forms/validate",
+            "api/web/admin/forms/publish",
+            "api/web/admin/forms/preferred",
             "request template builder",
             "request-template wizard screen map",
             "template wizard screens",
@@ -1110,6 +1157,9 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",
             "server/web_api/admin_handlers.py",
+            "server/tickets/form_lifecycle_service.py",
+            "server/tickets/form_business_validation.py",
+            "server/app/repos/form_drafts_repo.py",
             "server/web_api/reports_handlers.py",
             "server/web_api/settings_handlers.py",
             "server/web_api/dto/settings.py",
@@ -1141,8 +1191,8 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             "python scripts/bootstrap_web_toolchain.py",
             "python scripts/check_webapp_cutover.py --json",
-            "pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666",
-            "pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666",
+            "pnpm --dir webapp run check:remote -- --base-url https://192.168.100.17:9443",
+            "pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443",
             'python scripts/agent_find.py "web_api" --dir server',
             'python scripts/agent_find.py "app/support" --dir server',
             'python scripts/agent_find.py "app/admin" --dir server',
@@ -1167,10 +1217,10 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/check_webapp_cutover.py --json",
             "pnpm --dir webapp run test",
             "pnpm --dir webapp run build",
-            "pnpm --dir webapp run check:remote -- --base-url http://192.168.100.17:8666",
-            "pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666",
+            "pnpm --dir webapp run check:remote -- --base-url https://192.168.100.17:9443",
+            "pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443",
             "python -m pytest server/tests/test_web_session_api.py server/tests/test_web_support_api.py server/tests/test_web_admin_api.py server/tests/test_web_reports_api.py server/tests/test_web_settings_api.py server/tests/test_web_realtime_api.py server/tests/test_static_pages_handlers.py -v --tb=short",
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         plan_required=True,
         docs_to_update=(
@@ -1241,7 +1291,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             "python scripts/diff_context.py",
             "python scripts/manage_remote_stack.py status control",
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         mode="Release / deploy / web admin",
         playbook=repo_path(LOCAL_WORKFLOW_PATH),
@@ -1253,7 +1303,7 @@ TOPICS: tuple[Topic, ...] = (
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         plan_required=True,
         docs_to_update=(
@@ -1858,7 +1908,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "ObserverOverlayService" --dir server',
             'python scripts/agent_find.py "trace_span" --dir pc_agent',
             'python -m pytest server/tests/test_observer_agent_telemetry_projection.py server/tests/test_observer_playbook_projection.py -q',
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         mode="Observer / tracing",
         skills=(
@@ -1871,7 +1921,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/verify_workspace.py",
             "python -m pytest server/tests/ ...",
             "python -m pytest pc_agent/tests/ ...",
-            "GUI check via MCP at http://192.168.100.17:8666/admin",
+            "GUI check via MCP at https://192.168.100.17:9443/admin",
         ),
         plan_required=True,
         docs_to_update=(
@@ -2563,7 +2613,7 @@ def recommend_checks(paths: Sequence[str]) -> list[str]:
     if any(path.startswith("pc_agent/") for path in normalized):
         checks.append("python -m pytest pc_agent/tests/ ...")
     if any(is_server_ui_path(path) for path in normalized):
-        checks.append("GUI check via MCP at http://192.168.100.17:8666/admin")
+        checks.append("GUI check via MCP at https://192.168.100.17:9443/admin")
     return checks
 
 
@@ -2645,4 +2695,3 @@ def iter_triggered_drift_rules(changes: Iterable[ChangedPath]) -> list[tuple[Dri
         if matched:
             grouped.append((rule, matched))
     return grouped
-

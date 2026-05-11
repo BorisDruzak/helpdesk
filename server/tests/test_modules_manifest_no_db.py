@@ -64,6 +64,166 @@ def test_normalize_manifest_keeps_semantic_tool_name_and_legacy_alias():
 
 
 @pytest.mark.no_db
+def test_normalize_manifest_defaults_old_tool_to_agent_managed_capability():
+    normalized, validation, summary = normalize_manifest(
+        {
+            "module_name": "network_tools",
+            "module_version": "1.0.0",
+            "tools": [{"name": "http_request", "description": "HTTP request from endpoint"}],
+        }
+    )
+
+    assert normalized is not None
+    assert not validation["errors"]["tools"]
+    tool = normalized["tools"][0]
+    assert tool["execution"] == {
+        "target": "agent_managed_module",
+        "requires_device": True,
+        "requires_agent_online": True,
+        "supports_auto_install": True,
+        "requires_integration": False,
+    }
+    assert tool["deployment"] == {
+        "provider_id": "network_tools",
+        "install_required_on_agent": True,
+        "package_type": "zip",
+    }
+    assert tool["readiness"] == {
+        "requires_credentials": False,
+        "requires_mapping": False,
+        "requires_policy": False,
+    }
+    assert tool["evidence"] == {"produces_evidence": False}
+    assert summary["tools"][0]["execution"]["target"] == "agent_managed_module"
+
+
+@pytest.mark.no_db
+def test_normalize_manifest_validates_execution_deployment_evidence_and_safety_blocks():
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "zabbix_connector",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "core",
+            "tools": [
+                {
+                    "tool": "zabbix.problems.lookup",
+                    "method": "lookup_problems",
+                    "contract_version": "1.0.0",
+                    "dependencies": {"min_agent_version": "1.0.0"},
+                    "lifecycle": "stable",
+                    "error_codes": [],
+                    "artifact_types": [],
+                    "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+                    "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+                    "execution": {
+                        "target": "server_connector",
+                        "requires_device": False,
+                        "requires_agent_online": False,
+                        "supports_auto_install": False,
+                        "requires_integration": True,
+                        "integration_key": "zabbix",
+                    },
+                    "deployment": {
+                        "provider_id": "zabbix_connector",
+                        "install_required_on_agent": False,
+                        "package_type": "server_connector",
+                    },
+                    "readiness": {
+                        "requires_credentials": True,
+                        "requires_mapping": True,
+                        "requires_policy": True,
+                        "required_permission": "monitoring.zabbix.view",
+                        "policy_key": "monitoring.zabbix.enabled",
+                        "mapping_key": "zabbix.host",
+                    },
+                    "safety": {"side_effects": False, "requires_consent": False, "idempotent": True},
+                    "evidence": {
+                        "produces_evidence": True,
+                        "kind": "monitoring.problem",
+                        "domain": "monitoring",
+                        "perspective": "monitoring",
+                        "passport_eligible": True,
+                    },
+                }
+            ],
+        }
+    )
+
+    assert normalized is not None
+    assert not validation["errors"]["tools"]
+    tool = normalized["tools"][0]
+    assert tool["execution"]["target"] == "server_connector"
+    assert tool["execution"]["integration_key"] == "zabbix"
+    assert tool["deployment"]["install_required_on_agent"] is False
+    assert tool["readiness"] == {
+        "requires_credentials": True,
+        "requires_mapping": True,
+        "requires_policy": True,
+        "required_permission": "monitoring.zabbix.view",
+        "policy_key": "monitoring.zabbix.enabled",
+        "mapping_key": "zabbix.host",
+    }
+    assert tool["safety"] == {"side_effects": False, "requires_consent": False, "idempotent": True}
+    assert tool["evidence"]["kind"] == "monitoring.problem"
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    ("tool_patch", "expected_message"),
+    [
+        ({"execution": {"target": "bad_target"}}, "execution.target"),
+        (
+            {
+                "execution": {"target": "server_connector", "requires_integration": True},
+                "deployment": {"install_required_on_agent": False},
+            },
+            "integration_key",
+        ),
+        (
+            {
+                "execution": {"target": "agent_builtin"},
+                "deployment": {"install_required_on_agent": True},
+            },
+            "agent_builtin",
+        ),
+        ({"evidence": {"produces_evidence": True, "kind": "logs.bundle"}}, "evidence.domain"),
+        ({"safety": {"side_effects": "no"}}, "safety.side_effects"),
+        ({"readiness": {"requires_credentials": "yes"}}, "readiness.requires_credentials"),
+        ({"readiness": {"required_permission": ""}}, "readiness.required_permission"),
+    ],
+)
+def test_normalize_manifest_rejects_invalid_capability_contract_blocks(tool_patch, expected_message):
+    tool = {
+        "tool": "vendor_x.capability",
+        "method": "run",
+        "contract_version": "1.0.0",
+        "dependencies": {"min_agent_version": "1.0.0"},
+        "lifecycle": "stable",
+        "error_codes": [],
+        "artifact_types": [],
+        "redaction": {"enabled": True, "allow_raw_sensitive_data": False},
+        "resources": {"max_runtime_sec": 15, "max_artifact_count": 0, "max_artifact_bytes": 0},
+    }
+    tool.update(tool_patch)
+
+    normalized, validation, _summary = normalize_manifest(
+        {
+            "manifest_version": 2,
+            "module_name": "vendor_capabilities",
+            "module_version": "1.0.0",
+            "module_api_version": "1.0.0",
+            "owner_scope": "vendor",
+            "tools": [tool],
+        }
+    )
+
+    assert normalized is None
+    assert any(expected_message in error for error in validation["errors"]["tools"])
+
+
+@pytest.mark.no_db
 def test_normalize_manifest_keeps_playbook_output_contract():
     normalized, validation, summary = normalize_manifest(
         {

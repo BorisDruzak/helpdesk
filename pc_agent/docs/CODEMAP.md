@@ -59,7 +59,7 @@
 | `pc_agent/core/machine_identity.py` | Разрешение стабильного `machine_id` из OS/runtime (Windows MachineGuid, Linux machine-id, env override, fallback file) |
 | `pc_agent/core/module_manager.py` | Установка/удаление/rollback модулей, semver, инвентарь |
 | `pc_agent/core/loader.py` | load_module_from_path (modules_store), сброс кэша импорта |
-| `pc_agent/core/registry.py` | Дескрипторы инструментов, canonical tool id/alias → runtime method, `call_tool()`; public tool name может быть semantic key (`dns.resolve`), а legacy `module.tool` остаётся alias; `@exposed_tool` прокидывает `output_schema` и `output_contract` в tool specs |
+| `pc_agent/core/registry.py` | Дескрипторы инструментов, canonical tool id/alias → runtime method, `call_tool()`; public tool name может быть semantic key (`dns.resolve`), а legacy `module.tool` остаётся alias; `@exposed_tool` прокидывает `output_schema`, `output_contract` и additive capability metadata (`execution`, `deployment`, `safety`, `readiness`, `evidence`, `artifacts`) в tool specs |
 | `pc_agent/core/tools.py` | Agent-side tool spec helpers над shared contract layer; legacy risk aliases живут здесь только как compatibility shim |
 | `pc_agent/core/policy_engine.py` | Политики выполнения |
 | `pc_agent/core/artifacts.py` | Артефакты (screenshot/record) |
@@ -74,7 +74,7 @@
 | Файл/каталог | Назначение |
 |--------------|------------|
 | `pc_agent/modules/base_module.py` | Базовый контракт модуля + mandatory observer SDK (`bind_trace`, `trace_event`, `trace_span`) для новых tool methods; dangerous module steps обязаны следовать `server/docs/OBSERVER_AUTHORING_RULES.md` |
-| `pc_agent/modules/impl/` | Встроенные реализации модулей; core enabled modules are `system`, `screen` and `diag_logs`; `diag_logs.py` collects system logs and agent runtime logs (`data/logs`) through `diag.logs.collect`, so field diagnostics such as `[gui-profiler]` can be retrieved remotely as an artifact |
+| `pc_agent/modules/impl/` | Встроенные реализации модулей; core enabled modules are `system`, `screen` and `diag_logs`; `system.collect`, `screen.collect`, `screen.record` and `diag.logs.collect` expose `agent_builtin` capability metadata; `diag_logs.py` collects system logs and agent runtime logs (`data/logs`) through `diag.logs.collect`, marks `logs.bundle` endpoint evidence as passport-eligible and produces `logs_zip` artifacts |
 | `pc_agent/modules/dynamic/` | Legacy (загрузчик использует только пакеты из modules_store) |
 | `pc_agent/modules/__init__.py` | extra_paths, поддержка test_<name> для тестов |
 

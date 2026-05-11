@@ -27,6 +27,43 @@ else:
         BaseModel = None
 
 
+def _agent_default_execution() -> Dict[str, Any]:
+    return {
+        "target": "agent_builtin",
+        "requires_device": True,
+        "requires_agent_online": True,
+        "supports_auto_install": False,
+        "requires_integration": False,
+    }
+
+
+def _agent_default_deployment(module_name: str) -> Dict[str, Any]:
+    return {
+        "provider_id": module_name,
+        "install_required_on_agent": False,
+        "package_type": "builtin",
+    }
+
+
+def _agent_default_safety(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "side_effects": bool(metadata.get("side_effects", False)),
+        "requires_consent": bool(metadata.get("requires_consent", False)),
+        "idempotent": bool(metadata.get("idempotent", False)),
+    }
+
+
+def _agent_default_artifacts(artifact_types: List[Dict[str, Any]]) -> Dict[str, Any]:
+    kinds = [
+        artifact.get("kind")
+        for artifact in artifact_types
+        if isinstance(artifact, dict) and isinstance(artifact.get("kind"), str) and artifact.get("kind")
+    ]
+    if not kinds:
+        return {}
+    return {"may_produce_artifacts": True, "artifact_kinds": kinds}
+
+
 def exposed_tool(
     name: Optional[str] = None,
     aliases: Optional[List[str]] = None,
@@ -56,6 +93,12 @@ def exposed_tool(
     artifact_types: Optional[List[Dict[str, Any]]] = None,
     redaction: Optional[Dict[str, Any]] = None,
     resources: Optional[Dict[str, Any]] = None,
+    execution: Optional[Dict[str, Any]] = None,
+    deployment: Optional[Dict[str, Any]] = None,
+    safety: Optional[Dict[str, Any]] = None,
+    readiness: Optional[Dict[str, Any]] = None,
+    evidence: Optional[Dict[str, Any]] = None,
+    artifacts: Optional[Dict[str, Any]] = None,
 ) -> Callable:
     """
     Декоратор для пометки методов модуля как экспонируемых инструментов (tools) для MCP.
@@ -162,6 +205,12 @@ def exposed_tool(
         func.__tool_artifact_types__ = list(artifact_types or [])
         func.__tool_redaction__ = redaction if isinstance(redaction, dict) else {}
         func.__tool_resources__ = resources if isinstance(resources, dict) else {}
+        func.__tool_execution__ = execution if isinstance(execution, dict) else {}
+        func.__tool_deployment__ = deployment if isinstance(deployment, dict) else {}
+        func.__tool_safety__ = safety if isinstance(safety, dict) else {}
+        func.__tool_readiness__ = readiness if isinstance(readiness, dict) else {}
+        func.__tool_evidence__ = evidence if isinstance(evidence, dict) else {}
+        func.__tool_artifacts__ = artifacts if isinstance(artifacts, dict) else {}
         
         # Проверяем, является ли функция асинхронной
         if inspect.iscoroutinefunction(func):
@@ -190,6 +239,12 @@ def exposed_tool(
             async_wrapper.__tool_artifact_types__ = func.__tool_artifact_types__
             async_wrapper.__tool_redaction__ = func.__tool_redaction__
             async_wrapper.__tool_resources__ = func.__tool_resources__
+            async_wrapper.__tool_execution__ = func.__tool_execution__
+            async_wrapper.__tool_deployment__ = func.__tool_deployment__
+            async_wrapper.__tool_safety__ = func.__tool_safety__
+            async_wrapper.__tool_readiness__ = func.__tool_readiness__
+            async_wrapper.__tool_evidence__ = func.__tool_evidence__
+            async_wrapper.__tool_artifacts__ = func.__tool_artifacts__
             return async_wrapper
         else:
             # Для sync функций создаем обычный wrapper
@@ -217,6 +272,12 @@ def exposed_tool(
             sync_wrapper.__tool_artifact_types__ = func.__tool_artifact_types__
             sync_wrapper.__tool_redaction__ = func.__tool_redaction__
             sync_wrapper.__tool_resources__ = func.__tool_resources__
+            sync_wrapper.__tool_execution__ = func.__tool_execution__
+            sync_wrapper.__tool_deployment__ = func.__tool_deployment__
+            sync_wrapper.__tool_safety__ = func.__tool_safety__
+            sync_wrapper.__tool_readiness__ = func.__tool_readiness__
+            sync_wrapper.__tool_evidence__ = func.__tool_evidence__
+            sync_wrapper.__tool_artifacts__ = func.__tool_artifacts__
             return sync_wrapper
     
     return decorator
@@ -460,6 +521,17 @@ class ModuleRegistry:
                 'side_effects': metadata_dict.get('side_effects', False),
                 'tool_kind': metadata_dict.get('tool_kind', 'diagnostic'),
             }
+        artifact_types_value = list(getattr(method, '__tool_artifact_types__', []) or [])
+        execution = dict(getattr(method, '__tool_execution__', {}) or _agent_default_execution())
+        deployment = dict(getattr(method, '__tool_deployment__', {}) or _agent_default_deployment(module_name))
+        safety = dict(getattr(method, '__tool_safety__', {}) or _agent_default_safety(metadata_dict))
+        readiness = dict(getattr(method, '__tool_readiness__', {}) or {
+            "requires_credentials": False,
+            "requires_mapping": False,
+            "requires_policy": False,
+        })
+        evidence = dict(getattr(method, '__tool_evidence__', {}) or {"produces_evidence": False})
+        artifacts = dict(getattr(method, '__tool_artifacts__', {}) or _agent_default_artifacts(artifact_types_value))
         
         return {
             'tool_name': tool_name,
@@ -481,9 +553,15 @@ class ModuleRegistry:
             'dependencies': getattr(method, '__tool_dependencies__', {}),
             'lifecycle': getattr(method, '__tool_lifecycle__', "stable"),
             'error_codes': list(getattr(method, '__tool_error_codes__', []) or []),
-            'artifact_types': list(getattr(method, '__tool_artifact_types__', []) or []),
+            'artifact_types': artifact_types_value,
             'redaction': getattr(method, '__tool_redaction__', {}) or {},
             'resources': getattr(method, '__tool_resources__', {}) or {},
+            'execution': execution,
+            'deployment': deployment,
+            'safety': safety,
+            'readiness': readiness,
+            'evidence': evidence,
+            'artifacts': artifacts,
         }
     
     def get_all(self) -> Dict[str, Dict[str, Any]]:
@@ -567,6 +645,16 @@ class ModuleRegistry:
             'artifact_types': tool_info.get('artifact_types', []),
             'redaction': tool_info.get('redaction', {}),
             'resources': tool_info.get('resources', {}),
+            'execution': tool_info.get('execution', _agent_default_execution()),
+            'deployment': tool_info.get('deployment', _agent_default_deployment("unknown")),
+            'safety': tool_info.get('safety', _agent_default_safety(metadata)),
+            'readiness': tool_info.get('readiness', {
+                "requires_credentials": False,
+                "requires_mapping": False,
+                "requires_policy": False,
+            }),
+            'evidence': tool_info.get('evidence', {"produces_evidence": False}),
+            'artifacts': tool_info.get('artifacts', {}),
         }
 
     def _rebuild_tool_index(self) -> None:

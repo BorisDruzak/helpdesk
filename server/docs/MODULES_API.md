@@ -16,6 +16,9 @@ Read these first:
 - `module` = delivery pack, versioning, ownership
 - `tool` = atomic typed executable contract
 - `playbook` = orchestration layer over tools
+- `provider` = module or service that owns capabilities
+- `capability` = universal projection of a tool, connector query, observer query, remote assist session action or manual diagnostic check
+- `execution_target` = where the capability runs: `agent_builtin`, `agent_managed_module`, `server_builtin`, `server_connector`, `observer_query`, `remote_assist`, `manual` or reserved `hybrid`
 
 Canonical tool ids stay semantic-only:
 
@@ -35,6 +38,45 @@ Legacy aliases exist only as compatibility bridges.
 - preferred-version resolution for auto-install
 - desired-state persistence before auto-install
 - version-aware auto-install/update before `run_tool`
+- capability projection through `GET /api/diagnostics/capabilities`
+- ticket-scoped readiness through `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
+- ticket-scoped capability execution through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`
+- routing agent capabilities to existing `ToolExecutionService.run_tool` while routing server connectors, observer queries, remote assist and manual checks through server-side providers
+
+## Diagnostic capability projection
+
+The first-stage capability registry is an additive service layer over existing modules and tools. It does not rename or replace `run_tool`.
+
+Sources:
+
+- agent builtin and managed tools from current tool manifests/snapshots
+- server connector skeletons, currently `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
+- observer skeletons: `observer.ticket.summary`, `observer.trace.bundle`
+- remote assist skeletons: `remote_assist.request_view`, `remote_assist.session.summary`
+- manual skeletons: `manual.visual_check`, `manual.vendor_response`
+
+Capability descriptors include provider id/type, execution target, schemas/contracts, safety flags, deployment metadata, readiness requirements, evidence metadata, artifact metadata and legacy aliases.
+
+Readiness statuses are: `available`, `install_required`, `installing`, `unsupported_platform`, `agent_offline`, `missing_dependency`, `consent_required`, `integration_not_configured`, `credentials_missing`, `mapping_missing`, `permission_denied`, `disabled_by_policy`, `unavailable`, `unknown`.
+
+Compatibility rules:
+
+- old managed ZIP manifests default to `agent_managed_module` and keep auto-install semantics
+- old builtin tools default to `agent_builtin` and never require server ZIP install
+- `server_connector` capabilities require `integration_key` and do not enqueue agent commands
+- observer and manual targets never enqueue agent commands
+- remote assist targets route to the existing Remote Assist session service instead of `ToolExecutionService.run_tool`
+
+Readiness input sources:
+
+- ticket-bound device record and agent online state
+- device OS/platform against capability `platforms`
+- `device_modules` and `device_desired_modules` for installed/active/installing state
+- dependency status supplied by caller/service context
+- integration config, credential state and mapping state supplied by connector config context
+- effective RBAC permission set from the authenticated actor
+- policy flags supplied by diagnostic/provider policy context
+- observer root trace and remote assist consent/policy metadata
 
 ## Admin workbench
 

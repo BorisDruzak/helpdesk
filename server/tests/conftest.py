@@ -56,6 +56,7 @@ TEST_UI_USER_PREFIX = "test-ui-user:"
 
 _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
+_SHARED_TEST_DB_TERMINATE_UNAVAILABLE = False
 _AGENT_WS_FIXTURES = {"test_agent"}
 
 
@@ -442,8 +443,12 @@ async def _terminate_other_test_database_backends(
     admin_database_url: str,
     test_database_url: str,
 ) -> None:
+    global _SHARED_TEST_DB_TERMINATE_UNAVAILABLE
+
     db_name = make_url(test_database_url).database or ""
     if db_name != SHARED_TEST_DATABASE_NAME:
+        return
+    if _SHARED_TEST_DB_TERMINATE_UNAVAILABLE:
         return
     _validate_test_database_name(db_name)
     try:
@@ -459,6 +464,7 @@ async def _terminate_other_test_database_backends(
         )
     except Exception as exc:
         if _is_admin_database_unavailable(exc):
+            _SHARED_TEST_DB_TERMINATE_UNAVAILABLE = True
             warnings.warn(
                 "Shared test DB cleanup could not terminate other backends; continuing without "
                 "pg_terminate_backend because admin privileges are unavailable.",
@@ -610,6 +616,14 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 observer_spans,
                 observer_traces,
                 agent_observer_events,
+                diagnostic_bundles,
+                diagnostic_findings,
+                diagnostic_evidence,
+                diagnostic_steps,
+                diagnostic_sessions,
+                remote_access_events,
+                remote_access_sessions,
+                artifacts,
                 operations,
                 device_outbox,
                 ticket_events,

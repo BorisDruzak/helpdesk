@@ -29,6 +29,292 @@ SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Z
 TOOL_KEY_RE = re.compile(r"^[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
 PY_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CONTRACT_PATH_RE = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
+EXECUTION_TARGETS = {
+    "agent_builtin",
+    "agent_managed_module",
+    "server_builtin",
+    "server_connector",
+    "observer_query",
+    "remote_assist",
+    "manual",
+    "hybrid",
+}
+EVIDENCE_PERSPECTIVES = {
+    "endpoint",
+    "server",
+    "monitoring",
+    "observer",
+    "remote_assist",
+    "manual",
+    "hybrid",
+}
+
+
+def _default_execution_for_target(target: str) -> Dict[str, Any]:
+    if target == "agent_builtin":
+        return {
+            "target": "agent_builtin",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": False,
+            "requires_integration": False,
+        }
+    if target == "agent_managed_module":
+        return {
+            "target": "agent_managed_module",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": True,
+            "requires_integration": False,
+        }
+    if target == "server_connector":
+        return {
+            "target": "server_connector",
+            "requires_device": False,
+            "requires_agent_online": False,
+            "supports_auto_install": False,
+            "requires_integration": True,
+        }
+    return {
+        "target": target,
+        "requires_device": False,
+        "requires_agent_online": False,
+        "supports_auto_install": False,
+        "requires_integration": False,
+    }
+
+
+def _default_deployment_for_target(module_name: str, target: str) -> Dict[str, Any]:
+    if target == "agent_builtin":
+        package_type = "builtin"
+        install_required = False
+    elif target == "agent_managed_module":
+        package_type = "zip"
+        install_required = True
+    elif target == "server_connector":
+        package_type = "server_connector"
+        install_required = False
+    else:
+        package_type = target
+        install_required = False
+    return {
+        "provider_id": module_name,
+        "install_required_on_agent": install_required,
+        "package_type": package_type,
+    }
+
+
+def _normalize_optional_block(raw_value: Any, *, field_name: str, errors: List[str]) -> Dict[str, Any]:
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        errors.append(f"{field_name} must be an object")
+        return {}
+    return dict(raw_value)
+
+
+def _normalize_execution_block(raw_value: Any, *, tool_name: str, errors: List[str]) -> Dict[str, Any]:
+    raw_execution = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' execution", errors=errors)
+    target = str(raw_execution.get("target") or "agent_managed_module").strip()
+    execution = _default_execution_for_target(target)
+    if target not in EXECUTION_TARGETS:
+        errors.append(f"Tool '{tool_name}' execution.target must be one of: {', '.join(sorted(EXECUTION_TARGETS))}")
+        target = "agent_managed_module"
+        execution = _default_execution_for_target(target)
+    execution["target"] = target
+    for field_name in (
+        "requires_device",
+        "requires_agent_online",
+        "supports_auto_install",
+        "requires_integration",
+    ):
+        if field_name in raw_execution:
+            execution[field_name] = _normalize_bool_field(
+                raw_execution.get(field_name),
+                default=execution[field_name],
+                field_name=f"Tool '{tool_name}' execution.{field_name}",
+                errors=errors,
+            )
+    integration_key = raw_execution.get("integration_key")
+    if integration_key is not None:
+        if not isinstance(integration_key, str) or not integration_key.strip():
+            errors.append(f"Tool '{tool_name}' execution.integration_key must be a non-empty string")
+        else:
+            execution["integration_key"] = integration_key.strip()
+    return execution
+
+
+def _normalize_deployment_block(
+    raw_value: Any,
+    *,
+    module_name: str,
+    tool_name: str,
+    target: str,
+    errors: List[str],
+) -> Dict[str, Any]:
+    raw_deployment = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' deployment", errors=errors)
+    deployment = _default_deployment_for_target(module_name, target)
+    provider_id = raw_deployment.get("provider_id")
+    if provider_id is not None:
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            errors.append(f"Tool '{tool_name}' deployment.provider_id must be a non-empty string")
+        else:
+            deployment["provider_id"] = provider_id.strip()
+    if "install_required_on_agent" in raw_deployment:
+        deployment["install_required_on_agent"] = _normalize_bool_field(
+            raw_deployment.get("install_required_on_agent"),
+            default=deployment["install_required_on_agent"],
+            field_name=f"Tool '{tool_name}' deployment.install_required_on_agent",
+            errors=errors,
+        )
+    package_type = raw_deployment.get("package_type")
+    if package_type is not None:
+        if not isinstance(package_type, str) or not package_type.strip():
+            errors.append(f"Tool '{tool_name}' deployment.package_type must be a non-empty string")
+        else:
+            deployment["package_type"] = package_type.strip()
+    return deployment
+
+
+def _normalize_safety_block(
+    raw_value: Any,
+    *,
+    tool_name: str,
+    requires_consent: bool,
+    idempotent: bool,
+    side_effects: bool,
+    errors: List[str],
+) -> Dict[str, Any]:
+    raw_safety = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' safety", errors=errors)
+    safety: Dict[str, Any] = {}
+    defaults = {
+        "side_effects": side_effects,
+        "requires_consent": requires_consent,
+        "idempotent": idempotent,
+    }
+    for field_name, default in defaults.items():
+        if field_name in raw_safety:
+            safety[field_name] = _normalize_bool_field(
+                raw_safety.get(field_name),
+                default=default,
+                field_name=f"Tool '{tool_name}' safety.{field_name}",
+                errors=errors,
+            )
+    return safety
+
+
+def _normalize_evidence_block(raw_value: Any, *, tool_name: str, errors: List[str]) -> Dict[str, Any]:
+    raw_evidence = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' evidence", errors=errors)
+    evidence: Dict[str, Any] = {
+        "produces_evidence": _normalize_bool_field(
+            raw_evidence.get("produces_evidence"),
+            default=False,
+            field_name=f"Tool '{tool_name}' evidence.produces_evidence",
+            errors=errors,
+        )
+    }
+    for field_name in ("kind", "domain", "perspective"):
+        value = raw_evidence.get(field_name)
+        if value is not None:
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"Tool '{tool_name}' evidence.{field_name} must be a non-empty string")
+            else:
+                evidence[field_name] = value.strip()
+    passport_eligible = raw_evidence.get("passport_eligible")
+    if passport_eligible is not None:
+        evidence["passport_eligible"] = _normalize_bool_field(
+            passport_eligible,
+            default=False,
+            field_name=f"Tool '{tool_name}' evidence.passport_eligible",
+            errors=errors,
+        )
+    if evidence.get("produces_evidence"):
+        for required_field in ("kind", "domain", "perspective"):
+            if not evidence.get(required_field):
+                errors.append(f"Tool '{tool_name}' evidence.{required_field} is required when produces_evidence=true")
+    perspective = evidence.get("perspective")
+    if perspective and perspective not in EVIDENCE_PERSPECTIVES:
+        errors.append(
+            f"Tool '{tool_name}' evidence.perspective must be one of: {', '.join(sorted(EVIDENCE_PERSPECTIVES))}"
+        )
+    return evidence
+
+
+def _normalize_artifacts_block(raw_value: Any, *, tool_name: str, errors: List[str]) -> Dict[str, Any]:
+    raw_artifacts = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' artifacts", errors=errors)
+    if not raw_artifacts:
+        return {}
+    artifacts: Dict[str, Any] = {}
+    if "may_produce_artifacts" in raw_artifacts:
+        artifacts["may_produce_artifacts"] = _normalize_bool_field(
+            raw_artifacts.get("may_produce_artifacts"),
+            default=False,
+            field_name=f"Tool '{tool_name}' artifacts.may_produce_artifacts",
+            errors=errors,
+        )
+    if "artifact_kinds" in raw_artifacts:
+        artifacts["artifact_kinds"] = _normalize_string_list(
+            raw_artifacts.get("artifact_kinds"),
+            field_name=f"Tool '{tool_name}' artifacts.artifact_kinds",
+            errors=errors,
+        )
+    return artifacts
+
+
+def _normalize_readiness_block(raw_value: Any, *, tool_name: str, errors: List[str]) -> Dict[str, Any]:
+    raw_readiness = _normalize_optional_block(raw_value, field_name=f"Tool '{tool_name}' readiness", errors=errors)
+    readiness: Dict[str, Any] = {
+        "requires_credentials": False,
+        "requires_mapping": False,
+        "requires_policy": False,
+    }
+    for field_name in ("requires_credentials", "requires_mapping", "requires_policy"):
+        if field_name in raw_readiness:
+            readiness[field_name] = _normalize_bool_field(
+                raw_readiness.get(field_name),
+                default=False,
+                field_name=f"Tool '{tool_name}' readiness.{field_name}",
+                errors=errors,
+            )
+    for field_name in ("required_permission", "policy_key", "mapping_key"):
+        value = raw_readiness.get(field_name)
+        if value is not None:
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"Tool '{tool_name}' readiness.{field_name} must be a non-empty string")
+            else:
+                readiness[field_name] = value.strip()
+    return readiness
+
+
+def _validate_capability_blocks(
+    *,
+    tool_name: str,
+    execution: Dict[str, Any],
+    deployment: Dict[str, Any],
+    readiness: Dict[str, Any],
+    errors: List[str],
+) -> None:
+    target = execution.get("target")
+    if target == "server_connector":
+        if execution.get("requires_integration") is not True:
+            errors.append(f"Tool '{tool_name}' server_connector execution.requires_integration must be true")
+        if not execution.get("integration_key"):
+            errors.append(f"Tool '{tool_name}' server_connector execution.integration_key is required")
+        if deployment.get("install_required_on_agent") is not False:
+            errors.append(f"Tool '{tool_name}' server_connector deployment.install_required_on_agent must be false")
+    if target == "agent_managed_module":
+        if deployment.get("install_required_on_agent") is not True:
+            errors.append(f"Tool '{tool_name}' agent_managed_module deployment.install_required_on_agent must be true")
+        if execution.get("requires_device") is not True:
+            errors.append(f"Tool '{tool_name}' agent_managed_module execution.requires_device must be true")
+        if execution.get("requires_agent_online") is not True:
+            errors.append(f"Tool '{tool_name}' agent_managed_module execution.requires_agent_online must be true")
+    if target == "agent_builtin" and deployment.get("install_required_on_agent") is not False:
+        errors.append(f"Tool '{tool_name}' agent_builtin deployment.install_required_on_agent must be false")
+    if execution.get("requires_integration") is True and not execution.get("integration_key"):
+        errors.append(f"Tool '{tool_name}' execution.integration_key is required when requires_integration=true")
+    if readiness.get("requires_credentials") is True and not execution.get("integration_key"):
+        errors.append(f"Tool '{tool_name}' execution.integration_key is required when readiness.requires_credentials=true")
 
 
 def _ensure_list(value: Any, default: Optional[List[Any]] = None) -> List[Any]:
@@ -124,7 +410,7 @@ def _normalize_contract_path(raw_value: Any, *, field_name: str, errors: List[st
 
 
 def _normalize_output_contract(raw_value: Any, *, field_name: str, errors: List[str]) -> Dict[str, Any]:
-    if raw_value is None:
+    if raw_value is None or raw_value == {}:
         return {}
     if not isinstance(raw_value, dict):
         errors.append(f"{field_name} must be an object")
@@ -446,6 +732,32 @@ def _normalize_tool_entry(
                     resources[required_key] = 0
             else:
                 errors.append(f"Tool '{tool_name}' resources.{required_key} is required")
+    execution = _normalize_execution_block(raw_tool.get("execution"), tool_name=tool_name, errors=errors)
+    deployment = _normalize_deployment_block(
+        raw_tool.get("deployment"),
+        module_name=module_name,
+        tool_name=tool_name,
+        target=str(execution.get("target") or "agent_managed_module"),
+        errors=errors,
+    )
+    safety = _normalize_safety_block(
+        raw_tool.get("safety"),
+        tool_name=tool_name,
+        requires_consent=requires_consent,
+        idempotent=idempotent,
+        side_effects=side_effects,
+        errors=errors,
+    )
+    evidence = _normalize_evidence_block(raw_tool.get("evidence"), tool_name=tool_name, errors=errors)
+    artifacts = _normalize_artifacts_block(raw_tool.get("artifacts"), tool_name=tool_name, errors=errors)
+    readiness = _normalize_readiness_block(raw_tool.get("readiness"), tool_name=tool_name, errors=errors)
+    _validate_capability_blocks(
+        tool_name=tool_name,
+        execution=execution,
+        deployment=deployment,
+        readiness=readiness,
+        errors=errors,
+    )
     normalized = {
         "tool": tool_name,
         "aliases": aliases,
@@ -476,6 +788,12 @@ def _normalize_tool_entry(
         "artifact_types": artifact_types,
         "redaction": redaction,
         "resources": resources,
+        "execution": execution,
+        "deployment": deployment,
+        "safety": safety,
+        "readiness": readiness,
+        "evidence": evidence,
+        "artifacts": artifacts,
     }
 
     return normalized, warnings, errors
@@ -504,6 +822,12 @@ def manifest_summary_from_manifest(manifest_json: Dict[str, Any]) -> Dict[str, A
                 "artifact_types": tool.get("artifact_types") or [],
                 "redaction": tool.get("redaction") or {},
                 "resources": tool.get("resources") or {},
+                "execution": tool.get("execution") or {},
+                "deployment": tool.get("deployment") or {},
+                "safety": tool.get("safety") or {},
+                "readiness": tool.get("readiness") or {},
+                "evidence": tool.get("evidence") or {},
+                "artifacts": tool.get("artifacts") or {},
             }
         )
 
@@ -683,6 +1007,16 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                     "max_artifact_count": 0,
                     "max_artifact_bytes": 0,
                 },
+                "execution": _default_execution_for_target("agent_managed_module"),
+                "deployment": _default_deployment_for_target(module_name or "unknown", "agent_managed_module"),
+                "safety": {},
+                "readiness": {
+                    "requires_credentials": False,
+                    "requires_mapping": False,
+                    "requires_policy": False,
+                },
+                "evidence": {"produces_evidence": False},
+                "artifacts": {},
             }
         )
         validation["warnings"].append("Manifest did not declare tools; fallback tool contract was generated")

@@ -397,6 +397,29 @@ from tech.handlers import (
     handle_tech_signatures_search,
     handle_tech_signature_detail,
 )
+from diagnostics.handlers import (
+    handle_diagnostics_capabilities,
+    handle_diagnostics_profiles,
+    handle_ticket_diagnostics_bundle_create,
+    handle_ticket_diagnostics_bundle_get,
+    handle_ticket_diagnostics_capability_run,
+    handle_ticket_diagnostics_capabilities,
+    handle_ticket_diagnostics_evidence,
+    handle_ticket_diagnostics_evidence_patch,
+    handle_ticket_diagnostics_finding_patch,
+    handle_ticket_diagnostics_findings,
+    handle_ticket_diagnostics_findings_evaluate,
+    handle_ticket_diagnostics_manual_evidence,
+    handle_ticket_diagnostics_manual_finding,
+    handle_ticket_diagnostics_overview,
+    handle_ticket_diagnostics_passport_attach_selected,
+    handle_ticket_diagnostics_profile,
+    handle_ticket_diagnostics_run_profile,
+    handle_ticket_diagnostics_session_create,
+    handle_ticket_diagnostics_session_detail,
+    handle_ticket_diagnostics_sessions,
+    handle_web_support_ticket_diagnostics_overview,
+)
 
 
 async def handle_health(_request: web.Request) -> web.Response:
@@ -500,6 +523,7 @@ def setup_routes(app: web.Application) -> None:
         web.patch('/api/web/support/tickets/{ticket_id}/passport/evidence/{evidence_id}', handle_web_support_ticket_passport_evidence_update),
         web.post('/api/web/support/tickets/{ticket_id}/passport/evidence', handle_web_support_ticket_passport_evidence),
         web.post('/api/web/support/tickets/{ticket_id}/passport/knowledge-draft', handle_web_support_ticket_passport_knowledge_draft),
+        web.get('/api/web/support/tickets/{ticket_id}/diagnostics/overview', handle_web_support_ticket_diagnostics_overview),
         web.post('/api/web/support/tickets/{ticket_id}/worklogs', handle_web_support_ticket_worklog),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
         web.post('/api/web/support/tickets/{ticket_id}/remote-assist/request', handle_remote_assist_request),
@@ -689,6 +713,24 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/tickets/queues/{queue_id}/order/reset', handle_ticket_queue_order_reset),
         web.post('/api/tickets/archive', handle_tickets_archive),
         web.post('/api/tickets/bulk_assign', handle_tickets_bulk_assign),
+        web.get('/api/tickets/{ticket_id}/diagnostics/capabilities', handle_ticket_diagnostics_capabilities),
+        web.post('/api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run', handle_ticket_diagnostics_capability_run),
+        web.get('/api/tickets/{ticket_id}/diagnostics/overview', handle_ticket_diagnostics_overview),
+        web.get('/api/tickets/{ticket_id}/diagnostics/sessions', handle_ticket_diagnostics_sessions),
+        web.post('/api/tickets/{ticket_id}/diagnostics/sessions', handle_ticket_diagnostics_session_create),
+        web.get('/api/tickets/{ticket_id}/diagnostics/sessions/{session_id}', handle_ticket_diagnostics_session_detail),
+        web.get('/api/tickets/{ticket_id}/diagnostics/evidence', handle_ticket_diagnostics_evidence),
+        web.post('/api/tickets/{ticket_id}/diagnostics/evidence/manual', handle_ticket_diagnostics_manual_evidence),
+        web.patch('/api/tickets/{ticket_id}/diagnostics/evidence/{evidence_id}', handle_ticket_diagnostics_evidence_patch),
+        web.get('/api/tickets/{ticket_id}/diagnostics/findings', handle_ticket_diagnostics_findings),
+        web.post('/api/tickets/{ticket_id}/diagnostics/findings/evaluate', handle_ticket_diagnostics_findings_evaluate),
+        web.post('/api/tickets/{ticket_id}/diagnostics/findings/manual', handle_ticket_diagnostics_manual_finding),
+        web.patch('/api/tickets/{ticket_id}/diagnostics/findings/{finding_id}', handle_ticket_diagnostics_finding_patch),
+        web.post('/api/tickets/{ticket_id}/diagnostics/bundle', handle_ticket_diagnostics_bundle_create),
+        web.get('/api/tickets/{ticket_id}/diagnostics/bundle/{bundle_id}', handle_ticket_diagnostics_bundle_get),
+        web.get('/api/tickets/{ticket_id}/diagnostics/profile', handle_ticket_diagnostics_profile),
+        web.post('/api/tickets/{ticket_id}/diagnostics/run-profile', handle_ticket_diagnostics_run_profile),
+        web.post('/api/tickets/{ticket_id}/diagnostics/passport/attach-selected', handle_ticket_diagnostics_passport_attach_selected),
         web.get('/api/tickets/{ticket_id}', handle_ticket_get),
         web.get('/api/tickets/{ticket_id}/snapshot', handle_ticket_get_snapshot),  # New snapshot endpoint
         web.get('/api/tickets/{ticket_id}/observer', handle_ticket_get_observer_summary),
@@ -768,6 +810,8 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         web.get('/api/tools', handle_get_tools),
         web.post('/api/tools/run', handle_tools_run),
+        web.get('/api/diagnostics/capabilities', handle_diagnostics_capabilities),
+        web.get('/api/diagnostics/profiles', handle_diagnostics_profiles),
         
         # ============================================================================
         # Admin API

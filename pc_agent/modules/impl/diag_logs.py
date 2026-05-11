@@ -78,7 +78,28 @@ class DiagLogsModule(BaseCollector):
         params_model=DiagLogsCollectParams,
         metadata_risk_level="sensitive_read",
         metadata_scopes=["logs"],
-        metadata_requires_consent=True
+        metadata_requires_consent=True,
+        execution={
+            "target": "agent_builtin",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": False,
+            "requires_integration": False,
+        },
+        deployment={
+            "provider_id": "diag_logs",
+            "install_required_on_agent": False,
+            "package_type": "builtin",
+        },
+        safety={"side_effects": False, "requires_consent": True, "idempotent": True},
+        evidence={
+            "produces_evidence": True,
+            "kind": "logs.bundle",
+            "domain": "logs",
+            "perspective": "endpoint",
+            "passport_eligible": True,
+        },
+        artifacts={"may_produce_artifacts": True, "artifact_kinds": ["logs_zip"]},
     )
     async def collect(self, **params) -> Dict[str, Any]:
         with self.trace_span("tool.entry", details={"tool_name": "diag.logs.collect"}):
