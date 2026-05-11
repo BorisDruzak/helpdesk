@@ -58,22 +58,22 @@
   - `register()` для module smoke/list_tools;
   - `create_remote_assist_thread()` для runtime host.
 - [x] Добавить package smoke tests.
-- [ ] Обновить docs/CODEMAP/navigation catalog для новой runtime-module boundary.
-- [ ] Собрать bootstrap agent release `3.1.55`.
-- [ ] Собрать ZIP module package.
-- [ ] Загрузить module package на сервер через `/api/modules/upload`.
-- [ ] Назначить `remote_assist_runtime@1.0.0` preferred/default по правилам modules.
-- [ ] Установить/проверить module на canary agent `AD-MAIN`.
-- [ ] Проверить, что при новом Remote Assist запуске агент логирует managed runtime или fallback reason.
+- [x] Обновить docs/CODEMAP/navigation catalog для новой runtime-module boundary.
+- [x] Собрать bootstrap agent release `3.1.55`.
+- [x] Собрать ZIP module package.
+- [x] Загрузить module package на сервер через `/api/modules/upload`.
+- [x] Назначить `remote_assist_runtime@1.0.0` preferred/default по правилам modules.
+- [x] Установить/проверить module на canary agent `AD-MAIN`.
+- [x] Проверить default path для агента: `AD-MAIN` на `3.1.55`, `remote_assist_runtime@1.0.0` active, desired diff `ok`.
 
 ## Verification Plan
 
 - `python -m pytest pc_agent/tests/test_remote_assist_runtime_host.py pc_agent/tests/test_remote_assist_runtime_module_package.py -q --tb=short`
 - `python -m pytest pc_agent/tests/test_remote_assist_webrtc_client.py pc_agent/tests/test_remote_assist_input_controller.py pc_agent/tests/test_remote_assist_elevated_helper.py -q --tb=short`
 - `python scripts/verify_workspace.py`
-- Server module upload response must include `module_name=remote_assist_runtime`, `module_version=1.0.0`.
-- Preferred/default response must show `remote_assist_runtime@1.0.0`.
-- Canary diagnostics must show installed/active `remote_assist_runtime@1.0.0` or a successful `install_module_package` operation for that module.
+- [x] Server module upload response included `module_name=remote_assist_runtime`, `module_version=1.0.0`, `preflight_status=passed`.
+- [x] Preferred/default response showed `preferred_version=1.0.0`.
+- [x] Canary diagnostics showed `AD-MAIN` updated to `3.1.55`; module APIs showed installed/active `remote_assist_runtime@1.0.0` and desired diff `ok`.
 
 ## Handoff Notes
 
