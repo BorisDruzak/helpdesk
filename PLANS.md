@@ -503,16 +503,15 @@ Initial strict role set:
 - [x] Run frontend tests/build:
   - `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx src/pages/admin/index.test.tsx`
   - `pnpm --dir webapp run build`
-- [ ] Run browser verification after deploy/release on the canonical stand:
-  - open `http://192.168.100.17:8666/admin`
-  - navigate to `/app/admin/forms`
-  - save a draft without changing preferred
-  - validate and see preflight report
-  - publish without preferred and confirm public/current still uses old preferred
-  - make preferred and confirm `/help`/agent catalog sees the new version
-  - run process preview and confirm computed queue/priority/SLA/diagnostics are visible
-  - rollback preferred to prior version
-- [ ] Stop remote server after verification unless explicitly asked to leave it running.
+- [x] Run browser verification after deploy/release on the canonical stand:
+  - opened `http://192.168.100.17:8666/admin` and navigated to `/app/admin/forms`;
+  - confirmed the lifecycle UI separates `Сохранить черновик`, `Проверить публикацию`, `Опубликовать` and per-version `Сделать preferred`;
+  - saved a draft without changing preferred; `/api/web/admin/forms/save-draft` returned `200 OK`;
+  - validated the draft and saw the structured preflight report; `/api/web/admin/forms/validate` returned `200 OK` and reported blocking business validation instead of a server error;
+  - ran process preview with sample answers and confirmed ticket type, priority, queue, routing rule, SLA/OLA, approval, diagnostics, closure, visibility and notification summary are visible; `/api/web/admin/forms/process-preview` returned `200 OK`;
+  - checked browser console/network: no console warnings/errors and no failed lifecycle requests;
+  - live publish, preferred switch and rollback were intentionally not executed on the canonical stand because they mutate the active `request_forms` catalog.
+- [x] Stop remote server after verification unless explicitly asked to leave it running.
 
 ## Rollout Strategy
 
