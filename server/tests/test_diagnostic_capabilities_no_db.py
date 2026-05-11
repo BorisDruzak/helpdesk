@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from diagnostics.capability_registry import CapabilityRegistry
@@ -223,6 +225,97 @@ async def test_readiness_uses_platform_install_dependency_policy_credentials_map
     assert permission_denied.readiness == "permission_denied"
     assert credentials_missing.readiness == "credentials_missing"
     assert mapping_missing.readiness == "mapping_missing"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_readiness_returns_stable_reason_codes_and_action_ids():
+    registry = CapabilityRegistry(tool_service=FakeToolService(), state=FakeState(online=True))
+    service = CapabilityReadinessService(state=FakeState(online=True))
+    capabilities = {cap.id: cap for cap in await registry.list_capabilities(device_id="device-1")}
+
+    no_device = await service.get_readiness(
+        capabilities["diag.logs.collect"],
+        ReadinessContext(ticket_id="ticket-1"),
+    )
+    desired_installing = await service.get_readiness(
+        capabilities["endpoint.http.request"],
+        ReadinessContext(
+            ticket_id="ticket-1",
+            device_id="device-1",
+            device_platform="win32",
+            desired_modules={"network_tools": {"version": "1.0.0", "state": "queued"}},
+            permissions={"module.tool.run.low_risk"},
+            policy_flags={"diagnostics.enabled": True},
+        ),
+    )
+    preflight_failed = await service.get_readiness(
+        capabilities["endpoint.http.request"],
+        ReadinessContext(
+            ticket_id="ticket-1",
+            device_id="device-1",
+            device_platform="win32",
+            dependency_status={
+                "endpoint.http.request": {
+                    "status": "failed",
+                    "reason_code": "PREFLIGHT_FAILED",
+                    "reason": "preflight failed",
+                }
+            },
+            permissions={"module.tool.run.low_risk"},
+            policy_flags={"diagnostics.enabled": True},
+        ),
+    )
+    connector_missing = await service.get_readiness(
+        capabilities["zabbix.problems.lookup"],
+        ReadinessContext(ticket_id="ticket-1", permissions={"monitoring.zabbix.view"}),
+    )
+    connector_no_credentials = await service.get_readiness(
+        capabilities["zabbix.problems.lookup"],
+        ReadinessContext(
+            ticket_id="ticket-1",
+            integration_configs={"zabbix": {"url": "https://zabbix.local"}},
+            credential_keys={"zabbix": False},
+            mappings={"zabbix.host": {"hostid": "10101"}},
+            permissions={"monitoring.zabbix.view"},
+            policy_flags={"monitoring.zabbix.enabled": True},
+        ),
+    )
+    connector_no_mapping = await service.get_readiness(
+        capabilities["zabbix.problems.lookup"],
+        ReadinessContext(
+            ticket_id="ticket-1",
+            integration_configs={"zabbix": {"url": "https://zabbix.local"}},
+            credential_keys={"zabbix": True},
+            mappings={},
+            permissions={"monitoring.zabbix.view"},
+            policy_flags={"monitoring.zabbix.enabled": True},
+        ),
+    )
+    remote_assist = await service.get_readiness(
+        capabilities["remote_assist.request_view"],
+        ReadinessContext(ticket_id="ticket-1", device_id="device-1"),
+    )
+    remote_assist_ready = await service.get_readiness(
+        replace(capabilities["remote_assist.request_view"], requires_consent=False),
+        ReadinessContext(ticket_id="ticket-1", device_id="device-1"),
+    )
+
+    assert no_device.reason_code == "DEVICE_REQUIRED"
+    assert no_device.actions == []
+    assert desired_installing.readiness == "installing"
+    assert desired_installing.reason_code == "MODULE_INSTALLING"
+    assert preflight_failed.readiness == "missing_dependency"
+    assert preflight_failed.reason_code == "PREFLIGHT_FAILED"
+    assert connector_missing.reason_code == "INTEGRATION_NOT_CONFIGURED"
+    assert connector_missing.actions == ["configure_integration"]
+    assert connector_no_credentials.reason_code == "CREDENTIALS_MISSING"
+    assert connector_no_credentials.actions == ["add_credentials"]
+    assert connector_no_mapping.reason_code == "MAPPING_MISSING"
+    assert connector_no_mapping.actions == ["configure_integration"]
+    assert remote_assist.readiness == "consent_required"
+    assert remote_assist.actions == ["request_consent"]
+    assert remote_assist_ready.actions == ["open_remote_assist"]
 
 
 @pytest.mark.no_db

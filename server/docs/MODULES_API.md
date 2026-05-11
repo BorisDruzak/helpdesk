@@ -60,6 +60,8 @@ Capability descriptors include provider id/type, execution target, schemas/contr
 
 Readiness statuses are: `available`, `install_required`, `installing`, `unsupported_platform`, `agent_offline`, `missing_dependency`, `consent_required`, `integration_not_configured`, `credentials_missing`, `mapping_missing`, `permission_denied`, `disabled_by_policy`, `unavailable`, `unknown`.
 
+Readiness payloads keep those status strings for compatibility and add stable machine-readable `reason_code` values plus explicit `actions` ids. UI code should drive controls from `actions` such as `install`, `run`, `configure_integration`, `add_credentials`, `request_consent`, `open_remote_assist` and `create_manual_evidence`; it should not parse the human `reason` text.
+
 Compatibility rules:
 
 - old managed ZIP manifests default to `agent_managed_module` and keep auto-install semantics
@@ -86,6 +88,7 @@ Provider config persistence starts at migration `075`. Runtime capability descri
 - `diagnostic_provider_credential_refs.secret_ref`: reference only; API responses redact it
 - config payloads are redacted before persistence for sensitive keys such as password, token, secret, api key and credentials
 - Zabbix readiness consumes persisted `integration_key=zabbix`, credential readiness and `mappings.zabbix.host`
+- permission, policy and integration blockers return generic human reasons while preserving detail through stable `reason_code`, preventing support/admin projections from exposing raw provider config or credential data
 
 ## Admin workbench
 

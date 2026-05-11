@@ -43,7 +43,13 @@ class CapabilityReadinessService:
             return self._server_connector_readiness(capability, context)
         if target == "observer_query":
             if context.has_root_trace is False:
-                return self._status(capability, "unavailable", "Ticket has no observer root trace", [])
+                return self._status(
+                    capability,
+                    "unavailable",
+                    "Ticket has no observer root trace",
+                    [],
+                    reason_code="OBSERVER_TRACE_MISSING",
+                )
             return self._status(capability, "available", None, ["run"])
         if target == "remote_assist":
             return self._remote_assist_readiness(capability, context)
@@ -57,32 +63,47 @@ class CapabilityReadinessService:
         context: ReadinessContext,
     ) -> Optional[CapabilityReadiness]:
         if context.has_permission is False:
-            return self._status(capability, "permission_denied", "Operator lacks permission", [])
+            return self._status(
+                capability,
+                "permission_denied",
+                "Operator lacks permission",
+                [],
+                reason_code="PERMISSION_DENIED",
+            )
         if capability.required_permission:
             permissions = set(context.permissions or [])
             if context.permissions is not None and capability.required_permission not in permissions:
                 return self._status(
                     capability,
                     "permission_denied",
-                    f"Permission '{capability.required_permission}' is required",
+                    "Operator lacks required permission",
                     [],
+                    reason_code="PERMISSION_DENIED",
                 )
         if capability.requires_policy:
             policy_key = capability.policy_key or capability.id
             policy_flags = context.policy_flags or {}
             if policy_key in policy_flags and not bool(policy_flags.get(policy_key)):
-                return self._status(capability, "disabled_by_policy", f"Policy '{policy_key}' disables capability", [])
+                return self._status(
+                    capability,
+                    "disabled_by_policy",
+                    "Policy disables capability",
+                    [],
+                    reason_code="POLICY_DISABLED",
+                )
         if not self._platform_supported(capability, context.device_platform):
             return self._status(
                 capability,
                 "unsupported_platform",
                 f"Capability is not supported on platform '{context.device_platform}'",
                 [],
+                reason_code="PLATFORM_UNSUPPORTED",
             )
         dependency_status = context.dependency_status or {}
         dep_value = dependency_status.get(capability.id, dependency_status.get(capability.provider_id))
-        if dep_value is False:
-            return self._status(capability, "missing_dependency", "Capability dependency is missing", [])
+        dependency_readiness = self._dependency_readiness(capability, dep_value)
+        if dependency_readiness is not None:
+            return dependency_readiness
         return None
 
     def _agent_readiness(
@@ -91,21 +112,55 @@ class CapabilityReadinessService:
         context: ReadinessContext,
     ) -> CapabilityReadiness:
         if not context.device_id:
-            return self._status(capability, "unavailable", "Device is required", [])
+            return self._status(
+                capability,
+                "unavailable",
+                "Device is required",
+                [],
+                reason_code="DEVICE_REQUIRED",
+            )
         if capability.requires_agent_online and not self._is_agent_online(context.device_id):
-            return self._status(capability, "agent_offline", "Agent is offline", [])
+            return self._status(
+                capability,
+                "agent_offline",
+                "Agent is offline",
+                [],
+                reason_code="AGENT_OFFLINE",
+            )
         if capability.execution_target == "agent_managed_module" and capability.install_required_on_agent:
             module_state = self._module_state(capability, context)
             if module_state in {"installing", "activating"}:
-                return self._status(capability, "installing", "Module installation is in progress", [])
+                return self._status(
+                    capability,
+                    "installing",
+                    "Module installation is in progress",
+                    [],
+                    reason_code="MODULE_INSTALLING",
+                )
             if module_state in {"failed", "missing"}:
-                return self._status(capability, "missing_dependency", "Module installation failed or is missing", ["install"])
+                return self._status(
+                    capability,
+                    "missing_dependency",
+                    "Module installation failed or is missing",
+                    ["install"],
+                    reason_code="MODULE_INSTALL_FAILED",
+                )
             if module_state == "active":
+                if capability.requires_consent:
+                    return self._consent_required(capability)
                 return self._status(capability, "available", None, ["run"])
             actions = ["install"]
             if capability.supports_auto_install:
                 actions.append("run")
-            return self._status(capability, "install_required", "Module is not installed on the device", actions)
+            return self._status(
+                capability,
+                "install_required",
+                "Module is not installed on the device",
+                actions,
+                reason_code="MODULE_INSTALL_REQUIRED",
+            )
+        if capability.requires_consent:
+            return self._consent_required(capability)
         return self._status(capability, "available", None, ["run"])
 
     def _server_connector_readiness(
@@ -121,15 +176,30 @@ class CapabilityReadinessService:
             return self._status(
                 capability,
                 "integration_not_configured",
-                f"Integration '{integration_key or 'unknown'}' is not configured",
-                [],
+                "Required integration is not configured",
+                ["configure_integration"],
+                reason_code="INTEGRATION_NOT_CONFIGURED",
             )
         if capability.requires_credentials and integration_key and credentials.get(integration_key) is not True:
-            return self._status(capability, "credentials_missing", "Integration credentials are missing", [])
+            return self._status(
+                capability,
+                "credentials_missing",
+                "Integration credentials are missing",
+                ["add_credentials"],
+                reason_code="CREDENTIALS_MISSING",
+            )
         if capability.requires_mapping:
             mapping_key = capability.mapping_key or integration_key
             if mapping_key and mapping_key not in mappings:
-                return self._status(capability, "mapping_missing", f"Mapping '{mapping_key}' is missing", [])
+                return self._status(
+                    capability,
+                    "mapping_missing",
+                    "Required integration mapping is missing",
+                    ["configure_integration"],
+                    reason_code="MAPPING_MISSING",
+                )
+        if capability.requires_consent:
+            return self._consent_required(capability)
         return self._status(capability, "available", None, ["run"])
 
     def _remote_assist_readiness(
@@ -138,14 +208,79 @@ class CapabilityReadinessService:
         context: ReadinessContext,
     ) -> CapabilityReadiness:
         if not context.device_id:
-            return self._status(capability, "unavailable", "Device is required", [])
+            return self._status(
+                capability,
+                "unavailable",
+                "Device is required",
+                [],
+                reason_code="DEVICE_REQUIRED",
+            )
         if capability.requires_agent_online and not self._is_agent_online(context.device_id):
-            return self._status(capability, "agent_offline", "Agent is offline", [])
+            return self._status(
+                capability,
+                "agent_offline",
+                "Agent is offline",
+                [],
+                reason_code="AGENT_OFFLINE",
+            )
         if context.has_permission is False:
-            return self._status(capability, "permission_denied", "Operator lacks permission", [])
+            return self._status(
+                capability,
+                "permission_denied",
+                "Operator lacks permission",
+                [],
+                reason_code="PERMISSION_DENIED",
+            )
         if capability.requires_consent:
-            return self._status(capability, "consent_required", "User consent is required", ["request_consent"])
-        return self._status(capability, "available", None, ["run"])
+            return self._consent_required(capability)
+        return self._status(capability, "available", None, ["open_remote_assist"])
+
+    def _consent_required(self, capability: CapabilityDescriptor) -> CapabilityReadiness:
+        return self._status(
+            capability,
+            "consent_required",
+            "User consent is required",
+            ["request_consent"],
+            reason_code="CONSENT_REQUIRED",
+        )
+
+    def _dependency_readiness(
+        self,
+        capability: CapabilityDescriptor,
+        dep_value: Any,
+    ) -> Optional[CapabilityReadiness]:
+        if dep_value is None or dep_value is True:
+            return None
+        if dep_value is False:
+            return self._status(
+                capability,
+                "missing_dependency",
+                "Capability dependency is missing",
+                [],
+                reason_code="DEPENDENCY_MISSING",
+            )
+        if isinstance(dep_value, dict):
+            raw_status = str(dep_value.get("status") or dep_value.get("state") or "").strip().lower()
+            if raw_status in {"ok", "ready", "available", "passed", "success"}:
+                return None
+            if raw_status in {"installing", "pending", "queued", "checking"}:
+                return self._status(
+                    capability,
+                    "installing",
+                    str(dep_value.get("reason") or "Capability dependency check is in progress"),
+                    [],
+                    reason_code=str(dep_value.get("reason_code") or "DEPENDENCY_CHECKING"),
+                )
+            reason = str(dep_value.get("reason") or "Capability dependency is missing")
+            reason_code = str(dep_value.get("reason_code") or "DEPENDENCY_MISSING")
+            return self._status(capability, "missing_dependency", reason, [], reason_code=reason_code)
+        return self._status(
+            capability,
+            "missing_dependency",
+            "Capability dependency is missing",
+            [],
+            reason_code="DEPENDENCY_MISSING",
+        )
 
     def _platform_supported(self, capability: CapabilityDescriptor, device_platform: Optional[str]) -> bool:
         platforms = [str(item).strip().lower() for item in (capability.platforms or ["any"]) if str(item).strip()]
@@ -177,7 +312,7 @@ class CapabilityReadinessService:
         desired = desired_modules.get(module_name)
         if isinstance(desired, dict):
             desired_state = str(desired.get("state") or "").strip().lower()
-            if desired_state == "installed":
+            if desired_state in {"installed", "installing", "queued", "pending", "requested", "reconciling"}:
                 return "installing"
         elif desired:
             return "installing"
@@ -194,6 +329,8 @@ class CapabilityReadinessService:
         readiness: str,
         reason: Optional[str],
         actions: list[str],
+        *,
+        reason_code: Optional[str] = None,
     ) -> CapabilityReadiness:
         return CapabilityReadiness(
             capability_id=capability.id,
@@ -201,7 +338,7 @@ class CapabilityReadinessService:
             execution_target=capability.execution_target,
             readiness=readiness,
             reason=reason,
-            reason_code=readiness.upper(),
+            reason_code=reason_code or readiness.upper(),
             actions=actions,
             evidence=capability.evidence,
             risk_level=capability.risk_level,

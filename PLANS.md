@@ -157,7 +157,7 @@ Verification:
 
 ### Phase 3: Real Readiness Model
 
-- [ ] Replace placeholder readiness heuristics with real data sources:
+- [x] Replace placeholder readiness heuristics with real data sources:
   - device exists / ticket bound to device
   - agent online state
   - platform compatibility from tool metadata, device OS and managed module manifest
@@ -171,8 +171,8 @@ Verification:
   - mapping requirements for server connectors
   - observer root trace availability
   - remote assist policy/user consent/device capability state
-- [ ] Return stable `reason_code` in addition to human-readable `reason`.
-- [ ] Return available actions with explicit action ids:
+- [x] Return stable `reason_code` in addition to human-readable `reason`.
+- [x] Return available actions with explicit action ids:
   - `install`
   - `run`
   - `configure_integration`
@@ -180,13 +180,15 @@ Verification:
   - `request_consent`
   - `open_remote_assist`
   - `create_manual_evidence`
-- [ ] Add no-db and DB-backed tests for each readiness status.
-- [ ] Ensure readiness cannot make support/admin UI leak devices or integration names outside caller permission.
+- [x] Add no-db and DB-backed tests for readiness statuses and provider-config transitions.
+- [x] Ensure readiness cannot make support/admin UI leak devices or integration names outside caller permission.
+
+Decision: readiness payloads keep the existing `readiness` status strings for backward compatibility, but `reason_code` is now a stable machine contract such as `DEVICE_REQUIRED`, `MODULE_INSTALL_REQUIRED`, `PREFLIGHT_FAILED`, `INTEGRATION_NOT_CONFIGURED`, `CREDENTIALS_MISSING`, `MAPPING_MISSING`, `CONSENT_REQUIRED`, `POLICY_DISABLED` or `PERMISSION_DENIED`. Human `reason` strings are generic for permissions/integrations, and callers should drive UI actions from `actions` ids instead of parsing text.
 
 Verification:
 
-- readiness unit tests
-- support/admin permission tests
+- `python -m pytest server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m pytest server/tests/test_diagnostic_capabilities_no_db.py server/tests/test_diagnostic_provider_config.py -q --tb=short`
 - targeted API tests for both global and ticket-scoped capability endpoints
 
 ### Phase 4: Execution Router Productionization
