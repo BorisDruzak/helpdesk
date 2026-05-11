@@ -138,6 +138,7 @@ Acceptance for this slice:
 - [x] Add Alembic migration and migration tests.
 - [x] Define provider config lifecycle: disabled, configured, credentials_missing, ready, degraded.
 - [x] Add admin-safe CRUD/service APIs for provider config without logging secrets.
+- [x] Add web-session admin aliases for provider config APIs so the admin UI can use httpOnly session auth.
 - [x] Add audit events for provider config changes.
 - [x] Update `server/docs/DATABASE.md`, `server/docs/MODULES_API.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`.
 
