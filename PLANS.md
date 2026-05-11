@@ -70,6 +70,11 @@ Make `/app/admin/forms` understandable for an administrator by separating catalo
 - [x] Ensure status chips, validation counts, draft state, and warning/error panels are visible in editor headers.
 - [x] Run TypeScript/build and focused tests where practical.
 - [ ] Verify `/app/admin/forms` manually in browser at `https://192.168.100.17:9443/app/admin/forms` after deploy/release if live verification is requested or feasible.
+- [x] Fix live QA regressions found after destructive confirmation:
+  - block catalog publish until validation/preflight has passed in the current draft;
+  - make Smart view preview/publish actions perform real work or explicit feedback;
+  - wire version actions to editor/compare behavior instead of no-op buttons;
+  - accept legacy/typed query aliases such as `mode=template_editor`, `mode=policy_editor`, `mode=smart_views`, `mode=process_preview`.
 
 ## Verification Plan
 
@@ -84,6 +89,8 @@ Make `/app/admin/forms` understandable for an administrator by separating catalo
   - verified overview, template, policy, smart views, versions, and process preview modes render separately
   - verified process preview calls the existing preview client and renders computed queue/process details
 - [ ] Browser check on `https://192.168.100.17:9443/app/admin/forms` after deploy/release if live verification is requested or feasible.
+- [x] Focused Vitest coverage for the live QA regressions.
+- [x] Re-run `pnpm --dir webapp run build` and relevant webapp tests after fixes.
 
 ## Handoff
 

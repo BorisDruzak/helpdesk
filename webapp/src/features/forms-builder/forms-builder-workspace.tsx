@@ -37,6 +37,7 @@ import {
   fetchHelpdeskModelRegistry,
   previewAdminFormProcess,
   publishAdminFormsCatalog,
+  publishHelpdeskSmartView,
   saveAdminFormsDraft,
   setAdminFormsPreferredVersion,
   validateAdminFormsCatalog,
@@ -45,13 +46,15 @@ import {
   type AdminFormsFieldType,
   type AdminFormsFormItem,
   type AdminFormsPayload,
+  type AdminFormsPlaybookTrigger,
   type AdminFormsProcessPreviewResult,
   type AdminFormsSaveRequest,
   type AdminFormsValidateResult,
   type AdminHelpdeskPolicyItem,
   type AdminHelpdeskSmartViewItem,
 } from "./api";
-import { fetchTicketFormsPackList, type TicketFormsPackSummary } from "./catalog-api";
+import { fetchTicketFormsPackList, fetchTicketFormsPackVersion, type TicketFormsPackSummary } from "./catalog-api";
+import { fetchSupportQueue, type SupportQueuePayload } from "../queues/api";
 
 type FormsBuilderMode =
   | "overview"
@@ -74,6 +77,15 @@ type Feedback = {
   text: string;
 } | null;
 
+type VersionCompareSummary = {
+  fromVersion: string;
+  toVersion: string;
+  added: number;
+  removed: number;
+  changed: number;
+  unchanged: number;
+};
+
 type TemplateStepKey =
   | "main"
   | "classification"
@@ -92,10 +104,14 @@ type TemplateStepKey =
 const MODE_QUERY_TO_STATE: Record<string, FormsBuilderMode> = {
   overview: "overview",
   template: "template_editor",
+  template_editor: "template_editor",
   policy: "policy_editor",
+  policy_editor: "policy_editor",
   "smart-views": "smart_views",
+  smart_views: "smart_views",
   versions: "versions",
   preview: "process_preview",
+  process_preview: "process_preview",
 };
 
 const MODE_STATE_TO_QUERY: Record<FormsBuilderMode, string> = {
@@ -250,6 +266,118 @@ function cloneDraft(payload: AdminFormsPayload): CatalogDraft {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function asNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function asFieldOptions(value: unknown): AdminFormsFieldOption[] {
+  return Array.isArray(value)
+    ? value.map((item) => {
+        const option = asRecord(item);
+        return {
+          value: String(option.value ?? option.key ?? option.label ?? ""),
+          label: String(option.label ?? option.value ?? option.key ?? ""),
+        };
+      }).filter((option) => option.value)
+    : [];
+}
+
+function normalizeVisibleWhen(value: unknown): AdminFormsFieldItem["visible_when"] {
+  const rule = asRecord(value);
+  const field = asString(rule.field).trim();
+  if (!field) {
+    return null;
+  }
+  return {
+    field,
+    equals: typeof rule.equals === "string" ? rule.equals : null,
+    values: asStringArray(rule.values ?? rule.in),
+  };
+}
+
+function normalizePackDraft(rawPack: Record<string, unknown>, fallbackSummary?: TicketFormsPackSummary | null): CatalogDraft {
+  const forms = Array.isArray(rawPack.forms) ? rawPack.forms : [];
+  return {
+    title: asString(rawPack.title, fallbackSummary?.title ?? "Каталог заявок"),
+    description: asString(rawPack.description, fallbackSummary?.description ?? ""),
+    forms: forms.map((item) => {
+      const form = asRecord(item);
+      const fields = Array.isArray(form.fields) ? form.fields : [];
+      return {
+        key: asString(form.key),
+        request_kind: asString(form.request_kind, asString(form.key)),
+        ticket_type: asNullableString(form.ticket_type),
+        title: asString(form.title, asString(form.key)),
+        description: asString(form.description),
+        category_id: asNumberOrNull(form.category_id),
+        service_id: asNumberOrNull(form.service_id),
+        subcategory_id: asNumberOrNull(form.subcategory_id),
+        default_queue_id: asNumberOrNull(form.default_queue_id),
+        sla_policy_id: asNumberOrNull(form.sla_policy_id),
+        suggested_playbook_id: asNullableString(form.suggested_playbook_id),
+        field_roles: asRecord(form.field_roles) as Record<string, string[]>,
+        priority_policy: asRecord(form.priority_policy),
+        routing_policy: asRecord(form.routing_policy),
+        approval_policy: asRecord(form.approval_policy),
+        diagnostic_policy: asRecord(form.diagnostic_policy),
+        ola_policy: asRecord(form.ola_policy),
+        closure_policy: asRecord(form.closure_policy),
+        visibility_policy: asRecord(form.visibility_policy),
+        notification_policy: asRecord(form.notification_policy),
+        reporting_policy: asRecord(form.reporting_policy),
+        priority_policy_ref: asNullableString(form.priority_policy_ref),
+        routing_policy_ref: asNullableString(form.routing_policy_ref),
+        sla_policy_ref: asNullableString(form.sla_policy_ref),
+        ola_policy_ref: asNullableString(form.ola_policy_ref),
+        approval_policy_ref: asNullableString(form.approval_policy_ref),
+        diagnostic_policy_ref: asNullableString(form.diagnostic_policy_ref),
+        closure_policy_ref: asNullableString(form.closure_policy_ref),
+        visibility_policy_ref: asNullableString(form.visibility_policy_ref),
+        notification_policy_ref: asNullableString(form.notification_policy_ref),
+        reporting_policy_ref: asNullableString(form.reporting_policy_ref),
+        route_preview_examples: Array.isArray(form.route_preview_examples) ? form.route_preview_examples as Array<Record<string, unknown>> : [],
+        process_preview_examples: Array.isArray(form.process_preview_examples) ? form.process_preview_examples as Array<Record<string, unknown>> : [],
+        field_aliases: asRecord(form.field_aliases) as Record<string, string | string[]>,
+        field_migration_note: asNullableString(form.field_migration_note),
+        playbook_triggers: Array.isArray(form.playbook_triggers) ? form.playbook_triggers as AdminFormsPlaybookTrigger[] : [],
+        fields: fields.map((rawField) => {
+          const field = asRecord(rawField);
+          const type = asString(field.type, "text") as AdminFormsFieldType;
+          return {
+            key: asString(field.key),
+            label: asString(field.label, asString(field.key)),
+            type,
+            type_label: FIELD_TYPE_LABELS[type] ?? type,
+            required: Boolean(field.required),
+            placeholder: asString(field.placeholder),
+            help_text: asString(field.help_text),
+            options: asFieldOptions(field.options),
+            visible_when: normalizeVisibleWhen(field.visible_when),
+            validation: asRecord(field.validation),
+            process_mapping: asRecord(field.process_mapping),
+          };
+        }),
+      };
+    }),
+  };
+}
+
 function draftFingerprint(draft: CatalogDraft | null) {
   return JSON.stringify(draft);
 }
@@ -385,7 +513,59 @@ function issueCounts(report: AdminFormsValidateResult | null, draft: CatalogDraf
     const formIssues = Number(!form.title.trim()) + Number(!form.key.trim());
     return count + formIssues + form.fields.filter((field) => !field.key.trim() || !field.label.trim()).length;
   }, 0) ?? 0;
-  return { errors: missing, warnings: 0, canPublish: missing === 0 };
+  return { errors: missing, warnings: 0, canPublish: false };
+}
+
+function getPublicationBlocker(
+  report: AdminFormsValidateResult | null,
+  publishAccess: { allowed: boolean; reason: string | null },
+  isChecking: boolean
+) {
+  if (!publishAccess.allowed) {
+    return publishAccess.reason ?? "Недостаточно прав для публикации.";
+  }
+  if (isChecking) {
+    return "Дождитесь завершения проверки публикации.";
+  }
+  if (!report) {
+    return "Сначала выполните проверку публикации. UI не отправит publish, пока preflight не подтвердит готовность.";
+  }
+  if (!report.summary.can_publish) {
+    const firstBlocker = [...report.errors, ...report.warnings].find((issue) => issue.blocking !== false);
+    return firstBlocker?.message ?? "Исправьте блокирующие ошибки перед публикацией.";
+  }
+  return null;
+}
+
+function compareCatalogDrafts(
+  fromVersion: string,
+  fromDraft: CatalogDraft,
+  toVersion: string,
+  toDraft: CatalogDraft
+): VersionCompareSummary {
+  const fromItems = new Map(fromDraft.forms.map((form) => [form.key, draftFingerprint({ title: "", description: "", forms: [form] })]));
+  const toItems = new Map(toDraft.forms.map((form) => [form.key, draftFingerprint({ title: "", description: "", forms: [form] })]));
+  let added = 0;
+  let removed = 0;
+  let changed = 0;
+  let unchanged = 0;
+
+  for (const [key, value] of toItems) {
+    if (!fromItems.has(key)) {
+      added += 1;
+    } else if (fromItems.get(key) === value) {
+      unchanged += 1;
+    } else {
+      changed += 1;
+    }
+  }
+  for (const key of fromItems.keys()) {
+    if (!toItems.has(key)) {
+      removed += 1;
+    }
+  }
+
+  return { fromVersion, toVersion, added, removed, changed, unchanged };
 }
 
 function policyList(policies: Record<string, AdminHelpdeskPolicyItem[]> | undefined) {
@@ -416,6 +596,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [validationReport, setValidationReport] = useState<AdminFormsValidateResult | null>(null);
+  const [versionCompare, setVersionCompare] = useState<VersionCompareSummary | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [previewValues, setPreviewValues] = useState<Record<string, string | boolean>>({});
   const [versionQuery, setVersionQuery] = useState("");
@@ -478,6 +659,39 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
     setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
   }, [draft, formsQuery.data]);
+
+  useEffect(() => {
+    const templateKey = searchParams.get("template");
+    if (!templateKey || !draft?.forms.some((form) => form.key === templateKey)) {
+      return;
+    }
+    setSelectedFormKey(templateKey);
+    setSelectedFieldKey(draft.forms.find((form) => form.key === templateKey)?.fields[0]?.key ?? null);
+  }, [draft, searchParams]);
+
+  useEffect(() => {
+    const policyCode = searchParams.get("policy");
+    if (!policyCode || !policyList(registryQuery.data?.policies).some((policy) => policy.code === policyCode)) {
+      return;
+    }
+    setSelectedPolicyCode(policyCode);
+  }, [registryQuery.data?.policies, searchParams]);
+
+  useEffect(() => {
+    const viewCode = searchParams.get("view");
+    if (!viewCode || !registryQuery.data?.smart_views.some((view) => view.code === viewCode)) {
+      return;
+    }
+    setSelectedSmartViewCode(viewCode);
+  }, [registryQuery.data?.smart_views, searchParams]);
+
+  useEffect(() => {
+    const version = searchParams.get("version");
+    if (!version || !versionsQuery.data?.packs.some((item) => item.version === version)) {
+      return;
+    }
+    setSelectedVersion(version);
+  }, [searchParams, versionsQuery.data?.packs]);
 
   useEffect(() => {
     setPreviewValues((current) => buildPreviewValues(selectedForm, current));
@@ -550,6 +764,85 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
       return previewAdminFormProcess({ form: toSaveForm(selectedForm), form_payload: previewValues });
     },
   });
+  const smartViewPreviewMutation = useMutation({
+    mutationFn: async (view: AdminHelpdeskSmartViewItem) =>
+      fetchSupportQueue({ scope: "all", statusFilter: "all", smartView: view.code, query: "" }),
+    onSuccess: (result, view) => {
+      setFeedback({ tone: "success", text: `Предпросмотр ${view.title || view.code}: найдено ${result.summary.visible_count} заявок.` });
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось выполнить предпросмотр smart view." });
+    },
+  });
+  const smartViewPublishMutation = useMutation({
+    mutationFn: async (view: AdminHelpdeskSmartViewItem) =>
+      publishHelpdeskSmartView({
+        code: view.code,
+        title: view.title,
+        description: view.description,
+        scope_level: view.scope_level,
+        scope_ref: view.scope_ref,
+        filter: view.filter,
+        sort: view.sort,
+        columns: view.columns,
+        requested_version: view.version,
+      }),
+    onSuccess: async (result) => {
+      setFeedback({ tone: "success", text: result.message });
+      setSelectedSmartViewCode(result.smart_view.code);
+      await queryClient.invalidateQueries({ queryKey: ["admin-helpdesk-model-registry"] });
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось опубликовать smart view." });
+    },
+  });
+  const openVersionMutation = useMutation({
+    mutationFn: async (version: TicketFormsPackSummary) => {
+      const detail = await fetchTicketFormsPackVersion(version.version);
+      return { version, draft: normalizePackDraft(detail.pack, version) };
+    },
+    onSuccess: ({ version, draft: loadedDraft }) => {
+      setDraft(loadedDraft);
+      setBaseline(draftFingerprint(loadedDraft));
+      setDraftId(null);
+      setValidationReport(null);
+      setVersionCompare(null);
+      setSelectedFormKey(loadedDraft.forms[0]?.key ?? null);
+      setSelectedFieldKey(loadedDraft.forms[0]?.fields[0]?.key ?? null);
+      setTemplateStep("fields");
+      setFeedback({ tone: "success", text: `Версия ${version.version} открыта в редакторе.` });
+      setMode("template_editor", { version: version.version, template: loadedDraft.forms[0]?.key ?? null });
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось открыть версию в редакторе." });
+    },
+  });
+  const compareVersionMutation = useMutation({
+    mutationFn: async (version: TicketFormsPackSummary) => {
+      const currentVersion = versionsQuery.data?.current?.version ?? formsQuery.data?.summary.version ?? version.version;
+      const [fromDetail, toDetail] = await Promise.all([
+        fetchTicketFormsPackVersion(currentVersion),
+        fetchTicketFormsPackVersion(version.version),
+      ]);
+      return compareCatalogDrafts(
+        currentVersion,
+        normalizePackDraft(fromDetail.pack, versionsQuery.data?.current),
+        version.version,
+        normalizePackDraft(toDetail.pack, version)
+      );
+    },
+    onSuccess: (summary) => {
+      setVersionCompare(summary);
+      setFeedback({
+        tone: "success",
+        text: `Сравнение ${summary.fromVersion} → ${summary.toVersion}: добавлено ${summary.added}, изменено ${summary.changed}, удалено ${summary.removed}.`,
+      });
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Не удалось сравнить версии каталога." });
+    },
+  });
+  const publicationBlocker = getPublicationBlocker(validationReport, publishAccess, validateMutation.isPending);
 
   function setMode(mode: FormsBuilderMode, next?: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams);
@@ -596,11 +889,59 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     if (!draft) {
       return;
     }
-    if (!publishAccess.allowed) {
-      setFeedback({ tone: "error", text: publishAccess.reason });
+    if (publicationBlocker) {
+      setFeedback({ tone: "error", text: publicationBlocker });
       return;
     }
     publishMutation.mutate({ ...toSaveRequest(draft), draft_id: draftId, make_preferred: true });
+  }
+
+  function previewSmartView() {
+    if (!selectedSmartView) {
+      setFeedback({ tone: "error", text: "Сначала выберите smart view." });
+      return;
+    }
+    setMode("smart_views", { view: selectedSmartView.code });
+    smartViewPreviewMutation.mutate(selectedSmartView);
+  }
+
+  function saveSmartView() {
+    if (!selectedSmartView) {
+      setFeedback({ tone: "error", text: "Сначала выберите smart view." });
+      return;
+    }
+    setFeedback({
+      tone: "success",
+      text: "Черновик smart view пока не сохраняется отдельным endpoint. Для реального изменения используйте публикацию новой версии.",
+    });
+  }
+
+  function publishSmartView() {
+    if (!selectedSmartView) {
+      setFeedback({ tone: "error", text: "Сначала выберите smart view." });
+      return;
+    }
+    if (!publishAccess.allowed) {
+      setFeedback({ tone: "error", text: publishAccess.reason ?? "Недостаточно прав для публикации." });
+      return;
+    }
+    smartViewPublishMutation.mutate(selectedSmartView);
+  }
+
+  function openSelectedVersionInEditor() {
+    if (!selectedVersionItem) {
+      setFeedback({ tone: "error", text: "Сначала выберите версию каталога." });
+      return;
+    }
+    openVersionMutation.mutate(selectedVersionItem);
+  }
+
+  function compareSelectedVersion() {
+    if (!selectedVersionItem) {
+      setFeedback({ tone: "error", text: "Сначала выберите версию каталога." });
+      return;
+    }
+    compareVersionMutation.mutate(selectedVersionItem);
   }
 
   function updateSelectedForm(updater: (form: AdminFormsFormItem) => AdminFormsFormItem) {
@@ -1167,7 +1508,10 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           title="Политики"
           items={policies.map((policy) => ({ key: policy.code, title: policy.title || policy.code, subtitle: `${policy.kind} / ${policy.version}` }))}
           selectedKey={selectedPolicy?.code ?? null}
-          onSelect={setSelectedPolicyCode}
+          onSelect={(code) => {
+            setSelectedPolicyCode(code);
+            setMode("policy_editor", { policy: code });
+          }}
         />
         <Card>
           <CardHeader className="gap-4">
@@ -1217,14 +1561,25 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           title="Smart views"
           items={smartViews.map((view) => ({ key: view.code, title: view.title || view.code, subtitle: formatDate(view.updated_at ?? view.created_at) }))}
           selectedKey={selectedSmartView?.code ?? null}
-          onSelect={setSelectedSmartViewCode}
+          onSelect={(code) => {
+            setSelectedSmartViewCode(code);
+            setMode("smart_views", { view: code });
+          }}
         />
-        <SmartViewEditor view={selectedSmartView} />
+        <SmartViewEditor
+          isPreviewPending={smartViewPreviewMutation.isPending}
+          isPublishPending={smartViewPublishMutation.isPending}
+          onPreview={previewSmartView}
+          onPublish={publishSmartView}
+          onSave={saveSmartView}
+          preview={smartViewPreviewMutation.data}
+          view={selectedSmartView}
+        />
         <RightInfoPanel title="Проверка запроса" rows={[
           ["Где используется", "Дашборды, очереди, плейбуки"],
-          ["Найдено заявок", "37"],
-          ["Время выполнения", "320 мс"],
-          ["Статус", "Успешно"],
+          ["Найдено заявок", smartViewPreviewMutation.data ? String(smartViewPreviewMutation.data.summary.visible_count) : "Запустите предпросмотр"],
+          ["Время выполнения", smartViewPreviewMutation.data ? "получено из API" : "нет данных"],
+          ["Статус", smartViewPreviewMutation.isError ? "Ошибка" : smartViewPreviewMutation.data ? "Успешно" : "Не запускался"],
         ]} />
       </div>
     );
@@ -1258,19 +1613,33 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
             ))}
           </CardContent>
         </Card>
-        <VersionDetails version={selectedVersionItem} />
+        <VersionDetails
+          compareSummary={versionCompare}
+          isComparing={compareVersionMutation.isPending}
+          isOpening={openVersionMutation.isPending}
+          onCompare={compareSelectedVersion}
+          onOpenEditor={openSelectedVersionInEditor}
+          version={selectedVersionItem}
+        />
         <div className="space-y-4">
           <BuilderHealthPanel />
           <Card>
             <CardHeader><CardTitle>Действия с публикацией</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <Button disabled={!health.canPublish || publishMutation.isPending} onClick={publishDraft} className="w-full" leadingIcon={<CheckCircle2 className="h-4 w-4" />}>
+              {publicationBlocker ? (
+                <div className="rounded-[0.9rem] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                  {publicationBlocker}
+                </div>
+              ) : null}
+              <Button disabled={Boolean(publicationBlocker) || publishMutation.isPending} onClick={publishDraft} className="w-full" leadingIcon={<CheckCircle2 className="h-4 w-4" />} title={publicationBlocker ?? undefined}>
                 {publishMutation.isPending ? "Публикуем..." : "Опубликовать"}
               </Button>
-              <Button disabled={!selectedVersionItem || preferredMutation.isPending} onClick={() => selectedVersionItem ? preferredMutation.mutate(selectedVersionItem.version) : undefined} className="w-full" variant="outline">
+              <Button disabled={!selectedVersionItem || selectedVersionItem.is_preferred || preferredMutation.isPending} onClick={() => selectedVersionItem ? preferredMutation.mutate(selectedVersionItem.version) : undefined} className="w-full" variant="outline">
                 Сделать preferred
               </Button>
-              <Button className="w-full" variant="outline">Сравнить с текущей</Button>
+              <Button className="w-full" disabled={!selectedVersionItem || compareVersionMutation.isPending} onClick={compareSelectedVersion} variant="outline">
+                {compareVersionMutation.isPending ? "Сравниваем..." : "Сравнить с текущей"}
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -1325,17 +1694,29 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
   }
 
   function BuilderHealthPanel() {
+    const issues = [...(validationReport?.errors ?? []), ...(validationReport?.warnings ?? [])];
     return (
       <Card>
         <CardHeader>
           <CardTitle>Состояние каталога</CardTitle>
-          <CardDescription>{health.canPublish ? "К публикации готово" : "Есть блокирующие замечания"}</CardDescription>
+          <CardDescription>{validationReport ? health.canPublish ? "К публикации готово" : "Есть блокирующие замечания" : "Публикация требует preflight-проверки"}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="flex items-center justify-between gap-3"><span>Ошибки</span><strong>{health.errors}</strong></div>
           <div className="flex items-center justify-between gap-3"><span>Предупреждения</span><strong>{health.warnings}</strong></div>
           <div className="flex items-center justify-between gap-3"><span>Черновик</span><strong>{hasUnsavedChanges ? "Есть изменения" : "Синхронизирован"}</strong></div>
-          <Button onClick={validateDraft} className="w-full" variant="outline" leadingIcon={<ListChecks className="h-4 w-4" />}>Проверить</Button>
+          {!validationReport ? (
+            <div className="rounded-[0.9rem] bg-amber-50 px-3 py-2 text-amber-900">Проверка ещё не запускалась. Publish заблокирован до результата preflight.</div>
+          ) : null}
+          {issues.slice(0, 3).map((issue) => (
+            <div className="rounded-[0.9rem] bg-surface-subtle px-3 py-2" key={`${issue.code}-${issue.path ?? ""}`}>
+              <p className="font-medium text-slate-900">{issue.message}</p>
+              <p className="mt-1 text-xs text-slate-500">{issue.recommendation ?? issue.path ?? issue.code}</p>
+            </div>
+          ))}
+          <Button disabled={validateMutation.isPending || !draft} onClick={validateDraft} className="w-full" variant="outline" leadingIcon={<ListChecks className="h-4 w-4" />}>
+            {validateMutation.isPending ? "Проверяем..." : "Проверить"}
+          </Button>
         </CardContent>
       </Card>
     );
@@ -1486,7 +1867,24 @@ function ConditionBuilderPreview({ policy }: { policy: AdminHelpdeskPolicyItem |
   );
 }
 
-function SmartViewEditor({ view }: { view: AdminHelpdeskSmartViewItem | null }) {
+function SmartViewEditor({
+  isPreviewPending,
+  isPublishPending,
+  onPreview,
+  onPublish,
+  onSave,
+  preview,
+  view,
+}: {
+  isPreviewPending: boolean;
+  isPublishPending: boolean;
+  onPreview: () => void;
+  onPublish: () => void;
+  onSave: () => void;
+  preview: SupportQueuePayload | undefined;
+  view: AdminHelpdeskSmartViewItem | null;
+}) {
+  const previewRows = preview?.tickets.slice(0, 5) ?? [];
   return (
     <Card>
       <CardHeader className="gap-4">
@@ -1497,9 +1895,13 @@ function SmartViewEditor({ view }: { view: AdminHelpdeskSmartViewItem | null }) 
             <CardDescription>{view?.description ?? "Сохранённый рабочий срез для контроля сроков, рисков и диагностики."}</CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline">Предпросмотр</Button>
-            <Button size="sm" variant="outline">Сохранить</Button>
-            <Button size="sm">Опубликовать smart view</Button>
+            <Button disabled={!view || isPreviewPending} onClick={onPreview} size="sm" variant="outline">
+              {isPreviewPending ? "Загружаем..." : "Предпросмотр"}
+            </Button>
+            <Button disabled={!view} onClick={onSave} size="sm" variant="outline">Сохранить</Button>
+            <Button disabled={!view || isPublishPending} onClick={onPublish} size="sm">
+              {isPublishPending ? "Публикуем..." : "Опубликовать smart view"}
+            </Button>
           </div>
         </div>
       </CardHeader>
@@ -1516,18 +1918,61 @@ function SmartViewEditor({ view }: { view: AdminHelpdeskSmartViewItem | null }) 
               <tr><th className="px-4 py-3">ID</th><th className="px-4 py-3">Название</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Исполнитель</th><th className="px-4 py-3">Срок до</th><th className="px-4 py-3">Срок решения</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {["TKT-102348", "TKT-102215", "TKT-102187"].map((id, index) => (
-                <tr key={id}><td className="px-4 py-3 font-semibold">{id}</td><td className="px-4 py-3">Заявка с риском SLA</td><td className="px-4 py-3"><Badge tone="success">Открыта</Badge></td><td className="px-4 py-3">Линия {index + 1}</td><td className="px-4 py-3 text-rose-600">{45 + index * 20} мин</td><td className="px-4 py-3">2 ч</td></tr>
-              ))}
+              {previewRows.length > 0 ? previewRows.map((ticket) => (
+                <tr key={ticket.ticket_id}>
+                  <td className="px-4 py-3 font-semibold">{ticket.ticket_code ?? ticket.ticket_id}</td>
+                  <td className="px-4 py-3">{ticket.title}</td>
+                  <td className="px-4 py-3"><Badge tone="success">{ticket.status_label || ticket.status}</Badge></td>
+                  <td className="px-4 py-3">{ticket.assignee_display_name ?? ticket.queue_code ?? "Не назначен"}</td>
+                  <td className="px-4 py-3 text-rose-600">{ticket.next_action_due_at ? formatDate(ticket.next_action_due_at) : "нет срока"}</td>
+                  <td className="px-4 py-3">{ticket.priority_class ?? ticket.priority ?? "—"}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
+                    {preview ? "По текущему smart view заявок не найдено." : "Нажмите «Предпросмотр», чтобы загрузить реальные результаты из API."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+        {preview ? (
+          <p className="text-sm text-slate-500">Показано {previewRows.length} из {preview.summary.visible_count} заявок.</p>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function VersionDetails({ version }: { version: TicketFormsPackSummary | null }) {
+function VersionDetails({
+  compareSummary,
+  isComparing,
+  isOpening,
+  onCompare,
+  onOpenEditor,
+  version,
+}: {
+  compareSummary: VersionCompareSummary | null;
+  isComparing: boolean;
+  isOpening: boolean;
+  onCompare: () => void;
+  onOpenEditor: () => void;
+  version: TicketFormsPackSummary | null;
+}) {
+  const summaryCards = compareSummary
+    ? [
+        ["Добавлено", String(compareSummary.added)],
+        ["Изменено", String(compareSummary.changed)],
+        ["Удалено", String(compareSummary.removed)],
+        ["Без изменений", String(compareSummary.unchanged)],
+      ]
+    : [
+        ["Добавлено", "—"],
+        ["Изменено", "—"],
+        ["Удалено", "—"],
+        ["Без изменений", "—"],
+      ];
   return (
     <Card>
       <CardHeader className="gap-4">
@@ -1538,14 +1983,18 @@ function VersionDetails({ version }: { version: TicketFormsPackSummary | null })
             <CardDescription>{version?.title ?? "Каталог заявок"}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline">Открыть в редакторе</Button>
-            <Button size="sm" variant="outline">Сравнить</Button>
+            <Button disabled={!version || isOpening} onClick={onOpenEditor} size="sm" variant="outline">
+              {isOpening ? "Открываем..." : "Открыть в редакторе"}
+            </Button>
+            <Button disabled={!version || isComparing} onClick={onCompare} size="sm" variant="outline">
+              {isComparing ? "Сравниваем..." : "Сравнить"}
+            </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-3 md:grid-cols-4">
-          {[["Добавлено", "14"], ["Изменено", "27"], ["Удалено", "6"], ["Без изменений", "58"]].map(([label, value]) => (
+          {summaryCards.map(([label, value]) => (
             <div className="rounded-[1rem] border border-border bg-white px-4 py-4" key={label}>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
               <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
@@ -1553,9 +2002,18 @@ function VersionDetails({ version }: { version: TicketFormsPackSummary | null })
           ))}
         </div>
         <div className="space-y-3 text-sm text-slate-600">
-          <p>Изменения в шаблонах: добавлено 2 формы, изменено 6, удалено 1.</p>
-          <p>Изменения в политиках: изменено 3 политики, добавлена 1.</p>
-          <p>Проверка совместимости: критических конфликтов не обнаружено.</p>
+          {compareSummary ? (
+            <>
+              <p>Сравнение версий: {compareSummary.fromVersion} → {compareSummary.toVersion}.</p>
+              <p>Изменения в шаблонах: добавлено {compareSummary.added}, изменено {compareSummary.changed}, удалено {compareSummary.removed}.</p>
+              <p>Проверка совместимости: для публикации всё равно требуется preflight-проверка каталога.</p>
+            </>
+          ) : (
+            <>
+              <p>Нажмите «Сравнить», чтобы загрузить выбранную версию и сравнить её с текущей.</p>
+              <p>Данные берутся из version history request_forms, без изменения backend-состояния.</p>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
