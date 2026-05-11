@@ -46,4 +46,4 @@ def test_remote_assist_runtime_package_manifest_passes_server_preflight():
     assert manifest["manifest_version"] == 2
     assert manifest["module_api_version"] == "1.0.0"
     assert manifest["owner_scope"] == "platform"
-    assert manifest["min_agent_version"] == "3.1.55"
+    assert manifest["min_agent_version"] == "3.1.56"

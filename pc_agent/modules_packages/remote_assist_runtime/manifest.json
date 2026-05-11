@@ -1,12 +1,12 @@
 {
   "module_name": "remote_assist_runtime",
-  "module_version": "1.0.1",
+  "module_version": "1.0.2",
   "module_api_version": "1.0.0",
   "manifest_version": 2,
   "description": "Remote Assist runtime provider for WebRTC screen sharing, control, clipboard and file transfer.",
   "entrypoint": "module:register",
   "platforms": ["win32"],
-  "min_agent_version": "3.1.55",
+  "min_agent_version": "3.1.56",
   "requirements": ["aiohttp", "aiortc", "mss", "pynput"],
   "optional_requirements": [],
   "owner_scope": "platform",
@@ -60,7 +60,7 @@
       },
       "dependencies": {
         "required_python_packages": ["aiohttp", "aiortc", "mss", "pynput"],
-        "min_agent_version": "3.1.55"
+        "min_agent_version": "3.1.56"
       },
       "error_codes": [],
       "artifact_types": [],

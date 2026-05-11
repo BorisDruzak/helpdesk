@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from pc_agent.remote_assist.elevated_helper import ElevatedInputProxyBackend, run_elevated_helper_client
+from pc_agent.remote_assist.elevated_helper import ElevatedInputProxyBackend, _SocketLineReader, run_elevated_helper_client
 
 
 pytestmark = pytest.mark.skipif(not __import__("sys").platform.startswith("win"), reason="Windows-only elevated helper proxy")
@@ -81,3 +81,13 @@ def test_elevated_helper_client_survives_idle_socket_timeout() -> None:
 
     assert result["hello"] == {"type": "hello", "token": token}
     assert result["stop_response"] == {"status": "ok"}
+
+
+def test_socket_line_reader_treats_timed_out_oserror_as_idle_timeout() -> None:
+    class TimedOutSocket:
+        def recv(self, size: int) -> bytes:
+            raise OSError("cannot read from timed out object")
+
+    reader = _SocketLineReader(TimedOutSocket())  # type: ignore[arg-type]
+
+    assert reader.readline(1024) is None

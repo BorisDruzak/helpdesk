@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 RUNTIME_CONTRACT_VERSION = "1.0.0"
-MODULE_VERSION = "1.0.1"
+MODULE_VERSION = "1.0.2"
 
 
 def create_remote_assist_thread(**kwargs: Any) -> "QThread":

@@ -11,6 +11,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
+from pc_agent.version import AGENT_VERSION
+
 from .input_controller import InputControllerError, ScreenSizeProvider, WindowsSendInputBackend
 
 
@@ -157,6 +161,13 @@ def launch_elevated_helper(port: int, token: str) -> None:
     import ctypes
 
     executable = str(Path(sys.executable).resolve())
+    logger.info(
+        "Remote Assist elevated helper launch requested: agent_version={} executable={} cwd={} port={}",
+        AGENT_VERSION,
+        executable,
+        os.getcwd(),
+        int(port),
+    )
     args = subprocess.list2cmdline(
         [
             "--remote-assist-elevated-helper",
@@ -169,6 +180,7 @@ def launch_elevated_helper(port: int, token: str) -> None:
         ]
     )
     rc = int(ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, args, os.getcwd(), 1))
+    logger.info("Remote Assist elevated helper ShellExecuteW returned: shell_code={} executable={}", rc, executable)
     if rc <= 32:
         raise InputControllerError("ELEVATION_DENIED", f"Windows elevation prompt failed or was denied; shell_code={rc}")
 
@@ -176,46 +188,68 @@ def launch_elevated_helper(port: int, token: str) -> None:
 def run_elevated_helper_client(*, host: str, port: int, token: str, idle_timeout_sec: int = 900) -> int:
     if not sys.platform.startswith("win"):
         return 2
-    backend = WindowsSendInputBackend()
-    deadline = time.monotonic() + max(30, int(idle_timeout_sec))
-    with socket.create_connection((host, int(port)), timeout=30) as conn:
-        conn.settimeout(2.0)
-        reader = _SocketLineReader(conn)
-        writer = conn.makefile("w", encoding="utf-8", newline="\n")
-        _helper_write(writer, {"type": "hello", "token": token})
-        while time.monotonic() < deadline:
-            line = reader.readline(_MAX_MESSAGE_BYTES + 1)
-            if line is None:
-                continue
-            if not line:
-                return 0
-            if len(line.encode("utf-8")) > _MAX_MESSAGE_BYTES:
-                _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_TOO_LARGE", "error": "Message is too large"})
-                continue
-            try:
-                message = json.loads(line)
-            except ValueError:
-                _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_INVALID", "error": "Message is invalid"})
-                continue
-            if not isinstance(message, dict):
-                _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_INVALID", "error": "Message must be an object"})
-                continue
-            if message.get("type") == "stop":
-                _helper_write(writer, {"status": "ok"})
-                return 0
-            if message.get("type") != "input" or not isinstance(message.get("action"), dict):
-                _helper_write(writer, {"status": "error", "error_code": "ELEVATED_TYPE_NOT_ALLOWED", "error": "Message type is not allowed"})
-                continue
-            try:
-                backend.send(message["action"])
-            except InputControllerError as exc:
-                _helper_write(writer, {"status": "error", "error_code": exc.code, "error": exc.message})
-            except Exception as exc:
-                _helper_write(writer, {"status": "error", "error_code": "ELEVATED_INPUT_FAILED", "error": str(exc)})
-            else:
-                deadline = time.monotonic() + max(30, int(idle_timeout_sec))
-                _helper_write(writer, {"status": "ok"})
-    return 0
+    executable = str(Path(sys.executable).resolve())
+    logger.info(
+        "Remote Assist elevated helper client starting: agent_version={} pid={} executable={} host={} port={}",
+        AGENT_VERSION,
+        os.getpid(),
+        executable,
+        host,
+        int(port),
+    )
+    try:
+        backend = WindowsSendInputBackend()
+        deadline = time.monotonic() + max(30, int(idle_timeout_sec))
+        with socket.create_connection((host, int(port)), timeout=30) as conn:
+            conn.settimeout(2.0)
+            reader = _SocketLineReader(conn)
+            writer = conn.makefile("w", encoding="utf-8", newline="\n")
+            _helper_write(writer, {"type": "hello", "token": token})
+            while time.monotonic() < deadline:
+                line = reader.readline(_MAX_MESSAGE_BYTES + 1)
+                if line is None:
+                    continue
+                if not line:
+                    logger.info("Remote Assist elevated helper client disconnected by parent")
+                    return 0
+                if len(line.encode("utf-8")) > _MAX_MESSAGE_BYTES:
+                    _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_TOO_LARGE", "error": "Message is too large"})
+                    continue
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_INVALID", "error": "Message is invalid"})
+                    continue
+                if not isinstance(message, dict):
+                    _helper_write(writer, {"status": "error", "error_code": "ELEVATED_MESSAGE_INVALID", "error": "Message must be an object"})
+                    continue
+                if message.get("type") == "stop":
+                    _helper_write(writer, {"status": "ok"})
+                    logger.info("Remote Assist elevated helper client stopped by parent")
+                    return 0
+                if message.get("type") != "input" or not isinstance(message.get("action"), dict):
+                    _helper_write(writer, {"status": "error", "error_code": "ELEVATED_TYPE_NOT_ALLOWED", "error": "Message type is not allowed"})
+                    continue
+                try:
+                    backend.send(message["action"])
+                except InputControllerError as exc:
+                    _helper_write(writer, {"status": "error", "error_code": exc.code, "error": exc.message})
+                except Exception as exc:
+                    _helper_write(writer, {"status": "error", "error_code": "ELEVATED_INPUT_FAILED", "error": str(exc)})
+                else:
+                    deadline = time.monotonic() + max(30, int(idle_timeout_sec))
+                    _helper_write(writer, {"status": "ok"})
+        logger.info("Remote Assist elevated helper client connection closed")
+        return 0
+    except (OSError, TimeoutError) as exc:
+        logger.warning(
+            "Remote Assist elevated helper client socket failure: agent_version={} pid={} executable={} error={}",
+            AGENT_VERSION,
+            os.getpid(),
+            executable,
+            exc,
+        )
+        return 1
 
 
 def _helper_write(writer: Any, message: dict[str, Any]) -> None:
@@ -244,6 +278,10 @@ class _SocketLineReader:
                 chunk = self._conn.recv(min(4096, max(1, limit + 1 - len(self._buffer))))
             except (socket.timeout, TimeoutError):
                 return None
+            except OSError as exc:
+                if "timed out" in str(exc).lower():
+                    return None
+                raise
             if not chunk:
                 if not self._buffer:
                     return ""
