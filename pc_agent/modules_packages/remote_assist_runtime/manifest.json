@@ -1,6 +1,6 @@
 {
   "module_name": "remote_assist_runtime",
-  "module_version": "1.0.0",
+  "module_version": "1.0.1",
   "module_api_version": "1.0.0",
   "manifest_version": 2,
   "description": "Remote Assist runtime provider for WebRTC screen sharing, control, clipboard and file transfer.",
