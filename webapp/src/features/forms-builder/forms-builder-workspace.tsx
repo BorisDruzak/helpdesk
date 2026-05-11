@@ -588,6 +588,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
   const complexityMode = parseComplexityMode(searchParams.get("complexity"));
   const [draft, setDraft] = useState<CatalogDraft | null>(null);
   const [baseline, setBaseline] = useState("null");
+  const [draftSourceVersion, setDraftSourceVersion] = useState<string | null>(null);
   const [selectedFormKey, setSelectedFormKey] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [templateStep, setTemplateStep] = useState<TemplateStepKey>("fields");
@@ -656,6 +657,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     const nextDraft = cloneDraft(formsQuery.data);
     setDraft(nextDraft);
     setBaseline(draftFingerprint(nextDraft));
+    setDraftSourceVersion(formsQuery.data.summary.version);
     setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
     setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
   }, [draft, formsQuery.data]);
@@ -731,6 +733,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
       const nextDraft = { title: result.summary.title, description: result.summary.description ?? "", forms: result.forms };
       setDraft(nextDraft);
       setBaseline(draftFingerprint(nextDraft));
+      setDraftSourceVersion(result.summary.version);
       setDraftId(null);
       setValidationReport(null);
       setFeedback({ tone: "success", text: result.message });
@@ -804,6 +807,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     onSuccess: ({ version, draft: loadedDraft }) => {
       setDraft(loadedDraft);
       setBaseline(draftFingerprint(loadedDraft));
+      setDraftSourceVersion(version.version);
       setDraftId(null);
       setValidationReport(null);
       setVersionCompare(null);
@@ -875,14 +879,14 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
       setFeedback({ tone: "error", text: publishAccess.reason });
       return;
     }
-    saveDraftMutation.mutate({ ...toSaveRequest(draft), base_version: formsQuery.data?.summary.version ?? null, draft_id: draftId });
+    saveDraftMutation.mutate({ ...toSaveRequest(draft), base_version: draftSourceVersion ?? formsQuery.data?.summary.version ?? null, draft_id: draftId });
   }
 
   function validateDraft() {
     if (!draft) {
       return;
     }
-    validateMutation.mutate({ ...toSaveRequest(draft), base_version: formsQuery.data?.summary.version ?? null, draft_id: draftId });
+    validateMutation.mutate({ ...toSaveRequest(draft), base_version: draftSourceVersion ?? formsQuery.data?.summary.version ?? null, draft_id: draftId });
   }
 
   function publishDraft() {
@@ -1003,7 +1007,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="brand">Основан на версии {formsQuery.data?.summary.version ?? "..."}</Badge>
+          <Badge tone="brand">Основан на версии {draftSourceVersion ?? formsQuery.data?.summary.version ?? "..."}</Badge>
           <Badge tone={hasUnsavedChanges ? "warning" : "success"}>
             {hasUnsavedChanges ? "Есть изменения" : "Сохранено"}
           </Badge>
@@ -1269,7 +1273,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge tone="brand">Черновик</Badge>
                     <Badge tone={hasUnsavedChanges ? "warning" : "success"}>{hasUnsavedChanges ? "Есть изменения" : "Сохранено"}</Badge>
-                    <Badge tone="info">Основан на версии {formsQuery.data?.summary.version ?? "..."}</Badge>
+                    <Badge tone="info">Основан на версии {draftSourceVersion ?? formsQuery.data?.summary.version ?? "..."}</Badge>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1754,7 +1758,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           ["Название", selectedForm?.title ?? "не выбран"],
           ["Ключ", selectedForm?.key ?? "n/a"],
           ["Поля", String(selectedForm?.fields.length ?? 0)],
-          ["Источник", formsQuery.data?.summary.version ?? "current"],
+          ["Источник", draftSourceVersion ?? formsQuery.data?.summary.version ?? "current"],
         ]} />
       </aside>
     );
