@@ -40,6 +40,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 **Тикетная система (миграция 018):**  
 **ticket_queues** — очереди (ServiceDesk L1, SysAdmins, Network, 1C, Security).  
 **ticket_queue_members** — участники очередей.  
+**support_queue_saved_views** — DB-backed Queue Mode saved views and column presets for personal, queue-shared and global support workspace scopes (migration 072).
 **ticket_categories** — иерархия category/service/subcategory.  
 **ticket_sla_policies**, **ticket_sla_targets**, **ticket_priority_matrix** — SLA и матрица impact×urgency→priority.  
 **ticket_routing_rules** — правила маршрутизации.  
@@ -222,6 +223,7 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 - `038_ticket_queue_rework.py` — snake_case статусы, importance/reasons, ui_users.last_ticket_assigned_at (Stage 10.6)
 - `039_add_servicedesk_test_queue.py` — upsert очереди `servicedesk_test` (active) для публичной ссылки `/queue/test`
 - `062_access_control_groups.py` — access groups, group permissions, group queue grants and access_audit для `/app/admin/access`
+- `072_support_queue_saved_views.py` — `support_queue_saved_views` for DB-backed support Queue Mode saved views and column presets.
 
 Команды: из каталога `server` — `alembic upgrade head`, `alembic revision --autogenerate`.
 

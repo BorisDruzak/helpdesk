@@ -9,7 +9,7 @@ from typing import Any
 
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 
 from access_control.service import can
 from app.api.serializers import ticket_to_dict
@@ -21,10 +21,12 @@ from app.db.models import (
     PlaybookStep,
     PlaybookStepRun,
     PlaybookVersion,
+    SupportQueueSavedView,
     Ticket,
     TicketApproval,
     TicketEvent,
     TicketQueue,
+    TicketQueueMember,
     TicketResolutionPassport,
 )
 from app.repos import DevicesRepo, NotificationRepo
@@ -91,6 +93,10 @@ from web_api.dto.support import (
     SupportQueueMassActionItem,
     SupportQueueMassActionRequest,
     SupportQueueMassActionResult,
+    SupportQueueSavedViewDeletePayload,
+    SupportQueueSavedViewItem,
+    SupportQueueSavedViewsPayload,
+    SupportQueueSavedViewUpsertRequest,
     SupportQueueFilters,
     SupportQueueCountItem,
     SupportQueuePayload,
@@ -188,6 +194,34 @@ SUPPORT_WORKSPACE_INTERNAL_NAV_PATTERNS = [
     re.compile(r"\btest\b", re.IGNORECASE),
 ]
 SUPPORT_WORKSPACE_VISIBILITY_KEY = "support_workspace_visibility"
+SUPPORT_QUEUE_SAVED_VIEW_SCOPES = {"personal", "queue", "global"}
+SUPPORT_QUEUE_VIEW_COLUMNS = {
+    "number",
+    "subject",
+    "requester",
+    "priority",
+    "status",
+    "next_action",
+    "sla",
+    "queue",
+    "assignee",
+    "last_event",
+    "unread",
+}
+SUPPORT_QUEUE_REQUIRED_VIEW_COLUMNS = {"number", "subject"}
+SUPPORT_QUEUE_DEFAULT_VIEW_COLUMNS = [
+    "number",
+    "subject",
+    "requester",
+    "priority",
+    "status",
+    "next_action",
+    "sla",
+    "queue",
+    "assignee",
+    "last_event",
+    "unread",
+]
 
 
 @dataclass
@@ -388,6 +422,152 @@ async def _read_support_json(request: web.Request) -> dict[str, Any] | web.Respo
     if not isinstance(data, dict):
         return _support_json_error("Тело запроса должно быть объектом", status=400, error_code="VALIDATION_ERROR")
     return data
+
+
+def _normalize_saved_view_scope(scope: str | None) -> str:
+    normalized = str(scope or "personal").strip().lower()
+    return normalized if normalized in SUPPORT_QUEUE_SAVED_VIEW_SCOPES else "personal"
+
+
+def _normalize_saved_view_name(name: str) -> str:
+    normalized = re.sub(r"\s+", " ", str(name or "").strip())
+    return normalized[:120]
+
+
+def _normalize_saved_view_columns(columns: list[str] | None) -> list[str]:
+    ordered: list[str] = []
+    for column in list(columns or SUPPORT_QUEUE_DEFAULT_VIEW_COLUMNS):
+        normalized = str(column or "").strip()
+        if normalized in SUPPORT_QUEUE_VIEW_COLUMNS and normalized not in ordered:
+            ordered.append(normalized)
+    for required in sorted(SUPPORT_QUEUE_REQUIRED_VIEW_COLUMNS):
+        if required not in ordered:
+            ordered.insert(0, required)
+    return ordered
+
+
+def _normalize_saved_view_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
+    raw = dict(filters or {})
+    normalized: dict[str, Any] = {}
+    for key in ("scope", "smartViewId", "queueId", "search", "showArchive"):
+        if key not in raw:
+            continue
+        value = raw[key]
+        if isinstance(value, (str, int, bool)) or value is None:
+            normalized[key] = value
+    if "search" in normalized:
+        normalized["search"] = str(normalized["search"] or "")[:200]
+    if "scope" in normalized:
+        normalized["scope"] = _normalize_scope(str(normalized["scope"]))
+    if "showArchive" in normalized:
+        normalized["showArchive"] = bool(normalized["showArchive"])
+    return normalized
+
+
+def _normalize_saved_view_sort(sort: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in list(sort or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field") or "").strip()
+        direction = str(item.get("direction") or "asc").strip().lower()
+        if not field:
+            continue
+        normalized.append({"field": field[:80], "direction": "desc" if direction == "desc" else "asc"})
+    return normalized
+
+
+async def _support_accessible_queue_ids(session, auth_context) -> set[int]:
+    if getattr(auth_context, "actor_role", None) == "admin":
+        rows = (await session.execute(select(TicketQueue.id).where(TicketQueue.is_active.is_(True)))).scalars().all()
+        return {int(row) for row in rows if row is not None}
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    if not actor_id:
+        return set()
+    rows = (
+        await session.execute(
+            select(TicketQueueMember.queue_id)
+            .join(TicketQueue, TicketQueue.id == TicketQueueMember.queue_id)
+            .where(TicketQueueMember.actor_id == actor_id)
+            .where(TicketQueue.is_active.is_(True))
+        )
+    ).scalars().all()
+    return {int(row) for row in rows if row is not None}
+
+
+def _saved_view_visibility_clause(auth_context, accessible_queue_ids: set[int]):
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    clauses = [SupportQueueSavedView.scope == "global"]
+    if actor_id:
+        clauses.append((SupportQueueSavedView.scope == "personal") & (SupportQueueSavedView.owner_actor_id == actor_id))
+    if accessible_queue_ids:
+        clauses.append((SupportQueueSavedView.scope == "queue") & (SupportQueueSavedView.queue_id.in_(accessible_queue_ids)))
+    return or_(*clauses)
+
+
+def _serialize_support_queue_saved_view(view: SupportQueueSavedView) -> SupportQueueSavedViewItem:
+    return SupportQueueSavedViewItem(
+        id=view.id,
+        name=view.name,
+        scope=view.scope,
+        owner_actor_id=view.owner_actor_id,
+        queue_id=view.queue_id,
+        filters=dict(view.filters_json or {}),
+        columns=_normalize_saved_view_columns(list(view.columns_json or [])),
+        sort=list(view.sort_json or []),
+        is_favorite=bool(view.is_favorite),
+        is_default=bool(view.is_default),
+        created_at=view.created_at.isoformat() if view.created_at else None,
+        updated_at=view.updated_at.isoformat() if view.updated_at else None,
+        created_by=view.created_by,
+        updated_by=view.updated_by,
+    )
+
+
+def _can_manage_saved_view(auth_context, view: SupportQueueSavedView) -> bool:
+    if getattr(auth_context, "actor_role", None) == "admin":
+        return True
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    return bool(actor_id and (view.owner_actor_id == actor_id or view.created_by == actor_id))
+
+
+async def _validate_saved_view_scope(
+    session,
+    auth_context,
+    *,
+    scope: str,
+    queue_id: int | None,
+    accessible_queue_ids: set[int] | None = None,
+) -> web.Response | None:
+    if scope == "global" and getattr(auth_context, "actor_role", None) != "admin":
+        return _support_json_error("Global saved views are admin-only", status=403, error_code="FORBIDDEN")
+    if scope != "queue":
+        return None
+    if queue_id is None:
+        return _support_json_error("queue_id is required for queue saved views", status=400, error_code="VALIDATION_ERROR")
+    queue = (await session.execute(select(TicketQueue).where(TicketQueue.id == queue_id))).scalar_one_or_none()
+    if queue is None or not bool(getattr(queue, "is_active", False)):
+        return _support_json_error("Queue not found or inactive", status=404, error_code="NOT_FOUND")
+    if getattr(auth_context, "actor_role", None) == "admin":
+        return None
+    ids = accessible_queue_ids if accessible_queue_ids is not None else await _support_accessible_queue_ids(session, auth_context)
+    if queue_id not in ids:
+        return _support_json_error("Queue is not available to the current operator", status=403, error_code="FORBIDDEN")
+    return None
+
+
+async def _clear_saved_view_default_peers(session, view: SupportQueueSavedView) -> None:
+    stmt = (
+        update(SupportQueueSavedView)
+        .where(SupportQueueSavedView.id != view.id)
+        .where(SupportQueueSavedView.scope == view.scope)
+        .where(SupportQueueSavedView.is_default.is_(True))
+    )
+    if view.scope == "personal":
+        stmt = stmt.where(SupportQueueSavedView.owner_actor_id == view.owner_actor_id)
+    elif view.scope == "queue":
+        stmt = stmt.where(SupportQueueSavedView.queue_id == view.queue_id)
+    await session.execute(stmt.values(is_default=False))
 
 
 async def _support_mutation_result(session, ticket: object, *, action: str, auto_assigned: bool = False) -> SupportTicketMutationActionResult:
@@ -3129,6 +3309,202 @@ async def _support_mass_action_internal_note(
         event_id=message_id,
     )
     return result, payload
+
+
+@require_auth("admin", "support")
+async def handle_web_support_queue_saved_views(request: web.Request):
+    auth_context = request["auth_context"]
+    try:
+        async with get_session() as session:
+            denied = await _require_permission(session, auth_context, "ticket.queue.view")
+            if denied:
+                return denied
+            accessible_queue_ids = await _support_accessible_queue_ids(session, auth_context)
+            views = (
+                await session.execute(
+                    select(SupportQueueSavedView)
+                    .where(_saved_view_visibility_clause(auth_context, accessible_queue_ids))
+                    .order_by(SupportQueueSavedView.is_favorite.desc(), SupportQueueSavedView.updated_at.desc())
+                )
+            ).scalars().all()
+            serialized = [_serialize_support_queue_saved_view(view) for view in views]
+            personal_default = next(
+                (
+                    view
+                    for view in serialized
+                    if view.scope == "personal"
+                    and view.owner_actor_id == str(getattr(auth_context, "actor_id", "") or "")
+                    and view.is_default
+                ),
+                None,
+            )
+            fallback_default = next((view for view in serialized if view.is_default), None)
+            default_view = personal_default or fallback_default
+            return json_model_response(
+                SuccessResponse[SupportQueueSavedViewsPayload](
+                    data=SupportQueueSavedViewsPayload(
+                        views=serialized,
+                        default_view_id=default_view.id if default_view else None,
+                        default_columns=default_view.columns if default_view else SUPPORT_QUEUE_DEFAULT_VIEW_COLUMNS,
+                    )
+                )
+            )
+    except Exception as exc:
+        logger.warning(f"[web_support_queue_saved_views] failed: {exc}")
+        return _support_json_error("Saved queue views are unavailable", status=500, error_code="SERVER_ERROR")
+
+
+@require_auth("admin", "support")
+async def handle_web_support_queue_saved_view_create(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        payload = SupportQueueSavedViewUpsertRequest.model_validate(data)
+    except Exception as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+
+    name = _normalize_saved_view_name(payload.name)
+    if not name:
+        return _support_json_error("Saved view name is required", status=400, error_code="VALIDATION_ERROR")
+
+    auth_context = request["auth_context"]
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    scope = _normalize_saved_view_scope(payload.scope)
+    queue_id = payload.queue_id if scope == "queue" else None
+
+    try:
+        async with get_session() as session:
+            denied = await _require_permission(session, auth_context, "ticket.queue.view")
+            if denied:
+                return denied
+            accessible_queue_ids = await _support_accessible_queue_ids(session, auth_context)
+            invalid_scope = await _validate_saved_view_scope(
+                session,
+                auth_context,
+                scope=scope,
+                queue_id=queue_id,
+                accessible_queue_ids=accessible_queue_ids,
+            )
+            if invalid_scope:
+                return invalid_scope
+            now = datetime.now(timezone.utc)
+            view = SupportQueueSavedView(
+                id=str(uuid.uuid4()),
+                name=name,
+                scope=scope,
+                owner_actor_id=actor_id if scope == "personal" else None,
+                queue_id=queue_id,
+                filters_json=_normalize_saved_view_filters(payload.filters),
+                columns_json=_normalize_saved_view_columns(payload.columns),
+                sort_json=_normalize_saved_view_sort(payload.sort),
+                is_favorite=bool(payload.is_favorite),
+                is_default=bool(payload.is_default),
+                created_at=now,
+                updated_at=now,
+                created_by=actor_id or None,
+                updated_by=actor_id or None,
+            )
+            session.add(view)
+            await session.flush()
+            if view.is_default:
+                await _clear_saved_view_default_peers(session, view)
+            await session.commit()
+            return json_model_response(SuccessResponse[SupportQueueSavedViewItem](data=_serialize_support_queue_saved_view(view)))
+    except Exception as exc:
+        logger.warning(f"[web_support_queue_saved_view_create] failed: {exc}")
+        return _support_json_error("Saved view was not created", status=500, error_code="SERVER_ERROR")
+
+
+@require_auth("admin", "support")
+async def handle_web_support_queue_saved_view_update(request: web.Request):
+    view_id = str(request.match_info.get("view_id") or "").strip()
+    if not view_id:
+        return _support_json_error("view_id is required", status=400, error_code="VALIDATION_ERROR")
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        payload = SupportQueueSavedViewUpsertRequest.model_validate(data)
+    except Exception as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+
+    name = _normalize_saved_view_name(payload.name)
+    if not name:
+        return _support_json_error("Saved view name is required", status=400, error_code="VALIDATION_ERROR")
+
+    auth_context = request["auth_context"]
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    scope = _normalize_saved_view_scope(payload.scope)
+    queue_id = payload.queue_id if scope == "queue" else None
+
+    try:
+        async with get_session() as session:
+            denied = await _require_permission(session, auth_context, "ticket.queue.view")
+            if denied:
+                return denied
+            view = (await session.execute(select(SupportQueueSavedView).where(SupportQueueSavedView.id == view_id))).scalar_one_or_none()
+            if view is None:
+                return _support_json_error("Saved view not found", status=404, error_code="NOT_FOUND")
+            if not _can_manage_saved_view(auth_context, view):
+                return _support_json_error("Saved view is owned by another operator", status=403, error_code="FORBIDDEN")
+            accessible_queue_ids = await _support_accessible_queue_ids(session, auth_context)
+            invalid_scope = await _validate_saved_view_scope(
+                session,
+                auth_context,
+                scope=scope,
+                queue_id=queue_id,
+                accessible_queue_ids=accessible_queue_ids,
+            )
+            if invalid_scope:
+                return invalid_scope
+            view.name = name
+            view.scope = scope
+            view.owner_actor_id = actor_id if scope == "personal" else None
+            view.queue_id = queue_id
+            view.filters_json = _normalize_saved_view_filters(payload.filters)
+            view.columns_json = _normalize_saved_view_columns(payload.columns)
+            view.sort_json = _normalize_saved_view_sort(payload.sort)
+            view.is_favorite = bool(payload.is_favorite)
+            view.is_default = bool(payload.is_default)
+            view.updated_at = datetime.now(timezone.utc)
+            view.updated_by = actor_id or None
+            await session.flush()
+            if view.is_default:
+                await _clear_saved_view_default_peers(session, view)
+            await session.commit()
+            return json_model_response(SuccessResponse[SupportQueueSavedViewItem](data=_serialize_support_queue_saved_view(view)))
+    except Exception as exc:
+        logger.warning(f"[web_support_queue_saved_view_update] failed view_id={view_id}: {exc}")
+        return _support_json_error("Saved view was not updated", status=500, error_code="SERVER_ERROR")
+
+
+@require_auth("admin", "support")
+async def handle_web_support_queue_saved_view_delete(request: web.Request):
+    view_id = str(request.match_info.get("view_id") or "").strip()
+    if not view_id:
+        return _support_json_error("view_id is required", status=400, error_code="VALIDATION_ERROR")
+    auth_context = request["auth_context"]
+    try:
+        async with get_session() as session:
+            denied = await _require_permission(session, auth_context, "ticket.queue.view")
+            if denied:
+                return denied
+            view = (await session.execute(select(SupportQueueSavedView).where(SupportQueueSavedView.id == view_id))).scalar_one_or_none()
+            if view is None:
+                return _support_json_error("Saved view not found", status=404, error_code="NOT_FOUND")
+            if not _can_manage_saved_view(auth_context, view):
+                return _support_json_error("Saved view is owned by another operator", status=403, error_code="FORBIDDEN")
+            await session.delete(view)
+            await session.commit()
+            return json_model_response(
+                SuccessResponse[SupportQueueSavedViewDeletePayload](
+                    data=SupportQueueSavedViewDeletePayload(deleted=True, id=view_id)
+                )
+            )
+    except Exception as exc:
+        logger.warning(f"[web_support_queue_saved_view_delete] failed view_id={view_id}: {exc}")
+        return _support_json_error("Saved view was not deleted", status=500, error_code="SERVER_ERROR")
 
 
 @require_auth("admin", "support")

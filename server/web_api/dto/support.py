@@ -108,6 +108,53 @@ class SupportQueuePayload(BaseModel):
     tickets: list[SupportQueueTicketItem]
 
 
+class SupportQueueSavedViewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    scope: str
+    owner_actor_id: str | None = None
+    queue_id: int | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    columns: list[str] = Field(default_factory=list)
+    sort: list[dict[str, Any]] = Field(default_factory=list)
+    is_favorite: bool = False
+    is_default: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
+
+
+class SupportQueueSavedViewsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    views: list[SupportQueueSavedViewItem] = Field(default_factory=list)
+    default_view_id: str | None = None
+    default_columns: list[str] = Field(default_factory=list)
+
+
+class SupportQueueSavedViewUpsertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    scope: str = "personal"
+    queue_id: int | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    columns: list[str] = Field(default_factory=list)
+    sort: list[dict[str, Any]] = Field(default_factory=list)
+    is_favorite: bool = False
+    is_default: bool = False
+
+
+class SupportQueueSavedViewDeletePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: bool
+    id: str
+
+
 class SupportWorkspaceSummaryQueueItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

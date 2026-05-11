@@ -1959,6 +1959,46 @@ class SmartView(Base):
     )
 
 
+class SupportQueueSavedView(Base):
+    """Operator/shared queue triage view for the support workspace."""
+
+    __tablename__ = "support_queue_saved_views"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, server_default="personal")
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_queues.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    filters_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    columns_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    sort_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    is_favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_support_queue_saved_views_owner", "owner_actor_id", "updated_at"),
+        Index("ix_support_queue_saved_views_scope", "scope", "queue_id"),
+        Index("ix_support_queue_saved_views_default", "scope", "owner_actor_id", "queue_id", "is_default"),
+    )
+
+
 class HelpdeskPolicyAudit(Base):
     """Audit trail for request-template and policy publishing."""
 

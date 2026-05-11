@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import {
   fetchSupportQueue,
+  fetchSupportQueueSavedViews,
   fetchSupportTicketPassportEvidenceCandidates,
   fetchSupportTicketTimeline,
   fetchSupportTicketWorkspace,
@@ -22,6 +23,9 @@ import {
   postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportWorkspaceCleanupNoise,
+  createSupportQueueSavedView,
+  deleteSupportQueueSavedView,
+  updateSupportQueueSavedView,
   type SupportQueuePayload,
   type SupportTicketTimelinePayload,
   type SupportQueueScope,
@@ -56,6 +60,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   return {
     ...actual,
     fetchSupportQueue: vi.fn(),
+    fetchSupportQueueSavedViews: vi.fn(),
     fetchSupportTicketPassportEvidenceCandidates: vi.fn(),
     fetchSupportTicketTimeline: vi.fn(),
     fetchSupportTicketWorkspace: vi.fn(),
@@ -73,6 +78,9 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     postSupportTicketReroute: vi.fn(),
     postSupportTicketStatus: vi.fn(),
     postSupportWorkspaceCleanupNoise: vi.fn(),
+    createSupportQueueSavedView: vi.fn(),
+    deleteSupportQueueSavedView: vi.fn(),
+    updateSupportQueueSavedView: vi.fn(),
   };
 });
 
@@ -91,6 +99,7 @@ vi.mock("../../features/auth/session-provider", () => ({
 }));
 
 const fetchSupportQueueMock = vi.mocked(fetchSupportQueue);
+const fetchSupportQueueSavedViewsMock = vi.mocked(fetchSupportQueueSavedViews);
 const fetchSupportTicketPassportEvidenceCandidatesMock = vi.mocked(fetchSupportTicketPassportEvidenceCandidates);
 const fetchSupportTicketTimelineMock = vi.mocked(fetchSupportTicketTimeline);
 const fetchSupportTicketWorkspaceMock = vi.mocked(fetchSupportTicketWorkspace);
@@ -108,6 +117,9 @@ const postSupportTicketQueueMock = vi.mocked(postSupportTicketQueue);
 const postSupportTicketRerouteMock = vi.mocked(postSupportTicketReroute);
 const postSupportTicketStatusMock = vi.mocked(postSupportTicketStatus);
 const postSupportWorkspaceCleanupNoiseMock = vi.mocked(postSupportWorkspaceCleanupNoise);
+const createSupportQueueSavedViewMock = vi.mocked(createSupportQueueSavedView);
+const deleteSupportQueueSavedViewMock = vi.mocked(deleteSupportQueueSavedView);
+const updateSupportQueueSavedViewMock = vi.mocked(updateSupportQueueSavedView);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
   return {
@@ -374,6 +386,14 @@ function renderTicketListPage(initialEntry = "/app/tickets") {
 
 beforeEach(() => {
   fetchSupportTicketTimelineMock.mockResolvedValue(timelinePayload({ filter: "all", items: [], total: 0 }));
+  fetchSupportQueueSavedViewsMock.mockResolvedValue({
+    views: [],
+    default_view_id: null,
+    default_columns: ["number", "subject", "requester", "priority", "status", "next_action", "sla", "queue", "assignee", "last_event", "unread"],
+  });
+  createSupportQueueSavedViewMock.mockResolvedValue({} as Awaited<ReturnType<typeof createSupportQueueSavedView>>);
+  updateSupportQueueSavedViewMock.mockResolvedValue({} as Awaited<ReturnType<typeof updateSupportQueueSavedView>>);
+  deleteSupportQueueSavedViewMock.mockResolvedValue({ deleted: true, id: "view-1" });
 });
 
 afterEach(() => {

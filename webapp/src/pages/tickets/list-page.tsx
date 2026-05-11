@@ -47,6 +47,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   createSupportTicketPassportEvidence,
+  createSupportQueueSavedView,
+  deleteSupportQueueSavedView,
+  fetchSupportQueueSavedViews,
   fetchSupportQueue,
   fetchSupportTicketPassportEvidenceCandidates,
   fetchSupportTicketTimeline,
@@ -69,7 +72,9 @@ import {
   postSupportTicketWorklog,
   postSupportQueueMassAction,
   postSupportWorkspaceCleanupNoise,
+  updateSupportQueueSavedView,
   type SupportQueueMassActionRequest,
+  type SupportQueueSavedViewUpsertRequest,
   type SupportQueueScope,
   type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
@@ -1327,6 +1332,12 @@ export function TicketListPage() {
     refetchInterval: SUPPORT_QUEUE_REFRESH_MS,
   });
 
+  const queueSavedViewsQuery = useQuery({
+    queryKey: ["tickets-workspace-queue-saved-views"],
+    queryFn: fetchSupportQueueSavedViews,
+    retry: false,
+  });
+
   useEffect(() => {
     const queue = queueQuery.data;
     if (!queue || selectedTicketId) {
@@ -1641,6 +1652,28 @@ export function TicketListPage() {
         selectedTicketId ? queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicketId] }) : Promise.resolve(),
         selectedTicketId ? queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicketId] }) : Promise.resolve(),
       ]);
+    },
+  });
+
+  const queueSavedViewCreateMutation = useMutation({
+    mutationFn: (request: SupportQueueSavedViewUpsertRequest) => createSupportQueueSavedView(request),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue-saved-views"] });
+    },
+  });
+
+  const queueSavedViewUpdateMutation = useMutation({
+    mutationFn: ({ viewId, request }: { viewId: string; request: SupportQueueSavedViewUpsertRequest }) =>
+      updateSupportQueueSavedView(viewId, request),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue-saved-views"] });
+    },
+  });
+
+  const queueSavedViewDeleteMutation = useMutation({
+    mutationFn: (viewId: string) => deleteSupportQueueSavedView(viewId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue-saved-views"] });
     },
   });
 
@@ -1979,12 +2012,23 @@ export function TicketListPage() {
             <QueueExplorer
               activeQueueId={activeQueueId}
               cleanupNoisePending={cleanupNoiseMutation.isPending}
+              defaultColumns={queueSavedViewsQuery.data?.default_columns}
+              defaultViewId={queueSavedViewsQuery.data?.default_view_id ?? null}
               massActionPending={queueMassActionMutation.isPending}
               massActionResult={queueMassActionMutation.data ?? null}
               onActiveQueueChange={setActiveQueueId}
               onCleanupNoise={() => cleanupNoiseMutation.mutate()}
+              onDeleteSavedView={(viewId) => queueSavedViewDeleteMutation.mutate(viewId)}
               onMassAction={(request) => queueMassActionMutation.mutate(request)}
               onOpenTicket={openTicket}
+              onPersistDefaultColumns={(viewId, request) => {
+                if (viewId) {
+                  queueSavedViewUpdateMutation.mutate({ viewId, request });
+                  return;
+                }
+                queueSavedViewCreateMutation.mutate(request);
+              }}
+              onSaveSavedView={(request) => queueSavedViewCreateMutation.mutate(request)}
               onScopeChange={setScope}
               onSearchChange={setSearch}
               onShowArchiveChange={setShowArchive}
@@ -2000,6 +2044,10 @@ export function TicketListPage() {
               search={search}
               selectedTicket={selectedTicket}
               selectedViewId={smartView}
+              savedViewMutationPending={queueSavedViewCreateMutation.isPending || queueSavedViewUpdateMutation.isPending || queueSavedViewDeleteMutation.isPending}
+              savedViews={queueSavedViewsQuery.data?.views ?? []}
+              savedViewsError={queueSavedViewsQuery.isError}
+              savedViewsLoading={queueSavedViewsQuery.isLoading}
               showArchive={showArchive}
               slices={viewModel.left.slices}
               tickets={visibleTickets}

@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Settings2 } from "lucide-react";
 import type {
   SupportQueueMassActionRequest,
   SupportQueueMassActionResult,
+  SupportQueueSavedViewItem,
+  SupportQueueSavedViewScope,
+  SupportQueueSavedViewUpsertRequest,
   SupportQueueScope,
 } from "../../../features/queues/api";
 import type {
@@ -32,10 +35,15 @@ type QueueExplorerProps = {
   cleanupNoisePending?: boolean;
   massActionPending?: boolean;
   massActionResult?: SupportQueueMassActionResult | null;
+  defaultColumns?: string[];
+  defaultViewId?: string | null;
   onActiveQueueChange: (queueId: string | null) => void;
   onCleanupNoise: () => void;
+  onDeleteSavedView: (viewId: string) => void;
   onMassAction: (request: SupportQueueMassActionRequest) => void;
   onOpenTicket: (ticketId: string) => void;
+  onPersistDefaultColumns: (viewId: string | null, request: SupportQueueSavedViewUpsertRequest) => void;
+  onSaveSavedView: (request: SupportQueueSavedViewUpsertRequest) => void;
   onScopeChange: (scope: SupportQueueScope) => void;
   onSearchChange: (value: string) => void;
   onSelectTicket: (ticketId: string) => void;
@@ -46,6 +54,10 @@ type QueueExplorerProps = {
   search: string;
   selectedTicket: SupportWorkspaceSelectedTicket | null;
   selectedViewId: string;
+  savedViewMutationPending?: boolean;
+  savedViews?: SupportQueueSavedViewItem[];
+  savedViewsError?: boolean;
+  savedViewsLoading?: boolean;
   showArchive: boolean;
   slices: SupportWorkspaceSlice[];
   tickets: SupportWorkspaceTicketItem[];
@@ -60,6 +72,18 @@ type SavedQueueView = {
   search: string;
   showArchive: boolean;
   columns: QueueColumnId[];
+};
+
+type SavedQueueViewLike = {
+  id: string;
+  name: string;
+  scope: SupportQueueScope;
+  smartViewId: string;
+  queueId: string | null;
+  search: string;
+  showArchive: boolean;
+  columns: QueueColumnId[];
+  backendView?: SupportQueueSavedViewItem;
 };
 
 const QUEUE_COLUMNS_STORAGE_KEY = "support-workspace-queue-table-columns";
@@ -106,6 +130,12 @@ function getInitialQueueColumns(): QueueColumnId[] {
   }
 }
 
+function normalizeQueueColumns(columns: string[] | undefined): QueueColumnId[] {
+  const valid = (columns ?? []).filter((item): item is QueueColumnId => QUEUE_COLUMN_OPTIONS.some((column) => column.id === item));
+  if (!valid.length) return DEFAULT_QUEUE_COLUMNS;
+  return Array.from(new Set([...REQUIRED_QUEUE_COLUMNS, ...valid]));
+}
+
 function getInitialSavedViews(): SavedQueueView[] {
   if (typeof window === "undefined") return [];
   try {
@@ -126,6 +156,45 @@ function persistJson(key: string, value: unknown) {
   } catch {
     // Queue preferences are a convenience; the table remains usable without localStorage.
   }
+}
+
+function stringFromFilters(filters: Record<string, unknown>, key: string, fallback = ""): string {
+  const value = filters[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function boolFromFilters(filters: Record<string, unknown>, key: string, fallback = false): boolean {
+  const value = filters[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function savedViewToViewLike(view: SupportQueueSavedViewItem): SavedQueueViewLike {
+  const filters = view.filters ?? {};
+  const scopeValue = stringFromFilters(filters, "scope", "all");
+  return {
+    id: view.id,
+    name: view.name,
+    scope: scopeValue === "mine" ? "mine" : "all",
+    smartViewId: stringFromFilters(filters, "smartViewId", "all"),
+    queueId: stringFromFilters(filters, "queueId", "") || (view.queue_id ? String(view.queue_id) : null),
+    search: stringFromFilters(filters, "search"),
+    showArchive: boolFromFilters(filters, "showArchive"),
+    columns: normalizeQueueColumns(view.columns),
+    backendView: view,
+  };
+}
+
+function localSavedViewToViewLike(view: SavedQueueView): SavedQueueViewLike {
+  return {
+    id: view.id,
+    name: view.name,
+    scope: view.scope,
+    smartViewId: view.smartViewId,
+    queueId: view.queueId,
+    search: view.search,
+    showArchive: view.showArchive,
+    columns: normalizeQueueColumns(view.columns),
+  };
 }
 
 function ticketActionScore(ticket: SupportWorkspaceTicketItem): number {
@@ -193,10 +262,15 @@ export function QueueExplorer({
   cleanupNoisePending = false,
   massActionPending = false,
   massActionResult = null,
+  defaultColumns,
+  defaultViewId = null,
   onActiveQueueChange,
   onCleanupNoise,
+  onDeleteSavedView,
   onMassAction,
   onOpenTicket,
+  onPersistDefaultColumns,
+  onSaveSavedView,
   onScopeChange,
   onSearchChange,
   onSelectTicket,
@@ -207,6 +281,10 @@ export function QueueExplorer({
   search,
   selectedTicket,
   selectedViewId,
+  savedViewMutationPending = false,
+  savedViews = [],
+  savedViewsError = false,
+  savedViewsLoading = false,
   showArchive,
   slices,
   tickets,
@@ -216,22 +294,64 @@ export function QueueExplorer({
   const [massActionsOpen, setMassActionsOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<QueueColumnId[]>(() => getInitialQueueColumns());
-  const [savedViews, setSavedViews] = useState<SavedQueueView[]>(() => getInitialSavedViews());
+  const [localFallbackViews] = useState<SavedQueueView[]>(() => getInitialSavedViews());
   const [savedViewName, setSavedViewName] = useState("");
+  const [savedViewScope, setSavedViewScope] = useState<SupportQueueSavedViewScope>("personal");
   const [massReason, setMassReason] = useState("queue_triage");
   const [massNote, setMassNote] = useState("");
   const [massPriority, setMassPriority] = useState<"P0" | "P1" | "P2" | "P3">("P2");
   const [massQueueId, setMassQueueId] = useState<string>("");
   const [massToolName, setMassToolName] = useState("diagnostics.basic");
   const [massProblemKey, setMassProblemKey] = useState("");
+  const appliedDefaultViewRef = useRef<string | null>(null);
+  const columnsChangedByUserRef = useRef(false);
 
   useEffect(() => {
     persistJson(QUEUE_COLUMNS_STORAGE_KEY, visibleColumns);
   }, [visibleColumns]);
 
   useEffect(() => {
-    persistJson(QUEUE_SAVED_VIEWS_STORAGE_KEY, savedViews);
-  }, [savedViews]);
+    if (!activeQueueId && savedViewScope === "queue") {
+      setSavedViewScope("personal");
+    }
+  }, [activeQueueId, savedViewScope]);
+
+  useEffect(() => {
+    if (!defaultColumns?.length) return;
+    if (appliedDefaultViewRef.current === defaultViewId) return;
+    appliedDefaultViewRef.current = defaultViewId;
+    setVisibleColumns(normalizeQueueColumns(defaultColumns));
+  }, [defaultColumns, defaultViewId]);
+
+  useEffect(() => {
+    if (!columnsChangedByUserRef.current) return;
+    const timeout = window.setTimeout(() => {
+      columnsChangedByUserRef.current = false;
+      onPersistDefaultColumns(defaultViewId, {
+        name: "Мой вид очереди",
+        scope: "personal",
+        filters: {
+          scope,
+          smartViewId: selectedViewId,
+          queueId: activeQueueId,
+          search,
+          showArchive,
+        },
+        columns: visibleColumns,
+        sort: [{ field: "action_score", direction: "desc" }],
+        is_default: true,
+        is_favorite: true,
+      });
+    }, 600);
+    return () => window.clearTimeout(timeout);
+  }, [activeQueueId, defaultViewId, onPersistDefaultColumns, scope, search, selectedViewId, showArchive, visibleColumns]);
+
+  const effectiveSavedViews = useMemo<SavedQueueViewLike[]>(() => {
+    if (savedViews.length || savedViewsLoading || !savedViewsError) {
+      return savedViews.map(savedViewToViewLike);
+    }
+    return localFallbackViews.map(localSavedViewToViewLike);
+  }, [localFallbackViews, savedViews, savedViewsError, savedViewsLoading]);
 
   const columnSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
   const sortedTickets = useMemo(
@@ -253,12 +373,13 @@ export function QueueExplorer({
 
   function toggleColumn(columnId: QueueColumnId) {
     if (REQUIRED_QUEUE_COLUMNS.has(columnId)) return;
+    columnsChangedByUserRef.current = true;
     setVisibleColumns((current) => {
       if (current.includes(columnId)) {
         return current.filter((item) => item !== columnId);
       }
       const next = [...current, columnId];
-      return DEFAULT_QUEUE_COLUMNS.filter((item) => next.includes(item));
+      return normalizeQueueColumns(next);
     });
   }
 
@@ -300,27 +421,51 @@ export function QueueExplorer({
   function saveCurrentView() {
     const name = savedViewName.trim();
     if (!name) return;
-    const view: SavedQueueView = {
-      id: `view:${Date.now()}`,
+    const viewScope: SupportQueueSavedViewScope = savedViewScope === "queue" && activeQueueId ? "queue" : "personal";
+    onSaveSavedView({
       name,
-      scope,
-      smartViewId: selectedViewId,
-      queueId: activeQueueId,
-      search,
-      showArchive,
+      scope: viewScope,
+      queue_id: viewScope === "queue" ? parseQueueId(activeQueueId) : null,
+      filters: {
+        scope,
+        smartViewId: selectedViewId,
+        queueId: activeQueueId,
+        search,
+        showArchive,
+      },
       columns: visibleColumns,
-    };
-    setSavedViews((current) => [view, ...current.filter((item) => item.name !== name)].slice(0, 12));
+      sort: [{ field: "action_score", direction: "desc" }],
+      is_favorite: true,
+      is_default: false,
+    });
     setSavedViewName("");
   }
 
-  function applySavedView(view: SavedQueueView) {
+  function importLocalSavedView(view: SavedQueueViewLike) {
+    onSaveSavedView({
+      name: view.name,
+      scope: "personal",
+      filters: {
+        scope: view.scope,
+        smartViewId: view.smartViewId,
+        queueId: view.queueId,
+        search: view.search,
+        showArchive: view.showArchive,
+      },
+      columns: view.columns,
+      sort: [{ field: "action_score", direction: "desc" }],
+      is_favorite: true,
+      is_default: false,
+    });
+  }
+
+  function applySavedView(view: SavedQueueViewLike) {
     onScopeChange(view.scope);
     onSmartViewChange(view.smartViewId);
     onActiveQueueChange(view.queueId);
     onSearchChange(view.search);
     onShowArchiveChange(view.showArchive);
-    setVisibleColumns(Array.from(new Set([...REQUIRED_QUEUE_COLUMNS, ...view.columns])));
+    setVisibleColumns(normalizeQueueColumns(view.columns));
   }
 
   return (
@@ -602,9 +747,19 @@ export function QueueExplorer({
               placeholder="Название вида"
               value={savedViewName}
             />
+            <select
+              className="h-9 rounded-lg border border-white/10 bg-[#101d30] px-2 text-xs text-slate-200 outline-none"
+              onChange={(event) => setSavedViewScope(event.currentTarget.value as SupportQueueSavedViewScope)}
+              value={savedViewScope}
+            >
+              <option value="personal">Личный</option>
+              <option disabled={!activeQueueId} value="queue">
+                Для очереди
+              </option>
+            </select>
             <button
               className="h-9 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-200 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!savedViewName.trim()}
+              disabled={!savedViewName.trim() || savedViewMutationPending}
               onClick={saveCurrentView}
               type="button"
             >
@@ -613,17 +768,40 @@ export function QueueExplorer({
           </div>
         </div>
 
-        {savedViews.length ? (
-          <div className="flex flex-wrap gap-2">
-            {savedViews.map((view) => (
-              <button
-                className="rounded-lg border border-blue-400/20 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-100 hover:bg-blue-500/20"
-                key={view.id}
-                onClick={() => applySavedView(view)}
-                type="button"
-              >
-                {view.name}
-              </button>
+        {effectiveSavedViews.length || savedViewsLoading || savedViewsError ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {savedViewsLoading ? <span className="text-xs text-slate-500">Loading views...</span> : null}
+            {savedViewsError ? <span className="text-xs text-amber-300">Backend views unavailable; local fallback is shown.</span> : null}
+            {effectiveSavedViews.map((view) => (
+              <span className="inline-flex items-center overflow-hidden rounded-lg border border-blue-400/20 bg-blue-500/10 text-xs font-semibold text-blue-100" key={view.id}>
+                <button
+                  className="px-3 py-1.5 hover:bg-blue-500/20"
+                  onClick={() => applySavedView(view)}
+                  type="button"
+                >
+                  {view.name}
+                </button>
+                {view.backendView ? (
+                  <button
+                    aria-label={`Delete view ${view.name}`}
+                    className="border-l border-blue-300/20 px-2 py-1.5 text-blue-100/70 hover:bg-red-500/20 hover:text-red-100"
+                    disabled={savedViewMutationPending}
+                    onClick={() => onDeleteSavedView(view.id)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                ) : (
+                  <button
+                    className="border-l border-blue-300/20 px-2 py-1.5 text-blue-100/70 hover:bg-blue-500/20"
+                    disabled={savedViewMutationPending}
+                    onClick={() => importLocalSavedView(view)}
+                    type="button"
+                  >
+                    import
+                  </button>
+                )}
+              </span>
             ))}
           </div>
         ) : null}

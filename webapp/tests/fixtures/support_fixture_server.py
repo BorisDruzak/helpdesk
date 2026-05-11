@@ -53,9 +53,11 @@ def build_fixture_state() -> dict:
     return {
         "message_counter": itertools.count(200),
         "operation_counter": itertools.count(1),
+        "saved_view_counter": itertools.count(1),
         "session_user": None,
         "ws_ticket_subscribers": {},
         "ws_device_subscribers": {},
+        "support_queue_saved_views": [],
         "admin": {
             "rollout": [
                 {
@@ -1996,6 +1998,106 @@ async def handle_support_queue(request: web.Request) -> web.Response:
     )
 
 
+async def handle_support_queue_saved_views(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    views = request.app["fixture_state"]["support_queue_saved_views"]
+    default_view = next((view for view in views if view.get("is_default")), None)
+    return json_success(
+        {
+            "views": deepcopy(views),
+            "default_view_id": default_view["id"] if default_view else None,
+            "default_columns": default_view["columns"] if default_view else [
+                "number",
+                "subject",
+                "requester",
+                "priority",
+                "status",
+                "next_action",
+                "sla",
+                "queue",
+                "assignee",
+                "last_event",
+                "unread",
+            ],
+        }
+    )
+
+
+async def handle_support_queue_saved_view_create(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    body = await request.json()
+    view = {
+        "id": f"fixture-view-{next(state['saved_view_counter'])}",
+        "name": body.get("name") or "Saved view",
+        "scope": body.get("scope") or "personal",
+        "owner_actor_id": SUPPORT_LOGIN,
+        "queue_id": body.get("queue_id"),
+        "filters": body.get("filters") or {},
+        "columns": body.get("columns") or [],
+        "sort": body.get("sort") or [],
+        "is_favorite": bool(body.get("is_favorite")),
+        "is_default": bool(body.get("is_default")),
+        "created_at": now_iso(minutes=0),
+        "updated_at": now_iso(minutes=0),
+        "created_by": SUPPORT_LOGIN,
+        "updated_by": SUPPORT_LOGIN,
+    }
+    if view["is_default"]:
+        for existing in state["support_queue_saved_views"]:
+            existing["is_default"] = False
+    state["support_queue_saved_views"].insert(0, view)
+    return json_success(deepcopy(view))
+
+
+async def handle_support_queue_saved_view_update(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    view_id = request.match_info["view_id"]
+    body = await request.json()
+    for view in state["support_queue_saved_views"]:
+        if view["id"] != view_id:
+            continue
+        view.update(
+            {
+                "name": body.get("name") or view["name"],
+                "scope": body.get("scope") or view["scope"],
+                "queue_id": body.get("queue_id"),
+                "filters": body.get("filters") or {},
+                "columns": body.get("columns") or [],
+                "sort": body.get("sort") or [],
+                "is_favorite": bool(body.get("is_favorite")),
+                "is_default": bool(body.get("is_default")),
+                "updated_at": now_iso(minutes=1),
+                "updated_by": SUPPORT_LOGIN,
+            }
+        )
+        if view["is_default"]:
+            for existing in state["support_queue_saved_views"]:
+                if existing["id"] != view_id:
+                    existing["is_default"] = False
+        return json_success(deepcopy(view))
+    raise web.HTTPNotFound()
+
+
+async def handle_support_queue_saved_view_delete(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    view_id = request.match_info["view_id"]
+    state["support_queue_saved_views"] = [
+        view for view in state["support_queue_saved_views"] if view["id"] != view_id
+    ]
+    return json_success({"deleted": True, "id": view_id})
+
+
 async def handle_support_ticket_detail(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -2596,6 +2698,10 @@ def build_app() -> web.Application:
             web.get("/api/web/realtime/bootstrap", handle_realtime_bootstrap),
             web.get("/api/web/support/bootstrap", handle_support_bootstrap),
             web.get("/api/web/support/queue", handle_support_queue),
+            web.get("/api/web/support/queue/saved-views", handle_support_queue_saved_views),
+            web.post("/api/web/support/queue/saved-views", handle_support_queue_saved_view_create),
+            web.put("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_update),
+            web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
             web.get("/api/web/support/tickets/{ticket_id}/knowledge-suggestions", handle_support_ticket_knowledge),
             web.get("/api/web/support/tickets/{ticket_id}/playbooks", handle_support_ticket_playbooks),

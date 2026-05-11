@@ -128,6 +128,47 @@ export type SupportQueueMassActionResult = {
   }>;
 };
 
+export type SupportQueueSavedViewScope = "personal" | "queue" | "global";
+
+export type SupportQueueSavedViewItem = {
+  id: string;
+  name: string;
+  scope: SupportQueueSavedViewScope;
+  owner_actor_id: string | null;
+  queue_id: number | null;
+  filters: Record<string, unknown>;
+  columns: string[];
+  sort: Array<Record<string, unknown>>;
+  is_favorite: boolean;
+  is_default: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+export type SupportQueueSavedViewsPayload = {
+  views: SupportQueueSavedViewItem[];
+  default_view_id: string | null;
+  default_columns: string[];
+};
+
+export type SupportQueueSavedViewUpsertRequest = {
+  name: string;
+  scope: SupportQueueSavedViewScope;
+  queue_id?: number | null;
+  filters: Record<string, unknown>;
+  columns: string[];
+  sort?: Array<Record<string, unknown>>;
+  is_favorite?: boolean;
+  is_default?: boolean;
+};
+
+export type SupportQueueSavedViewDeletePayload = {
+  deleted: boolean;
+  id: string;
+};
+
 export type SupportTicketDetailPayload = {
   ticket: {
     ticket_id: string;
@@ -1051,6 +1092,89 @@ export async function postSupportQueueMassAction(request: SupportQueueMassAction
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось выполнить массовое действие",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function fetchSupportQueueSavedViews(): Promise<SupportQueueSavedViewsPayload> {
+  const response = await fetch("/api/web/support/queue/saved-views", {
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportQueueSavedViewsPayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Failed to load saved queue views",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function createSupportQueueSavedView(request: SupportQueueSavedViewUpsertRequest): Promise<SupportQueueSavedViewItem> {
+  const response = await fetch("/api/web/support/queue/saved-views", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+  const payload = await readJson<SuccessResponse<SupportQueueSavedViewItem> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Failed to save queue view",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function updateSupportQueueSavedView(viewId: string, request: SupportQueueSavedViewUpsertRequest): Promise<SupportQueueSavedViewItem> {
+  const response = await fetch(`/api/web/support/queue/saved-views/${encodeURIComponent(viewId)}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(request)
+  });
+  const payload = await readJson<SuccessResponse<SupportQueueSavedViewItem> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Failed to update queue view",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function deleteSupportQueueSavedView(viewId: string): Promise<SupportQueueSavedViewDeletePayload> {
+  const response = await fetch(`/api/web/support/queue/saved-views/${encodeURIComponent(viewId)}`, {
+    method: "DELETE",
+    credentials: "same-origin"
+  });
+  const payload = await readJson<SuccessResponse<SupportQueueSavedViewDeletePayload> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Failed to delete queue view",
       response.status,
       errorPayload?.error_code
     );

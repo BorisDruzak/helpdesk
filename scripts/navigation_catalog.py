@@ -510,6 +510,8 @@ TOPICS: tuple[Topic, ...] = (
             "support queue mass action",
             "/api/web/support/queue/mass-action",
             "queue saved views",
+            "/api/web/support/queue/saved-views",
+            "support_queue_saved_views",
             "queue table columns",
             "include_archived",
             "include_hidden",

@@ -115,6 +115,12 @@ Improve the existing support workspace without replacing the current interface o
   - finish drag-resize persistence by mode with constrained CSS-variable updates;
   - add an overlay/drawer fallback for expanded queue/tools/SLA/passport modes below 1200px;
   - update focused server/webapp tests and browser-check the deployed workspace.
+- [x] DB-backed support queue saved views:
+  - add `support_queue_saved_views` table for per-user, queue-level and global saved triage views with persisted columns;
+  - expose typed support endpoints to list/create/update/delete saved views without widening ticket visibility;
+  - migrate Queue Mode from localStorage-only saved views/columns to backend persistence, keeping localStorage as one-time fallback/import;
+  - add DB-backed tests, frontend tests, build and `verify_workspace.py`;
+  - deploy and apply the migration through the standard release/migration flow.
 - [ ] Add deeper SLA policy details and passport edit forms when backend exposes more normalized workspace data.
 
 ## Manual Check After Deploy

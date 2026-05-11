@@ -24,6 +24,7 @@ from app.db.models import (
     RegistryPerson,
     RegistryService,
     ReportingPolicy,
+    SupportQueueSavedView,
     Ticket,
     TicketApproval,
     TicketEvent,
@@ -207,6 +208,111 @@ async def test_web_support_queue_mass_action_priority_requires_reason(test_clien
     assert response.status == 400
     payload = await response.json()
     assert payload["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_saved_views_persist_personal_columns(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/support/queue/saved-views",
+        headers=_support_headers(),
+        json={
+            "name": "Morning triage",
+            "scope": "personal",
+            "filters": {"scope": "mine", "smartViewId": "sla_risk", "search": "printer", "showArchive": False},
+            "columns": ["subject", "sla", "assignee"],
+            "is_default": True,
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    view = payload["data"]
+    assert view["owner_actor_id"] == "support-test"
+    assert view["scope"] == "personal"
+    assert view["is_default"] is True
+    assert view["filters"]["smartViewId"] == "sla_risk"
+    assert view["columns"] == ["number", "subject", "sla", "assignee"]
+
+    response = await test_client.get("/api/web/support/queue/saved-views", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["default_view_id"] == view["id"]
+    assert payload["data"]["default_columns"] == ["number", "subject", "sla", "assignee"]
+    assert [item["id"] for item in payload["data"]["views"]] == [view["id"]]
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_saved_views_follow_queue_membership(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        visible_queue = await _seed_queue(session, code=f"saved_visible_{uuid.uuid4().hex[:8]}", name="Saved visible", members=["support-test"])
+        hidden_queue = await _seed_queue(session, code=f"saved_hidden_{uuid.uuid4().hex[:8]}", name="Saved hidden", members=["other-support"])
+        session.add_all(
+            [
+                SupportQueueSavedView(
+                    id=str(uuid.uuid4()),
+                    name="Visible queue view",
+                    scope="queue",
+                    queue_id=visible_queue.id,
+                    filters_json={"scope": "all"},
+                    columns_json=["number", "subject", "sla"],
+                    sort_json=[],
+                    is_favorite=False,
+                    is_default=False,
+                    created_by="lead",
+                    updated_by="lead",
+                ),
+                SupportQueueSavedView(
+                    id=str(uuid.uuid4()),
+                    name="Hidden queue view",
+                    scope="queue",
+                    queue_id=hidden_queue.id,
+                    filters_json={"scope": "all"},
+                    columns_json=["number", "subject", "sla"],
+                    sort_json=[],
+                    is_favorite=False,
+                    is_default=False,
+                    created_by="lead",
+                    updated_by="lead",
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/support/queue/saved-views", headers=_support_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    names = {item["name"] for item in payload["data"]["views"]}
+    assert "Visible queue view" in names
+    assert "Hidden queue view" not in names
+
+
+@pytest.mark.asyncio
+async def test_web_support_queue_saved_view_global_scope_requires_admin(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/support/queue/saved-views",
+        headers=_support_headers(),
+        json={"name": "Global triage", "scope": "global", "columns": ["number", "subject"]},
+    )
+
+    assert response.status == 403
+    payload = await response.json()
+    assert payload["error_code"] == "FORBIDDEN"
 
 
 def _support_headers() -> dict[str, str]:
