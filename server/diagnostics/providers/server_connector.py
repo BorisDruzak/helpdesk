@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from diagnostics.capability_models import CapabilityDescriptor
+from diagnostics.evidence import normalize_tool_result_to_evidence_stub
 from diagnostics.providers.zabbix_provider import list_zabbix_capabilities
 
 
@@ -18,7 +19,20 @@ class ServerConnectorProvider:
     response until a configured connector client is added.
     """
 
-    async def run(self, capability: CapabilityDescriptor, **kwargs: Any) -> Dict[str, Any]:
+    def list_capabilities(self) -> List[CapabilityDescriptor]:
+        return list_server_connector_capabilities()
+
+    async def get_readiness(self, capability: CapabilityDescriptor, **kwargs: Any) -> Dict[str, Any]:
+        params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}
+        if capability.requires_integration and not (params.get("integration_config") or params.get("_integration_config")):
+            return {"readiness": "integration_not_configured", "reason_code": "INTEGRATION_NOT_CONFIGURED"}
+        if capability.requires_credentials and not (params.get("credentials_ref") or params.get("_credentials_ref")):
+            return {"readiness": "credentials_missing", "reason_code": "CREDENTIALS_MISSING"}
+        if capability.requires_mapping and not (params.get("mapping") or params.get("_mapping")):
+            return {"readiness": "mapping_missing", "reason_code": "MAPPING_MISSING"}
+        return {"readiness": "available", "reason_code": "AVAILABLE"}
+
+    async def run_query(self, capability: CapabilityDescriptor, **kwargs: Any) -> Dict[str, Any]:
         params = kwargs.get("params") if isinstance(kwargs.get("params"), dict) else {}
         integration_key = capability.integration_key
         config = params.get("integration_config") or params.get("_integration_config")
@@ -54,3 +68,30 @@ class ServerConnectorProvider:
             "message": "Server connector route is active, but no external connector client is configured.",
             "evidence": capability.evidence,
         }
+
+    def normalize_result(self, capability: CapabilityDescriptor, result: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        payload = dict(result or {})
+        payload.setdefault("capability_id", capability.id)
+        payload.setdefault("provider_id", capability.provider_id)
+        payload.setdefault("integration_key", capability.integration_key)
+        payload.setdefault("evidence", capability.evidence)
+        return payload
+
+    def map_evidence(self, capability: CapabilityDescriptor, result: Dict[str, Any], **kwargs: Any) -> Dict[str, Any] | None:
+        if result.get("evidence_preview"):
+            return result["evidence_preview"]
+        if not (capability.evidence or {}).get("produces_evidence"):
+            return None
+        return normalize_tool_result_to_evidence_stub(
+            {"operation_id": f"server_connector:{capability.id}", "status": result.get("status") or "unknown"},
+            capability,
+            result,
+        ).to_dict()
+
+    async def run(self, capability: CapabilityDescriptor, **kwargs: Any) -> Dict[str, Any]:
+        result = await self.run_query(capability, **kwargs)
+        normalized = self.normalize_result(capability, result, **kwargs)
+        evidence_preview = self.map_evidence(capability, normalized, **kwargs)
+        if evidence_preview is not None:
+            normalized["evidence_preview"] = evidence_preview
+        return normalized

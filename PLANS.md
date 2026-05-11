@@ -193,20 +193,20 @@ Verification:
 
 ### Phase 4: Execution Router Productionization
 
-- [ ] Add explicit operation/session/query model around capability runs without changing existing `run_tool`.
-- [ ] For `agent_builtin` and `agent_managed_module`, keep calling `ToolExecutionService.run_tool`.
+- [x] Add explicit operation/session/query model around capability runs without changing existing `run_tool`.
+- [x] For `agent_builtin` and `agent_managed_module`, keep calling `ToolExecutionService.run_tool`.
 - [ ] For `server_builtin`, implement server-local command/query runner with operation records.
-- [ ] For `server_connector`, implement provider interface:
+- [x] For `server_connector`, implement provider interface:
   - `list_capabilities()`
   - `get_readiness()`
   - `run_query()`
   - `normalize_result()`
   - `map_evidence()`
-- [ ] For `observer_query`, route to existing observer services for summary/bundle.
-- [ ] For `remote_assist`, route to existing remote assist request/session APIs rather than `run_tool`.
-- [ ] For `manual`, create manual evidence/finding flows.
-- [ ] Add idempotency and timeout semantics per target.
-- [ ] Add structured error codes:
+- [x] For `observer_query`, route to existing observer services for summary/bundle.
+- [x] For `remote_assist`, route to existing remote assist request/session APIs rather than `run_tool`.
+- [x] For `manual`, create manual evidence/finding flows.
+- [x] Add idempotency and timeout semantics per target.
+- [x] Add structured error codes:
   - `CAPABILITY_NOT_FOUND`
   - `CAPABILITY_NOT_READY`
   - `CAPABILITY_TARGET_UNSUPPORTED`
@@ -215,12 +215,14 @@ Verification:
   - `MAPPING_MISSING`
   - `POLICY_DENIED`
   - `CONSENT_REQUIRED`
-- [ ] Ensure non-agent targets never write DeviceOutbox rows.
+- [x] Ensure non-agent targets never write DeviceOutbox rows.
+
+Decision: Phase 4 establishes the production routing contract without changing agent execution. `CapabilityExecutionRouter.run_capability()` now returns a target-specific envelope with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. The ticket run endpoint computes current readiness and returns `409 CAPABILITY_NOT_READY` before invoking a provider/tool when the capability is blocked. `consent_required` stays executable for agent and remote-assist capabilities when the action is `request_consent`, preserving existing consent initiation flows. `agent_builtin` / `agent_managed_module` still call `ToolExecutionService.run_tool`; server connector, observer, remote assist and manual targets use provider boundaries. `server_builtin` remains reserved until a server-local operation runner is introduced.
 
 Verification:
 
+- `python -m pytest server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
 - router tests proving each target goes to the correct backend
-- operation lifecycle tests
 - negative tests proving server connector / observer / remote assist / manual do not call `ToolExecutionService.run_tool`
 
 ### Phase 5: Zabbix Server Connector

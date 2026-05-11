@@ -343,6 +343,31 @@ class FakeProvider:
         return {"status": self.status, "capability_id": capability.id}
 
 
+class FakeServerConnectorProvider:
+    def __init__(self):
+        self.query_calls = []
+
+    def list_capabilities(self):
+        return []
+
+    async def get_readiness(self, capability, **kwargs):
+        return {"readiness": "available"}
+
+    async def run_query(self, capability, **kwargs):
+        self.query_calls.append((capability.id, kwargs))
+        return {"status": "success", "raw": {"problem_count": 0}}
+
+    def normalize_result(self, capability, result, **kwargs):
+        return {
+            "status": result["status"],
+            "capability_id": capability.id,
+            "output": {"problem_count": result["raw"]["problem_count"]},
+        }
+
+    def map_evidence(self, capability, result, **kwargs):
+        return {"kind": capability.evidence["kind"], "status": "ok"}
+
+
 @pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_execution_router_routes_only_agent_capabilities_to_tool_execution_service():
@@ -408,3 +433,109 @@ async def test_execution_router_routes_only_agent_capabilities_to_tool_execution
     assert observer_provider.calls[0][0] == "observer.ticket.summary"
     assert remote_provider.calls[0][0] == "remote_assist.request_view"
     assert manual_provider.calls[0][0] == "manual.visual_check"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_execution_router_returns_target_specific_envelope_and_provider_interface_metadata():
+    tool_service = FakeToolService()
+    registry = CapabilityRegistry(tool_service=tool_service, state=FakeState())
+    server_provider = FakeServerConnectorProvider()
+    observer_provider = FakeProvider("success")
+    remote_provider = FakeProvider("created")
+    manual_provider = FakeProvider("created")
+    router = CapabilityExecutionRouter(
+        capability_registry=registry,
+        tool_service=tool_service,
+        server_connector_provider=server_provider,
+        observer_provider=observer_provider,
+        remote_assist_provider=remote_provider,
+        manual_provider=manual_provider,
+    )
+
+    agent_result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="diag.logs.collect",
+        params={},
+        actor=None,
+        idempotency_key="idem-agent",
+        timeout_ms=1000,
+    )
+    server_result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="zabbix.problems.lookup",
+        params={"integration_config": {"url": "https://zabbix.local"}, "credentials_ref": "secret", "mapping": {"host": "web-1"}},
+        actor=None,
+        idempotency_key="idem-zabbix",
+        timeout_ms=2000,
+    )
+    remote_result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="remote_assist.request_view",
+        params={},
+        actor=None,
+        idempotency_key="idem-remote",
+        timeout_ms=3000,
+    )
+    manual_result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="manual.visual_check",
+        params={"summary": "ok"},
+        actor=None,
+        idempotency_key="idem-manual",
+        timeout_ms=4000,
+    )
+
+    assert agent_result["execution_kind"] == "operation"
+    assert agent_result["execution_target"] == "agent_builtin"
+    assert agent_result["idempotency_key"] == "idem-agent"
+    assert agent_result["timeout_ms"] == 1000
+    assert tool_service.run_calls[0]["call_id"] == "idem-agent"
+    assert server_result["execution_kind"] == "query"
+    assert server_result["execution_target"] == "server_connector"
+    assert server_result["idempotency_key"] == "idem-zabbix"
+    assert server_result["timeout_ms"] == 2000
+    assert server_result["evidence_preview"]["kind"] == "monitoring.problem"
+    assert server_provider.query_calls[0][0] == "zabbix.problems.lookup"
+    assert remote_result["execution_kind"] == "session"
+    assert remote_result["idempotency_key"] == "idem-remote"
+    assert manual_result["execution_kind"] == "manual_evidence"
+    assert manual_result["idempotency_key"] == "idem-manual"
+    assert len(tool_service.run_calls) == 1
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_execution_router_blocks_not_ready_capability_before_provider_or_tool_call():
+    tool_service = FakeToolService()
+    registry = CapabilityRegistry(tool_service=tool_service, state=FakeState())
+    server_provider = FakeServerConnectorProvider()
+    router = CapabilityExecutionRouter(
+        capability_registry=registry,
+        tool_service=tool_service,
+        server_connector_provider=server_provider,
+    )
+
+    result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="zabbix.problems.lookup",
+        params={},
+        actor=None,
+        readiness={
+            "readiness": "integration_not_configured",
+            "reason_code": "INTEGRATION_NOT_CONFIGURED",
+            "actions": ["configure_integration"],
+        },
+    )
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "CAPABILITY_NOT_READY"
+    assert result["reason_code"] == "INTEGRATION_NOT_CONFIGURED"
+    assert result["execution_target"] == "server_connector"
+    assert server_provider.query_calls == []
+    assert tool_service.run_calls == []

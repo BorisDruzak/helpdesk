@@ -70,6 +70,8 @@ Compatibility rules:
 - observer and manual targets never enqueue agent commands
 - remote assist targets route to the existing Remote Assist session service instead of `ToolExecutionService.run_tool`
 
+Capability execution responses are normalized with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. `execution_kind` is `operation` for agent tools, `query` for server connector and observer lookups, `session` for remote assist, and `manual_evidence` for manual checks. The ticket-scoped run endpoint checks readiness before dispatch; blocked capabilities return `409` with `error_code=CAPABILITY_NOT_READY` and a stable `reason_code`. `consent_required` remains executable for agent and remote-assist capabilities when the action is `request_consent`, so existing consent workflows can still be initiated.
+
 Readiness input sources:
 
 - ticket-bound device record and agent online state

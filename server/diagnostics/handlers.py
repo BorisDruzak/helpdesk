@@ -90,6 +90,25 @@ def _desired_module_map(items: list[DeviceDesiredModule]) -> dict:
     }
 
 
+def _request_idempotency_key(request: web.Request, payload: dict) -> str | None:
+    raw = payload.get("idempotency_key") or request.headers.get("X-Idempotency-Key")
+    value = str(raw or "").strip()
+    return value or None
+
+
+def _request_timeout_ms(payload: dict) -> int | None:
+    raw = payload.get("timeout_ms")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return min(value, 300_000)
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     state = request.app.get("state")
@@ -284,10 +303,33 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         payload = await request.json()
     except Exception:
         payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     params = payload.get("params") if isinstance(payload, dict) and isinstance(payload.get("params"), dict) else {}
+    idempotency_key = _request_idempotency_key(request, payload)
+    timeout_ms = _request_timeout_ms(payload)
     state = request.app.get("state")
     async with get_session() as session:
         ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one_or_none()
+        device = None
+        installed_modules = []
+        desired_modules = []
+        if ticket is not None and getattr(ticket, "device_id", None):
+            device = (
+                await session.execute(
+                    select(Device).where(Device.device_id == ticket.device_id, Device.deleted_at.is_(None))
+                )
+            ).scalar_one_or_none()
+            installed_modules = list(
+                (
+                    await session.execute(select(DeviceModule).where(DeviceModule.device_id == ticket.device_id))
+                ).scalars()
+            )
+            desired_modules = list(
+                (
+                    await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
+                ).scalars()
+            )
     if ticket is None:
         return web.json_response(
             {"status": "error", "error_code": "TICKET_NOT_FOUND", "error": "Ticket not found"},
@@ -296,6 +338,42 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
     tool_service = ToolExecutionService(state)
     registry = CapabilityRegistry(tool_service=tool_service, state=state)
+    capability = await registry.resolve_capability(capability_id, device_id=device_id)
+    readiness = None
+    if capability is not None:
+        access = resolve_effective_access(
+            actor_id=getattr(request.get("auth_context"), "actor_id", None),
+            actor_role=getattr(request.get("auth_context"), "actor_role", None),
+        )
+        async with get_session() as session:
+            persisted_maps = await DiagnosticProviderConfigService(session).build_readiness_maps()
+        readiness_context = ReadinessContext(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            actor=request.get("auth_context"),
+            device_platform=_device_platform(device),
+            installed_modules=_installed_module_map(installed_modules),
+            desired_modules=_desired_module_map(desired_modules),
+            integration_configs=_merge_maps(
+                _state_mapping(state, "diagnostic_integration_configs", "integration_configs"),
+                persisted_maps.integration_configs,
+            ),
+            credential_keys=_merge_maps(
+                _state_mapping(state, "diagnostic_credential_keys", "credential_keys"),
+                persisted_maps.credential_keys,
+            ),
+            mappings=_merge_maps(
+                _state_mapping(state, "diagnostic_mappings", "integration_mappings"),
+                persisted_maps.mappings,
+            ),
+            policy_flags=_merge_maps(
+                _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
+                persisted_maps.policy_flags,
+            ),
+            permissions=set(access.permissions),
+            has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
+        )
+        readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
     router = CapabilityExecutionRouter(capability_registry=registry, tool_service=tool_service)
     result = await router.run_capability(
         ticket_id=ticket_id,
@@ -303,10 +381,17 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         capability_id=capability_id,
         params=params,
         actor=request.get("auth_context"),
+        readiness=readiness,
+        idempotency_key=idempotency_key,
+        timeout_ms=timeout_ms,
     )
     status = 200
     if result.get("error_code") == "CAPABILITY_NOT_FOUND":
         status = 404
+    elif result.get("error_code") == "CAPABILITY_NOT_READY":
+        status = 409
+    elif result.get("error_code") == "CAPABILITY_TARGET_UNSUPPORTED":
+        status = 501
     elif result.get("status") == "error":
         status = 400
     return web.json_response(result, status=status)
