@@ -61,6 +61,13 @@ Verified:
 - `python -m compileall -q server\diagnostics server\app\repos\diagnostics_repo.py server\app\db\models.py server\routes.py`
 - `pnpm --dir webapp build`
 - `python -m alembic -c alembic.ini heads` from `server/` shows `074 (head)`.
+- `git diff --cached --check`
+- `python -m pytest server/tests/test_diagnostic_layer.py server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m pytest pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_diag_logs_module.py -q --tb=short`
+- `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --skip-ci-check --leave-running`
+- `python scripts/run_remote_migrations.py current` shows `074 (head)` on Linux.
+- `python scripts/manage_remote_stack.py smoke server`
+- Browser check at `https://192.168.100.17:9443/admin`: support ticket tools workspace opens the Diagnostics tab; overview loads evidence counts, perspectives, latest evidence and action buttons with no console warnings/errors.
 
 ## Active Diagnostic Layer MVP Slice
 
@@ -103,7 +110,7 @@ Next execution slice:
 - [x] Add `POST /api/tickets/{ticket_id}/diagnostics/passport/attach-selected`.
 - [x] Add `POST /api/tickets/{ticket_id}/diagnostics/run-profile` MVP: create diagnostic session, record recommended capability/playbook steps, project current ticket sources, evaluate findings and optionally auto-select passport-eligible evidence.
 - [x] Add frontend actions in the Diagnostics tab: run profile, evaluate findings, build bundle and attach selected evidence to passport.
-- [ ] Deploy to Linux, apply migration `074`, smoke the remote stack and browser-check the Diagnostics tab.
+- [x] Deploy to Linux, apply migration `074`, smoke the remote stack and browser-check the Diagnostics tab.
 
 Acceptance for this slice:
 
