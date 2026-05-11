@@ -195,7 +195,7 @@ Verification:
 
 - [x] Add explicit operation/session/query model around capability runs without changing existing `run_tool`.
 - [x] For `agent_builtin` and `agent_managed_module`, keep calling `ToolExecutionService.run_tool`.
-- [ ] For `server_builtin`, implement server-local command/query runner with operation records.
+- [x] For `server_builtin`, implement server-local command/query runner with operation records.
 - [x] For `server_connector`, implement provider interface:
   - `list_capabilities()`
   - `get_readiness()`
@@ -217,12 +217,14 @@ Verification:
   - `CONSENT_REQUIRED`
 - [x] Ensure non-agent targets never write DeviceOutbox rows.
 
-Decision: Phase 4 establishes the production routing contract without changing agent execution. `CapabilityExecutionRouter.run_capability()` now returns a target-specific envelope with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. The ticket run endpoint computes current readiness and returns `409 CAPABILITY_NOT_READY` before invoking a provider/tool when the capability is blocked. `consent_required` stays executable for agent and remote-assist capabilities when the action is `request_consent`, preserving existing consent initiation flows. `agent_builtin` / `agent_managed_module` still call `ToolExecutionService.run_tool`; server connector, observer, remote assist and manual targets use provider boundaries. `server_builtin` remains reserved until a server-local operation runner is introduced.
+Decision: Phase 4 establishes the production routing contract without changing agent execution. `CapabilityExecutionRouter.run_capability()` now returns a target-specific envelope with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. The ticket run endpoint computes current readiness and returns `409 CAPABILITY_NOT_READY` before invoking a provider/tool when the capability is blocked. `consent_required` stays executable for agent and remote-assist capabilities when the action is `request_consent`, preserving existing consent initiation flows. `agent_builtin` / `agent_managed_module` still call `ToolExecutionService.run_tool`; server connector, observer, remote assist and manual targets use provider boundaries. `server_builtin` now has a server-local runner for `server.dns.resolve` and `server.http.request`; it creates `operations` rows, transitions `queued -> running -> succeeded/failed`, supports idempotency keys and timeouts, maps evidence preview, and never writes `device_outbox`.
 
 Verification:
 
 - `python -m pytest server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m pytest server/tests/test_diagnostic_server_builtin_runner.py -q --tb=short`
 - router tests proving each target goes to the correct backend
+- operation lifecycle tests for `server_builtin` success/failure/idempotency
 - negative tests proving server connector / observer / remote assist / manual do not call `ToolExecutionService.run_tool`
 
 ### Phase 5: Zabbix Server Connector

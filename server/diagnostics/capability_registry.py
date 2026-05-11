@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional
 
 from diagnostics.capability_models import CapabilityDescriptor
+from diagnostics.providers.server_builtin import list_server_builtin_capabilities
 from diagnostics.providers.server_connector import list_server_connector_capabilities
 from diagnostics.providers.static_providers import list_static_capabilities
 
@@ -88,6 +89,7 @@ class CapabilityRegistry:
         if self.tool_service:
             server_tools = await self.tool_service.get_tools_from_server(device_id)
             capabilities.extend(self._project_tools(server_tools, default_source="managed_module"))
+        capabilities.extend(list_server_builtin_capabilities())
         capabilities.extend(list_server_connector_capabilities())
         capabilities.extend(list_static_capabilities())
         return self._dedupe(capabilities)

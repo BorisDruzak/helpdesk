@@ -7,6 +7,7 @@ from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
 from diagnostics.providers.observer_provider import ObserverCapabilityProvider
 from diagnostics.providers.remote_assist_provider import RemoteAssistCapabilityProvider
+from diagnostics.providers.server_builtin import ServerBuiltinProvider
 from diagnostics.providers.server_connector import ServerConnectorProvider
 
 
@@ -30,6 +31,7 @@ class CapabilityExecutionRouter:
         *,
         capability_registry: CapabilityRegistry,
         tool_service: Any,
+        server_builtin_provider: Any = None,
         server_connector_provider: Any = None,
         observer_provider: Any = None,
         remote_assist_provider: Any = None,
@@ -37,6 +39,7 @@ class CapabilityExecutionRouter:
     ) -> None:
         self.capability_registry = capability_registry
         self.tool_service = tool_service
+        self.server_builtin_provider = server_builtin_provider or ServerBuiltinProvider()
         self.server_connector_provider = server_connector_provider or ServerConnectorProvider()
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
         self.remote_assist_provider = remote_assist_provider or RemoteAssistCapabilityProvider()
@@ -87,6 +90,25 @@ class CapabilityExecutionRouter:
                 capability_id=capability.id,
                 params=params,
                 actor=actor,
+                idempotency_key=idempotency_key,
+            )
+            return self._envelope(
+                capability,
+                result,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
+        if target == "server_builtin":
+            result = await self.route_server_builtin(
+                capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                params=params,
+                actor=actor,
+                state=self.capability_registry.state,
+                timeout_ms=timeout_ms,
                 idempotency_key=idempotency_key,
             )
             return self._envelope(
@@ -180,8 +202,13 @@ class CapabilityExecutionRouter:
             wait_for_result=False,
         )
 
+    async def route_server_builtin(self, capability, **kwargs) -> Dict[str, Any]:
+        return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
+
     async def route_server_connector(self, capability, **kwargs) -> Dict[str, Any]:
-        provider = self.server_connector_provider
+        return await self._route_query_provider(self.server_connector_provider, capability, **kwargs)
+
+    async def _route_query_provider(self, provider, capability, **kwargs) -> Dict[str, Any]:
         if hasattr(provider, "run_query"):
             result = await provider.run_query(capability, **kwargs)
             if hasattr(provider, "normalize_result"):

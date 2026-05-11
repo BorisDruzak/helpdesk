@@ -51,6 +51,7 @@ The first-stage capability registry is an additive service layer over existing m
 Sources:
 
 - agent builtin and managed tools from current tool manifests/snapshots
+- server builtin capabilities: `server.dns.resolve`, `server.http.request`
 - server connector skeletons, currently `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
 - observer skeletons: `observer.ticket.summary`, `observer.trace.bundle`
 - remote assist skeletons: `remote_assist.request_view`, `remote_assist.session.summary`
@@ -71,6 +72,8 @@ Compatibility rules:
 - remote assist targets route to the existing Remote Assist session service instead of `ToolExecutionService.run_tool`
 
 Capability execution responses are normalized with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. `execution_kind` is `operation` for agent tools, `query` for server connector and observer lookups, `session` for remote assist, and `manual_evidence` for manual checks. The ticket-scoped run endpoint checks readiness before dispatch; blocked capabilities return `409` with `error_code=CAPABILITY_NOT_READY` and a stable `reason_code`. `consent_required` remains executable for agent and remote-assist capabilities when the action is `request_consent`, so existing consent workflows can still be initiated.
+
+`server_builtin` capabilities run on the Maria server and create ordinary `operations` rows with `kind=server_capability`, `command_name=server_builtin`, and `tool_name=<capability id>`. They transition `queued -> running -> succeeded/failed`, support idempotency keys and timeouts, expose `/api/operations/{operation_id}` as `poll_url`, map evidence previews, and do not enqueue `device_outbox` commands.
 
 Readiness input sources:
 
