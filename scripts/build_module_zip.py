@@ -18,6 +18,36 @@ import zipfile
 from pathlib import Path
 
 
+def _iter_package_include(repo_root: Path, include_spec: dict):
+    source_raw = str(include_spec.get("source") or "").strip()
+    target_raw = str(include_spec.get("target") or "").strip()
+    if not source_raw or not target_raw:
+        raise ValueError("package_include entries require source and target")
+
+    source = (repo_root / source_raw).resolve()
+    repo_resolved = repo_root.resolve()
+    if repo_resolved not in source.parents and source != repo_resolved:
+        raise ValueError(f"package_include source escapes repository: {source_raw}")
+    if not source.is_dir():
+        raise ValueError(f"package_include source directory not found: {source}")
+
+    target = Path(target_raw)
+    if target.is_absolute() or ".." in target.parts or any(part.startswith(".") for part in target.parts):
+        raise ValueError(f"Invalid package_include target: {target_raw}")
+
+    excluded = {str(item).strip() for item in include_spec.get("exclude") or [] if str(item).strip()}
+    for path in source.rglob("*"):
+        rel = path.relative_to(source)
+        if any(part in excluded for part in rel.parts):
+            continue
+        if any(part == "__pycache__" or part.endswith(".pyc") for part in rel.parts):
+            continue
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        if path.is_file():
+            yield path, (target / rel).as_posix()
+
+
 def main():
     import sys
     repo_root = Path(__file__).resolve().parent.parent
@@ -57,6 +87,11 @@ def main():
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         z.write(module_py, arcname="module.py")
+        for include_spec in manifest.get("package_include") or []:
+            if not isinstance(include_spec, dict):
+                raise ValueError("package_include entries must be objects")
+            for source_file, arcname in _iter_package_include(repo_root, include_spec):
+                z.write(source_file, arcname=arcname)
 
     data = zip_buffer.getvalue()
     out_zip.write_bytes(data)

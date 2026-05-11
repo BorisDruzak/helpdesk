@@ -1,0 +1,86 @@
+{
+  "module_name": "remote_assist_runtime",
+  "module_version": "1.0.0",
+  "module_api_version": "1.0.0",
+  "manifest_version": 2,
+  "description": "Remote Assist runtime provider for WebRTC screen sharing, control, clipboard and file transfer.",
+  "entrypoint": "module:register",
+  "platforms": ["win32"],
+  "min_agent_version": "3.1.55",
+  "requirements": ["aiohttp", "aiortc", "mss", "pynput"],
+  "optional_requirements": [],
+  "owner_scope": "platform",
+  "package_include": [
+    {
+      "source": "pc_agent/remote_assist",
+      "target": "remote_assist_runtime_impl",
+      "exclude": ["runtime_host.py", "__pycache__"]
+    }
+  ],
+  "tools": [
+    {
+      "tool": "remote_assist_runtime.info",
+      "name": "remote_assist_runtime.info",
+      "method": "info",
+      "description": "Return Remote Assist runtime module metadata.",
+      "risk_level": "safe_read",
+      "lifecycle": "stable",
+      "contract_version": "1.0.0",
+      "params_schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "module_version": {"type": "string"},
+          "runtime_contract_version": {"type": "string"},
+          "runtime_kind": {"type": "string"}
+        },
+        "required": ["module_version", "runtime_contract_version", "runtime_kind"]
+      },
+      "output_contract": {
+        "status_path": "runtime_kind",
+        "status_values": ["remote_assist"],
+        "success_values": ["remote_assist"],
+        "error_values": [],
+        "summary_path": "runtime_kind"
+      },
+      "metadata": {
+        "domain": "remote_assist",
+        "platforms": ["win32"],
+        "risk_level": "safe_read",
+        "requires_consent": false,
+        "idempotent": true,
+        "side_effects": false,
+        "allow_roles": ["admin", "support", "agent"],
+        "scopes": ["remote_assist.runtime"],
+        "origin": "managed",
+        "tool_kind": "diagnostic"
+      },
+      "dependencies": {
+        "required_python_packages": ["aiohttp", "aiortc", "mss", "pynput"],
+        "min_agent_version": "3.1.55"
+      },
+      "error_codes": [],
+      "artifact_types": [],
+      "redaction": {
+        "enabled": true,
+        "allow_raw_sensitive_data": false,
+        "redact_headers": true,
+        "redact_env": true,
+        "redact_fields": []
+      },
+      "resources": {
+        "max_runtime_sec": 30,
+        "max_artifact_count": 0,
+        "max_artifact_bytes": 0
+      }
+    }
+  ],
+  "runtime": {
+    "kind": "remote_assist",
+    "factory": "module:create_remote_assist_thread",
+    "contract_version": "1.0.0"
+  }
+}

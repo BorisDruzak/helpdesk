@@ -1,99 +1,82 @@
-# Forms Builder UI Refactor Plan
+# Remote Assist Runtime Module Plan
 
 ## Goal
 
-Make `/app/admin/forms` understandable for an administrator by separating catalog overview, template editing, policy editing, smart views, versions/publication, and process preview into distinct UI modes while preserving the existing backend APIs, legacy compatibility, and `request_forms` pack format.
+Перевести Remote Assist из монолитной агентской реализации в обновляемый managed runtime module, чтобы исправления WebRTC, capture, control, clipboard, file-transfer и elevated mode можно было поставлять отдельным модулем без полного релиза Maria Agent.
 
 ## Scope
 
-- Work only in `C:\Users\admin-2\CodexProjects\pc_client`.
-- Change the React webapp UI and shell behavior for the forms builder route.
-- Keep current endpoints:
-  - `GET /api/web/admin/forms/current`
-  - `POST /api/web/admin/forms/save`
-  - `POST /api/web/admin/forms/save-draft`
-  - `POST /api/web/admin/forms/validate`
-  - `POST /api/web/admin/forms/publish`
-  - `PATCH /api/web/admin/forms/preferred`
-  - `POST /api/web/admin/forms/route-preview`
-  - `POST /api/web/admin/forms/process-preview`
-- Do not change backend DTOs, legacy pack behavior, `/help`, agent create wizard, or ticket creation runtime.
+- Рабочая копия: `C:\Users\admin-2\CodexProjects\pc_client`.
+- Агент: `pc_agent/remote_assist/*`, `pc_agent/ui_gui/main_window.py`, module host/loader integration.
+- Модуль: managed package `remote_assist_runtime`, публикуемый через существующую серверную module registry.
+- Сервер: использовать существующие module upload/preferred/install/reconcile механизмы; не создавать отдельную систему доставки.
+- Remote Assist server lifecycle, DB schema, signaling API and support workspace viewer остаются текущими.
 
 ## Constraints
 
-- The global app sidebar must default to collapsed on `/app/admin/forms`, with an explicit expand/collapse control.
-- Other app routes must keep their existing sidebar behavior.
-- Overview must not show all editors at once.
-- Publication should be a release-management action in Versions/Publication mode, not a primary CTA on every editor section.
-- Raw JSON and low-level refs stay available only in expert/advanced sections.
-- Existing functions and compatibility paths remain in place unless they are only reorganized visually.
+- Consent, ticket/device/operator binding, audit and timeline остаются серверным source of truth.
+- Базовый агент должен сохранять safe fallback на встроенный Remote Assist runtime, если managed module отсутствует, не установлен или не загрузился.
+- Managed module не имеет права обходить consent, RBAC, signaling token validation или запреты на hidden unattended access.
+- GUI Maria Agent нельзя блокировать: runtime module запускается через QThread/asyncio boundary.
+- Native dependencies, которые должны быть bundled в PyInstaller, всё ещё требуют full agent release.
+- Elevated helper entrypoint (`pc_agent.exe --remote-assist-elevated-helper`) остаётся в базовом агенте, пока нет отдельного подписанного helper delivery layer.
 
 ## Current State
 
-- Current primary files:
-  - `webapp/src/app/layouts/app-shell.tsx`
-  - `webapp/src/components/shell/app-sidebar.tsx`
-  - `webapp/src/pages/admin/forms-page.tsx`
-  - `webapp/src/features/forms-builder/forms-builder-panel.tsx`
-  - `webapp/src/features/forms-builder/api.ts`
-- Backend already exposes draft, validation, publish, preferred, route preview, and process preview APIs.
-- `forms-builder-panel.tsx` currently combines overview metrics, registry controls, policy editors, smart views, versions, template fields, advanced JSON, route preview, process preview, and publish controls in one screen.
+- Remote Assist сейчас был частью базового агента: команда `remote_assist.request` обрабатывается в `pc_agent/ws_agent.py`, затем GUI создаёт `RemoteAssistThread` из `pc_agent.remote_assist.thread`.
+- Сервер доставляет запрос через DeviceOutbox / Protocol V3, а signaling идёт через `/ws/remote-assist/{session_id}` с короткоживущими role tokens.
+- Текущая module system обслуживает ZIP + `manifest.json`, server preflight, preferred version, `install_module_package`, agent `ModuleManager`, `DynamicModuleLoader`, `ModuleRegistry`.
+- Для Remote Assist нужен слой поверх существующих modules: runtime-module host, который умеет загрузить активный module package и получить factory для long-lived Remote Assist thread.
 
-## Decisions
+## Architecture Decisions
 
-- Treat the change as a frontend-local React webapp change; no backend contract changes are planned.
-- Add route-aware collapse behavior to `AppShell`/`AppSidebar` instead of changing global navigation defaults.
-- Implement internal mode navigation with query params, using:
-  - `mode=overview`
-  - `mode=template`
-  - `mode=policy`
-  - `mode=smart-views`
-  - `mode=versions`
-  - `mode=preview`
-- Keep the existing single-page route and state model to avoid router churn.
-- Keep existing API calls and mutations, but expose them through clearer screen-level CTAs.
+- Название runtime module: `remote_assist_runtime`.
+- Версия первого managed module: `1.0.0`.
+- Базовый агент получает `pc_agent.remote_assist.runtime_host`:
+  - ищет активную версию `remote_assist_runtime` в `modules_store`;
+  - загружает `module.py`;
+  - вызывает `create_remote_assist_thread(...)`;
+  - при любой ошибке пишет warning и использует встроенный `RemoteAssistThread`.
+- Managed package `pc_agent/modules_packages/remote_assist_runtime` в первом срезе поставляет совместимый runtime factory и диагностический tool `remote_assist_runtime.info`.
+- Runtime factory interface:
+  - вход: `signaling_url`, `token`, `ice_servers`, `mode`, `media`, `features`, `parent`;
+  - выход: объект с Qt-сигналами `failed`, `ended`, `state_changed`, методами `start()`, `stop()`, `isRunning()`.
+- Серверный default достигается существующим механизмом preferred modules + desired install на устройство, не отдельным remote-assist updater.
+- Нужен один bootstrap-релиз агента с `runtime_host`; следующие Remote Assist runtime исправления можно поставлять через module package.
 
 ## Implementation Steps
 
-- [x] Run project intake and web toolchain bootstrap.
-- [x] Rebuild stale context index.
-- [x] Replace `PLANS.md` with this scoped UI refactor plan.
-- [x] Add forms-builder route sidebar collapse support in the app shell/sidebar.
-- [x] Add builder mode and complexity mode state synced with query params.
-- [x] Replace the overloaded first screen with a catalog overview.
-- [x] Move template editing into a focused editor layout with stepper, central editor, and right preview/context.
-- [x] Group field process roles by priority, routing, diagnostics, approvals, closure, reporting/passport, and other.
-- [x] Move policy editing into a focused policy mode and hide raw JSON under expert/advanced controls.
-- [x] Move smart views into a focused smart-view mode with list, editor, preview, and checks.
-- [x] Move versions and publication into a release-management mode.
-- [x] Move process preview into a separate process simulation mode using the existing process-preview endpoint.
-- [x] Ensure status chips, validation counts, draft state, and warning/error panels are visible in editor headers.
-- [x] Run TypeScript/build and focused tests where practical.
-- [ ] Verify `/app/admin/forms` manually in browser at `https://192.168.100.17:9443/app/admin/forms` after deploy/release if live verification is requested or feasible.
-- [x] Fix live QA regressions found after destructive confirmation:
-  - block catalog publish until validation/preflight has passed in the current draft;
-  - make Smart view preview/publish actions perform real work or explicit feedback;
-  - wire version actions to editor/compare behavior instead of no-op buttons;
-  - accept legacy/typed query aliases such as `mode=template_editor`, `mode=policy_editor`, `mode=smart_views`, `mode=process_preview`.
+- [x] Очистить старый `PLANS.md` и заменить на этот план.
+- [x] Добавить regression tests для runtime host:
+  - fallback использует встроенный `RemoteAssistThread`;
+  - active `remote_assist_runtime` module factory получает параметры сессии.
+- [x] Добавить `pc_agent/remote_assist/runtime_host.py`.
+- [x] Переключить `pc_agent/ui_gui/main_window.py` на `create_remote_assist_thread(...)`.
+- [x] Добавить managed package `pc_agent/modules_packages/remote_assist_runtime`:
+  - `manifest.json`;
+  - `module.py`;
+  - `register()` для module smoke/list_tools;
+  - `create_remote_assist_thread()` для runtime host.
+- [x] Добавить package smoke tests.
+- [ ] Обновить docs/CODEMAP/navigation catalog для новой runtime-module boundary.
+- [ ] Собрать bootstrap agent release `3.1.55`.
+- [ ] Собрать ZIP module package.
+- [ ] Загрузить module package на сервер через `/api/modules/upload`.
+- [ ] Назначить `remote_assist_runtime@1.0.0` preferred/default по правилам modules.
+- [ ] Установить/проверить module на canary agent `AD-MAIN`.
+- [ ] Проверить, что при новом Remote Assist запуске агент логирует managed runtime или fallback reason.
 
 ## Verification Plan
 
-- [x] `python scripts/verify_workspace.py`
-- [x] `pnpm --dir webapp run build`
-- [x] `pnpm --dir webapp run test`
-- [x] Focused Vitest checks during timeout triage:
-  - `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-panel.test.tsx --reporter=dot`
-  - `pnpm --dir webapp exec vitest run src/pages/admin/index.test.tsx --reporter=dot`
-- [x] Browser check through MCP against local Vite with mocked admin/session/forms API:
-  - opened `/app/admin/forms?mode=overview`
-  - verified overview, template, policy, smart views, versions, and process preview modes render separately
-  - verified process preview calls the existing preview client and renders computed queue/process details
-- [ ] Browser check on `https://192.168.100.17:9443/app/admin/forms` after deploy/release if live verification is requested or feasible.
-- [x] Focused Vitest coverage for the live QA regressions.
-- [x] Re-run `pnpm --dir webapp run build` and relevant webapp tests after fixes.
+- `python -m pytest pc_agent/tests/test_remote_assist_runtime_host.py pc_agent/tests/test_remote_assist_runtime_module_package.py -q --tb=short`
+- `python -m pytest pc_agent/tests/test_remote_assist_webrtc_client.py pc_agent/tests/test_remote_assist_input_controller.py pc_agent/tests/test_remote_assist_elevated_helper.py -q --tb=short`
+- `python scripts/verify_workspace.py`
+- Server module upload response must include `module_name=remote_assist_runtime`, `module_version=1.0.0`.
+- Preferred/default response must show `remote_assist_runtime@1.0.0`.
+- Canary diagnostics must show installed/active `remote_assist_runtime@1.0.0` or a successful `install_module_package` operation for that module.
 
-## Handoff
+## Handoff Notes
 
-- Keep unrelated dirty worktree files unstaged and untouched.
-- The remote server was not started or changed for this UI pass.
-- The local Vite dev server used for browser QA was stopped after checks.
+- This first slice makes Remote Assist module-loadable. It does not remove the bundled fallback from the agent.
+- Future module versions can replace `module.py` with a self-contained implementation, but any new native dependency still requires a full agent build.
+- Do not remove fallback until at least one canary cycle proves module install, activation, Remote Assist consent, WebRTC video, control, clipboard, file transfer and elevated mode.

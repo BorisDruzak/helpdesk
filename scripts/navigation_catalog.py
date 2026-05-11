@@ -144,7 +144,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="remote_assist",
         title="Remote Assist / WebRTC",
-        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, view-only screen sharing by default, support UI defaulting to clipboard auto-sync for screen sessions and file transfer for permitted sessions, smooth 1280x720@15fps profile for responsive control, explicit recvonly browser offers, failed WebRTC timeout cleanup, policy-gated interactive/elevated control over the WebRTC control data channel with sequential input processing, explicit single/double-click commands, a Windows UAC helper for elevated_admin, active-viewer elevation CTA that starts a separate elevated_admin request, operator-to-device file transfer over the file-transfer data channel with button/drag-drop/browser file-paste entry points, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
+        summary="Ticket-bound WebRTC Remote Assist: operator request, mandatory user consent through Maria Agent, retained non-blocking Qt consent dialogs, short-lived signaling tokens, dedicated signaling WebSocket, runtime-module bootstrap through pc_agent.remote_assist.runtime_host with managed remote_assist_runtime fallback, view-only screen sharing by default, support UI defaulting to clipboard auto-sync for screen sessions and file transfer for permitted sessions, smooth 1280x720@15fps profile for responsive control, explicit recvonly browser offers, failed WebRTC timeout cleanup, policy-gated interactive/elevated control over the WebRTC control data channel with sequential input processing, explicit single/double-click commands, a Windows UAC helper for elevated_admin, active-viewer elevation CTA that starts a separate elevated_admin request, operator-to-device file transfer over the file-transfer data channel with button/drag-drop/browser file-paste entry points, coturn REST-style ICE credential generation, audit rows, ticket timeline events and resolution passport summary.",
         aliases=(
             "remote assist",
             "remote_assist",
@@ -170,8 +170,11 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/remote_assist/file_transfer.py",
             "pc_agent/remote_assist/webrtc_client.py",
             "pc_agent/remote_assist/tls.py",
+            "pc_agent/remote_assist/runtime_host.py",
             "pc_agent/remote_assist/thread.py",
             "pc_agent/remote_assist/screen_track.py",
+            "pc_agent/modules_packages/remote_assist_runtime/manifest.json",
+            "pc_agent/modules_packages/remote_assist_runtime/module.py",
             "pc_agent/ui_gui/remote_assist_dialog.py",
             "webapp/src/features/remote-assist/remote-assist-panel.tsx",
             "webapp/src/features/remote-assist/remote-assist-viewer.tsx",
@@ -210,7 +213,7 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/docs/PROTOCOL_V3.md",
             repo_path(PLANS_PATH),
         ),
-        path_prefixes=("server/remote_assist/", "pc_agent/remote_assist/", "webapp/src/features/remote-assist/"),
+        path_prefixes=("server/remote_assist/", "pc_agent/remote_assist/", "pc_agent/modules_packages/remote_assist_runtime/", "webapp/src/features/remote-assist/"),
         exact_paths=(
             "server/routes.py",
             "server/config.py",
@@ -1691,7 +1694,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_updates",
         title="Agent updates / rollout",
-        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.54 for Remote Assist elevated/admin helper idle-timeout stability, 3.1.53 clipboard/control coexistence, recoverable video-stall warning, window-level file paste and active-viewer elevated request access, 3.1.52 default clipboard/file-transfer capabilities and active-viewer elevated request CTA, 3.1.51 file transfer, 3.1.50 elevated_admin UAC helper, 3.1.49 explicit double-click, sequential control input and user-end viewer notification, 3.1.48 stalled-video recovery and RDP/virtual-display mouse reliability, 3.1.47 HTTPS/WSS stand trust, 3.1.46 clipboard/control hotfixes, 3.1.45 quality/control/clipboard auto-sync, 3.1.43 focused-window GUI CPU spikes from `action_trace.jsonl` recounts after 3.1.42 loading `diag_logs` as a core built-in module, 3.1.41 remote retrieval of `[gui-profiler]` logs through `diag.logs.collect`, 3.1.40 field GUI CPU diagnostics, 3.1.39 focused-window mitigation, 3.1.38 launcher version retention and soft-shadow opt-in, 3.1.37 idle CPU/WMI reduction, 3.1.36 Remote Assist WebRTC timeout/capture cleanup, 3.1.35 SendInput/Linux interactive-control testing, 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
+        summary="Launcher builds, self-update, upload, canary rollout, recommended-version behavior, React `/app/admin/agent-updates` build registry and rollout policy UI over web-session aliases `/api/web/admin/agent-builds*` and `/api/web/admin/agent-updates/rollout-policy`, Windows stable release bump to 3.1.55 for Remote Assist runtime-module bootstrap, 3.1.54 elevated/admin helper idle-timeout stability, 3.1.53 clipboard/control coexistence, recoverable video-stall warning, window-level file paste and active-viewer elevated request access, 3.1.52 default clipboard/file-transfer capabilities and active-viewer elevated request CTA, 3.1.51 file transfer, 3.1.50 elevated_admin UAC helper, 3.1.49 explicit double-click, sequential control input and user-end viewer notification, 3.1.48 stalled-video recovery and RDP/virtual-display mouse reliability, 3.1.47 HTTPS/WSS stand trust, 3.1.46 clipboard/control hotfixes, 3.1.45 quality/control/clipboard auto-sync, 3.1.43 focused-window GUI CPU spikes from `action_trace.jsonl` recounts after 3.1.42 loading `diag_logs` as a core built-in module, 3.1.41 remote retrieval of `[gui-profiler]` logs through `diag.logs.collect`, 3.1.40 field GUI CPU diagnostics, 3.1.39 focused-window mitigation, 3.1.38 launcher version retention and soft-shadow opt-in, 3.1.37 idle CPU/WMI reduction, 3.1.36 Remote Assist WebRTC timeout/capture cleanup, 3.1.35 SendInput/Linux interactive-control testing, 3.1.34 WebRTC packaging and startup-failure reporting and 3.1.33 Remote Assist runtime fixes, 3.1.32 requester diagnostic-result timeline wording, 3.1.31 requester timeline projection support, 3.1.30 GUI taskbar-window fix and 3.1.29 requester confirmation, diagnostic consent, diagnostics/deadline/assignment summaries and Russian event text GUI fixes, single-flight pending markers, truthful scheduled command results, launcher rollback after immediate crash, agent telemetry evidence for update flows and end-to-end update tracing.",
         aliases=(
             "agent update",
             "agent updates",

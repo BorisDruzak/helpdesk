@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox, QPlainTextEdit, QStackedWidget, QToolButton,
     QGraphicsDropShadowEffect,
 )
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QSize, Qt, QThread, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPixmap
 from loguru import logger
 
@@ -26,7 +26,7 @@ from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidge
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
-from pc_agent.remote_assist.thread import RemoteAssistThread
+from pc_agent.remote_assist.runtime_host import create_remote_assist_thread
 from pc_agent.version import AGENT_VERSION
 
 
@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         # Этап 4: запись экрана — operation_id для STOP и виджет кнопки
         self._recording_operation_id: Optional[str] = None
         self._stop_button_widget: Optional[QWidget] = None
-        self._remote_assist_threads: Dict[str, RemoteAssistThread] = {}
+        self._remote_assist_threads: Dict[str, QThread] = {}
         self._remote_assist_banners: Dict[str, QWidget] = {}
         self._remote_assist_banner_labels: Dict[str, QLabel] = {}
         self._remote_assist_modes: Dict[str, str] = {}
@@ -2134,7 +2134,7 @@ class MainWindow(QMainWindow):
         existing = self._remote_assist_threads.get(session_id)
         if existing and existing.isRunning():
             return
-        thread = RemoteAssistThread(
+        thread = create_remote_assist_thread(
             signaling_url=signaling_url,
             token=token,
             ice_servers=data.get("ice_servers") if isinstance(data.get("ice_servers"), list) else [],
