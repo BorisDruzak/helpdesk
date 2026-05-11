@@ -6605,8 +6605,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
             </div>
 
             <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">
-              Публикация всегда создаёт новую версию pack и сразу делает её активной. Если нужен откат, загрузите
-              прошлую версию слева и либо сделайте её preferred, либо выпустите на её основе новую версию.
+              Черновик можно сохранить без изменения активной версии. Публикация создаёт новую версию pack, а
+              preferred переключается отдельным действием в списке версий для безопасного rollout или отката.
             </div>
           </CardContent>
         </Card>
