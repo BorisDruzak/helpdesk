@@ -346,6 +346,7 @@
 ## 2026-04-17 Trace overlay
 
 - `server/observer/service.py` projects a technical trace overlay over existing domain data instead of replacing ticket/problem entities.
+- PostgreSQL projection writes for `observer_spans` and `observer_span_links` are chunked under asyncpg's bind-parameter ceiling; large ticket-root traces must be projected in batches, not as one giant `INSERT ... VALUES`.
 - `server/observer/runtime.py` keeps hot traces fresh in the background by scanning newly committed source rows and re-projecting only changed trace ids.
 - New observer storage lives in `observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, and `observer_error_signatures` (migration `052_observer_trace_overlay`).
 - Canonical observer docs: `server/docs/OBSERVER_LAYER.md` and `server/docs/OBSERVER_AUTHORING_RULES.md`.

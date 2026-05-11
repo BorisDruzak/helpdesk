@@ -79,6 +79,7 @@ Observer runtime:
 - делает background historical backfill;
 - применяет retention/sampling settings;
 - поддерживает materialized agent/module spans поверх agent action trace.
+- writes large PostgreSQL span/link projections in bounded batches, so a noisy ticket-root trace cannot exceed asyncpg's `32767` bind-parameter limit during `observer_spans` / `observer_span_links` materialization.
 
 Нормальный путь для горячих кейсов — background refresh, а не ручной rebuild.
 

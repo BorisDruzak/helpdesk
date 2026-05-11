@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import observer.service as observer_service_module
-from observer.service import ObserverOverlayService, TraceOverlayFilters
+from observer.service import ObserverOverlayService, TraceOverlayFilters, _iter_postgres_payload_batches
 
 
 class _AsyncSessionContext:
@@ -17,6 +19,48 @@ class _AsyncSessionContext:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+def test_postgres_payload_batches_respect_bind_parameter_limit() -> None:
+    payloads = [{f"field_{field}": f"{row}-{field}" for field in range(4)} for row in range(7)]
+
+    batches = list(_iter_postgres_payload_batches(payloads, bind_limit=10))
+
+    assert [len(batch) for batch in batches] == [2, 2, 2, 1]
+
+
+@pytest.mark.asyncio
+async def test_store_span_payloads_chunks_large_postgres_bulk_insert() -> None:
+    session = MagicMock()
+    session.get_bind.return_value = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+    session.execute = AsyncMock()
+    service = ObserverOverlayService(session)
+    now = datetime.now(timezone.utc)
+    span_payloads = [
+        {
+            "span_id": f"span-{index}",
+            "trace_id": "trace-1",
+            "parent_span_id": None,
+            "source_type": "ticket_event",
+            "source_ref": str(index),
+            "name": "ticket.event",
+            "kind": "event",
+            "component": "tickets",
+            "event_type": "chat_message",
+            "module_name": None,
+            "tool_name": None,
+            "status": "ok",
+            "started_at": now,
+            "finished_at": now,
+            "duration_ms": 0,
+            "attrs_json": {"index": index},
+        }
+        for index in range(2_000)
+    ]
+
+    await service._store_span_payloads(span_payloads)
+
+    assert session.execute.await_count == 2
 
 
 @pytest.mark.asyncio

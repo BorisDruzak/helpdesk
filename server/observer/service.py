@@ -74,6 +74,7 @@ RUNTIME_AUDIT_EVENTS = {
 MODULE_RECONCILE_AUDIT_EVENTS = {"module_reconcile_failed"}
 WEB_AUTH_AUDIT_EVENTS = {"web_auth_failed", "web_auth_forbidden"}
 OBSERVER_RUNTIME_AUDIT_EVENTS = {"observer_runtime_degraded"}
+OBSERVER_POSTGRES_BULK_BIND_LIMIT = 30_000
 PROBLEM_AUDIT_EVENTS = (
     PROVISIONING_AUDIT_EVENTS
     | AUTH_AUDIT_EVENTS
@@ -104,6 +105,19 @@ def _observer_trace_url(trace_id: str | None) -> str | None:
     if not value:
         return None
     return f"/app/admin/observer?trace_id={value}"
+
+
+def _iter_postgres_payload_batches(
+    payloads: list[dict[str, Any]],
+    *,
+    bind_limit: int = OBSERVER_POSTGRES_BULK_BIND_LIMIT,
+) -> Iterable[list[dict[str, Any]]]:
+    if not payloads:
+        return
+    max_field_count = max((len(payload) for payload in payloads), default=1)
+    batch_size = max(1, bind_limit // max(1, max_field_count))
+    for index in range(0, len(payloads), batch_size):
+        yield payloads[index:index + batch_size]
 
 
 @dataclass(slots=True)
@@ -1280,15 +1294,16 @@ class ObserverOverlayService:
                 for column in ObserverSpan.__table__.columns
                 if column.name != "span_id"
             }
-            stmt = (
-                insert_stmt
-                .values(span_payloads)
-                .on_conflict_do_update(
-                    index_elements=[ObserverSpan.span_id],
-                    set_=update_columns,
+            for batch in _iter_postgres_payload_batches(span_payloads):
+                stmt = (
+                    insert_stmt
+                    .values(batch)
+                    .on_conflict_do_update(
+                        index_elements=[ObserverSpan.span_id],
+                        set_=update_columns,
+                    )
                 )
-            )
-            await self.session.execute(stmt)
+                await self.session.execute(stmt)
             return
         for payload in span_payloads:
             self.session.add(ObserverSpan(**payload))
@@ -1298,12 +1313,13 @@ class ObserverOverlayService:
             return
         bind = self.session.get_bind()
         if bind is not None and bind.dialect.name == "postgresql":
-            stmt = (
-                pg_insert(ObserverSpanLink)
-                .values(link_payloads)
-                .on_conflict_do_nothing()
-            )
-            await self.session.execute(stmt)
+            for batch in _iter_postgres_payload_batches(link_payloads):
+                stmt = (
+                    pg_insert(ObserverSpanLink)
+                    .values(batch)
+                    .on_conflict_do_nothing()
+                )
+                await self.session.execute(stmt)
             return
         for payload in link_payloads:
             self.session.add(ObserverSpanLink(**payload))
