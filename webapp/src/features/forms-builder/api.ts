@@ -689,7 +689,33 @@ export async function validateAdminFormsCatalog(
     },
     body: JSON.stringify(payload)
   });
-  return readSuccessResponse(response, "Не удалось проверить каталог форм");
+  const result = await readSuccessResponse<Partial<AdminFormsValidateResult>>(
+    response,
+    "Не удалось проверить каталог форм"
+  );
+  const errors = Array.isArray(result.errors) ? result.errors : [];
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const summary = result.summary ?? {
+    errors_count: errors.length,
+    warnings_count: warnings.length,
+    can_publish: errors.length === 0
+  };
+
+  return {
+    status: result.status ?? "validated",
+    summary: {
+      errors_count: Number(summary.errors_count ?? errors.length),
+      warnings_count: Number(summary.warnings_count ?? warnings.length),
+      can_publish: Boolean(summary.can_publish ?? errors.length === 0)
+    },
+    errors,
+    warnings,
+    message:
+      result.message ??
+      (summary.can_publish
+        ? "Проверка завершена: публикация разрешена."
+        : "Проверка завершена: публикация заблокирована.")
+  };
 }
 
 export async function publishAdminFormsCatalog(
