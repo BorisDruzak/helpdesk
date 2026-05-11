@@ -324,10 +324,17 @@ def admin_forms_actor_id(auth_context: AuthContext) -> str:
     return str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
 
 
+def _business_validation_base_pack(base_pack):
+    if isinstance(base_pack, dict):
+        return base_pack
+    pack_json = getattr(base_pack, "pack_json", None)
+    return pack_json if isinstance(pack_json, dict) else None
+
+
 async def build_form_business_validation_context(
     session,
     *,
-    base_pack: dict | None = None,
+    base_pack: dict | object | None = None,
 ) -> FormBusinessValidationContext:
     queue_rows = (
         await session.execute(
@@ -373,7 +380,7 @@ async def build_form_business_validation_context(
             and str(row[1] or "").strip().lower() in {"diag", "diagnostic", "diagnostics"}
         },
         policy_refs=policy_refs,
-        base_pack=base_pack,
+        base_pack=_business_validation_base_pack(base_pack),
     )
 
 

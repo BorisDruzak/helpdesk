@@ -403,6 +403,27 @@ async def test_web_admin_forms_validate_returns_business_preflight_report(test_c
 
 
 @pytest.mark.asyncio
+async def test_web_admin_forms_validate_accepts_existing_base_version(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    published = await test_client.post(
+        "/api/web/admin/forms/save",
+        json=_typed_forms_payload("printer", title="Печать / принтер"),
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert published.status == 200, await published.text()
+
+    response = await test_client.post(
+        "/api/web/admin/forms/validate",
+        json={**_typed_forms_payload("printer", title="Печать / принтер"), "base_version": "1.0.1"},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["summary"]["can_publish"] is True
+
+
+@pytest.mark.asyncio
 async def test_web_admin_forms_publish_blocks_missing_business_refs(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
     payload = _typed_forms_payload("website_unavailable", title="Website unavailable")
