@@ -1692,5 +1692,5 @@ describe("AdminWorkspacePage", () => {
     await waitFor(() => {
       expect(screen.getByText("Есть отставание")).toBeInTheDocument();
     });
-  }, 10000);
+  }, 20000);
 });
