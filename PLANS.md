@@ -510,7 +510,13 @@ Initial strict role set:
   - validated the draft and saw the structured preflight report; `/api/web/admin/forms/validate` returned `200 OK` and reported blocking business validation instead of a server error;
   - ran process preview with sample answers and confirmed ticket type, priority, queue, routing rule, SLA/OLA, approval, diagnostics, closure, visibility and notification summary are visible; `/api/web/admin/forms/process-preview` returned `200 OK`;
   - checked browser console/network: no console warnings/errors and no failed lifecycle requests;
-  - live publish, preferred switch and rollback were intentionally not executed on the canonical stand because they mutate the active `request_forms` catalog.
+  - live publish/preferred/rollback verification was executed after explicit approval on 2026-05-11:
+    - baseline preferred was `request_forms` version `1.0.15`;
+    - published version `1.0.16` with `make_preferred=false`; `/api/ticket_forms/current` and `/public_api/ticket_forms/current` stayed on `1.0.15`;
+    - switched preferred to `1.0.16`; admin current, public current and `/help` rendered the new catalog;
+    - launched local GUI agent instance `forms-lifecycle-live` through `scripts/manage_local_agent.py`; automation status reported `form_pack_version: 1.0.16`;
+    - created live smoke ticket `T-000533` through `scripts/agent_test_driver.py create-ticket`; ticket snapshot stored `request_form_version`, `resolved_pack_version` and `custom_fields.request_form.pack_version` as `1.0.16`;
+    - rolled preferred back to `1.0.15`; admin current and public current returned to `1.0.15`; local agent instance was stopped.
 - [x] Stop remote server after verification unless explicitly asked to leave it running.
 
 ## Rollout Strategy
