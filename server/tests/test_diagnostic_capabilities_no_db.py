@@ -137,6 +137,22 @@ async def test_readiness_calculates_agent_managed_and_server_connector_states():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
+async def test_readiness_marks_server_builtin_available_without_device_or_agent():
+    registry = CapabilityRegistry(tool_service=FakeToolService(), state=FakeState(online=False))
+    service = CapabilityReadinessService(state=FakeState(online=False))
+    capabilities = {cap.id: cap for cap in await registry.list_capabilities(device_id=None)}
+
+    readiness = await service.get_readiness(
+        capabilities["server.dns.resolve"],
+        ReadinessContext(ticket_id="ticket-1"),
+    )
+
+    assert readiness.readiness == "available"
+    assert readiness.actions == ["run"]
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
 async def test_readiness_uses_platform_install_dependency_policy_credentials_mapping_and_permissions():
     registry = CapabilityRegistry(tool_service=FakeToolService(), state=FakeState(online=True))
     service = CapabilityReadinessService(state=FakeState(online=True))

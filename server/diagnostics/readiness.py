@@ -39,6 +39,10 @@ class CapabilityReadinessService:
             return common
         if target in {"agent_builtin", "agent_managed_module"}:
             return self._agent_readiness(capability, context)
+        if target == "server_builtin":
+            if capability.requires_consent:
+                return self._consent_required(capability)
+            return self._status(capability, "available", None, ["run"])
         if target == "server_connector":
             return self._server_connector_readiness(capability, context)
         if target == "observer_query":
