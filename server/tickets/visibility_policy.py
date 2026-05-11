@@ -24,6 +24,7 @@ DEFAULT_HIDE_FROM_REQUESTER = {
     "update_summary",
     "worklog_totals",
     "worklogs",
+    "custom_fields.request_template",
 }
 
 

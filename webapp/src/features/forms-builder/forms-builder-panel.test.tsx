@@ -33,12 +33,26 @@ function createFormsPayload(): AdminFormsPayload {
       current_endpoint: "/api/web/admin/forms/current",
       save_endpoint: "/api/web/admin/forms/save",
       preview_endpoint: "/api/web/admin/forms/route-preview",
+      process_preview_endpoint: "/api/web/admin/forms/process-preview",
       field_type_options: [
         { value: "text", label: "Текст" },
         { value: "textarea", label: "Большой текст" },
         { value: "select", label: "Список" },
         { value: "radio", label: "Переключатель" },
         { value: "checkbox", label: "Флажок" }
+      ],
+      field_role_options: [
+        { value: "routing_field", label: "Routing field" },
+        { value: "priority_impact", label: "Priority impact" },
+        { value: "priority_urgency", label: "Priority urgency" },
+        { value: "priority_importance", label: "Priority importance" },
+        { value: "diagnostic_input", label: "Diagnostic input" },
+        { value: "approval_subject", label: "Approval subject" },
+        { value: "closure_evidence", label: "Closure evidence" },
+        { value: "reporting_dimension", label: "Reporting dimension" },
+        { value: "passport_fact", label: "Passport fact" },
+        { value: "visibility_public", label: "Requester-visible fact" },
+        { value: "display_only", label: "Display only" }
       ]
     },
     forms: [
@@ -182,11 +196,64 @@ describe("FormsBuilderPanel", () => {
     renderFormsBuilder({ permissions: ["admin.forms.view"] });
 
     expect(await screen.findByText("Недостаточно прав: admin.forms.publish")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Опубликовать новую версию|Сохранить изменения/ })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /Сохранить черновик|Опубликовать/ })[0]).toBeDisabled();
   });
 
-  it("показывает каталог форм и публикует новую версию", async () => {
-    const saveCalls: unknown[] = [];
+  it("shows inline field role conflicts near affected fields", async () => {
+    const payload = createFormsPayload();
+    payload.forms[0] = {
+      ...payload.forms[0],
+      diagnostic_policy: {
+        auto_run: { enabled: true },
+        suggested_playbooks: ["diagnose.printer"]
+      },
+      field_roles: {
+        room: ["priority_impact", "diagnostic_input"],
+        printer_model: ["priority_impact"]
+      }
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: payload
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    await waitFor(() => {
+      expect(screen.getAllByText("Печать / принтер").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getAllByText("Role priority_impact can be assigned to only one field.").length).toBeGreaterThan(0);
+    expect(screen.getByText("Diagnostic input needs a playbook parameter mapping.")).toBeInTheDocument();
+  });
+
+  it("сохраняет черновик, запускает проверку и публикует отдельными действиями", async () => {
+    const draftCalls: unknown[] = [];
+    const validateCalls: unknown[] = [];
+    const publishCalls: unknown[] = [];
 
     vi.stubGlobal(
       "fetch",
@@ -240,8 +307,43 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
-          saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
+        if (url === "/api/web/admin/forms/save-draft" && method === "POST") {
+          draftCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              draft_id: "draft-1",
+              pack_key: "request_forms",
+              base_version: "1.0.3",
+              status: "draft",
+              summary: createFormsPayload().summary,
+              published_version: null,
+              preferred_version: "1.0.3",
+              message: "Черновик сохранён. Активная версия не изменилась."
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/forms/validate" && method === "POST") {
+          validateCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              status: "validated",
+              summary: {
+                errors_count: 0,
+                warnings_count: 0,
+                can_publish: true
+              },
+              errors: [],
+              warnings: [],
+              message: "Проверка завершена: публикация разрешена."
+            }
+          });
+        }
+
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
+          publishCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
             data: {
@@ -273,6 +375,9 @@ describe("FormsBuilderPanel", () => {
                   ]
                 }
               ],
+              published_version: "1.0.4",
+              preferred_version: "1.0.4",
+              made_preferred: true,
               message: "Каталог опубликован как версия 1.0.4. Изменения уже активны в /help и в интерфейсе агента."
             }
           });
@@ -308,16 +413,32 @@ describe("FormsBuilderPanel", () => {
       target: { value: "issue_code" }
     });
     fireEvent.click(screen.getByRole("button", { name: "Добавить вопросы" }));
+    expect(screen.getByText("Priority impact")).toBeInTheDocument();
+    expect(screen.queryByText("priority_field")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить черновик" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Черновик сохранён/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Проверить публикацию" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Проверка завершена/).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(screen.getByText(/Каталог опубликован как версия 1.0.4/)).toBeInTheDocument();
     });
 
-    expect(saveCalls).toHaveLength(1);
+    expect(draftCalls).toHaveLength(1);
+    expect(validateCalls).toHaveLength(1);
+    expect(publishCalls).toHaveLength(1);
     const savedPrinterRepair = (
-      saveCalls[0] as {
+      publishCalls[0] as {
         forms: Array<{
           key: string;
           fields?: Array<{ key: string }>;
@@ -327,13 +448,18 @@ describe("FormsBuilderPanel", () => {
       }
     ).forms.find((form) => form.key === "printer_repair");
     expect(savedPrinterRepair?.fields?.some((field) => field.key === "impact_scope")).toBe(true);
-    expect(savedPrinterRepair?.field_roles?.impact_scope).toContain("priority_field");
+    expect(savedPrinterRepair?.field_roles?.impact_scope).toContain("priority_impact");
     expect(savedPrinterRepair?.priority_policy).toMatchObject({
       impact_field: "impact_scope",
       urgency_field: "work_continuity",
       importance_field: "business_importance",
     });
-    expect(saveCalls[0]).toMatchObject({
+    expect(validateCalls[0]).toMatchObject({
+      draft_id: "draft-1"
+    });
+    expect(publishCalls[0]).toMatchObject({
+      draft_id: "draft-1",
+      make_preferred: true,
       title: "Каталог заявок",
       forms: [
         expect.objectContaining({
@@ -461,6 +587,126 @@ describe("FormsBuilderPanel", () => {
     });
   });
 
+  it("строит полный process preview по текущей форме", async () => {
+    const processPreviewCalls: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({
+            status: "success",
+            data: createFormsPayload()
+          });
+        }
+
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({
+            status: "ok",
+            pack_key: "request_forms",
+            current: null,
+            preferred: null,
+            packs: []
+          });
+        }
+
+        if (url === "/api/web/admin/forms/process-preview" && method === "POST") {
+          processPreviewCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket_type: "incident",
+              request_kind: "printer",
+              priority: {
+                priority_class: "P2",
+                priority_source: "request_template.priority_policy"
+              },
+              routing: {
+                source: "request_template.routing_policy",
+                target_queue_id: 17,
+                target_queue_name: "Printer 214",
+                matched_rule_code: "printer_room_214"
+              },
+              sla: {
+                policy_code: "incident_sla",
+                first_response_min: 15,
+                resolution_min: 240
+              },
+              ola: {
+                policy_code: "printer_ola",
+                ack_min: 10,
+                processing_min: 120
+              },
+              approval: {
+                required: false,
+                mode: "none"
+              },
+              diagnostics: {
+                suggested_playbooks: ["printer.quick_diag"],
+                auto_run_enabled: true,
+                consent_required: false
+              },
+              closure: {
+                requires_resolution_code: true,
+                requires_evidence: false
+              },
+              visibility: {
+                public_status_mapping: {}
+              },
+              notifications: {
+                events: ["ticket_created"]
+              },
+              summary_rows: [{ key: "room", label: "Кабинет", value: "214" }],
+              validation_report: {
+                summary: { can_publish: true },
+                errors: [],
+                warnings: []
+              },
+              preview_metadata: {
+                source: "draft",
+                side_effects: []
+              }
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder();
+
+    await screen.findByRole("heading", { name: "Конструктор форм заявок" });
+    fireEvent.change(await screen.findByLabelText("Кабинет"), {
+      target: { value: "214" }
+    });
+    fireEvent.change(screen.getByLabelText("Модель"), {
+      target: { value: "HP LaserJet" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить процесс" }));
+
+    expect(await screen.findByText("При таких ответах будет создан")).toBeInTheDocument();
+    expect(screen.getByText("Printer 214")).toBeInTheDocument();
+    expect(screen.getByText("P2")).toBeInTheDocument();
+    expect(screen.getByText(/incident_sla/)).toBeInTheDocument();
+    expect(screen.getByText("printer.quick_diag")).toBeInTheDocument();
+    expect(screen.getByText("printer_room_214")).toBeInTheDocument();
+    expect(processPreviewCalls).toHaveLength(1);
+    expect(processPreviewCalls[0]).toMatchObject({
+      form: {
+        key: "printer",
+        request_kind: "printer"
+      },
+      form_payload: {
+        room: "214",
+        printer_model: "HP LaserJet"
+      }
+    });
+  });
+
   it("показывает проверку публикации и блокирует hard-invalid форму", async () => {
     vi.stubGlobal(
       "fetch",
@@ -521,7 +767,7 @@ describe("FormsBuilderPanel", () => {
     expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
     expect(screen.getByText("У поля «Кабинет» нужен ключ.")).toBeInTheDocument();
     expect(screen.getByText("Укажите ключ плейбука или выключите автозапуск.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Сохранить изменения" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Опубликовать" })[0]).toBeDisabled();
   });
 
   it("показывает end-to-end preview запуска плейбука вместе с маршрутом", async () => {
@@ -680,7 +926,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -719,7 +965,7 @@ describe("FormsBuilderPanel", () => {
       expect(screen.getByLabelText("Поле условия")).toHaveValue("");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -790,7 +1036,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -838,7 +1084,7 @@ describe("FormsBuilderPanel", () => {
       target: { value: "network" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -942,7 +1188,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -971,7 +1217,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(screen.getAllByText("Уведомления")[0]);
     fireEvent.click(screen.getByRole("button", { name: "Вставить уведомления" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1087,7 +1333,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1117,7 +1363,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(screen.getByLabelText("Эскалировать руководителю очереди"));
     fireEvent.click(screen.getByLabelText("Канал email"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1174,7 +1420,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1210,7 +1456,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(templateControl("Куда направить"), { target: { value: "networks" } });
     fireEvent.change(templateControl("Повысить приоритет на"), { target: { value: "2" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1272,7 +1518,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1309,7 +1555,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(templateControl("Эскалировать через"), { target: { value: "1d" } });
     fireEvent.click(templateControl("Комментарий при отказе"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1366,7 +1612,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1404,7 +1650,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(templateControl("Открывать при отрицательном отзыве"));
     fireEvent.change(templateControl("Коды решения"), { target: { value: "fixed_remote, duplicate, cannot_reproduce" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1466,7 +1712,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1506,7 +1752,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(templateControl("DNS_FAIL очередь"), { target: { value: "networks_l2" } });
     fireEvent.change(templateControl("HTTP_500 очередь"), { target: { value: "apps" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1569,7 +1815,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1607,7 +1853,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.change(templateControl("Скрыть от заявителя"), { target: { value: "internal_notes, ola_details, raw_diagnostics" } });
     fireEvent.change(templateControl("Показывать заявителю"), { target: { value: "public_messages, public_status, expected_due_at" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1661,7 +1907,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1698,7 +1944,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(templateControl("Канал: Telegram"));
     fireEvent.click(templateControl("Канал: VK Teams"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -1808,7 +2054,7 @@ describe("FormsBuilderPanel", () => {
           });
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if (url === "/api/web/admin/forms/publish" && method === "POST") {
           saveCalls.push(JSON.parse(String(init?.body ?? "{}")));
           return jsonResponse({
             status: "success",
@@ -1856,7 +2102,7 @@ describe("FormsBuilderPanel", () => {
     fireEvent.click(templateControl("Требовать официальный паспорт"));
     fireEvent.click(templateControl("Подсказки для базы знаний"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     await waitFor(() => {
       expect(saveCalls).toHaveLength(1);
@@ -2031,6 +2277,107 @@ describe("FormsBuilderPanel", () => {
     expect(payload.form.fields.map((field) => field.key)).toContain("room");
     expect(payload.publish_policies).toBe(true);
     expect(await screen.findByText(/Шаблон обращения printer опубликован/)).toBeInTheDocument();
+  });
+
+  it("показывает policy refs как основной режим и сохраняет выбранный ref в draft", async () => {
+    const draftCalls: unknown[] = [];
+    const registryPayload = createHelpdeskModelRegistryPayload();
+    registryPayload.request_templates = [
+      {
+        template_code: "site_unavailable",
+        version: "1.0.1",
+        public_title: "Не открывается сайт",
+        internal_name: "Incident / Website unavailable",
+        description: "Проблемы доступа к сайту",
+        ticket_type: "incident",
+        category_id: 10,
+        service_id: null,
+        subcategory_id: null,
+        form_schema_id: "site_form",
+        workflow_profile_id: "incident_default",
+        priority_policy_code: null,
+        routing_policy_code: "website_routing_v5",
+        sla_policy_id: null,
+        sla_policy_code: null,
+        ola_policy_code: null,
+        approval_policy_code: null,
+        diagnostic_policy_code: null,
+        closure_policy_code: null,
+        visibility_policy_code: null,
+        notification_policy_code: null,
+        reporting_policy_code: null,
+        config: {},
+        overrides: {},
+        is_active: true,
+        published_at: "2026-05-02T18:00:00+05:00",
+        created_at: "2026-05-02T18:00:00+05:00",
+        created_by: "admin1",
+        updated_at: "2026-05-02T18:00:00+05:00",
+        updated_by: "admin1"
+      }
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: createFormsPayload() });
+        }
+        if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+          return jsonResponse({ status: "ok", pack_key: "request_forms", current: null, preferred: null, packs: [] });
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: registryPayload });
+        }
+        if (url === "/api/web/admin/forms/save-draft" && method === "POST") {
+          draftCalls.push(JSON.parse(String(init?.body ?? "{}")));
+          return jsonResponse({
+            status: "success",
+            data: {
+              draft_id: "draft-policy-ref",
+              pack_key: "request_forms",
+              base_version: "1.0.3",
+              status: "draft",
+              summary: createFormsPayload().summary,
+              published_version: null,
+              preferred_version: "1.0.3",
+              message: "Черновик сохранён. Активная версия не изменилась."
+            }
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${method} ${url}`);
+      })
+    );
+
+    renderFormsBuilder({ permissions: ["admin.forms.publish"] });
+
+    expect(await screen.findByText("Policy refs")).toBeInTheDocument();
+    expect(screen.getByText("Advanced inline policy JSON")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Routing policy ref"), {
+      target: { value: "website_routing_v5" }
+    });
+
+    expect(await screen.findByText("Affects active templates: Не открывается сайт")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить черновик" })[0]);
+
+    await waitFor(() => {
+      expect(draftCalls).toHaveLength(1);
+    });
+
+    expect(draftCalls[0]).toMatchObject({
+      forms: [
+        {
+          key: "printer",
+          routing_policy_ref: "website_routing_v5"
+        }
+      ]
+    });
   });
   it("публикует отдельную routing policy из редактора политик", async () => {
     const publishCalls: unknown[] = [];

@@ -1587,6 +1587,39 @@ class TicketFormPack(Base):
         )
 
 
+class FormBuilderDraft(Base):
+    """Draft request-form catalog that is not visible to requesters until published."""
+
+    __tablename__ = "form_builder_drafts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    pack_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    base_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="draft", index=True)
+    schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    validation_report_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    published_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_form_builder_drafts_pack_status", "pack_key", "status"),
+        Index("ix_form_builder_drafts_updated_at", "updated_at"),
+    )
+
+
 class TicketType(Base):
     """Versioned top-level service desk process type defaults."""
 

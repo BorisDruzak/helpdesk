@@ -6,7 +6,7 @@
 
 - Legacy shell: вкладка `Конструктор форм` в `/admin`, файлы `server/admin_ticket_forms_builder.html` и `server/admin_ticket_forms_builder.js`.
 - Новый typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
-- Новый typed boundary для React-панели: `GET /api/web/admin/forms/current`, `POST /api/web/admin/forms/save` и `POST /api/web/admin/forms/route-preview`.
+- Новый typed boundary для React-панели: `GET /api/web/admin/forms/current`, `POST /api/web/admin/forms/save`, `POST /api/web/admin/forms/route-preview` и `POST /api/web/admin/forms/process-preview`.
 - Доменный pack-registry остаётся общим: `GET /api/ticket_forms/current`, `GET /public_api/ticket_forms/current`, `POST /api/ticket_forms/packs/save`, `PATCH /api/ticket_forms/packs/{pack_key}/{version}/preferred`.
 
 ## Зачем нужен конструктор
@@ -112,7 +112,9 @@
 
 - Конструктор форм теперь напрямую связан с routing builder: `GET /api/web/settings` возвращает `routing_builder` catalog, собранный из текущего preferred pack, поэтому правила маршрутизации можно настраивать по базовым полям тикета и по `request_form_data.<field>` без ручного угадывания ключей.
 - Preview маршрута вызывается через `POST /api/web/admin/forms/route-preview`: React-панель отправляет текущий draft формы и примерные значения, а сервер отвечает, какая очередь и какое правило совпадут, либо что сработал fallback.
+- Process preview вызывается через `POST /api/web/admin/forms/process-preview`: React-панель отправляет текущий draft формы и примерные значения, а сервер без side effects возвращает `ticket_type`, `request_kind`, computed priority, matched routing rule/queue, SLA/OLA targets, approval summary, suggested diagnostics, closure checklist, visibility/notification summaries and business validation report.
 - Runtime routing использует тот же form-aware context, что и preview: `ticket_type`, `request_kind`, `custom_fields`, `request_form_data`, `request_form_key`, `request_form_title`, `request_form_summary`.
+- Runtime create/create-preview сохраняет explainable snapshot: `custom_fields.request_form` показывает источник (`legacy_pack` или `standalone_registry`), pack/form keys and versions, а `custom_fields.request_template` хранит template/schema versions, policy refs/snapshots and `computed` decisions. `computed` содержит priority, routing source, queue id/code/name and matched routing rule. Requester/public ticket payloads hide `custom_fields.request_template` by default so internal policy JSON does not leak.
 
 ## Integrity rules для зависимых полей
 
@@ -146,13 +148,31 @@
 - HTTP API pack registry: `server/tickets/form_pack_handlers.py`, typed web boundary `server/web_api/admin_handlers.py`
 - Публичная форма: `server/help.html`, `server/help.js`
 - Агентский диалог создания тикета: `pc_agent/ui_gui/chat_panel.py`
+## 2026-05-11 lifecycle and business preflight
+
+- The typed React boundary now separates draft, validation, publication and preferred rollout:
+  - `POST /api/web/admin/forms/save-draft`
+  - `POST /api/web/admin/forms/validate`
+  - `POST /api/web/admin/forms/publish`
+  - `PATCH /api/web/admin/forms/preferred`
+- `POST /api/web/admin/forms/save` remains compatible with older callers and still routes through the same lifecycle service.
+- `server/tickets/form_lifecycle_service.py` owns draft storage, validation orchestration, publish versioning and preferred switching.
+- `server/tickets/form_business_validation.py` owns the business preflight report. It returns `summary`, `errors[]` and `warnings[]`; publish/save is blocked when `errors[]` is not empty.
+- Current blocking checks cover missing conditional fields, required fields hidden without a checkable condition, missing routing queues, missing SLA policy ids, queues with OLA targets but no OLA policy, missing diagnostic playbooks, playbooks that are not diagnostic-domain safe, approval policies without approver source, closure policies without `closure_evidence`, and unknown/inactive policy refs.
+- Current warning checks cover missing SLA policy, weak/missing public title, missing priority facts in raw packs, required fields without help text, missing saved route/process preview samples for process-aware forms, and field-key changes against `base_version` without alias or migration note.
+- Preflight metadata preserved in form packs: `route_preview_examples`, `process_preview_examples`, `field_aliases`, and `field_migration_note`.
+- Canonical policy references are accepted on forms as `priority_policy_ref`, `routing_policy_ref`, `sla_policy_ref`, `ola_policy_ref`, `approval_policy_ref`, `diagnostic_policy_ref`, `closure_policy_ref`, `visibility_policy_ref`, `notification_policy_ref`, and `reporting_policy_ref`. Normalization mirrors them into `policy_refs` and the existing `*_policy_code` fields so old runtime and standalone registry paths keep working.
+- When an explicit `*_policy_ref` and inline legacy policy JSON are both present, the ref is authoritative for publication. `publish-from-form` attaches that ref to the request template and skips publishing a generated policy for that kind.
+- In `/app/admin/forms`, policy refs are the primary template controls. Inline policy JSON is still editable, but it is labeled as `Advanced inline policy JSON`; the ref panel also shows active request templates already using an entered policy code.
+- `/app/admin/forms` now has a `Проверить процесс` action backed by `server/tickets/form_process_preview.py`. It keeps the old route-preview action available, but the primary admin check now shows what ticket would be created from the sample answers: type, priority, route, SLA/OLA, approval, diagnostics, closure and notification plan.
+
 ## 2026-04-29 priority question contract
 
 - Priority facts are normal request-template fields, not hardcoded priority selectors.
 - The standard field keys are `impact_scope`, `work_continuity`, `business_importance`, `critical_service` and `public_service`.
 - `priority_policy.impact_field`, `priority_policy.urgency_field`, `priority_policy.importance_field` map those fields into the deterministic priority engine.
 - `priority_policy.modifier_fields` maps boolean modifiers such as `critical_service` and `public_service`.
-- `field_roles` marks how fields participate in process execution. The supported roles in the React builder are `routing_field`, `priority_field`, `sla_field`, `approval_field`, `diagnostic_input`, `closure_evidence` and `display_only`.
+- `field_roles` marks how fields participate in process execution. The canonical roles are `routing_field`, `priority_impact`, `priority_urgency`, `priority_importance`, `diagnostic_input`, `approval_subject`, `closure_evidence`, `reporting_dimension`, `passport_fact`, `visibility_public` and `display_only`; legacy packs may still load old `priority_field`, `sla_field` and `approval_field` roles for compatibility. Business preflight now enforces singleton priority roles, requires `diagnostic_input` parameter mappings for diagnostic autorun, checks `approval_subject` fields for user/service/role/group compatibility and checks `closure_evidence` fields against closure evidence requirements. `/app/admin/forms` shows the same role issues inline on affected fields.
 - `/app/admin/forms` can add the standard priority question set to any request template, after which every label, option, required flag and role remains editable in the server UI.
 - The local agent reads the same server form pack. If a template defines priority fields, the agent renders those fields in the priority step and sends their values in `form_payload`. Fixed local priority controls are only a fallback for old packs without priority fields.
 - SLA shown to the requester/agent is not local text. It is read from the created/refreshed ticket payload (`first_response_due_at`, `resolution_due_at`) after the server computes effective priority and SLA targets.

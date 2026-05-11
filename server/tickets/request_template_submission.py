@@ -123,6 +123,28 @@ def _find_registry_form_schema(
     return None
 
 
+def _with_resolution_metadata(
+    validated_submission: dict[str, Any],
+    *,
+    resolved_from: str,
+    resolved_pack_key: str | None,
+    resolved_pack_version: Any,
+    resolved_template_key: str | None,
+    resolved_template_version: Any,
+    resolved_form_schema_id: str | None,
+    resolved_form_schema_version: Any,
+) -> dict[str, Any]:
+    result = deepcopy(validated_submission)
+    result["resolved_from"] = resolved_from
+    result["resolved_pack_key"] = resolved_pack_key
+    result["resolved_pack_version"] = resolved_pack_version
+    result["resolved_template_key"] = resolved_template_key
+    result["resolved_template_version"] = resolved_template_version
+    result["resolved_form_schema_id"] = resolved_form_schema_id
+    result["resolved_form_schema_version"] = resolved_form_schema_version
+    return result
+
+
 async def resolve_create_form_submission(
     session: Any,
     *,
@@ -140,10 +162,21 @@ async def resolve_create_form_submission(
             pack_key=pack_key,
             version=pack_version,
         )
-        return validate_form_submission(
+        validated_submission = validate_form_submission(
             form_pack,
             form_key=form_key,
             raw_values=raw_values or {},
+        )
+        template_context = validated_submission.get("template_context") or {}
+        return _with_resolution_metadata(
+            validated_submission,
+            resolved_from="legacy_pack",
+            resolved_pack_key=str(form_pack.get("pack_key") or pack_key or DEFAULT_TICKET_FORM_PACK_KEY),
+            resolved_pack_version=form_pack.get("version"),
+            resolved_template_key=str(template_context.get("key") or validated_submission.get("request_template_key") or form_key),
+            resolved_template_version=template_context.get("request_template_version"),
+            resolved_form_schema_id=template_context.get("form_schema_id"),
+            resolved_form_schema_version=template_context.get("form_schema_version") or form_pack.get("version"),
         )
     except ValueError as legacy_error:
         template_code = str(request_template_key or form_key or "").strip()
@@ -177,8 +210,19 @@ async def resolve_create_form_submission(
             form_schema=form_schema,
             form_key=registry_form_key,
         )
-        return validate_form_submission(
+        validated_submission = validate_form_submission(
             registry_pack,
             form_key=registry_form_key,
             raw_values=raw_values or {},
+        )
+        template_code = str(template.get("template_code") or template_code)
+        return _with_resolution_metadata(
+            validated_submission,
+            resolved_from="standalone_registry",
+            resolved_pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
+            resolved_pack_version=registry_pack.get("version"),
+            resolved_template_key=template_code,
+            resolved_template_version=template.get("version"),
+            resolved_form_schema_id=form_schema.get("schema_id"),
+            resolved_form_schema_version=form_schema.get("version"),
         )

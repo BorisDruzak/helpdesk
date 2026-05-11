@@ -815,7 +815,7 @@ describe("AdminWorkspacePage", () => {
           return jsonResponse(cloneFormsVersionsPayload(formsState));
         }
 
-        if (url === "/api/web/admin/forms/save" && method === "POST") {
+        if ((url === "/api/web/admin/forms/save" || url === "/api/web/admin/forms/publish") && method === "POST") {
           const payload = JSON.parse(String(init?.body ?? "{}")) as {
             title: string;
             description: string;
@@ -1672,7 +1672,7 @@ describe("AdminWorkspacePage", () => {
     fireEvent.change(screen.getByLabelText("Ключ поля"), {
       target: { value: "issue_code" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Опубликовать" })[0]);
 
     expect(await screen.findByText(/Каталог опубликован как версия 1.0.4/)).toBeInTheDocument();
     expect(saveCalls).toHaveLength(1);

@@ -34,6 +34,7 @@ from tickets.create_flow import build_default_priority_payload, create_ticket_wi
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
+    attach_request_template_computed_snapshot,
     build_form_custom_fields,
 )
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
@@ -1075,6 +1076,12 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
         routing_decision = await routing_service.resolve_routing_decision(synthetic_ticket, device_metadata=None)
         queue_id = routing_decision.get("queue_id") if isinstance(routing_decision, dict) else None
         queue = await ticket_repo.get_queue(queue_id) if queue_id is not None else None
+        custom_fields = attach_request_template_computed_snapshot(
+            custom_fields,
+            priority_decision=priority_decision,
+            routing_decision=routing_decision,
+            queue=queue,
+        )
 
         sla_preview: dict[str, Any] = {
             "first_response_due_at": None,
@@ -1105,6 +1112,8 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
         "request_template_key": request_template.get("key") or form_key,
         "request_template_title": request_template.get("title") or custom_fields.get("request_form_title") or form_key,
         "form_key": custom_fields.get("request_form_key") or form_key,
+        "request_form": custom_fields.get("request_form") if isinstance(custom_fields.get("request_form"), dict) else {},
+        "request_template": request_template,
         "ticket_type": ticket_type,
         "priority": priority_decision,
         "routing": {

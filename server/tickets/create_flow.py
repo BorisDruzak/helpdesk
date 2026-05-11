@@ -20,6 +20,7 @@ from tickets.public_access import (
     generate_public_access_code,
     set_public_access_code,
 )
+from tickets.form_catalog import attach_request_template_computed_snapshot
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
@@ -304,6 +305,19 @@ async def create_ticket_with_side_effects(
         )
     ticket = await ticket_repo.get_ticket(ticket_id)
     ticket = await apply_create_side_effects(session, ticket_repo, ticket)
+    if ticket is not None:
+        current_custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
+        queue = await ticket_repo.get_queue(getattr(ticket, "queue_id", None)) if getattr(ticket, "queue_id", None) is not None else None
+        computed_custom_fields = attach_request_template_computed_snapshot(
+            current_custom_fields,
+            priority_decision=current_custom_fields.get("priority_decision"),
+            routing_decision=current_custom_fields.get("routing_decision"),
+            queue=queue,
+        )
+        if computed_custom_fields != current_custom_fields:
+            await ticket_repo.update_ticket(ticket_id, custom_fields=computed_custom_fields)
+            ticket = await ticket_repo.get_ticket(ticket_id)
+            custom_fields = computed_custom_fields
 
     initial_message_id: Optional[str] = None
     initial_message_text = (initial_message_text if initial_message_text is not None else description).strip()

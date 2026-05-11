@@ -56,11 +56,11 @@ DEFAULT_PRIORITY_POLICY = {
     },
 }
 DEFAULT_PRIORITY_FIELD_ROLES = {
-    "impact_scope": ["priority_field"],
-    "work_continuity": ["priority_field"],
-    "business_importance": ["priority_field"],
-    "critical_service": ["priority_field", "sla_field"],
-    "public_service": ["priority_field", "sla_field"],
+    "impact_scope": ["priority_impact"],
+    "work_continuity": ["priority_urgency"],
+    "business_importance": ["priority_importance"],
+    "critical_service": ["passport_fact"],
+    "public_service": ["visibility_public"],
 }
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
@@ -115,6 +115,8 @@ _TEMPLATE_DICT_FIELDS = (
     "visibility_policy",
     "notification_policy",
     "reporting_policy",
+    "field_aliases",
+    "migration",
 )
 _TEMPLATE_INT_FIELDS = (
     "category_id",
@@ -130,6 +132,16 @@ _TEMPLATE_VERSION_FIELDS = (
 _TEMPLATE_STRING_FIELDS = (
     "form_schema_id",
     "workflow_profile_id",
+    "priority_policy_ref",
+    "routing_policy_ref",
+    "sla_policy_ref",
+    "ola_policy_ref",
+    "approval_policy_ref",
+    "diagnostic_policy_ref",
+    "closure_policy_ref",
+    "visibility_policy_ref",
+    "notification_policy_ref",
+    "reporting_policy_ref",
     "priority_policy_code",
     "routing_policy_code",
     "sla_policy_code",
@@ -140,16 +152,41 @@ _TEMPLATE_STRING_FIELDS = (
     "visibility_policy_code",
     "notification_policy_code",
     "reporting_policy_code",
+    "field_migration_note",
 )
-_ALLOWED_FIELD_ROLES = {
-    "routing_field",
-    "priority_field",
-    "sla_field",
-    "approval_field",
-    "diagnostic_input",
-    "closure_evidence",
-    "display_only",
+_POLICY_REF_FIELDS = {
+    "priority": ("priority_policy_ref", "priority_policy_code"),
+    "routing": ("routing_policy_ref", "routing_policy_code"),
+    "sla": ("sla_policy_ref", "sla_policy_code"),
+    "ola": ("ola_policy_ref", "ola_policy_code"),
+    "approval": ("approval_policy_ref", "approval_policy_code"),
+    "diagnostic": ("diagnostic_policy_ref", "diagnostic_policy_code"),
+    "closure": ("closure_policy_ref", "closure_policy_code"),
+    "visibility": ("visibility_policy_ref", "visibility_policy_code"),
+    "notification": ("notification_policy_ref", "notification_policy_code"),
+    "reporting": ("reporting_policy_ref", "reporting_policy_code"),
 }
+_TEMPLATE_LIST_FIELDS = (
+    "route_preview_examples",
+    "process_preview_examples",
+    "preview_samples",
+)
+FIELD_ROLE_OPTIONS = (
+    {"value": "routing_field", "label": "Routing field"},
+    {"value": "priority_impact", "label": "Priority impact"},
+    {"value": "priority_urgency", "label": "Priority urgency"},
+    {"value": "priority_importance", "label": "Priority importance"},
+    {"value": "diagnostic_input", "label": "Diagnostic input"},
+    {"value": "approval_subject", "label": "Approval subject"},
+    {"value": "closure_evidence", "label": "Closure evidence"},
+    {"value": "reporting_dimension", "label": "Reporting dimension"},
+    {"value": "passport_fact", "label": "Passport fact"},
+    {"value": "visibility_public", "label": "Requester-visible fact"},
+    {"value": "display_only", "label": "Display only"},
+)
+FIELD_ROLE_VALUES = frozenset(item["value"] for item in FIELD_ROLE_OPTIONS)
+LEGACY_FIELD_ROLE_VALUES = frozenset({"priority_field", "sla_field", "approval_field"})
+_ALLOWED_FIELD_ROLES = FIELD_ROLE_VALUES | LEGACY_FIELD_ROLE_VALUES
 
 
 def build_default_priority_fields() -> list[dict[str, Any]]:
@@ -690,6 +727,26 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
             value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)
             if value:
                 template_context[dict_field] = value
+        normalized_policy_refs = (
+            deepcopy(template_context.get("policy_refs"))
+            if isinstance(template_context.get("policy_refs"), dict)
+            else {}
+        )
+        for kind, (ref_field, code_field) in _POLICY_REF_FIELDS.items():
+            explicit_ref = str(template_context.get(ref_field) or "").strip()
+            legacy_code = str(template_context.get(code_field) or "").strip()
+            effective_ref = explicit_ref or legacy_code
+            if not effective_ref:
+                continue
+            normalized_policy_refs[kind] = effective_ref
+            template_context[ref_field] = effective_ref
+            template_context[code_field] = effective_ref
+        if normalized_policy_refs:
+            template_context["policy_refs"] = normalized_policy_refs
+        for list_field in _TEMPLATE_LIST_FIELDS:
+            value = raw_form.get(list_field)
+            if isinstance(value, list) and value:
+                template_context[list_field] = [deepcopy(item) for item in value if isinstance(item, dict)]
 
         normalized_forms.append(
             {
@@ -926,17 +983,141 @@ def validate_form_submission(
 
 
 def build_form_custom_fields(validated_submission: dict[str, Any]) -> dict[str, Any]:
+    template_context = deepcopy(validated_submission.get("template_context") or {})
+    resolved_from = validated_submission.get("resolved_from") or "legacy_pack"
+    resolved_pack_key = validated_submission.get("resolved_pack_key") or validated_submission.get("pack_key")
+    resolved_pack_version = validated_submission.get("resolved_pack_version") or validated_submission.get("pack_version")
+    resolved_template_key = (
+        validated_submission.get("resolved_template_key")
+        or template_context.get("key")
+        or validated_submission.get("request_template_key")
+    )
+    resolved_template_version = (
+        validated_submission.get("resolved_template_version")
+        or template_context.get("request_template_version")
+    )
+    resolved_form_schema_id = (
+        validated_submission.get("resolved_form_schema_id")
+        or template_context.get("form_schema_id")
+    )
+    resolved_form_schema_version = (
+        validated_submission.get("resolved_form_schema_version")
+        or template_context.get("form_schema_version")
+    )
+    if resolved_template_version is not None:
+        template_context.setdefault("version", resolved_template_version)
+        template_context.setdefault("request_template_version", resolved_template_version)
+    if resolved_template_key:
+        template_context.setdefault("key", resolved_template_key)
+    if resolved_form_schema_id:
+        template_context.setdefault("form_schema_id", resolved_form_schema_id)
+    if resolved_form_schema_version is not None:
+        template_context.setdefault("form_schema_version", resolved_form_schema_version)
+    template_context.setdefault("source", resolved_from)
+    request_form_snapshot = {
+        "source": resolved_from,
+        "pack_key": resolved_pack_key,
+        "pack_version": resolved_pack_version,
+        "form_key": validated_submission.get("form_key"),
+        "form_title": validated_submission.get("form_title"),
+    }
     return {
         "request_kind": validated_submission.get("request_kind"),
         "request_form_pack_key": validated_submission.get("pack_key"),
         "request_form_version": validated_submission.get("pack_version"),
         "request_form_key": validated_submission.get("form_key"),
         "request_form_title": validated_submission.get("form_title"),
+        "request_form": request_form_snapshot,
+        "resolved_from": resolved_from,
+        "resolved_pack_key": resolved_pack_key,
+        "resolved_pack_version": resolved_pack_version,
+        "resolved_template_key": resolved_template_key,
+        "resolved_template_version": resolved_template_version,
+        "resolved_form_schema_id": resolved_form_schema_id,
+        "resolved_form_schema_version": resolved_form_schema_version,
         "request_form_data": deepcopy(validated_submission.get("submitted_values") or {}),
         "request_form_summary": deepcopy(validated_submission.get("summary_rows") or []),
         "request_form_playbook_triggers": deepcopy(validated_submission.get("playbook_triggers") or []),
-        "request_template": deepcopy(validated_submission.get("template_context") or {}),
+        "request_template": template_context,
     }
+
+
+def _routing_rule_identifier(rule: Any) -> str | int | None:
+    if not isinstance(rule, dict):
+        return None
+    for key in ("code", "key", "id", "priority_order", "index"):
+        value = rule.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def attach_request_template_computed_snapshot(
+    custom_fields: dict[str, Any] | None,
+    *,
+    priority_decision: dict[str, Any] | None = None,
+    routing_decision: dict[str, Any] | None = None,
+    queue: Any | None = None,
+) -> dict[str, Any]:
+    result = deepcopy(custom_fields or {})
+    request_template = result.get("request_template") if isinstance(result.get("request_template"), dict) else {}
+    request_template = deepcopy(request_template)
+    computed = request_template.get("computed") if isinstance(request_template.get("computed"), dict) else {}
+    computed = deepcopy(computed)
+
+    priority = priority_decision if isinstance(priority_decision, dict) else result.get("priority_decision")
+    if isinstance(priority, dict):
+        priority_class = (
+            priority.get("effective_priority")
+            or priority.get("priority_class")
+            or priority.get("computed_priority")
+        )
+        if priority_class:
+            computed["priority"] = priority_class
+        if priority.get("priority_source"):
+            computed["priority_source"] = priority.get("priority_source")
+        if priority.get("computed_priority"):
+            computed["computed_priority"] = priority.get("computed_priority")
+        if priority.get("manual_priority"):
+            computed["manual_priority"] = priority.get("manual_priority")
+
+    routing = routing_decision if isinstance(routing_decision, dict) else result.get("routing_decision")
+    if isinstance(routing, dict):
+        queue_id = routing.get("to_queue_id") if routing.get("to_queue_id") is not None else routing.get("queue_id")
+        if queue_id is not None:
+            computed["queue_id"] = queue_id
+        if routing.get("source"):
+            computed["routing_source"] = routing.get("source")
+        matched_rule = _routing_rule_identifier(routing.get("matched_rule"))
+        if matched_rule is not None:
+            computed["matched_routing_rule"] = matched_rule
+
+    if queue is not None:
+        queue_id = getattr(queue, "id", None)
+        if queue_id is not None:
+            computed["queue_id"] = queue_id
+        queue_code = getattr(queue, "code", None)
+        queue_name = getattr(queue, "name", None)
+        if queue_code:
+            computed["queue_code"] = queue_code
+        if queue_name:
+            computed["queue_name"] = queue_name
+
+    approval_policy = request_template.get("approval_policy") if isinstance(request_template.get("approval_policy"), dict) else {}
+    if approval_policy:
+        computed["approval_required"] = bool(approval_policy.get("required"))
+    diagnostic_policy = request_template.get("diagnostic_policy") if isinstance(request_template.get("diagnostic_policy"), dict) else {}
+    playbooks = diagnostic_policy.get("suggested_playbooks") or diagnostic_policy.get("playbooks") or []
+    if isinstance(playbooks, list):
+        computed["suggested_diagnostics"] = [
+            str(item.get("playbook_key") if isinstance(item, dict) else item or "").strip()
+            for item in playbooks
+            if str(item.get("playbook_key") if isinstance(item, dict) else item or "").strip()
+        ]
+
+    request_template["computed"] = computed
+    result["request_template"] = request_template
+    return result
 
 
 def build_request_kind_title_map(pack: dict[str, Any]) -> dict[str, str]:

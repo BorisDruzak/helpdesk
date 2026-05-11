@@ -1,4 +1,21 @@
-export type AdminFormsFieldType = "text" | "textarea" | "select" | "radio" | "checkbox";
+export type AdminFormsFieldType =
+  | "text"
+  | "textarea"
+  | "select"
+  | "multi_select"
+  | "radio"
+  | "checkbox"
+  | "date"
+  | "datetime"
+  | "file"
+  | "user_picker"
+  | "department_picker"
+  | "location_picker"
+  | "device_picker"
+  | "service_picker"
+  | "url"
+  | "phone"
+  | "email";
 
 export type AdminFormsFieldOption = {
   value: string;
@@ -54,6 +71,20 @@ export type AdminFormsFormItem = {
   visibility_policy?: Record<string, unknown>;
   notification_policy?: Record<string, unknown>;
   reporting_policy?: Record<string, unknown>;
+  priority_policy_ref?: string | null;
+  routing_policy_ref?: string | null;
+  sla_policy_ref?: string | null;
+  ola_policy_ref?: string | null;
+  approval_policy_ref?: string | null;
+  diagnostic_policy_ref?: string | null;
+  closure_policy_ref?: string | null;
+  visibility_policy_ref?: string | null;
+  notification_policy_ref?: string | null;
+  reporting_policy_ref?: string | null;
+  route_preview_examples?: Array<Record<string, unknown>>;
+  process_preview_examples?: Array<Record<string, unknown>>;
+  field_aliases?: Record<string, string | string[]>;
+  field_migration_note?: string | null;
   fields: AdminFormsFieldItem[];
   playbook_triggers?: AdminFormsPlaybookTrigger[];
 };
@@ -76,8 +107,13 @@ export type AdminFormsPayload = {
     current_endpoint: string;
     save_endpoint: string;
     preview_endpoint: string;
+    process_preview_endpoint?: string;
     field_type_options: Array<{
       value: AdminFormsFieldType;
+      label: string;
+    }>;
+    field_role_options: Array<{
+      value: string;
       label: string;
     }>;
   };
@@ -87,6 +123,8 @@ export type AdminFormsPayload = {
 export type AdminFormsSaveRequest = {
   title: string;
   description: string;
+  publish?: boolean;
+  make_preferred?: boolean;
   forms: Array<{
     key: string;
     request_kind: string;
@@ -109,6 +147,20 @@ export type AdminFormsSaveRequest = {
     visibility_policy?: Record<string, unknown>;
     notification_policy?: Record<string, unknown>;
     reporting_policy?: Record<string, unknown>;
+    priority_policy_ref?: string | null;
+    routing_policy_ref?: string | null;
+    sla_policy_ref?: string | null;
+    ola_policy_ref?: string | null;
+    approval_policy_ref?: string | null;
+    diagnostic_policy_ref?: string | null;
+    closure_policy_ref?: string | null;
+    visibility_policy_ref?: string | null;
+    notification_policy_ref?: string | null;
+    reporting_policy_ref?: string | null;
+    route_preview_examples?: Array<Record<string, unknown>>;
+    process_preview_examples?: Array<Record<string, unknown>>;
+    field_aliases?: Record<string, string | string[]>;
+    field_migration_note?: string | null;
     playbook_triggers?: AdminFormsPlaybookTrigger[];
     fields: Array<{
       key: string;
@@ -135,6 +187,62 @@ export type AdminFormsSaveResult = {
   message: string;
 };
 
+export type AdminFormsDraftSaveRequest = AdminFormsSaveRequest & {
+  base_version?: string | null;
+  draft_id?: string | null;
+};
+
+export type AdminFormsDraftSaveResult = {
+  draft_id: string;
+  pack_key: string;
+  base_version: string | null;
+  status: string;
+  summary: AdminFormsSummary;
+  published_version: string | null;
+  preferred_version: string | null;
+  message: string;
+};
+
+export type AdminFormsValidationIssue = {
+  code: string;
+  message: string;
+  path: string | null;
+  severity: string | null;
+  blocking: boolean | null;
+  recommendation: string | null;
+  source?: string | null;
+};
+
+export type AdminFormsValidateResult = {
+  status: "validated";
+  summary: {
+    errors_count: number;
+    warnings_count: number;
+    can_publish: boolean;
+  };
+  errors: AdminFormsValidationIssue[];
+  warnings: AdminFormsValidationIssue[];
+  message: string;
+};
+
+export type AdminFormsPublishRequest = AdminFormsSaveRequest & {
+  draft_id?: string | null;
+  make_preferred?: boolean;
+};
+
+export type AdminFormsPublishResult = AdminFormsSaveResult & {
+  published_version: string;
+  preferred_version: string | null;
+  made_preferred: boolean;
+};
+
+export type AdminFormsPreferredUpdateResult = {
+  pack_key: string;
+  previous_version: string | null;
+  preferred_version: string;
+  message: string;
+};
+
 export type AdminFormsRoutePreviewResult = {
   ticket_type: string;
   request_kind: string;
@@ -153,6 +261,27 @@ export type AdminFormsRoutePreviewResult = {
     label: string;
     value: string;
   }>;
+};
+
+export type AdminFormsProcessPreviewResult = {
+  ticket_type: string;
+  request_kind: string;
+  priority: Record<string, unknown>;
+  routing: Record<string, unknown>;
+  sla: Record<string, unknown>;
+  ola: Record<string, unknown>;
+  approval: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+  closure: Record<string, unknown>;
+  visibility: Record<string, unknown>;
+  notifications: Record<string, unknown>;
+  summary_rows: Array<{
+    key: string;
+    label: string;
+    value: string;
+  }>;
+  validation_report: Record<string, unknown>;
+  preview_metadata: Record<string, unknown>;
 };
 
 export type AdminHelpdeskPolicyItem = {
@@ -535,6 +664,60 @@ export async function saveAdminFormsCatalog(
   return readSuccessResponse(response, "Не удалось опубликовать каталог форм");
 }
 
+export async function saveAdminFormsDraft(
+  payload: AdminFormsDraftSaveRequest
+): Promise<AdminFormsDraftSaveResult> {
+  const response = await fetch("/api/web/admin/forms/save-draft", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось сохранить черновик каталога форм");
+}
+
+export async function validateAdminFormsCatalog(
+  payload: AdminFormsDraftSaveRequest
+): Promise<AdminFormsValidateResult> {
+  const response = await fetch("/api/web/admin/forms/validate", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось проверить каталог форм");
+}
+
+export async function publishAdminFormsCatalog(
+  payload: AdminFormsPublishRequest
+): Promise<AdminFormsPublishResult> {
+  const response = await fetch("/api/web/admin/forms/publish", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось опубликовать каталог форм");
+}
+
+export async function setAdminFormsPreferredVersion(version: string): Promise<AdminFormsPreferredUpdateResult> {
+  const response = await fetch("/api/web/admin/forms/preferred", {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ version })
+  });
+  return readSuccessResponse(response, "Не удалось сделать версию каталога preferred");
+}
+
 export async function previewAdminFormRoute(payload: {
   form: AdminFormsSaveRequest["forms"][number];
   form_payload: Record<string, string | boolean>;
@@ -548,4 +731,19 @@ export async function previewAdminFormRoute(payload: {
     body: JSON.stringify(payload)
   });
   return readSuccessResponse(response, "Не удалось построить preview маршрута");
+}
+
+export async function previewAdminFormProcess(payload: {
+  form: AdminFormsSaveRequest["forms"][number];
+  form_payload: Record<string, string | boolean>;
+}): Promise<AdminFormsProcessPreviewResult> {
+  const response = await fetch("/api/web/admin/forms/process-preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось построить preview процесса");
 }

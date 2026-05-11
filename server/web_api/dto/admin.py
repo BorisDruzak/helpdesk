@@ -408,6 +408,20 @@ class AdminFormsFormItem(BaseModel):
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
     notification_policy: dict[str, Any] = Field(default_factory=dict)
     reporting_policy: dict[str, Any] = Field(default_factory=dict)
+    priority_policy_ref: str | None = None
+    routing_policy_ref: str | None = None
+    sla_policy_ref: str | None = None
+    ola_policy_ref: str | None = None
+    approval_policy_ref: str | None = None
+    diagnostic_policy_ref: str | None = None
+    closure_policy_ref: str | None = None
+    visibility_policy_ref: str | None = None
+    notification_policy_ref: str | None = None
+    reporting_policy_ref: str | None = None
+    route_preview_examples: list[dict[str, Any]] = Field(default_factory=list)
+    process_preview_examples: list[dict[str, Any]] = Field(default_factory=list)
+    field_aliases: dict[str, str | list[str]] = Field(default_factory=dict)
+    field_migration_note: str | None = None
     fields: list[AdminFormsFieldItem] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
@@ -432,7 +446,9 @@ class AdminFormsBuilderCapabilities(BaseModel):
     current_endpoint: str
     save_endpoint: str
     preview_endpoint: str
+    process_preview_endpoint: str
     field_type_options: list[AdminFilterOption]
+    field_role_options: list[AdminFilterOption] = Field(default_factory=list)
 
 
 class AdminFormsPayload(BaseModel):
@@ -498,6 +514,20 @@ class AdminFormsSaveFormRequest(BaseModel):
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
     notification_policy: dict[str, Any] = Field(default_factory=dict)
     reporting_policy: dict[str, Any] = Field(default_factory=dict)
+    priority_policy_ref: str | None = None
+    routing_policy_ref: str | None = None
+    sla_policy_ref: str | None = None
+    ola_policy_ref: str | None = None
+    approval_policy_ref: str | None = None
+    diagnostic_policy_ref: str | None = None
+    closure_policy_ref: str | None = None
+    visibility_policy_ref: str | None = None
+    notification_policy_ref: str | None = None
+    reporting_policy_ref: str | None = None
+    route_preview_examples: list[dict[str, Any]] = Field(default_factory=list)
+    process_preview_examples: list[dict[str, Any]] = Field(default_factory=list)
+    field_aliases: dict[str, str | list[str]] = Field(default_factory=dict)
+    field_migration_note: str | None = None
     fields: list[AdminFormsSaveFieldRequest] = Field(default_factory=list)
     playbook_triggers: list[AdminFormsPlaybookTrigger] = Field(default_factory=list)
 
@@ -508,6 +538,8 @@ class AdminFormsSaveRequest(BaseModel):
     title: str | None = None
     description: str | None = None
     forms: list[AdminFormsSaveFormRequest] = Field(default_factory=list)
+    publish: bool = True
+    make_preferred: bool = True
 
 
 class AdminFormsSaveResult(BaseModel):
@@ -515,6 +547,91 @@ class AdminFormsSaveResult(BaseModel):
 
     summary: AdminFormsSummary
     forms: list[AdminFormsFormItem] = Field(default_factory=list)
+    message: str
+
+
+class AdminFormsDraftSaveRequest(AdminFormsSaveRequest):
+    base_version: str | None = None
+    draft_id: str | None = None
+
+
+class AdminFormsDraftSaveResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: str
+    pack_key: str
+    base_version: str | None = None
+    status: str = "draft"
+    summary: AdminFormsSummary
+    published_version: str | None = None
+    preferred_version: str | None = None
+    message: str
+
+
+class AdminFormsValidationReportSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    errors_count: int = 0
+    warnings_count: int = 0
+    can_publish: bool = True
+
+
+class AdminFormsValidationIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    path: str | None = None
+    severity: str | None = None
+    blocking: bool | None = None
+    recommendation: str | None = None
+    source: str | None = None
+
+
+class AdminFormsValidateRequest(AdminFormsSaveRequest):
+    base_version: str | None = None
+    draft_id: str | None = None
+
+
+class AdminFormsValidateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = "validated"
+    summary: AdminFormsValidationReportSummary
+    errors: list[AdminFormsValidationIssue] = Field(default_factory=list)
+    warnings: list[AdminFormsValidationIssue] = Field(default_factory=list)
+    message: str
+
+
+class AdminFormsPublishRequest(AdminFormsSaveRequest):
+    base_version: str | None = None
+    draft_id: str | None = None
+    make_preferred: bool = True
+
+
+class AdminFormsPublishResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: AdminFormsSummary
+    forms: list[AdminFormsFormItem] = Field(default_factory=list)
+    published_version: str
+    preferred_version: str | None = None
+    made_preferred: bool = True
+    message: str
+
+
+class AdminFormsPreferredUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+
+
+class AdminFormsPreferredUpdateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pack_key: str
+    previous_version: str | None = None
+    preferred_version: str
     message: str
 
 
@@ -553,6 +670,36 @@ class AdminFormsRoutePreviewResult(BaseModel):
     fallback_applied: bool = False
     matched_rule: AdminFormsRoutePreviewMatchedRule | None = None
     summary_rows: list[AdminFormsRoutePreviewSummaryRow] = Field(default_factory=list)
+
+
+class AdminFormsProcessPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    form: AdminFormsSaveFormRequest
+    form_payload: dict[str, Any] = Field(default_factory=dict)
+    requester_context: dict[str, Any] = Field(default_factory=dict)
+    device_context: dict[str, Any] = Field(default_factory=dict)
+    draft_id: str | None = None
+    base_version: str | None = None
+
+
+class AdminFormsProcessPreviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_type: str
+    request_kind: str
+    priority: dict[str, Any] = Field(default_factory=dict)
+    routing: dict[str, Any] = Field(default_factory=dict)
+    sla: dict[str, Any] = Field(default_factory=dict)
+    ola: dict[str, Any] = Field(default_factory=dict)
+    approval: dict[str, Any] = Field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    closure: dict[str, Any] = Field(default_factory=dict)
+    visibility: dict[str, Any] = Field(default_factory=dict)
+    notifications: dict[str, Any] = Field(default_factory=dict)
+    summary_rows: list[AdminFormsRoutePreviewSummaryRow] = Field(default_factory=list)
+    validation_report: dict[str, Any] = Field(default_factory=dict)
+    preview_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdminHelpdeskPolicyItem(BaseModel):

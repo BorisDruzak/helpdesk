@@ -47,13 +47,21 @@ from auth.context import AuthContext
 from auth.middleware import require_auth
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
+    FIELD_ROLE_OPTIONS,
     build_form_custom_fields,
     build_default_ticket_form_pack,
-    next_form_pack_version,
     resolve_ticket_form_pack,
     validate_form_pack_schema,
     validate_form_submission,
 )
+from tickets.form_lifecycle_service import (
+    publish_admin_forms_draft as _publish_admin_forms_draft_service,
+    save_admin_forms_draft as _save_admin_forms_draft_service,
+    save_admin_forms_pack as _save_admin_forms_pack_service,
+    set_admin_forms_preferred as _set_admin_forms_preferred_service,
+    validate_admin_forms_draft as _validate_admin_forms_draft_service,
+)
+from tickets.form_process_preview import build_form_process_preview
 from tickets.routing_service import (
     FALLBACK_QUEUE_CODE,
     build_form_routing_context,
@@ -113,10 +121,18 @@ from web_api.dto.admin import (
     AdminDeviceUpdatesPayload,
     AdminFilterOption,
     AdminFormsBuilderCapabilities,
+    AdminFormsDraftSaveRequest,
+    AdminFormsDraftSaveResult,
     AdminFormsFieldItem,
     AdminFormsFieldOption,
     AdminFormsFormItem,
     AdminFormsPayload,
+    AdminFormsPreferredUpdateRequest,
+    AdminFormsPreferredUpdateResult,
+    AdminFormsProcessPreviewRequest,
+    AdminFormsProcessPreviewResult,
+    AdminFormsPublishRequest,
+    AdminFormsPublishResult,
     AdminFormsRoutePreviewMatchedRule,
     AdminFormsRoutePreviewRequest,
     AdminFormsRoutePreviewResult,
@@ -125,6 +141,8 @@ from web_api.dto.admin import (
     AdminFormsSaveRequest,
     AdminFormsSaveResult,
     AdminFormsSummary,
+    AdminFormsValidateRequest,
+    AdminFormsValidateResult,
     AdminFormsVisibleWhen,
     AdminHelpdeskModelCapabilities,
     AdminHelpdeskModelPayload,
@@ -307,6 +325,7 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS.extend(
 _FORMS_CURRENT_ENDPOINT = "/api/web/admin/forms/current"
 _FORMS_SAVE_ENDPOINT = "/api/web/admin/forms/save"
 _FORMS_PREVIEW_ENDPOINT = "/api/web/admin/forms/route-preview"
+_FORMS_PROCESS_PREVIEW_ENDPOINT = "/api/web/admin/forms/process-preview"
 _HELPDESK_MODEL_REGISTRY_ENDPOINT = "/api/web/admin/helpdesk-model/policies"
 _HELPDESK_MODEL_PUBLISH_FROM_FORM_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/publish-from-form"
 _HELPDESK_MODEL_REPUBLISH_LEGACY_FORMS_ENDPOINT = "/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms"
@@ -463,6 +482,13 @@ def _form_field_type_options() -> list[AdminFilterOption]:
     ]
 
 
+def _form_field_role_options() -> list[AdminFilterOption]:
+    return [
+        AdminFilterOption(value=str(item["value"]), label=str(item["label"]))
+        for item in FIELD_ROLE_OPTIONS
+    ]
+
+
 def _map_admin_form_visible_when(raw_rule: dict | None) -> AdminFormsVisibleWhen | None:
     if not isinstance(raw_rule, dict):
         return None
@@ -585,7 +611,9 @@ def _build_admin_forms_payload_from_pack(
             current_endpoint=_FORMS_CURRENT_ENDPOINT,
             save_endpoint=_FORMS_SAVE_ENDPOINT,
             preview_endpoint=_FORMS_PREVIEW_ENDPOINT,
+            process_preview_endpoint=_FORMS_PROCESS_PREVIEW_ENDPOINT,
             field_type_options=_form_field_type_options(),
+            field_role_options=_form_field_role_options(),
         ),
         forms=[
             _map_admin_form_item(form)
@@ -676,6 +704,16 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
     for key in (
         "ticket_type",
         "suggested_playbook_id",
+        "priority_policy_ref",
+        "routing_policy_ref",
+        "sla_policy_ref",
+        "ola_policy_ref",
+        "approval_policy_ref",
+        "diagnostic_policy_ref",
+        "closure_policy_ref",
+        "visibility_policy_ref",
+        "notification_policy_ref",
+        "reporting_policy_ref",
     ):
         value = str(getattr(payload, key, None) or "").strip()
         if value:
@@ -696,10 +734,18 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
         "visibility_policy",
         "notification_policy",
         "reporting_policy",
+        "field_aliases",
     ):
         value = getattr(payload, key, None)
         if isinstance(value, dict) and value:
             form_payload[key] = value
+    for key in ("route_preview_examples", "process_preview_examples"):
+        value = getattr(payload, key, None)
+        if isinstance(value, list) and value:
+            form_payload[key] = [dict(item) for item in value if isinstance(item, dict)]
+    field_migration_note = str(getattr(payload, "field_migration_note", None) or "").strip()
+    if field_migration_note:
+        form_payload["field_migration_note"] = field_migration_note
     return form_payload
 
 
@@ -2468,51 +2514,58 @@ async def _save_admin_forms_pack(
     auth_context: AuthContext,
     payload: AdminFormsSaveRequest,
 ) -> AdminFormsSaveResult:
-    raw_pack = _serialize_admin_forms_save_request(payload)
-    normalized_pack = validate_form_pack_schema(raw_pack, require_version=False)
-    updated_by = str(auth_context.actor_id or auth_context.actor_role or "admin").strip() or "admin"
+    return await _save_admin_forms_pack_service(auth_context=auth_context, payload=payload)
 
-    async with get_session() as session:
-        repo = TicketFormPacksRepo(session)
-        current = await resolve_ticket_form_pack(repo, pack_key=DEFAULT_TICKET_FORM_PACK_KEY)
-        next_version = next_form_pack_version(current.get("version") if isinstance(current, dict) else None)
-        while await repo.get_pack(DEFAULT_TICKET_FORM_PACK_KEY, next_version) is not None:
-            next_version = next_form_pack_version(next_version)
-        normalized_pack["version"] = next_version
-        stored_pack = await repo.upsert_pack(
-            pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
-            version=next_version,
-            schema_json=normalized_pack,
-            created_by=updated_by,
-            notes=str(normalized_pack.get("description") or ""),
-        )
-        await repo.set_preferred(
-            pack_key=DEFAULT_TICKET_FORM_PACK_KEY,
-            version=next_version,
-            updated_by=updated_by,
-        )
-        await session.commit()
 
-    return AdminFormsSaveResult(
-        summary=_build_admin_forms_summary(
-            normalized_pack,
-            last_published_at=stored_pack.created_at.isoformat() if stored_pack.created_at else None,
-            last_published_by=stored_pack.created_by or updated_by,
-        ),
-        forms=[
-            _map_admin_form_item(form)
-            for form in (normalized_pack.get("forms") or [])
-            if isinstance(form, dict)
-        ],
-        message=(
-            f"Каталог опубликован как версия {next_version}. "
-            "Изменения уже активны в /help и в интерфейсе агента."
-        ),
-    )
+async def _save_admin_forms_draft(
+    *,
+    auth_context: AuthContext,
+    payload: AdminFormsDraftSaveRequest,
+) -> AdminFormsDraftSaveResult:
+    return await _save_admin_forms_draft_service(auth_context=auth_context, payload=payload)
+
+
+async def _validate_admin_forms_draft(
+    *,
+    payload: AdminFormsValidateRequest,
+) -> AdminFormsValidateResult:
+    return await _validate_admin_forms_draft_service(payload=payload)
+
+
+async def _publish_admin_forms_draft(
+    *,
+    auth_context: AuthContext,
+    payload: AdminFormsPublishRequest,
+) -> AdminFormsPublishResult:
+    return await _publish_admin_forms_draft_service(auth_context=auth_context, payload=payload)
+
+
+async def _set_admin_forms_preferred(
+    *,
+    auth_context: AuthContext,
+    payload: AdminFormsPreferredUpdateRequest,
+) -> AdminFormsPreferredUpdateResult:
+    return await _set_admin_forms_preferred_service(auth_context=auth_context, payload=payload)
 
 
 def _policy_ref_code(template_code: str, kind: str) -> str:
     return normalize_template_code(f"{template_code}_{kind}_policy")
+
+
+def _form_policy_ref(form: dict[str, object], kind: str) -> str | None:
+    direct = str(form.get(f"{kind}_policy_ref") or "").strip()
+    if direct:
+        return direct
+    code = str(form.get(f"{kind}_policy_code") or "").strip()
+    if code:
+        return code
+    refs = form.get("policy_refs") if isinstance(form.get("policy_refs"), dict) else {}
+    ref = refs.get(kind) if isinstance(refs, dict) else None
+    if isinstance(ref, dict):
+        value = str(ref.get("code") or "").strip()
+        return value or None
+    value = str(ref or "").strip()
+    return value or None
 
 
 def _policy_title(form: dict[str, object], kind: str) -> str:
@@ -2708,6 +2761,10 @@ async def _publish_helpdesk_template_from_form_dict(
         )
         if publish_policies:
             for kind, field_name in policy_fields.items():
+                explicit_ref = _form_policy_ref(form, kind)
+                if explicit_ref:
+                    policy_ref_by_kind[kind] = explicit_ref
+                    continue
                 config = form.get(field_name) if isinstance(form.get(field_name), dict) else {}
                 if not config:
                     policy_ref_by_kind[kind] = None
@@ -2726,6 +2783,9 @@ async def _publish_helpdesk_template_from_form_dict(
                 )
                 policies[kind] = AdminHelpdeskPolicyItem.model_validate(item)
                 policy_ref_by_kind[kind] = policy_code
+        else:
+            for kind in policy_fields:
+                policy_ref_by_kind[kind] = _form_policy_ref(form, kind)
 
         request_template = await repo.publish_request_template(
             template_code=template_code,
@@ -3396,6 +3456,25 @@ async def _preview_admin_forms_route(
     )
 
 
+async def _preview_admin_forms_process(
+    *,
+    payload: AdminFormsProcessPreviewRequest,
+) -> AdminFormsProcessPreviewResult:
+    raw_form = _serialize_admin_form_request(payload.form)
+    async with get_session() as session:
+        config_repo = TicketAdminConfigRepo(session)
+        rules = await config_repo.list_routing_rules(include_disabled=False)
+        queues = await config_repo.list_queues(include_inactive=True)
+
+    result = await build_form_process_preview(
+        raw_form=raw_form,
+        form_payload=payload.form_payload,
+        queues=queues,
+        routing_rules=rules,
+    )
+    return AdminFormsProcessPreviewResult.model_validate(result)
+
+
 @require_auth("admin")
 async def handle_web_admin_bootstrap(_request):
     payload = AdminBootstrapPayload(
@@ -3839,6 +3918,180 @@ async def handle_web_admin_forms_save(request: web.Request):
 
 
 @require_auth("admin")
+async def handle_web_admin_forms_save_draft(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsDraftSaveRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру черновика каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _save_admin_forms_draft(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру черновика каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_save_draft] Failed to save forms draft: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось сохранить черновик каталога форм",
+                "error_code": "ADMIN_FORMS_DRAFT_SAVE_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsDraftSaveResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsDraftSaveResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_validate(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsValidateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру каталога форм для проверки",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _validate_admin_forms_draft(payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_validate] Failed to validate forms draft: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось проверить каталог форм",
+                "error_code": "ADMIN_FORMS_VALIDATE_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsValidateResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsValidateResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_publish(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsPublishRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру публикации каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _publish_admin_forms_draft(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте структуру публикации каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_publish] Failed to publish forms draft: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось опубликовать каталог форм",
+                "error_code": "ADMIN_FORMS_PUBLISH_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsPublishResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsPublishResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_preferred(request: web.Request):
+    auth_context: AuthContext = request["auth_context"]
+
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsPreferredUpdateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте версию активного каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _set_admin_forms_preferred(auth_context=auth_context, payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Проверьте версию активного каталога форм",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_preferred] Failed to switch preferred forms version: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось переключить активную версию каталога форм",
+                "error_code": "ADMIN_FORMS_PREFERRED_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsPreferredUpdateResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsPreferredUpdateResult](data=typed_result))
+
+
+@require_auth("admin")
 async def handle_web_admin_forms_route_preview(request: web.Request):
     try:
         raw_payload = await request.json()
@@ -3878,6 +4131,48 @@ async def handle_web_admin_forms_route_preview(request: web.Request):
 
     typed_result = AdminFormsRoutePreviewResult.model_validate(result)
     return json_model_response(SuccessResponse[AdminFormsRoutePreviewResult](data=typed_result))
+
+
+@require_auth("admin")
+async def handle_web_admin_forms_process_preview(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminFormsProcessPreviewRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверьте структуру формы и пример значений для process preview",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+
+    try:
+        result = await _preview_admin_forms_process(payload=payload)
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc) or "Не удалось построить process preview",
+                "error_code": "VALIDATION_ERROR",
+            },
+            status=400,
+        )
+    except Exception as exc:
+        logger.error(f"[web_admin_forms_process_preview] Failed to build process preview: {exc}")
+        logger.exception(exc)
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось построить process preview",
+                "error_code": "ADMIN_FORMS_PROCESS_PREVIEW_FAILED",
+            },
+            status=500,
+        )
+
+    typed_result = AdminFormsProcessPreviewResult.model_validate(result)
+    return json_model_response(SuccessResponse[AdminFormsProcessPreviewResult](data=typed_result))
 
 
 @require_auth("admin")

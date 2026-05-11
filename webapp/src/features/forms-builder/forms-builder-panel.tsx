@@ -36,8 +36,10 @@ import {
   type AdminFormsFieldType,
   type AdminFormsPayload,
   type AdminFormsPlaybookTrigger,
+  type AdminFormsProcessPreviewResult,
   type AdminFormsRoutePreviewResult,
   type AdminFormsSaveRequest,
+  type AdminFormsValidateResult,
   type AdminHelpdeskPolicyDiffResult,
   type AdminHelpdeskPolicyItem,
   type AdminHelpdeskModelPayload,
@@ -47,17 +49,20 @@ import {
   diffHelpdeskPolicyVersions,
   fetchHelpdeskModelRegistry,
   fetchAdminFormsCatalog,
+  publishAdminFormsCatalog,
   publishHelpdeskPolicy,
   publishHelpdeskSmartView,
   publishHelpdeskTemplateFromForm,
+  previewAdminFormProcess,
   previewAdminFormRoute,
   rollbackHelpdeskPolicyVersion,
-  saveAdminFormsCatalog,
+  saveAdminFormsDraft,
+  setAdminFormsPreferredVersion,
+  validateAdminFormsCatalog,
 } from "./api";
 import {
   fetchTicketFormsPackList,
   fetchTicketFormsPackVersion,
-  setTicketFormsPackPreferred,
   type TicketFormsPackSummary,
 } from "./catalog-api";
 
@@ -109,6 +114,20 @@ type DraftForm = {
   visibility_policy_json: string;
   notification_policy_json: string;
   reporting_policy_json: string;
+  priority_policy_ref: string;
+  routing_policy_ref: string;
+  sla_policy_ref: string;
+  ola_policy_ref: string;
+  approval_policy_ref: string;
+  diagnostic_policy_ref: string;
+  closure_policy_ref: string;
+  visibility_policy_ref: string;
+  notification_policy_ref: string;
+  reporting_policy_ref: string;
+  route_preview_examples_json: string;
+  process_preview_examples_json: string;
+  field_aliases_json: string;
+  field_migration_note: string;
   playbook_triggers: AdminFormsPlaybookTrigger[];
   fields: DraftField[];
 };
@@ -162,6 +181,20 @@ const FIELD_ROLE_OPTIONS = [
   { value: "diagnostic_input", label: "Передаётся в диагностику" },
   { value: "closure_evidence", label: "Нужно для закрытия" },
   { value: "display_only", label: "Только отображается" },
+] as const;
+
+const CANONICAL_FIELD_ROLE_OPTIONS = [
+  { value: "routing_field", label: "Routing field" },
+  { value: "priority_impact", label: "Priority impact" },
+  { value: "priority_urgency", label: "Priority urgency" },
+  { value: "priority_importance", label: "Priority importance" },
+  { value: "diagnostic_input", label: "Diagnostic input" },
+  { value: "approval_subject", label: "Approval subject" },
+  { value: "closure_evidence", label: "Closure evidence" },
+  { value: "reporting_dimension", label: "Reporting dimension" },
+  { value: "passport_fact", label: "Passport fact" },
+  { value: "visibility_public", label: "Requester-visible fact" },
+  { value: "display_only", label: "Display only" },
 ] as const;
 
 const PRIORITY_QUESTION_FIELDS: DraftField[] = [
@@ -277,6 +310,23 @@ function parseJsonDraft(value: string, fallback: Record<string, unknown> = {}): 
   }
 }
 
+function parseJsonArrayDraft(value: string): Array<Record<string, unknown>> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseFieldRolesDraft(value: string): Record<string, string[]> {
   const parsed = parseJsonDraft(value);
   return Object.fromEntries(
@@ -286,6 +336,23 @@ function parseFieldRolesDraft(value: string): Record<string, string[]> {
         Array.isArray(roles) ? roles.map((role) => String(role ?? "").trim()).filter(Boolean) : [],
       ])
       .filter(([key, roles]) => key.trim() && roles.length)
+  );
+}
+
+function parseFieldAliasesDraft(value: string): Record<string, string | string[]> {
+  const parsed = parseJsonDraft(value);
+  return Object.fromEntries(
+    Object.entries(parsed)
+      .map(([key, aliases]): [string, string | string[]] => [
+        key,
+        Array.isArray(aliases)
+          ? aliases.map((alias) => String(alias ?? "").trim()).filter(Boolean)
+          : String(aliases ?? "").trim(),
+      ])
+      .filter((entry): entry is [string, string | string[]] => {
+        const [key, aliases] = entry;
+        return key.trim().length > 0 && (Array.isArray(aliases) ? aliases.length > 0 : aliases.length > 0);
+      })
   );
 }
 
@@ -398,6 +465,20 @@ function hydrateDraft(payload: Pick<AdminFormsPayload, "summary" | "forms">): Dr
       visibility_policy_json: jsonDraft(form.visibility_policy),
       notification_policy_json: jsonDraft(form.notification_policy),
       reporting_policy_json: jsonDraft(form.reporting_policy),
+      priority_policy_ref: form.priority_policy_ref ?? "",
+      routing_policy_ref: form.routing_policy_ref ?? "",
+      sla_policy_ref: form.sla_policy_ref ?? "",
+      ola_policy_ref: form.ola_policy_ref ?? "",
+      approval_policy_ref: form.approval_policy_ref ?? "",
+      diagnostic_policy_ref: form.diagnostic_policy_ref ?? "",
+      closure_policy_ref: form.closure_policy_ref ?? "",
+      visibility_policy_ref: form.visibility_policy_ref ?? "",
+      notification_policy_ref: form.notification_policy_ref ?? "",
+      reporting_policy_ref: form.reporting_policy_ref ?? "",
+      route_preview_examples_json: jsonDraft(form.route_preview_examples),
+      process_preview_examples_json: jsonDraft(form.process_preview_examples),
+      field_aliases_json: jsonDraft(form.field_aliases),
+      field_migration_note: form.field_migration_note ?? "",
       playbook_triggers: form.playbook_triggers ?? [],
       fields: form.fields.map((field) => ({
         key: field.key,
@@ -465,6 +546,20 @@ function hydrateDraftFromPack(pack: Record<string, unknown>): DraftCatalog {
         visibility_policy_json: jsonDraft((form as { visibility_policy?: unknown }).visibility_policy),
         notification_policy_json: jsonDraft((form as { notification_policy?: unknown }).notification_policy),
         reporting_policy_json: jsonDraft((form as { reporting_policy?: unknown }).reporting_policy),
+        priority_policy_ref: String((form as { priority_policy_ref?: unknown }).priority_policy_ref ?? ""),
+        routing_policy_ref: String((form as { routing_policy_ref?: unknown }).routing_policy_ref ?? ""),
+        sla_policy_ref: String((form as { sla_policy_ref?: unknown }).sla_policy_ref ?? ""),
+        ola_policy_ref: String((form as { ola_policy_ref?: unknown }).ola_policy_ref ?? ""),
+        approval_policy_ref: String((form as { approval_policy_ref?: unknown }).approval_policy_ref ?? ""),
+        diagnostic_policy_ref: String((form as { diagnostic_policy_ref?: unknown }).diagnostic_policy_ref ?? ""),
+        closure_policy_ref: String((form as { closure_policy_ref?: unknown }).closure_policy_ref ?? ""),
+        visibility_policy_ref: String((form as { visibility_policy_ref?: unknown }).visibility_policy_ref ?? ""),
+        notification_policy_ref: String((form as { notification_policy_ref?: unknown }).notification_policy_ref ?? ""),
+        reporting_policy_ref: String((form as { reporting_policy_ref?: unknown }).reporting_policy_ref ?? ""),
+        route_preview_examples_json: jsonDraft((form as { route_preview_examples?: unknown }).route_preview_examples),
+        process_preview_examples_json: jsonDraft((form as { process_preview_examples?: unknown }).process_preview_examples),
+        field_aliases_json: jsonDraft((form as { field_aliases?: unknown }).field_aliases),
+        field_migration_note: String((form as { field_migration_note?: unknown }).field_migration_note ?? ""),
         playbook_triggers: Array.isArray((form as { playbook_triggers?: unknown[] }).playbook_triggers)
           ? ((form as { playbook_triggers: unknown[] }).playbook_triggers ?? [])
               .map((triggerRaw) => {
@@ -560,6 +655,20 @@ function serializeDraft(catalog: DraftCatalog): AdminFormsSaveRequest {
       visibility_policy: parseJsonDraft(form.visibility_policy_json),
       notification_policy: parseJsonDraft(form.notification_policy_json),
       reporting_policy: parseJsonDraft(form.reporting_policy_json),
+      priority_policy_ref: form.priority_policy_ref.trim() || undefined,
+      routing_policy_ref: form.routing_policy_ref.trim() || undefined,
+      sla_policy_ref: form.sla_policy_ref.trim() || undefined,
+      ola_policy_ref: form.ola_policy_ref.trim() || undefined,
+      approval_policy_ref: form.approval_policy_ref.trim() || undefined,
+      diagnostic_policy_ref: form.diagnostic_policy_ref.trim() || undefined,
+      closure_policy_ref: form.closure_policy_ref.trim() || undefined,
+      visibility_policy_ref: form.visibility_policy_ref.trim() || undefined,
+      notification_policy_ref: form.notification_policy_ref.trim() || undefined,
+      reporting_policy_ref: form.reporting_policy_ref.trim() || undefined,
+      route_preview_examples: parseJsonArrayDraft(form.route_preview_examples_json),
+      process_preview_examples: parseJsonArrayDraft(form.process_preview_examples_json),
+      field_aliases: parseFieldAliasesDraft(form.field_aliases_json),
+      field_migration_note: form.field_migration_note.trim() || undefined,
       playbook_triggers: form.playbook_triggers,
       fields: form.fields.map((field) => {
         const options = field.options.filter((option) => option.value.trim() && option.label.trim());
@@ -681,6 +790,20 @@ function createEmptyForm(index: number): DraftForm {
     visibility_policy_json: "",
     notification_policy_json: "",
     reporting_policy_json: "",
+    priority_policy_ref: "",
+    routing_policy_ref: "",
+    sla_policy_ref: "",
+    ola_policy_ref: "",
+    approval_policy_ref: "",
+    diagnostic_policy_ref: "",
+    closure_policy_ref: "",
+    visibility_policy_ref: "",
+    notification_policy_ref: "",
+    reporting_policy_ref: "",
+    route_preview_examples_json: "",
+    process_preview_examples_json: "",
+    field_aliases_json: "",
+    field_migration_note: "",
     playbook_triggers: [],
     fields: [createEmptyField("text", 1)],
   };
@@ -688,6 +811,114 @@ function createEmptyForm(index: number): DraftForm {
 
 function getFieldRoles(form: DraftForm, fieldKey: string): string[] {
   return parseFieldRolesDraft(form.field_roles_json)[fieldKey] ?? [];
+}
+
+function boolish(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "required", "on"].includes(value.trim().toLowerCase());
+  }
+  return Boolean(value);
+}
+
+function draftNestedObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function fieldHasDiagnosticParamMapping(form: DraftForm, field: DraftField): boolean {
+  const mapping = draftNestedObject(field.process_mapping);
+  const directKeys = ["diagnostic_param", "diagnostic_parameter", "playbook_param", "playbook_parameter"];
+  if (directKeys.some((key) => String(mapping[key] ?? "").trim())) {
+    return true;
+  }
+  const mappingKeys = ["diagnostic_params", "playbook_params", "param_mappings"];
+  if (mappingKeys.some((key) => {
+    const value = mapping[key];
+    return Array.isArray(value) ? value.length > 0 : Boolean(value && typeof value === "object" && Object.keys(value).length);
+  })) {
+    return true;
+  }
+
+  const diagnosticPolicy = parseJsonDraft(form.diagnostic_policy_json);
+  return ["input_mappings", "field_mappings", "param_mappings", "playbook_params"].some((key) => {
+    const value = diagnosticPolicy[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+    const mappings = value as Record<string, unknown>;
+    return field.key in mappings || Object.values(mappings).map((item) => String(item ?? "").trim()).includes(field.key);
+  });
+}
+
+function diagnosticAutorunEnabled(form: DraftForm): boolean {
+  const diagnosticPolicy = parseJsonDraft(form.diagnostic_policy_json);
+  const autoRun = draftNestedObject(diagnosticPolicy.auto_run);
+  return boolish(autoRun.enabled) || form.playbook_triggers.some((trigger) => boolish(trigger.enabled ?? true));
+}
+
+function approvalSubjectCompatible(field: DraftField): boolean {
+  if (field.type === "user_picker" || field.type === "service_picker") {
+    return true;
+  }
+  const mapping = draftNestedObject(field.process_mapping);
+  const subjectType = String(
+    mapping.approval_subject_type ?? mapping.subject_type ?? mapping.approval_type ?? ""
+  ).trim();
+  return ["user", "service", "role", "group"].includes(subjectType);
+}
+
+function closureEvidenceCompatible(field: DraftField): boolean {
+  if (["file", "url", "textarea", "text"].includes(field.type)) {
+    return true;
+  }
+  const mapping = draftNestedObject(field.process_mapping);
+  const evidenceType = String(
+    mapping.closure_evidence_type ?? mapping.evidence_type ?? mapping.artifact_type ?? ""
+  ).trim();
+  return ["file", "attachment", "url", "text", "worklog", "operation_log", "approval", "passport_fact"].includes(evidenceType);
+}
+
+function closureRequiresEvidence(form: DraftForm): boolean {
+  const closurePolicy = parseJsonDraft(form.closure_policy_json);
+  const evidence = draftNestedObject(closurePolicy.evidence);
+  const beforeResolved = draftNestedObject(closurePolicy.before_resolved);
+  return [
+    closurePolicy.evidence_required,
+    closurePolicy.require_evidence,
+    evidence.required,
+    evidence.required_for_resolution,
+    beforeResolved.evidence_required,
+  ].some(boolish);
+}
+
+function approvalRequired(form: DraftForm): boolean {
+  return boolish(parseJsonDraft(form.approval_policy_json).required);
+}
+
+function getFieldRoleIssueMessages(form: DraftForm, field: DraftField): string[] {
+  const rolesByField = parseFieldRolesDraft(form.field_roles_json);
+  const roles = rolesByField[field.key] ?? [];
+  const messages: string[] = [];
+  for (const role of ["priority_impact", "priority_urgency", "priority_importance"]) {
+    const fieldKeys = Object.entries(rolesByField)
+      .filter(([, values]) => values.includes(role))
+      .map(([fieldKey]) => fieldKey);
+    if (fieldKeys.length > 1 && fieldKeys.includes(field.key)) {
+      messages.push(`Role ${role} can be assigned to only one field.`);
+    }
+  }
+  if (diagnosticAutorunEnabled(form) && roles.includes("diagnostic_input") && !fieldHasDiagnosticParamMapping(form, field)) {
+    messages.push("Diagnostic input needs a playbook parameter mapping.");
+  }
+  if (approvalRequired(form) && roles.includes("approval_subject") && !approvalSubjectCompatible(field)) {
+    messages.push("Approval subject must resolve to user, service, role, or group.");
+  }
+  if (closureRequiresEvidence(form) && roles.includes("closure_evidence") && !closureEvidenceCompatible(field)) {
+    messages.push("Closure evidence must be a file, URL, text evidence, or mapped artifact.");
+  }
+  return messages;
 }
 
 function updateFieldRoles(form: DraftForm, fieldKey: string, role: string, enabled: boolean): DraftForm {
@@ -720,11 +951,11 @@ function applyPriorityQuestionTemplate(form: DraftForm): DraftForm {
     })),
   ];
   const roles = parseFieldRolesDraft(form.field_roles_json);
-  for (const field of PRIORITY_QUESTION_FIELDS) {
-    roles[field.key] = field.key === "critical_service" || field.key === "public_service"
-      ? ["priority_field", "sla_field"]
-      : ["priority_field"];
-  }
+  roles.impact_scope = ["priority_impact"];
+  roles.work_continuity = ["priority_urgency"];
+  roles.business_importance = ["priority_importance"];
+  roles.critical_service = ["passport_fact"];
+  roles.public_service = ["visibility_public"];
   return {
     ...form,
     fields,
@@ -1400,7 +1631,8 @@ function PolicyJsonEditor({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+    <details className="rounded-[1rem] border border-border bg-white px-4 py-4" open>
+      <summary className="cursor-pointer text-sm font-semibold text-slate-950">Advanced inline policy JSON</summary>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-950">{title}</p>
@@ -1416,7 +1648,7 @@ function PolicyJsonEditor({
         spellCheck={false}
         value={value}
       />
-    </div>
+    </details>
   );
 }
 
@@ -1441,6 +1673,18 @@ type PolicyEditorDraft = {
   scope_ref: string;
   jsonText: string;
 };
+
+type FormPolicyRefField =
+  | "priority_policy_ref"
+  | "sla_policy_ref"
+  | "ola_policy_ref"
+  | "routing_policy_ref"
+  | "approval_policy_ref"
+  | "closure_policy_ref"
+  | "diagnostic_policy_ref"
+  | "notification_policy_ref"
+  | "visibility_policy_ref"
+  | "reporting_policy_ref";
 
 const POLICY_EDITOR_ITEMS: Array<{ kind: PolicyEditorKind; label: string; description: string }> = [
   { kind: "priority", label: "Приоритет", description: "Поля влияния, срочности и override" },
@@ -1550,6 +1794,19 @@ const TICKET_TYPE_POLICY_CODE_FIELDS: Record<PolicyEditorKind, keyof AdminHelpde
   reporting: "default_reporting_policy_code",
 };
 
+const FORM_POLICY_REF_ITEMS: Array<{ kind: PolicyEditorKind; field: FormPolicyRefField; label: string; placeholder: string }> = [
+  { kind: "priority", field: "priority_policy_ref", label: "Priority policy ref", placeholder: "incident_priority_v2" },
+  { kind: "routing", field: "routing_policy_ref", label: "Routing policy ref", placeholder: "website_routing_v5" },
+  { kind: "sla", field: "sla_policy_ref", label: "SLA policy ref", placeholder: "incident_sla_v3" },
+  { kind: "ola", field: "ola_policy_ref", label: "OLA policy ref", placeholder: "default_queue_ola_v1" },
+  { kind: "approval", field: "approval_policy_ref", label: "Approval policy ref", placeholder: "access_approval_v1" },
+  { kind: "diagnostic", field: "diagnostic_policy_ref", label: "Diagnostic policy ref", placeholder: "website_diagnostics_v2" },
+  { kind: "closure", field: "closure_policy_ref", label: "Closure policy ref", placeholder: "incident_closure_v1" },
+  { kind: "visibility", field: "visibility_policy_ref", label: "Visibility policy ref", placeholder: "requester_visibility_v1" },
+  { kind: "notification", field: "notification_policy_ref", label: "Notification policy ref", placeholder: "ticket_notifications_v1" },
+  { kind: "reporting", field: "reporting_policy_ref", label: "Reporting policy ref", placeholder: "standard_passport_v1" },
+];
+
 function buildPolicyImpactPreview(
   data: AdminHelpdeskModelPayload | undefined,
   draft: PolicyEditorDraft
@@ -1573,6 +1830,25 @@ function buildPolicyImpactPreview(
   );
   const scopeLabel = draft.scope_ref.trim() ? `${draft.scope_level}: ${draft.scope_ref.trim()}` : draft.scope_level;
   return { templates, ticketTypes, scopeLabel };
+}
+
+function formPolicyRefTemplateMatches(
+  data: AdminHelpdeskModelPayload | undefined,
+  kind: PolicyEditorKind,
+  policyRef: string
+): AdminHelpdeskRequestTemplateItem[] {
+  const code = policyRef.trim();
+  if (!data || !code) {
+    return [];
+  }
+  const templateField = TEMPLATE_POLICY_CODE_FIELDS[kind];
+  return data.request_templates.filter(
+    (template) => template.is_active && String(template[templateField] ?? "") === code
+  );
+}
+
+function templateDisplayName(template: AdminHelpdeskRequestTemplateItem): string {
+  return template.public_title || template.internal_name || template.template_code;
 }
 
 function getFirstRule(config: Record<string, unknown>): Record<string, unknown> {
@@ -3439,9 +3715,73 @@ function SmartViewsRegistryEditor({
   );
 }
 
+function PolicyRefsPanel({
+  form,
+  modelData,
+  onUpdateForm,
+}: {
+  form: DraftForm;
+  modelData?: AdminHelpdeskModelPayload;
+  onUpdateForm: (updater: (form: DraftForm) => DraftForm) => void;
+}) {
+  const filledRefs = FORM_POLICY_REF_ITEMS.filter((item) => form[item.field].trim()).length;
+
+  return (
+    <div className="mt-4 rounded-[1rem] border border-brand-100 bg-white px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Policy refs</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Stable policy keys are the primary contract. Inline JSON remains available only as the advanced fallback below the process steps.
+          </p>
+        </div>
+        <Badge tone={filledRefs > 0 ? "success" : "warning"}>{filledRefs} refs</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {FORM_POLICY_REF_ITEMS.map((item) => {
+          const value = form[item.field];
+          const affectedTemplates = formPolicyRefTemplateMatches(modelData, item.kind, value);
+          const affectedNames = affectedTemplates.map(templateDisplayName).join(", ");
+          return (
+            <label className="space-y-2 text-sm font-medium text-slate-800" key={item.field}>
+              <span>{item.label}</span>
+              <input
+                aria-label={item.label}
+                className="field-base h-11 w-full px-4 text-sm"
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value;
+                  onUpdateForm((current) => ({ ...current, [item.field]: nextValue }));
+                }}
+                placeholder={item.placeholder}
+                value={value}
+              />
+              <span className="block min-h-[1rem] text-[11px] font-normal leading-4 text-slate-500">
+                {value.trim()
+                  ? affectedTemplates.length
+                    ? `Affects active templates: ${affectedNames}`
+                    : "No active templates currently use this policy ref."
+                  : "No ref set; this form can still use inline/default policy config."}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 rounded-[0.8rem] border border-border bg-surface-subtle px-3 py-3">
+        <p className="text-xs font-semibold text-slate-800">Advanced inline policy JSON</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Use inline policy JSON only for migration or local experiments; publishing should normally reference versioned policies by key.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function TemplateConstructorPanel({
   form,
   activeStep,
+  modelData,
   onStepChange,
   onUpdateForm,
   onUpdatePolicyJson,
@@ -3449,6 +3789,7 @@ function TemplateConstructorPanel({
 }: {
   form: DraftForm;
   activeStep: TemplateStepKey;
+  modelData?: AdminHelpdeskModelPayload;
   onStepChange: (step: TemplateStepKey) => void;
   onUpdateForm: (updater: (form: DraftForm) => DraftForm) => void;
   onUpdatePolicyJson: (field: PolicyJsonField, value: string) => void;
@@ -3555,6 +3896,8 @@ function TemplateConstructorPanel({
           </div>
           <Badge tone="neutral">{form.key}</Badge>
         </div>
+
+        <PolicyRefsPanel form={form} modelData={modelData} onUpdateForm={onUpdateForm} />
 
         {activeStep === "template" ? (
           <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -4024,6 +4367,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const [previewValues, setPreviewValues] = useState<PreviewFormValues>({});
   const [previewValidationIssues, setPreviewValidationIssues] = useState<PreviewValidationIssue[]>([]);
+  const [serverDraftId, setServerDraftId] = useState<string | null>(null);
+  const [serverValidationReport, setServerValidationReport] = useState<AdminFormsValidateResult | null>(null);
   const publishAccess = resolveOptionalAccess(permissions, "admin.forms.publish");
 
   const formsQuery = useQuery({
@@ -4044,8 +4389,47 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     retry: false,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: saveAdminFormsCatalog,
+  const saveDraftMutation = useMutation({
+    mutationFn: saveAdminFormsDraft,
+    onSuccess: (result) => {
+      setServerDraftId(result.draft_id);
+      setServerValidationReport(null);
+      if (draft) {
+        setBaselineFingerprint(buildDraftFingerprint(draft));
+      }
+      setLoadedSourceLabel(`Черновик ${result.draft_id}`);
+      setActionFeedback({
+        tone: "success",
+        text: result.message,
+      });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось сохранить черновик каталога форм.",
+      });
+    },
+  });
+
+  const validateMutation = useMutation({
+    mutationFn: validateAdminFormsCatalog,
+    onSuccess: (result) => {
+      setServerValidationReport(result);
+      setActionFeedback({
+        tone: result.summary.can_publish ? "success" : "error",
+        text: result.message,
+      });
+    },
+    onError: (error) => {
+      setActionFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось проверить каталог форм.",
+      });
+    },
+  });
+
+  const publishCatalogMutation = useMutation({
+    mutationFn: publishAdminFormsCatalog,
     onSuccess: async (result) => {
       const nextDraft = hydrateDraft({
         summary: result.summary,
@@ -4055,6 +4439,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
       setBaselineFingerprint(buildDraftFingerprint(nextDraft));
       setLoadedVersion(result.summary.version);
       setLoadedSourceLabel(`Опубликованная версия ${result.summary.version}`);
+      setServerDraftId(null);
+      setServerValidationReport(null);
       setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
       setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
       setActionFeedback({
@@ -4075,11 +4461,11 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
   });
 
   const preferredMutation = useMutation({
-    mutationFn: setTicketFormsPackPreferred,
+    mutationFn: setAdminFormsPreferredVersion,
     onSuccess: async (result) => {
       setActionFeedback({
         tone: "success",
-        text: `Активная версия каталога обновлена: ${result.preferred.version}.`,
+        text: result.message || `Активная версия каталога обновлена: ${result.preferred_version}.`,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-forms-builder-current"] }),
@@ -4105,6 +4491,22 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
         throw new Error("Заполните обязательные поля preview.");
       }
       return previewAdminFormRoute({
+        form: serializeDraftForm(selectedForm),
+        form_payload: previewValues,
+      });
+    },
+  });
+  const processPreviewMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedForm) {
+        throw new Error("Сначала выберите форму для process preview.");
+      }
+      const issues = validatePreviewValues(selectedForm, previewValues);
+      setPreviewValidationIssues(issues);
+      if (issues.length) {
+        throw new Error("Заполните обязательные поля preview.");
+      }
+      return previewAdminFormProcess({
         form: serializeDraftForm(selectedForm),
         form_payload: previewValues,
       });
@@ -4214,16 +4616,22 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     selectedForm?.fields.find((field) => field.key === selectedFieldKey) ??
     selectedForm?.fields[0] ??
     null;
+  const selectedFieldRoleIssues = useMemo(
+    () => (selectedForm && selectedField ? getFieldRoleIssueMessages(selectedForm, selectedField) : []),
+    [selectedField, selectedForm]
+  );
 
   useEffect(() => {
     setPreviewValues((current) => buildPreviewValues(selectedForm, current));
     setPreviewValidationIssues([]);
     previewMutation.reset();
+    processPreviewMutation.reset();
   }, [selectedForm]);
 
   const updatePreviewValue = (fieldKey: string, value: string | boolean) => {
     setPreviewValidationIssues([]);
     previewMutation.reset();
+    processPreviewMutation.reset();
     setPreviewValues((current) => ({
       ...current,
       [fieldKey]: value,
@@ -4234,6 +4642,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     if (!selectedForm) {
       return;
     }
+    setServerValidationReport(null);
     setDraft((current) => (current ? updateFormInCatalog(current, selectedForm.key, updater) : current));
   };
 
@@ -4246,10 +4655,13 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
 
   const hasUnsavedChanges = buildDraftFingerprint(draft) !== baselineFingerprint;
   const routePreview: AdminFormsRoutePreviewResult | undefined = previewMutation.data;
+  const processPreview: AdminFormsProcessPreviewResult | undefined = processPreviewMutation.data;
   const playbookTriggerReadiness = getPlaybookTriggerReadiness(selectedForm?.playbook_triggers[0]);
   const validationIssues = useMemo(() => validateDraftCatalog(draft), [draft]);
   const validationErrors = validationIssues.filter((issue) => issue.severity === "error");
   const hasBlockingValidationIssues = validationErrors.length > 0;
+  const validationReportErrors = serverValidationReport?.errors ?? [];
+  const validationReportWarnings = serverValidationReport?.warnings ?? [];
   const publishDisabled = !publishAccess.allowed;
   const dependencyFields =
     selectedForm && selectedField ? getDependencyFields(selectedForm, selectedField.key) : [];
@@ -4257,6 +4669,55 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     dependencyFields.find((field) => field.key === selectedField?.visible_when.field) ?? null;
   const dependencyValueOptions = getDependencyValueOptions(dependencyField);
   const visibilityMode = selectedField ? getVisibilityMode(selectedField) : "always";
+
+  function buildDraftLifecyclePayload() {
+    if (!draft) {
+      return null;
+    }
+    return {
+      ...serializeDraft(draft),
+      base_version: loadedVersion,
+      draft_id: serverDraftId,
+    };
+  }
+
+  function saveDraft() {
+    const payload = buildDraftLifecyclePayload();
+    if (!payload) {
+      return;
+    }
+    if (!publishAccess.allowed) {
+      setActionFeedback({ tone: "error", text: publishAccess.reason });
+      return;
+    }
+    setActionFeedback(null);
+    saveDraftMutation.mutate(payload);
+  }
+
+  function validateCatalog() {
+    const payload = buildDraftLifecyclePayload();
+    if (!payload) {
+      return;
+    }
+    setActionFeedback(null);
+    validateMutation.mutate(payload);
+  }
+
+  function publishCatalog() {
+    const payload = buildDraftLifecyclePayload();
+    if (!payload) {
+      return;
+    }
+    if (!publishAccess.allowed) {
+      setActionFeedback({ tone: "error", text: publishAccess.reason });
+      return;
+    }
+    setActionFeedback(null);
+    publishCatalogMutation.mutate({
+      ...payload,
+      make_preferred: true,
+    });
+  }
 
   const visibleVersions = useMemo(
     () => (versionsQuery.data?.packs ?? []).filter((item) => versionMatchesSearch(item, versionSearch)),
@@ -4283,6 +4744,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     setLoadedSourceLabel(`Текущая активная версия ${formsQuery.data.summary.version}`);
     setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
     setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
+    setServerDraftId(null);
+    setServerValidationReport(null);
     setActionFeedback(null);
   }
 
@@ -4302,6 +4765,8 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
       setLoadedSourceLabel(`Черновик из версии ${version}`);
       setSelectedFormKey(nextDraft.forms[0]?.key ?? null);
       setSelectedFieldKey(nextDraft.forms[0]?.fields[0]?.key ?? null);
+      setServerDraftId(null);
+      setServerValidationReport(null);
       setActionFeedback({
         tone: "success",
         text: `Версия ${version} загружена в редактор.`,
@@ -4444,21 +4909,26 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                 Загрузить текущую
               </Button>
               <Button
-                disabled={publishDisabled || !draft || saveMutation.isPending || hasBlockingValidationIssues}
+                disabled={publishDisabled || !draft || saveDraftMutation.isPending}
                 leadingIcon={<Save className="h-4 w-4" />}
-                onClick={() => {
-                  if (!draft) {
-                    return;
-                  }
-                  if (!publishAccess.allowed) {
-                    setActionFeedback({ tone: "error", text: publishAccess.reason });
-                    return;
-                  }
-                  setActionFeedback(null);
-                  saveMutation.mutate(serializeDraft(draft));
-                }}
+                onClick={saveDraft}
               >
-                {saveMutation.isPending ? "Публикуем..." : "Опубликовать новую версию"}
+                {saveDraftMutation.isPending ? "Сохраняем..." : "Сохранить черновик"}
+              </Button>
+              <Button
+                disabled={!draft || validateMutation.isPending}
+                leadingIcon={<FileCheck2 className="h-4 w-4" />}
+                onClick={validateCatalog}
+                variant="outline"
+              >
+                {validateMutation.isPending ? "Проверяем..." : "Проверить публикацию"}
+              </Button>
+              <Button
+                disabled={publishDisabled || !draft || publishCatalogMutation.isPending || hasBlockingValidationIssues}
+                leadingIcon={<CheckCircle2 className="h-4 w-4" />}
+                onClick={publishCatalog}
+              >
+                {publishCatalogMutation.isPending ? "Публикуем..." : "Опубликовать"}
               </Button>
             </div>
 
@@ -4578,22 +5048,21 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                   {hasUnsavedChanges ? "Есть несохранённые изменения" : "Черновик синхронизирован"}
                 </Badge>
                 <Button
-                  disabled={publishDisabled || !draft || saveMutation.isPending || hasBlockingValidationIssues}
+                  disabled={publishDisabled || !draft || saveDraftMutation.isPending}
+                  leadingIcon={<Save className="h-4 w-4" />}
+                  onClick={saveDraft}
+                  size="sm"
+                  variant="outline"
+                >
+                  {saveDraftMutation.isPending ? "Сохраняем..." : "Сохранить черновик"}
+                </Button>
+                <Button
+                  disabled={publishDisabled || !draft || publishCatalogMutation.isPending || hasBlockingValidationIssues}
                   leadingIcon={<CheckCircle2 className="h-4 w-4" />}
-                  onClick={() => {
-                    if (!draft) {
-                      return;
-                    }
-                    if (!publishAccess.allowed) {
-                      setActionFeedback({ tone: "error", text: publishAccess.reason });
-                      return;
-                    }
-                    setActionFeedback(null);
-                    saveMutation.mutate(serializeDraft(draft));
-                  }}
+                  onClick={publishCatalog}
                   size="sm"
                 >
-                  {saveMutation.isPending ? "Публикуем..." : "Сохранить изменения"}
+                  {publishCatalogMutation.isPending ? "Публикуем..." : "Опубликовать"}
                 </Button>
               </div>
             </div>
@@ -4974,6 +5443,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                         <TemplateConstructorPanel
                           activeStep={activeTemplateStep}
                           form={selectedForm}
+                          modelData={helpdeskModelQuery.data}
                           onSelectField={(fieldKey) => {
                             setSelectedFieldKey(fieldKey);
                           }}
@@ -5149,30 +5619,38 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
 
                           <div className="grid min-w-0 gap-4 2xl:grid-cols-[260px_minmax(0,1fr)]">
                             <div className="min-w-0 max-h-[calc(100vh-32rem)] space-y-3 overflow-y-auto pr-1">
-                              {selectedForm.fields.map((field) => (
-                                <button
-                                  key={field.key}
-                                  className={cn(
-                                    "w-full rounded-[1rem] border px-4 py-4 text-left transition-colors",
-                                    selectedField?.key === field.key
-                                      ? "border-brand-200 bg-brand-50"
-                                      : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
-                                  )}
-                                  onClick={() => setSelectedFieldKey(field.key)}
-                                  type="button"
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <p className="font-medium text-slate-900">{field.label || field.key}</p>
-                                      <p className="mt-1 text-xs text-slate-500">{field.key}</p>
+                              {selectedForm.fields.map((field) => {
+                                const fieldRoleIssues = getFieldRoleIssueMessages(selectedForm, field);
+                                return (
+                                  <button
+                                    key={field.key}
+                                    className={cn(
+                                      "w-full rounded-[1rem] border px-4 py-4 text-left transition-colors",
+                                      selectedField?.key === field.key
+                                        ? "border-brand-200 bg-brand-50"
+                                        : "border-border bg-white hover:border-brand-100 hover:bg-surface-subtle"
+                                    )}
+                                    onClick={() => setSelectedFieldKey(field.key)}
+                                    type="button"
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-slate-900">{field.label || field.key}</p>
+                                        <p className="mt-1 text-xs text-slate-500">{field.key}</p>
+                                      </div>
+                                      <Badge tone="neutral">{fieldTypeLabel(field.type)}</Badge>
                                     </div>
-                                    <Badge tone="neutral">{fieldTypeLabel(field.type)}</Badge>
-                                  </div>
-                                  <p className="mt-3 text-xs text-slate-500">
-                                    {field.required ? "Обязательное поле" : "Необязательное поле"}
-                                  </p>
-                                </button>
-                              ))}
+                                    <p className="mt-3 text-xs text-slate-500">
+                                      {field.required ? "Обязательное поле" : "Необязательное поле"}
+                                    </p>
+                                    {fieldRoleIssues.length ? (
+                                      <p className="mt-2 rounded-[0.75rem] bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                        {fieldRoleIssues[0]}
+                                      </p>
+                                    ) : null}
+                                  </button>
+                                );
+                              })}
                             </div>
 
                             <div className="min-w-0 rounded-[1.1rem] border border-border bg-surface-subtle px-4 py-4">
@@ -5318,8 +5796,23 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                                         Роли определяют, участвует ли поле в приоритете, маршрутизации, сроках ответа, согласовании, диагностике или закрытии.
                                       </p>
                                     </div>
+                                    {selectedFieldRoleIssues.length ? (
+                                      <ul className="space-y-2">
+                                        {selectedFieldRoleIssues.map((message) => (
+                                          <li
+                                            className="rounded-[0.8rem] bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800"
+                                            key={message}
+                                          >
+                                            {message}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
                                     <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
-                                      {FIELD_ROLE_OPTIONS.map((role) => {
+                                      {(formsQuery.data?.capabilities.field_role_options?.length
+                                        ? formsQuery.data.capabilities.field_role_options
+                                        : CANONICAL_FIELD_ROLE_OPTIONS
+                                      ).map((role) => {
                                         const roles = getFieldRoles(selectedForm, selectedField.key);
                                         return (
                                           <label
@@ -5743,15 +6236,39 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                 <div>
                   <p className="font-semibold text-slate-900">Проверка публикации</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    {validationIssues.length
+                    {serverValidationReport
+                      ? `${serverValidationReport.summary.errors_count} ошибок, ${serverValidationReport.summary.warnings_count} предупреждений`
+                      : validationIssues.length
                       ? `${validationErrors.length} блокирующих, ${validationIssues.length - validationErrors.length} предупреждений`
                       : "Каталог можно публиковать."}
                   </p>
                 </div>
-                <Badge tone={hasBlockingValidationIssues ? "warning" : "success"}>
-                  {hasBlockingValidationIssues ? "Нужно исправить" : "Готово"}
+                <Badge tone={hasBlockingValidationIssues || serverValidationReport?.summary.can_publish === false ? "warning" : "success"}>
+                  {hasBlockingValidationIssues || serverValidationReport?.summary.can_publish === false ? "Нужно исправить" : "Готово"}
                 </Badge>
               </div>
+              {serverValidationReport ? (
+                <div className="mt-3 rounded-[0.8rem] bg-surface-subtle px-3 py-2 text-sm text-slate-700">
+                  {serverValidationReport.message}
+                </div>
+              ) : null}
+              {validationReportErrors.length || validationReportWarnings.length ? (
+                <ul className="mt-3 space-y-2 text-sm">
+                  {[...validationReportErrors, ...validationReportWarnings].slice(0, 5).map((issue) => (
+                    <li
+                      className={cn(
+                        "rounded-[0.8rem] px-3 py-2",
+                        issue.severity === "error" || issue.blocking
+                          ? "bg-rose-50 text-rose-700"
+                          : "bg-amber-50 text-amber-800",
+                      )}
+                      key={`${issue.code}:${issue.path ?? issue.message}`}
+                    >
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {validationIssues.length ? (
                 <ul className="mt-3 space-y-2 text-sm">
                   {validationIssues.slice(0, 5).map((issue) => (
@@ -5813,18 +6330,28 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
             <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-slate-900">Предпросмотр маршрута</p>
+                  <p className="font-semibold text-slate-900">Проверить процесс</p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Заполните пример значений и проверьте, какая очередь или routing rule сработает для текущей формы.
+                    Заполните пример значений и проверьте тип тикета, приоритет, маршрут, SLA/OLA, согласования, диагностику и закрытие.
                   </p>
                 </div>
-                <Button
-                  disabled={!selectedForm || previewMutation.isPending}
-                  onClick={() => previewMutation.mutate()}
-                  size="sm"
-                >
-                  {previewMutation.isPending ? "Проверяем..." : "Проверить"}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={!selectedForm || processPreviewMutation.isPending}
+                    onClick={() => processPreviewMutation.mutate()}
+                    size="sm"
+                  >
+                    {processPreviewMutation.isPending ? "Проверяем..." : "Проверить процесс"}
+                  </Button>
+                  <Button
+                    disabled={!selectedForm || previewMutation.isPending}
+                    onClick={() => previewMutation.mutate()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {previewMutation.isPending ? "Проверяем..." : "Проверить"}
+                  </Button>
+                </div>
               </div>
 
               {selectedForm ? (
@@ -5904,6 +6431,102 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                   {previewMutation.error instanceof Error
                     ? previewMutation.error.message
                     : "Не удалось построить preview маршрута."}
+                </div>
+              ) : null}
+
+              {processPreviewMutation.isError ? (
+                <div className="mt-4 rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                  {processPreviewMutation.error instanceof Error
+                    ? processPreviewMutation.error.message
+                    : "Не удалось построить preview процесса."}
+                </div>
+              ) : null}
+
+              {processPreview ? (
+                <div className="mt-4 space-y-3 rounded-[1rem] border border-brand-100 bg-brand-50/60 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-brand-700">
+                        При таких ответах будет создан
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-slate-950">
+                        {String(processPreview.routing.target_queue_name ?? processPreview.routing.target_queue_id ?? "Очередь не определена")}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {String(processPreview.routing.source ?? "routing source не определён")}
+                      </p>
+                    </div>
+                    <Badge tone="neutral">{String(processPreview.priority.priority_class ?? "P?")}</Badge>
+                  </div>
+
+                  <div className="grid gap-2 text-sm md:grid-cols-2">
+                    <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Тип</p>
+                      <p className="mt-2 font-semibold text-slate-900">{processPreview.ticket_type}</p>
+                      <p className="mt-1 text-slate-500">{processPreview.request_kind}</p>
+                    </div>
+                    <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">SLA / OLA</p>
+                      <p className="mt-2 text-slate-700">
+                        SLA: {String(processPreview.sla.policy_code ?? processPreview.sla.policy_ref ?? "не задан")}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        FRT {String(processPreview.sla.first_response_min ?? "—")} мин, RES {String(processPreview.sla.resolution_min ?? "—")} мин
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        OLA ACK {String(processPreview.ola.ack_min ?? "—")} мин, work {String(processPreview.ola.processing_min ?? "—")} мин
+                      </p>
+                    </div>
+                    <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Правило маршрутизации
+                      </p>
+                      <p className="mt-2 text-slate-700">
+                        {String(
+                          processPreview.routing.matched_rule_code ??
+                            processPreview.routing.matched_rule_id ??
+                            "правило не найдено"
+                        )}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        queue_id {String(processPreview.routing.target_queue_id ?? "—")}
+                      </p>
+                    </div>
+                    <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Согласование</p>
+                      <p className="mt-2 text-slate-700">
+                        {processPreview.approval.required ? "Требуется" : "Не требуется"}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        {String(processPreview.approval.source_type ?? processPreview.approval.mode ?? "any_one")}
+                      </p>
+                    </div>
+                    <div className="rounded-[0.9rem] bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Диагностика</p>
+                      <p className="mt-2 text-slate-700">
+                        {Array.isArray(processPreview.diagnostics.suggested_playbooks)
+                          ? processPreview.diagnostics.suggested_playbooks.join(", ") || "нет"
+                          : "нет"}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        {processPreview.diagnostics.auto_run_enabled ? "auto-run включён" : "auto-run выключен"}
+                        {processPreview.diagnostics.consent_required ? ", требуется consent" : ""}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[0.9rem] bg-white px-3 py-3 text-sm text-slate-600">
+                    <p className="font-medium text-slate-900">Закрытие / видимость / уведомления</p>
+                    <p className="mt-2">
+                      Resolution code: {processPreview.closure.requires_resolution_code ? "обязателен" : "не обязателен"};
+                      evidence: {processPreview.closure.requires_evidence ? "нужно" : "не нужно"}
+                    </p>
+                    <p className="mt-1">
+                      Notifications: {Array.isArray(processPreview.notifications.events)
+                        ? processPreview.notifications.events.join(", ") || "нет"
+                        : "нет"}
+                    </p>
+                  </div>
                 </div>
               ) : null}
 

@@ -6,10 +6,25 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
+    ApprovalPolicy,
+    ClosurePolicy,
+    DiagnosticPolicy,
+    FormCondition,
+    FormField,
+    FormSchema,
+    HelpdeskPolicyAudit,
+    NotificationPolicy,
+    OlaPolicy,
     Playbook,
     PlaybookRun,
     PlaybookVersion,
+    PriorityPolicy,
+    ReportingPolicy,
+    RequestTemplate,
+    RoutingPolicy,
     ServerConfig,
+    SlaPolicy,
+    SmartView,
     Ticket,
     TicketCategory,
     TicketEvent,
@@ -17,6 +32,8 @@ from app.db.models import (
     TicketQueue,
     TicketSlaPolicy,
     TicketSlaTarget,
+    TicketType,
+    VisibilityPolicy,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
@@ -38,6 +55,32 @@ async def _clear_request_form_packs(test_engine) -> None:
                 ServerConfig.key == f"{TICKET_FORM_PREFERRED_KEY_PREFIX}request_forms"
             )
         )
+        await session.commit()
+
+
+async def _clear_policy_registry(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        for model in (
+            HelpdeskPolicyAudit,
+            FormCondition,
+            FormField,
+            FormSchema,
+            SmartView,
+            RequestTemplate,
+            TicketType,
+            PriorityPolicy,
+            SlaPolicy,
+            OlaPolicy,
+            RoutingPolicy,
+            ApprovalPolicy,
+            ClosurePolicy,
+            DiagnosticPolicy,
+            NotificationPolicy,
+            VisibilityPolicy,
+            ReportingPolicy,
+        ):
+            await session.execute(delete(model))
         await session.commit()
 
 
@@ -68,6 +111,22 @@ async def _ensure_default_sla_policy(test_engine) -> None:
             ]
         )
         await session.commit()
+
+
+async def _ensure_queue(test_engine, *, code: str, name: str) -> TicketQueue:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        result = await session.execute(select(TicketQueue).where(TicketQueue.code == code))
+        queue = result.scalar_one_or_none()
+        if queue is None:
+            queue = TicketQueue(code=code, name=name, is_triage=False, is_active=True)
+            session.add(queue)
+            await session.flush()
+        else:
+            queue.name = name
+            queue.is_active = True
+        await session.commit()
+        return queue
 
 
 async def _publish_manual_priority_form_pack(test_client) -> None:
@@ -127,6 +186,29 @@ def _manual_priority_create_payload(device_id: str) -> dict:
     }
 
 
+def _typed_forms_payload(form_key: str, *, title: str | None = None) -> dict:
+    return {
+        "title": "Каталог заявок",
+        "description": "Typed forms lifecycle test",
+        "forms": [
+            {
+                "key": form_key,
+                "request_kind": form_key,
+                "title": title or form_key.replace("_", " ").title(),
+                "fields": [
+                    {
+                        "key": "room",
+                        "label": "Кабинет",
+                        "type": "text",
+                        "required": True,
+                        "options": [],
+                    }
+                ],
+            }
+        ],
+    }
+
+
 @pytest.mark.asyncio
 async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
@@ -146,7 +228,7 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
     assert {"impact_scope", "work_continuity", "business_importance"}.issubset(
         {field["key"] for field in site_form["fields"]}
     )
-    assert "priority_field" in site_form["field_roles"]["impact_scope"]
+    assert "priority_impact" in site_form["field_roles"]["impact_scope"]
 
 
 @pytest.mark.asyncio
@@ -191,6 +273,157 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
     assert current_data["pack"]["version"] == "1.0.1"
     assert current_data["pack"]["forms"][0]["fields"][0]["key"] == "room"
     assert current_data["pack"]["forms"][0]["ticket_type"] == "incident"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_forms_save_draft_keeps_current_preferred_version(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    published = await test_client.post(
+        "/api/web/admin/forms/save",
+        json=_typed_forms_payload("printer", title="Печать / принтер"),
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert published.status == 200, await published.text()
+    published_payload = await published.json()
+    assert published_payload["data"]["summary"]["version"] == "1.0.1"
+
+    draft = await test_client.post(
+        "/api/web/admin/forms/save-draft",
+        json={**_typed_forms_payload("printer_draft", title="Черновой принтер"), "base_version": "1.0.1"},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert draft.status == 200, await draft.text()
+    draft_payload = await draft.json()
+    assert draft_payload["data"]["status"] == "draft"
+    assert draft_payload["data"]["published_version"] is None
+    assert draft_payload["data"]["preferred_version"] == "1.0.1"
+
+    current_response = await test_client.get(
+        "/api/ticket_forms/current?pack_key=request_forms",
+        headers=_admin_headers(),
+    )
+    assert current_response.status == 200, await current_response.text()
+    current_data = await current_response.json()
+    assert current_data["pack"]["version"] == "1.0.1"
+    assert current_data["pack"]["forms"][0]["key"] == "printer"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_forms_publish_can_leave_preferred_unchanged(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    initial = await test_client.post(
+        "/api/web/admin/forms/save",
+        json=_typed_forms_payload("printer", title="Печать / принтер"),
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert initial.status == 200, await initial.text()
+
+    published = await test_client.post(
+        "/api/web/admin/forms/publish",
+        json={**_typed_forms_payload("access", title="Доступ"), "make_preferred": False},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert published.status == 200, await published.text()
+    published_payload = await published.json()
+    assert published_payload["data"]["published_version"] == "1.0.2"
+    assert published_payload["data"]["preferred_version"] == "1.0.1"
+    assert published_payload["data"]["made_preferred"] is False
+
+    current_response = await test_client.get(
+        "/api/ticket_forms/current?pack_key=request_forms",
+        headers=_admin_headers(),
+    )
+    assert current_response.status == 200, await current_response.text()
+    current_data = await current_response.json()
+    assert current_data["pack"]["version"] == "1.0.1"
+    assert current_data["pack"]["forms"][0]["key"] == "printer"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_forms_preferred_switches_published_version(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    initial = await test_client.post(
+        "/api/web/admin/forms/save",
+        json=_typed_forms_payload("printer", title="Печать / принтер"),
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert initial.status == 200, await initial.text()
+
+    published = await test_client.post(
+        "/api/web/admin/forms/publish",
+        json={**_typed_forms_payload("access", title="Доступ"), "make_preferred": False},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert published.status == 200, await published.text()
+
+    preferred = await test_client.patch(
+        "/api/web/admin/forms/preferred",
+        json={"version": "1.0.2"},
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert preferred.status == 200, await preferred.text()
+    preferred_payload = await preferred.json()
+    assert preferred_payload["data"]["previous_version"] == "1.0.1"
+    assert preferred_payload["data"]["preferred_version"] == "1.0.2"
+
+    current_response = await test_client.get(
+        "/api/ticket_forms/current?pack_key=request_forms",
+        headers=_admin_headers(),
+    )
+    assert current_response.status == 200, await current_response.text()
+    current_data = await current_response.json()
+    assert current_data["pack"]["version"] == "1.0.2"
+    assert current_data["pack"]["forms"][0]["key"] == "access"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_forms_validate_returns_business_preflight_report(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+
+    response = await test_client.post(
+        "/api/web/admin/forms/validate",
+        json=_typed_forms_payload("printer", title="Printer"),
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    data = payload["data"]
+    warning_codes = {issue["code"] for issue in data["warnings"]}
+
+    assert data["summary"]["errors_count"] == 0
+    assert data["summary"]["can_publish"] is True
+    assert {
+        "REQUIRED_FIELD_HELP_TEXT_MISSING",
+        "PUBLIC_TITLE_MISSING",
+        "SLA_POLICY_MISSING",
+    } <= warning_codes
+
+
+@pytest.mark.asyncio
+async def test_web_admin_forms_publish_blocks_missing_business_refs(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    payload = _typed_forms_payload("website_unavailable", title="Website unavailable")
+    payload["forms"][0]["default_queue_id"] = 999_999_991
+
+    response = await test_client.post(
+        "/api/web/admin/forms/publish",
+        json=payload,
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert response.status == 400, await response.text()
+    error = await response.json()
+    assert error["error_code"] == "VALIDATION_ERROR"
+    assert "ROUTING_QUEUE_NOT_FOUND" in error["error"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        stored = (
+            await session.execute(select(TicketFormPack).where(TicketFormPack.pack_key == "request_forms"))
+        ).scalars().all()
+    assert stored == []
 
 
 @pytest.mark.asyncio
@@ -1228,6 +1461,140 @@ def test_validate_form_pack_schema_preserves_request_template_process_context():
     assert form["notification_policy"]["on_status_changed"]["requester"] is True
 
 
+def test_validate_form_pack_schema_accepts_canonical_field_role_enum_and_legacy_roles():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "title": "Website unavailable",
+                    "field_roles": {
+                        "impact_scope": ["priority_impact"],
+                        "work_continuity": ["priority_urgency"],
+                        "legacy_priority": ["priority_field"],
+                    },
+                    "fields": [
+                        {"key": "impact_scope", "label": "Impact", "type": "text"},
+                        {"key": "work_continuity", "label": "Urgency", "type": "text"},
+                        {"key": "legacy_priority", "label": "Legacy priority", "type": "text"},
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    form = pack["forms"][0]
+    assert form["field_roles"]["impact_scope"] == ["priority_impact"]
+    assert form["field_roles"]["work_continuity"] == ["priority_urgency"]
+    assert form["field_roles"]["legacy_priority"] == ["priority_field"]
+
+
+def test_validate_form_pack_schema_rejects_unknown_field_role():
+    with pytest.raises(ValueError, match="unsupported role"):
+        validate_form_pack_schema(
+            {
+                "pack_key": "request_forms",
+                "title": "Request catalog",
+                "forms": [
+                    {
+                        "key": "website_unavailable",
+                        "request_kind": "website_unavailable",
+                        "title": "Website unavailable",
+                        "field_roles": {"impact_scope": ["priority_magic"]},
+                        "fields": [
+                            {"key": "impact_scope", "label": "Impact", "type": "text"},
+                        ],
+                    }
+                ],
+            },
+            require_version=False,
+        )
+
+
+def test_validate_form_pack_schema_preserves_preflight_metadata():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "title": "Website unavailable",
+                    "field_aliases": {"website_url": "target_url"},
+                    "field_migration_note": "target_url renamed to website_url",
+                    "route_preview_examples": [{"name": "DNS", "form_payload": {"website_url": "example.test"}}],
+                    "process_preview_examples": [{"name": "P1", "form_payload": {"website_url": "example.test"}}],
+                    "fields": [
+                        {"key": "website_url", "label": "URL", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    form = pack["forms"][0]
+    assert form["field_aliases"] == {"website_url": "target_url"}
+    assert form["field_migration_note"] == "target_url renamed to website_url"
+    assert form["route_preview_examples"][0]["name"] == "DNS"
+    assert form["process_preview_examples"][0]["name"] == "P1"
+
+
+def test_validate_form_pack_schema_preserves_canonical_policy_refs():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "website_unavailable",
+                    "request_kind": "website_unavailable",
+                    "title": "Website unavailable",
+                    "priority_policy_ref": "incident_priority_v2",
+                    "routing_policy_ref": "website_routing_v5",
+                    "sla_policy_ref": "incident_sla_v3",
+                    "ola_policy_ref": "queue_ola_v1",
+                    "approval_policy_ref": "manager_approval_v1",
+                    "diagnostic_policy_ref": "website_diagnostics_v2",
+                    "closure_policy_ref": "incident_closure_v1",
+                    "visibility_policy_ref": "requester_visibility_v1",
+                    "notification_policy_ref": "incident_notifications_v1",
+                    "reporting_policy_ref": "incident_reporting_v1",
+                    "priority_policy": {"impact_field": "legacy_inline"},
+                    "fields": [
+                        {"key": "url", "label": "URL", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    form = pack["forms"][0]
+    assert form["priority_policy_ref"] == "incident_priority_v2"
+    assert form["priority_policy_code"] == "incident_priority_v2"
+    assert form["routing_policy_code"] == "website_routing_v5"
+    assert form["sla_policy_code"] == "incident_sla_v3"
+    assert form["policy_refs"] == {
+        "priority": "incident_priority_v2",
+        "routing": "website_routing_v5",
+        "sla": "incident_sla_v3",
+        "ola": "queue_ola_v1",
+        "approval": "manager_approval_v1",
+        "diagnostic": "website_diagnostics_v2",
+        "closure": "incident_closure_v1",
+        "visibility": "requester_visibility_v1",
+        "notification": "incident_notifications_v1",
+        "reporting": "incident_reporting_v1",
+    }
+    assert form["priority_policy"]["impact_field"] == "legacy_inline"
+
+
 def test_validate_form_pack_schema_preserves_custom_ticket_type():
     pack = validate_form_pack_schema(
         {
@@ -1335,6 +1702,211 @@ async def test_create_ticket_uses_template_ticket_type_over_request_body(test_cl
     assert ticket.custom_fields["request_template"]["key"] == "website_unavailable"
     assert ticket.custom_fields["request_template"]["ticket_type"] == "incident"
     assert ticket.custom_fields["request_template"]["suggested_playbook_id"] == "diagnose.website"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_stores_legacy_form_source_and_computed_snapshot(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    await _clear_request_form_packs(test_engine)
+    network_queue = await _ensure_queue(
+        test_engine,
+        code=f"networks_{uuid.uuid4().hex[:8]}",
+        name="Networks",
+    )
+    form_key = f"website_snapshot_{uuid.uuid4().hex[:8]}"
+
+    save_response = await test_client.post(
+        "/api/ticket_forms/packs/save",
+        json={
+            "pack": {
+                "pack_key": "request_forms",
+                "title": "Каталог заявок",
+                "forms": [
+                    {
+                        "key": form_key,
+                        "request_kind": form_key,
+                        "ticket_type": "incident",
+                        "title": "Проблема с сайтом",
+                        "priority_policy": {
+                            "impact_field": "impact_scope",
+                            "urgency_field": "work_continuity",
+                            "matrix": {"department": {"blocked": "P1"}},
+                        },
+                        "routing_policy": {
+                            "rules": [
+                                {
+                                    "code": "website_department_to_networks",
+                                    "priority_order": 10,
+                                    "when": {
+                                        "field": "request_form_data.impact_scope",
+                                        "op": "eq",
+                                        "value": "department",
+                                    },
+                                    "then": {"queue_id": network_queue.id},
+                                }
+                            ]
+                        },
+                        "fields": [
+                            {"key": "impact_scope", "label": "Impact", "type": "text", "required": True},
+                            {"key": "work_continuity", "label": "Continuity", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+    assert save_response.status == 200, await save_response.text()
+
+    create_response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Website issue",
+            "description": "Department cannot open the site",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "impact_scope": "department",
+                "work_continuity": "blocked",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert create_response.status == 200, await create_response.text()
+    ticket_id = (await create_response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    custom_fields = ticket.custom_fields
+    assert custom_fields["request_form"] == {
+        "source": "legacy_pack",
+        "pack_key": "request_forms",
+        "pack_version": custom_fields["request_form_version"],
+        "form_key": form_key,
+        "form_title": "Проблема с сайтом",
+    }
+    assert custom_fields["resolved_from"] == "legacy_pack"
+    computed = custom_fields["request_template"]["computed"]
+    assert computed["priority"] == "P1"
+    assert computed["queue_id"] == network_queue.id
+    assert computed["queue_code"] == network_queue.code
+    assert computed["matched_routing_rule"] == "website_department_to_networks"
+    assert computed["routing_source"] == "request_template.routing_policy"
+
+    requester_response = await test_client.get(
+        f"/api/tickets/{ticket_id}",
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert requester_response.status == 200, await requester_response.text()
+    requester_ticket = (await requester_response.json())["ticket"]
+    assert "request_template" not in requester_ticket["custom_fields"]
+
+    preview_response = await test_client.post(
+        "/api/tickets/create/preview",
+        json={
+            "device_id": str(uuid.uuid4()),
+            "title": "Preview",
+            "description": "Preview website issue",
+            "user_display_name": "Alice",
+            "form_key": form_key,
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "impact_scope": "department",
+                "work_continuity": "blocked",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert preview_response.status == 200, await preview_response.text()
+    preview = (await preview_response.json())["preview"]
+    assert preview["request_form"]["source"] == "legacy_pack"
+    assert preview["request_form"]["form_key"] == form_key
+    assert preview["request_template"]["computed"]["priority"] == "P1"
+    assert preview["request_template"]["computed"]["queue_code"] == network_queue.code
+    assert preview["request_template"]["computed"]["matched_routing_rule"] == "website_department_to_networks"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_uses_standalone_registry_source_snapshot(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    await _clear_request_form_packs(test_engine)
+    await _ensure_fallback_queue(test_engine)
+    template_key = f"standalone_snapshot_{uuid.uuid4().hex[:8]}"
+    schema_id = f"{template_key}_schema"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        repo = HelpdeskPolicyRepo(session)
+        await repo.publish_form_schema(
+            schema_id=schema_id,
+            request_template_code=template_key,
+            form_key=template_key,
+            title="Standalone snapshot",
+            ticket_type="incident",
+            fields=[
+                {"key": "impact_scope", "label": "Impact", "type": "text", "required": True},
+                {"key": "work_continuity", "label": "Continuity", "type": "text", "required": True},
+            ],
+            config={
+                "priority_policy": {
+                    "impact_field": "impact_scope",
+                    "urgency_field": "work_continuity",
+                    "matrix": {"department": {"blocked": "P1"}},
+                }
+            },
+            actor_id="admin1",
+            actor_role="admin",
+            requested_version="2.4.0",
+        )
+        await repo.publish_request_template(
+            template_code=template_key,
+            public_title="Standalone snapshot",
+            ticket_type="incident",
+            form_schema_id=schema_id,
+            actor_id="admin1",
+            actor_role="admin",
+            requested_version="3.1.0",
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        json={
+            "title": "Standalone request",
+            "description": "Created from standalone registry",
+            "device_id": str(uuid.uuid4()),
+            "user_display_name": "Alice",
+            "request_template_key": template_key,
+            "form_payload": {
+                "impact_scope": "department",
+                "work_continuity": "blocked",
+            },
+        },
+        headers={"Authorization": "Bearer test-ui-user:alice"},
+    )
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one()
+
+    request_form = ticket.custom_fields["request_form"]
+    request_template = ticket.custom_fields["request_template"]
+    assert request_form["source"] == "standalone_registry"
+    assert request_form["pack_key"] == "request_forms"
+    assert request_form["form_key"] == template_key
+    assert ticket.custom_fields["resolved_template_key"] == template_key
+    assert ticket.custom_fields["resolved_template_version"] == "3.1.0"
+    assert ticket.custom_fields["resolved_form_schema_id"] == schema_id
+    assert ticket.custom_fields["resolved_form_schema_version"] == "2.4.0"
+    assert request_template["version"] == "3.1.0"
+    assert request_template["form_schema_id"] == schema_id
+    assert request_template["form_schema_version"] == "2.4.0"
+    assert request_template["computed"]["priority"] == "P1"
 
 
 def test_validate_form_submission_applies_visible_when_in():

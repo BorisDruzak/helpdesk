@@ -681,6 +681,8 @@ async def test_web_admin_forms_current_returns_typed_fallback_payload_when_db_is
     assert payload["data"]["capabilities"]["current_endpoint"] == "/api/web/admin/forms/current"
     assert payload["data"]["capabilities"]["save_endpoint"] == "/api/web/admin/forms/save"
     assert payload["data"]["capabilities"]["preview_endpoint"] == "/api/web/admin/forms/route-preview"
+    role_values = {item["value"] for item in payload["data"]["capabilities"]["field_role_options"]}
+    assert {"priority_impact", "priority_urgency", "priority_importance"} <= role_values
     assert payload["data"]["forms"][0]["fields"][0]["type_label"]
 
 
@@ -704,6 +706,7 @@ async def test_web_admin_forms_current_returns_typed_payload(web_admin_client, m
                 current_endpoint="/api/web/admin/forms/current",
                 save_endpoint="/api/web/admin/forms/save",
                 preview_endpoint="/api/web/admin/forms/route-preview",
+                process_preview_endpoint="/api/web/admin/forms/process-preview",
                 field_type_options=[
                     AdminFilterOption(value="text", label="Текст"),
                     AdminFilterOption(value="select", label="Список"),
@@ -751,6 +754,7 @@ async def test_web_admin_forms_current_returns_typed_payload(web_admin_client, m
     assert payload["data"]["summary"]["version"] == "1.0.3"
     assert payload["data"]["forms"][0]["key"] == "printer"
     assert payload["data"]["capabilities"]["preview_endpoint"] == "/api/web/admin/forms/route-preview"
+    assert payload["data"]["capabilities"]["process_preview_endpoint"] == "/api/web/admin/forms/process-preview"
     assert payload["data"]["forms"][0]["fields"][1]["options"][0]["label"] == "HP"
     assert payload["data"]["forms"][0]["fields"][1]["visible_when"]["field"] == "room"
 
@@ -843,6 +847,192 @@ async def test_web_admin_forms_save_returns_typed_payload(web_admin_client, monk
     assert payload["data"]["summary"]["last_published_by"] == "admin1"
     assert payload["data"]["forms"][0]["fields"][0]["required"] is True
     assert "Каталог опубликован как версия 1.0.4" in payload["data"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_save_draft_does_not_publish_or_prefer(web_admin_client, monkeypatch):
+    async def fake_save_draft(*, auth_context, payload):
+        assert auth_context.actor_role == "admin"
+        assert payload.forms[0].key == "printer"
+        return {
+            "draft_id": "draft-1",
+            "pack_key": "request_forms",
+            "base_version": "1.0.3",
+            "status": "draft",
+            "summary": {
+                "pack_key": "request_forms",
+                "version": "draft",
+                "title": "Каталог заявок",
+                "description": "Черновик",
+                "forms_count": 1,
+                "fields_count": 1,
+                "required_fields_count": 1,
+                "last_published_at": None,
+                "last_published_by": None,
+            },
+            "published_version": None,
+            "preferred_version": "1.0.3",
+            "message": "Черновик сохранён. Активная версия не изменилась.",
+        }
+
+    monkeypatch.setattr(admin_handlers, "_save_admin_forms_draft", fake_save_draft, raising=False)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/save-draft",
+        json={
+            "base_version": "1.0.3",
+            "title": "Каталог заявок",
+            "description": "Черновик",
+            "forms": [
+                {
+                    "key": "printer",
+                    "request_kind": "printer",
+                    "title": "Печать / принтер",
+                    "fields": [{"key": "room", "label": "Кабинет", "type": "text", "required": True}],
+                }
+            ],
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["draft_id"] == "draft-1"
+    assert payload["data"]["status"] == "draft"
+    assert payload["data"]["published_version"] is None
+    assert payload["data"]["preferred_version"] == "1.0.3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_validate_returns_report_without_publishing(web_admin_client, monkeypatch):
+    async def fake_validate(*, payload):
+        assert payload.base_version == "1.0.3"
+        assert payload.draft_id == "draft-1"
+        assert payload.forms[0].key == "printer"
+        return {
+            "status": "validated",
+            "summary": {"errors_count": 0, "warnings_count": 1, "can_publish": True},
+            "errors": [],
+            "warnings": [
+                {
+                    "code": "REQUIRED_FIELD_WITHOUT_HELP_TEXT",
+                    "message": "Обязательное поле не содержит подсказку",
+                    "path": "forms[0].fields[0].help_text",
+                    "recommendation": "Добавьте help_text для пользователя",
+                }
+            ],
+            "message": "Проверка завершена: публикация разрешена.",
+        }
+
+    monkeypatch.setattr(admin_handlers, "_validate_admin_forms_draft", fake_validate, raising=False)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/validate",
+        json={
+            "base_version": "1.0.3",
+            "draft_id": "draft-1",
+            "title": "Каталог заявок",
+            "forms": [
+                {
+                    "key": "printer",
+                    "request_kind": "printer",
+                    "title": "Печать / принтер",
+                    "fields": [{"key": "room", "label": "Кабинет", "type": "text", "required": True}],
+                }
+            ],
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["status"] == "validated"
+    assert payload["data"]["summary"]["can_publish"] is True
+    assert payload["data"]["warnings"][0]["code"] == "REQUIRED_FIELD_WITHOUT_HELP_TEXT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_publish_can_skip_preferred_switch(web_admin_client, monkeypatch):
+    async def fake_publish(*, auth_context, payload):
+        assert auth_context.actor_role == "admin"
+        assert payload.base_version == "1.0.3"
+        assert payload.draft_id == "draft-1"
+        assert payload.make_preferred is False
+        return {
+            "summary": {
+                "pack_key": "request_forms",
+                "version": "1.0.4",
+                "title": "Каталог заявок",
+                "description": None,
+                "forms_count": 1,
+                "fields_count": 1,
+                "required_fields_count": 1,
+                "last_published_at": "2026-05-11T10:00:00+05:00",
+                "last_published_by": "admin1",
+            },
+            "forms": [],
+            "published_version": "1.0.4",
+            "preferred_version": "1.0.3",
+            "made_preferred": False,
+            "message": "Каталог опубликован как версия 1.0.4. Активная версия не изменилась.",
+        }
+
+    monkeypatch.setattr(admin_handlers, "_publish_admin_forms_draft", fake_publish, raising=False)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/publish",
+        json={
+            "base_version": "1.0.3",
+            "draft_id": "draft-1",
+            "make_preferred": False,
+            "title": "Каталог заявок",
+            "forms": [
+                {
+                    "key": "printer",
+                    "request_kind": "printer",
+                    "title": "Печать / принтер",
+                    "fields": [{"key": "room", "label": "Кабинет", "type": "text", "required": True}],
+                }
+            ],
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["published_version"] == "1.0.4"
+    assert payload["data"]["preferred_version"] == "1.0.3"
+    assert payload["data"]["made_preferred"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_preferred_switches_existing_version(web_admin_client, monkeypatch):
+    async def fake_set_preferred(*, auth_context, payload):
+        assert auth_context.actor_role == "admin"
+        assert payload.version == "1.0.4"
+        return {
+            "pack_key": "request_forms",
+            "previous_version": "1.0.3",
+            "preferred_version": "1.0.4",
+            "message": "Активная версия каталога обновлена: 1.0.4.",
+        }
+
+    monkeypatch.setattr(admin_handlers, "_set_admin_forms_preferred", fake_set_preferred, raising=False)
+
+    response = await web_admin_client.patch(
+        "/api/web/admin/forms/preferred",
+        json={"version": "1.0.4"},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["previous_version"] == "1.0.3"
+    assert payload["data"]["preferred_version"] == "1.0.4"
 
 
 @pytest.mark.asyncio
@@ -1027,6 +1217,65 @@ async def test_web_admin_forms_route_preview_returns_typed_payload(web_admin_cli
     assert payload["data"]["matched_rule"]["id"] == 5
     assert payload["data"]["matched_rule"]["condition_json"]["field"] == "request_form_data.room"
     assert payload["data"]["summary_rows"][0]["label"] == "Кабинет"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_forms_process_preview_returns_typed_payload(web_admin_client, monkeypatch):
+    async def fake_preview(*, payload):
+        assert payload.form.key == "printer"
+        assert payload.form_payload == {"room": "214", "printer_model": "HP LaserJet"}
+        return {
+            "ticket_type": "incident",
+            "request_kind": "printer",
+            "priority": {"priority_class": "P2", "priority_reason": "impact=2"},
+            "routing": {
+                "source": "ticket_routing_rule",
+                "target_queue_id": 17,
+                "target_queue_name": "Printer 214",
+                "fallback_applied": False,
+                "matched_rule": {"id": 5, "priority_order": 10},
+            },
+            "sla": {"policy_code": "incident_sla", "first_response_min": 60, "resolution_min": 240},
+            "ola": {"policy_code": "printer_ola", "ack_min": 15, "processing_min": 120},
+            "approval": {"required": False},
+            "diagnostics": {"suggested_playbooks": ["diagnose.printer"], "auto_run_enabled": True},
+            "closure": {"requires_resolution_code": True},
+            "visibility": {"public_status_mapping": {"new": "received"}},
+            "notifications": {"events": ["on_ticket_created"]},
+            "summary_rows": [{"key": "room", "label": "Кабинет", "value": "214"}],
+            "validation_report": {"summary": {"errors_count": 0, "warnings_count": 0, "can_publish": True}, "errors": [], "warnings": []},
+            "preview_metadata": {"side_effects": []},
+        }
+
+    monkeypatch.setattr(admin_handlers, "_preview_admin_forms_process", fake_preview)
+
+    response = await web_admin_client.post(
+        "/api/web/admin/forms/process-preview",
+        json={
+            "form": {
+                "key": "printer",
+                "request_kind": "printer",
+                "ticket_type": "incident",
+                "title": "Принтер",
+                "fields": [
+                    {"key": "room", "label": "Кабинет", "type": "text", "required": True, "options": []},
+                    {"key": "printer_model", "label": "Модель", "type": "text", "required": False, "options": []},
+                ],
+            },
+            "form_payload": {"room": "214", "printer_model": "HP LaserJet"},
+        },
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["ticket_type"] == "incident"
+    assert payload["data"]["routing"]["target_queue_name"] == "Printer 214"
+    assert payload["data"]["priority"]["priority_class"] == "P2"
+    assert payload["data"]["diagnostics"]["suggested_playbooks"] == ["diagnose.printer"]
+    assert payload["data"]["preview_metadata"]["side_effects"] == []
 
 
 @pytest.mark.asyncio

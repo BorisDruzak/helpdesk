@@ -868,6 +868,49 @@ async def test_web_admin_publish_from_form_creates_template_policies_and_audit(t
 
 
 @pytest.mark.asyncio
+async def test_web_admin_publish_from_form_prefers_policy_refs_over_inline_config(test_client, test_engine):
+    await _clear_policy_registry(test_engine)
+    form_key = f"policy_ref_form_{uuid.uuid4().hex[:8]}"
+    priority_ref = f"{form_key}_existing_priority"
+
+    response = await test_client.post(
+        "/api/web/admin/helpdesk-model/request-templates/publish-from-form",
+        json={
+            "form": {
+                "key": form_key,
+                "request_kind": form_key,
+                "ticket_type": "incident",
+                "title": "Policy ref form",
+                "priority_policy_ref": priority_ref,
+                "priority_policy": {"impact_field": "legacy_inline_should_not_publish"},
+                "routing_policy": {"rules": [{"when": {"field": "url"}, "then": {"queue_id": 17}}]},
+                "fields": [
+                    {"key": "url", "label": "URL", "type": "text", "required": True},
+                ],
+            },
+            "publish_policies": True,
+        },
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+    )
+
+    assert response.status == 200, await response.text()
+    result = (await response.json())["data"]
+    assert result["request_template"]["priority_policy_code"] == priority_ref
+    assert result["request_template"]["routing_policy_code"] == f"{form_key}_routing_policy"
+    assert "priority" not in result["policies"]
+    assert result["policies"]["routing"]["config"]["rules"][0]["then"]["queue_id"] == 17
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        template = (
+            await session.execute(select(RequestTemplate).where(RequestTemplate.template_code == form_key))
+        ).scalar_one()
+
+    assert template.priority_policy_code == priority_ref
+    assert template.config_json["form"]["policy_refs"]["priority"] == priority_ref
+
+
+@pytest.mark.asyncio
 async def test_web_admin_publish_policy_creates_version_and_audit(test_client, test_engine):
     await _clear_policy_registry(test_engine)
     policy_code = f"routing_{uuid.uuid4().hex[:8]}"

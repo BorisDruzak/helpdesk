@@ -336,6 +336,10 @@ def _public_matched_rule(rule: Optional[dict], priority_order: Optional[int] = N
     if not isinstance(rule, dict):
         return None
     result: dict[str, Any] = {}
+    for key in ("code", "key", "id"):
+        value = rule.get(key)
+        if value not in (None, ""):
+            result[key] = value
     if priority_order is not None:
         result["priority_order"] = priority_order
     if index is not None:
