@@ -845,7 +845,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities and non-agent provider routes).",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes).",
         aliases=(
             "module",
             "modules",

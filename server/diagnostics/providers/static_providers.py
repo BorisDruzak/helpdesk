@@ -5,6 +5,62 @@ from typing import List
 from diagnostics.capability_models import CapabilityDescriptor
 
 
+def _manual_capability(capability_id: str, title: str, description: str, *, kind: str) -> CapabilityDescriptor:
+    return CapabilityDescriptor(
+        id=capability_id,
+        title=title,
+        description=description,
+        provider_id="manual",
+        provider_type="manual_provider",
+        execution_target="manual",
+        required_permission="diagnostics.create_manual_evidence",
+        source="manual",
+        params_schema={
+            "type": "object",
+            "required": ["summary"],
+            "properties": {
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "status": {"type": "string", "enum": ["ok", "warning", "error", "info", "unknown"]},
+                "severity": {"type": "string", "enum": ["none", "low", "medium", "high", "critical"]},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "artifact_refs": {"type": "array"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "selected_for_passport": {"type": "boolean"},
+                "passport_eligible": {"type": "boolean"},
+                "raw_ref": {"type": "string"},
+                "redaction_level": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+        output_schema={
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "ticket_id": {"type": "string"},
+                "kind": {"type": "string"},
+                "status": {"type": "string"},
+                "selected_for_passport": {"type": "boolean"},
+            },
+            "additionalProperties": True,
+        },
+        output_contract={
+            "kind": "manual.evidence",
+            "status_field": "diagnostic_status",
+            "summary_field": "summary",
+            "primary_id_field": "evidence_id",
+            "supports_evidence_preview": True,
+        },
+        evidence={
+            "produces_evidence": True,
+            "kind": kind,
+            "domain": "manual",
+            "perspective": "manual",
+            "passport_eligible": True,
+        },
+    )
+
+
 def list_static_capabilities() -> List[CapabilityDescriptor]:
     return [
         CapabilityDescriptor(
@@ -270,38 +326,28 @@ def list_static_capabilities() -> List[CapabilityDescriptor]:
                 "passport_eligible": True,
             },
         ),
-        CapabilityDescriptor(
-            id="manual.visual_check",
-            title="Manual: visual check",
-            description="Record a manual operator observation.",
-            provider_id="manual",
-            provider_type="manual_provider",
-            execution_target="manual",
-            required_permission="ticket.passport.manage",
-            source="manual",
-            evidence={
-                "produces_evidence": True,
-                "kind": "manual.visual_check",
-                "domain": "manual",
-                "perspective": "manual",
-                "passport_eligible": True,
-            },
+        _manual_capability(
+            "manual.visual_check",
+            "Manual: visual check",
+            "Record a manual operator observation.",
+            kind="manual.visual_check",
         ),
-        CapabilityDescriptor(
-            id="manual.vendor_response",
-            title="Manual: vendor response",
-            description="Record a vendor response as manual diagnostic evidence.",
-            provider_id="manual",
-            provider_type="manual_provider",
-            execution_target="manual",
-            required_permission="ticket.passport.manage",
-            source="manual",
-            evidence={
-                "produces_evidence": True,
-                "kind": "manual.vendor_response",
-                "domain": "manual",
-                "perspective": "manual",
-                "passport_eligible": True,
-            },
+        _manual_capability(
+            "manual.vendor_response",
+            "Manual: vendor response",
+            "Record a vendor response as manual diagnostic evidence.",
+            kind="manual.vendor_response",
+        ),
+        _manual_capability(
+            "manual.operator_note",
+            "Manual: operator note",
+            "Record an operator note as diagnostic evidence.",
+            kind="manual.operator_note",
+        ),
+        _manual_capability(
+            "manual.customer_confirmation",
+            "Manual: customer confirmation",
+            "Record requester/customer confirmation as diagnostic evidence.",
+            kind="manual.customer_confirmation",
         ),
     ]

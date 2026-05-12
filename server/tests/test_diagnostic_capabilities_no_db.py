@@ -112,6 +112,11 @@ async def test_capability_registry_projects_agent_and_skeleton_provider_capabili
     assert by_id["remote_assist.request_control"].output_contract["kind"] == "remote_assist.session_request"
     assert by_id["remote_assist.session.summary"].output_contract["kind"] == "remote_assist.session_summary"
     assert by_id["manual.visual_check"].execution_target == "manual"
+    assert by_id["manual.visual_check"].required_permission == "diagnostics.create_manual_evidence"
+    assert by_id["manual.visual_check"].output_contract["kind"] == "manual.evidence"
+    assert by_id["manual.vendor_response"].output_contract["kind"] == "manual.evidence"
+    assert by_id["manual.operator_note"].execution_target == "manual"
+    assert by_id["manual.customer_confirmation"].evidence["kind"] == "manual.customer_confirmation"
 
 
 @pytest.mark.no_db
@@ -345,6 +350,14 @@ async def test_readiness_returns_stable_reason_codes_and_action_ids():
             remote_assist={"active_session": {"session_id": "session-1", "status": "active"}},
         ),
     )
+    manual_denied = await service.get_readiness(
+        capabilities["manual.visual_check"],
+        ReadinessContext(ticket_id="ticket-1", permissions=set()),
+    )
+    manual_available = await service.get_readiness(
+        capabilities["manual.operator_note"],
+        ReadinessContext(ticket_id="ticket-1", permissions={"diagnostics.create_manual_evidence"}),
+    )
 
     assert no_device.reason_code == "DEVICE_REQUIRED"
     assert no_device.actions == []
@@ -368,6 +381,10 @@ async def test_readiness_returns_stable_reason_codes_and_action_ids():
     assert remote_active_exists.readiness == "unavailable"
     assert remote_active_exists.reason_code == "REMOTE_ASSIST_SESSION_ACTIVE"
     assert remote_active_exists.actions == ["open_remote_assist"]
+    assert manual_denied.readiness == "permission_denied"
+    assert manual_denied.reason_code == "PERMISSION_DENIED"
+    assert manual_available.readiness == "available"
+    assert manual_available.actions == ["create_manual_evidence"]
 
 
 @pytest.mark.no_db

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Artifact, DiagnosticBundle, DiagnosticEvidence, DiagnosticFinding, DiagnosticSession, Operation, RemoteAccessSession, Ticket, TicketEvidenceItem
+from app.db.models import Artifact, DiagnosticBundle, DiagnosticEvidence, DiagnosticFinding, DiagnosticSession, Operation, RemoteAccessSession, Ticket, TicketEvent, TicketEvidenceItem
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
@@ -430,6 +430,7 @@ async def test_run_profile_and_attach_selected_api(test_client):
     assert manual_response.status == 201
     evidence_payload = await manual_response.json()
     evidence_id = evidence_payload["evidence"]["id"]
+    assert evidence_payload["evidence"]["kind"] == "manual.vendor_response"
     patch_response = await test_client.patch(
         f"/api/tickets/{ticket_id}/diagnostics/evidence/{evidence_id}",
         headers=_auth(),
@@ -447,3 +448,63 @@ async def test_run_profile_and_attach_selected_api(test_client):
     assert attach_payload["status"] == "ok"
     assert attach_payload["attached_count"] == 1
     assert attach_payload["evidence"][0]["source_id"] == evidence_id
+
+
+@pytest.mark.asyncio
+async def test_manual_capability_run_creates_diagnostic_evidence_event_and_passport_candidate(test_client):
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    from app.db import get_session
+
+    async with get_session() as session:
+        session.add(_ticket(ticket_id, device_id))
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/tickets/{ticket_id}/diagnostics/capabilities/manual.operator_note/run",
+        headers=_auth(),
+        json={
+            "params": {
+                "title": "Operator note",
+                "summary": "Operator confirmed the printer display shows an offline warning",
+                "status": "warning",
+                "tags": ["printer", "onsite"],
+                "selected_for_passport": True,
+            }
+        },
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "created"
+    assert payload["execution_target"] == "manual"
+    assert payload["execution_kind"] == "manual_evidence"
+    assert payload["output"]["selected_for_passport"] is True
+    assert payload["evidence_preview"]["kind"] == "manual.operator_note"
+
+    async with get_session() as session:
+        evidence = (
+            await session.execute(
+                select(DiagnosticEvidence).where(
+                    DiagnosticEvidence.ticket_id == ticket_id,
+                    DiagnosticEvidence.capability_id == "manual.operator_note",
+                )
+            )
+        ).scalar_one()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_manual_evidence_created",
+                )
+            )
+        ).scalar_one()
+
+    assert evidence.kind == "manual.operator_note"
+    assert evidence.source_type == "manual"
+    assert evidence.selected_for_passport is True
+    assert evidence.created_by == "support-test"
+    assert evidence.tags == ["printer", "onsite"]
+    assert event.payload["evidence_id"] == evidence.id
+    assert event.payload["capability_id"] == "manual.operator_note"

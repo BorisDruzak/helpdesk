@@ -317,21 +317,21 @@ Verification:
 
 ### Phase 8: Manual Capabilities
 
-- [ ] Add manual evidence creation capabilities:
+- [x] Add manual evidence creation capabilities:
   - `manual.visual_check`
   - `manual.vendor_response`
   - `manual.operator_note`
-  - optional `manual.customer_confirmation`
-- [ ] Implement permission checks.
-- [ ] Add manual evidence DTOs and event payloads.
-- [ ] Link manual capabilities to ticket passport/evidence candidate flows.
-- [ ] Add audit trail and source attribution.
+  - `manual.customer_confirmation`
+- [x] Implement permission checks.
+- [x] Add manual evidence DTOs and event payloads.
+- [x] Link manual capabilities to ticket passport/evidence candidate flows.
+- [x] Add audit trail and source attribution.
+
+Decision: Manual capabilities now create `diagnostic_evidence` first and no longer bypass the Diagnostic Layer by writing directly to `ticket_evidence_items`. `manual.visual_check`, `manual.vendor_response`, `manual.operator_note` and `manual.customer_confirmation` use the `manual` execution target, require `diagnostics.create_manual_evidence`, produce `manual.evidence` output envelopes and write `diagnostic_manual_evidence_created` ticket events for audit/realtime projection. Passport linkage remains the existing selected-evidence bridge: evidence can be marked `selected_for_passport` and attached through `DiagnosticPassportBridgeService`, preserving current passport semantics.
 
 Verification:
 
-- support passport/evidence tests
-- RBAC denial tests
-- timeline event tests
+- `python -m pytest server/tests/test_manual_capability_provider.py server/tests/test_diagnostic_capabilities_no_db.py::test_capability_registry_projects_agent_and_skeleton_provider_capabilities server/tests/test_diagnostic_capabilities_no_db.py::test_readiness_returns_stable_reason_codes_and_action_ids server/tests/test_diagnostic_layer.py::test_manual_capability_run_creates_diagnostic_evidence_event_and_passport_candidate server/tests/test_diagnostic_layer.py::test_run_profile_and_attach_selected_api -q --tb=short`
 
 ### Phase 9: Evidence Persistence and Diagnostic Sessions
 

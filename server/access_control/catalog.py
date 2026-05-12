@@ -193,6 +193,13 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         "Тикеты",
     ),
     PermissionDefinition(
+        "diagnostics.create_manual_evidence",
+        "Добавлять ручные диагностические факты",
+        "Создание manual diagnostic evidence без автоматического изменения статуса тикета.",
+        "tickets",
+        "Тикеты",
+    ),
+    PermissionDefinition(
         "ticket.playbook.run",
         "Запускать плейбуки из тикета",
         "Запуск опубликованных диагностических playbooks против устройства тикета.",
@@ -332,6 +339,7 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "ticket.comment.public",
             "ticket.comment.internal",
             "ticket.passport.manage",
+            "diagnostics.create_manual_evidence",
             "ticket.playbook.run",
             "ticket.tool.run",
             "remote_assist.request",

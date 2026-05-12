@@ -16,6 +16,7 @@ from diagnostics.execution_router import CapabilityExecutionRouter
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
 from diagnostics.provider_config import DiagnosticProviderConfigService
+from diagnostics.providers.manual_provider import ManualCapabilityProvider
 from diagnostics.profiles import list_profiles, resolve_ticket_profile
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
 from diagnostics.projection import DiagnosticProjectionService
@@ -546,20 +547,39 @@ async def handle_ticket_diagnostics_manual_evidence(request: web.Request) -> web
     if not isinstance(payload, dict):
         payload = {}
     actor = request.get("auth_context")
-    async with get_session() as session:
-        item = await DiagnosticProjectionService(session).create_manual_evidence(
-            ticket_id=ticket_id,
-            title=str(payload.get("title") or "Manual diagnostic evidence"),
-            summary=payload.get("summary"),
-            status=str(payload.get("status") or "info"),
-            kind=str(payload.get("kind") or "manual.check"),
-            domain=str(payload.get("domain") or "manual"),
-            perspective=str(payload.get("perspective") or "manual"),
-            created_by="support",
-            passport_eligible=bool(payload.get("passport_eligible", True)),
+    access = resolve_effective_access(
+        actor_id=getattr(actor, "actor_id", None),
+        actor_role=getattr(actor, "actor_role", None),
+    )
+    if "diagnostics.create_manual_evidence" not in set(access.permissions):
+        return web.json_response(
+            {
+                "status": "error",
+                "error_code": "PERMISSION_DENIED",
+                "error": "Operator lacks permission to create manual diagnostic evidence",
+            },
+            status=403,
         )
-        await session.commit()
-    return web.json_response({"status": "ok", "evidence": evidence_to_dict(item)}, status=201)
+    capability_id = str(payload.get("capability_id") or payload.get("kind") or "manual.visual_check").strip()
+    if capability_id not in {"manual.visual_check", "manual.vendor_response", "manual.operator_note", "manual.customer_confirmation"}:
+        capability_id = "manual.visual_check"
+    state = request.app.get("state")
+    capability = await CapabilityRegistry(tool_service=ToolExecutionService(state), state=state).resolve_capability(capability_id)
+    if capability is None:
+        return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND"}, status=404)
+    result = await ManualCapabilityProvider().run(
+        capability,
+        ticket_id=ticket_id,
+        device_id=payload.get("device_id"),
+        actor=actor,
+        params=payload,
+        state=state,
+    )
+    if result.get("status") == "error":
+        return web.json_response(result, status=400)
+    if result.get("status") == "unsupported":
+        return web.json_response(result, status=501)
+    return web.json_response({"status": "ok", "evidence": result.get("output") or {}, "event_id": result.get("event_id")}, status=201)
 
 
 @require_auth("admin", "support")
