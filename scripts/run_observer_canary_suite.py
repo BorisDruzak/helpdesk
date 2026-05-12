@@ -48,6 +48,22 @@ DEFAULT_COVERAGE_ROOT_KINDS = (
     "playbook_run",
     "web_auth",
     "observer_runtime",
+    "capability_run",
+    "server_connector_query",
+    "observer_query",
+    "manual_evidence",
+    "remote_assist",
+)
+SOURCE_COVERAGE_ROOT_KINDS = (
+    "module_reconcile",
+    "playbook_run",
+    "web_auth",
+    "observer_runtime",
+    "capability_run",
+    "server_connector_query",
+    "observer_query",
+    "manual_evidence",
+    "remote_assist",
 )
 
 
@@ -963,6 +979,117 @@ def remote_seed_observer_source_coverage_code(device_id: str) -> str:
                     }},
                 )
                 output["observer_runtime"] = {{"trace_id": await _project_runtime_audit(session, observer_runtime)}}
+                diagnostic_runtime_audits = {{
+                    "capability_run": await audit_repo.add(
+                        device_id=device_id,
+                        event_type="capability_run_succeeded",
+                        severity="info",
+                        source="diagnostic_capability",
+                        actor_role="support",
+                        details_json={{
+                            "stage": "finished",
+                            "capability_id": "diag.logs.collect",
+                            "provider_id": "diag_logs",
+                            "execution_target": "agent_builtin",
+                            "metrics": {{
+                                "duration_ms": 12,
+                                "result_status": "success",
+                                "readiness_failure_count": 0,
+                                "provider_error_count": 0,
+                                "evidence_linked_count": 0,
+                            }},
+                            "canary": "observer_coverage",
+                        }},
+                    ),
+                    "server_connector_query": await audit_repo.add(
+                        device_id="server",
+                        event_type="capability_run_blocked",
+                        severity="warning",
+                        source="diagnostic_server_connector",
+                        actor_role="support",
+                        details_json={{
+                            "stage": "finished",
+                            "capability_id": "zabbix.problems.lookup",
+                            "provider_id": "zabbix_connector",
+                            "execution_target": "server_connector",
+                            "readiness": {{"readiness": "integration_not_configured", "reason_code": "INTEGRATION_NOT_CONFIGURED"}},
+                            "metrics": {{
+                                "duration_ms": 3,
+                                "result_status": "error",
+                                "readiness_failure_count": 1,
+                                "provider_error_count": 0,
+                                "evidence_linked_count": 0,
+                            }},
+                            "canary": "observer_coverage",
+                        }},
+                    ),
+                    "observer_query": await audit_repo.add(
+                        device_id="server",
+                        event_type="capability_run_succeeded",
+                        severity="info",
+                        source="diagnostic_observer_query",
+                        actor_role="support",
+                        details_json={{
+                            "stage": "finished",
+                            "capability_id": "observer.ticket.summary",
+                            "provider_id": "observer",
+                            "execution_target": "observer_query",
+                            "metrics": {{
+                                "duration_ms": 8,
+                                "result_status": "success",
+                                "readiness_failure_count": 0,
+                                "provider_error_count": 0,
+                                "evidence_linked_count": 1,
+                            }},
+                            "canary": "observer_coverage",
+                        }},
+                    ),
+                    "manual_evidence": await audit_repo.add(
+                        device_id="server",
+                        event_type="capability_evidence_linked",
+                        severity="info",
+                        source="diagnostic_manual",
+                        actor_role="support",
+                        details_json={{
+                            "stage": "evidence_linked",
+                            "capability_id": "manual.visual_check",
+                            "provider_id": "manual",
+                            "execution_target": "manual",
+                            "diagnostic_evidence_id": f"canary-manual-{{suffix}}",
+                            "metrics": {{
+                                "duration_ms": 0,
+                                "result_status": "created",
+                                "readiness_failure_count": 0,
+                                "provider_error_count": 0,
+                                "evidence_linked_count": 1,
+                            }},
+                            "canary": "observer_coverage",
+                        }},
+                    ),
+                    "remote_assist": await audit_repo.add(
+                        device_id=device_id,
+                        event_type="capability_run_succeeded",
+                        severity="info",
+                        source="diagnostic_remote_assist",
+                        actor_role="support",
+                        details_json={{
+                            "stage": "finished",
+                            "capability_id": "remote_assist.session.summary",
+                            "provider_id": "remote_assist",
+                            "execution_target": "remote_assist",
+                            "metrics": {{
+                                "duration_ms": 6,
+                                "result_status": "success",
+                                "readiness_failure_count": 0,
+                                "provider_error_count": 0,
+                                "evidence_linked_count": 1,
+                            }},
+                            "canary": "observer_coverage",
+                        }},
+                    ),
+                }}
+                for root_kind, audit in diagnostic_runtime_audits.items():
+                    output[root_kind] = {{"trace_id": await _project_runtime_audit(session, audit)}}
                 await session.commit()
 
             print(json.dumps(output, ensure_ascii=False, sort_keys=True))
@@ -1229,7 +1356,7 @@ async def scenario_observer_source_coverage(
     raw = await run_remote_python(remote=remote, code=remote_seed_observer_source_coverage_code(device_id))
     payload = json.loads(raw.splitlines()[-1])
     results: list[ScenarioResult] = []
-    for root_kind in ("module_reconcile", "playbook_run", "web_auth", "observer_runtime"):
+    for root_kind in SOURCE_COVERAGE_ROOT_KINDS:
         item = payload.get(root_kind) if isinstance(payload, dict) else None
         trace_id = str((item or {}).get("trace_id") or "").strip()
         if not trace_id:
@@ -2064,6 +2191,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--leave-local-agent-running", action="store_true")
     parser.add_argument("--report-path", type=Path)
     parser.add_argument("--markdown-report-path", type=Path)
+    parser.add_argument(
+        "--source-coverage-only",
+        action="store_true",
+        help="Seed and verify observer source coverage probes without starting a local agent.",
+    )
     parser.add_argument("--skip-source-coverage-probes", action="store_true")
     parser.add_argument("--expected-agent-version", default=os.environ.get("PC_CLIENT_EXPECTED_AGENT_VERSION") or read_local_agent_version())
     return parser.parse_args()
@@ -2077,20 +2209,35 @@ async def main_async() -> int:
     started_local_agent = False
     module_name: str | None = None
     instance_payload: dict[str, Any] | None = None
+    coverage_root_kinds = SOURCE_COVERAGE_ROOT_KINDS if args.source_coverage_only else DEFAULT_COVERAGE_ROOT_KINDS
 
     try:
         async with ApiClient(args.base_url) as api:
             _print_step(f"Logging in as admin at {args.base_url}")
             admin_token = await api.login_ui(args.admin_login, args.admin_password, expected_role="admin")
-            await ensure_support_user(
-                api,
-                admin_token=admin_token,
-                login=args.support_login,
-                password=args.support_password,
-            )
-            support_token = await api.login_ui(args.support_login, args.support_password, expected_role="support")
+            support_token: str | None = None
+            if not args.source_coverage_only:
+                await ensure_support_user(
+                    api,
+                    admin_token=admin_token,
+                    login=args.support_login,
+                    password=args.support_password,
+                )
+                support_token = await api.login_ui(args.support_login, args.support_password, expected_role="support")
 
-            if not args.skip_local_agent_start:
+            if args.source_coverage_only:
+                device_id = str(uuid.uuid4())
+                instance_payload = {"machine_id": device_id}
+                _print_step(f"Seeding observer source coverage probes for synthetic device {device_id}")
+                results.extend(
+                    await scenario_observer_source_coverage(
+                        api,
+                        admin_token=admin_token,
+                        device_id=device_id,
+                        remote=args.remote,
+                    )
+                )
+            elif not args.skip_local_agent_start:
                 _print_step(f"Starting isolated local launcher instance {args.instance_name}")
                 await asyncio.to_thread(
                     run_subprocess,
@@ -2105,94 +2252,97 @@ async def main_async() -> int:
                 )
                 started_local_agent = True
 
-            instance_payload = load_instance(args.instance_name)
-            device_id = str(instance_payload["machine_id"])
-            await wait_device_online(api, admin_token=admin_token, device_id=device_id, expected_online=True, timeout_sec=90.0)
-            _print_step(f"Canary device online: {device_id}")
+            if not args.source_coverage_only:
+                if support_token is None:
+                    raise RuntimeError("Support token was not initialized for full observer canary run")
+                instance_payload = load_instance(args.instance_name)
+                device_id = str(instance_payload["machine_id"])
+                await wait_device_online(api, admin_token=admin_token, device_id=device_id, expected_online=True, timeout_sec=90.0)
+                _print_step(f"Canary device online: {device_id}")
 
-            module_results, module_name = await scenario_module_lifecycle(
-                api,
-                admin_token=admin_token,
-                support_token=support_token,
-                device_id=device_id,
-            )
-            results.extend(module_results)
-            results.extend(
-                await scenario_consent(
+                module_results, module_name = await scenario_module_lifecycle(
                     api,
                     admin_token=admin_token,
                     support_token=support_token,
                     device_id=device_id,
-                    remote=args.remote,
-                    tool_name=f"{module_name}.consent_probe",
                 )
-            )
-            results.append(await scenario_retry_exhausted(api, admin_token=admin_token, device_id=device_id, remote=args.remote))
-            results.extend(
-                await scenario_ws_ack_nack_replay(
-                    api,
-                    admin_token=admin_token,
-                    support_token=support_token,
-                    ws_url=args.ws_url,
-                    ui_ws_url=args.ui_ws_url,
-                    remote=args.remote,
-                )
-            )
-            results.append(
-                await scenario_disconnect(
-                    api,
-                    admin_token=admin_token,
-                    support_token=support_token,
-                    device_id=device_id,
-                    module_name=module_name,
-                    instance_name=args.instance_name,
-                    remote=args.remote,
-                )
-            )
-
-            if not args.skip_source_coverage_probes:
-                _print_step("Seeding observer source coverage probes")
+                results.extend(module_results)
                 results.extend(
-                    await scenario_observer_source_coverage(
+                    await scenario_consent(
                         api,
                         admin_token=admin_token,
+                        support_token=support_token,
                         device_id=device_id,
+                        remote=args.remote,
+                        tool_name=f"{module_name}.consent_probe",
+                    )
+                )
+                results.append(await scenario_retry_exhausted(api, admin_token=admin_token, device_id=device_id, remote=args.remote))
+                results.extend(
+                    await scenario_ws_ack_nack_replay(
+                        api,
+                        admin_token=admin_token,
+                        support_token=support_token,
+                        ws_url=args.ws_url,
+                        ui_ws_url=args.ui_ws_url,
+                        remote=args.remote,
+                    )
+                )
+                results.append(
+                    await scenario_disconnect(
+                        api,
+                        admin_token=admin_token,
+                        support_token=support_token,
+                        device_id=device_id,
+                        module_name=module_name,
+                        instance_name=args.instance_name,
                         remote=args.remote,
                     )
                 )
 
-            if args.expected_agent_version:
-                _print_step(f"Checking stable agent build registry for {args.expected_agent_version}")
-                results.extend(
-                    await scenario_agent_build_registry(
-                        api,
-                        admin_token=admin_token,
-                        expected_version=str(args.expected_agent_version),
+                if not args.skip_source_coverage_probes:
+                    _print_step("Seeding observer source coverage probes")
+                    results.extend(
+                        await scenario_observer_source_coverage(
+                            api,
+                            admin_token=admin_token,
+                            device_id=device_id,
+                            remote=args.remote,
+                        )
                     )
-                )
 
-            if module_name:
-                _print_step(f"Restarting local launcher instance {args.instance_name} for cleanup")
-                await asyncio.to_thread(
-                    run_subprocess,
-                    build_local_agent_start_command(
-                        args.instance_name,
-                        ui_port=args.ui_port,
-                        ws_url=args.ws_url,
-                        api_url=f"{args.base_url}/api",
-                    ),
-                    WORKSPACE,
-                    None,
-                )
-                await wait_device_online(api, admin_token=admin_token, device_id=device_id, expected_online=True, timeout_sec=90.0)
-                results.append(
-                    await cleanup_module(
-                        api,
-                        admin_token=admin_token,
-                        device_id=device_id,
-                        module_name=module_name,
+                if args.expected_agent_version:
+                    _print_step(f"Checking stable agent build registry for {args.expected_agent_version}")
+                    results.extend(
+                        await scenario_agent_build_registry(
+                            api,
+                            admin_token=admin_token,
+                            expected_version=str(args.expected_agent_version),
+                        )
                     )
-                )
+
+                if module_name:
+                    _print_step(f"Restarting local launcher instance {args.instance_name} for cleanup")
+                    await asyncio.to_thread(
+                        run_subprocess,
+                        build_local_agent_start_command(
+                            args.instance_name,
+                            ui_port=args.ui_port,
+                            ws_url=args.ws_url,
+                            api_url=f"{args.base_url}/api",
+                        ),
+                        WORKSPACE,
+                        None,
+                    )
+                    await wait_device_online(api, admin_token=admin_token, device_id=device_id, expected_online=True, timeout_sec=90.0)
+                    results.append(
+                        await cleanup_module(
+                            api,
+                            admin_token=admin_token,
+                            device_id=device_id,
+                            module_name=module_name,
+                        )
+                    )
 
     finally:
         if started_local_agent and not args.leave_local_agent_running:
@@ -2208,7 +2358,7 @@ async def main_async() -> int:
             "device_id": instance_payload.get("machine_id") if instance_payload else None,
             "results": [asdict(item) for item in results],
         }
-        report["coverage"] = build_observer_coverage_summary(results)
+        report["coverage"] = build_observer_coverage_summary(results, required_root_kinds=coverage_root_kinds)
         report_path.write_text(_json_dump(report), encoding="utf-8")
         _print_step(f"Report written to {report_path}")
         if args.markdown_report_path:

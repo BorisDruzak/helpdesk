@@ -176,5 +176,33 @@ def test_remote_seed_observer_source_coverage_code_contains_projection_sources()
     assert "module_reconcile_failed" in code
     assert "observer_runtime_degraded" in code
     assert "web_auth_failed" in code
+    assert "capability_run_succeeded" in code
+    assert "diagnostic_server_connector" in code
+    assert "diagnostic_observer_query" in code
+    assert "diagnostic_manual" in code
+    assert "diagnostic_remote_assist" in code
     assert "PlaybookRun" in code
     assert "ObserverOverlayService" in code
+
+
+def test_default_observer_coverage_root_kinds_include_diagnostic_capabilities() -> None:
+    assert "capability_run" in suite.DEFAULT_COVERAGE_ROOT_KINDS
+    assert "server_connector_query" in suite.DEFAULT_COVERAGE_ROOT_KINDS
+    assert "observer_query" in suite.DEFAULT_COVERAGE_ROOT_KINDS
+    assert "manual_evidence" in suite.DEFAULT_COVERAGE_ROOT_KINDS
+    assert "remote_assist" in suite.DEFAULT_COVERAGE_ROOT_KINDS
+
+
+def test_source_coverage_root_kinds_are_subset_of_default_coverage() -> None:
+    assert set(suite.SOURCE_COVERAGE_ROOT_KINDS).issubset(set(suite.DEFAULT_COVERAGE_ROOT_KINDS))
+    assert suite.SOURCE_COVERAGE_ROOT_KINDS == (
+        "module_reconcile",
+        "playbook_run",
+        "web_auth",
+        "observer_runtime",
+        "capability_run",
+        "server_connector_query",
+        "observer_query",
+        "manual_evidence",
+        "remote_assist",
+    )
