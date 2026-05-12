@@ -52,7 +52,7 @@ Sources:
 
 - agent builtin and managed tools from current tool manifests/snapshots
 - server builtin capabilities: `server.dns.resolve`, `server.http.request`
-- server connector skeletons, currently `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
+- server connector capabilities, currently the Zabbix JSON-RPC provider: `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
 - observer skeletons: `observer.ticket.summary`, `observer.trace.bundle`
 - remote assist skeletons: `remote_assist.request_view`, `remote_assist.session.summary`
 - manual skeletons: `manual.visual_check`, `manual.vendor_response`
@@ -75,6 +75,8 @@ Capability execution responses are normalized with `execution_target`, `executio
 
 `server_builtin` capabilities run on the Maria server and create ordinary `operations` rows with `kind=server_capability`, `command_name=server_builtin`, and `tool_name=<capability id>`. They transition `queued -> running -> succeeded/failed`, support idempotency keys and timeouts, expose `/api/operations/{operation_id}` as `poll_url`, map evidence previews, and do not enqueue `device_outbox` commands.
 
+Zabbix `server_connector` capabilities run on the Maria server through `diagnostics.providers.zabbix_provider.ZabbixProvider`. The provider reads bounded runtime config from diagnostic provider config, calls Zabbix JSON-RPC methods `problem.get`, `host.get` and `history.get`, caps returned problem/history rows, maps outputs to `monitoring.problem`, `monitoring.host_health` and `monitoring.metric_history`, and never returns raw credential material in result payloads. Ticket-scoped capability runs inject persisted integration config, mapping and ready credential refs into the server connector route before dispatch.
+
 Readiness input sources:
 
 - ticket-bound device record and agent online state
@@ -93,6 +95,7 @@ Provider config persistence starts at migration `075`. Runtime capability descri
 - `diagnostic_provider_credential_refs.secret_ref`: reference only; API responses redact it
 - config payloads are redacted before persistence for sensitive keys such as password, token, secret, api key and credentials
 - Zabbix readiness consumes persisted `integration_key=zabbix`, credential readiness and `mappings.zabbix.host`
+- Zabbix runtime config supports URL, TLS verification flag, timeout and mapping fields; credential refs remain internal runtime inputs and are redacted from admin/API payloads
 - permission, policy and integration blockers return generic human reasons while preserving detail through stable `reason_code`, preventing support/admin projections from exposing raw provider config or credential data
 
 ## Admin workbench

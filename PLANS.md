@@ -31,7 +31,7 @@ Stage 1 foundation is implemented:
 - Server capability projection exists in `server/diagnostics/`.
 - Readiness foundation exists.
 - Execution router foundation routes only `agent_builtin` / `agent_managed_module` to existing `ToolExecutionService.run_tool`; non-agent targets return unsupported placeholders and do not touch DeviceOutbox.
-- Skeleton capabilities exist for Zabbix, observer, remote assist, and manual providers.
+- Zabbix capabilities are implemented through a bounded server connector client; observer, remote assist, and manual providers are server-side routes.
 - Endpoints exist:
   - `GET /api/diagnostics/capabilities`
   - `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
@@ -43,7 +43,7 @@ Active execution slice:
 - [x] Extend manifest/tool metadata with explicit readiness flags for credentials, mapping and policy while keeping old manifests valid.
 - [x] Replace placeholder readiness decisions with a real service context that can use device records, installed/desired module state, platform metadata, integration config, credentials, mapping, policy and permission checks.
 - [x] Replace unsupported provider placeholders for `observer_query`, `remote_assist` and `manual` with real server-side provider routes built on existing observer, remote assist and passport/evidence services.
-- [x] Keep Zabbix as a safe server connector implementation boundary: validate config/credentials/mapping and return bounded provider results without making external API calls until a real connector client/config store is present.
+- [x] Keep Zabbix as a safe server connector implementation boundary: validate config/credentials/mapping, use persisted provider config at run time, and return bounded provider results through a JSON-RPC client without moving checks onto the agent.
 - [x] Prove non-agent targets do not call `ToolExecutionService.run_tool` from the generic capability router.
 
 Verified:
@@ -229,33 +229,37 @@ Verification:
 
 ### Phase 5: Zabbix Server Connector
 
-- [ ] Define config schema:
+- [x] Define config schema:
   - endpoint URL
   - auth method
   - credentials reference
   - TLS options
   - host mapping strategy
   - timeout/retry policy
-- [ ] Implement Zabbix provider capabilities:
+- [x] Implement Zabbix provider capabilities:
   - `zabbix.problems.lookup`
   - `zabbix.host.health`
   - `zabbix.item.history`
-- [ ] Add readiness:
+- [x] Add readiness:
   - integration_not_configured
   - credentials_missing
   - mapping_missing
   - available
   - unavailable/degraded
-- [ ] Implement safe API client with redaction and bounded responses.
-- [ ] Map Zabbix results to evidence:
+- [x] Implement safe API client with redaction and bounded responses.
+- [x] Map Zabbix results to evidence:
   - `monitoring.problem`
   - `monitoring.host_health`
   - `monitoring.metric_history`
-- [ ] Add tests with fake HTTP server or mocked Zabbix API, not real external calls.
-- [ ] Add docs and admin config examples.
+- [x] Add tests with fake HTTP server or mocked Zabbix API, not real external calls.
+- [x] Add docs and admin config examples.
+
+Decision: `diagnostics.providers.zabbix_provider.ZabbixProvider` is the first real `server_connector` implementation. It performs bounded Zabbix JSON-RPC calls for `problem.get`, `host.get` and `history.get`, accepts runtime config from persisted diagnostic provider config, uses credential references without returning/logging raw tokens, maps results to existing evidence metadata, and keeps all execution on the server side. Persisted provider config can supply URL, TLS/timeout options and mappings; a ready credential ref is passed internally to the provider run path. A full secret-vault resolver and admin UI for secret material are still separate work.
 
 Verification:
 
+- `python -m pytest server/tests/test_zabbix_provider_no_db.py -q --tb=short`
+- `python -m pytest server/tests/test_diagnostic_provider_config.py -q --tb=short`
 - provider unit tests
 - readiness tests
 - redaction tests
@@ -451,7 +455,7 @@ Verification:
 - [ ] Capability registry covers agent builtin, managed modules, server builtin/connector, observer, remote assist, manual and hybrid reserved target.
 - [ ] Readiness is accurate for device, online agent, install state, platform, dependencies, consent, RBAC, policy, integration config, credentials and mapping.
 - [ ] Non-agent targets never enqueue DeviceOutbox commands.
-- [ ] Server connector provider skeleton is replaced by at least one real connector implementation, starting with Zabbix.
+- [x] Server connector provider skeleton is replaced by at least one real connector implementation, starting with Zabbix.
 - [ ] Observer query capabilities return real observer data.
 - [ ] Remote assist capabilities route to existing remote assist service.
 - [ ] Manual capabilities create auditable manual evidence/facts.
@@ -464,8 +468,7 @@ Verification:
 
 ## Current Limitations / Handoff
 
-- Stage 1 intentionally did not add DB schema for diagnostic provider config; connector config/credentials/mapping are read from service context until a persistent config store is added.
-- Zabbix provider validates config/credentials/mapping and routes through a bounded server connector provider, but it still does not call a real external Zabbix API client.
+- Zabbix has a bounded JSON-RPC provider and uses persisted config/mapping/ready credential refs in the ticket run route. Secret material is still expected through a runtime credential ref/resolver boundary; a full vault-backed secret-management UI is not implemented in this slice.
 - `observer_query`, `remote_assist` and `manual` targets now route through server providers. Remote Assist uses the existing session service and may enqueue its existing `remote_assist.request` command; it does not use ordinary `ToolExecutionService.run_tool`.
 - The support tools panel can carry metadata, but full Diagnostic Center UI is not implemented.
 - Existing unrelated dirty worktree files predate this task and must not be reverted as part of this plan.

@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.evidence import normalize_tool_result_to_evidence_stub
-from diagnostics.providers.zabbix_provider import list_zabbix_capabilities
+from diagnostics.providers.zabbix_provider import ZabbixProvider, list_zabbix_capabilities
 
 
 def list_server_connector_capabilities() -> List[CapabilityDescriptor]:
@@ -18,6 +18,9 @@ class ServerConnectorProvider:
     capability reached the server connector route and returns a bounded provider
     response until a configured connector client is added.
     """
+
+    def __init__(self, *, zabbix_provider: ZabbixProvider | None = None) -> None:
+        self.zabbix_provider = zabbix_provider or ZabbixProvider()
 
     def list_capabilities(self) -> List[CapabilityDescriptor]:
         return list_server_connector_capabilities()
@@ -59,6 +62,8 @@ class ServerConnectorProvider:
                 "capability_id": capability.id,
                 "message": f"Mapping '{capability.mapping_key or integration_key or capability.id}' is missing",
             }
+        if capability.provider_id == "zabbix_connector" or capability.integration_key == "zabbix":
+            return await self.zabbix_provider.run_query(capability, **kwargs)
         return {
             "status": "unavailable",
             "error_code": "CONNECTOR_CLIENT_NOT_CONFIGURED",

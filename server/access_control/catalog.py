@@ -287,6 +287,13 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         "Observer",
     ),
     PermissionDefinition(
+        "monitoring.zabbix.view",
+        "View Zabbix diagnostics",
+        "Run read-only Zabbix monitoring lookups from diagnostic capabilities.",
+        "monitoring",
+        "Monitoring",
+    ),
+    PermissionDefinition(
         "admin.observer.view",
         "Открывать admin observer",
         "Доступ к /app/admin/observer.",
@@ -335,6 +342,7 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "remote_assist.elevated",
             "module.tool.run.low_risk",
             "module.tool.run.high_risk",
+            "monitoring.zabbix.view",
             "observer.trace.view",
             "control.server.view",
         }

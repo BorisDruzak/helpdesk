@@ -109,6 +109,28 @@ def _request_timeout_ms(payload: dict) -> int | None:
     return min(value, 300_000)
 
 
+def _with_provider_runtime_params(params: dict, capability, persisted_maps) -> dict:
+    result = dict(params or {})
+    integration_key = getattr(capability, "integration_key", None)
+    if not integration_key:
+        return result
+    config = persisted_maps.integration_configs.get(integration_key)
+    if config is not None and "integration_config" not in result and "_integration_config" not in result:
+        result["_integration_config"] = config
+    credential_ref = getattr(persisted_maps, "credential_refs", {}).get(integration_key)
+    if credential_ref is not None and "credentials_ref" not in result and "_credentials_ref" not in result:
+        result["_credentials_ref"] = credential_ref
+    mapping_key = getattr(capability, "mapping_key", None)
+    mapping = None
+    if mapping_key and mapping_key in persisted_maps.mappings:
+        mapping = {mapping_key: persisted_maps.mappings[mapping_key]}
+    elif persisted_maps.mappings:
+        mapping = persisted_maps.mappings
+    if mapping is not None and "mapping" not in result and "_mapping" not in result:
+        result["_mapping"] = mapping
+    return result
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     state = request.app.get("state")
@@ -374,6 +396,7 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
+        params = _with_provider_runtime_params(params, capability, persisted_maps)
     router = CapabilityExecutionRouter(capability_registry=registry, tool_service=tool_service)
     result = await router.run_capability(
         ticket_id=ticket_id,

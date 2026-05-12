@@ -17,6 +17,7 @@ REDACTED = "***redacted***"
 class DiagnosticReadinessMaps:
     integration_configs: dict[str, Any]
     credential_keys: dict[str, bool]
+    credential_refs: dict[str, Any]
     mappings: dict[str, Any]
     policy_flags: dict[str, bool]
 
@@ -123,6 +124,7 @@ class DiagnosticProviderConfigService:
     async def build_readiness_maps(self) -> DiagnosticReadinessMaps:
         integration_configs: dict[str, Any] = {}
         credential_keys: dict[str, bool] = {}
+        credential_refs: dict[str, Any] = {}
         mappings: dict[str, Any] = {}
         policy_flags: dict[str, bool] = {}
         for config in await self.repo.list_configs():
@@ -136,6 +138,9 @@ class DiagnosticProviderConfigService:
             integration_configs[integration_key] = dict(config.config_json or {})
             refs = await self.repo.list_credential_refs(config.id)
             credential_keys[integration_key] = any(ref.status == "ready" for ref in refs)
+            ready_ref = next((ref for ref in refs if ref.status == "ready" and ref.secret_ref), None)
+            if ready_ref is not None:
+                credential_refs[integration_key] = ready_ref.secret_ref
             config_mappings = (config.config_json or {}).get("mappings")
             if isinstance(config_mappings, dict):
                 mappings.update(config_mappings)
@@ -145,6 +150,7 @@ class DiagnosticProviderConfigService:
         return DiagnosticReadinessMaps(
             integration_configs=integration_configs,
             credential_keys=credential_keys,
+            credential_refs=credential_refs,
             mappings=mappings,
             policy_flags=policy_flags,
         )
