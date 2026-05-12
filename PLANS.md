@@ -467,17 +467,30 @@ Verification:
 
 ### Phase 13: Release, Migration and Deployment
 
-- [ ] If DB schema changes were added, run migrations only through canonical scripts:
+- [x] If DB schema changes were added, run migrations only through canonical scripts:
   - `python scripts/deploy_workspace_to_remote.py`
   - `python scripts/run_remote_migrations.py current`
   - `python scripts/run_remote_migrations.py upgrade head`
-- [ ] Run server release checks:
+- [x] Run server release checks:
   - `python scripts/verify_workspace.py`
   - targeted pytest suites
   - remote smoke
   - browser checks for UI changes
-- [ ] Stop remote server after verification unless user asks to keep it running.
+- [x] Stop remote server after verification unless user asks to keep it running.
 - [ ] Do not publish to GitHub until verified.
+
+Implemented in phase 13:
+
+- Released committed state `49f5775 diagnostics: add capability observability` to `/var/chat_bot/pc_client` through `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running`.
+- Release flow ran local `verify_workspace.py`, built and uploaded the React bundle, deployed the committed branch to Linux, ran remote Alembic `upgrade head`, started control/server and passed remote server smoke after one retry.
+- Confirmed remote Alembic state separately with `python scripts/run_remote_migrations.py current`: `076 (head)`.
+- Confirmed remote server status and smoke with `python scripts/manage_remote_stack.py status server` and `python scripts/manage_remote_stack.py smoke server`.
+- Browser-checked `http://192.168.100.17:8666/admin`: login page rendered, `admin/admin123` opened the Admin workspace and browser console had no warnings/errors.
+- Stopped the remote server with `python scripts/manage_remote_stack.py stop server`; follow-up status reported `inactive/dead`.
+
+Release note:
+
+- This was a quick staging release gate because the local workspace has unrelated pre-existing dirty files and no full CI artifact was required for this iteration. Use the full gate before publishing to GitHub.
 
 ## Acceptance Criteria For Full Completion
 
