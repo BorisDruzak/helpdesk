@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -36,6 +37,7 @@ import {
   type DiagnosticCapability,
   type DiagnosticEvidence,
 } from "./api";
+import { normalizeCapabilityParamSchema } from "./params-schema";
 
 type DiagnosticCenterPanelProps = {
   ticketId: string;
@@ -106,6 +108,65 @@ function capabilityCanRun(capability: DiagnosticCapability): boolean {
   return capability.actions.includes("run") || capability.actions.includes("open_remote_assist");
 }
 
+function blockedCapabilityTitle(capability: DiagnosticCapability): string | null {
+  if (capabilityCanRun(capability) || capability.actions.includes("create_manual_evidence")) {
+    return null;
+  }
+  if (capability.readiness === "permission_denied") {
+    return "Недоступно для вашей роли";
+  }
+  if (capability.readiness === "disabled_by_policy") {
+    return "Отключено политикой";
+  }
+  if (capability.readiness === "agent_offline") {
+    return "Агент не в сети";
+  }
+  if (capability.readiness === "unsupported_platform") {
+    return "Платформа не поддерживается";
+  }
+  if (capability.readiness === "integration_not_configured") {
+    return "Интеграция не настроена";
+  }
+  if (capability.readiness === "credentials_missing") {
+    return "Не хватает учетных данных";
+  }
+  if (capability.readiness === "mapping_missing") {
+    return "Не настроено сопоставление";
+  }
+  if (capability.readiness === "missing_dependency") {
+    return "Не выполнены зависимости";
+  }
+  if (capability.readiness === "installing") {
+    return "Идет установка";
+  }
+  if (capability.readiness === "unavailable") {
+    return "Capability недоступна";
+  }
+  return null;
+}
+
+function blockedCapabilityDetail(capability: DiagnosticCapability): string {
+  if (capability.reason) {
+    return capability.reason;
+  }
+  if (capability.readiness === "permission_denied") {
+    return "У оператора нет разрешения на запуск этой diagnostic capability.";
+  }
+  if (capability.readiness === "disabled_by_policy") {
+    return "Текущая политика тикета или рабочей зоны запрещает запуск этой проверки.";
+  }
+  if (capability.readiness === "integration_not_configured") {
+    return "Настройте provider в админском разделе модулей, затем обновите readiness.";
+  }
+  if (capability.readiness === "credentials_missing") {
+    return "Добавьте готовую credential reference для provider config.";
+  }
+  if (capability.readiness === "mapping_missing") {
+    return "Добавьте mapping между тикетом, сервисом или устройством и внешней системой.";
+  }
+  return "Проверьте readiness и доступные actions для этой capability.";
+}
+
 function primaryActionLabel(capability: DiagnosticCapability): string {
   if (capability.actions.includes("open_remote_assist")) {
     return "Открыть удалённую помощь";
@@ -146,6 +207,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
   const [perspectiveFilter, setPerspectiveFilter] = useState(ALL_FILTER);
   const [providerFilter, setProviderFilter] = useState(ALL_FILTER);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
+  const [capabilityParamsById, setCapabilityParamsById] = useState<Record<string, Record<string, unknown>>>({});
   const [manualDraft, setManualDraft] = useState<ManualEvidenceDraft>({
     title: "",
     summary: "",
@@ -208,6 +270,12 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
 
   const selectedCapability =
     filteredCapabilities.find((capability) => capability.id === selectedCapabilityId) ?? filteredCapabilities[0] ?? null;
+  const selectedCapabilityParams = selectedCapability ? capabilityParamsById[selectedCapability.id] ?? {} : {};
+  const selectedCapabilityParamFields = useMemo(
+    () => normalizeCapabilityParamSchema(selectedCapability?.params_schema, selectedCapabilityParams),
+    [selectedCapability?.id, selectedCapability?.params_schema, selectedCapabilityParams],
+  );
+  const selectedCapabilityBlockedTitle = selectedCapability ? blockedCapabilityTitle(selectedCapability) : null;
   const runAccess = selectedCapability ? requireToolRunPermission(session, selectedCapability.risk_level) : null;
   const manualAccess = requirePermission(session, "diagnostics.create_manual_evidence");
   const passportAccess = requirePermission(session, "ticket.passport.manage");
@@ -227,7 +295,8 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
   };
 
   const runCapabilityMutation = useMutation({
-    mutationFn: (capability: DiagnosticCapability) => runTicketDiagnosticCapability(ticketId, capability.id, {}),
+    mutationFn: ({ capability, params }: { capability: DiagnosticCapability; params: Record<string, unknown> }) =>
+      runTicketDiagnosticCapability(ticketId, capability.id, { params }),
     onSuccess: async (result) => {
       setLastActionMessage(summarizeRunResult(result));
       await invalidateDiagnostics();
@@ -549,6 +618,36 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                     </div>
                   ) : null}
 
+                  {selectedCapabilityParamFields.length ? (
+                    <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                      <p className="font-semibold text-slate-900">Параметры запуска</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Поля построены из `params_schema`; значения отправляются как `params` в capability router.
+                      </p>
+                      <SchemaParamEditor
+                        className="mt-4"
+                        fields={selectedCapabilityParamFields}
+                        onChange={(params) =>
+                          setCapabilityParamsById((current) => ({
+                            ...current,
+                            [selectedCapability.id]: params,
+                          }))
+                        }
+                        value={selectedCapabilityParams}
+                      />
+                    </div>
+                  ) : null}
+
+                  {selectedCapabilityBlockedTitle ? (
+                    <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{selectedCapabilityBlockedTitle}</p>
+                        {selectedCapability.reason_code ? <Badge tone="warning">{selectedCapability.reason_code}</Badge> : null}
+                      </div>
+                      <p className="mt-2">{blockedCapabilityDetail(selectedCapability)}</p>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-2">
                     {capabilityCanRun(selectedCapability) ? (
                       <>
@@ -556,7 +655,12 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                           className="w-full"
                           disabled={!runAccess?.allowed || runCapabilityMutation.isPending}
                           leadingIcon={<Play className="h-4 w-4" />}
-                          onClick={() => runCapabilityMutation.mutate(selectedCapability)}
+                          onClick={() =>
+                            runCapabilityMutation.mutate({
+                              capability: selectedCapability,
+                              params: capabilityParamsById[selectedCapability.id] ?? {},
+                            })
+                          }
                         >
                           {runCapabilityMutation.isPending ? "Выполняем..." : primaryActionLabel(selectedCapability)}
                         </Button>

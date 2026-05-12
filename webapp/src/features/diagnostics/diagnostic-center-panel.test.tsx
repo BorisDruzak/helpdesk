@@ -192,6 +192,167 @@ describe("DiagnosticCenterPanel", () => {
     expect(await screen.findByText("Evidence создано: ev-2")).toBeInTheDocument();
   });
 
+  it("builds capability run params from params_schema", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/overview") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "ticket-1",
+            device_id: "device-1",
+            status: "unknown",
+            summary: "Нет данных.",
+            profile: { id: "generic", version: "1", title: "Generic", recommended_capabilities: [], recommended_playbooks: [], required_evidence_kinds: [], optional_evidence_kinds: [] },
+            evidence_counts: {},
+            perspectives: {},
+            latest_evidence: [],
+            latest_operations: [],
+            latest_playbooks: [],
+            remote_assist: { count: 0, latest: null },
+            observer: { root_trace_id: null, available: false },
+            artifacts: { count: 0, items: [] },
+            findings: [],
+            recommended_actions: [],
+          },
+        });
+      }
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities") {
+        return jsonResponse({
+          status: "ok",
+          count: 1,
+          capabilities: [
+            {
+              id: "server.http.request",
+              title: "Server HTTP request",
+              provider_id: "server_builtin",
+              execution_target: "server_builtin",
+              risk_level: "low",
+              readiness: "available",
+              reason: null,
+              actions: ["run"],
+              requires_consent: false,
+              requires_integration: false,
+              integration_key: null,
+              install_required_on_agent: false,
+              params_schema: {
+                type: "object",
+                required: ["url"],
+                properties: {
+                  url: { type: "string", title: "URL", description: "Target URL" },
+                  method: { type: "string", title: "Method", enum: ["GET", "POST"], default: "GET" },
+                },
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/diagnostics/evidence")) {
+        return jsonResponse({ status: "ok", evidence: [] });
+      }
+      if (url.endsWith("/diagnostics/sessions")) {
+        return jsonResponse({ status: "ok", sessions: [] });
+      }
+      if (url.endsWith("/diagnostics/findings")) {
+        return jsonResponse({ status: "ok", findings: [] });
+      }
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities/server.http.request/run" && init?.method === "POST") {
+        return jsonResponse({ status: "success", capability_id: "server.http.request", operation_id: "op-http" });
+      }
+      return jsonResponse({ status: "error", error: `unexpected ${url}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+
+    fireEvent.change(await screen.findByLabelText("URL"), { target: { value: "https://example.test/health" } });
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "POST" } });
+    fireEvent.click(screen.getByText("Запустить"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/support/tickets/ticket-1/diagnostics/capabilities/server.http.request/run",
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+    });
+    const runCall = fetchMock.mock.calls.find(([url]) =>
+      String(url) === "/api/web/support/tickets/ticket-1/diagnostics/capabilities/server.http.request/run",
+    );
+    expect(JSON.parse(String(runCall?.[1]?.body))).toEqual({
+      params: { method: "POST", url: "https://example.test/health" },
+    });
+  });
+
+  it("shows readiness-specific disabled copy for blocked capabilities", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/diagnostics/overview")) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "ticket-1",
+            device_id: "device-1",
+            status: "unknown",
+            summary: "Нет данных.",
+            profile: { id: "generic", version: "1", title: "Generic", recommended_capabilities: [], recommended_playbooks: [], required_evidence_kinds: [], optional_evidence_kinds: [] },
+            evidence_counts: {},
+            perspectives: {},
+            latest_evidence: [],
+            latest_operations: [],
+            latest_playbooks: [],
+            remote_assist: { count: 0, latest: null },
+            observer: { root_trace_id: null, available: false },
+            artifacts: { count: 0, items: [] },
+            findings: [],
+            recommended_actions: [],
+          },
+        });
+      }
+      if (url.endsWith("/diagnostics/capabilities")) {
+        return jsonResponse({
+          status: "ok",
+          count: 1,
+          capabilities: [
+            {
+              id: "zabbix.problems.lookup",
+              title: "Zabbix problems",
+              provider_id: "zabbix_connector",
+              execution_target: "server_connector",
+              risk_level: "low",
+              readiness: "permission_denied",
+              reason_code: "PERMISSION_DENIED",
+              reason: "Operator lacks permission",
+              actions: [],
+              requires_consent: false,
+              requires_integration: true,
+              integration_key: "zabbix",
+              install_required_on_agent: false,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/diagnostics/evidence")) {
+        return jsonResponse({ status: "ok", evidence: [] });
+      }
+      if (url.endsWith("/diagnostics/sessions")) {
+        return jsonResponse({ status: "ok", sessions: [] });
+      }
+      if (url.endsWith("/diagnostics/findings")) {
+        return jsonResponse({ status: "ok", findings: [] });
+      }
+      return jsonResponse({ status: "error", error: `unexpected ${url}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+
+    expect(await screen.findByText("Недоступно для вашей роли")).toBeInTheDocument();
+    expect(screen.getByText("PERMISSION_DENIED")).toBeInTheDocument();
+    expect(screen.queryByText("Запустить")).not.toBeInTheDocument();
+  });
+
   it("creates manual evidence from the diagnostics panel", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
