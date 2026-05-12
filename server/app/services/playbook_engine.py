@@ -20,6 +20,7 @@ from app.utils.playbook_step_eval import evaluate_if_expr, resolve_params_templa
 from app.services.playbook_capability import check_tool_available
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
+from diagnostics.observability import RuntimeAuditCapabilityExecutionObserver
 from diagnostics.projection import DiagnosticProjectionService
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 
@@ -131,9 +132,11 @@ async def _execute_non_agent_capability_step(
     )
     readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
     timeout_ms = int(step.timeout_sec * 1000) if step.timeout_sec else None
+    observability = RuntimeAuditCapabilityExecutionObserver(state=state)
     router = CapabilityExecutionRouter(
         capability_registry=CapabilityRegistry(tool_service=None, state=state),
         tool_service=ToolExecutionService(state),
+        observability=observability,
     )
     result = await router.run_capability(
         ticket_id=ticket_id,
@@ -175,7 +178,7 @@ async def _execute_non_agent_capability_step(
             ticket = await session.get(Ticket, ticket_id)
             if ticket is not None:
                 async with session.begin_nested():
-                    await DiagnosticProjectionService(session).project_capability_result(
+                    evidence = await DiagnosticProjectionService(session).project_capability_result(
                         ticket_id=ticket_id,
                         capability_descriptor=capability,
                         result=result,
@@ -183,6 +186,18 @@ async def _execute_non_agent_capability_step(
                         session_id=(context or {}).get("diagnostic_session_id"),
                         readiness=_readiness_dict(readiness),
                         params=params,
+                    )
+                    await observability.record_evidence_linked(
+                        capability=capability,
+                        ticket_id=ticket_id,
+                        device_id=run.device_id,
+                        actor=actor,
+                        params=params,
+                        result={**result, "diagnostic_evidence_id": evidence.id, "evidence_persisted": True},
+                        readiness=readiness,
+                        evidence_id=evidence.id,
+                        idempotency_key=f"playbook:{run.id}:step:{step.id}:attempt:1",
+                        timeout_ms=timeout_ms,
                     )
         except Exception as exc:
             logger.warning(

@@ -10,6 +10,7 @@ from app.db.models import Artifact, DiagnosticEvidence, Operation, RemoteAccessS
 from app.repos.diagnostics_repo import DiagnosticRepo
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.evidence import normalize_tool_result_to_evidence_values
+from diagnostics.observability import redact_diagnostic_payload
 
 
 def _status_from_operation(status: str | None) -> str:
@@ -122,6 +123,8 @@ class DiagnosticProjectionService:
             "actor_id": _actor_id(actor),
         }
         values = normalize_tool_result_to_evidence_values(operation, capability_descriptor, result)
+        if isinstance(values.get("normalized_payload"), dict):
+            values["normalized_payload"] = redact_diagnostic_payload(values["normalized_payload"])
         provider_type = values.pop("provider_type", None)
         capability_version = values.pop("capability_version", None)
         values.update(
@@ -149,7 +152,7 @@ class DiagnosticProjectionService:
                 readiness_reason_code=(readiness or {}).get("reason_code"),
                 readiness_reason=(readiness or {}).get("reason"),
                 readiness_actions=list((readiness or {}).get("actions") or []),
-                params_snapshot=dict(params or {}),
+                params_snapshot=redact_diagnostic_payload(dict(params or {})),
                 result_snapshot=_result_snapshot(result),
                 evidence_id=evidence.id,
                 operation_id=operation_id,
@@ -345,7 +348,7 @@ class DiagnosticProjectionService:
             status=normalized_status,
             severity=severity or ("none" if normalized_status == "ok" else ("medium" if normalized_status == "error" else "low")),
             confidence=confidence,
-            normalized_payload=normalized_payload or {},
+            normalized_payload=redact_diagnostic_payload(normalized_payload or {}),
             raw_ref=raw_ref,
             artifact_refs=artifact_refs or [],
             redaction_level=redaction_level,
@@ -423,7 +426,7 @@ def _created_by(actor: Any) -> str:
 
 
 def _result_snapshot(result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return redact_diagnostic_payload({
         "status": result.get("status"),
         "operation_id": result.get("operation_id"),
         "session_id": result.get("session_id"),
@@ -433,7 +436,7 @@ def _result_snapshot(result: dict[str, Any]) -> dict[str, Any]:
         "error_message": result.get("error_message"),
         "output": result.get("output") if isinstance(result.get("output"), dict) else {},
         "evidence_preview": result.get("evidence_preview") if isinstance(result.get("evidence_preview"), dict) else None,
-    }
+    })
 
 
 def _artifact_link_ref(ref: Any) -> dict[str, Any] | None:

@@ -13,6 +13,7 @@ import config
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
+from diagnostics.observability import RuntimeAuditCapabilityExecutionObserver
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
 from diagnostics.provider_config import DiagnosticProviderConfigService
@@ -459,7 +460,8 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
         params = _with_provider_runtime_params(params, capability, persisted_maps)
-    router = CapabilityExecutionRouter(capability_registry=registry, tool_service=tool_service)
+    observability = RuntimeAuditCapabilityExecutionObserver(state=state)
+    router = CapabilityExecutionRouter(capability_registry=registry, tool_service=tool_service, observability=observability)
     result = await router.run_capability(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -490,6 +492,18 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         result = dict(result)
         result["diagnostic_evidence_id"] = evidence.id
         result["evidence_persisted"] = True
+        await observability.record_evidence_linked(
+            capability=capability,
+            ticket_id=ticket_id,
+            device_id=device_id,
+            actor=request.get("auth_context"),
+            params=params,
+            result=result,
+            readiness=readiness,
+            evidence_id=evidence.id,
+            idempotency_key=idempotency_key,
+            timeout_ms=timeout_ms,
+        )
     status = 200
     if result.get("error_code") == "CAPABILITY_NOT_FOUND":
         status = 404

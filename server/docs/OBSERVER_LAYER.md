@@ -109,6 +109,11 @@ Observer runtime:
 - `playbook_run`
 - `web_auth`
 - `observer_runtime`
+- `capability_run`
+- `server_connector_query`
+- `observer_query`
+- `manual_evidence`
+- `remote_assist`
 - `ws_delivery`
 - `retry_exhausted`
 
@@ -155,6 +160,8 @@ Codex/live debugging entrypoints:
 - `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `playbook_run_id`, `step_run_id`, `route`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
 - Diagnostic capability `observer.ticket.summary` returns root trace health, latest error, top signature, trace counts and compact related traces as `observer.summary` evidence preview.
 - Diagnostic capability `observer.trace.bundle` returns a bounded primary-trace bundle with related traces, error occurrences, signatures, degradations and next checks as `observer.trace_bundle` evidence preview.
+- Diagnostic capability execution writes redacted `agent_runtime_audit` lifecycle rows: `capability_run_started`, `capability_run_succeeded`, `capability_run_failed`, `capability_run_blocked` and `capability_evidence_linked`. Observer projects them with root kinds `capability_run`, `server_connector_query`, `observer_query`, `manual_evidence` or `remote_assist` based on `execution_target`.
+- Diagnostic audit details expose bounded metrics (`duration_ms`, `result_status`, readiness failure count, provider error count and evidence linked count) but redact integration config, credential refs, sensitive query params and evidence payload values before trace export.
 - Auth/provisioning debugging should start with `q=connection_request`, `q=invalid_token`, `root_kind=device_provisioning`, or `root_kind=agent_auth`. These queries must find operation-less `agent_runtime_audit` traces and signatures for warning/error events such as `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, and `invalid_token`.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.

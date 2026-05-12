@@ -434,28 +434,36 @@ Notes:
 
 ### Phase 12: Operations, Observer and Audit Hardening
 
-- [ ] Ensure every capability execution writes trace-visible lifecycle events.
-- [ ] Add observer root kinds/spans for:
+- [x] Ensure every capability execution writes trace-visible lifecycle events.
+- [x] Add observer root kinds/spans for:
   - capability run
   - server connector query
   - observer query
   - manual evidence
   - remote assist capability session
-- [ ] Add operation/session metrics:
+- [x] Add operation/session metrics:
   - duration
   - result status
   - readiness failure count
   - provider errors
   - evidence created/linked
-- [ ] Add audit events for high-risk or externally integrated capabilities.
-- [ ] Add redaction for integration config, credentials, query params and evidence payloads.
-- [ ] Update observer docs if new trace-visible API/flows are added.
+- [x] Add audit events for high-risk or externally integrated capabilities.
+- [x] Add redaction for integration config, credentials, query params and evidence payloads.
+- [x] Update observer docs if new trace-visible API/flows are added.
+
+Implemented in phase 12:
+
+- `CapabilityExecutionRouter` now emits `capability_run_started` plus terminal lifecycle events through an observer sink without changing the old agent `run_tool` path.
+- HTTP diagnostic capability runs and playbook non-agent capability steps use `RuntimeAuditCapabilityExecutionObserver`, which writes redacted `agent_runtime_audit` rows for trace projection.
+- Observer runtime audit projection now recognizes diagnostic root kinds: `capability_run`, `server_connector_query`, `observer_query`, `manual_evidence` and `remote_assist`.
+- Lifecycle audit details include bounded metrics (`duration_ms`, `result_status`, readiness failure count, provider error count and evidence linked count) and evidence metadata.
+- Runtime params/result snapshots and persisted session capability snapshots redact integration config, credential refs, sensitive query fields and evidence output payloads.
 
 Verification:
 
-- observer tests
-- dangerous-flow canary where applicable
-- redaction tests
+- [x] observer tests
+- [ ] dangerous-flow canary where applicable
+- [x] redaction tests
 
 ### Phase 13: Release, Migration and Deployment
 

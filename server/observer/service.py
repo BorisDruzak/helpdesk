@@ -74,6 +74,21 @@ RUNTIME_AUDIT_EVENTS = {
 MODULE_RECONCILE_AUDIT_EVENTS = {"module_reconcile_failed"}
 WEB_AUTH_AUDIT_EVENTS = {"web_auth_failed", "web_auth_forbidden"}
 OBSERVER_RUNTIME_AUDIT_EVENTS = {"observer_runtime_degraded"}
+DIAGNOSTIC_CAPABILITY_AUDIT_EVENTS = {
+    "capability_run_started",
+    "capability_run_succeeded",
+    "capability_run_failed",
+    "capability_run_blocked",
+    "capability_evidence_linked",
+}
+DIAGNOSTIC_CAPABILITY_AUDIT_SOURCES = {
+    "diagnostic_capability",
+    "diagnostic_server_builtin",
+    "diagnostic_server_connector",
+    "diagnostic_observer_query",
+    "diagnostic_remote_assist",
+    "diagnostic_manual",
+}
 OBSERVER_POSTGRES_BULK_BIND_LIMIT = 30_000
 PROBLEM_AUDIT_EVENTS = (
     PROVISIONING_AUDIT_EVENTS
@@ -82,6 +97,7 @@ PROBLEM_AUDIT_EVENTS = (
     | MODULE_RECONCILE_AUDIT_EVENTS
     | WEB_AUTH_AUDIT_EVENTS
     | OBSERVER_RUNTIME_AUDIT_EVENTS
+    | {"capability_run_failed", "capability_run_blocked"}
     | {"agent_offline", "agent_disconnect", "agent_superseded"}
 )
 DANGEROUS_ROOT_KINDS = {
@@ -95,6 +111,11 @@ DANGEROUS_ROOT_KINDS = {
     "web_auth",
     "observer_runtime",
     "consent",
+    "capability_run",
+    "server_connector_query",
+    "observer_query",
+    "remote_assist",
+    "manual_evidence",
 }
 _TRACE_PROJECTION_LOCK_GUARD = asyncio.Lock()
 _TRACE_PROJECTION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
@@ -286,6 +307,18 @@ def _playbook_run_id_from_trace_id(trace_id: str) -> Optional[int]:
 def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
     event_type = str(audit.event_type or "").strip().lower()
     source = str(audit.source or "").strip().lower()
+    details = audit.details_json if isinstance(audit.details_json, dict) else {}
+    if event_type in DIAGNOSTIC_CAPABILITY_AUDIT_EVENTS or source in DIAGNOSTIC_CAPABILITY_AUDIT_SOURCES:
+        target = str(details.get("execution_target") or "").strip().lower()
+        if source == "diagnostic_server_connector" or target == "server_connector":
+            return "server_connector_query"
+        if source == "diagnostic_observer_query" or target == "observer_query":
+            return "observer_query"
+        if source == "diagnostic_remote_assist" or target == "remote_assist":
+            return "remote_assist"
+        if source == "diagnostic_manual" or target == "manual":
+            return "manual_evidence"
+        return "capability_run"
     if event_type in UPDATE_AUDIT_EVENTS or event_type.startswith("update_"):
         return "agent_update"
     if event_type in PROVISIONING_AUDIT_EVENTS or source.startswith("connection_request"):
@@ -305,7 +338,20 @@ def _runtime_audit_root_kind(audit: AgentRuntimeAudit) -> str:
 
 def _runtime_root_kind_from_audits(audits: Iterable[AgentRuntimeAudit]) -> str:
     kinds = [_runtime_audit_root_kind(audit) for audit in audits]
-    for preferred in ("agent_update", "module_reconcile", "web_auth", "observer_runtime", "device_provisioning", "agent_auth", "agent_runtime"):
+    for preferred in (
+        "agent_update",
+        "module_reconcile",
+        "server_connector_query",
+        "remote_assist",
+        "observer_query",
+        "manual_evidence",
+        "capability_run",
+        "web_auth",
+        "observer_runtime",
+        "device_provisioning",
+        "agent_auth",
+        "agent_runtime",
+    ):
         if preferred in kinds:
             return preferred
     return "trace"

@@ -2,9 +2,12 @@ from dataclasses import replace
 
 import pytest
 
+from app.db.models import AgentRuntimeAudit
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
+from diagnostics.observability import build_capability_audit_details, redact_diagnostic_payload
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
+from observer.service import _runtime_audit_root_kind
 
 
 class FakeToolService:
@@ -89,6 +92,20 @@ class FakeState:
 
     def is_agent_online(self, _device_id):
         return self.online
+
+
+class FakeExecutionObserver:
+    def __init__(self):
+        self.events = []
+
+    async def record_started(self, **kwargs):
+        self.events.append(("started", kwargs))
+
+    async def record_finished(self, **kwargs):
+        self.events.append(("finished", kwargs))
+
+    async def record_evidence_linked(self, **kwargs):
+        self.events.append(("evidence_linked", kwargs))
 
 
 @pytest.mark.no_db
@@ -608,3 +625,149 @@ async def test_execution_router_blocks_not_ready_capability_before_provider_or_t
     assert result["execution_target"] == "server_connector"
     assert server_provider.query_calls == []
     assert tool_service.run_calls == []
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_execution_router_emits_capability_lifecycle_events_with_metrics():
+    tool_service = FakeToolService()
+    registry = CapabilityRegistry(tool_service=tool_service, state=FakeState())
+    observer = FakeExecutionObserver()
+    router = CapabilityExecutionRouter(
+        capability_registry=registry,
+        tool_service=tool_service,
+        server_connector_provider=FakeServerConnectorProvider(),
+        observability=observer,
+    )
+
+    result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="zabbix.problems.lookup",
+        params={"integration_config": {"url": "https://zabbix.local"}, "credentials_ref": "secret-ref"},
+        actor=None,
+        idempotency_key="idem-zabbix",
+    )
+
+    assert result["status"] == "success"
+    assert [event for event, _ in observer.events] == ["started", "finished"]
+    finished = observer.events[1][1]
+    assert finished["result"]["capability_id"] == "zabbix.problems.lookup"
+    assert finished["duration_ms"] >= 0
+    assert finished["idempotency_key"] == "idem-zabbix"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_execution_router_emits_blocked_lifecycle_without_provider_call():
+    tool_service = FakeToolService()
+    registry = CapabilityRegistry(tool_service=tool_service, state=FakeState())
+    provider = FakeServerConnectorProvider()
+    observer = FakeExecutionObserver()
+    router = CapabilityExecutionRouter(
+        capability_registry=registry,
+        tool_service=tool_service,
+        server_connector_provider=provider,
+        observability=observer,
+    )
+
+    result = await router.run_capability(
+        ticket_id="ticket-1",
+        device_id="device-1",
+        capability_id="zabbix.problems.lookup",
+        params={},
+        actor=None,
+        readiness={"readiness": "integration_not_configured", "reason_code": "INTEGRATION_NOT_CONFIGURED"},
+    )
+
+    assert result["error_code"] == "CAPABILITY_NOT_READY"
+    assert provider.query_calls == []
+    assert [event for event, _ in observer.events] == ["started", "finished"]
+    assert observer.events[1][1]["result"]["error_code"] == "CAPABILITY_NOT_READY"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_capability_audit_details_redact_runtime_config_credentials_and_payload():
+    tool_service = FakeToolService()
+    registry = CapabilityRegistry(tool_service=tool_service, state=FakeState())
+    capability = await registry.resolve_capability("zabbix.problems.lookup", device_id="device-1")
+
+    details = build_capability_audit_details(
+        capability=capability,
+        ticket_id="ticket-1",
+        device_id="device-1",
+        params={
+            "integration_config": {"api_url": "https://zabbix.local", "api_token": "raw-token"},
+            "credentials_ref": "vault:zabbix-prod",
+            "query": {"password": "raw-password", "host": "web-1"},
+        },
+        result={"status": "error", "error_code": "ZABBIX_AUTH_FAILED", "output": {"secret": "raw-secret"}},
+        duration_ms=15,
+        stage="finished",
+    )
+
+    assert details["params_snapshot"]["integration_config"]["redacted"] is True
+    assert details["params_snapshot"]["credentials_ref"]["redacted"] is True
+    assert details["params_snapshot"]["query"]["password"] == "***REDACTED***"
+    assert details["result_snapshot"]["output"]["secret"] == "***REDACTED***"
+    assert details["metrics"]["duration_ms"] == 15
+    assert details["metrics"]["provider_error_count"] == 1
+    assert "raw-token" not in str(details)
+    assert "vault:zabbix-prod" not in str(details)
+
+
+@pytest.mark.no_db
+def test_redact_diagnostic_payload_handles_nested_private_runtime_fields():
+    payload = redact_diagnostic_payload(
+        {
+            "params": {
+                "_integration_config": {"api_url": "https://zabbix.local", "token": "raw-token"},
+                "_credentials_ref": "vault:zabbix-prod",
+                "safe": "value",
+            }
+        }
+    )
+
+    assert payload["params"]["_integration_config"]["redacted"] is True
+    assert payload["params"]["_credentials_ref"]["redacted"] is True
+    assert payload["params"]["safe"] == "value"
+    assert "raw-token" not in str(payload)
+    assert "vault:zabbix-prod" not in str(payload)
+
+
+@pytest.mark.no_db
+def test_observer_runtime_audit_root_kind_projects_diagnostic_capability_targets():
+    assert (
+        _runtime_audit_root_kind(
+            AgentRuntimeAudit(
+                device_id="server",
+                event_type="capability_run_started",
+                source="diagnostic_server_connector",
+                details_json={"execution_target": "server_connector"},
+            )
+        )
+        == "server_connector_query"
+    )
+    assert (
+        _runtime_audit_root_kind(
+            AgentRuntimeAudit(
+                device_id="server",
+                event_type="capability_run_succeeded",
+                source="diagnostic_observer_query",
+                details_json={"execution_target": "observer_query"},
+            )
+        )
+        == "observer_query"
+    )
+    assert (
+        _runtime_audit_root_kind(
+            AgentRuntimeAudit(
+                device_id="server",
+                event_type="capability_evidence_linked",
+                source="diagnostic_manual",
+                details_json={"execution_target": "manual"},
+            )
+        )
+        == "manual_evidence"
+    )

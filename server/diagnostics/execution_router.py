@@ -9,6 +9,7 @@ from diagnostics.providers.observer_provider import ObserverCapabilityProvider
 from diagnostics.providers.remote_assist_provider import RemoteAssistCapabilityProvider
 from diagnostics.providers.server_builtin import ServerBuiltinProvider
 from diagnostics.providers.server_connector import ServerConnectorProvider
+from diagnostics.observability import NullCapabilityExecutionObserver, monotonic_ms
 
 
 TARGET_EXECUTION_KIND = {
@@ -36,6 +37,7 @@ class CapabilityExecutionRouter:
         observer_provider: Any = None,
         remote_assist_provider: Any = None,
         manual_provider: Any = None,
+        observability: Any = None,
     ) -> None:
         self.capability_registry = capability_registry
         self.tool_service = tool_service
@@ -44,6 +46,7 @@ class CapabilityExecutionRouter:
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
         self.remote_assist_provider = remote_assist_provider or RemoteAssistCapabilityProvider()
         self.manual_provider = manual_provider or ManualCapabilityProvider()
+        self.observability = observability or NullCapabilityExecutionObserver()
 
     async def resolve_capability(self, capability_id: str, *, device_id: Optional[str] = None):
         return await self.capability_registry.resolve_capability(capability_id, device_id=device_id)
@@ -72,6 +75,69 @@ class CapabilityExecutionRouter:
                 "idempotency_key": idempotency_key,
                 "timeout_ms": timeout_ms,
             }
+        started_ms = monotonic_ms()
+        await self.observability.record_started(
+            capability=capability,
+            ticket_id=ticket_id,
+            device_id=device_id,
+            actor=actor,
+            params=params,
+            readiness=readiness,
+            idempotency_key=idempotency_key,
+            timeout_ms=timeout_ms,
+        )
+        try:
+            result = await self._run_resolved_capability(
+                capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                params=params,
+                actor=actor,
+                readiness=readiness,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
+            await self.observability.record_finished(
+                capability=capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                actor=actor,
+                params=params,
+                result=result,
+                readiness=readiness,
+                duration_ms=max(0, monotonic_ms() - started_ms),
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
+            return result
+        except Exception as exc:
+            await self.observability.record_finished(
+                capability=capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                actor=actor,
+                params=params,
+                result={"status": "error", "capability_id": capability.id, "execution_target": capability.execution_target},
+                readiness=readiness,
+                duration_ms=max(0, monotonic_ms() - started_ms),
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+                error=exc,
+            )
+            raise
+
+    async def _run_resolved_capability(
+        self,
+        capability,
+        *,
+        ticket_id: str,
+        device_id: Optional[str],
+        params: Dict[str, Any],
+        actor: Any,
+        readiness: Any = None,
+        idempotency_key: Optional[str] = None,
+        timeout_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
         readiness_error = self._readiness_error(
             capability,
             readiness=readiness,

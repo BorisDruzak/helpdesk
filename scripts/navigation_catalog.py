@@ -845,7 +845,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes, phase-9 persistent result-to-evidence mapping through `diagnostic_session_capabilities` plus `diagnostic_artifact_links`, and phase-10 capability-backed playbook steps that keep agent tools on `run_tool` while routing server/observer/remote/manual targets through the diagnostic capability router).",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes, phase-9 persistent result-to-evidence mapping through `diagnostic_session_capabilities` plus `diagnostic_artifact_links`, phase-10 capability-backed playbook steps that keep agent tools on `run_tool` while routing server/observer/remote/manual targets through the diagnostic capability router, and phase-12 capability observability with redacted runtime-audit lifecycle rows and observer root kinds for capability/server-connector/observer/manual/remote-assist runs).",
         aliases=(
             "module",
             "modules",
@@ -886,6 +886,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/diagnostics/projection.py",
             "server/diagnostics/provider_config.py",
             "server/diagnostics/readiness.py",
+            "server/diagnostics/observability.py",
             "server/app/repos/diagnostic_provider_config_repo.py",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/registry.py",
@@ -934,6 +935,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/utils/module_builder.py",
             "server/diagnostics/capability_registry.py",
             "server/diagnostics/execution_router.py",
+            "server/diagnostics/observability.py",
             "server/diagnostics/readiness.py",
             "server/diagnostics/evidence.py",
             "server/diagnostics/service.py",
@@ -1842,7 +1844,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="observer",
         title="Observer / traces / degradations",
-        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search including projected attrs_json ticket codes such as T-000520, Codex-friendly diagnostics bundle, observer diagnostic query capabilities `observer.ticket.summary` / `observer.trace.bundle`, live coverage canary reports, full-ticket observer summary counts, ticket-local signature occurrence counts, support lifecycle events resolving through canonical ticket-root trace instead of ad-hoc trace ids, compact typed `/app/tickets` observer diagnostic card with root trace URL/status/kind, health label, latest error, top signature and compact related/active/error traces, operation-card trace relation labels for ticket root / operation child / retry child / playbook child with direct `/app/admin/observer` links, typed admin observer trace rows enriched with ticket_code, ticket_title, device hostname/label, operation/tool labels and display title/subtitle, typed detail routes `/api/web/admin/observer/traces/{trace_id}` and `/api/web/admin/observer/trace-detail/{trace_id}`, explainable trace detail projection with launch source, actor, tool/module/preset metadata, human diagnosis, launch path, next actions, agent status and stage failure semantics, `/app/admin/observer?trace_id=...` deep-link selection, single-flight UI polling, the canonical `/support` ticket-trace drawer, support-facing playbook failure/readiness evidence for MODULE_NOT_ON_SERVER and failed steps, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and evidence-source trace detail.",
+        summary="Trace overlay, bounded action rows with opt-in action-span sync, pushed agent_observer_events telemetry, playbook_run/playbook_step_run roots, module_reconcile/web_auth/observer_runtime audit roots, diagnostic capability runtime-audit roots (`capability_run`, `server_connector_query`, `observer_query`, `manual_evidence`, `remote_assist`), route/playbook filters, retention/sampling settings, backfill health, degradation queries, observer correlation search including projected attrs_json ticket codes such as T-000520, Codex-friendly diagnostics bundle, observer diagnostic query capabilities `observer.ticket.summary` / `observer.trace.bundle`, live coverage canary reports, full-ticket observer summary counts, ticket-local signature occurrence counts, support lifecycle events resolving through canonical ticket-root trace instead of ad-hoc trace ids, compact typed `/app/tickets` observer diagnostic card with root trace URL/status/kind, health label, latest error, top signature and compact related/active/error traces, operation-card trace relation labels for ticket root / operation child / retry child / playbook child with direct `/app/admin/observer` links, typed admin observer trace rows enriched with ticket_code, ticket_title, device hostname/label, operation/tool labels and display title/subtitle, typed detail routes `/api/web/admin/observer/traces/{trace_id}` and `/api/web/admin/observer/trace-detail/{trace_id}`, explainable trace detail projection with launch source, actor, tool/module/preset metadata, human diagnosis, launch path, next actions, agent status and stage failure semantics, `/app/admin/observer?trace_id=...` deep-link selection, single-flight UI polling, the canonical `/support` ticket-trace drawer, support-facing playbook failure/readiness evidence for MODULE_NOT_ON_SERVER and failed steps, and the `/app/admin/observer` workbench with quick/traces/signatures/degradations/runtime tabs, global mode and evidence-source trace detail.",
         aliases=(
             "observer",
             "trace overlay",
@@ -1877,6 +1879,11 @@ TOPICS: tuple[Topic, ...] = (
             "module_reconcile",
             "web_auth",
             "observer_runtime",
+            "capability_run",
+            "server_connector_query",
+            "observer_query",
+            "manual_evidence",
+            "remote_assist",
             "route filter",
             "трасса",
             "трейс",
@@ -1889,6 +1896,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/observer/service.py",
             "server/observer/runtime.py",
+            "server/diagnostics/observability.py",
             "server/app/repos/agent_observer_events_repo.py",
             "server/auth/middleware.py",
             "server/modules/reconcile.py",
@@ -1946,6 +1954,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tech/handlers.py",
             "server/auth/middleware.py",
             "server/modules/reconcile.py",
+            "server/diagnostics/observability.py",
             "server/app/repos/agent_observer_events_repo.py",
             "server/app/repos/observer_settings_repo.py",
             "server/admin.html",
