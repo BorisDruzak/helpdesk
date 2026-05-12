@@ -40,8 +40,8 @@ def list_server_builtin_capabilities() -> List[CapabilityDescriptor]:
             params_schema={
                 "type": "object",
                 "properties": {
-                    "hostname": {"type": "string"},
-                    "family": {"type": "string", "enum": ["any", "ipv4", "ipv6"]},
+                    "hostname": {"type": "string", "title": "Hostname", "description": "DNS name to resolve."},
+                    "family": {"type": "string", "title": "Address family", "enum": ["any", "ipv4", "ipv6"], "default": "any"},
                 },
                 "required": ["hostname"],
             },
@@ -76,8 +76,8 @@ def list_server_builtin_capabilities() -> List[CapabilityDescriptor]:
             params_schema={
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string"},
-                    "method": {"type": "string", "enum": ["GET", "HEAD"]},
+                    "url": {"type": "string", "title": "URL", "description": "HTTP or HTTPS URL to request."},
+                    "method": {"type": "string", "title": "Method", "enum": ["GET", "HEAD"], "default": "GET"},
                 },
                 "required": ["url"],
             },
