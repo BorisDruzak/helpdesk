@@ -344,18 +344,9 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
     capability_items = []
     for capability in capabilities:
         readiness = await readiness_service.get_readiness(capability, context)
-        item = readiness.to_dict()
-        item.update(
-            {
-                "id": capability.id,
-                "provider_id": capability.provider_id,
-                "provider_type": capability.provider_type,
-                "source": capability.source,
-                "install_required_on_agent": capability.install_required_on_agent,
-                "requires_integration": capability.requires_integration,
-                "integration_key": capability.integration_key,
-            }
-        )
+        item = capability.to_dict()
+        item.update(readiness.to_dict())
+        item["id"] = capability.id
         capability_items.append(item)
     return web.json_response(
         {

@@ -294,6 +294,16 @@ async def test_diagnostics_overview_api_projects_existing_sources(test_client):
         assert alias_payload["status"] == "ok"
         assert key in alias_payload
 
+    capabilities_response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/diagnostics/capabilities",
+        headers=_auth(),
+    )
+    capabilities_payload = await capabilities_response.json()
+    capabilities_by_id = {item["id"]: item for item in capabilities_payload["capabilities"]}
+    assert capabilities_by_id["server.http.request"]["params_schema"]["required"] == ["url"]
+    assert "url" in capabilities_by_id["server.http.request"]["params_schema"]["properties"]
+    assert capabilities_by_id["server.http.request"]["output_contract"]
+
 
 @pytest.mark.asyncio
 async def test_selected_diagnostic_evidence_attaches_to_passport_idempotently(test_engine):

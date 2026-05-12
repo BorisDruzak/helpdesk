@@ -45,6 +45,21 @@ def list_server_builtin_capabilities() -> List[CapabilityDescriptor]:
                 },
                 "required": ["hostname"],
             },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "hostname": {"type": "string"},
+                    "addresses": {"type": "array", "items": {"type": "string"}},
+                    "family": {"type": "string"},
+                    "summary": {"type": "string"},
+                },
+            },
+            output_contract={
+                "status_path": "status",
+                "summary_path": "summary",
+                "facts": ["hostname", "addresses", "family"],
+            },
             evidence={
                 "produces_evidence": True,
                 "kind": "network.dns",
@@ -65,6 +80,22 @@ def list_server_builtin_capabilities() -> List[CapabilityDescriptor]:
                     "method": {"type": "string", "enum": ["GET", "HEAD"]},
                 },
                 "required": ["url"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "url": {"type": "string"},
+                    "method": {"type": "string"},
+                    "status_code": {"type": "integer"},
+                    "elapsed_ms": {"type": "integer"},
+                    "summary": {"type": "string"},
+                },
+            },
+            output_contract={
+                "status_path": "status",
+                "summary_path": "summary",
+                "facts": ["url", "method", "status_code", "elapsed_ms"],
             },
             evidence={
                 "produces_evidence": True,
