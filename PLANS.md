@@ -403,16 +403,16 @@ Notes:
 
 ### Phase 11: Diagnostic Center UI
 
-- [ ] Add Diagnostic Center UI surfaces in the React webapp:
+- [x] Add Diagnostic Center UI surfaces in the React webapp:
   - ticket-scoped capability list
   - readiness statuses and actions
   - filters by domain/perspective/provider/target
   - install/run/configure/request consent actions
   - evidence preview and attach-to-passport
   - session/finding view
-- [ ] Keep legacy support tool panel working.
-- [ ] Add admin/provider config UI for server connectors.
-- [ ] Add affordances for non-agent targets:
+- [x] Keep legacy support tool panel working.
+- [x] Add admin/provider config UI for server connectors.
+- [x] Add affordances for non-agent targets:
   - server connector configuration
   - observer summary/bundle
   - remote assist request
@@ -421,10 +421,16 @@ Notes:
 
 Verification:
 
-- `python scripts/bootstrap_web_toolchain.py`
-- webapp type/build/tests
-- Playwright/browser checks
-- server API tests
+- [x] `python scripts/bootstrap_web_toolchain.py`
+- [x] webapp type/build/tests
+- [ ] Playwright/browser checks
+- [x] server API tests
+
+Notes:
+
+- Completed in this phase: `/app/tickets/:ticketId` now has a dedicated Diagnostic Center tab backed by `webapp/src/features/diagnostics/diagnostic-center-panel.tsx`. It loads ticket capabilities, readiness, evidence, sessions, findings and overview; filters by execution target/domain/perspective/provider; routes runnable capabilities through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`; supports manual evidence, finding evaluation, diagnostic bundle creation and selected evidence attachment to passport.
+- `/app/admin/modules#diagnostic-provider-configs` now exposes `DiagnosticProviderConfigPanel` over the existing web-admin provider config aliases, so server connectors such as `zabbix_connector` can be configured without showing raw secret values from API responses.
+- Legacy ticket tools and playbooks panels remain in the sidebar and still use their existing APIs. Browser signoff is left for the deploy step because this slice has only been verified locally with webapp build/tests and server API tests.
 
 ### Phase 12: Operations, Observer and Audit Hardening
 
@@ -490,5 +496,5 @@ Verification:
 
 - Zabbix has a bounded JSON-RPC provider and uses persisted config/mapping/ready credential refs in the ticket run route. Secret material is still expected through a runtime credential ref/resolver boundary; a full vault-backed secret-management UI is not implemented in this slice.
 - `observer_query`, `remote_assist` and `manual` targets now route through server providers. Remote Assist uses the existing session service and may enqueue its existing `remote_assist.request` command; it does not use ordinary `ToolExecutionService.run_tool`.
-- The support tools panel can carry metadata, but full Diagnostic Center UI is not implemented.
+- Diagnostic Center UI now exists in the React ticket detail and provider config UI exists under admin modules. Remaining UI hardening: live browser signoff after deploy, richer schema-driven params for arbitrary capabilities, and deeper RBAC-specific disabled-state copy.
 - Existing unrelated dirty worktree files predate this task and must not be reverted as part of this plan.

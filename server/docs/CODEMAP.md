@@ -307,6 +307,7 @@
 - `server/modules/workbench_service.py` can reconstruct editable tool fragments from module archives via builder markers or AST analysis of `@exposed_tool` functions.
 - `server/admin_modules_workbench.js` is the main entrypoint for template-driven module authoring, inline validation, output-contract/readiness controls, API preview over headless authoring endpoints, archive/source exploration, and rollout-policy controls in the admin UI.
 - `webapp/src/features/modules/modules-panel.tsx` is the typed `/app/admin/modules` module constructor; it mirrors output-contract controls, calls `/api/modules/authoring/validate|publish`, and includes the published-version lab-test panel for choosing Windows/Linux lab agents before live verification.
+- `webapp/src/features/diagnostics/diagnostic-center-panel.tsx` is the React ticket Diagnostic Center used by `/app/tickets/:ticketId`: it consumes diagnostics overview/capability/evidence/session/finding APIs, filters capabilities by target/domain/perspective/provider, runs capability router actions, creates manual evidence, evaluates findings, builds bundles and attaches selected evidence to passport without replacing the legacy tools/playbooks sidebar. `webapp/src/features/diagnostics/provider-config-panel.tsx` is mounted under `/app/admin/modules#diagnostic-provider-configs` for web-admin server connector config over `/api/web/admin/diagnostics/providers/configs*`.
 
 ## 2026-04-16 Module page refactor
 

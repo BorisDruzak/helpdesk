@@ -145,6 +145,87 @@ export type PassportAttachedEvidence = {
   verification_status: string;
 };
 
+export type DiagnosticCapability = {
+  id: string;
+  capability_id?: string;
+  title: string;
+  description?: string | null;
+  provider_id: string | null;
+  provider_type?: string | null;
+  source?: string | null;
+  execution_target: string;
+  tool_kind?: string | null;
+  risk_level: string;
+  readiness: string;
+  reason: string | null;
+  reason_code?: string | null;
+  actions: string[];
+  side_effects?: boolean;
+  requires_consent: boolean;
+  requires_device?: boolean;
+  requires_agent_online?: boolean;
+  supports_auto_install?: boolean;
+  requires_integration: boolean;
+  integration_key: string | null;
+  install_required_on_agent: boolean;
+  platforms?: string[];
+  params_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  output_contract?: Record<string, unknown>;
+  evidence?: {
+    produces_evidence?: boolean;
+    kind?: string;
+    domain?: string;
+    perspective?: string;
+    passport_eligible?: boolean;
+    [key: string]: unknown;
+  };
+  artifacts?: {
+    may_produce_artifacts?: boolean;
+    artifact_kinds?: string[];
+    [key: string]: unknown;
+  };
+  aliases?: string[];
+};
+
+export type DiagnosticCapabilityRunResult = {
+  status: string;
+  capability_id?: string;
+  execution_target?: string;
+  provider_id?: string;
+  operation_id?: string | null;
+  event_id?: string | number | null;
+  diagnostic_evidence_id?: string | null;
+  evidence_persisted?: boolean;
+  output?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  message?: string;
+  error?: string;
+  error_code?: string;
+  [key: string]: unknown;
+};
+
+export type DiagnosticProviderCredentialRef = {
+  id?: string;
+  credential_key: string;
+  secret_ref: string;
+  status: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type DiagnosticProviderConfig = {
+  id: string;
+  provider_id: string;
+  provider_type: string;
+  integration_key: string | null;
+  enabled: boolean;
+  status: string;
+  config: Record<string, unknown>;
+  redaction: Record<string, unknown>;
+  health: Record<string, unknown>;
+  credential_refs: DiagnosticProviderCredentialRef[];
+};
+
 export type DiagnosticProfileRunResult = {
   ticket_id: string;
   profile_id: string;
@@ -186,6 +267,40 @@ export async function getTicketDiagnosticsOverview(ticketId: string): Promise<Di
   });
   const payload = await readJson<ApiSuccessResponse<DiagnosticOverview> | ApiErrorResponse>(response);
   return assertSuccess(payload, response, "Unable to load diagnostics overview");
+}
+
+export async function listTicketDiagnosticCapabilities(ticketId: string): Promise<DiagnosticCapability[]> {
+  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities`, {
+    credentials: "same-origin",
+  });
+  const payload = await readJson<ApiOkResponse<{ capabilities: DiagnosticCapability[] }> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to load diagnostic capabilities").capabilities;
+}
+
+export async function runTicketDiagnosticCapability(
+  ticketId: string,
+  capabilityId: string,
+  payload: { params?: Record<string, unknown>; session_id?: string | null; timeout_ms?: number } = {},
+): Promise<DiagnosticCapabilityRunResult> {
+  const response = await fetch(
+    `/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities/${encodeURIComponent(capabilityId)}/run`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  const result = await readJson<DiagnosticCapabilityRunResult | ApiErrorResponse>(response);
+  if (!response.ok || !result || result.status === "error") {
+    const errorPayload = result && result.status === "error" ? result : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Unable to run diagnostic capability",
+      response.status,
+      errorPayload?.error_code,
+    );
+  }
+  return result as DiagnosticCapabilityRunResult;
 }
 
 export async function listDiagnosticSessions(ticketId: string): Promise<DiagnosticSession[]> {
@@ -293,4 +408,36 @@ export async function attachSelectedDiagnosticEvidenceToPassport(ticketId: strin
   });
   const result = await readJson<ApiOkResponse<{ evidence: PassportAttachedEvidence[]; attached_count: number }> | ApiErrorResponse>(response);
   return assertOk(result, response, "Unable to attach diagnostic evidence to passport").evidence;
+}
+
+export async function listDiagnosticProviderConfigs(): Promise<DiagnosticProviderConfig[]> {
+  const response = await fetch("/api/web/admin/diagnostics/providers/configs", { credentials: "same-origin" });
+  const payload = await readJson<ApiOkResponse<{ provider_configs: DiagnosticProviderConfig[] }> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to load diagnostic provider configs").provider_configs;
+}
+
+export async function upsertDiagnosticProviderConfig(
+  providerId: string,
+  payload: {
+    provider_type?: string;
+    integration_key?: string | null;
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+    credential_refs?: Array<{
+      credential_key: string;
+      secret_ref: string;
+      status?: string;
+      metadata?: Record<string, unknown>;
+    }>;
+    health?: Record<string, unknown>;
+  },
+): Promise<DiagnosticProviderConfig> {
+  const response = await fetch(`/api/web/admin/diagnostics/providers/configs/${encodeURIComponent(providerId)}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readJson<ApiOkResponse<{ provider_config: DiagnosticProviderConfig }> | ApiErrorResponse>(response);
+  return assertOk(result, response, "Unable to save diagnostic provider config").provider_config;
 }

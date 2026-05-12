@@ -50,6 +50,7 @@ import {
   type SupportTicketPlaybooksPayload,
   type SupportTicketToolsPayload,
 } from "../../features/queues/api";
+import { DiagnosticCenterPanel } from "../../features/diagnostics/diagnostic-center-panel";
 import { requirePermission, requireToolRunPermission } from "../../features/auth/permissions";
 import { useSession } from "../../features/auth/session-provider";
 import { supportToolParamFields, validateSupportToolParams } from "../../features/queues/tool-param-fields";
@@ -2243,6 +2244,7 @@ export function TicketDetailPage() {
 
   const tabItems = [
     { value: "dialog", label: "Диалог", count: detail?.timeline.length ?? 0 },
+    { value: "diagnostics", label: "Диагностика" },
     { value: "info", label: "Информация" },
     { value: "files", label: "Файлы", count: attachments.length },
     { value: "history", label: "История", count: historyItems.length + latestOperations.length },
@@ -2613,6 +2615,8 @@ export function TicketDetailPage() {
                   })}
                 </div>
               ) : null}
+
+              {detail && activeTab === "diagnostics" ? <DiagnosticCenterPanel ticketId={ticketId} /> : null}
 
               {detail && activeTab === "info" ? (
                 <div className="grid gap-4 md:grid-cols-2">

@@ -1,6 +1,7 @@
 import { ModulesPanel } from "../../features/modules/modules-panel";
 import { PageHeading } from "../../components/ui/page-heading";
 import { useSession } from "../../features/auth/session-provider";
+import { DiagnosticProviderConfigPanel } from "../../features/diagnostics/provider-config-panel";
 
 
 export function AdminModulesPage() {
@@ -15,6 +16,7 @@ export function AdminModulesPage() {
       />
 
       <ModulesPanel permissions={session?.permissions ?? []} />
+      <DiagnosticProviderConfigPanel />
     </section>
   );
 }
