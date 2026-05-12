@@ -54,6 +54,7 @@ import {
   type DiagnosticOverview,
   type DiagnosticStatus,
 } from "../../features/diagnostics/api";
+import { DiagnosticCenterPanel } from "../../features/diagnostics/diagnostic-center-panel";
 import {
   createSupportTicketPassportEvidence,
   createSupportQueueSavedView,
@@ -3437,18 +3438,7 @@ export function TicketListPage() {
                       ))}
                     </div>
                     {toolsWorkspaceTab === "diagnostics" ? (
-                      <DiagnosticOverviewPanel
-                        isAttachingPassport={diagnosticPassportAttachMutation.isPending}
-                        isBuildingBundle={diagnosticBundleMutation.isPending}
-                        isEvaluating={diagnosticFindingsMutation.isPending}
-                        isLoading={diagnosticsOverviewQuery.isFetching && !diagnosticsOverviewQuery.data}
-                        isRunningProfile={diagnosticProfileRunMutation.isPending}
-                        onAttachPassport={() => diagnosticPassportAttachMutation.mutate(selectedTicket.id)}
-                        onBuildBundle={() => diagnosticBundleMutation.mutate(selectedTicket.id)}
-                        onEvaluateFindings={() => diagnosticFindingsMutation.mutate(selectedTicket.id)}
-                        onRunProfile={() => diagnosticProfileRunMutation.mutate(selectedTicket.id)}
-                        overview={diagnosticsOverviewQuery.data}
-                      />
+                      <DiagnosticCenterPanel ticketId={selectedTicket.id} />
                     ) : null}
                     {toolsWorkspaceTab === "quick" ? (
                       <div className="grid gap-2 md:grid-cols-2">
