@@ -1,5 +1,10 @@
 # Command Result Lifecycle Guarantees
 
+> Lifecycle import rule: `command_ack` and `command_result` DB transitions must not depend on
+> optional ticket/chat helper imports. `websocket.agent_services.DB_AVAILABLE` is reserved for the
+> operations/outbox lifecycle path; ticket creation availability is tracked separately by
+> `TICKET_CREATE_AVAILABLE`.
+
 ## Назначение
 
 Этот документ описывает инварианты и гарантии обработки `command_result` в системе операций сервера. Цель: обеспечить надежность и предсказуемость жизненного цикла операций.

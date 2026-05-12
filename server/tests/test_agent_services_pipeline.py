@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import websocket.agent_services as agent_services
 from websocket.agent_services import (
     AgentCommandService,
     OutboxBatchIngestService,
@@ -24,6 +25,10 @@ from websocket.validator import EventValidator
 
 
 pytestmark = pytest.mark.no_db
+
+
+def test_agent_services_keeps_command_lifecycle_db_available():
+    assert agent_services.DB_AVAILABLE is True
 
 
 class _BatchAckManagerStub:
@@ -420,15 +425,24 @@ async def test_agent_chat_raise_returns_canonical_ticket_id(monkeypatch):
     async def _fake_create_ticket(*args, **kwargs):
         return {"ticket_id": "ticket-canonical-1"}
 
+    def _fake_description(**kwargs):
+        return "fake description"
+
     async def _fake_send_ws_command(**kwargs):
         queued_commands.append(kwargs)
         return {"status": "queued"}
 
+    class _FakeDbSession:
+        async def commit(self):
+            pass
+
     @asynccontextmanager
     async def _fake_get_session():
-        yield object()
+        yield _FakeDbSession()
 
     monkeypatch.setattr("websocket.agent_services.create_ticket_with_side_effects", _fake_create_ticket)
+    monkeypatch.setattr("websocket.agent_services.build_agent_raise_description", _fake_description)
+    monkeypatch.setattr("websocket.agent_services.TICKET_CREATE_AVAILABLE", True)
     monkeypatch.setattr("websocket.agent_services.send_ws_command", _fake_send_ws_command)
     monkeypatch.setattr("websocket.agent_services.get_session", _fake_get_session)
 

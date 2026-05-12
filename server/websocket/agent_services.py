@@ -33,9 +33,13 @@ from .contexts import AgentConnectionContext, EnvelopeContext
 try:
     from tickets.create_flow import build_agent_raise_description, create_ticket_with_side_effects
 
-    DB_AVAILABLE = True
+    TICKET_CREATE_AVAILABLE = True
 except ImportError:
-    DB_AVAILABLE = False
+    build_agent_raise_description = None
+    create_ticket_with_side_effects = None
+    TICKET_CREATE_AVAILABLE = False
+
+DB_AVAILABLE = True
 
 
 class HandshakeService:
@@ -776,7 +780,7 @@ class AgentCommandService:
         }
         ctx.state.create_chat_session(chat_job_id, session_data)
 
-        if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+        if TICKET_CREATE_AVAILABLE and ENABLE_DB_PERSISTENCE:
             try:
                 async with get_session() as db_session:
                     created = await create_ticket_with_side_effects(
