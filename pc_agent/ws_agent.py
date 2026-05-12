@@ -221,6 +221,7 @@ class WSAgent:
         
         # WebSocket соединение с сервером (для chat_raise и других команд)
         self._agent_ws: Optional[ClientWebSocketResponse] = None
+        self._ws_send_lock = asyncio.Lock()
         self._pending_chat_raise: Dict[str, asyncio.Future] = {}  # request_id -> Future
         
         # Protocol V3: Session ID для tracking unknown messages
@@ -1654,7 +1655,13 @@ class WSAgent:
         if job_id or self._current_job_id:
             envelope["job_id"] = job_id or self._current_job_id
         
-        await ws.send_json(envelope)
+        async with self._ws_send_lock:
+            await ws.send_json(envelope)
+        if msg_type in {"command_ack", "command_result"}:
+            logger.info(
+                f"[V3] Sent command lifecycle envelope: type={msg_type}, "
+                f"request_id={request_id}, status={payload_dict.get('status') if isinstance(payload_dict, dict) else None}"
+            )
         logger.debug(
             f"📤 [V3] Отправлен envelope: type={msg_type}, request_id={request_id}, "
             f"trace_id={trace_id}, ticket_id={ticket_id or self._current_ticket_id}"
