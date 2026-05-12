@@ -521,6 +521,58 @@ def test_build_module_package_includes_output_contract_for_playbook_builder():
 
 
 @pytest.mark.no_db
+def test_build_module_package_keeps_capability_metadata_out_of_runtime_decorator():
+    zip_bytes, _summary = build_module_package(
+        module_name="vendor_capability",
+        version="1.0.0",
+        tool_name="vendor.capability.check",
+        description="Capability metadata check",
+        user_function_body='return {"ok": True}',
+        method_name="check_tool",
+        tools=[
+            {
+                "tool_name": "vendor.capability.check",
+                "method_name": "check_tool",
+                "description": "Capability metadata check",
+                "params_schema": {"type": "object", "properties": {}},
+                "execution": {
+                    "target": "agent_managed_module",
+                    "requires_device": True,
+                    "requires_agent_online": True,
+                    "supports_auto_install": True,
+                    "requires_integration": False,
+                },
+                "deployment": {
+                    "provider_id": "vendor_capability",
+                    "install_required_on_agent": True,
+                    "package_type": "zip",
+                },
+                "readiness": {"requires_credentials": False, "requires_policy": False},
+                "evidence": {
+                    "produces_evidence": True,
+                    "kind": "vendor.check",
+                    "domain": "endpoint",
+                    "perspective": "endpoint",
+                },
+                "user_function_body": 'return {"ok": True}',
+            }
+        ],
+    )
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        module_py = zf.read("module.py").decode("utf-8")
+        manifest_json = json.loads(zf.read("manifest.json").decode("utf-8"))
+
+    assert "execution=" not in module_py
+    assert "deployment=" not in module_py
+    assert "readiness=" not in module_py
+    assert "evidence=" not in module_py
+    assert manifest_json["tools"][0]["execution"]["target"] == "agent_managed_module"
+    assert manifest_json["tools"][0]["deployment"]["package_type"] == "zip"
+    assert manifest_json["tools"][0]["evidence"]["kind"] == "vendor.check"
+
+
+@pytest.mark.no_db
 def test_preflight_module_zip_rejects_missing_observer_breadcrumbs():
     module_name = "observer_missing"
     manifest = {

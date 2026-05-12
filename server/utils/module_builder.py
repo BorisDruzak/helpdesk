@@ -65,12 +65,6 @@ TOOL_METHOD_TEMPLATE = """    @exposed_tool(
         artifact_types={artifact_types_literal},
         redaction={redaction_literal},
         resources={resources_literal},
-        execution={execution_literal},
-        deployment={deployment_literal},
-        safety={safety_literal},
-        readiness={readiness_literal},
-        evidence={evidence_literal},
-        artifacts={artifacts_literal},
     )
     async def {method_name}(self, **kwargs) -> Dict[str, Any]:
         params = {{**{defaults_literal}, **kwargs}}
@@ -381,12 +375,6 @@ def _render_tool_methods(tool_specs: List[Dict[str, Any]]) -> str:
                 artifact_types_literal=repr(tool["artifact_types"]),
                 redaction_literal=repr(tool["redaction"]),
                 resources_literal=repr(tool["resources"]),
-                execution_literal=repr(tool["execution"]),
-                deployment_literal=repr(tool["deployment"]),
-                safety_literal=repr(tool["safety"]),
-                readiness_literal=repr(tool["readiness"]),
-                evidence_literal=repr(tool["evidence"]),
-                artifacts_literal=repr(tool["artifacts"]),
                 method_name=tool["method"],
                 defaults_literal=repr(tool["defaults"]),
                 user_function_body=tool["user_function_body"],
