@@ -267,23 +267,28 @@ Verification:
 
 ### Phase 6: Observer Query Capabilities
 
-- [ ] Implement `observer.ticket.summary` using existing observer ticket summary/root trace services.
-- [ ] Implement `observer.trace.bundle` using existing diagnostics bundle/export path.
-- [ ] Define output contracts for observer capabilities.
-- [ ] Convert observer query results into evidence preview:
+- [x] Implement `observer.ticket.summary` using existing observer ticket summary/root trace services.
+- [x] Implement `observer.trace.bundle` using existing diagnostics bundle/export path.
+- [x] Define output contracts for observer capabilities.
+- [x] Convert observer query results into evidence preview:
   - root trace health
   - latest error
   - top signature
   - related traces
   - degraded runtime signals
-- [ ] Ensure observer query capabilities are read-only and do not generate DeviceOutbox commands.
-- [ ] Add browser/API tests for support/admin deep links if UI consumes them.
+- [x] Ensure observer query capabilities are read-only and do not generate DeviceOutbox commands.
+- [x] Add browser/API tests for support/admin deep links if UI consumes them.
+
+Decision: `diagnostics.providers.observer_provider.ObserverCapabilityProvider` now dispatches `observer.ticket.summary` and `observer.trace.bundle` separately. Ticket summary returns a compact support-facing output with root trace health, latest error, top signature, trace counts, related traces and evidence preview. Trace bundle uses existing observer overlay trace search/detail/signature/degradation services to return a bounded bundle contract with primary trace, related traces, signatures, degradations, recommended next checks and evidence preview. Both capabilities stay `observer_query` / `execution_kind=query`; they do not call `ToolExecutionService.run_tool` and do not enqueue DeviceOutbox rows.
 
 Verification:
 
-- observer no-db/DB tests
-- existing observer tests
-- support detail observer regression tests
+- `python -m pytest server/tests/test_observer_capability_provider.py server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m pytest server/tests/test_observer_capability_provider.py server/tests/test_diagnostic_capabilities_no_db.py server/tests/test_observer_diagnostics_api.py -q --tb=short`
+- `python -m pytest server/tests/test_web_support_api.py -k "observer" -q --tb=short`
+- `python -m pytest server/tests/test_admin_tech_api.py::test_tech_diagnostics_bundle_collects_trace_context -q --tb=short`
+- `python -m compileall -q server/diagnostics server/observer`
+- `python scripts/verify_workspace.py`
 
 ### Phase 7: Remote Assist Capabilities
 

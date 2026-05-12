@@ -24,7 +24,7 @@ Observer нужен для ответа на вопросы вида:
 
 Ключевой инвариант: observer не дублирует ticket business state и не становится source of truth для helpdesk-логики.
 
-Diagnostic Layer integration: ticket diagnostics may project the ticket `observer_root_trace_id` into `diagnostic_evidence` as `kind=observer.summary`, `domain=observer`, `perspective=observer`, and show it in `GET /api/tickets/{ticket_id}/diagnostics/overview`. This projection is a support-facing summary link; raw spans, signatures, bundles and action traces remain owned by observer services and admin/support observer workbenches.
+Diagnostic Layer integration: ticket diagnostics may project the ticket `observer_root_trace_id` into `diagnostic_evidence` as `kind=observer.summary`, `domain=observer`, `perspective=observer`, and show it in `GET /api/tickets/{ticket_id}/diagnostics/overview`. `observer.ticket.summary` and `observer.trace.bundle` are server-side `observer_query` capabilities: they expose compact support-facing summaries/evidence previews through the diagnostic capability router while reusing observer overlay services. They are read-only, do not call `ToolExecutionService.run_tool`, and never enqueue DeviceOutbox rows. Raw spans, signatures, bundles and action traces remain owned by observer services and admin/support observer workbenches.
 
 ## 3. Источники данных
 
@@ -134,6 +134,8 @@ Admin / tech API:
 Ticket-scoped API:
 
 - `GET /api/tickets/{ticket_id}/observer`
+- `POST /api/tickets/{ticket_id}/diagnostics/capabilities/observer.ticket.summary/run`
+- `POST /api/tickets/{ticket_id}/diagnostics/capabilities/observer.trace.bundle/run`
 - `GET /api/web/support/bootstrap`
 - `GET /api/web/support/tickets/{ticket_id}`
 - `GET /api/web/admin/bootstrap`
@@ -151,6 +153,8 @@ Codex/live debugging entrypoints:
 
 - `GET /api/admin/tech/observer/search?q=...` correlates by trace, ticket, operation, device, tool, module or signature text and returns matching traces/signatures plus next checks.
 - `GET /api/admin/tech/diagnostics/bundle?...` accepts `trace_id`, `ticket_id`, `operation_id`, `device_id`, `playbook_run_id`, `step_run_id`, `route`, `q`, `lookback_hours` and optional `include_agent_actions=1`; the redacted payload includes trace detail, related traces, ticket/device context, agent audit, recent warning/error logs, signatures, degradations and recommended next checks.
+- Diagnostic capability `observer.ticket.summary` returns root trace health, latest error, top signature, trace counts and compact related traces as `observer.summary` evidence preview.
+- Diagnostic capability `observer.trace.bundle` returns a bounded primary-trace bundle with related traces, error occurrences, signatures, degradations and next checks as `observer.trace_bundle` evidence preview.
 - Auth/provisioning debugging should start with `q=connection_request`, `q=invalid_token`, `root_kind=device_provisioning`, or `root_kind=agent_auth`. These queries must find operation-less `agent_runtime_audit` traces and signatures for warning/error events such as `connection_request_token_limit`, `device_fingerprint_mismatch`, `connection_request_rejected`, and `invalid_token`.
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.

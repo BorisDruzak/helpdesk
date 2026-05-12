@@ -53,7 +53,7 @@ Sources:
 - agent builtin and managed tools from current tool manifests/snapshots
 - server builtin capabilities: `server.dns.resolve`, `server.http.request`
 - server connector capabilities, currently the Zabbix JSON-RPC provider: `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
-- observer skeletons: `observer.ticket.summary`, `observer.trace.bundle`
+- observer query capabilities: `observer.ticket.summary`, `observer.trace.bundle`
 - remote assist skeletons: `remote_assist.request_view`, `remote_assist.session.summary`
 - manual skeletons: `manual.visual_check`, `manual.vendor_response`
 
@@ -76,6 +76,8 @@ Capability execution responses are normalized with `execution_target`, `executio
 `server_builtin` capabilities run on the Maria server and create ordinary `operations` rows with `kind=server_capability`, `command_name=server_builtin`, and `tool_name=<capability id>`. They transition `queued -> running -> succeeded/failed`, support idempotency keys and timeouts, expose `/api/operations/{operation_id}` as `poll_url`, map evidence previews, and do not enqueue `device_outbox` commands.
 
 Zabbix `server_connector` capabilities run on the Maria server through `diagnostics.providers.zabbix_provider.ZabbixProvider`. The provider reads bounded runtime config from diagnostic provider config, calls Zabbix JSON-RPC methods `problem.get`, `host.get` and `history.get`, caps returned problem/history rows, maps outputs to `monitoring.problem`, `monitoring.host_health` and `monitoring.metric_history`, and never returns raw credential material in result payloads. Ticket-scoped capability runs inject persisted integration config, mapping and ready credential refs into the server connector route before dispatch.
+
+Observer `observer_query` capabilities run on the Maria server through `diagnostics.providers.observer_provider.ObserverCapabilityProvider`. `observer.ticket.summary` calls the existing ticket observer summary/root trace service and returns a compact support-facing contract: root trace id, health, trace/signature counts, latest error, top signature, related traces and recent occurrences. `observer.trace.bundle` uses the existing observer overlay trace search/detail/signature/degradation services to return a bounded trace bundle: primary trace, related traces, error occurrences, signatures, degradations, recommended next checks and observer links. Both capabilities map to observer evidence previews and remain read-only query targets; they never call `ToolExecutionService.run_tool` and never enqueue DeviceOutbox rows.
 
 Readiness input sources:
 

@@ -105,6 +105,8 @@ async def test_capability_registry_projects_agent_and_skeleton_provider_capabili
     assert by_id["server.dns.resolve"].execution_target == "server_builtin"
     assert by_id["zabbix.problems.lookup"].execution_target == "server_connector"
     assert by_id["observer.ticket.summary"].execution_target == "observer_query"
+    assert by_id["observer.ticket.summary"].output_contract["kind"] == "observer.ticket_summary"
+    assert by_id["observer.trace.bundle"].output_contract["kind"] == "observer.trace_bundle"
     assert by_id["remote_assist.request_view"].execution_target == "remote_assist"
     assert by_id["manual.visual_check"].execution_target == "manual"
 
