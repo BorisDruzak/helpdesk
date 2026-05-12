@@ -54,7 +54,7 @@ Sources:
 - server builtin capabilities: `server.dns.resolve`, `server.http.request`
 - server connector capabilities, currently the Zabbix JSON-RPC provider: `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
 - observer query capabilities: `observer.ticket.summary`, `observer.trace.bundle`
-- remote assist skeletons: `remote_assist.request_view`, `remote_assist.session.summary`
+- remote assist session capabilities: `remote_assist.request_view`, `remote_assist.request_control`, `remote_assist.session.summary`
 - manual skeletons: `manual.visual_check`, `manual.vendor_response`
 
 Capability descriptors include provider id/type, execution target, schemas/contracts, safety flags, deployment metadata, readiness requirements, evidence metadata, artifact metadata and legacy aliases.
@@ -79,6 +79,8 @@ Zabbix `server_connector` capabilities run on the Maria server through `diagnost
 
 Observer `observer_query` capabilities run on the Maria server through `diagnostics.providers.observer_provider.ObserverCapabilityProvider`. `observer.ticket.summary` calls the existing ticket observer summary/root trace service and returns a compact support-facing contract: root trace id, health, trace/signature counts, latest error, top signature, related traces and recent occurrences. `observer.trace.bundle` uses the existing observer overlay trace search/detail/signature/degradation services to return a bounded trace bundle: primary trace, related traces, error occurrences, signatures, degradations, recommended next checks and observer links. Both capabilities map to observer evidence previews and remain read-only query targets; they never call `ToolExecutionService.run_tool` and never enqueue DeviceOutbox rows.
 
+Remote Assist `remote_assist` capabilities are session targets. `remote_assist.request_view` maps to the existing `view_only` consent flow, `remote_assist.request_control` maps to `interactive_control` and requires `remote_assist.control` plus the interactive-control policy flag, and `remote_assist.session.summary` reads ticket sessions without requiring an online device. Requests route through `RemoteAssistService.request_session()` and `send_request_to_agent()` so the existing consent/signaling lifecycle stays authoritative; the generic capability router still treats the result as `execution_kind=session`, not as an ordinary tool operation. Session request and summary outputs map to passport-eligible `remote_assist.session` evidence previews.
+
 Readiness input sources:
 
 - ticket-bound device record and agent online state
@@ -89,7 +91,7 @@ Readiness input sources:
 - effective RBAC permission set from the authenticated actor
 - persisted diagnostic provider config (`diagnostic_provider_configs`), credential references and mappings for server connectors
 - policy flags supplied by diagnostic/provider policy context
-- observer root trace and remote assist consent/policy metadata
+- observer root trace and remote assist consent/policy/active-session metadata
 
 Provider config persistence starts at migration `075`. Runtime capability descriptors remain computed from module manifests and provider skeletons so dynamic agent toolsets do not depend on DB snapshots. The persisted tables hold provider/config lifecycle and audit data:
 

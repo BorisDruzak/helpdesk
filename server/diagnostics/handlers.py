@@ -6,8 +6,10 @@ from sqlalchemy import select
 from app.db import get_session
 from access_control.service import resolve_effective_access
 from app.db.models import Device, DeviceDesiredModule, DeviceModule, DiagnosticEvidence, DiagnosticFinding, Ticket
+from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
 from auth.middleware import require_auth
+import config
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
@@ -20,6 +22,7 @@ from diagnostics.projection import DiagnosticProjectionService
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 from diagnostics.serialization import bundle_to_dict, evidence_to_dict, finding_to_dict, session_to_dict, ticket_evidence_to_dict
 from diagnostics.service import DiagnosticOverviewService
+from remote_assist.policy import is_remote_assist_mode_enabled
 from diagnostics.sessions import DiagnosticSessionService
 from tools.service import ToolExecutionService
 
@@ -51,6 +54,27 @@ def _merge_maps(*maps: dict) -> dict:
         if isinstance(item, dict):
             result.update(item)
     return result
+
+
+def _remote_assist_policy_flags() -> dict:
+    return {
+        "remote_assist.enabled": bool(config.REMOTE_ASSIST_ENABLED),
+        "remote_assist.interactive_control.enabled": is_remote_assist_mode_enabled("interactive_control"),
+        "remote_assist.file_transfer.enabled": is_remote_assist_mode_enabled("file_transfer"),
+        "remote_assist.elevated_admin.enabled": is_remote_assist_mode_enabled("elevated_admin"),
+    }
+
+
+def _remote_assist_context(active_session) -> dict:
+    if active_session is None:
+        return {}
+    return {
+        "active_session": {
+            "session_id": active_session.id,
+            "status": active_session.status,
+            "mode": active_session.mode,
+        }
+    }
 
 
 def _device_platform(device: Device | None) -> str | None:
@@ -226,6 +250,7 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         device = None
         installed_modules = []
         desired_modules = []
+        active_remote_assist_session = None
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
@@ -241,6 +266,10 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
                 (
                     await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
                 ).scalars()
+            )
+            active_remote_assist_session = await RemoteAccessRepo(session).active_for_ticket_device(
+                ticket.ticket_id,
+                ticket.device_id,
             )
     if ticket is None:
         return web.json_response(
@@ -279,11 +308,13 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
             persisted_maps.mappings,
         ),
         policy_flags=_merge_maps(
+            _remote_assist_policy_flags(),
             _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
             persisted_maps.policy_flags,
         ),
         permissions=set(access.permissions),
         has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
+        remote_assist=_remote_assist_context(active_remote_assist_session),
     )
     capability_items = []
     for capability in capabilities:
@@ -336,6 +367,7 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         device = None
         installed_modules = []
         desired_modules = []
+        active_remote_assist_session = None
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
@@ -351,6 +383,10 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
                 (
                     await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
                 ).scalars()
+            )
+            active_remote_assist_session = await RemoteAccessRepo(session).active_for_ticket_device(
+                ticket.ticket_id,
+                ticket.device_id,
             )
     if ticket is None:
         return web.json_response(
@@ -389,11 +425,13 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
                 persisted_maps.mappings,
             ),
             policy_flags=_merge_maps(
+                _remote_assist_policy_flags(),
                 _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
                 persisted_maps.policy_flags,
             ),
             permissions=set(access.permissions),
             has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
+            remote_assist=_remote_assist_context(active_remote_assist_session),
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
         params = _with_provider_runtime_params(params, capability, persisted_maps)

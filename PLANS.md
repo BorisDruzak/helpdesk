@@ -292,27 +292,28 @@ Verification:
 
 ### Phase 7: Remote Assist Capabilities
 
-- [ ] Model remote assist as session capability, not command/tool.
-- [ ] Add capabilities:
+- [x] Model remote assist as session capability, not command/tool.
+- [x] Add capabilities:
   - `remote_assist.request_view`
   - `remote_assist.request_control`
   - `remote_assist.session.summary`
   - optional later: file transfer, clipboard, elevated/admin as policy-gated sub-capabilities.
-- [ ] Readiness must use:
+- [x] Readiness must use:
   - device online
   - support permission
   - remote assist policy
   - user consent state
   - session availability
-- [ ] Route execution to existing remote assist service/routes.
-- [ ] Map session summary to passport-eligible evidence where policy allows.
-- [ ] Preserve current Remote Assist consent/signaling flow.
+- [x] Route execution to existing remote assist service/routes.
+- [x] Map session summary to passport-eligible evidence where policy allows.
+- [x] Preserve current Remote Assist consent/signaling flow.
+
+Decision: Remote Assist remains a `session` capability target, not a regular tool command. `remote_assist.request_view` requests `view_only`; `remote_assist.request_control` requests `interactive_control` and is gated by `remote_assist.control` plus `remote_assist.interactive_control.enabled`; `remote_assist.session.summary` is a read-side ticket summary that does not require an online device. The provider uses `RemoteAssistService.request_session()` and `send_request_to_agent()` for real session/consent signaling, returns normalized session envelopes and maps both request/summary results to `remote_assist.session` evidence previews. Readiness now accounts for policy flags and active ticket/device sessions before routing.
 
 Verification:
 
-- remote assist policy tests
-- handler/router tests
-- no regression in current remote assist tests
+- `python -m pytest server/tests/test_remote_assist_capability_provider.py server/tests/test_remote_assist_no_db.py server/tests/test_diagnostic_capabilities_no_db.py -q --tb=short`
+- `python -m compileall -q server/diagnostics server/remote_assist`
 
 ### Phase 8: Manual Capabilities
 

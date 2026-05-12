@@ -108,6 +108,9 @@ async def test_capability_registry_projects_agent_and_skeleton_provider_capabili
     assert by_id["observer.ticket.summary"].output_contract["kind"] == "observer.ticket_summary"
     assert by_id["observer.trace.bundle"].output_contract["kind"] == "observer.trace_bundle"
     assert by_id["remote_assist.request_view"].execution_target == "remote_assist"
+    assert by_id["remote_assist.request_control"].required_permission == "remote_assist.control"
+    assert by_id["remote_assist.request_control"].output_contract["kind"] == "remote_assist.session_request"
+    assert by_id["remote_assist.session.summary"].output_contract["kind"] == "remote_assist.session_summary"
     assert by_id["manual.visual_check"].execution_target == "manual"
 
 
@@ -319,6 +322,29 @@ async def test_readiness_returns_stable_reason_codes_and_action_ids():
         replace(capabilities["remote_assist.request_view"], requires_consent=False),
         ReadinessContext(ticket_id="ticket-1", device_id="device-1"),
     )
+    remote_control_policy_denied = await service.get_readiness(
+        capabilities["remote_assist.request_control"],
+        ReadinessContext(
+            ticket_id="ticket-1",
+            device_id="device-1",
+            permissions={"remote_assist.control"},
+            policy_flags={"remote_assist.interactive_control.enabled": False},
+        ),
+    )
+    remote_summary = await service.get_readiness(
+        capabilities["remote_assist.session.summary"],
+        ReadinessContext(ticket_id="ticket-1", permissions={"remote_assist.view"}),
+    )
+    remote_active_exists = await service.get_readiness(
+        replace(capabilities["remote_assist.request_view"], requires_consent=False),
+        ReadinessContext(
+            ticket_id="ticket-1",
+            device_id="device-1",
+            permissions={"remote_assist.request"},
+            policy_flags={"remote_assist.enabled": True},
+            remote_assist={"active_session": {"session_id": "session-1", "status": "active"}},
+        ),
+    )
 
     assert no_device.reason_code == "DEVICE_REQUIRED"
     assert no_device.actions == []
@@ -335,6 +361,13 @@ async def test_readiness_returns_stable_reason_codes_and_action_ids():
     assert remote_assist.readiness == "consent_required"
     assert remote_assist.actions == ["request_consent"]
     assert remote_assist_ready.actions == ["open_remote_assist"]
+    assert remote_control_policy_denied.readiness == "disabled_by_policy"
+    assert remote_control_policy_denied.reason_code == "POLICY_DISABLED"
+    assert remote_summary.readiness == "available"
+    assert remote_summary.actions == ["open_remote_assist"]
+    assert remote_active_exists.readiness == "unavailable"
+    assert remote_active_exists.reason_code == "REMOTE_ASSIST_SESSION_ACTIVE"
+    assert remote_active_exists.actions == ["open_remote_assist"]
 
 
 @pytest.mark.no_db
