@@ -417,20 +417,21 @@ Notes:
   - observer summary/bundle
   - remote assist request
   - manual fact entry
-- [ ] Add browser checks at `http://192.168.100.17:8666/admin` per project browser canon after deploy.
+- [x] Add browser checks at `http://192.168.100.17:8666/admin` per project browser canon after deploy.
 
 Verification:
 
 - [x] `python scripts/bootstrap_web_toolchain.py`
 - [x] webapp type/build/tests
-- [ ] Playwright/browser checks
+- [x] Playwright/browser checks
 - [x] server API tests
 
 Notes:
 
 - Completed in this phase: `/app/tickets/:ticketId` now has a dedicated Diagnostic Center tab backed by `webapp/src/features/diagnostics/diagnostic-center-panel.tsx`. It loads ticket capabilities, readiness, evidence, sessions, findings and overview; filters by execution target/domain/perspective/provider; routes runnable capabilities through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`; supports manual evidence, finding evaluation, diagnostic bundle creation and selected evidence attachment to passport.
 - `/app/admin/modules#diagnostic-provider-configs` now exposes `DiagnosticProviderConfigPanel` over the existing web-admin provider config aliases, so server connectors such as `zabbix_connector` can be configured without showing raw secret values from API responses.
-- Legacy ticket tools and playbooks panels remain in the sidebar and still use their existing APIs. Browser signoff is left for the deploy step because this slice has only been verified locally with webapp build/tests and server API tests.
+- Legacy ticket tools and playbooks panels remain in the sidebar and still use their existing APIs.
+- Browser signoff found and fixed a compact-layout drawer hit-testing regression: in ticket mode the right drawer stayed pointer-active over the center panel because Tailwind's `.flex` utility overrode the component-layer `display: none`. `webapp/src/styles.css` now hides the drawer with `display: none !important` for compact ticket mode.
 
 ### Phase 12: Operations, Observer and Audit Hardening
 
@@ -487,6 +488,7 @@ Implemented in phase 13:
 - Confirmed remote server status and smoke with `python scripts/manage_remote_stack.py status server` and `python scripts/manage_remote_stack.py smoke server`.
 - Browser-checked `http://192.168.100.17:8666/admin`: login page rendered, `admin/admin123` opened the Admin workspace and browser console had no warnings/errors.
 - Stopped the remote server with `python scripts/manage_remote_stack.py stop server`; follow-up status reported `inactive/dead`.
+- Follow-up live browser signoff on the support workspace opened `http://192.168.100.17:8666/admin`, switched to Support, opened a ticket, and found a compact-layout drawer hit-test issue that blocked the `Диагностика` tab. The UI CSS fix was built locally and is part of the next deploy/browser verification slice.
 
 Release note:
 
@@ -494,28 +496,28 @@ Release note:
 
 ## Acceptance Criteria For Full Completion
 
-- [ ] Old module manifests still validate.
-- [ ] Old managed ZIP modules still auto-install and run through `ToolExecutionService.run_tool`.
-- [ ] Old builtin modules still run.
-- [ ] Old playbooks still run.
-- [ ] New manifest blocks are validated and surfaced.
-- [ ] Capability registry covers agent builtin, managed modules, server builtin/connector, observer, remote assist, manual and hybrid reserved target.
-- [ ] Readiness is accurate for device, online agent, install state, platform, dependencies, consent, RBAC, policy, integration config, credentials and mapping.
-- [ ] Non-agent targets never enqueue DeviceOutbox commands.
+- [x] Old module manifests still validate.
+- [x] Old managed ZIP modules still auto-install and run through `ToolExecutionService.run_tool`.
+- [x] Old builtin modules still run.
+- [x] Old playbooks still run.
+- [x] New manifest blocks are validated and surfaced.
+- [x] Capability registry covers agent builtin, managed modules, server builtin/connector, observer, remote assist, manual and hybrid reserved target.
+- [x] Readiness is accurate for device, online agent, install state, platform, dependencies, consent, RBAC, policy, integration config, credentials and mapping.
+- [x] Non-agent targets never enqueue DeviceOutbox commands.
 - [x] Server connector provider skeleton is replaced by at least one real connector implementation, starting with Zabbix.
-- [ ] Observer query capabilities return real observer data.
-- [ ] Remote assist capabilities route to existing remote assist service.
-- [ ] Manual capabilities create auditable manual evidence/facts.
-- [ ] Evidence is normalized, persisted where needed, traceable and passport-linkable.
-- [ ] Diagnostic sessions/findings can aggregate capability results.
-- [ ] UI can display capabilities, readiness, actions, evidence and findings.
-- [ ] Docs, CODEMAP, navigation catalog and architecture boundaries are current.
-- [ ] Targeted and cross-subsystem tests pass.
-- [ ] Migrations, if added, are linear, compile, apply on remote with `upgrade head`, and leave DB at head.
+- [x] Observer query capabilities return real observer data.
+- [x] Remote assist capabilities route to existing remote assist service.
+- [x] Manual capabilities create auditable manual evidence/facts.
+- [x] Evidence is normalized, persisted where needed, traceable and passport-linkable.
+- [x] Diagnostic sessions/findings can aggregate capability results.
+- [x] UI can display capabilities, readiness, actions, evidence and findings.
+- [x] Docs, CODEMAP, navigation catalog and architecture boundaries are current.
+- [x] Targeted and cross-subsystem tests pass.
+- [x] Migrations, if added, are linear, compile, apply on remote with `upgrade head`, and leave DB at head.
 
 ## Current Limitations / Handoff
 
 - Zabbix has a bounded JSON-RPC provider and uses persisted config/mapping/ready credential refs in the ticket run route. Secret material is still expected through a runtime credential ref/resolver boundary; a full vault-backed secret-management UI is not implemented in this slice.
 - `observer_query`, `remote_assist` and `manual` targets now route through server providers. Remote Assist uses the existing session service and may enqueue its existing `remote_assist.request` command; it does not use ordinary `ToolExecutionService.run_tool`.
-- Diagnostic Center UI now exists in the React ticket detail and provider config UI exists under admin modules. Remaining UI hardening: live browser signoff after deploy, richer schema-driven params for arbitrary capabilities, and deeper RBAC-specific disabled-state copy.
+- Diagnostic Center UI now exists in the React ticket detail and provider config UI exists under admin modules. Live browser signoff is in progress; the first pass found and fixed a compact-layout drawer hit-testing issue. Remaining UI hardening: richer schema-driven params for arbitrary capabilities and deeper RBAC-specific disabled-state copy.
 - Existing unrelated dirty worktree files predate this task and must not be reverted as part of this plan.

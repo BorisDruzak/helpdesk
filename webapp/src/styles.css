@@ -127,7 +127,7 @@
   }
 
   .support-workspace[data-compact-layout="true"][data-mode="ticket"] .support-workspace__right-panel--drawer {
-    display: none;
+    display: none !important;
   }
 
   .support-workspace[data-compact-layout="true"][data-mode="queue"] .support-workspace__mode-grid {
