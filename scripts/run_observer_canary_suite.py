@@ -32,9 +32,9 @@ from scripts.manage_remote_stack import (  # noqa: E402
 )
 
 
-DEFAULT_BASE_URL = "http://192.168.100.17:8666"
-DEFAULT_WS_URL = "ws://192.168.100.17:8666/ws"
-DEFAULT_UI_WS_URL = "ws://192.168.100.17:8666/ws_ui"
+DEFAULT_BASE_URL = "https://192.168.100.17:9443"
+DEFAULT_WS_URL = "wss://192.168.100.17:9443/ws"
+DEFAULT_UI_WS_URL = "wss://192.168.100.17:9443/ws_ui"
 INSTANCE_ROOT = WORKSPACE / ".local-agent" / "instances"
 ARTIFACTS_DIR = WORKSPACE / "artifacts" / "observer_canaries"
 DEFAULT_COVERAGE_ROOT_KINDS = (
@@ -65,6 +65,7 @@ SOURCE_COVERAGE_ROOT_KINDS = (
     "manual_evidence",
     "remote_assist",
 )
+DEFAULT_AGENT_BUILD_TARGETS = ("windows_amd64", "linux_alt_x86_64")
 
 
 @dataclass
@@ -385,6 +386,42 @@ def read_local_agent_version() -> str:
     start += len(marker)
     end = version_py.find('"', start)
     return version_py[start:end] if end > start else ""
+
+
+def parse_csv_items(raw: str | None) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def parse_expected_agent_versions_by_target(raw: str | None) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for item in parse_csv_items(raw):
+        if "=" not in item:
+            raise ValueError(
+                "Expected target-specific agent versions as TARGET=VERSION pairs, "
+                f"got {item!r}"
+            )
+        target, version = (part.strip() for part in item.split("=", 1))
+        if not target or not version:
+            raise ValueError(
+                "Expected target-specific agent versions as non-empty TARGET=VERSION pairs, "
+                f"got {item!r}"
+            )
+        mapping[target] = version
+    return mapping
+
+
+def resolve_agent_build_expectations(
+    *,
+    expected_agent_version: str | None,
+    expected_agent_version_by_target: str | None,
+) -> dict[str, str]:
+    expected = parse_expected_agent_versions_by_target(expected_agent_version_by_target)
+    local_windows_version = str(expected_agent_version or "").strip()
+    if local_windows_version:
+        expected.setdefault("windows_amd64", local_windows_version)
+    return expected
 
 
 class ApiClient:
@@ -1396,8 +1433,8 @@ async def scenario_agent_build_registry(
     api: ApiClient,
     *,
     admin_token: str,
-    expected_version: str,
-    targets: tuple[str, ...] = ("windows_amd64", "linux_alt_x86_64"),
+    expected_versions_by_target: dict[str, str],
+    targets: tuple[str, ...] = DEFAULT_AGENT_BUILD_TARGETS,
 ) -> list[ScenarioResult]:
     results: list[ScenarioResult] = []
     for target in targets:
@@ -1408,24 +1445,33 @@ async def scenario_agent_build_registry(
             expected_statuses=(200,),
         )
         builds = payload.get("builds") if isinstance(payload.get("builds"), list) else []
-        match = next(
-            (
-                build
-                for build in builds
-                if str(build.get("version") or "") == expected_version and str(build.get("target") or "") == target
-            ),
-            None,
-        )
+        target_builds = [build for build in builds if str(build.get("target") or "") == target]
+        expected_version = str(expected_versions_by_target.get(target) or "").strip()
+        if expected_version:
+            match = next(
+                (
+                    build
+                    for build in target_builds
+                    if str(build.get("version") or "") == expected_version
+                ),
+                None,
+            )
+            ok = bool(match)
+            summary = f"Stable agent build registry contains {expected_version} for {target}."
+        else:
+            match = target_builds[0] if target_builds else None
+            ok = bool(match)
+            summary = f"Stable agent build registry contains at least one build for {target}."
         results.append(
             ScenarioResult(
                 name=f"agent_build_registry_{target}",
-                ok=bool(match),
-                summary=f"Stable agent build registry contains {expected_version} for {target}.",
+                ok=ok,
+                summary=summary,
                 details={
                     "target": target,
                     "root_kind": "agent_update",
-                    "expected_version": expected_version,
-                    "available_versions": [str(build.get("version") or "") for build in builds],
+                    "expected_version": expected_version or None,
+                    "available_versions": [str(build.get("version") or "") for build in target_builds],
                     "sha256": match.get("sha256") if match else None,
                     "download_path": match.get("download_path") if match else None,
                 },
@@ -2198,6 +2244,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--skip-source-coverage-probes", action="store_true")
     parser.add_argument("--expected-agent-version", default=os.environ.get("PC_CLIENT_EXPECTED_AGENT_VERSION") or read_local_agent_version())
+    parser.add_argument(
+        "--expected-agent-version-by-target",
+        default=os.environ.get("PC_CLIENT_EXPECTED_AGENT_VERSION_BY_TARGET"),
+        help="Comma-separated TARGET=VERSION expectations, for example windows_amd64=3.1.56,linux_alt_x86_64=3.1.26.",
+    )
+    parser.add_argument(
+        "--agent-build-targets",
+        default=os.environ.get("PC_CLIENT_AGENT_BUILD_TARGETS") or ",".join(DEFAULT_AGENT_BUILD_TARGETS),
+        help="Comma-separated build targets to validate in the stable agent build registry.",
+    )
     return parser.parse_args()
 
 
@@ -2210,6 +2266,11 @@ async def main_async() -> int:
     module_name: str | None = None
     instance_payload: dict[str, Any] | None = None
     coverage_root_kinds = SOURCE_COVERAGE_ROOT_KINDS if args.source_coverage_only else DEFAULT_COVERAGE_ROOT_KINDS
+    agent_build_targets = parse_csv_items(args.agent_build_targets)
+    expected_agent_versions = resolve_agent_build_expectations(
+        expected_agent_version=args.expected_agent_version,
+        expected_agent_version_by_target=args.expected_agent_version_by_target,
+    )
 
     try:
         async with ApiClient(args.base_url) as api:
@@ -2311,13 +2372,18 @@ async def main_async() -> int:
                         )
                     )
 
-                if args.expected_agent_version:
-                    _print_step(f"Checking stable agent build registry for {args.expected_agent_version}")
+                if agent_build_targets:
+                    build_target_summary = ", ".join(
+                        f"{target}={expected_agent_versions[target]}" if target in expected_agent_versions else f"{target}=any"
+                        for target in agent_build_targets
+                    )
+                    _print_step(f"Checking stable agent build registry ({build_target_summary})")
                     results.extend(
                         await scenario_agent_build_registry(
                             api,
                             admin_token=admin_token,
-                            expected_version=str(args.expected_agent_version),
+                            expected_versions_by_target=expected_agent_versions,
+                            targets=agent_build_targets,
                         )
                     )
 

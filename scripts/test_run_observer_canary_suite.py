@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
+import pytest
 import scripts.run_observer_canary_suite as suite
 
 
@@ -148,7 +150,7 @@ def test_build_observer_coverage_summary_tracks_required_root_kinds() -> None:
 def test_render_markdown_report_includes_coverage_and_results() -> None:
     report = {
         "generated_at": "2026-04-28T10:00:00+00:00",
-        "base_url": "http://192.168.100.17:8666",
+        "base_url": "https://192.168.100.17:9443",
         "device_id": "device-1",
         "coverage": {
             "ok": False,
@@ -206,3 +208,61 @@ def test_source_coverage_root_kinds_are_subset_of_default_coverage() -> None:
         "manual_evidence",
         "remote_assist",
     )
+
+
+def test_resolve_agent_build_expectations_defaults_local_version_to_windows_only() -> None:
+    expectations = suite.resolve_agent_build_expectations(
+        expected_agent_version="3.1.56",
+        expected_agent_version_by_target=None,
+    )
+
+    assert expectations == {"windows_amd64": "3.1.56"}
+
+
+def test_resolve_agent_build_expectations_accepts_target_specific_overrides() -> None:
+    expectations = suite.resolve_agent_build_expectations(
+        expected_agent_version="3.1.56",
+        expected_agent_version_by_target="windows_amd64=3.1.57,linux_alt_x86_64=3.1.26",
+    )
+
+    assert expectations == {"windows_amd64": "3.1.57", "linux_alt_x86_64": "3.1.26"}
+
+
+def test_parse_expected_agent_versions_by_target_rejects_invalid_items() -> None:
+    with pytest.raises(ValueError):
+        suite.parse_expected_agent_versions_by_target("windows_amd64")
+
+
+class _FakeApi:
+    def __init__(self, builds_by_target: dict[str, list[dict[str, str]]]) -> None:
+        self.builds_by_target = builds_by_target
+
+    async def request_json(self, method: str, path: str, **kwargs: object) -> tuple[int, dict[str, object]]:
+        assert method == "GET"
+        query = parse_qs(urlsplit(path).query)
+        target = query["target"][0]
+        return 200, {"builds": self.builds_by_target.get(target, [])}
+
+
+@pytest.mark.asyncio
+async def test_agent_build_registry_checks_exact_windows_and_any_unpinned_target() -> None:
+    results = await suite.scenario_agent_build_registry(
+        _FakeApi(
+            {
+                "windows_amd64": [
+                    {"target": "windows_amd64", "version": "3.1.56", "sha256": "sha-win"},
+                ],
+                "linux_alt_x86_64": [
+                    {"target": "linux_alt_x86_64", "version": "3.1.26", "sha256": "sha-linux"},
+                ],
+            }
+        ),
+        admin_token="admin-token",
+        expected_versions_by_target={"windows_amd64": "3.1.56"},
+        targets=("windows_amd64", "linux_alt_x86_64"),
+    )
+
+    assert [item.ok for item in results] == [True, True]
+    assert results[0].details["expected_version"] == "3.1.56"
+    assert results[1].details["expected_version"] is None
+    assert results[1].details["available_versions"] == ["3.1.26"]
