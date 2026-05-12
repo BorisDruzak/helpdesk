@@ -845,7 +845,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes).",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin config aliases, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes, and phase-9 persistent result-to-evidence mapping through `diagnostic_session_capabilities` plus `diagnostic_artifact_links`).",
         aliases=(
             "module",
             "modules",
@@ -882,6 +882,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/websocket/modules_sync.py",
             "server/diagnostics/capability_registry.py",
             "server/diagnostics/service.py",
+            "server/diagnostics/evidence.py",
             "server/diagnostics/projection.py",
             "server/diagnostics/provider_config.py",
             "server/diagnostics/readiness.py",
@@ -943,6 +944,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/diagnostics/profile_runner.py",
             "server/diagnostics/passport_bridge.py",
             "server/app/repos/diagnostics_repo.py",
+            "server/app/db/migrations/versions/20260512_0300_076_diagnostic_evidence_links.py",
             "server/docs/MODULE_AUTHORING_RULES.md",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/loader.py",

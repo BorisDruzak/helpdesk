@@ -335,21 +335,21 @@ Verification:
 
 ### Phase 9: Evidence Persistence and Diagnostic Sessions
 
-- [ ] Add DB model if needed:
+- [x] Add DB model if needed:
   - `diagnostic_sessions`
   - `diagnostic_session_capabilities`
   - `diagnostic_evidence`
   - `diagnostic_findings`
   - `diagnostic_artifact_links`
-- [ ] Define how an operation/session/query result becomes evidence:
+- [x] Define how an operation/session/query result becomes evidence:
   - raw operation result
   - normalized evidence preview
   - accepted evidence
   - passport-linked evidence
   - finding
-- [ ] Implement `normalize_tool_result_to_evidence_stub` as production mapper.
-- [ ] Preserve existing `TicketEvidenceService` and passport flows; extend them rather than replacing.
-- [ ] Add evidence provenance:
+- [x] Implement `normalize_tool_result_to_evidence_stub` as production mapper.
+- [x] Preserve existing `TicketEvidenceService` and passport flows; extend them rather than replacing.
+- [x] Add evidence provenance:
   - capability id/version
   - provider id/type
   - operation/session/query id
@@ -357,14 +357,22 @@ Verification:
   - artifact refs
   - actor
   - redaction policy
-- [ ] Add cleanup/retention policy.
+- [x] Add cleanup/retention policy.
+
+Implemented in phase 9:
+
+- Migration `076` adds `diagnostic_session_capabilities` and `diagnostic_artifact_links`.
+- `DiagnosticProjectionService.project_capability_result()` persists non-agent capability results into `diagnostic_evidence`, links artifacts, and writes session-scoped capability snapshots.
+- `normalize_tool_result_to_evidence_values()` is the production mapper; the legacy preview helper delegates to it.
+- Ticket capability run API now persists evidence for non-agent server/observer/remote capability results while keeping agent `run_tool` async behavior and manual evidence's existing provider-owned persistence.
+- `DiagnosticEvidenceRetentionPolicy.cleanup_unselected_evidence()` removes old transient evidence while preserving selected passport evidence.
 
 Verification:
 
-- migration tests
-- evidence service tests
-- passport linking tests
-- observer trace correlation tests
+- [x] migration/model tests
+- [x] evidence service tests
+- [x] passport linking tests
+- [x] server_builtin operation/evidence lifecycle tests
 
 ### Phase 10: Playbook Integration
 

@@ -77,7 +77,7 @@ async def test_zabbix_problem_lookup_calls_jsonrpc_and_redacts_token(monkeypatch
     assert calls[0]["payload"]["auth"] == "secret-zabbix-token"
     assert calls[0]["payload"]["params"]["hostids"] == ["10101"]
     assert evidence["kind"] == "monitoring.problem"
-    assert evidence["status"] == "success"
+    assert evidence["status"] == "ok"
 
 
 @pytest.mark.no_db

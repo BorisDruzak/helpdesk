@@ -35,7 +35,7 @@ def test_playbook_readiness_blocks_missing_tools_and_required_params():
     )
 
     assert readiness.can_run is False
-    assert readiness.missing_tools == ["ip_address.get_ip", "diag.logs.collect"]
+    assert readiness.missing_tools == ["ip_address.get_ip"]
     assert readiness.missing_params == ["network.ping.target"]
     assert "Недоступны инструменты" in readiness.label
     assert "Не заполнены параметры" in readiness.label

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Artifact, DiagnosticEvidence, Operation, RemoteAccessSession, Ticket
 from app.repos.diagnostics_repo import DiagnosticRepo
+from diagnostics.capability_models import CapabilityDescriptor
+from diagnostics.evidence import normalize_tool_result_to_evidence_values
 
 
 def _status_from_operation(status: str | None) -> str:
@@ -99,6 +101,64 @@ class DiagnosticProjectionService:
         self.session = session
         self.repo = DiagnosticRepo(session)
 
+    async def project_capability_result(
+        self,
+        *,
+        ticket_id: str,
+        capability_descriptor: CapabilityDescriptor,
+        result: dict[str, Any],
+        actor: Any = None,
+        session_id: str | None = None,
+        step_id: str | None = None,
+        readiness: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> DiagnosticEvidence:
+        operation = {
+            "operation_id": result.get("operation_id"),
+            "session_id": result.get("session_id"),
+            "query_id": result.get("query_id"),
+            "status": result.get("status"),
+            "trace_id": result.get("trace_id"),
+            "actor_id": _actor_id(actor),
+        }
+        values = normalize_tool_result_to_evidence_values(operation, capability_descriptor, result)
+        provider_type = values.pop("provider_type", None)
+        capability_version = values.pop("capability_version", None)
+        values.update(
+            {
+                "ticket_id": ticket_id,
+                "session_id": session_id,
+                "step_id": step_id,
+                "created_by": _created_by(actor),
+                "selected_for_passport": bool(result.get("selected_for_passport") and values.get("passport_eligible")),
+            }
+        )
+        evidence = await self.repo.upsert_evidence(**values)
+        await self._persist_artifact_links(evidence)
+        if session_id:
+            operation_id = await self._existing_operation_id(result.get("operation_id"))
+            await self.repo.upsert_session_capability(
+                session_id=session_id,
+                ticket_id=ticket_id,
+                provider_id=capability_descriptor.provider_id,
+                provider_type=provider_type or capability_descriptor.provider_type,
+                capability_id=capability_descriptor.id,
+                capability_version=capability_version,
+                execution_target=capability_descriptor.execution_target,
+                readiness_status=(readiness or {}).get("readiness"),
+                readiness_reason_code=(readiness or {}).get("reason_code"),
+                readiness_reason=(readiness or {}).get("reason"),
+                readiness_actions=list((readiness or {}).get("actions") or []),
+                params_snapshot=dict(params or {}),
+                result_snapshot=_result_snapshot(result),
+                evidence_id=evidence.id,
+                operation_id=operation_id,
+                session_ref=result.get("session_id"),
+                query_ref=result.get("query_id"),
+                status=evidence.status,
+            )
+        return evidence
+
     async def project_operation_result(self, operation_id: str) -> DiagnosticEvidence:
         operation = await self.session.get(Operation, operation_id)
         if operation is None or not operation.ticket_id:
@@ -124,7 +184,7 @@ class DiagnosticProjectionService:
             "artifact_count": len(artifact_refs),
         }
         summary = operation.result_summary or operation.error_message or operation.error_code or operation.status
-        return await self.repo.upsert_evidence(
+        evidence = await self.repo.upsert_evidence(
             ticket_id=operation.ticket_id,
             source_type="operation",
             source_id=operation.operation_id,
@@ -144,6 +204,8 @@ class DiagnosticProjectionService:
             passport_eligible=bool(metadata.get("passport_eligible")),
             created_by="system",
         )
+        await self._persist_artifact_links(evidence)
+        return evidence
 
     async def project_remote_assist_session(self, session_id: str) -> DiagnosticEvidence:
         remote = await self.session.get(RemoteAccessSession, session_id)
@@ -164,7 +226,7 @@ class DiagnosticProjectionService:
             "duration_seconds": duration_seconds,
             "close_reason": remote.close_reason,
         }
-        return await self.repo.upsert_evidence(
+        evidence = await self.repo.upsert_evidence(
             ticket_id=remote.ticket_id,
             source_type="remote_assist",
             source_id=remote.id,
@@ -182,11 +244,13 @@ class DiagnosticProjectionService:
             passport_eligible=True,
             created_by="system",
         )
+        await self._persist_artifact_links(evidence)
+        return evidence
 
     async def project_observer_summary(self, ticket: Ticket) -> DiagnosticEvidence | None:
         if not ticket.observer_root_trace_id:
             return None
-        return await self.repo.upsert_evidence(
+        evidence = await self.repo.upsert_evidence(
             ticket_id=ticket.ticket_id,
             source_type="observer",
             source_id=ticket.observer_root_trace_id,
@@ -205,6 +269,8 @@ class DiagnosticProjectionService:
             passport_eligible=True,
             created_by="system",
         )
+        await self._persist_artifact_links(evidence)
+        return evidence
 
     async def project_ticket_sources(self, ticket_id: str) -> None:
         ticket = await self.session.get(Ticket, ticket_id)
@@ -263,7 +329,7 @@ class DiagnosticProjectionService:
         selected_for_passport: bool = False,
     ) -> DiagnosticEvidence:
         normalized_status = str(status or "info").strip().lower() or "info"
-        return await self.repo.upsert_evidence(
+        evidence = await self.repo.upsert_evidence(
             ticket_id=ticket_id,
             session_id=session_id,
             step_id=step_id,
@@ -288,3 +354,100 @@ class DiagnosticProjectionService:
             selected_for_passport=bool(selected_for_passport and passport_eligible),
             created_by=created_by,
         )
+        await self._persist_artifact_links(evidence)
+        return evidence
+
+    async def _persist_artifact_links(self, evidence: DiagnosticEvidence) -> None:
+        for ref in evidence.artifact_refs or []:
+            normalized = _artifact_link_ref(ref)
+            if not normalized:
+                continue
+            artifact_id = normalized.get("artifact_id")
+            if artifact_id:
+                artifact = await self.session.get(Artifact, artifact_id)
+                if artifact is None:
+                    artifact_id = None
+            await self.repo.upsert_artifact_link(
+                ticket_id=evidence.ticket_id,
+                session_id=evidence.session_id,
+                step_id=evidence.step_id,
+                evidence_id=evidence.id,
+                artifact_id=artifact_id,
+                artifact_kind=normalized.get("kind"),
+                source_type=evidence.source_type,
+                source_id=evidence.source_id,
+                provider_id=evidence.provider_id,
+                capability_id=evidence.capability_id,
+                trace_id=evidence.trace_id,
+                metadata_json={"artifact_ref": ref},
+            )
+
+    async def _existing_operation_id(self, operation_id: Any) -> str | None:
+        value = str(operation_id or "").strip()
+        if not value:
+            return None
+        operation = await self.session.get(Operation, value)
+        return value if operation is not None else None
+
+
+class DiagnosticEvidenceRetentionPolicy:
+    """Retention cleanup for transient diagnostic evidence."""
+
+    def __init__(self, session: AsyncSession, *, retention_days: int = 365):
+        self.session = session
+        self.retention_days = max(1, int(retention_days))
+        self.repo = DiagnosticRepo(session)
+
+    async def cleanup_unselected_evidence(self, *, now: datetime | None = None) -> int:
+        current = now or datetime.now(timezone.utc)
+        cutoff = current - timedelta(days=self.retention_days)
+        return await self.repo.cleanup_unselected_evidence_before(cutoff)
+
+
+def _actor_id(actor: Any) -> str | None:
+    if actor is None:
+        return None
+    value = getattr(actor, "actor_id", None)
+    if value:
+        return str(value)
+    return str(actor)
+
+
+def _created_by(actor: Any) -> str:
+    if actor is None:
+        return "system"
+    role = getattr(actor, "actor_role", None)
+    if role:
+        return str(role)
+    return "support"
+
+
+def _result_snapshot(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": result.get("status"),
+        "operation_id": result.get("operation_id"),
+        "session_id": result.get("session_id"),
+        "query_id": result.get("query_id"),
+        "summary": result.get("summary") or result.get("message"),
+        "error_code": result.get("error_code"),
+        "error_message": result.get("error_message"),
+        "output": result.get("output") if isinstance(result.get("output"), dict) else {},
+        "evidence_preview": result.get("evidence_preview") if isinstance(result.get("evidence_preview"), dict) else None,
+    }
+
+
+def _artifact_link_ref(ref: Any) -> dict[str, Any] | None:
+    if isinstance(ref, dict):
+        artifact_id = ref.get("artifact_id") or ref.get("id")
+        kind = ref.get("kind") or ref.get("artifact_kind")
+        path = ref.get("path")
+        if not artifact_id and not kind and not path:
+            return None
+        return {
+            "artifact_id": str(artifact_id) if artifact_id else None,
+            "kind": str(kind) if kind else None,
+            "path": str(path) if path else None,
+        }
+    if isinstance(ref, str) and ref:
+        return {"artifact_id": ref, "kind": None, "path": None}
+    return None

@@ -75,6 +75,16 @@ Capability execution responses are normalized with `execution_target`, `executio
 
 `server_builtin` capabilities run on the Maria server and create ordinary `operations` rows with `kind=server_capability`, `command_name=server_builtin`, and `tool_name=<capability id>`. They transition `queued -> running -> succeeded/failed`, support idempotency keys and timeouts, expose `/api/operations/{operation_id}` as `poll_url`, map evidence previews, and do not enqueue `device_outbox` commands.
 
+When a non-agent capability is executed through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`, successful server/query/session results are also projected into persistent `diagnostic_evidence` when the capability produces evidence. Migration `076` adds `diagnostic_session_capabilities` for session-scoped capability snapshots and `diagnostic_artifact_links` for normalized artifact references. The mapper path is:
+
+- raw operation/session/query result
+- `normalize_tool_result_to_evidence_values()` production evidence values
+- `diagnostic_evidence` row with provider, capability, source, trace, artifact, actor and redaction provenance
+- optional `diagnostic_session_capabilities` snapshot when the request passes a valid `session_id`
+- optional passport row only after `selected_for_passport` and `/diagnostics/passport/attach-selected`
+
+Agent-side targets keep their asynchronous `ToolExecutionService.run_tool` behavior and are projected from terminal operation results later. Manual capabilities still persist their own diagnostic evidence in `ManualCapabilityProvider`, so the generic run endpoint does not duplicate them.
+
 Zabbix `server_connector` capabilities run on the Maria server through `diagnostics.providers.zabbix_provider.ZabbixProvider`. The provider reads bounded runtime config from diagnostic provider config, calls Zabbix JSON-RPC methods `problem.get`, `host.get` and `history.get`, caps returned problem/history rows, maps outputs to `monitoring.problem`, `monitoring.host_health` and `monitoring.metric_history`, and never returns raw credential material in result payloads. Ticket-scoped capability runs inject persisted integration config, mapping and ready credential refs into the server connector route before dispatch.
 
 Observer `observer_query` capabilities run on the Maria server through `diagnostics.providers.observer_provider.ObserverCapabilityProvider`. `observer.ticket.summary` calls the existing ticket observer summary/root trace service and returns a compact support-facing contract: root trace id, health, trace/signature counts, latest error, top signature, related traces and recent occurrences. `observer.trace.bundle` uses the existing observer overlay trace search/detail/signature/degradation services to return a bounded trace bundle: primary trace, related traces, error occurrences, signatures, degradations, recommended next checks and observer links. Both capabilities map to observer evidence previews and remain read-only query targets; they never call `ToolExecutionService.run_tool` and never enqueue DeviceOutbox rows.

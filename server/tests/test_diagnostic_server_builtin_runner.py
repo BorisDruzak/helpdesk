@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import DeviceOutbox, Operation, Ticket
+from app.db.models import DeviceOutbox, DiagnosticEvidence, Operation, Ticket
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
 
@@ -22,6 +22,10 @@ def _ticket(ticket_id: str, device_id: str) -> Ticket:
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
+
+
+def _auth() -> dict[str, str]:
+    return {"Authorization": "Bearer test-ui-support-token"}
 
 
 @pytest.mark.asyncio
@@ -136,4 +140,44 @@ async def test_server_builtin_failure_marks_operation_failed_without_outbox(test
     assert operation.status == "failed"
     assert operation.error_code == "SERVER_BUILTIN_QUERY_FAILED"
     assert operation.finished_at is not None
+    assert outbox_count == 0
+
+
+@pytest.mark.asyncio
+async def test_server_builtin_capability_api_persists_diagnostic_evidence(test_client):
+    from app.db import get_session
+
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    async with get_session() as session:
+        session.add(_ticket(ticket_id, device_id))
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/tickets/{ticket_id}/diagnostics/capabilities/server.dns.resolve/run",
+        headers=_auth(),
+        json={"params": {"hostname": "localhost"}, "idempotency_key": "server-dns-evidence"},
+    )
+    assert response.status == 200
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["operation_id"]
+    assert payload["diagnostic_evidence_id"]
+    assert payload["evidence_preview"]["kind"] == "network.dns"
+
+    async with get_session() as session:
+        evidence = await session.get(DiagnosticEvidence, payload["diagnostic_evidence_id"])
+        operation = await session.scalar(select(Operation).where(Operation.operation_id == payload["operation_id"]))
+        outbox_count = await session.scalar(select(func.count(DeviceOutbox.id)))
+
+    assert evidence is not None
+    assert evidence.source_type == "operation"
+    assert evidence.source_id == payload["operation_id"]
+    assert evidence.provider_id == "server_builtin"
+    assert evidence.capability_id == "server.dns.resolve"
+    assert evidence.kind == "network.dns"
+    assert evidence.status == "ok"
+    assert operation is not None
+    assert operation.status == "succeeded"
     assert outbox_count == 0

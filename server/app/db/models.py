@@ -3024,6 +3024,38 @@ class DiagnosticStep(Base):
     )
 
 
+class DiagnosticSessionCapability(Base):
+    """Session-scoped capability snapshot with readiness, params, result and evidence links."""
+
+    __tablename__ = "diagnostic_session_capabilities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    capability_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    capability_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    execution_target: Mapped[str] = mapped_column(String(64), nullable=False)
+    readiness_status: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    readiness_reason_code: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    readiness_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    readiness_actions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    params_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    result_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete="SET NULL"), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("operations.operation_id", ondelete="SET NULL"), nullable=True, index=True)
+    session_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    query_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned", server_default="planned")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_diag_session_caps_session_capability", "session_id", "capability_id"),
+    )
+
+
 class DiagnosticEvidence(Base):
     """Normalized diagnostic fact that can later be selected for a passport."""
 
@@ -3061,6 +3093,32 @@ class DiagnosticEvidence(Base):
         Index("ix_diag_ev_ticket_observed", "ticket_id", "observed_at"),
         Index("ix_diag_ev_source_identity", "ticket_id", "source_type", "source_id", "kind", unique=True),
         Index("ix_diag_ev_ticket_status", "ticket_id", "status"),
+    )
+
+
+class DiagnosticArtifactLink(Base):
+    """Normalized link from diagnostic evidence/session steps to existing artifacts."""
+
+    __tablename__ = "diagnostic_artifact_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    step_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"), nullable=True, index=True)
+    evidence_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("diagnostic_evidence.id", ondelete="CASCADE"), nullable=True, index=True)
+    artifact_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("artifacts.artifact_id", ondelete="SET NULL"), nullable=True, index=True)
+    artifact_kind: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    capability_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "evidence_id", "artifact_id", "artifact_kind", name="uq_diag_artifact_link_identity"),
+        Index("ix_diag_artifact_links_source", "source_type", "source_id"),
     )
 
 

@@ -134,6 +134,29 @@ def _request_timeout_ms(payload: dict) -> int | None:
     return min(value, 300_000)
 
 
+def _result_should_persist_as_evidence(capability, result: dict) -> bool:
+    if capability is None or not isinstance(result, dict):
+        return False
+    if result.get("error_code") in {"CAPABILITY_NOT_FOUND", "CAPABILITY_NOT_READY", "CAPABILITY_TARGET_UNSUPPORTED"}:
+        return False
+    if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
+        return False
+    if capability.execution_target == "manual" and result.get("evidence_id"):
+        return False
+    return bool((capability.evidence or {}).get("produces_evidence") or result.get("evidence_preview"))
+
+
+async def _valid_diagnostic_session_id(session, *, ticket_id: str, raw_session_id) -> str | None:
+    session_id = str(raw_session_id or "").strip()
+    if not session_id:
+        return None
+    repo = DiagnosticRepo(session)
+    item = await repo.get_session(session_id)
+    if item is None or item.ticket_id != ticket_id:
+        return None
+    return session_id
+
+
 def _with_provider_runtime_params(params: dict, capability, persisted_maps) -> dict:
     result = dict(params or {})
     integration_key = getattr(capability, "integration_key", None)
@@ -447,6 +470,26 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         idempotency_key=idempotency_key,
         timeout_ms=timeout_ms,
     )
+    if _result_should_persist_as_evidence(capability, result):
+        async with get_session() as session:
+            session_id = await _valid_diagnostic_session_id(
+                session,
+                ticket_id=ticket_id,
+                raw_session_id=payload.get("session_id") if isinstance(payload, dict) else None,
+            )
+            evidence = await DiagnosticProjectionService(session).project_capability_result(
+                ticket_id=ticket_id,
+                capability_descriptor=capability,
+                result=result,
+                actor=request.get("auth_context"),
+                session_id=session_id,
+                readiness=readiness.to_dict() if hasattr(readiness, "to_dict") else readiness,
+                params=params,
+            )
+            await session.commit()
+        result = dict(result)
+        result["diagnostic_evidence_id"] = evidence.id
+        result["evidence_persisted"] = True
     status = 200
     if result.get("error_code") == "CAPABILITY_NOT_FOUND":
         status = 404

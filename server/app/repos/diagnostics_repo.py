@@ -4,10 +4,18 @@ from datetime import datetime, timezone
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DiagnosticBundle, DiagnosticEvidence, DiagnosticFinding, DiagnosticSession, DiagnosticStep
+from app.db.models import (
+    DiagnosticArtifactLink,
+    DiagnosticBundle,
+    DiagnosticEvidence,
+    DiagnosticFinding,
+    DiagnosticSession,
+    DiagnosticSessionCapability,
+    DiagnosticStep,
+)
 
 
 def _uuid() -> str:
@@ -67,6 +75,35 @@ class DiagnosticRepo:
         await self.session.flush()
         return item
 
+    async def upsert_session_capability(self, **values: Any) -> DiagnosticSessionCapability:
+        session_id = values.get("session_id")
+        capability_id = values.get("capability_id")
+        evidence_id = values.get("evidence_id")
+        operation_id = values.get("operation_id")
+        existing = None
+        if session_id and capability_id:
+            stmt = select(DiagnosticSessionCapability).where(
+                DiagnosticSessionCapability.session_id == session_id,
+                DiagnosticSessionCapability.capability_id == capability_id,
+            )
+            if evidence_id:
+                stmt = stmt.where(DiagnosticSessionCapability.evidence_id == evidence_id)
+            elif operation_id:
+                stmt = stmt.where(DiagnosticSessionCapability.operation_id == operation_id)
+            existing = (await self.session.execute(stmt)).scalar_one_or_none()
+        if existing is not None:
+            for key, value in values.items():
+                if key != "id":
+                    setattr(existing, key, value)
+            existing.updated_at = datetime.now(timezone.utc)
+            await self.session.flush()
+            return existing
+        values.setdefault("id", _uuid())
+        item = DiagnosticSessionCapability(**values)
+        self.session.add(item)
+        await self.session.flush()
+        return item
+
     async def list_steps(self, ticket_id: str, *, session_id: str | None = None) -> list[DiagnosticStep]:
         stmt = select(DiagnosticStep).where(DiagnosticStep.ticket_id == ticket_id)
         if session_id:
@@ -103,6 +140,45 @@ class DiagnosticRepo:
         self.session.add(item)
         await self.session.flush()
         return item
+
+    async def upsert_artifact_link(self, **values: Any) -> DiagnosticArtifactLink:
+        ticket_id = values.get("ticket_id")
+        evidence_id = values.get("evidence_id")
+        artifact_id = values.get("artifact_id")
+        artifact_kind = values.get("artifact_kind")
+        existing = None
+        if ticket_id and evidence_id and (artifact_id or artifact_kind):
+            existing = (
+                await self.session.execute(
+                    select(DiagnosticArtifactLink).where(
+                        DiagnosticArtifactLink.ticket_id == ticket_id,
+                        DiagnosticArtifactLink.evidence_id == evidence_id,
+                        DiagnosticArtifactLink.artifact_id == artifact_id,
+                        DiagnosticArtifactLink.artifact_kind == artifact_kind,
+                    )
+                )
+            ).scalar_one_or_none()
+        if existing is not None:
+            for key, value in values.items():
+                if key != "id":
+                    setattr(existing, key, value)
+            await self.session.flush()
+            return existing
+        values.setdefault("id", _uuid())
+        item = DiagnosticArtifactLink(**values)
+        self.session.add(item)
+        await self.session.flush()
+        return item
+
+    async def cleanup_unselected_evidence_before(self, cutoff: datetime) -> int:
+        result = await self.session.execute(
+            delete(DiagnosticEvidence).where(
+                DiagnosticEvidence.observed_at < cutoff,
+                DiagnosticEvidence.selected_for_passport.is_(False),
+            )
+        )
+        await self.session.flush()
+        return int(result.rowcount or 0)
 
     async def get_evidence(self, evidence_id: str) -> DiagnosticEvidence | None:
         return await self.session.get(DiagnosticEvidence, evidence_id)
