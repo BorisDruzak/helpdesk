@@ -180,6 +180,7 @@ class DeviceDispatchService:
                 for cmd in pending:
                     try:
                         await _send_single_command(self.state, ws, agent_device_id, cmd, repo)
+                        await session.commit()
                     except Exception as exc:
                         logger.error(
                             f"[DeviceDispatchService] Failed to send command: device_id={device_id} "
@@ -192,8 +193,8 @@ class DeviceDispatchService:
                             error_code="SEND_ERROR",
                             error_message=str(exc),
                         )
+                        await session.commit()
                         break
-                await session.commit()
 
                 has_more = await repo.has_pending_for_device(device_id=device_id)
                 if not has_more:
@@ -381,6 +382,7 @@ class PollingDeviceOutboxSender:
                 for cmd in commands:
                     try:
                         await _send_single_command(self.state, ws, agent_device_id, cmd, repo)
+                        await session.commit()
                     except Exception as exc:
                         await _handle_delivery_error(
                             state_manager=self.state,
@@ -389,6 +391,7 @@ class PollingDeviceOutboxSender:
                             error_code="SEND_ERROR",
                             error_message=str(exc),
                         )
+                        await session.commit()
             await session.commit()
 
 
