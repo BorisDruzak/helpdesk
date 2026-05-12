@@ -74,7 +74,7 @@ describe("DiagnosticCenterPanel", () => {
           },
         });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/capabilities") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities") {
         return jsonResponse({
           status: "ok",
           count: 2,
@@ -128,7 +128,7 @@ describe("DiagnosticCenterPanel", () => {
           ],
         });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/evidence") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/evidence") {
         return jsonResponse({
           status: "ok",
           evidence: [
@@ -159,13 +159,13 @@ describe("DiagnosticCenterPanel", () => {
           ],
         });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/sessions") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/sessions") {
         return jsonResponse({ status: "ok", sessions: [] });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/findings") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/findings") {
         return jsonResponse({ status: "ok", findings: [] });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/capabilities/diag.logs.collect/run" && init?.method === "POST") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities/diag.logs.collect/run" && init?.method === "POST") {
         return jsonResponse({
           status: "success",
           capability_id: "diag.logs.collect",
@@ -185,7 +185,7 @@ describe("DiagnosticCenterPanel", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/tickets/ticket-1/diagnostics/capabilities/diag.logs.collect/run",
+        "/api/web/support/tickets/ticket-1/diagnostics/capabilities/diag.logs.collect/run",
         expect.objectContaining({ method: "POST" }),
       );
     });
@@ -217,19 +217,19 @@ describe("DiagnosticCenterPanel", () => {
           },
         });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/capabilities") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/capabilities") {
         return jsonResponse({ status: "ok", capabilities: [], count: 0 });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/evidence") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/evidence") {
         return jsonResponse({ status: "ok", evidence: [] });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/sessions") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/sessions") {
         return jsonResponse({ status: "ok", sessions: [] });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/findings") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/findings") {
         return jsonResponse({ status: "ok", findings: [] });
       }
-      if (url === "/api/tickets/ticket-1/diagnostics/evidence/manual" && init?.method === "POST") {
+      if (url === "/api/web/support/tickets/ticket-1/diagnostics/evidence/manual" && init?.method === "POST") {
         return jsonResponse({
           status: "ok",
           evidence: {
@@ -253,7 +253,7 @@ describe("DiagnosticCenterPanel", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/tickets/ticket-1/diagnostics/evidence/manual",
+        "/api/web/support/tickets/ticket-1/diagnostics/evidence/manual",
         expect.objectContaining({
           method: "POST",
           body: expect.stringContaining("Checked with user"),

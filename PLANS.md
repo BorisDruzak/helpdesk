@@ -433,6 +433,7 @@ Notes:
 - Legacy ticket tools and playbooks panels remain in the sidebar and still use their existing APIs.
 - Browser signoff found and fixed a compact-layout drawer hit-testing regression: in ticket mode the right drawer stayed pointer-active over the center panel because Tailwind's `.flex` utility overrode the component-layer `display: none`. `webapp/src/styles.css` now hides the drawer with `display: none !important` for compact ticket mode.
 - Follow-up signoff also found that the live `/app/tickets/:ticketId` route is backed by `TicketListPage`; the standalone `TicketDetailPage` route currently lazy-loads the same workspace page. `DiagnosticCenterPanel` is now wired directly into the live `Инструменты -> Диагностика` workspace tab so capability list/readiness/evidence/sessions/findings are visible in the actual support route.
+- Follow-up signoff found that the Diagnostic Center was visible but its secondary queries used token-protected `/api/tickets/{ticket_id}/diagnostics/*` paths, which return `401` under the React httpOnly web session. The support workspace now uses `/api/web/support/tickets/{ticket_id}/diagnostics/*` aliases for capabilities, sessions, evidence, findings, bundle, profile-run and passport attach while the legacy `/api/tickets/*` contract remains available.
 
 ### Phase 12: Operations, Observer and Audit Hardening
 

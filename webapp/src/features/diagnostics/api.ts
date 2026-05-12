@@ -226,6 +226,10 @@ export type DiagnosticProviderConfig = {
   credential_refs: DiagnosticProviderCredentialRef[];
 };
 
+function ticketDiagnosticsBase(ticketId: string): string {
+  return `/api/web/support/tickets/${encodeURIComponent(ticketId)}/diagnostics`;
+}
+
 export type DiagnosticProfileRunResult = {
   ticket_id: string;
   profile_id: string;
@@ -262,7 +266,7 @@ function assertOk<T>(payload: ApiOkResponse<T> | ApiErrorResponse | null, respon
 }
 
 export async function getTicketDiagnosticsOverview(ticketId: string): Promise<DiagnosticOverview> {
-  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/diagnostics/overview`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/overview`, {
     credentials: "same-origin",
   });
   const payload = await readJson<ApiSuccessResponse<DiagnosticOverview> | ApiErrorResponse>(response);
@@ -270,7 +274,7 @@ export async function getTicketDiagnosticsOverview(ticketId: string): Promise<Di
 }
 
 export async function listTicketDiagnosticCapabilities(ticketId: string): Promise<DiagnosticCapability[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/capabilities`, {
     credentials: "same-origin",
   });
   const payload = await readJson<ApiOkResponse<{ capabilities: DiagnosticCapability[] }> | ApiErrorResponse>(response);
@@ -283,7 +287,7 @@ export async function runTicketDiagnosticCapability(
   payload: { params?: Record<string, unknown>; session_id?: string | null; timeout_ms?: number } = {},
 ): Promise<DiagnosticCapabilityRunResult> {
   const response = await fetch(
-    `/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities/${encodeURIComponent(capabilityId)}/run`,
+    `${ticketDiagnosticsBase(ticketId)}/capabilities/${encodeURIComponent(capabilityId)}/run`,
     {
       method: "POST",
       credentials: "same-origin",
@@ -304,13 +308,13 @@ export async function runTicketDiagnosticCapability(
 }
 
 export async function listDiagnosticSessions(ticketId: string): Promise<DiagnosticSession[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/sessions`, { credentials: "same-origin" });
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/sessions`, { credentials: "same-origin" });
   const payload = await readJson<ApiOkResponse<{ sessions: DiagnosticSession[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load diagnostic sessions").sessions;
 }
 
 export async function createDiagnosticSession(ticketId: string, payload: { profile_id?: string; trigger_source?: string }): Promise<DiagnosticSession> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/sessions`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/sessions`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -321,7 +325,7 @@ export async function createDiagnosticSession(ticketId: string, payload: { profi
 }
 
 export async function listDiagnosticEvidence(ticketId: string): Promise<DiagnosticEvidence[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/evidence`, { credentials: "same-origin" });
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/evidence`, { credentials: "same-origin" });
   const payload = await readJson<ApiOkResponse<{ evidence: DiagnosticEvidence[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load diagnostic evidence").evidence;
 }
@@ -338,7 +342,7 @@ export async function createManualEvidence(
     passport_eligible?: boolean;
   },
 ): Promise<DiagnosticEvidence> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/evidence/manual`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/evidence/manual`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -349,7 +353,7 @@ export async function createManualEvidence(
 }
 
 export async function updateDiagnosticEvidence(ticketId: string, evidenceId: string, patch: { selected_for_passport?: boolean }): Promise<DiagnosticEvidence> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/evidence/${encodeURIComponent(evidenceId)}`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/evidence/${encodeURIComponent(evidenceId)}`, {
     method: "PATCH",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -360,13 +364,13 @@ export async function updateDiagnosticEvidence(ticketId: string, evidenceId: str
 }
 
 export async function listDiagnosticFindings(ticketId: string): Promise<DiagnosticFinding[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/findings`, { credentials: "same-origin" });
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/findings`, { credentials: "same-origin" });
   const payload = await readJson<ApiOkResponse<{ findings: DiagnosticFinding[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load diagnostic findings").findings;
 }
 
 export async function evaluateDiagnosticFindings(ticketId: string): Promise<DiagnosticFinding[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/findings/evaluate`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/findings/evaluate`, {
     method: "POST",
     credentials: "same-origin",
   });
@@ -375,7 +379,7 @@ export async function evaluateDiagnosticFindings(ticketId: string): Promise<Diag
 }
 
 export async function buildDiagnosticBundle(ticketId: string, payload: Record<string, unknown> = {}): Promise<DiagnosticBundle> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/bundle`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/bundle`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -389,7 +393,7 @@ export async function runDiagnosticProfile(
   ticketId: string,
   payload: { profile_id?: string; params?: Record<string, unknown>; auto_select_evidence?: boolean },
 ): Promise<DiagnosticProfileRunResult> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/run-profile`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/run-profile`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -400,7 +404,7 @@ export async function runDiagnosticProfile(
 }
 
 export async function attachSelectedDiagnosticEvidenceToPassport(ticketId: string): Promise<PassportAttachedEvidence[]> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/diagnostics/passport/attach-selected`, {
+  const response = await fetch(`${ticketDiagnosticsBase(ticketId)}/passport/attach-selected`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
