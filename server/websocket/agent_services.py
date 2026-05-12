@@ -95,6 +95,11 @@ class CommandAckService:
         payload = message.get("payload", {})
         operation_id = message.get("request_id")
         ack_status = payload.get("status")
+        logger.info(
+            "[command_ack] received: "
+            f"operation_id={operation_id} ack_status={ack_status} "
+            f"agent_id={ctx.agent_id} connection_id={ctx.connection_id}"
+        )
 
         if not operation_id:
             logger.warning(f"[command_ack] Missing operation_id (request_id) from agent {ctx.agent_id}")
@@ -146,6 +151,11 @@ class CommandResultService:
     async def handle(self, message: dict[str, Any], ctx: AgentConnectionContext) -> None:
         # 1) normalize
         normalized = self._normalizer.normalize(message)
+        logger.info(
+            "[command_result] received: "
+            f"operation_id={normalized.command_id} status={normalized.lifecycle_status} "
+            f"agent_id={ctx.agent_id} connection_id={ctx.connection_id}"
+        )
         # 2) lifecycle update
         lifecycle_outcome = await self._lifecycle.handle(
             legacy_handler=self._legacy_handler,
@@ -309,6 +319,10 @@ class OperationLifecycleService:
                         await outbox_repo.mark_as_delivered(operation_id)
                 else:
                     processed = False
+                    logger.warning(
+                        "[command_result] unsupported lifecycle status: "
+                        f"operation_id={operation_id} status={lifecycle_status}"
+                    )
 
                 # Снимок скаляров до выхода из get_session(): после commit/expiry повторный доступ к ORM
                 # может вызвать implicit lazy-load → greenlet_spawn / await_only (SQLAlchemy async).
@@ -341,6 +355,12 @@ class OperationLifecycleService:
                 if not processed and legacy_handler is not None:
                     await legacy_handler(ws=ctx.ws, data=message, state=ctx.state, agent_id=ctx.agent_id)
                     processed = True
+                logger.info(
+                    "[command_result] lifecycle outcome: "
+                    f"operation_id={operation_id} status={lifecycle_status} "
+                    f"processed={processed} operation_kind={operation_kind_out} "
+                    f"ticket_id={ticket_id_out}"
+                )
                 return CommandResultLifecycleOutcome(
                     processed=processed,
                     command_id=normalized.command_id,

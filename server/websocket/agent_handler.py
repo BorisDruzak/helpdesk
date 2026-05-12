@@ -127,6 +127,16 @@ async def websocket_handler(request):
                     data = json.loads(msg.data)
                     envelope = EnvelopeContext.from_message(data)
                     msg_type = envelope.message_type
+                    if msg_type in {"command_ack", "command_result"}:
+                        payload = data.get("payload")
+                        payload_status = payload.get("status") if isinstance(payload, dict) else None
+                        logger.info(
+                            "[WS handler] inbound agent command lifecycle message: "
+                            f"type={msg_type} request_id={data.get('request_id')} "
+                            f"ctx_agent_id={connection_ctx.agent_id} "
+                            f"ctx_connection_id={connection_ctx.connection_id} "
+                            f"payload_status={payload_status}"
+                        )
 
                     if (
                         msg_type != "handshake"
