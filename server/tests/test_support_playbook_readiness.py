@@ -60,6 +60,40 @@ def test_playbook_readiness_allows_server_installable_tools():
     assert readiness.label == "Готов к запуску"
 
 
+def test_playbook_readiness_does_not_require_agent_toolset_for_non_agent_capabilities():
+    manifest = {
+        "required_capabilities": [
+            {"capability_id": "server.http.request", "execution_target": "server_builtin"},
+            {"capability_id": "observer.ticket.summary", "execution_target": "observer_query"},
+            {"capability_id": "endpoint.http.request", "execution_target": "agent_managed_module"},
+        ],
+        "blocks": [
+            {
+                "capability_id": "server.http.request",
+                "execution_target": "server_builtin",
+                "params": {},
+                "tool_manifest": {
+                    "params_schema": {
+                        "type": "object",
+                        "required": ["url"],
+                        "properties": {"url": {"type": "string"}},
+                    }
+                },
+            }
+        ],
+    }
+
+    readiness = _build_playbook_launch_readiness(
+        manifest,
+        device_id="device-1",
+        available_tool_names=set(),
+    )
+
+    assert readiness.can_run is False
+    assert readiness.missing_tools == ["endpoint.http.request"]
+    assert readiness.missing_params == ["server.http.request.url"]
+
+
 def test_operation_display_marks_logical_failed_result():
     operation = SimpleNamespace(
         status="succeeded",

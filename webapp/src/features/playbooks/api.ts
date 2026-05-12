@@ -3,6 +3,9 @@ export type AdminPlaybookBlockCatalogItem = {
   label: string;
   tool: string | null;
   tool_name?: string | null;
+  capability_id?: string | null;
+  execution_target?: string | null;
+  provider_id?: string | null;
   block_type: string;
   module_kind: "diagnostic" | "remediation";
   module_name?: string | null;
@@ -31,6 +34,7 @@ export type AdminPlaybookBlockCatalogItem = {
   risk_level?: string | null;
   params_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
   presets?: Array<{
     preset_id?: string;
     id?: string;
@@ -76,6 +80,9 @@ export type AdminPlaybookDraftBlock = {
   type: "diagnostic" | "decision" | "report";
   module_kind: "diagnostic";
   tool: string | null;
+  capability_id?: string | null;
+  execution_target?: string | null;
+  provider_id?: string | null;
   label: string;
   preset_id?: string | null;
   install_policy?: string | null;

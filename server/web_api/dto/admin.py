@@ -1142,6 +1142,9 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     label: str
     tool: str | None = None
     tool_name: str | None = None
+    capability_id: str | None = None
+    execution_target: str | None = None
+    provider_id: str | None = None
     block_type: str
     module_kind: str
     module_name: str | None = None
@@ -1161,6 +1164,7 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     risk_level: str | None = None
     params_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
     presets: list[dict[str, Any]] = Field(default_factory=list)
     error_codes: list[str] = Field(default_factory=list)
 
@@ -1212,6 +1216,9 @@ class AdminPlaybookDraftBlock(BaseModel):
     type: str = "diagnostic"
     module_kind: str = "diagnostic"
     tool: str | None = None
+    capability_id: str | None = None
+    execution_target: str | None = None
+    provider_id: str | None = None
     label: str | None = None
     preset_id: str | None = None
     install_policy: str | None = "lazy"

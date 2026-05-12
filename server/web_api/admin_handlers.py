@@ -41,7 +41,8 @@ from config import MODULES_STORAGE_DIR
 from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings, _preferred_gate_for_module
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
-from playbooks.tool_catalog import normalize_tool_catalog_entry
+from diagnostics.capability_registry import CapabilityRegistry
+from playbooks.tool_catalog import normalize_capability_catalog_entry, normalize_tool_catalog_entry
 from tools.service import ToolExecutionService
 from auth.context import AuthContext
 from auth.middleware import require_auth
@@ -3266,6 +3267,18 @@ async def _build_admin_playbooks_payload(state: object | None = None) -> AdminPl
             block_catalog.append(entry)
     except Exception as exc:
         logger.warning(f"[web_admin_playbooks] failed to load server command catalog: {exc}")
+    try:
+        for capability in await CapabilityRegistry(tool_service=None, state=state).list_capabilities(device_id=None):
+            if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
+                continue
+            entry = normalize_capability_catalog_entry(capability, source=capability.source or "diagnostic_capability")
+            capability_id = str(entry.get("capability_id") or entry.get("tool") or "")
+            if not capability_id or capability_id in seen_catalog_tools:
+                continue
+            seen_catalog_tools.add(capability_id)
+            block_catalog.append(entry)
+    except Exception as exc:
+        logger.warning(f"[web_admin_playbooks] failed to load diagnostic capability catalog: {exc}")
     try:
         async with get_session() as session:
             latest_rows = await session.execute(

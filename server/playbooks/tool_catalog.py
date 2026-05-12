@@ -210,6 +210,60 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
     return normalized
 
 
+def normalize_capability_catalog_entry(raw_capability: Any, *, source: str) -> dict[str, Any]:
+    """Normalize a universal diagnostic capability into the playbook builder catalog shape."""
+    if hasattr(raw_capability, "to_dict"):
+        raw = raw_capability.to_dict()
+    elif isinstance(raw_capability, dict):
+        raw = _as_dict(raw_capability)
+    else:
+        raw = {}
+    capability_id = str(raw.get("id") or raw.get("capability_id") or raw.get("tool") or "").strip()
+    execution_target = str(raw.get("execution_target") or _as_dict(raw.get("execution")).get("target") or "").strip()
+    provider_id = str(raw.get("provider_id") or _as_dict(raw.get("deployment")).get("provider_id") or "").strip()
+    params_schema = _as_dict(raw.get("params_schema"))
+    output_schema = _as_dict(raw.get("output_schema"))
+    output_contract = _as_dict(raw.get("output_contract"))
+    if not output_contract:
+        output_contract = normalize_output_contract({}, output_schema=output_schema, error_codes=[])
+    condition_hints = _as_dict(raw.get("condition_hints"))
+    if not condition_hints:
+        condition_hints = build_condition_hints(output_contract, [])
+    install_required = bool(raw.get("install_required_on_agent") or raw.get("install_required"))
+    non_agent = execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}
+    return {
+        "id": capability_id,
+        "label": str(raw.get("title") or raw.get("label") or capability_id),
+        "tool": capability_id,
+        "tool_name": capability_id,
+        "capability_id": capability_id,
+        "execution_target": execution_target or None,
+        "provider_id": provider_id or None,
+        "block_type": "diagnostic",
+        "module_kind": "diagnostic",
+        "module_name": provider_id or None,
+        "description": str(raw.get("description") or "").strip(),
+        "default_params": _as_dict(raw.get("default_params")),
+        "changes_device": bool(raw.get("side_effects", False)),
+        "requires_confirmation": bool(raw.get("requires_consent", False)),
+        "requires_consent": bool(raw.get("requires_consent", False)),
+        "output_contract": output_contract,
+        "condition_hints": condition_hints,
+        "source": source,
+        "install_required": install_required,
+        "install_policy": "server" if non_agent else ("lazy" if install_required else "preinstalled"),
+        "supported_platforms": [str(item) for item in (raw.get("platforms") or ["any"])],
+        "platforms": [str(item) for item in (raw.get("platforms") or ["any"])],
+        "min_agent_version": raw.get("min_agent_version"),
+        "risk_level": str(raw.get("risk_level") or "low"),
+        "params_schema": params_schema,
+        "output_schema": output_schema,
+        "evidence": _as_dict(raw.get("evidence")),
+        "presets": _as_list(raw.get("presets")),
+        "error_codes": _as_list(raw.get("error_codes")),
+    }
+
+
 def expand_preset_params(
     tool_entry: dict[str, Any],
     *,
@@ -243,6 +297,9 @@ def build_required_tools_manifest(
         tool_name = str(block.get("tool") or "").strip()
         if not tool_name or tool_name in seen:
             continue
+        execution_target = str(block.get("execution_target") or "").strip()
+        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
+            continue
         seen.add(tool_name)
         entry = catalog_by_tool.get(tool_name) or _as_dict(block.get("tool_manifest"))
         result.append(
@@ -262,6 +319,52 @@ def build_required_tools_manifest(
                 "condition_hints": _as_dict(entry.get("condition_hints")),
                 "presets": _as_list(entry.get("presets")),
                 "error_codes": _as_list(entry.get("error_codes")),
+            }
+        )
+    return result
+
+
+def build_required_capabilities_manifest(
+    blocks: list[dict[str, Any]],
+    catalog_by_capability: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build target-aware requirements for capability-backed playbook steps."""
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for block in blocks:
+        capability_id = str(block.get("capability_id") or block.get("tool") or "").strip()
+        if not capability_id or capability_id in seen:
+            continue
+        seen.add(capability_id)
+        entry = catalog_by_capability.get(capability_id) or _as_dict(block.get("tool_manifest"))
+        execution_target = str(
+            block.get("execution_target")
+            or entry.get("execution_target")
+            or _as_dict(entry.get("execution")).get("target")
+            or "agent_managed_module"
+        ).strip()
+        install_required = bool(
+            entry.get("install_required")
+            or entry.get("install_required_on_agent")
+            or _as_dict(entry.get("deployment")).get("install_required_on_agent")
+        )
+        result.append(
+            {
+                "capability_id": capability_id,
+                "execution_target": execution_target,
+                "provider_id": entry.get("provider_id") or _as_dict(entry.get("deployment")).get("provider_id"),
+                "install_required": install_required,
+                "install_policy": str(
+                    block.get("install_policy")
+                    or entry.get("install_policy")
+                    or ("lazy" if install_required else ("server" if execution_target not in {"agent_builtin", "agent_managed_module"} else "preinstalled"))
+                ),
+                "requires_consent": bool(entry.get("requires_consent") or entry.get("requires_confirmation")),
+                "params_schema": _as_dict(entry.get("params_schema")),
+                "output_schema": _as_dict(entry.get("output_schema")),
+                "output_contract": _as_dict(entry.get("output_contract")),
+                "condition_hints": _as_dict(entry.get("condition_hints")),
+                "evidence": _as_dict(entry.get("evidence")),
             }
         )
     return result

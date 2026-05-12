@@ -326,6 +326,105 @@ class TestPlaybookTypedLocalSteps:
             assert step_runs[1].status == "success"
             assert step_runs[1].output_json["decision"] == "ready"
 
+    @pytest.mark.asyncio
+    async def test_non_agent_capability_step_routes_through_diagnostic_router(self, test_engine):
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        device_id = str(uuid.uuid4())
+
+        async with session_maker() as session:
+            playbook = Playbook(
+                key=f"pb_{uuid.uuid4().hex[:8]}",
+                name="Mixed target playbook",
+                domain="diag",
+                owner="tests",
+                archived=False,
+            )
+            session.add(playbook)
+            await session.flush()
+            version = PlaybookVersion(
+                playbook_id=playbook.id,
+                version="1.0.0",
+                manifest_json={
+                    "required_capabilities": [
+                        {
+                            "capability_id": "observer.ticket.summary",
+                            "execution_target": "observer_query",
+                        }
+                    ]
+                },
+                status="published",
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(version)
+            await session.flush()
+            playbook_version_id = version.id
+            session.add(
+                PlaybookStep(
+                    playbook_version_id=version.id,
+                    step_key="observer_summary",
+                    order_no=10,
+                    type="collect",
+                    tool="observer.ticket.summary",
+                    params_template_json={"trace_limit": 3},
+                )
+            )
+            await session.commit()
+
+        router_result = {
+            "status": "success",
+            "capability_id": "observer.ticket.summary",
+            "execution_target": "observer_query",
+            "execution_kind": "query",
+            "summary": "Observer summary: 0 errors",
+            "output": {"error_count": 0},
+            "evidence_preview": {
+                "kind": "observer.summary",
+                "domain": "observer",
+                "perspective": "observer",
+                "title": "Observer summary",
+                "summary": "Observer summary: 0 errors",
+                "status": "ok",
+                "source_type": "observer",
+                "source_id": "observer.ticket.summary",
+                "artifact_refs": [],
+                "trace_id": None,
+            },
+        }
+
+        with patch("app.services.playbook_engine.CapabilityExecutionRouter", create=True) as router_cls, \
+             patch("tools.service.ToolExecutionService._ensure_module_installed", AsyncMock()) as ensure_module, \
+             patch("app.services.operation_service.OperationService") as operation_service, \
+             patch("websocket.protocol.enqueue_command_async", AsyncMock()) as enqueue:
+            router_cls.return_value.run_capability = AsyncMock(return_value=router_result)
+            operation_service.return_value.enqueue_operation = AsyncMock()
+            async with session_maker() as session:
+                run_id, first_operation_id = await playbook_engine.start_run(
+                    session=session,
+                    state=MagicMock(),
+                    playbook_version_id=playbook_version_id,
+                    device_id=device_id,
+                    context_json={"ticket_id": str(uuid.uuid4())},
+                )
+                await session.commit()
+
+        assert first_operation_id is None
+        assert router_cls.return_value.run_capability.await_count == 1
+        assert router_cls.return_value.run_capability.await_args.kwargs["capability_id"] == "observer.ticket.summary"
+        assert router_cls.return_value.run_capability.await_args.kwargs["params"] == {"trace_limit": 3}
+        assert ensure_module.await_count == 0
+        assert operation_service.return_value.enqueue_operation.await_count == 0
+        assert enqueue.await_count == 0
+
+        async with session_maker() as session:
+            step_run = (
+                await session.execute(select(PlaybookStepRun).where(PlaybookStepRun.playbook_run_id == run_id))
+            ).scalar_one()
+            assert step_run.status == "success"
+            assert step_run.operation_id is None
+            assert step_run.output_json["execution_target"] == "observer_query"
+            run = await playbook_engine.PlaybookRepo(session).get_run_with_step_runs(run_id)
+            assert run[0].status == "success"
+
     @pytest.mark.no_db
     def test_if_expr_supports_steps_alias_and_collections(self):
         from app.utils.playbook_step_eval import evaluate_if_expr

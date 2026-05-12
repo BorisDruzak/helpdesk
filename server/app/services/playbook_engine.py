@@ -8,6 +8,7 @@ command_result (success/error). Этап 6: deferred run (pending + scheduled_at
 """
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Optional, Tuple, Any, List
 
 from loguru import logger
@@ -17,10 +18,18 @@ from app.repos.playbook_repo import PlaybookRepo
 from app.db.models import PlaybookStep
 from app.utils.playbook_step_eval import evaluate_if_expr, resolve_params_template
 from app.services.playbook_capability import check_tool_available
+from diagnostics.capability_registry import CapabilityRegistry
+from diagnostics.execution_router import CapabilityExecutionRouter
+from diagnostics.projection import DiagnosticProjectionService
+from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 
 TOOL_BACKED_STEP_TYPES = frozenset({"run_tool", "collect", "enrich", "remediate"})
 LOCAL_STEP_TYPES = frozenset({"transform", "decision", "report"})
 PLAYBOOK_TOOL_ACTOR_ROLE = "support"
+AGENT_CAPABILITY_TARGETS = frozenset({"agent_builtin", "agent_managed_module"})
+NON_AGENT_CAPABILITY_TARGETS = frozenset(
+    {"server_builtin", "server_connector", "observer_query", "remote_assist", "manual"}
+)
 
 
 def _step_type(step: PlaybookStep) -> str:
@@ -34,6 +43,153 @@ def _is_tool_backed_step(step: PlaybookStep) -> bool:
 
 def _has_local_steps(group: List[Tuple[PlaybookStep, int]]) -> bool:
     return any(not _is_tool_backed_step(step) for step, _ in group)
+
+
+def _step_executable_id(step: PlaybookStep) -> str:
+    return str(getattr(step, "tool", None) or "").strip()
+
+
+def _playbook_actor(context: dict) -> Any:
+    actor_id = str((context or {}).get("triggered_by") or (context or {}).get("actor_id") or "playbook").strip()
+    role = str((context or {}).get("actor_role") or PLAYBOOK_TOOL_ACTOR_ROLE).strip() or PLAYBOOK_TOOL_ACTOR_ROLE
+    return SimpleNamespace(actor_id=actor_id, actor_role=role)
+
+
+def _context_dict(context: dict, *keys: str) -> dict | None:
+    for key in keys:
+        value = (context or {}).get(key)
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _context_permissions(context: dict) -> set[str] | None:
+    raw = (context or {}).get("permissions")
+    if raw is None:
+        return None
+    if isinstance(raw, (list, tuple, set)):
+        return {str(item) for item in raw if str(item).strip()}
+    return {str(raw)}
+
+
+async def _resolve_non_agent_capability(state, capability_id: str):
+    if not capability_id:
+        return None
+    try:
+        registry = CapabilityRegistry(tool_service=None, state=state)
+        capability = await registry.resolve_capability(capability_id, device_id=None)
+    except Exception as exc:
+        logger.debug(f"[PlaybookEngine] Capability resolve skipped id={capability_id}: {exc}")
+        return None
+    if capability and capability.execution_target in NON_AGENT_CAPABILITY_TARGETS:
+        return capability
+    return None
+
+
+def _capability_step_succeeded(result: dict[str, Any]) -> bool:
+    status = str((result or {}).get("status") or "").strip().lower()
+    if status in {"error", "failed", "failure", "unsupported"}:
+        return False
+    if result.get("error_code"):
+        return False
+    return True
+
+
+def _readiness_dict(readiness: Any) -> dict[str, Any]:
+    if hasattr(readiness, "to_dict"):
+        return readiness.to_dict()
+    return dict(readiness) if isinstance(readiness, dict) else {}
+
+
+async def _execute_non_agent_capability_step(
+    session,
+    state,
+    repo: PlaybookRepo,
+    run,
+    step: PlaybookStep,
+    capability,
+    context: dict,
+    params: dict,
+):
+    from tools.service import ToolExecutionService
+
+    ticket_id = str((context or {}).get("ticket_id") or "").strip()
+    actor = _playbook_actor(context)
+    readiness_context = ReadinessContext(
+        ticket_id=ticket_id or None,
+        device_id=run.device_id,
+        actor=actor,
+        device_platform=(context or {}).get("device_platform"),
+        integration_configs=_context_dict(context, "integration_configs", "diagnostic_integration_configs"),
+        credential_keys=_context_dict(context, "credential_keys", "diagnostic_credential_keys"),
+        mappings=_context_dict(context, "mappings", "diagnostic_mappings"),
+        policy_flags=_context_dict(context, "policy_flags", "diagnostic_policy_flags"),
+        permissions=_context_permissions(context),
+        has_root_trace=(context or {}).get("has_root_trace"),
+        remote_assist=_context_dict(context, "remote_assist"),
+        has_permission=(context or {}).get("has_permission", True),
+    )
+    readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
+    timeout_ms = int(step.timeout_sec * 1000) if step.timeout_sec else None
+    router = CapabilityExecutionRouter(
+        capability_registry=CapabilityRegistry(tool_service=None, state=state),
+        tool_service=ToolExecutionService(state),
+    )
+    result = await router.run_capability(
+        ticket_id=ticket_id,
+        device_id=run.device_id,
+        capability_id=capability.id,
+        params=params,
+        actor=actor,
+        readiness=readiness,
+        idempotency_key=f"playbook:{run.id}:step:{step.id}:attempt:1",
+        timeout_ms=timeout_ms,
+    )
+    succeeded = _capability_step_succeeded(result)
+    status = "success" if succeeded else "failed"
+    now = datetime.now(timezone.utc)
+    step_run = await repo.create_step_run(
+        playbook_run_id=run.id,
+        playbook_step_id=step.id,
+        operation_id=result.get("operation_id"),
+        attempt=1,
+        input_json=params,
+        status=status,
+        output_json=result if succeeded else None,
+        error_json=None
+        if succeeded
+        else {
+            "code": result.get("error_code") or "CAPABILITY_STEP_FAILED",
+            "message": result.get("message") or result.get("error_message") or "Capability step failed",
+            "stage": "capability_route",
+            "readiness": _readiness_dict(readiness),
+            "result": result,
+        },
+        finished_at=now,
+    )
+    if ticket_id and succeeded and capability.execution_target != "manual" and result.get("evidence_preview"):
+        step_key = str(step.step_key)
+        try:
+            from app.db.models import Ticket
+
+            ticket = await session.get(Ticket, ticket_id)
+            if ticket is not None:
+                async with session.begin_nested():
+                    await DiagnosticProjectionService(session).project_capability_result(
+                        ticket_id=ticket_id,
+                        capability_descriptor=capability,
+                        result=result,
+                        actor=actor,
+                        session_id=(context or {}).get("diagnostic_session_id"),
+                        readiness=_readiness_dict(readiness),
+                        params=params,
+                    )
+        except Exception as exc:
+            logger.warning(
+                f"[PlaybookEngine] Capability evidence projection failed run_id={run.id} "
+                f"step_key={step_key} capability_id={capability.id}: {exc}"
+            )
+    return step_run
 
 
 async def _execute_local_step(
@@ -248,6 +404,24 @@ async def _start_group_steps(
             continue
         # Этап 9: Capability Gate — проверка до enqueue (отключается CAPABILITY_GATE_STRICT=false)
         params = _step_params(step, context, prev_steps)
+        non_agent_capability = await _resolve_non_agent_capability(state, _step_executable_id(step))
+        if non_agent_capability is not None:
+            step_run = await _execute_non_agent_capability_step(
+                session,
+                state,
+                repo,
+                run,
+                step,
+                non_agent_capability,
+                context,
+                params,
+            )
+            processed_steps += 1
+            prev_steps = await repo.get_prev_steps_for_run(run.id)
+            await _process_run_after_step_terminal(session, state, repo, run, step, step_run)
+            if getattr(run, "status", None) != "running":
+                break
+            continue
         ready, err_code, err_msg, preflight_authoritative = await _ensure_tool_step_ready(state, run, step)
         if not ready:
             step_run_fail = await _fail_tool_step_before_enqueue(

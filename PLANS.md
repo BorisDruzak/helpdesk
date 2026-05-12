@@ -376,24 +376,30 @@ Verification:
 
 ### Phase 10: Playbook Integration
 
-- [ ] Allow playbooks to reference capability ids in addition to current tool ids.
-- [ ] Keep old playbooks working unchanged.
-- [ ] Add playbook step target resolution:
-  - agent tool
-  - server connector query
-  - observer query
-  - manual checkpoint
-  - remote assist session request
-- [ ] Add readiness preflight for capability-backed playbook steps.
-- [ ] Add output contracts for non-agent capability steps.
-- [ ] Add evidence attachment policy per step.
-- [ ] Add authoring UI/catalog updates for capabilities.
+- [x] Allow playbooks to reference capability ids in addition to current tool ids.
+- [x] Keep old playbooks working unchanged.
+- [x] Add playbook step target resolution:
+  - agent tool remains on the existing `run_tool` path.
+  - server builtin / server connector query route through `CapabilityExecutionRouter`.
+  - observer query routes through the observer capability provider.
+  - manual checkpoint routes through the manual capability provider.
+  - remote assist session request routes through the remote assist capability provider.
+- [x] Add readiness preflight for capability-backed playbook steps.
+- [x] Add output contracts for non-agent capability steps.
+- [x] Add evidence attachment policy per step.
+- [x] Add authoring UI/catalog updates for capabilities.
 
 Verification:
 
-- existing playbook tests
-- new mixed-target playbook tests
-- no regression in auto-install before tool-backed steps
+- [x] existing playbook tests
+- [x] new mixed-target playbook tests
+- [x] no regression in auto-install before tool-backed steps
+
+Notes:
+
+- Completed in this phase: playbook drafts now persist `required_capabilities` alongside legacy `required_tools`; non-agent capability steps complete `playbook_step_run` synchronously with router output and do not enqueue DeviceOutbox commands; agent-backed steps still use the existing module install preflight and `run_tool` enqueue path.
+- Evidence attachment is opportunistic and safe: playbook capability results with `evidence_preview` project into diagnostic evidence only when the ticket context points to an existing ticket, and projection failure does not fail the playbook step.
+- Full policy/RBAC depth for capability playbooks remains part of Phase 12 hardening.
 
 ### Phase 11: Diagnostic Center UI
 

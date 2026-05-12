@@ -232,6 +232,86 @@ def test_normalize_playbook_draft_writes_manifest_v2_required_tools_and_install_
 
 
 @pytest.mark.no_db
+def test_normalize_playbook_draft_accepts_capability_id_for_non_agent_steps():
+    normalized = normalize_playbook_draft(
+        {
+            "key": "server_side_http",
+            "name": "Server-side HTTP check",
+            "blocks": [
+                {
+                    "id": "server_http",
+                    "type": "diagnostic",
+                    "module_kind": "diagnostic",
+                    "capability_id": "server.http.request",
+                    "label": "Server HTTP request",
+                    "params": {"url": "https://example.test"},
+                    "tool_manifest": {
+                        "id": "server.http.request",
+                        "capability_id": "server.http.request",
+                        "label": "Server HTTP request",
+                        "execution_target": "server_builtin",
+                        "provider_id": "server_builtin",
+                        "params_schema": {
+                            "type": "object",
+                            "required": ["url"],
+                            "properties": {"url": {"type": "string"}},
+                        },
+                        "output_contract": {
+                            "status_path": "status",
+                            "status_values": ["success", "error"],
+                            "success_values": ["success"],
+                            "error_values": ["error"],
+                        },
+                        "evidence": {
+                            "produces_evidence": True,
+                            "kind": "network.http",
+                            "domain": "network",
+                            "perspective": "server",
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    block = normalized["manifest"]["blocks"][0]
+    assert normalized["steps"][0]["tool"] == "server.http.request"
+    assert block["tool"] == "server.http.request"
+    assert block["capability_id"] == "server.http.request"
+    assert block["execution_target"] == "server_builtin"
+    assert normalized["manifest"]["required_capabilities"] == [
+        {
+            "capability_id": "server.http.request",
+            "execution_target": "server_builtin",
+            "provider_id": "server_builtin",
+            "install_required": False,
+            "install_policy": "server",
+            "requires_consent": False,
+            "params_schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {"url": {"type": "string"}},
+            },
+            "output_schema": {},
+            "output_contract": {
+                "status_path": "status",
+                "status_values": ["success", "error"],
+                "success_values": ["success"],
+                "error_values": ["error"],
+            },
+            "condition_hints": {},
+            "evidence": {
+                "produces_evidence": True,
+                "kind": "network.http",
+                "domain": "network",
+                "perspective": "server",
+            },
+        }
+    ]
+    assert normalized["manifest"]["required_tools"] == []
+
+
+@pytest.mark.no_db
 def test_form_pack_preserves_ticket_created_diagnostic_playbook_trigger():
     pack = validate_form_pack_schema(
         {

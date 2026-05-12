@@ -2150,10 +2150,49 @@ def _required_tools_from_manifest(manifest_json: object) -> list[str]:
     for raw_block in manifest_json.get("blocks") or []:
         if not isinstance(raw_block, dict):
             continue
+        execution_target = str(raw_block.get("execution_target") or "").strip()
+        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
+            continue
         tool_name = str(raw_block.get("tool") or raw_block.get("tool_name") or "").strip()
         if tool_name and tool_name not in tools:
             tools.append(tool_name)
     return tools
+
+
+def _required_capabilities_from_manifest(manifest_json: object) -> list[dict[str, str | None]]:
+    if not isinstance(manifest_json, dict):
+        return []
+    capabilities: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    for raw_item in manifest_json.get("required_capabilities") or []:
+        if not isinstance(raw_item, dict):
+            continue
+        capability_id = str(raw_item.get("capability_id") or raw_item.get("id") or "").strip()
+        if not capability_id or capability_id in seen:
+            continue
+        seen.add(capability_id)
+        capabilities.append(
+            {
+                "capability_id": capability_id,
+                "execution_target": str(raw_item.get("execution_target") or "").strip() or None,
+            }
+        )
+    for raw_block in manifest_json.get("blocks") or []:
+        if not isinstance(raw_block, dict):
+            continue
+        capability_id = str(
+            raw_block.get("capability_id") or raw_block.get("capability") or raw_block.get("tool") or ""
+        ).strip()
+        if not capability_id or capability_id in seen:
+            continue
+        seen.add(capability_id)
+        capabilities.append(
+            {
+                "capability_id": capability_id,
+                "execution_target": str(raw_block.get("execution_target") or "").strip() or None,
+            }
+        )
+    return capabilities
 
 
 @dataclass(frozen=True)
@@ -2207,8 +2246,10 @@ def _schema_param_has_default(schema: object, param_name: str) -> bool:
 
 
 def _block_required_param_gaps(block: dict) -> list[str]:
-    tool_name = str(block.get("tool") or block.get("tool_name") or "").strip()
-    if not tool_name:
+    executable_id = str(
+        block.get("tool") or block.get("tool_name") or block.get("capability_id") or block.get("capability") or ""
+    ).strip()
+    if not executable_id:
         return []
     params = block.get("params") if isinstance(block.get("params"), dict) else {}
     default_params = block.get("default_params") if isinstance(block.get("default_params"), dict) else {}
@@ -2218,7 +2259,7 @@ def _block_required_param_gaps(block: dict) -> list[str]:
     for param_name in _schema_required_param_names(schema):
         if param_name in params or param_name in default_params or _schema_param_has_default(schema, param_name):
             continue
-        missing.append(f"{tool_name}.{param_name}")
+        missing.append(f"{executable_id}.{param_name}")
     return missing
 
 
@@ -2250,12 +2291,23 @@ def _build_playbook_launch_readiness(
         )
 
     required_tools = _required_tools_from_manifest(manifest_json)
+    required_capabilities = _required_capabilities_from_manifest(manifest_json)
     missing_tools = []
     for tool in required_tools:
         builtin_prefix = tool.split(".", 1)[0].lower() if "." in tool else ""
         if tool in available_tool_names or builtin_prefix in AGENT_BUILTIN_MODULES:
             continue
         missing_tools.append(tool)
+    for capability in required_capabilities:
+        capability_id = str(capability.get("capability_id") or "").strip()
+        execution_target = str(capability.get("execution_target") or "").strip()
+        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
+            continue
+        builtin_prefix = capability_id.split(".", 1)[0].lower() if "." in capability_id else ""
+        if capability_id in available_tool_names or builtin_prefix in AGENT_BUILTIN_MODULES:
+            continue
+        if capability_id not in missing_tools:
+            missing_tools.append(capability_id)
     missing_params = _required_param_gaps_from_manifest(manifest_json)
     label_parts: list[str] = []
     if missing_tools:

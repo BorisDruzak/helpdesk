@@ -84,6 +84,9 @@ function blockFromCatalog(
     type: "diagnostic",
     module_kind: "diagnostic",
     tool: item.tool,
+    capability_id: item.capability_id ?? item.tool,
+    execution_target: item.execution_target ?? null,
+    provider_id: item.provider_id ?? null,
     label: item.label,
     preset_id: null,
     install_policy: item.install_policy ?? (item.install_required ? "lazy" : "preinstalled"),
@@ -663,6 +666,9 @@ export function PlaybookBuilderPanel({ permissions }: { permissions?: string[] }
   function updateBlockTool(blockId: string, item: AdminPlaybookBlockCatalogItem) {
     updateBlock(blockId, {
       tool: item.tool,
+      capability_id: item.capability_id ?? item.tool,
+      execution_target: item.execution_target ?? null,
+      provider_id: item.provider_id ?? null,
       label: item.label,
       preset_id: null,
       install_policy: item.install_policy ?? (item.install_required ? "lazy" : "preinstalled"),
