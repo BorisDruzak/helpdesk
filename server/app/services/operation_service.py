@@ -138,6 +138,39 @@ class OperationService:
         # Terminal statuses: no deadline
         else:
             return None
+
+    def _calculate_deadline_for_status(
+        self,
+        operation: Operation,
+        status: str,
+        *,
+        transition_at: Optional[datetime] = None,
+    ) -> Optional[datetime]:
+        """Calculate a transition deadline without mutating the ORM row first."""
+        now = transition_at or datetime.now(timezone.utc)
+        kind = operation.kind
+
+        if status in ["queued", "sent"]:
+            timeout = self._get_sla_timeout(kind, "delivery_timeout")
+            return operation.queued_at + timedelta(seconds=timeout)
+        if status == "accepted":
+            timeout = self._get_sla_timeout(kind, "accepted_timeout")
+            return now + timedelta(seconds=timeout)
+        if status == "running":
+            timeout = (
+                operation.timeout_override_sec
+                if operation.timeout_override_sec is not None
+                else self._get_sla_timeout(kind, "execution_timeout")
+            )
+            start_time = operation.started_at or now
+            return start_time + timedelta(seconds=timeout)
+        if status == "waiting_consent":
+            timeout = self._get_sla_timeout(kind, "consent_timeout")
+            start_time = operation.started_at or now
+            return start_time + timedelta(seconds=timeout)
+        if status == "cancel_requested":
+            return now + timedelta(seconds=60)
+        return None
     
     def update_deadline(
         self,
@@ -277,9 +310,7 @@ class OperationService:
             )
             return False
         
-        operation.status = "sent"
-        operation.sent_at = datetime.now(timezone.utc)
-        new_deadline = self.calculate_deadline(operation)
+        new_deadline = self._calculate_deadline_for_status(operation, "sent")
         
         success = await self.repo.update_status(
             operation_id=operation_id,
@@ -325,9 +356,7 @@ class OperationService:
             )
             return False
         
-        operation.status = "accepted"
-        operation.accepted_at = datetime.now(timezone.utc)
-        new_deadline = self.calculate_deadline(operation)
+        new_deadline = self._calculate_deadline_for_status(operation, "accepted")
         
         success = await self.repo.update_status(
             operation_id=operation_id,
@@ -373,9 +402,7 @@ class OperationService:
             )
             return False
         
-        operation.status = "running"
-        operation.started_at = datetime.now(timezone.utc)
-        new_deadline = self.calculate_deadline(operation)
+        new_deadline = self._calculate_deadline_for_status(operation, "running")
         
         success = await self.repo.update_status(
             operation_id=operation_id,
@@ -421,17 +448,15 @@ class OperationService:
             )
             return False
         
-        operation.status = "waiting_consent"
         # Set started_at if not already set (for deadline calculation)
-        if not operation.started_at:
-            operation.started_at = datetime.now(timezone.utc)
-        new_deadline = self.calculate_deadline(operation)
+        set_started_at = not operation.started_at
+        new_deadline = self._calculate_deadline_for_status(operation, "waiting_consent")
         
         success = await self.repo.update_status(
             operation_id=operation_id,
             new_status="waiting_consent",
             expected_statuses=expected_statuses,
-            timestamp_field="started_at" if not operation.started_at else None,
+            timestamp_field="started_at" if set_started_at else None,
             deadline_at=new_deadline
         )
         
@@ -474,7 +499,7 @@ class OperationService:
             timestamp_field="finished_at",
             result_summary=result_summary,
             result_event_id=result_event_id,
-            deadline_at=None  # Clear deadline for terminal status
+            clear_deadline=True,
         )
         
         if success:
@@ -519,7 +544,7 @@ class OperationService:
             error_code=error_code,
             error_message=error_message,
             result_event_id=result_event_id,
-            deadline_at=None  # Clear deadline for terminal status
+            clear_deadline=True,
         )
         
         if success:
@@ -562,7 +587,7 @@ class OperationService:
             timestamp_field="finished_at",
             error_code="timeout",
             error_message=error_message or "Operation timed out",
-            deadline_at=None  # Clear deadline for terminal status
+            clear_deadline=True,
         )
         
         if success:
@@ -640,8 +665,11 @@ class OperationService:
         if cancel_requested_at is None:
             cancel_requested_at = datetime.now(timezone.utc)
         
-        operation.status = "cancel_requested"
-        new_deadline = self.calculate_deadline(operation)
+        new_deadline = self._calculate_deadline_for_status(
+            operation,
+            "cancel_requested",
+            transition_at=cancel_requested_at,
+        )
         
         success = await self.repo.update_status(
             operation_id=operation_id,
@@ -700,7 +728,7 @@ class OperationService:
             expected_statuses=expected_statuses,
             result_event_id=result_event_id,
             canceled_at=canceled_at,
-            deadline_at=None,  # Clear deadline for terminal status
+            clear_deadline=True,
             status_before_cancel=None,  # Очистить после успешного cancel
             active_cancel_operation_id=None  # Очистить для разрешения повторного cancel
         )
@@ -996,7 +1024,7 @@ class OperationService:
             timestamp_field="finished_at",
             error_code="CONSENT_DENIED",
             error_message=reason or "Consent denied",
-            deadline_at=None  # Clear deadline for terminal status
+            clear_deadline=True,
         )
         
         if success:

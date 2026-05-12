@@ -172,6 +172,7 @@ class OperationsRepo:
         result_summary: Optional[str] = None,
         result_event_id: Optional[int] = None,
         retry_count: Optional[int] = None,
+        clear_deadline: bool = False,
         # Cancel fields
         status_before_cancel: Optional[str] = None,
         cancel_target_operation_id: Optional[str] = None,
@@ -231,7 +232,9 @@ class OperationsRepo:
             values[timestamp_field] = datetime.now(timezone.utc)
         
         # Update deadline if specified
-        if deadline_at is not None:
+        if clear_deadline:
+            values["deadline_at"] = None
+        elif deadline_at is not None:
             values["deadline_at"] = deadline_at
         
         # Update error fields if specified

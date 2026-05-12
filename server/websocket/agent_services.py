@@ -90,10 +90,8 @@ class CommandAckService:
         if not ctx.agent_id:
             return
         agent_info = ctx.state.get_agent(ctx.agent_id)
-        if not agent_info:
-            return
-
-        agent_info["metadata"]["last_seen"] = time.time()
+        if agent_info:
+            agent_info["metadata"]["last_seen"] = time.time()
         payload = message.get("payload", {})
         operation_id = message.get("request_id")
         ack_status = payload.get("status")
