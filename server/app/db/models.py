@@ -348,7 +348,7 @@ class TicketActionLog(Base):
     action_type: Mapped[str] = mapped_column(String(40), nullable=False)
     actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_event_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
@@ -1572,6 +1572,137 @@ class OperationDependency(Base):
         Index("ix_operation_dependencies_key", "dependency_key"),
         Index("ix_operation_dependencies_status", "status"),
         Index("ix_operation_dependencies_timeout_at", "timeout_at"),
+    )
+
+
+class RunnerRolloutPlan(Base):
+    """Fleet rollout plan for the protected agent_recipe_runner managed module."""
+
+    __tablename__ = "runner_rollout_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    module_name: Mapped[str] = mapped_column(String(100), nullable=False, default="agent_recipe_runner")
+    target_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    rollback_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft", index=True)
+    strategy: Mapped[str] = mapped_column(String(32), nullable=False, default="canary_waves")
+    canary_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    wave_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    paused_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rolled_back_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_runner_rollout_plans_module_status", "module_name", "status"),
+        Index("ix_runner_rollout_plans_target_status", "target_version", "status"),
+    )
+
+
+class RunnerRolloutWave(Base):
+    """A canary or rollout wave inside a runner rollout plan."""
+
+    __tablename__ = "runner_rollout_waves"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
+    wave_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("plan_id", "wave_index", name="uq_runner_rollout_waves_plan_index"),
+        Index("ix_runner_rollout_waves_plan_status", "plan_id", "status"),
+    )
+
+
+class RunnerRolloutTarget(Base):
+    """Per-device target state for a runner rollout plan."""
+
+    __tablename__ = "runner_rollout_targets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
+    wave_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_waves.id", ondelete="SET NULL"), nullable=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    module_name: Mapped[str] = mapped_column(String(100), nullable=False, default="agent_recipe_runner")
+    target_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    rollback_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    current_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    desired_set_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    failed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rolled_back_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    last_error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("plan_id", "device_id", name="uq_runner_rollout_targets_plan_device"),
+        Index("ix_runner_rollout_targets_plan_status", "plan_id", "status"),
+        Index("ix_runner_rollout_targets_wave_status", "wave_id", "status"),
+        Index("ix_runner_rollout_targets_device", "device_id"),
+    )
+
+
+class RunnerRolloutEvent(Base):
+    """Audit timeline for runner rollout plan/wave/target actions."""
+
+    __tablename__ = "runner_rollout_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    plan_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("runner_rollout_plans.id", ondelete="CASCADE"), nullable=False)
+    wave_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_waves.id", ondelete="SET NULL"), nullable=True)
+    target_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("runner_rollout_targets.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_runner_rollout_events_plan", "plan_id", "created_at"),
+        Index("ix_runner_rollout_events_type", "event_type"),
     )
 
 

@@ -16,6 +16,7 @@ import { CapabilityDetailDrawer } from "./capability-detail-drawer";
 import { CapabilityProviderCards } from "./capability-provider-cards";
 import { EvidenceMappingPanel } from "./evidence-mapping-panel";
 import { ReadinessLabPanel } from "./readiness-lab-panel";
+import { RunnerRolloutPanel } from "./runner-rollout-panel";
 import { SdkModulesTab } from "./sdk-modules-tab";
 import type { CapabilityDescriptor, DiagnosticProviderConfig, ProviderSummary } from "./types";
 
@@ -320,13 +321,16 @@ export function CapabilityStudioPage() {
       ) : null}
 
       {activeTab === "providers" ? (
-        <CapabilityProviderCards
-          providers={providers}
-          onSelectProvider={(providerId) => {
-            setProviderFilter(providerId);
-            setTab("catalog");
-          }}
-        />
+        <div className="space-y-5">
+          <RunnerRolloutPanel />
+          <CapabilityProviderCards
+            providers={providers}
+            onSelectProvider={(providerId) => {
+              setProviderFilter(providerId);
+              setTab("catalog");
+            }}
+          />
+        </div>
       ) : null}
 
       {activeTab === "evidence" ? (

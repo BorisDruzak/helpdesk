@@ -175,3 +175,75 @@ export interface AgentRecipeCreateResult {
   recipe_version_id: string;
   capability: CapabilityDescriptor;
 }
+
+export interface RunnerRolloutTarget {
+  target_id: string;
+  device_id: string;
+  wave_id?: string | null;
+  module_name: string;
+  target_version: string;
+  rollback_version?: string | null;
+  status: string;
+  current_version?: string | null;
+  operation_id?: string | null;
+  last_error_code?: string | null;
+  last_error_message?: string | null;
+  desired_set_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface RunnerRolloutWave {
+  wave_id: string;
+  wave_index: number;
+  status: string;
+  target_count: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  targets: RunnerRolloutTarget[];
+}
+
+export interface RunnerRolloutPlan {
+  plan_id: string;
+  module_name: string;
+  target_version: string;
+  rollback_version?: string | null;
+  status: string;
+  strategy: string;
+  canary_size: number;
+  wave_size: number;
+  max_concurrency: number;
+  target_count: number;
+  created_by?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  rolled_back_at?: string | null;
+  waves: RunnerRolloutWave[];
+  targets: RunnerRolloutTarget[];
+  current_wave?: RunnerRolloutWave | null;
+  summary: Record<string, number>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RunnerRolloutSummary {
+  provider_id: string;
+  module_name: string;
+  installed_active_devices: number;
+  rollout_targets: number;
+  versions: Array<{ version: string; count: number }>;
+  latest_plan?: RunnerRolloutPlan | null;
+}
+
+export interface RunnerRolloutPayload {
+  summary: RunnerRolloutSummary;
+  plans: RunnerRolloutPlan[];
+}
+
+export interface RunnerRolloutCreatePayload {
+  target_version: string;
+  rollback_version?: string;
+  target_device_ids?: string[];
+  canary_size?: number;
+  wave_size?: number;
+  max_concurrency?: number;
+}

@@ -18,6 +18,26 @@ Goal: make `agent_recipe` runs able to install or upgrade the protected `agent_r
 - [x] Update support diagnostics UI labels for install/upgrade runner actions and waiting dependency run results.
 - [x] Add targeted tests for missing runner dependency creation and idempotent resume.
 
+### Runner Fleet Rollout / Canary / Waves / Rollback Slice
+
+Goal: add an admin-managed rollout workflow for the protected `agent_recipe_runner` module across multiple devices. This is separate from ticket-bound runtime dependency install: plans, waves and target state are persisted, but installs/upgrades still go through `device_desired_modules` and `modules.reconcile.reconcile_device`.
+
+- [ ] Add persisted runner rollout plan, wave, target and event models plus migration.
+- [ ] Add rollout service/repo with canary selection, wave promotion, pause/resume, refresh and rollback.
+- [ ] Keep module delivery inside existing module lifecycle; never write module storage or install commands directly.
+- [ ] Expose admin APIs for summary, create plan, start canary, promote wave, pause/resume, refresh and rollback.
+- [ ] Extend Capability Studio provider card with Runner Rollout UI and actions.
+- [ ] Add backend tests for canary desired-state writes, promotion guardrails, status refresh and rollback.
+- [ ] Add frontend type/build coverage and browser-check `/app/admin/capabilities?tab=providers`.
+
+Hard constraints for this slice:
+
+- Runner rollout only targets `agent_recipe_runner`.
+- No fake fleet rollout over the single-device dependency path.
+- No remediation or arbitrary command execution.
+- Rollback means setting desired module version back to the recorded rollback version and reconciling affected devices.
+- Canary/waves may be admin-triggered in MVP; background scheduling can be added later without changing the persistence model.
+
 Hard constraints for this slice:
 
 - No arbitrary PowerShell/Bash/Python command runner.

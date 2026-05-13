@@ -41,6 +41,36 @@ Ticket-bound auto-install/auto-upgrade is intentionally narrower than fleet roll
 - Resume is idempotent: if the parent operation already has a `run_recipe` outbox command, subsequent resume attempts do not enqueue another one.
 - Timeout is handled by the operation watchdog through the dependency timeout timestamp and fails the parent operation with a clear runner dependency error. Intermediate `waiting_dependency` responses are not persisted as diagnostic evidence; evidence is created from terminal recipe execution results.
 
+## Fleet Rollout / Canary / Waves / Rollback
+
+Fleet rollout is a separate admin workflow for the protected runner package. It is not the same as ticket-bound auto-install:
+
+- Ticket-bound auto-install installs or upgrades one device so a specific recipe operation can continue.
+- Fleet rollout deliberately targets many devices and persists explicit plan/wave/target state.
+
+Migrations `079` and `080` add:
+
+- `runner_rollout_plans`
+- `runner_rollout_waves`
+- `runner_rollout_targets`
+- `runner_rollout_events`
+
+The service entrypoint is `server/diagnostics/runner_rollout.py`. Admin APIs live under:
+
+- `GET /api/web/admin/capabilities/runner-rollout`
+- `POST /api/web/admin/capabilities/runner-rollout/plans`
+- `GET /api/web/admin/capabilities/runner-rollout/plans/{plan_id}`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/start-canary`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/promote-next-wave`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/pause`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/resume`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/refresh`
+- `POST /api/web/admin/capabilities/runner-rollout/plans/{plan_id}/rollback`
+
+Rollout delivery still uses the existing module lifecycle. Starting canary or promoting a wave writes `device_desired_modules` for `agent_recipe_runner@target_version` and invokes `modules.reconcile.reconcile_device`. Rollback writes desired state back to the recorded rollback version and reconciles only targets that were started by the plan. The workflow never writes module storage directly and never sends a recipe command as part of rollout.
+
+Capability Studio surfaces this in the Providers tab as an Agent Recipe Runner rollout panel. Upload, preferred-version assignment and live tests remain in Modules Workbench.
+
 ## Readiness
 
 `agent_recipe` readiness can return:
