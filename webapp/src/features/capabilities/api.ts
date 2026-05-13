@@ -34,13 +34,16 @@ function assertOk<T>(payload: ApiOkResponse<T> | ApiErrorResponse | null, respon
 }
 
 export async function listAdminCapabilities(): Promise<CapabilityDescriptor[]> {
-  const response = await fetch("/api/web/admin/capabilities", { credentials: "same-origin" });
+  const response = await fetch("/api/web/admin/capabilities", { credentials: "same-origin", cache: "no-store" });
   const payload = await readJson<ApiOkResponse<{ capabilities: CapabilityDescriptor[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load capabilities").capabilities;
 }
 
 export async function listAdminCapabilityProviderConfigs(): Promise<DiagnosticProviderConfig[]> {
-  const response = await fetch("/api/web/admin/capabilities/provider-configs", { credentials: "same-origin" });
+  const response = await fetch("/api/web/admin/capabilities/provider-configs", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
   const payload = await readJson<ApiOkResponse<{ provider_configs: DiagnosticProviderConfig[] }> | ApiErrorResponse>(
     response,
   );
@@ -56,7 +59,10 @@ export async function listTicketCapabilityReadiness(ticketId: string): Promise<C
 }
 
 export async function listAgentRecipePrimitives(): Promise<AgentRecipePrimitive[]> {
-  const response = await fetch("/api/web/admin/agent-recipes/primitives", { credentials: "same-origin" });
+  const response = await fetch("/api/web/admin/agent-recipes/primitives", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
   const payload = await readJson<ApiOkResponse<{ primitives: AgentRecipePrimitive[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load agent recipe primitives").primitives;
 }
