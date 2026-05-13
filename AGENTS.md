@@ -21,15 +21,15 @@
    - если задача затрагивает новый `webapp/`, frontend bundle pipeline или release flow для web-ассетов, перед любыми frontend-командами обязательно выполнить `python scripts/bootstrap_web_toolchain.py`.
 4. При изменении структуры, маршрутов, контрактов или ключевых потоков синхронно обновлять код, docs и канонический `CODEMAP`.
 5. Перед коммитом прогонять минимум `python scripts/verify_workspace.py`, затем релевантные `pytest` и нужные smoke/browser-проверки.
-6. После локальной проверки делать локальный commit.
+6. После локальной проверки делать локальный commit и сразу push этого commit в GitHub `origin` на текущую ветку. Локальный commit без GitHub push считается незавершённым checkpoint-ом, если пользователь явно не попросил не публиковать.
 7. Для выкладки на Linux использовать только штатные скрипты:
    - `python scripts/deploy_workspace_to_remote.py`
    - `python scripts/release_server_to_remote.py`
    - `python scripts/manage_remote_stack.py start|stop|restart|status|smoke|logs server|agent|control`
    - Для итерационного стенда допускается явный `--gate quick`; он пропускает только full-CI artifact gate и не заменяет `verify_workspace`, релевантные pytest, remote smoke или browser checks.
-   - Для финального release, GitHub push и публикации проверенного состояния использовать `--gate full` или дефолтный режим без `--gate`; full требует green CI artifact текущего commit.
+   - Для финального release и публикации проверенного release-состояния использовать `--gate full` или дефолтный режим без `--gate`; full требует green CI artifact текущего commit. Обычный GitHub push dev-ветки после локального commit не требует full gate.
 8. После проверок на Linux останавливать сервер: `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
-9. В GitHub публиковать только проверенное состояние.
+9. Каждый локальный commit публиковать в GitHub `origin` тем же рабочим циклом (`git push -u origin <current-branch>` при первом push ветки, затем `git push`). Строгий отдельный secret-scan перед таким push не требуется; достаточно обычного осознанного staging по текущему `.gitignore` и проектным правилам не логировать сырые токены.
 
 ## Контекст и артефакты
 

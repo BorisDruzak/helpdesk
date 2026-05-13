@@ -10,8 +10,9 @@
 
 - Правки и коммиты делаются только в локальной копии на диске машины.
 - На шару и на Linux-хост отправляется только проверенное состояние.
-- В GitHub публикуется только то, что уже прошло проверку.
-- Канонический порядок для финального release/push: локальные правки -> локальные проверки -> локальный commit -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> push проверенных изменений.
+- Каждый локальный commit публикуется в GitHub `origin` сразу после commit: локальный commit и GitHub push являются одним checkpoint-ом.
+- Для обычного push dev-ветки в GitHub не нужен отдельный строгий secret-scan или full CI artifact; достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов.
+- Канонический порядок для финального release: локальные правки -> локальные проверки -> локальный commit -> push в GitHub `origin` -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> release-отчёт.
 - Для быстрой итерации на Linux-стенде допускается явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
@@ -57,11 +58,14 @@ python scripts/verify_workspace.py
 
 `verify_workspace.py` включает UTF-8/compile checks, module observer guard, `docs_drift_check.py` и active-doc broken-link check через `docs_inventory.py --check-links`.
 
-6. После локальной проверки сделать локальный commit.
+6. После локальной проверки сделать локальный commit и сразу отправить его в GitHub `origin`.
 
 ```powershell
 git commit -m "<message>"
+git push -u origin <current-branch>
 ```
+
+Если upstream для ветки уже настроен, использовать `git push`.
 
 7. Подготовить green CI artifact для целевого коммита:
 
@@ -128,12 +132,19 @@ python scripts/manage_remote_stack.py stop agent
 
 ## GitHub
 
-Сейчас локальный Git-репозиторий уже создан. Когда появится URL GitHub-репозитория, его нужно добавить как `origin`, после чего использовать обычный цикл:
+GitHub remote настроен как `origin`. Обязательный цикл после каждого локального commit:
 
 ```powershell
-git remote add origin <github-url>
-git push -u origin main
+git push -u origin <current-branch>
 ```
+
+Для последующих push той же ветки:
+
+```powershell
+git push
+```
+
+GitHub push dev-ветки не ждёт `python scripts/run_ci_suite.py`; full CI нужен для финального release/deploy-claim и публикации проверенного release-состояния.
 
 Если нужно обновить именно Linux working copy через Git, рабочий цикл такой:
 
@@ -159,15 +170,15 @@ git status --short
    Для задач по `webapp/` и frontend release pipeline перед этим сначала выполнить `python scripts/bootstrap_web_toolchain.py`.
 5. Для длинных задач вести `PLANS.md`.
 6. Если задача затрагивает локальный агент, использовать `python scripts/manage_local_agent.py ...` и проверять нужный сценарий на отдельном инстансе.
-7. Только после проверок делать локальный commit.
+7. Только после проверок делать локальный commit и сразу push в GitHub `origin`.
 8. Для финального verified deploy только после локальной проверки и green CI artifact выкладывать состояние на Linux через `python scripts/deploy_workspace_to_remote.py` или `python scripts/release_server_to_remote.py` в дефолтном `--gate full`.
-   Для быстрой проверки на стенде разрешён явный `--gate quick`, но результат такого deploy нельзя считать финально проверенным для GitHub push/release.
+   Для быстрой проверки на стенде разрешён явный `--gate quick`, но результат такого deploy нельзя считать финально проверенным для release/deploy-claim.
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
 11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
 12. Если менялся веб-интерфейс, обязательно открыть [admin](https://192.168.100.17:9443/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
 13. Для полного verified server-flow предпочитать `python scripts/release_server_to_remote.py` в дефолтном `--gate full`; для итерационного стенда допустим `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
-14. В GitHub публиковать только изменения, которые уже прошли проверки, получили green CI artifact через full gate и были запущены по нужному сценарию.
+14. GitHub push выполняется сразу после каждого локального commit. Green CI artifact и full gate обязательны не для самого dev-branch push, а для финального release/deploy-claim.
 
 ## Observer guard and live canaries
 

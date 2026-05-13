@@ -72,7 +72,7 @@ python scripts/build_context_index.py --force
 | Contract / Boundary Change | Меняется Protocol, DTO, manifest, DB, auth, observer, runtime contract | `ARCHITECTURE_BOUNDARIES`, CODEMAP, профильные docs | Producer+consumer updates |
 | Review / Self-Review | Большой или рискованный diff | `superpowers:requesting-code-review` | Findings or explicit no-findings |
 | Verify / Completion Gate | Перед статусом, commit, push, deploy | `superpowers:verification-before-completion` | Fresh command output |
-| Commit | Проверенные локальные изменения | targeted `git add`, `git diff --cached` | Commit с файлами задачи |
+| Commit | Проверенные локальные изменения | targeted `git add`, `git diff --cached`, `git push origin` | Commit с файлами задачи, опубликованный в GitHub |
 | Deploy / Release | Нужно выложить на Linux или проверить live | release scripts, remote stack scripts | Commit first, smoke/browser result |
 | Dirty Worktree Triage | Есть незакоммиченные файлы | `diff_context`, `git status --short` | Решение: ignore / continue / stop |
 
@@ -293,7 +293,7 @@ git add .
 
 ## Commit Mode
 
-Коммит делать только после fresh verification.
+Коммит делать только после fresh verification. В `pc_client` локальный commit и GitHub push идут вместе: после успешного `git commit` сразу отправить этот commit в `origin` на текущую ветку. Не оставлять локальный commit неопубликованным, если пользователь явно не попросил отложить push.
 
 ```powershell
 git status --short
@@ -302,7 +302,12 @@ python scripts/verify_workspace.py
 git add <file-1> <file-2> ...
 git diff --cached
 git commit -m "<type>: <summary>"
+git push -u origin <current-branch>
 ```
+
+Если upstream для ветки уже настроен, использовать обычный `git push`. Первый push новой ветки делать через `git push -u origin <current-branch>`.
+
+Обычный push dev-ветки в GitHub не требует отдельного строгого secret-scan или полного `run_ci_suite.py`: проект находится в стадии локальной разработки и рассчитан на локальный запуск. Достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов. Full CI остаётся gate-ом для финального release/deploy-claim.
 
 Если есть unrelated dirty files, они остаются unstaged. В финальном отчёте назвать, что они не включены.
 
@@ -341,7 +346,7 @@ Deploy только после локального commit.
 
 Gate semantics:
 
-- `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and is mandatory before final release, GitHub push, or publishing a verified state.
+- `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and is mandatory before final release or publishing a verified release state. Routine GitHub pushes of dev branches happen immediately after local commit and do not require full gate.
 - `--gate quick` is an explicit staging/iteration mode; it skips only the green full-CI artifact requirement and still requires local verification, relevant focused tests, remote smoke, and browser/live checks for the touched area.
 - `--skip-ci-check` remains an emergency compatibility bypass and should be treated as equivalent to quick gate, not as a normal release path.
 
@@ -367,7 +372,7 @@ python scripts/manage_remote_stack.py smoke server
 python scripts/release_server_to_remote.py --gate quick
 ```
 
-После quick gate нельзя делать финальный push/release-claim, пока текущий commit не прошёл `python scripts/run_ci_suite.py` и full gate.
+После quick gate нельзя делать финальный release-claim, пока текущий commit не прошёл `python scripts/run_ci_suite.py` и full gate. Обычный push dev-ветки в `origin` всё равно выполняется сразу после локального commit.
 
 Если менялся web UI, проверить браузером каноничный адрес:
 

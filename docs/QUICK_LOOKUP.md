@@ -107,6 +107,7 @@
 
 - Canonical testing rules live in `docs/TESTING_RULES.md`.
 - `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, `server_pytest_db_api`, and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
+- Every local commit must be pushed to GitHub `origin` immediately; local commit and GitHub push are one checkpoint. Routine dev-branch pushes do not require full CI or a separate strict secret scan, but still require intentional staging and `git diff --cached`.
 - Deploy/release scripts use `--gate full` by default and require a green CI artifact for the current commit. Use explicit `--gate quick` only for staging/iteration on the Linux stand; quick gate skips the full-CI artifact requirement but not focused verification, remote smoke, or browser/live checks.
 - `server/tests/conftest.py` auto-marks tests that use `test_agent` as `agent_ws`/`integration` and prints all Python thread stacks when a watched test exceeds the watchdog threshold.
 
@@ -250,7 +251,12 @@ Historical docs больше не канон:
 Если задача затрагивает release/deploy:
 
 - `python scripts/run_ci_suite.py`
-- `python scripts/release_server_to_remote.py --gate quick` for staging iteration, then full CI before final release/push
+- `python scripts/release_server_to_remote.py --gate quick` for staging iteration, then full CI before final release/deploy claim
+
+После любого локального commit:
+
+- `git push -u origin <current-branch>` для первого push ветки
+- `git push` для следующих commit на ветке
 
 Если задача затрагивает `webapp/` или frontend bundle pipeline:
 
