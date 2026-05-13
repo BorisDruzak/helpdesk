@@ -3,8 +3,8 @@ Stage 10.2: Публичное API очереди без авторизации.
 Stage 10.3.1: Валидация limit/offset/days — при невалидных значениях 400 validation_error (не 500).
 
 GET /public_api/queues
-GET /public_api/queue/tickets?queue_id=...&limit=...&offset=...&ticket_code=...
-GET /public_api/queue/stats?days=7&queue_id=...
+GET /public_api/queue/tickets?queue_code=...&limit=...&offset=...&ticket_code=...
+GET /public_api/queue/stats?days=7&queue_code=...
 
 Только безопасные поля. ETag/304 для tickets и stats. Limit 1..200, offset 0..10000, days 1..90.
 """
@@ -27,6 +27,7 @@ from app.repos import TicketEventsRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from tickets.queue_position_service import QueuePositionService
 from tickets.metrics_service import TicketMetricsService
+from tickets.statuses import requester_status_for_internal, requester_status_label_for_internal
 
 PUBLIC_API_MAX_LIMIT = 200
 
@@ -56,6 +57,35 @@ def _etag_from_body(body: bytes) -> str:
     return '"' + sha256(body).hexdigest()[:32] + '"'
 
 
+def _wait_bucket(wait_seconds: object) -> str | None:
+    try:
+        seconds = int(wait_seconds or 0)
+    except (TypeError, ValueError):
+        return None
+    if seconds < 15 * 60:
+        return "<15m"
+    if seconds < 30 * 60:
+        return "15-30m"
+    if seconds < 60 * 60:
+        return "30-60m"
+    if seconds < 2 * 60 * 60:
+        return "1-2h"
+    return "2h+"
+
+
+def _public_ticket_row(row: dict, *, queue_code: str | None) -> dict:
+    status = str(row.get("status") or "")
+    return {
+        "ticket_code": row.get("ticket_code"),
+        "public_position": row.get("position"),
+        "public_status": requester_status_for_internal(status),
+        "public_status_label": requester_status_label_for_internal(status),
+        "queue_code": queue_code,
+        "wait_bucket": _wait_bucket(row.get("wait_seconds")),
+        "updated_at": row.get("updated_at"),
+    }
+
+
 def _parse_include_empty(request: web.Request) -> bool:
     """include_empty: default False. true|false в query."""
     raw = (request.query.get("include_empty") or "").strip().lower()
@@ -77,7 +107,6 @@ async def handle_public_queues(request: web.Request) -> web.Response:
             for q in queues:
                 open_count = await admin_repo.count_open_tickets_in_queue(q.id)
                 items.append({
-                    "queue_id": q.id,
                     "queue_code": q.code,
                     "queue_name": q.name,
                     "open_count": open_count,
@@ -101,15 +130,18 @@ async def handle_public_queue_tickets(request: web.Request) -> web.Response:
     if not DB_AVAILABLE or get_session is None:
         return web.json_response({"status": "error", "error": "service_unavailable"}, status=503)
     queue_id_param = request.query.get("queue_id")
-    if not queue_id_param:
+    queue_code_param = (request.query.get("queue_code") or "").strip() or None
+    if not queue_id_param and not queue_code_param:
         return web.json_response(
-            {"status": "error", "error": "validation_error", "details": "queue_id required"},
+            {"status": "error", "error": "validation_error", "details": "queue required"},
             status=400,
         )
-    try:
-        queue_id = int(queue_id_param)
-    except (TypeError, ValueError):
-        return _validation_error_response("invalid queue_id")
+    queue_id = None
+    if queue_id_param:
+        try:
+            queue_id = int(queue_id_param)
+        except (TypeError, ValueError):
+            return _validation_error_response("invalid queue_id")
     limit, err = _parse_positive_int(
         request.query.get("limit"), 100, 1, PUBLIC_API_MAX_LIMIT
     )
@@ -123,35 +155,26 @@ async def handle_public_queue_tickets(request: web.Request) -> web.Response:
     try:
         async with get_session() as session:
             ticket_repo = TicketEventsRepo(session)
+            admin_repo = TicketAdminConfigRepo(session)
+            q = None
+            if queue_id is not None:
+                q = await admin_repo.get_queue(queue_id)
+            elif queue_code_param is not None:
+                queues = await admin_repo.list_queues(include_inactive=False)
+                q = next((candidate for candidate in queues if candidate.code == queue_code_param), None)
+                if q is not None:
+                    queue_id = q.id
+            if q is None or queue_id is None:
+                return _validation_error_response("invalid queue")
+            queue_code = q.code
             pos_svc = QueuePositionService(ticket_repo)
             rows = await pos_svc.list_queue_positions(queue_id, include_terminal=False)
-            queue_code = None
-            admin_repo = TicketAdminConfigRepo(session)
-            q = await admin_repo.get_queue(queue_id)
-            if q:
-                queue_code = q.code
             if ticket_code_filter:
                 ticket_code_filter_upper = ticket_code_filter.upper()
                 rows = [r for r in rows if (r.get("ticket_code") or "").upper().find(ticket_code_filter_upper) >= 0]
             total = len(rows)
             rows = rows[offset : offset + limit]
-            out = [
-                {
-                    "ticket_id": r["ticket_id"],
-                    "ticket_code": r["ticket_code"],
-                    "status": r["status"],
-                    "priority": r["priority"],
-                    "urgency": r.get("urgency"),
-                    "importance": r.get("importance"),
-                    "requester_id": r.get("requester_id"),
-                    "requester_display_name": r.get("requester_display_name"),
-                    "position": r["position"],
-                    "wait_seconds": r["wait_seconds"],
-                    "queue_code": queue_code,
-                    "updated_at": r.get("updated_at"),
-                }
-                for r in rows
-            ]
+            out = [_public_ticket_row(r, queue_code=queue_code) for r in rows]
             data = {"tickets": out, "total": total, "limit": limit, "offset": offset}
         body = json.dumps(data).encode("utf-8")
         etag = _etag_from_body(body)
@@ -168,13 +191,14 @@ async def handle_public_queue_tickets(request: web.Request) -> web.Response:
 
 
 async def handle_public_queue_stats(request: web.Request) -> web.Response:
-    """GET /public_api/queue/stats?days=7&queue_id=... — KPI. ETag/304."""
+    """GET /public_api/queue/stats?days=7&queue_code=... — public KPI projection. ETag/304."""
     if not DB_AVAILABLE or get_session is None:
         return web.json_response({"status": "error", "error": "service_unavailable"}, status=503)
     days, err = _parse_positive_int(request.query.get("days"), 7, 1, 90)
     if err is not None:
         return _validation_error_response("days " + err)
     queue_id = request.query.get("queue_id")
+    queue_code = (request.query.get("queue_code") or "").strip() or None
     if queue_id is not None:
         try:
             queue_id = int(queue_id)
@@ -188,6 +212,13 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
         async with get_session() as session:
             ticket_repo = TicketEventsRepo(session)
             metrics_svc = TicketMetricsService(default_days=7, max_days=365)
+            if queue_id is None and queue_code is not None:
+                admin_repo = TicketAdminConfigRepo(session)
+                queues = await admin_repo.list_queues(include_inactive=False)
+                q = next((candidate for candidate in queues if candidate.code == queue_code), None)
+                if q is None:
+                    return _validation_error_response("invalid queue")
+                queue_id = q.id
             sla_data = await ticket_repo.get_metrics_sla(period_start, period_end, queue_id=queue_id)
             backlog_rows = await ticket_repo.get_metrics_backlog(queue_id=queue_id)
             backlog_open = sum(r["count"] for r in backlog_rows)
@@ -209,7 +240,6 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
                 for item in top_list:
                     q = await admin_repo.get_queue(item["queue_id"])
                     load_with_names.append({
-                        "queue_id": item["queue_id"],
                         "queue_code": q.code if q else None,
                         "queue_name": q.name if q else None,
                         "open_count": item["open_count"],
@@ -223,7 +253,6 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
                 "closed_today": closed_today,
                 "top_queue_load": top_queue_load,
                 "days": days,
-                "queue_id": queue_id,
             }
         body = json.dumps(data).encode("utf-8")
         etag = _etag_from_body(body)

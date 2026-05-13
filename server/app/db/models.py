@@ -25,8 +25,8 @@ class Ticket(Base):
     Ticket model for Protocol V3 (расширенная тикетная система).
     
     Represents a support ticket bound to a specific device.
-    Статусы: new, triaged, in_progress, waiting_on_user, waiting_on_vendor, resolved, closed.
-    Совместимость: soft-нормализация принимает legacy значения.
+    Статусы: canonical ticket status contract from tickets.statuses.CANONICAL_STATUSES.
+    Совместимость: legacy aliases normalize only at input boundaries and are not stored.
     """
     __tablename__ = "tickets"
     
@@ -58,7 +58,7 @@ class Ticket(Base):
     importance: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     urgency_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     importance_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    requester_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requester_id: Mapped[str] = mapped_column(Text, nullable=False)
     assignee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
@@ -113,6 +113,14 @@ class Ticket(Base):
     archived_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     
     __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('new', 'queued', 'assigned', 'in_progress', "
+            "'waiting_on_user', 'waiting_on_internal_team', 'waiting_on_vendor', "
+            "'waiting_on_approval', 'scheduled', 'resolved', 'closed', 'canceled')",
+            name="ck_tickets_status_canonical",
+        ),
+        sa.CheckConstraint("btrim(requester_id) <> ''", name="ck_tickets_requester_id_non_empty"),
+        sa.CheckConstraint("sla_policy_id IS NULL OR priority IS NOT NULL", name="ck_tickets_sla_priority_present"),
         Index("ix_tickets_device_id_status", "device_id", "status"),
         Index("ix_tickets_queue_status_priority", "queue_id", "status", "priority"),
         Index("ix_tickets_assignee_status", "assignee_id", "status"),
@@ -134,6 +142,26 @@ class Ticket(Base):
             f"<Ticket(ticket_id={self.ticket_id!r}, device_id={self.device_id!r}, "
             f"status={self.status!r})>"
         )
+
+
+def _ensure_ticket_requester_id(_mapper, _connection, target: Ticket) -> None:
+    """Application-boundary fallback matching migration 081 for legacy direct inserts."""
+    requester_id = getattr(target, "requester_id", None)
+    if isinstance(requester_id, str) and requester_id.strip():
+        return
+    device_id = getattr(target, "device_id", None)
+    if isinstance(device_id, str) and device_id.strip():
+        target.requester_id = f"device:{device_id.strip()}"
+        return
+    ticket_id = getattr(target, "ticket_id", None)
+    if isinstance(ticket_id, str) and ticket_id.strip():
+        target.requester_id = f"legacy:{ticket_id.strip()}"
+        return
+    target.requester_id = "legacy:unknown"
+
+
+sa.event.listen(Ticket, "before_insert", _ensure_ticket_requester_id)
+sa.event.listen(Ticket, "before_update", _ensure_ticket_requester_id)
 
 
 class TicketEvent(Base):
@@ -170,8 +198,10 @@ class TicketEvent(Base):
         # Server events (agent_seq = NULL) дедуплицируются через логику по message_id в TicketEventsRepo
         # Composite index для эффективного получения событий с сортировкой
         Index("ix_ticket_events_ticket_id_agent_seq", "ticket_id", "agent_seq"),
+        Index("ix_ticket_events_ticket_created_id", "ticket_id", "created_at", "id"),
         # Index для фильтрации по типу событий
         Index("ix_ticket_events_ticket_type_seq", "ticket_id", "event_type", "agent_seq"),
+        Index("ix_ticket_events_ticket_type_created_id", "ticket_id", "event_type", "created_at", "id"),
         Index("ix_ticket_events_trace_id", "trace_id"),
     )
     

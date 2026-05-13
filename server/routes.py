@@ -305,6 +305,11 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_traces,
     handle_web_admin_set_module_preferred_version,
 )
+from web_api.policy_health_handlers import (
+    handle_web_admin_policy_health,
+    handle_web_admin_policy_health_detail,
+    handle_web_admin_policy_health_simulate,
+)
 from web_api.registry_handlers import (
     handle_registry_options,
     handle_registry_profile_upsert,
@@ -642,6 +647,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/forms/validate', handle_web_admin_forms_validate),
         web.post('/api/web/admin/forms/publish', handle_web_admin_forms_publish),
         web.patch('/api/web/admin/forms/preferred', handle_web_admin_forms_preferred),
+        web.get('/api/web/admin/helpdesk/policy-health', handle_web_admin_policy_health),
+        web.get('/api/web/admin/helpdesk/policy-health/{template_code}', handle_web_admin_policy_health_detail),
+        web.post('/api/web/admin/helpdesk/policy-health/simulate', handle_web_admin_policy_health_simulate),
           web.get('/api/web/admin/helpdesk-model/policies', handle_web_admin_helpdesk_model_policies),
           web.post('/api/web/admin/helpdesk-model/policies/publish', handle_web_admin_helpdesk_model_publish_policy),
           web.post('/api/web/admin/helpdesk-model/policies/diff', handle_web_admin_helpdesk_model_policy_diff),

@@ -28,7 +28,7 @@
 2. Назначение через `/api/tickets/{id}/assign`: `admin` — ручное/auto, `support` — только на себя (take-to-self).
 3. Обновление приоритета через `/api/tickets/{id}/priority` с `urgency`, `importance`, `urgency_reason`, `importance_reason`.
 4. Обновление профиля инициатора через `/api/tickets/{id}/requester_profile`.
-5. Переходы статусов: `new -> triaged -> in_progress -> resolved`, а `closed` выставляется только после подтверждения пользователя.
+5. Переходы статусов: `new -> queued/assigned -> in_progress -> resolved`, а `closed` выставляется только после подтверждения пользователя. Legacy `triaged` допускается только как входной alias и после миграции не хранится в БД.
 6. Проверка `snapshot`: `priority_class`, `requester_display_name`, `history`.
 
 ## Браузерная проверка
@@ -52,7 +52,7 @@
 1. Время до взятия в работу: `created_at -> first assign/status in_progress`.
 2. Время решения: `created_at -> resolved/closed`.
 3. Доля waiting-статусов.
-4. Загрузка операторов: `active_count` считается только по `in_progress`; `triaged` = «В очереди у оператора».
+4. Загрузка операторов: `active_count` считается только по `in_progress`; queued work uses canonical `queued`/`assigned`, while legacy `triaged` is an input/backfill alias only.
 5. Ошибки лимита назначения: ответы `409 assignment_limit`.
 
 ## Завершение

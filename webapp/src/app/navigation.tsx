@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Building2,
+  ClipboardCheck,
   DownloadCloud,
   KeyRound,
   Layers3,
@@ -122,6 +123,14 @@ export const appNavigation: AppNavItem[] = [
     icon: Workflow,
     section: "admin",
     to: "/app/admin/forms",
+    permission: "admin.forms.view",
+  },
+  {
+    label: "Policy Health",
+    description: "Request templates, SLA, OLA, visibility",
+    icon: ClipboardCheck,
+    section: "admin",
+    to: "/app/admin/policy-health",
     permission: "admin.forms.view",
   },
   {

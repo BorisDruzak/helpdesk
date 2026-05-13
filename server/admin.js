@@ -774,8 +774,8 @@
         const QUEUE_POLL_INTERVAL_MS = 25000;
         const QUEUE_POLL_INTERVAL_WS_ACTIVE_MS = 60000;
         let queueState = { tickets: [], lastSync: null, wsConnected: false, canWrite: true, actorId: '', actorRole: '', subscribedTicketIds: new Set(), queueReloadLock: false };
-        const STATUS_RU_TO_CANONICAL = { 'Новая': 'new', 'В очереди у оператора': 'triaged', 'В работе': 'in_progress', 'Ожидание ответа пользователя': 'waiting_on_user', 'Ожидание внешней стороны': 'waiting_on_vendor', 'Решена': 'resolved', 'Закрыта': 'closed' };
-        const STATUS_CANONICAL_TO_RU = { 'new': 'Новая', 'triaged': 'В очереди у оператора', 'in_progress': 'В работе', 'waiting_on_user': 'Ожидание ответа пользователя', 'waiting_on_vendor': 'Ожидание внешней стороны', 'resolved': 'Решена', 'closed': 'Закрыта' };
+        const STATUS_RU_TO_CANONICAL = { 'Новая': 'new', 'В очереди': 'queued', 'Назначена': 'assigned', 'В работе': 'in_progress', 'Ожидание ответа пользователя': 'waiting_on_user', 'Ожидание внутренней группы': 'waiting_on_internal_team', 'Ожидание внешней стороны': 'waiting_on_vendor', 'Ожидание согласования': 'waiting_on_approval', 'Запланирована': 'scheduled', 'Решена': 'resolved', 'Закрыта': 'closed', 'Отменена': 'canceled' };
+        const STATUS_CANONICAL_TO_RU = { 'new': 'Новая', 'queued': 'В очереди', 'assigned': 'Назначена', 'in_progress': 'В работе', 'waiting_on_user': 'Ожидание ответа пользователя', 'waiting_on_internal_team': 'Ожидание внутренней группы', 'waiting_on_vendor': 'Ожидание внешней стороны', 'waiting_on_approval': 'Ожидание согласования', 'scheduled': 'Запланирована', 'resolved': 'Решена', 'closed': 'Закрыта', 'canceled': 'Отменена' };
         const PRIORITY_CLASS_TO_RU = { P0: 'Критический', P1: 'Высокий', P2: 'Средний', P3: 'Низкий' };
         let queueManageModalTicketId = null;
         let queueManageModalTicket = null;
@@ -2035,7 +2035,7 @@
             document.getElementById('presetBreached')?.addEventListener('click', () => { document.getElementById('filterFrBreached').checked = true; document.getElementById('filterResBreached').checked = true; queueLoadTickets(); });
             document.getElementById('presetHighPriority')?.addEventListener('click', () => { document.getElementById('filterPriority').value = 'P0'; queueLoadTickets(); });
             // Populate status/priority dropdowns
-            const statusOpts = ['new','triaged','in_progress','waiting_on_user','waiting_on_vendor','resolved','closed'];
+            const statusOpts = ['new','queued','assigned','in_progress','waiting_on_user','waiting_on_internal_team','waiting_on_vendor','waiting_on_approval','scheduled','resolved','closed','canceled'];
             const selStatus = document.getElementById('filterStatus');
             if (selStatus && selStatus.options.length <= 1) { statusOpts.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = queueStatusLabel(s); selStatus.appendChild(o); }); }
             const priorities = ['P0','P1','P2','P3'];

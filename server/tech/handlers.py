@@ -1274,7 +1274,7 @@ async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
                     milestones["assigned"] = _iso(ev.created_at)
             if ev.event_type in ("ticket_status_changed", "status_changed"):
                 after = _ticket_status_from_payload(payload)
-                if after in ("triaged", "in_progress") and not milestones["in_progress"]:
+                if after == "in_progress" and not milestones["in_progress"]:
                     milestones["in_progress"] = _iso(ev.created_at)
                 if after == "waiting_on_user" and not milestones["waiting_user"]:
                     milestones["waiting_user"] = _iso(ev.created_at)
@@ -1293,13 +1293,13 @@ async def handle_tech_ticket_lifecycle(request: web.Request) -> web.Response:
             )
             if assignee_event:
                 milestones["assigned"] = _iso(assignee_event.created_at)
-        if ticket.status in ("triaged", "in_progress") and not milestones["in_progress"]:
+        if ticket.status == "in_progress" and not milestones["in_progress"]:
             status_event = next(
                 (
                     ev
                     for ev in events
                     if ev.event_type in ("ticket_status_changed", "status_changed")
-                    and _ticket_status_from_payload(ev.payload if isinstance(ev.payload, dict) else {}) in ("triaged", "in_progress")
+                    and _ticket_status_from_payload(ev.payload if isinstance(ev.payload, dict) else {}) == "in_progress"
                 ),
                 None,
             )

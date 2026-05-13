@@ -12,17 +12,22 @@
     const WS_PING_INTERVAL_MS = 10000;
     const EMBED_MODE = new URLSearchParams(window.location.search).get('embed') === '1';
     const STATUS_LABELS = {
-        new: 'Новая', triaged: 'В очереди у оператора', in_progress: 'В работе',
-        waiting_on_user: 'Ожидание ответа пользователя', waiting_on_vendor: 'Ожидание внешней стороны',
-        resolved: 'Решена', closed: 'Закрыта'
+        new: 'Новая', queued: 'В очереди', assigned: 'Назначена', in_progress: 'В работе',
+        waiting_on_user: 'Ожидание ответа пользователя', waiting_on_internal_team: 'Ожидание внутренней группы',
+        waiting_on_vendor: 'Ожидание внешней стороны', waiting_on_approval: 'Ожидание согласования',
+        scheduled: 'Запланирована', resolved: 'Решена', closed: 'Закрыта', canceled: 'Отменена'
     };
     const PRIORITY_LABELS = { P0: 'Критический', P1: 'Высокий', P2: 'Средний', P3: 'Низкий' };
     const STATUS_OPTIONS = [
         { value: 'new', label: 'Новая' },
-        { value: 'triaged', label: 'В очереди у оператора' },
+        { value: 'queued', label: 'В очереди' },
+        { value: 'assigned', label: 'Назначена' },
         { value: 'in_progress', label: 'В работе' },
         { value: 'waiting_on_user', label: 'Ожидание ответа пользователя' },
+        { value: 'waiting_on_internal_team', label: 'Ожидание внутренней группы' },
         { value: 'waiting_on_vendor', label: 'Ожидание внешней стороны' },
+        { value: 'waiting_on_approval', label: 'Ожидание согласования' },
+        { value: 'scheduled', label: 'Запланирована' },
         { value: 'resolved', label: 'Решена' }
     ];
     const HIDDEN_TIMELINE_EVENT_TYPES = new Set([
@@ -1098,7 +1103,7 @@
             meta.requester_profile = ev.payload.requester_profile || meta.requester_profile;
             meta.requester_display_name = ev.payload.requester_display_name || meta.requester_display_name;
         }
-        meta.requires_operator_action = meta.status === 'new' || meta.status === 'triaged' || meta.status === 'in_progress';
+        meta.requires_operator_action = ['new', 'queued', 'assigned', 'in_progress'].includes(meta.status);
         setTopbar(meta);
         renderSidebar(opts.forceSidebarSync === true);
         renderHistory(events.filter((item) => ['status_changed', 'priority_changed', 'assignee_changed', 'queue_changed', 'requester_profile_changed', 'device_changed'].includes(item.event_type)));
@@ -1752,9 +1757,10 @@
     async function runCommand(cmd) {
         if (cmd === '/status') {
             const statusOpts = [
-                { v: 'new', l: 'Новая' }, { v: 'triaged', l: 'В очереди у оператора' }, { v: 'in_progress', l: 'В работе' },
-                { v: 'waiting_on_user', l: 'Ожидание ответа пользователя' }, { v: 'waiting_on_vendor', l: 'Ожидание внешней стороны' },
-                { v: 'resolved', l: 'Решена' }, { v: 'closed', l: 'Закрыта' }
+                { v: 'new', l: 'Новая' }, { v: 'queued', l: 'В очереди' }, { v: 'assigned', l: 'Назначена' }, { v: 'in_progress', l: 'В работе' },
+                { v: 'waiting_on_user', l: 'Ожидание ответа пользователя' }, { v: 'waiting_on_internal_team', l: 'Ожидание внутренней группы' },
+                { v: 'waiting_on_vendor', l: 'Ожидание внешней стороны' }, { v: 'waiting_on_approval', l: 'Ожидание согласования' },
+                { v: 'scheduled', l: 'Запланирована' }, { v: 'resolved', l: 'Решена' }, { v: 'closed', l: 'Закрыта' }, { v: 'canceled', l: 'Отменена' }
             ];
             openInlinePanel('Сменить статус',
                 `<div class="form-group"><label>Новый статус</label><select id="cmdStatusSelect">${statusOpts.map(o => `<option value="${escapeHtml(o.v)}">${escapeHtml(o.l)}</option>`).join('')}</select></div>

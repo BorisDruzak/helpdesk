@@ -36,16 +36,6 @@ from web_api.dto.reports import (
 )
 
 
-_STATUS_LABELS = {
-    "new": "Новый",
-    "triaged": "Триаж",
-    "in_progress": "В работе",
-    "waiting_on_user": "Ждём пользователя",
-    "waiting_on_vendor": "Ждём вендора",
-    "resolved": "Решён",
-    "closed": "Закрыт",
-}
-
 _PRIORITY_LABELS = {
     "P1": "Критический",
     "P2": "Высокий",

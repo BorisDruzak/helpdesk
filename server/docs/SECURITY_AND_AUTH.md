@@ -157,7 +157,8 @@
 - Маршруты **`/public_api/*`** не начинаются с `/api/`, поэтому **auth middleware к ним не применяется** — доступ без токена.
 - Endpoints: `GET /public_api/queues`, `GET /public_api/queue/tickets`, `GET /public_api/queue/stats`.
 - **GET /public_api/queues:** по умолчанию возвращаются только очереди с `open_count > 0`; параметр `include_empty=true` — все активные очереди. Сортировка: open_count desc, queue_code asc.
-- **Только read-only**. Поля публичной очереди: `ticket_code`, `status`, `priority`, `position`, `wait_seconds`, `queue_code`, `updated_at`, `requester_display_name`, `urgency`, `importance`.
+- **Только read-only**. Public queue uses a dedicated unauthenticated serializer and exposes only the sanitized public projection: `ticket_code`, `public_position`, `public_status`, `public_status_label`, `queue_code`, `wait_bucket`, `updated_at`, `total`, `limit`, `offset`. It must not expose internal `ticket_id`, `requester_id`, `requester_display_name`, full name, contacts/location, urgency/importance/reasons, internal priority, assignee/queue ids, device/asset refs, raw `custom_fields`, trace ids or operation ids.
+- Policy Health endpoints are read-only for `admin` and `auditor`: `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}` and `POST /api/web/admin/helpdesk/policy-health/simulate`. `support`, requester and unauthenticated users are denied; simulation is dry-run and must not create tickets or leak requester PII.
 - Лимит выборки: max 200. Рекомендуется rate-limit по IP на уровне reverse-proxy.
 
 ### 4.6 Тикеты: смена приоритета (Stage 10.3)

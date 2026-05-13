@@ -40,7 +40,6 @@ export function getTicketStatusTone(status: string | null | undefined): TicketBa
     case "new":
     case "queued":
     case "assigned":
-    case "triaged":
     case "sent":
     case "running":
       return "brand";

@@ -1,3 +1,62 @@
+# P0 Ticket System Contract Hardening
+
+Goal: bring the service-desk ticket system to a strict production contract before further feature work. This is a cross-cutting / release-control change because it touches DB migrations, ticket workflow, API contracts, unauthenticated public endpoints, admin UI, docs and tests.
+
+## Discovery Report
+
+- Status source of truth: `server/tickets/statuses.py` already has the target canonical set, waiting/terminal/operator/action-required groupings, Russian labels and requester-facing projection. Gaps: no explicit `LEGACY_STATUS_ALIASES`, no boundary-only `normalize_status_for_input(...)` metadata result and no write-boundary `assert_canonical_status(...)`.
+- Legacy `triaged` drift remains in production surfaces: `server/admin.js`, `server/admin.css`, `server/web_api/reports_handlers.py`, `server/app/db/models.py`, `webapp/src/features/tickets/status-presentation.ts`, plus legacy docs and historical migrations. It must remain only as an input alias/backfill/test/docs-compatibility term.
+- Public queue privacy drift: `server/tickets/queue_position_service.py` produces internal rows, and `server/tickets/public_queue_handlers.py` currently serializes `ticket_id`, `requester_id`, `requester_display_name`, `urgency`, `importance`, internal `queue_id`, priority and exact wait seconds to unauthenticated clients.
+- Silent workflow side effects: `server/tickets/workflow_service.py` has `except Exception: pass` around OLA pause/resume/close. SLA and approval side effects are critical paths but do not yet create side-effect failure audit events when they fail.
+- DB invariants: `Ticket.requester_id` is nullable in `server/app/db/models.py`; ticket status has no canonical DB `CHECK`; event ordering is deterministic in `TicketEventsRepo.get_events()` by `agent_seq NULLS LAST, created_at, id`, but the DB lacks explicit `ticket_id, created_at, id` and `ticket_id, event_type, created_at, id` helper indexes.
+- Existing migrations include legacy status normalization through revision `058`; the next linear migration after `080` must backfill `triaged` to `assigned` when `assignee_id` is present, otherwise `queued`, backfill requester identity, and enforce constraints.
+- Policy/form surface exists across `form_catalog`, `form_process_preview`, `helpdesk_policy_runtime`, `admin_config_service` and admin handlers. There is no production policy-health service/API/dashboard with per-template checks and dry-run simulation.
+
+## Design Decisions
+
+- `server/tickets/statuses.py` remains the only status contract module. Boundary normalization accepts aliases; storage assertions reject aliases.
+- Existing DB rows with `triaged` migrate to `assigned` only when an assignee exists, otherwise `queued`; downgrades must not resurrect `triaged` as a normal status.
+- Public queue handlers will own a sanitized public serializer. Internal/admin queue rows may keep richer fields, but unauthenticated handlers must never forward raw rows.
+- Workflow side effects will use a shared runner that logs structured failures, records a `workflow_side_effect_failed` ticket event, increments a local metric counter and returns a structured result. SLA and required approval creation are critical; OLA and notifications are non-critical but audited.
+- SLA due-timestamp checks will stay at service/application level unless the current policy model proves that both due timestamps are universally mandatory. The DB will enforce safe invariants only: canonical status, non-empty requester, SLA tickets have priority.
+- Timeline/replay ordering keeps the existing public contract and adds explicit DB indexes to support deterministic ordering.
+
+## Implementation Phases
+
+- [x] Add/adjust contract tests for canonical statuses, legacy alias normalization, write-boundary assertion and drift guard.
+- [x] Add public queue privacy tests with recursive forbidden-key checks and sanitized ETag body expectations.
+- [x] Add workflow side-effect observability tests for non-critical and critical failures.
+- [x] Implement status contract helpers and replace production `triaged` UI/API/report drift.
+- [x] Add migration `081` and model constraints for requester/status/SLA-safe invariants plus event-order indexes.
+- [x] Harden public queue serializers and public queue UI data model.
+- [x] Implement side-effect runner and replace silent workflow OLA blocks; wrap SLA/approval critical paths.
+- [x] Implement policy-health service, admin/auditor API, dry-run simulation and admin UI dashboard.
+- [x] Sync `TICKET_SYSTEM.md`, `DATABASE.md`, `REQUEST_FORM_BUILDER.md`, `SECURITY_AND_AUTH.md`, `CODEMAP.md`, `QUICK_LOOKUP.md`, `ARCHITECTURE_BOUNDARIES.md`, runbook docs and `scripts/navigation_catalog.py`.
+- [ ] Run targeted pytest, migration verification, `verify_workspace.py`, full non-manual server tests where feasible, frontend build/tests and browser checks for changed admin/public UI.
+
+## Verification Log
+
+- Targeted P0 tests before requester-boundary hook: `python -m pytest server\tests\test_ticket_status_contract_no_db.py server\tests\test_ticket_create_contracts.py server\tests\test_ticket_device_binding.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 75 passed.
+- Full server non-manual suite initially exposed legacy direct-ORM `Ticket` inserts without `requester_id`; after adding the model boundary fallback, representative failures passed: `python -m pytest server\tests\test_ticket_requester_boundary_no_db.py server\tests\test_admin_tech_api.py::test_tech_observer_search_correlates_by_operation_id server\tests\test_diagnostic_layer.py::test_empty_diagnostics_overview_is_unknown server\tests\test_trace_overlay_api.py::test_trace_overlay_marks_orphaned_tool_dispatch_as_error_signature -q --tb=short` -> 6 passed.
+- Full server non-manual retry: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 861 passed, 2 failed in `server/tests/test_modules_workbench_api.py` because the test live agent was not connected in full-suite order; both failed tests passed when rerun in isolation: `python -m pytest server\tests\test_modules_workbench_api.py::test_module_live_test_records_windows_pass_and_unblocks_preferred server\tests\test_modules_workbench_api.py::test_module_live_test_writes_observer_trace_for_selected_agent -q --tb=short` -> 2 passed.
+- Final targeted P0 tests after requester-boundary hook: `python -m pytest server\tests\test_ticket_status_contract_no_db.py server\tests\test_ticket_status_usage_no_db.py server\tests\test_ticket_requester_boundary_no_db.py server\tests\test_ticket_create_contracts.py server\tests\test_ticket_device_binding.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 78 passed.
+- Frontend type/build: `pnpm --dir webapp exec tsc --noEmit` and `pnpm --dir webapp run build` passed.
+- Project verification: `python scripts\verify_workspace.py` -> passed after final changes.
+- Migration sanity: `python -m alembic -c alembic.ini heads` from `server/` -> `081 (head)`.
+- Static guards after final changes: `rg -n -U "except Exception:\s*\r?\n\s*pass" server\tickets` returned no matches; `rg -n "triaged" server webapp\src` showed only legacy docs/migrations/tests/status contract occurrences.
+
+## Rollback Notes
+
+- Migration rollback can drop newly added constraints/indexes and make `requester_id` nullable again. It intentionally should not convert canonical statuses back to `triaged`.
+- Public queue privacy is forward-only at the API contract level; clients must use `ticket_code`, public position/status and queue code instead of internal ids.
+- Side-effect auditing is additive: the new `workflow_side_effect_failed` events can be ignored by old consumers.
+
+## Known Risks
+
+- Historical docs and migrations will still contain `triaged` for legacy compatibility; tests must guard production code rather than historical records.
+- Policy-health has broad surface area. The first production implementation should reuse existing resolvers where available and limit conflict detection to practical deterministic checks, then expand.
+- Existing worktree has unrelated untracked `tmp/` diagnostic artifacts; they are out of scope and must not be staged or reverted.
+
 # Diagnostic Capabilities Full Implementation Plan
 
 ## Active Agent Recipe Runner Production Slice

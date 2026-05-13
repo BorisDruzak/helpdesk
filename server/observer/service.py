@@ -390,7 +390,17 @@ def _span_status_from_ticket_status(status: Optional[str]) -> str:
     key = str(status or "").strip().lower()
     if key in {"resolved", "closed"}:
         return "ok"
-    if key in {"new", "triaged", "in_progress", "waiting_on_user", "waiting_on_vendor"}:
+    if key in {
+        "new",
+        "queued",
+        "assigned",
+        "in_progress",
+        "waiting_on_user",
+        "waiting_on_internal_team",
+        "waiting_on_vendor",
+        "waiting_on_approval",
+        "scheduled",
+    }:
         return "running"
     return "ok"
 

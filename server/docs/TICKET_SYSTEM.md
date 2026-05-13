@@ -6,6 +6,15 @@
 
 ---
 
+## P0 service desk contract hardening (2026-05-13)
+
+- `server/tickets/statuses.py` is the only status contract source. `CANONICAL_STATUSES` is exactly: `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`.
+- `triaged` is legacy compatibility only. It may be accepted at external input boundaries through `normalize_status_for_input()` and is migrated to `assigned` when `assignee_id` is set, otherwise `queued`. `assert_canonical_status()` must run before DB writes and rejects aliases including `triaged`.
+- Migration `081_ticket_contract_hardening` backfills legacy statuses/requesters, sets `tickets.requester_id` to `NOT NULL`, rejects blank requester ids, enforces `ck_tickets_status_canonical`, and adds deterministic ticket-event ordering indexes. `Ticket` model insert/update hooks apply the same requester fallback for legacy direct ORM inserts: `device:<device_id>` first, then `legacy:<ticket_id>`. Timeline/replay order is `created_at ASC, id ASC`.
+- Public unauthenticated queue APIs use a separate sanitized serializer. They may expose `ticket_code`, `public_position`, requester-facing status/label, `queue_code`, `wait_bucket`, rounded/update timestamps and aggregate counts; they must not expose internal `ticket_id`, requester identity, urgency/importance/priority, assignee/queue ids, device/asset refs, raw custom fields or trace/operation ids.
+- Workflow side effects are observable. SLA and required approval side effects are critical; OLA and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages.
+- Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied.
+
 ## Источники создания тикета и инварианты
 
 **Канонические источники создания тикета (DB-first):**
@@ -96,7 +105,7 @@
 ### API (Этап 2)
 
 - **POST** `/api/tickets/{ticket_id}/reroute` — явный пересчёт очереди, снятие manual lock.
-- **POST** `/api/tickets/{ticket_id}/classify` — body: `category_id`, `service_id`, `subcategory_id`; триггер reroute только для статусов New/Triaged.
+- **POST** `/api/tickets/{ticket_id}/classify` — body: `category_id`, `service_id`, `subcategory_id`; reroute is allowed only for non-terminal canonical intake/queue statuses (`new`, `queued`, `assigned`) according to the current workflow profile.
 - **POST** `/api/tickets/{ticket_id}/queue` — ручная смена очереди + reason, устанавливает routing lock, снимает исполнителя вне новой очереди и при необходимости запускает автоназначение уже по составу целевой очереди.
 - **GET** `/api/tickets/{ticket_id}/sla` — текущие SLA-таймеры, breach state, `sla_paused_at`, paused seconds.
 

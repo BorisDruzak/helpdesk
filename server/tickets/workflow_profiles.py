@@ -19,17 +19,6 @@ WORKFLOW_PROFILES_CONFIG_KEY = "ticket.workflow_profiles"
 
 DEFAULT_SUPPORT_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "new": ("queued", "assigned", "in_progress", "canceled"),
-    "triaged": (
-        "assigned",
-        "in_progress",
-        "waiting_on_user",
-        "waiting_on_internal_team",
-        "waiting_on_vendor",
-        "waiting_on_approval",
-        "scheduled",
-        "resolved",
-        "canceled",
-    ),
     "queued": (
         "assigned",
         "in_progress",
@@ -75,7 +64,7 @@ DEFAULT_REQUESTER_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "resolved": ("in_progress", "closed"),
 }
 
-ALLOWED_WORKFLOW_STATUSES = set(CANONICAL_STATUSES) | {"triaged"}
+ALLOWED_WORKFLOW_STATUSES = set(CANONICAL_STATUSES)
 
 
 @dataclass(frozen=True)
@@ -392,7 +381,7 @@ def _normalize_transitions(
         return dict(DEFAULT_SUPPORT_TRANSITIONS), {}
     if not isinstance(value, dict):
         raise ValueError("transitions must be an object")
-    allowed = set(allowed_statuses) | {"triaged"}
+    allowed = set(allowed_statuses)
     normalized: dict[str, tuple[str, ...]] = {}
     gates: dict[str, dict[str, WorkflowTransitionGate]] = {}
     for raw_from, raw_targets in value.items():
@@ -461,7 +450,7 @@ def _normalize_transition_gates(
         return {}
     if not isinstance(value, dict):
         raise ValueError("transition_gates must be an object")
-    allowed = set(allowed_statuses) | {"triaged"}
+    allowed = set(allowed_statuses)
     gates: dict[str, dict[str, WorkflowTransitionGate]] = {}
     for raw_from, raw_targets in value.items():
         from_status = str(raw_from or "").strip()

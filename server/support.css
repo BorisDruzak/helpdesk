@@ -560,7 +560,8 @@ body {
 }
 
 .status-chip.status-new,
-.status-chip.status-triaged {
+.status-chip.status-queued,
+.status-chip.status-assigned {
     background: #eee6d4;
     color: #845b25;
 }

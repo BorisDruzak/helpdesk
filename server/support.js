@@ -37,15 +37,20 @@
         MINE: 'mine',
         ALL: 'all',
     });
-    const ACTIVE_WORK_STATUSES = new Set(['triaged', 'in_progress', 'waiting_on_user', 'waiting_on_vendor', 'resolved']);
+    const ACTIVE_WORK_STATUSES = new Set(['queued', 'assigned', 'in_progress', 'waiting_on_user', 'waiting_on_internal_team', 'waiting_on_vendor', 'waiting_on_approval', 'scheduled', 'resolved']);
     const STATUS_LABELS = {
         new: 'Новая',
-        triaged: 'В очереди у оператора',
+        queued: 'В очереди',
+        assigned: 'Назначена',
         in_progress: 'В работе',
         waiting_on_user: 'Ждёт пользователя',
+        waiting_on_internal_team: 'Ждёт внутреннюю группу',
         waiting_on_vendor: 'Ждёт внешнюю сторону',
+        waiting_on_approval: 'Ждёт согласование',
+        scheduled: 'Запланирована',
         resolved: 'Решена',
         closed: 'Закрыта',
+        canceled: 'Отменена',
     };
     const PRIORITY_LABELS = {
         P0: 'Критический',
@@ -1072,7 +1077,7 @@
     }
 
     function canTakeSelf(ticket) {
-        return canWrite() && Boolean(ticket) && !ticket.assignee_id && (ticket.status === 'new' || ticket.status === 'triaged');
+        return canWrite() && Boolean(ticket) && !ticket.assignee_id && (ticket.status === 'new' || ticket.status === 'queued');
     }
 
     function shouldObserveTicket(ticket) {

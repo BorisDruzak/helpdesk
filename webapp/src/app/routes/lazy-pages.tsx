@@ -70,6 +70,10 @@ export const AdminPlaybooksPage = lazy(() =>
   import("../../pages/admin/playbooks-page").then((module) => ({ default: module.AdminPlaybooksPage })),
 );
 
+export const AdminPolicyHealthPage = lazy(() =>
+  import("../../pages/admin/policy-health-page").then((module) => ({ default: module.AdminPolicyHealthPage })),
+);
+
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );

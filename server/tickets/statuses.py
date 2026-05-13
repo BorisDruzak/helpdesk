@@ -30,6 +30,7 @@ WAITING_STATUSES = {
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
 ACTIVE_OPERATOR_STATUSES = {"assigned", "in_progress"}
 ACTION_REQUIRED_STATUSES = {"new", "queued", "assigned", "in_progress"}
+PUBLIC_VISIBLE_STATUSES = CANONICAL_STATUSES
 
 STATUS_LABELS_RU = {
     "new": "Новая",
@@ -55,38 +56,28 @@ REQUESTER_STATUS_LABELS_RU = {
     "canceled": "Отменена",
 }
 
-_NORMALIZE_MAP = {
-    "new": "new",
+LEGACY_STATUS_ALIASES = {
     "new ticket": "new",
     "new_request": "new",
     "newrequest": "new",
     "triaged": "queued",
     "queue": "queued",
-    "queued": "queued",
-    "assigned": "assigned",
-    "in_progress": "in_progress",
     "in progress": "in_progress",
     "in-progress": "in_progress",
     "open": "in_progress",
-    "waiting_on_user": "waiting_on_user",
     "waiting on user": "waiting_on_user",
     "waiting-for-user": "waiting_on_user",
     "waiting_user": "waiting_on_user",
-    "waiting_on_internal_team": "waiting_on_internal_team",
     "waiting on internal team": "waiting_on_internal_team",
     "waiting_internal": "waiting_on_internal_team",
-    "waiting_on_vendor": "waiting_on_vendor",
     "waiting on vendor": "waiting_on_vendor",
     "waiting_vendor": "waiting_on_vendor",
-    "waiting_on_approval": "waiting_on_approval",
     "waiting on approval": "waiting_on_approval",
     "waiting_approval": "waiting_on_approval",
-    "scheduled": "scheduled",
-    "resolved": "resolved",
-    "closed": "closed",
-    "canceled": "canceled",
     "cancelled": "canceled",
 }
+_NORMALIZE_MAP = {status: status for status in CANONICAL_STATUSES}
+_NORMALIZE_MAP.update(LEGACY_STATUS_ALIASES)
 
 WAIT_STATUS_TO_TYPE = {
     "waiting_on_user": "user",
@@ -119,6 +110,28 @@ PRIORITY_CLASS_BASE_SCORE = {
 WAITING_STATUS_PENALTY = 500_000
 
 REQUESTER_PROFILE_FIELDS = ("full_name", "building", "room", "phone")
+
+
+def normalize_status_for_input(raw_status: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Normalize boundary input and report whether it used a legacy alias."""
+
+    raw_value = raw_status if isinstance(raw_status, str) else None
+    canonical, was_legacy = normalize_status(raw_status)
+    if canonical is None:
+        raise ValueError(f"invalid ticket status: {raw_status!r}")
+    return {
+        "status": canonical,
+        "canonical_value": canonical,
+        "raw_value": raw_value,
+        "was_legacy": was_legacy,
+        "context": context or {},
+    }
+
+
+def assert_canonical_status(status: str) -> str:
+    if status not in CANONICAL_STATUSES:
+        raise ValueError(f"{status!r} is not a canonical ticket status")
+    return status
 
 
 def normalize_status(raw: str) -> Tuple[Optional[str], bool]:
@@ -187,6 +200,10 @@ def requester_status_label_ru(requester_status: Optional[str]) -> str:
     if not requester_status:
         return "Не указан"
     return REQUESTER_STATUS_LABELS_RU.get(requester_status, requester_status)
+
+
+def requester_status_label_for_internal(status: Optional[str]) -> str:
+    return requester_status_label_ru(requester_status_for_internal(status))
 
 
 def next_action_owner_for_status(status: Optional[str]) -> str:
