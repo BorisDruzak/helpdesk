@@ -217,7 +217,8 @@ async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
             "status": "ok",
             "capabilities": [_capability_payload(capability) for capability in capabilities],
             "count": len(capabilities),
-        }
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 

@@ -34,13 +34,16 @@ function assertOk<T>(payload: ApiOkResponse<T> | ApiErrorResponse | null, respon
 }
 
 export async function listAdminCapabilities(): Promise<CapabilityDescriptor[]> {
-  const response = await fetch("/api/web/admin/capabilities", { credentials: "same-origin", cache: "no-store" });
+  const response = await fetch(`/api/web/admin/capabilities?_=${Date.now()}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
   const payload = await readJson<ApiOkResponse<{ capabilities: CapabilityDescriptor[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load capabilities").capabilities;
 }
 
 export async function listAdminCapabilityProviderConfigs(): Promise<DiagnosticProviderConfig[]> {
-  const response = await fetch("/api/web/admin/capabilities/provider-configs", {
+  const response = await fetch(`/api/web/admin/capabilities/provider-configs?_=${Date.now()}`, {
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -59,7 +62,7 @@ export async function listTicketCapabilityReadiness(ticketId: string): Promise<C
 }
 
 export async function listAgentRecipePrimitives(): Promise<AgentRecipePrimitive[]> {
-  const response = await fetch("/api/web/admin/agent-recipes/primitives", {
+  const response = await fetch(`/api/web/admin/agent-recipes/primitives?_=${Date.now()}`, {
     credentials: "same-origin",
     cache: "no-store",
   });
