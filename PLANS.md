@@ -465,7 +465,7 @@ Implemented in phase 12:
 Verification:
 
 - [x] observer tests
-- [ ] dangerous-flow canary where applicable
+- [x] dangerous-flow canary where applicable
 - [x] redaction tests
 
 ### Phase 13: Release, Migration and Deployment
@@ -491,6 +491,8 @@ Implemented in phase 13:
 - Browser-checked `http://192.168.100.17:8666/admin`: login page rendered, `admin/admin123` opened the Admin workspace and browser console had no warnings/errors.
 - Stopped the remote server with `python scripts/manage_remote_stack.py stop server`; follow-up status reported `inactive/dead`.
 - Follow-up live browser signoff on the support workspace opened `http://192.168.100.17:8666/admin`, switched to Support, opened a ticket, and found a compact-layout drawer hit-test issue that blocked the `Диагностика` tab. The UI CSS fix was built locally and is part of the next deploy/browser verification slice.
+
+- Follow-up Phase 12 canary signoff ran `python scripts/run_observer_canary_suite.py --base-url http://192.168.100.17:8666 --ws-url ws://192.168.100.17:8666/ws --ui-ws-url ws://192.168.100.17:8666/ws_ui --report-path artifacts/observer_canaries/diagnostic_phase12_20260513_071408.json --markdown-report-path artifacts/observer_canaries/diagnostic_phase12_20260513_071408.md`. It passed module install/update/remove, consent approve/deny/timeout, retry exhaustion, WS nack/replay/rate-limit, UI replay, agent disconnect timeout, stable agent build registry checks and source coverage for `module_reconcile`, `playbook_run`, `web_auth`, `observer_runtime`, `capability_run`, `server_connector_query`, `observer_query`, `manual_evidence` and `remote_assist`.
 
 Release note:
 
