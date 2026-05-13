@@ -195,9 +195,14 @@ async def test_runner_rollout_rollback_reverts_started_targets_only(test_engine,
         )
         started = await service.start_canary(plan["plan_id"], actor="admin")
         rolled_back = await service.rollback_plan(plan["plan_id"], actor="admin", reason="failed canary")
+        refreshed = await service.refresh_plan(plan["plan_id"])
+        second_refresh = await service.refresh_plan(plan["plan_id"])
         await session.commit()
 
     assert rolled_back["status"] == "rolling_back"
+    assert refreshed["status"] == "rolled_back"
+    assert refreshed["summary"]["rolled_back"] == 1
+    assert second_refresh["summary"]["rolled_back"] == 1
     touched = {item["device_id"] for item in started["current_wave"]["targets"]}
     assert set(reconciled) == touched | touched
 
@@ -206,3 +211,35 @@ async def test_runner_rollout_rollback_reverts_started_targets_only(test_engine,
         assert {row.device_id for row in desired} == touched
         assert {row.desired_version for row in desired} == {"1.0.0"}
         assert {row.reason for row in desired} == {"runner_rollback"}
+
+
+@pytest.mark.asyncio
+async def test_runner_rollout_noop_rollback_stays_rolled_back_after_refresh(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def fake_reconcile(device_id, *_args, **_kwargs):
+        return {"installs": 1, "operations": []}
+
+    monkeypatch.setattr("diagnostics.runner_rollout.reconcile_device", fake_reconcile)
+
+    async with session_maker() as session:
+        device_ids = await _seed_runner_fleet(session)
+        service = RunnerRolloutService(session)
+        plan = await service.create_plan(
+            target_version="1.0.0",
+            rollback_version="1.0.0",
+            target_device_ids=device_ids[:1],
+            canary_size=1,
+            wave_size=1,
+            actor="admin",
+        )
+        await service.start_canary(plan["plan_id"], actor="admin")
+        await service.rollback_plan(plan["plan_id"], actor="admin", reason="noop rollback")
+        first_refresh = await service.refresh_plan(plan["plan_id"])
+        second_refresh = await service.refresh_plan(plan["plan_id"])
+        await session.commit()
+
+    assert first_refresh["status"] == "rolled_back"
+    assert first_refresh["summary"] == {"rolled_back": 1}
+    assert second_refresh["status"] == "rolled_back"
+    assert second_refresh["summary"] == {"rolled_back": 1}

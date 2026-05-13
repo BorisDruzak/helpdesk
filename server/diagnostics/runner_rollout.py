@@ -247,10 +247,14 @@ class RunnerRolloutService:
             if active is None:
                 continue
             target.current_version = active.version
-            if plan.status == "rolling_back" and target.status in {"rollback_desired", "rolling_back"}:
+            if plan.status in {"rolling_back", "rolled_back"} and target.status in {
+                "rollback_desired",
+                "rolling_back",
+                "rolled_back",
+            }:
                 if target.rollback_version and active.version == target.rollback_version and active.installed and active.active:
                     target.status = "rolled_back"
-                    target.completed_at = now
+                    target.completed_at = target.completed_at or now
                 continue
             if active.version == target.target_version and active.installed and active.active:
                 target.status = "succeeded"
