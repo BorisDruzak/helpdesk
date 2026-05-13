@@ -205,6 +205,13 @@ async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     registry = CapabilityRegistry(tool_service=tool_service, state=state)
     device_id = request.query.get("device_id")
     capabilities = await registry.list_capabilities(device_id=device_id)
+    existing_ids = {capability.id for capability in capabilities}
+    async with get_session() as session:
+        for recipe in await AgentRecipeRepo(session).list_published_capabilities():
+            descriptor = recipe.descriptor()
+            if descriptor.id not in existing_ids:
+                capabilities.append(descriptor)
+                existing_ids.add(descriptor.id)
     return web.json_response(
         {
             "status": "ok",
