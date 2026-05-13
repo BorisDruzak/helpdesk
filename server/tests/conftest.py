@@ -633,6 +633,7 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 remote_access_events,
                 remote_access_sessions,
                 artifacts,
+                operation_dependencies,
                 operations,
                 device_outbox,
                 ticket_events,

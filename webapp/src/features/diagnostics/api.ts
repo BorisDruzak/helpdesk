@@ -190,10 +190,20 @@ export type DiagnosticCapability = {
 
 export type DiagnosticCapabilityRunResult = {
   status: string;
+  phase?: string;
   capability_id?: string;
   execution_target?: string;
   provider_id?: string;
   operation_id?: string | null;
+  dependency?: {
+    type?: string;
+    action?: string;
+    module_name?: string;
+    required_version?: string;
+    target_version?: string;
+    dependency_operation_id?: string | null;
+    status?: string;
+  };
   event_id?: string | number | null;
   diagnostic_evidence_id?: string | null;
   evidence_persisted?: boolean;

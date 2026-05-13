@@ -41,9 +41,9 @@ async def reconcile_device(
     4. Для каждого desired=absent: если actual active — enqueue remove
     
     Returns:
-        {"installs": int, "removes": int, "skipped": int}
+        {"installs": int, "removes": int, "skipped": int, "operations": list}
     """
-    stats = {"installs": 0, "removes": 0, "skipped": 0}
+    stats = {"installs": 0, "removes": 0, "skipped": 0, "operations": []}
 
     async def _run(sess: AsyncSession) -> dict:
         desired_repo = DeviceDesiredModulesRepo(sess)
@@ -200,6 +200,14 @@ async def reconcile_device(
                         operation_id=operation_id,
                     )
                     stats["installs"] += 1
+                    stats["operations"].append(
+                        {
+                            "operation_id": operation_id,
+                            "command": "install_module_package",
+                            "module_name": module_name,
+                            "module_version": desired_version,
+                        }
+                    )
                     logger.info(
                         f"[reconcile/{reason}] Enqueued install: device={device_id} "
                         f"module={module_name}@{desired_version} op={operation_id}"
@@ -237,6 +245,14 @@ async def reconcile_device(
                         operation_id=operation_id,
                     )
                     stats["removes"] += 1
+                    stats["operations"].append(
+                        {
+                            "operation_id": operation_id,
+                            "command": "remove_module",
+                            "module_name": module_name,
+                            "module_version": getattr(current_actual, "version", None),
+                        }
+                    )
                     logger.info(
                         f"[reconcile/{reason}] Enqueued remove: device={device_id} "
                         f"module={module_name} op={operation_id}"

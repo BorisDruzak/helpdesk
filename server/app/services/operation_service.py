@@ -204,7 +204,8 @@ class OperationService:
         playbook_run_id: Optional[int] = None,
         retry_of_operation_id: Optional[str] = None,
         max_retries: int = 3,
-        initial_status: str = "queued"
+        initial_status: str = "queued",
+        initial_phase: Optional[str] = None,
     ) -> Operation:
         """
         Enqueue a new operation with specified initial status.
@@ -261,6 +262,7 @@ class OperationService:
             playbook_run_id=playbook_run_id,
             retry_of_operation_id=retry_of_operation_id,
             status=initial_status,
+            phase=initial_phase,
             max_retries=max_retries
         )
         

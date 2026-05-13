@@ -379,6 +379,12 @@ class CapabilityExecutionRouter:
             and "request_consent" in set(readiness.get("actions") or [])
         ):
             return True
+        if (
+            capability.execution_target == "agent_recipe"
+            and readiness_status in {"runner_not_installed", "runner_install_required", "runner_outdated", "primitive_not_supported"}
+            and {"install_runner", "upgrade_runner"}.intersection(set(readiness.get("actions") or []))
+        ):
+            return True
         return (
             readiness_status == "install_required"
             and capability.execution_target == "agent_managed_module"

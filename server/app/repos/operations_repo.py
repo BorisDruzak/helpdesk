@@ -46,6 +46,7 @@ class OperationsRepo:
         playbook_run_id: Optional[int] = None,
         retry_of_operation_id: Optional[str] = None,
         status: str = "queued",
+        phase: Optional[str] = None,
         deadline_at: Optional[datetime] = None,
         max_retries: int = 3
     ) -> Operation:
@@ -85,6 +86,7 @@ class OperationsRepo:
             actor_role=actor_role,
             trace_id=trace_id,
             status=status,
+            phase=phase,
             deadline_at=deadline_at,
             queued_at=datetime.now(timezone.utc),
             retry_count=0,
@@ -101,6 +103,19 @@ class OperationsRepo:
         )
         
         return operation
+
+    async def update_phase(
+        self,
+        operation_id: str,
+        phase: Optional[str],
+        expected_phases: Optional[List[Optional[str]]] = None,
+    ) -> bool:
+        where_clause = Operation.operation_id == operation_id
+        if expected_phases is not None:
+            where_clause = and_(where_clause, Operation.phase.in_(expected_phases))
+        stmt = update(Operation).where(where_clause).values(phase=phase)
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0
     
     PENDING_STATUSES = ("queued", "sent", "accepted", "running")
 

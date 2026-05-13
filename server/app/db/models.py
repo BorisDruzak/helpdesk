@@ -1453,6 +1453,7 @@ class Operation(Base):
     # Status: queued, sent, accepted, running, waiting_consent, succeeded, failed, denied, timed_out, cancel_requested, canceled
     # denied - терминальный статус для denied consent, отдельно от failed
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    phase: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
     
     # SLA tracking
     deadline_at: Mapped[Optional[datetime]] = mapped_column(
@@ -1514,6 +1515,7 @@ class Operation(Base):
     __table_args__ = (
         Index("ix_operations_status_queued_at", "status", "queued_at"),
         Index("ix_operations_device_id_status", "device_id", "status"),
+        Index("ix_operations_phase", "phase"),
         Index("ix_operations_deadline_at", "deadline_at"),
         Index("ix_operations_cancel_target", "cancel_target_operation_id"),
         Index("ix_operations_active_cancel", "active_cancel_operation_id"),
@@ -1525,6 +1527,52 @@ class Operation(Base):
             f"<Operation(operation_id={self.operation_id!r}, device_id={self.device_id!r}, "
             f"kind={self.kind!r}, status={self.status!r})>"
         )
+
+
+class OperationDependency(Base):
+    """Runtime dependency linkage for operations that wait on a module, runner, or integration."""
+
+    __tablename__ = "operation_dependencies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dependency_operation_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("operations.operation_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    dependency_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    dependency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    module_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    current_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    target_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    version_constraint: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    timeout_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    resume_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_operation_dependencies_operation_id", "operation_id"),
+        Index("ix_operation_dependencies_dependency_operation_id", "dependency_operation_id"),
+        Index("ix_operation_dependencies_type", "dependency_type"),
+        Index("ix_operation_dependencies_key", "dependency_key"),
+        Index("ix_operation_dependencies_status", "status"),
+        Index("ix_operation_dependencies_timeout_at", "timeout_at"),
+    )
 
 
 class Module(Base):

@@ -41,6 +41,8 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 
 **Diagnostic Provider Config (migration 075):** `diagnostic_providers`, `diagnostic_capabilities`, `diagnostic_capability_versions`, `diagnostic_provider_configs`, `diagnostic_provider_credential_refs`, `diagnostic_provider_audit`. Capability descriptors still remain computed from manifests/providers for runtime compatibility, while these tables persist provider configuration lifecycle, credential references, redacted integration config and audit rows for server connectors such as Zabbix. Main entrypoints: `server/app/repos/diagnostic_provider_config_repo.py`, `server/diagnostics/provider_config.py`, and `/api/diagnostics/providers/configs*`.
 
+**Agent Recipe Runtime Dependencies (migration 078):** `operation_dependencies` plus nullable `operations.phase`. These fields model ticket-bound runtime prerequisites such as installing/upgrading the protected `agent_recipe_runner` before a recipe operation can continue. Parent recipe operations keep the existing `operations.status` lifecycle and use phase values like `waiting_dependency`, `installing_dependency`, `sending_run_recipe` and `running_recipe`; dependency rows link to the module install operation created by reconcile.
+
 **Тикетная система (миграция 018):**  
 **ticket_queues** — очереди (ServiceDesk L1, SysAdmins, Network, 1C, Security).  
 **ticket_queue_members** — участники очередей.  
@@ -81,10 +83,13 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
 | **device_outbox** | Серверная outbox: команды к агентам до доставки по WebSocket. Жизненный цикл: pending → sent → delivered/failed. | `DeviceOutboxRepo`: вставка команды, выборка pending по device_id, обновление status/sent_at/delivered_at. Отправка команд агенту через outbox sender (`device_outbox_sender`) и доставка по WS. |
-| **operations** | Материализованное состояние операций (run_tool, cancel и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.). Связь с consent_decisions. Tools API, WebSocket, отмена операций. |
+| **operations** | Материализованное состояние операций (run_tool, cancel, agent_recipe и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.) плюс nullable `phase` для runtime dependency substate. Связь с consent_decisions и operation_dependencies. Tools API, WebSocket, отмена операций. |
+| **operation_dependencies** | Явная связь parent operation с runtime dependency operation/resource. | `OperationDependenciesRepo` / `diagnostics.runtime_dependencies`: runner/module dependency status, target version, timeout, resume attempts and dependency operation linkage. |
 
 **device_outbox:** `id` (PK), `device_id`, `command_id`, `command`, `params` (JSONB), `status`, `request_id`, `trace_id`, `operation_id`, `actor_role`, `retry_count`, `max_retries`, `created_at`, `sent_at`, `delivered_at`, `failed_at`, `error_code`, `error_message`.  
-**operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `retry_of_operation_id`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
+**operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `phase`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `retry_of_operation_id`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
+
+**operation_dependencies:** `id` (PK), `operation_id` (FK operations), `dependency_operation_id` (nullable FK operations), `dependency_type`, `dependency_key`, `provider_id`, `module_name`, `current_version`, `target_version`, `version_constraint`, `status`, `reason`, `reason_code`, `created_at`, `resolved_at`, `timeout_at`, `resume_attempts`, `metadata_json`.
 
 ---
 

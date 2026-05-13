@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import uuid
 
 import pytest
@@ -16,7 +17,11 @@ from app.db.models import (
     DiagnosticCapability,
     DiagnosticCapabilityVersion,
     DiagnosticProvider,
+    DeviceDesiredModule,
     Operation,
+    OperationDependency,
+    Module,
+    ServerConfig,
     Ticket,
 )
 from diagnostics.agent_recipes import AgentRecipeValidationError
@@ -36,7 +41,13 @@ def _ticket(ticket_id: str, device_id: str) -> Ticket:
     )
 
 
-async def _seed_recipe(session, *, device_id: str, runner_version: str = "1.0.0") -> dict[str, str]:
+async def _seed_recipe(
+    session,
+    *,
+    device_id: str,
+    runner_version: str = "1.0.0",
+    install_runner: bool = True,
+) -> dict[str, str]:
     provider = DiagnosticProvider(
         provider_id="agent_recipe_runner",
         provider_type="agent_recipe_runner",
@@ -118,22 +129,54 @@ async def _seed_recipe(session, *, device_id: str, runner_version: str = "1.0.0"
         resource_limits_json={"timeout_sec": 10},
         redaction_json={},
     )
-    module = DeviceModule(
-        device_id=device_id,
-        module_name="agent_recipe_runner",
-        version=runner_version,
-        installed=True,
-        active=True,
-        state="active",
-        source="test",
-    )
     session.add(provider)
     await session.flush()
     session.add_all([capability, capability_version])
     await session.flush()
-    session.add_all([recipe, primitive, module])
+    session.add_all([recipe, primitive])
+    if install_runner:
+        session.add(
+            DeviceModule(
+                device_id=device_id,
+                module_name="agent_recipe_runner",
+                version=runner_version,
+                installed=True,
+                active=True,
+                state="active",
+                source="test",
+            )
+        )
     await session.flush()
     return {"capability_version_id": capability_version_id, "recipe_version_id": recipe_version_id}
+
+
+async def _seed_preferred_runner_module(session, *, version: str = "1.0.0") -> None:
+    session.add(
+        Module(
+            module_name="agent_recipe_runner",
+            version=version,
+            sha256="a" * 64,
+            size=1234,
+            storage_path=f"agent_recipe_runner-{version}.zip",
+            uploaded_by="admin",
+            manifest_json={
+                "module_name": "agent_recipe_runner",
+                "module_version": version,
+                "owner_scope": "platform",
+                "system_module": True,
+                "protected": True,
+                "platforms": ["win32", "linux"],
+            },
+            validation_json={"status": "passed"},
+        )
+    )
+    session.add(
+        ServerConfig(
+            key="module_preferred:agent_recipe_runner",
+            value=json.dumps({"module_name": "agent_recipe_runner", "version": version}),
+        )
+    )
+    await session.flush()
 
 
 @pytest.mark.asyncio
@@ -237,3 +280,163 @@ async def test_recipe_execution_uses_default_runner_primitives_without_db_seed(t
 
     assert result["status"] == "queued", result
     assert result["command"] == "run_recipe"
+
+
+@pytest.mark.asyncio
+async def test_recipe_execution_missing_runner_creates_runtime_dependency(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async def fake_install(self, *, parent_operation, plan, actor_role):
+        from app.services.operation_service import OperationService
+        from modules.reconcile import set_desired_installed
+
+        await set_desired_installed(
+            device_id=parent_operation.device_id,
+            module_name=plan.module_name,
+            desired_version=plan.target_version,
+            desired_sha256=plan.module_sha256,
+            reason="agent_recipe",
+            updated_by=actor_role,
+            session=self.session,
+        )
+        dep_operation_id = str(uuid.uuid4())
+        await OperationService(self.session).enqueue_operation(
+            operation_id=dep_operation_id,
+            device_id=parent_operation.device_id,
+            kind="command",
+            actor_role="system",
+            trace_id=parent_operation.trace_id,
+            ticket_id=parent_operation.ticket_id,
+            command_name="install_module_package",
+        )
+        return {"status": "installing", "operation_id": dep_operation_id, "reconcile": {"installs": 1}}
+
+    monkeypatch.setattr(
+        "diagnostics.runtime_dependencies.RecipeRunnerDependencyProvider.install_or_upgrade_runner",
+        fake_install,
+    )
+
+    async with session_maker() as session:
+        session.add(_ticket(ticket_id, device_id))
+        await _seed_recipe(session, device_id=device_id, install_runner=False)
+        await _seed_preferred_runner_module(session, version="1.0.0")
+        await session.commit()
+
+    async with session_maker() as session:
+        service = RecipeExecutionService(session)
+        result = await service.run_recipe_capability(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            capability_id="endpoint.spooler.status",
+            params={"sample": True},
+            actor={"actor_role": "support"},
+        )
+        await session.commit()
+
+    assert result["status"] == "waiting_dependency", result
+    assert result["phase"] == "installing_runner"
+    assert result["dependency"]["action"] == "install_runner"
+    assert result["dependency"]["target_version"] == "1.0.0"
+
+    async with session_maker() as session:
+        operation = await session.scalar(select(Operation).where(Operation.operation_id == result["operation_id"]))
+        dependency = await session.scalar(
+            select(OperationDependency).where(OperationDependency.operation_id == result["operation_id"])
+        )
+        outbox = await session.scalar(select(DeviceOutbox).where(DeviceOutbox.operation_id == result["operation_id"]))
+        desired = await session.scalar(
+            select(DeviceDesiredModule).where(
+                DeviceDesiredModule.device_id == device_id,
+                DeviceDesiredModule.module_name == "agent_recipe_runner",
+            )
+        )
+
+    assert operation is not None
+    assert operation.kind == "agent_recipe"
+    assert operation.phase == "installing_dependency"
+    assert dependency is not None
+    assert dependency.status == "installing"
+    assert dependency.dependency_operation_id
+    assert dependency.metadata_json["runtime_params"] == {"sample": True}
+    assert desired is not None
+    assert desired.desired_version == "1.0.0"
+    assert outbox is None
+
+
+@pytest.mark.asyncio
+async def test_recipe_dependency_resume_is_idempotent(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+
+    async def fake_install(self, *, parent_operation, plan, actor_role):
+        dep_operation_id = str(uuid.uuid4())
+        from app.services.operation_service import OperationService
+
+        await OperationService(self.session).enqueue_operation(
+            operation_id=dep_operation_id,
+            device_id=parent_operation.device_id,
+            kind="command",
+            actor_role="system",
+            trace_id=parent_operation.trace_id,
+            ticket_id=parent_operation.ticket_id,
+            command_name="install_module_package",
+        )
+        return {"status": "installing", "operation_id": dep_operation_id, "reconcile": {"installs": 1}}
+
+    monkeypatch.setattr(
+        "diagnostics.runtime_dependencies.RecipeRunnerDependencyProvider.install_or_upgrade_runner",
+        fake_install,
+    )
+
+    async with session_maker() as session:
+        session.add(_ticket(ticket_id, device_id))
+        await _seed_recipe(session, device_id=device_id, install_runner=False)
+        await _seed_preferred_runner_module(session, version="1.0.0")
+        await session.commit()
+
+    async with session_maker() as session:
+        service = RecipeExecutionService(session)
+        result = await service.run_recipe_capability(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            capability_id="endpoint.spooler.status",
+            params={"sample": True},
+            actor={"actor_role": "support"},
+        )
+        session.add(
+            DeviceModule(
+                device_id=device_id,
+                module_name="agent_recipe_runner",
+                version="1.0.0",
+                installed=True,
+                active=True,
+                state="active",
+                source="test",
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        service = RecipeExecutionService(session)
+        first = await service.resume_after_dependency(result["operation_id"])
+        second = await service.resume_after_dependency(result["operation_id"])
+        await session.commit()
+
+    assert first["status"] == "resumed"
+    assert second["status"] == "ignored"
+
+    async with session_maker() as session:
+        outbox_count = await session.scalar(
+            select(func.count(DeviceOutbox.id)).where(DeviceOutbox.operation_id == result["operation_id"])
+        )
+        operation = await session.scalar(select(Operation).where(Operation.operation_id == result["operation_id"]))
+        dependency = await session.scalar(
+            select(OperationDependency).where(OperationDependency.operation_id == result["operation_id"])
+        )
+
+    assert outbox_count == 1
+    assert operation.phase == "running_recipe"
+    assert dependency.status == "ready"

@@ -81,10 +81,16 @@ function statusTone(value: string | null | undefined): "neutral" | "brand" | "su
   if (value === "error" || value === "failed" || value === "agent_offline" || value === "permission_denied") {
     return "danger";
   }
-  if (value === "running" || value === "installing") {
+  if (value === "running" || value === "installing" || value === "waiting_dependency" || value === "runner_installing") {
     return "info";
   }
-  if (value === "integration_not_configured" || value === "mapping_missing") {
+  if (
+    value === "integration_not_configured" ||
+    value === "mapping_missing" ||
+    value === "runner_not_installed" ||
+    value === "runner_outdated" ||
+    value === "primitive_not_supported"
+  ) {
     return "brand";
   }
   return "neutral";
@@ -105,7 +111,12 @@ function capabilityPerspective(capability: DiagnosticCapability): string {
 }
 
 function capabilityCanRun(capability: DiagnosticCapability): boolean {
-  return capability.actions.includes("run") || capability.actions.includes("open_remote_assist");
+  return (
+    capability.actions.includes("run") ||
+    capability.actions.includes("open_remote_assist") ||
+    capability.actions.includes("install_runner") ||
+    capability.actions.includes("upgrade_runner")
+  );
 }
 
 function blockedCapabilityTitle(capability: DiagnosticCapability): string | null {
@@ -168,6 +179,12 @@ function blockedCapabilityDetail(capability: DiagnosticCapability): string {
 }
 
 function primaryActionLabel(capability: DiagnosticCapability): string {
+  if (capability.actions.includes("upgrade_runner")) {
+    return "Обновить runner и запустить";
+  }
+  if (capability.actions.includes("install_runner")) {
+    return "Установить runner и запустить";
+  }
   if (capability.actions.includes("open_remote_assist")) {
     return "Открыть удалённую помощь";
   }
@@ -187,8 +204,14 @@ function summarizeRunResult(result: Record<string, unknown> | null): string | nu
   const evidenceId = String(result.diagnostic_evidence_id ?? "").trim();
   const operationId = String(result.operation_id ?? "").trim();
   const message = String(result.message ?? "").trim();
+  const phase = String(result.phase ?? "").trim();
+  const dependency = result.dependency && typeof result.dependency === "object" ? (result.dependency as Record<string, unknown>) : null;
   if (message) {
     return message;
+  }
+  if (result.status === "waiting_dependency" || phase === "installing_runner") {
+    const targetVersion = String(dependency?.target_version ?? "").trim();
+    return `Устанавливаем Agent Recipe Runner${targetVersion ? ` ${targetVersion}` : ""}. После установки проверка запустится автоматически.`;
   }
   if (evidenceId) {
     return `Evidence создано: ${evidenceId}`;

@@ -4,6 +4,20 @@
 
 Goal: add `agent_recipe` as a production execution target backed by a protected managed `agent_recipe_runner` module. Recipes are persisted DB records, not generated ZIP modules; execution uses a first-class `run_recipe` Protocol V3 command and produces operations plus diagnostic evidence.
 
+### Ticket-bound Runner Auto-Install / Auto-Upgrade Slice
+
+Goal: make `agent_recipe` runs able to install or upgrade the protected `agent_recipe_runner` as a runtime dependency without blocking the HTTP request and without bypassing module lifecycle.
+
+- [x] Add `operation_dependencies` plus `operations.phase` for parent operation dependency state.
+- [x] Select runner through preferred module assignment and version/platform/primitive compatibility checks.
+- [x] Use `device_desired_modules` and `modules.reconcile.reconcile_device` for install/upgrade.
+- [x] Return parent `operation_id` immediately in `waiting_dependency` / `installing_runner` state.
+- [x] Resume parent recipe operation after dependency terminal result, `module_state_changed`, or `tools_changed`.
+- [x] Keep resume idempotent and avoid duplicate `run_recipe` outbox commands.
+- [x] Add timeout handling through operation watchdog and dependency timeout timestamps.
+- [x] Update support diagnostics UI labels for install/upgrade runner actions and waiting dependency run results.
+- [x] Add targeted tests for missing runner dependency creation and idempotent resume.
+
 Hard constraints for this slice:
 
 - No arbitrary PowerShell/Bash/Python command runner.

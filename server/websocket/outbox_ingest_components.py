@@ -396,6 +396,15 @@ class OutboxEventPublishService:
                     state=ctx.state,
                     reason="event_module_state_changed",
                 )
+                try:
+                    from app.db import get_session
+                    from diagnostics.recipe_execution_service import RecipeExecutionService
+
+                    async with get_session() as session:
+                        await RecipeExecutionService(session, state=ctx.state).resume_waiting_dependencies_for_device(ctx.agent_id)
+                        await session.commit()
+                except Exception as resume_exc:
+                    logger.warning(f"[outbox_pipeline] recipe dependency resume after module_state_changed failed: {resume_exc}")
             except Exception as exc:
                 logger.warning(f"[outbox_pipeline] reconcile after module_state_changed failed: {exc}")
             await self._enqueue_toolset_refresh(
@@ -404,6 +413,15 @@ class OutboxEventPublishService:
                 reason="module_state_changed",
             )
         if outcome.event_type == "tools_changed" and getattr(ctx, "agent_id", None):
+            try:
+                from app.db import get_session
+                from diagnostics.recipe_execution_service import RecipeExecutionService
+
+                async with get_session() as session:
+                    await RecipeExecutionService(session, state=ctx.state).resume_waiting_dependencies_for_device(ctx.agent_id)
+                    await session.commit()
+            except Exception as resume_exc:
+                logger.warning(f"[outbox_pipeline] recipe dependency resume after tools_changed failed: {resume_exc}")
             await self._enqueue_toolset_refresh(
                 ctx=ctx,
                 outcome=outcome,

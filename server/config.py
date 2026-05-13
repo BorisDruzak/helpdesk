@@ -339,6 +339,23 @@ PLAYBOOK_SCHEDULER_ENABLED = os.getenv("PLAYBOOK_SCHEDULER_ENABLED", "true").low
 PLAYBOOK_PARALLEL_ENABLED = os.getenv("PLAYBOOK_PARALLEL_ENABLED", "true").lower() == "true"
 CAPABILITY_GATE_STRICT = os.getenv("CAPABILITY_GATE_STRICT", "true").lower() == "true"
 
+# Agent Recipe Runner runtime dependency policy.
+AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED = os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED", "true").lower() == "true"
+AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ENABLED = os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ENABLED", "true").lower() == "true"
+AGENT_RECIPE_RUNNER_AUTO_INSTALL_TIMEOUT_SEC = int(os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_TIMEOUT_SEC", "300"))
+AGENT_RECIPE_RUNNER_AUTO_UPGRADE_TIMEOUT_SEC = int(os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_TIMEOUT_SEC", "600"))
+AGENT_RECIPE_RUNNER_AUTO_INSTALL_ROLES = {
+    role.strip()
+    for role in os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_ROLES", "support,support_l1,support_l2,admin,system").split(",")
+    if role.strip()
+}
+AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ROLES = {
+    role.strip()
+    for role in os.getenv("AGENT_RECIPE_RUNNER_AUTO_UPGRADE_ROLES", "support,support_l2,admin,system").split(",")
+    if role.strip()
+}
+AGENT_RECIPE_RUNNER_AUTO_MAX_RISK = os.getenv("AGENT_RECIPE_RUNNER_AUTO_MAX_RISK", "low").strip().lower()
+
 # ============================================================================
 # Logging Configuration
 # ============================================================================

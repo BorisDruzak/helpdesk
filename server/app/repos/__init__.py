@@ -9,6 +9,7 @@ from app.repos.devices_repo import DevicesRepo
 from app.repos.device_config_repo import DeviceConfigRepo
 from app.repos.toolset_snapshots_repo import ToolsetSnapshotsRepo
 from app.repos.operations_repo import OperationsRepo
+from app.repos.operation_dependencies_repo import OperationDependenciesRepo
 from app.repos.modules_repo import ModulesRepo
 from app.repos.device_modules_repo import DeviceModulesRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
@@ -38,6 +39,7 @@ __all__ = [
     "DeviceConfigRepo",
     "ToolsetSnapshotsRepo",
     "OperationsRepo",
+    "OperationDependenciesRepo",
     "ModulesRepo",
     "DeviceModulesRepo",
     "AuthTokensRepo",

@@ -59,8 +59,10 @@ Wire-format `ToolResponse` сохраняется для совместимос�
 - Managed packs проходят install/reconcile path и preferred-version auto-update.
 # Agent Recipe execution
 
-`agent_recipe` is a first-class capability execution target for declarative endpoint diagnostics. It creates `operations.kind=agent_recipe` and enqueues a Protocol V3 `run_recipe` command in `device_outbox`.
+`agent_recipe` is a first-class capability execution target for declarative endpoint diagnostics. When the protected `agent_recipe_runner` is already active and compatible, it creates `operations.kind=agent_recipe` and enqueues a Protocol V3 `run_recipe` command in `device_outbox`.
 
 `run_recipe` payload includes `operation_id`, `trace_id`, `ticket_id`, `capability_id`, `capability_version_id`, `recipe_version_id`, `runner_provider_id`, `min_runner_version`, `primitive_id`, `recipe`, `runtime_params`, `resource_limits` and `redaction`. The agent responds through the normal `command_result` envelope with a ToolResponse-compatible payload.
+
+If the runner is missing or outdated, `RecipeExecutionService` creates the parent recipe operation with `operations.phase=waiting_dependency`, persists an `operation_dependencies` row, selects a compatible preferred runner version, writes the existing `device_desired_modules` desired-state row and invokes module reconcile. The run endpoint returns immediately with dependency state; `run_recipe` is not enqueued until module install/activation is observed and readiness is rechecked. Resume is idempotent and timeout/failure of the dependency fails the parent recipe operation.
 
 `ToolExecutionService.run_tool` remains the path for `agent_builtin` and `agent_managed_module`; it is not the recipe execution path. Terminal `agent_recipe` command results are projected into `diagnostic_evidence` by the command-result side-effect pipeline.

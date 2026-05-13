@@ -474,10 +474,30 @@ class CommandResultEventPublisher:
                             from diagnostics.projection import DiagnosticProjectionService
 
                             await DiagnosticProjectionService(session).project_operation_result(operation.operation_id)
+                            await op_repo.update_phase(
+                                operation.operation_id,
+                                "completed" if lifecycle_outcome.status == "succeeded" else "failed",
+                            )
                             await session.commit()
                         except Exception as exc:
                             logger.warning(
                                 f"[command_result] agent_recipe evidence projection failed: "
+                                f"operation_id={operation.operation_id} error={exc}"
+                            )
+                    if operation and lifecycle_outcome.status in {"succeeded", "failed", "canceled", "timed_out"}:
+                        try:
+                            from diagnostics.recipe_execution_service import RecipeExecutionService
+
+                            resume_results = await RecipeExecutionService(session, state=state).notify_dependency_operation_terminal(
+                                operation.operation_id,
+                                lifecycle_outcome.status,
+                                normalized.data_payload if isinstance(normalized.data_payload, dict) else {},
+                            )
+                            if resume_results:
+                                await session.commit()
+                        except Exception as exc:
+                            logger.warning(
+                                f"[command_result] runtime dependency notification failed: "
                                 f"operation_id={operation.operation_id} error={exc}"
                             )
                     if operation and ui_publisher is not None:
