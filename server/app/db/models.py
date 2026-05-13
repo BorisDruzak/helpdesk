@@ -3223,14 +3223,119 @@ class DiagnosticCapabilityVersion(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     capability_id: Mapped[str] = mapped_column(Text, sa.ForeignKey("diagnostic_capabilities.capability_id", ondelete="CASCADE"), nullable=False)
     version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="published", server_default="published")
     descriptor_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    params_schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    output_schema_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    output_contract_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    safety_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    evidence_mapping_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    deployment_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    readiness_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    contract_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="", server_default="")
     source_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    deprecated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_diag_capability_versions_capability", "capability_id", "is_current"),
         sa.UniqueConstraint("capability_id", "version", name="uq_diag_capability_versions_capability_version"),
+    )
+
+
+class AgentRecipeVersion(Base):
+    """Concrete declarative recipe implementation for an agent_recipe capability version."""
+
+    __tablename__ = "agent_recipe_versions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    capability_version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("diagnostic_capability_versions.id", ondelete="CASCADE"), nullable=False)
+    recipe_schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    runner_provider_id: Mapped[str] = mapped_column(Text, nullable=False, default="agent_recipe_runner", server_default="agent_recipe_runner")
+    min_runner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_id: Mapped[str] = mapped_column(Text, nullable=False)
+    primitive_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    platforms_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    platform_variants_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    recipe_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    parameter_bindings_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    resource_limits_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    redaction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    validation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", server_default="unknown")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_agent_recipe_versions_capability_version", "capability_version_id"),
+        Index("ix_agent_recipe_versions_primitive", "primitive_id"),
+        Index("ix_agent_recipe_versions_runner", "runner_provider_id"),
+        Index("ix_agent_recipe_versions_validation", "validation_status"),
+    )
+
+
+class AgentRecipePrimitive(Base):
+    """Primitive catalog advertised by protected agent_recipe_runner versions."""
+
+    __tablename__ = "agent_recipe_primitives"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    runner_provider_id: Mapped[str] = mapped_column(Text, nullable=False, default="agent_recipe_runner", server_default="agent_recipe_runner")
+    runner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_id: Mapped[str] = mapped_column(Text, nullable=False)
+    primitive_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    platforms_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    params_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    output_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    output_contract: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    safety_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    evidence_defaults_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    resource_limits_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    redaction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "runner_provider_id",
+            "runner_version",
+            "primitive_id",
+            "primitive_version",
+            name="uq_agent_recipe_primitives_runner_primitive",
+        ),
+        Index("ix_agent_recipe_primitives_runner", "runner_provider_id", "runner_version"),
+        Index("ix_agent_recipe_primitives_primitive", "primitive_id"),
+    )
+
+
+class AgentRecipeTestRun(Base):
+    """Audit trail for recipe validation/live tests."""
+
+    __tablename__ = "agent_recipe_test_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    recipe_version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("agent_recipe_versions.id", ondelete="CASCADE"), nullable=False)
+    target_device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    runner_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    result_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    artifacts_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_agent_recipe_test_runs_recipe", "recipe_version_id"),
+        Index("ix_agent_recipe_test_runs_status", "status"),
+        Index("ix_agent_recipe_test_runs_platform", "platform"),
+        Index("ix_agent_recipe_test_runs_device", "target_device_id"),
     )
 
 

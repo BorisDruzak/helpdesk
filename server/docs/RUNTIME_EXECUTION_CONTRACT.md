@@ -57,3 +57,10 @@ Wire-format `ToolResponse` сохраняется для совместимос�
 - Builtin modules являются first-class tool providers по тому же contract.
 - Отличие только в доставке: builtin не требуют server ZIP install.
 - Managed packs проходят install/reconcile path и preferred-version auto-update.
+# Agent Recipe execution
+
+`agent_recipe` is a first-class capability execution target for declarative endpoint diagnostics. It creates `operations.kind=agent_recipe` and enqueues a Protocol V3 `run_recipe` command in `device_outbox`.
+
+`run_recipe` payload includes `operation_id`, `trace_id`, `ticket_id`, `capability_id`, `capability_version_id`, `recipe_version_id`, `runner_provider_id`, `min_runner_version`, `primitive_id`, `recipe`, `runtime_params`, `resource_limits` and `redaction`. The agent responds through the normal `command_result` envelope with a ToolResponse-compatible payload.
+
+`ToolExecutionService.run_tool` remains the path for `agent_builtin` and `agent_managed_module`; it is not the recipe execution path. Terminal `agent_recipe` command results are projected into `diagnostic_evidence` by the command-result side-effect pipeline.

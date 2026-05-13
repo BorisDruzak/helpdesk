@@ -15,6 +15,7 @@ from diagnostics.observability import NullCapabilityExecutionObserver, monotonic
 TARGET_EXECUTION_KIND = {
     "agent_builtin": "operation",
     "agent_managed_module": "operation",
+    "agent_recipe": "operation",
     "server_builtin": "query",
     "server_connector": "query",
     "observer_query": "query",
@@ -166,6 +167,24 @@ class CapabilityExecutionRouter:
                 idempotency_key=idempotency_key,
                 timeout_ms=timeout_ms,
             )
+        if target == "agent_recipe":
+            result = await self.route_agent_recipe(
+                capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                params=params,
+                actor=actor,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
+            return self._envelope(
+                capability,
+                result,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
         if target == "server_builtin":
             result = await self.route_server_builtin(
                 capability,
@@ -270,6 +289,23 @@ class CapabilityExecutionRouter:
 
     async def route_server_builtin(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
+
+    async def route_agent_recipe(self, capability, **kwargs) -> Dict[str, Any]:
+        from app.db import get_session
+        from diagnostics.recipe_execution_service import RecipeExecutionService
+
+        async with get_session() as session:
+            result = await RecipeExecutionService(session, state=self.capability_registry.state).run_recipe_capability(
+                ticket_id=kwargs["ticket_id"],
+                device_id=kwargs.get("device_id"),
+                capability_id=capability.id,
+                params=kwargs.get("params") or {},
+                actor=kwargs.get("actor"),
+                idempotency_key=kwargs.get("idempotency_key"),
+                timeout_ms=kwargs.get("timeout_ms"),
+            )
+            await session.commit()
+            return result
 
     async def route_server_connector(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_connector_provider, capability, **kwargs)

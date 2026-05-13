@@ -172,3 +172,12 @@ Wire-contract Protocol V3 при этом не меняется: формат en
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — безопасность и аутентификация (токены, handshake, middleware).
 - [pc_agent/docs/PROTOCOL_V3.md](../../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация Protocol V3.
 - [BOTTLENECKS_AND_RISKS.md](../../docs/archive/BOTTLENECKS_AND_RISKS.md) — исторические узкие места и риски проекта.
+## 2026-05-13 Agent Recipe command
+
+`run_recipe` is a first-class DeviceOutbox / Protocol V3 command for `execution_target=agent_recipe`.
+The server creates an `operations` row with `kind=agent_recipe`, then enqueues `DeviceOutbox.command="run_recipe"`
+with the actual diagnostic `capability_id`, immutable capability/recipe version ids, `runner_provider_id`,
+`min_runner_version`, `primitive_id`, recipe payload, runtime params, resource limits and redaction policy. This path is
+intentionally separate from ordinary `run_tool`: declarative recipes are not ZIP modules and must execute only through
+the protected managed module `agent_recipe_runner`. Terminal `command_result` payloads keep the existing operation
+lifecycle shape and are projected to diagnostic evidence by the diagnostics projection layer.

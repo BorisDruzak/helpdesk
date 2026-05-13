@@ -1,6 +1,7 @@
 export type ExecutionTarget =
   | "agent_builtin"
   | "agent_managed_module"
+  | "agent_recipe"
   | "server_builtin"
   | "server_connector"
   | "observer_query"
@@ -14,6 +15,12 @@ export type CapabilityReadinessStatus =
   | "installing"
   | "unsupported_platform"
   | "agent_offline"
+  | "runner_not_installed"
+  | "runner_install_required"
+  | "runner_installing"
+  | "runner_outdated"
+  | "primitive_not_supported"
+  | "recipe_not_published"
   | "missing_dependency"
   | "consent_required"
   | "integration_not_configured"
@@ -63,6 +70,13 @@ export interface CapabilityDescriptor {
   provider_type?: string | null;
   source?: string | null;
   execution_target: ExecutionTarget | string;
+  runner_provider_id?: string | null;
+  min_runner_version?: string | null;
+  primitive_id?: string | null;
+  primitive_version?: string | null;
+  recipe_version_id?: string | null;
+  capability_version_id?: string | null;
+  supports_auto_install_runner?: boolean;
   tool_kind?: CapabilityToolKind | null;
   risk_level?: CapabilityRiskLevel | null;
   readiness?: CapabilityReadinessStatus | string;
@@ -123,4 +137,41 @@ export interface ProviderSummary {
 export interface EvidenceMappingRow {
   capability: CapabilityDescriptor;
   mapping_status: "configured" | "inferred" | "missing" | "read-only" | "invalid";
+}
+
+export interface AgentRecipePrimitive {
+  primitive_id: string;
+  primitive_version: string;
+  title: string;
+  description?: string | null;
+  platforms: string[];
+  runner_provider_id?: string;
+  runner_version?: string;
+  params_schema?: unknown;
+  output_schema?: unknown;
+  output_contract?: unknown;
+  safety?: Record<string, unknown>;
+  risk_level?: string;
+}
+
+export interface AgentRecipeCreatePayload {
+  canonical_id: string;
+  title: string;
+  description?: string;
+  primitive_id: string;
+  primitive_version?: string;
+  platforms: Array<"win32" | "linux">;
+  min_runner_version?: string;
+  domain?: string;
+  evidence_kind?: string;
+  params?: Record<string, unknown>;
+  recipe?: Record<string, unknown>;
+  evidence_mapping?: Record<string, unknown>;
+}
+
+export interface AgentRecipeCreateResult {
+  capability_id: string;
+  capability_version_id: string;
+  recipe_version_id: string;
+  capability: CapabilityDescriptor;
 }

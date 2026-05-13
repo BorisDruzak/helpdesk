@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 EXECUTION_TARGETS = {
     "agent_builtin",
     "agent_managed_module",
+    "agent_recipe",
     "server_builtin",
     "server_connector",
     "observer_query",
@@ -21,6 +22,12 @@ READINESS_STATUSES = {
     "installing",
     "unsupported_platform",
     "agent_offline",
+    "runner_not_installed",
+    "runner_install_required",
+    "runner_installing",
+    "runner_outdated",
+    "primitive_not_supported",
+    "recipe_not_published",
     "missing_dependency",
     "consent_required",
     "integration_not_configured",
@@ -65,6 +72,13 @@ class CapabilityDescriptor:
     artifacts: Dict[str, Any] = field(default_factory=dict)
     aliases: List[str] = field(default_factory=list)
     source: str = "managed_module"
+    runner_provider_id: Optional[str] = None
+    min_runner_version: Optional[str] = None
+    primitive_id: Optional[str] = None
+    primitive_version: Optional[str] = None
+    recipe_version_id: Optional[str] = None
+    capability_version_id: Optional[str] = None
+    supports_auto_install_runner: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

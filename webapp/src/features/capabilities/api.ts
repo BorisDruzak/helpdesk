@@ -1,5 +1,11 @@
 import { SupportBootstrapApiError } from "../queues/api";
-import type { CapabilityDescriptor, DiagnosticProviderConfig } from "./types";
+import type {
+  AgentRecipeCreatePayload,
+  AgentRecipeCreateResult,
+  AgentRecipePrimitive,
+  CapabilityDescriptor,
+  DiagnosticProviderConfig,
+} from "./types";
 
 type ApiErrorResponse = {
   status: "error";
@@ -47,4 +53,39 @@ export async function listTicketCapabilityReadiness(ticketId: string): Promise<C
   });
   const payload = await readJson<ApiOkResponse<{ capabilities: CapabilityDescriptor[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load ticket capability readiness").capabilities;
+}
+
+export async function listAgentRecipePrimitives(): Promise<AgentRecipePrimitive[]> {
+  const response = await fetch("/api/web/admin/agent-recipes/primitives", { credentials: "same-origin" });
+  const payload = await readJson<ApiOkResponse<{ primitives: AgentRecipePrimitive[] }> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to load agent recipe primitives").primitives;
+}
+
+export async function createAgentRecipe(payload: AgentRecipeCreatePayload): Promise<AgentRecipeCreateResult> {
+  const response = await fetch("/api/web/admin/agent-recipes", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await readJson<ApiOkResponse<AgentRecipeCreateResult> | ApiErrorResponse>(response);
+  return assertOk(data, response, "Unable to create agent recipe");
+}
+
+export async function validateAgentRecipe(recipeVersionId: string): Promise<{ validation_status: string }> {
+  const response = await fetch(`/api/web/admin/agent-recipes/${encodeURIComponent(recipeVersionId)}/validate`, {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  const payload = await readJson<ApiOkResponse<{ validation_status: string }> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to validate agent recipe");
+}
+
+export async function publishAgentRecipe(recipeVersionId: string): Promise<{ capability_id: string }> {
+  const response = await fetch(`/api/web/admin/agent-recipes/${encodeURIComponent(recipeVersionId)}/publish`, {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  const payload = await readJson<ApiOkResponse<{ capability_id: string }> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to publish agent recipe");
 }

@@ -345,7 +345,13 @@ export function CapabilityStudioPage() {
       </div>
 
       <CapabilityDetailDrawer capability={selectedCapability} onClose={() => setSelectedCapability(null)} />
-      <CapabilityCreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CapabilityCreateModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: ["admin-capabilities"] });
+        }}
+      />
     </section>
   );
 }

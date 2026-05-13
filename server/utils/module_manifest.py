@@ -32,6 +32,7 @@ CONTRACT_PATH_RE = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
 EXECUTION_TARGETS = {
     "agent_builtin",
     "agent_managed_module",
+    "agent_recipe",
     "server_builtin",
     "server_connector",
     "observer_query",
@@ -67,6 +68,14 @@ def _default_execution_for_target(target: str) -> Dict[str, Any]:
             "supports_auto_install": True,
             "requires_integration": False,
         }
+    if target == "agent_recipe":
+        return {
+            "target": "agent_recipe",
+            "requires_device": True,
+            "requires_agent_online": True,
+            "supports_auto_install": True,
+            "requires_integration": False,
+        }
     if target == "server_connector":
         return {
             "target": "server_connector",
@@ -91,6 +100,9 @@ def _default_deployment_for_target(module_name: str, target: str) -> Dict[str, A
     elif target == "agent_managed_module":
         package_type = "zip"
         install_required = True
+    elif target == "agent_recipe":
+        package_type = "declarative_recipe"
+        install_required = False
     elif target == "server_connector":
         package_type = "server_connector"
         install_required = False
@@ -898,6 +910,8 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
         "requirements": _ensure_list(source.get("requirements"), []),
         "optional_requirements": _ensure_list(source.get("optional_requirements"), []),
         "min_agent_version": source.get("min_agent_version"),
+        "system_module": bool(source.get("system_module", False)),
+        "protected": bool(source.get("protected", False)),
         "tools": [],
     }
     validation["errors"]["metadata"].extend(_validate_platforms(normalized["platforms"], "manifest.json platforms"))
@@ -964,7 +978,10 @@ def normalize_manifest(manifest: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any
                         f"Tool '{tool.get('tool')}' uses a reserved namespace and requires owner_scope=core|platform|builtin"
                     )
 
-    if not normalized["tools"]:
+    if not normalized["tools"] and (normalized.get("system_module") or normalized.get("protected")):
+        validation["warnings"].append("Protected/system module declares no support-visible tools")
+
+    if not normalized["tools"] and not (normalized.get("system_module") or normalized.get("protected")):
         fallback_tool_name = f"{module_name}.run" if module_name else "unknown.run"
         normalized["tools"].append(
             {

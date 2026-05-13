@@ -5,10 +5,11 @@ type BadgeTone = NonNullable<BadgeProps["tone"]>;
 export const TARGET_LABELS: Record<string, string> = {
   agent_builtin: "Встроено в агент",
   agent_managed_module: "Модуль агента",
+  agent_recipe: "Agent Recipe",
   server_builtin: "Серверная проверка",
   server_connector: "API-коннектор",
   observer_query: "Запрос Observer",
-  remote_assist: "Удалённая помощь",
+  remote_assist: "Удаленная помощь",
   manual: "Ручная проверка",
   hybrid: "Hybrid",
 };
@@ -16,6 +17,7 @@ export const TARGET_LABELS: Record<string, string> = {
 export const PROVIDER_GROUP_LABELS: Record<string, string> = {
   agent_builtin: "Agent builtins",
   agent_managed_module: "Agent managed modules",
+  agent_recipe: "Agent Recipe Runner",
   server_builtin: "Server builtins",
   server_connector: "Server connectors",
   observer_query: "Observer",
@@ -35,10 +37,32 @@ export function readinessTone(value: string | null | undefined): BadgeTone {
   if (value === "available") {
     return "success";
   }
-  if (["install_required", "installing", "consent_required", "credentials_missing", "mapping_missing"].includes(value ?? "")) {
+  if (
+    [
+      "install_required",
+      "installing",
+      "runner_not_installed",
+      "runner_install_required",
+      "runner_installing",
+      "runner_outdated",
+      "consent_required",
+      "credentials_missing",
+      "mapping_missing",
+    ].includes(value ?? "")
+  ) {
     return "warning";
   }
-  if (["permission_denied", "disabled_by_policy", "unsupported_platform", "agent_offline", "unavailable"].includes(value ?? "")) {
+  if (
+    [
+      "permission_denied",
+      "disabled_by_policy",
+      "unsupported_platform",
+      "agent_offline",
+      "primitive_not_supported",
+      "recipe_not_published",
+      "unavailable",
+    ].includes(value ?? "")
+  ) {
     return "danger";
   }
   return "neutral";
@@ -58,7 +82,7 @@ export function riskTone(value: string | null | undefined): BadgeTone {
 }
 
 export function targetTone(value: string | null | undefined): BadgeTone {
-  if (value === "server_connector") {
+  if (value === "server_connector" || value === "agent_recipe") {
     return "brand";
   }
   if (value === "server_builtin" || value === "observer_query") {

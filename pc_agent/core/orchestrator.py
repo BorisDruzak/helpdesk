@@ -521,6 +521,25 @@ class AgentOrchestrator:
                         "job_id": command.get("job_id"),
                     }
                     result = await self._handle_run_tool(tool, command_params, actor_role, meta)
+
+                case 'run_recipe':
+                    from pc_agent.core.recipe_runner_bridge import RecipeRunnerBridge
+
+                    recipe_payload = dict(command)
+                    recipe_payload.pop("cmd", None)
+                    runtime_context = {
+                        "request_id": request_id,
+                        "device_id": device_id,
+                        "ticket_id": ticket_id,
+                        "actor_role": actor_role,
+                        "operation_id": command.get("operation_id"),
+                        "trace_id": command.get("trace_id"),
+                        "platform": command.get("platform"),
+                    }
+                    result = await RecipeRunnerBridge(self.module_manager, self.loader).run_recipe(
+                        recipe_payload,
+                        runtime_context,
+                    )
                     
                 case 'start_job':
                     job_type = command.get('job_type')

@@ -93,6 +93,14 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
               <DetailField label="Integration key" value={capability.integration_key} />
               <DetailField label="Install required on agent" value={capability.install_required_on_agent} />
               <DetailField label="Platforms" value={capability.platforms?.join(", ") || "any"} />
+              {capability.execution_target === "agent_recipe" ? (
+                <>
+                  <DetailField label="Runner provider" value={capability.runner_provider_id} />
+                  <DetailField label="Min runner version" value={capability.min_runner_version} />
+                  <DetailField label="Primitive" value={capability.primitive_id} />
+                  <DetailField label="Recipe version" value={capability.recipe_version_id} />
+                </>
+              ) : null}
             </div>
           </Section>
 

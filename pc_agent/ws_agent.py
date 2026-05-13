@@ -130,6 +130,7 @@ IDEMPOTENT_METHODS = {
     "start_job",
     "stop_job",
     "run_tool",
+    "run_recipe",
     "schedule_task",
     "cancel_task",
     "task_run_now"
@@ -1674,7 +1675,7 @@ class WSAgent:
 
     def _should_run_command_in_background(self, command: Optional[str]) -> bool:
         """Commands that can take noticeable time should not block the WS receive loop."""
-        return command in {"run_tool", "call_tool", "remote_assist.request"}
+        return command in {"run_tool", "call_tool", "run_recipe", "remote_assist.request"}
 
     async def _execute_command_and_send_result(
         self,
@@ -2317,7 +2318,7 @@ class WSAgent:
             # КОМАНДЫ ОРКЕСТРАТОРА (делегируем через handle_command)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
-            orchestrator_commands = ["ping", "collect", "list_modules", "update", "install_module_package", "exec_script", "get_manifest", "list_tools", "run_tool", "call_tool", "list_installed_modules", "activate_module", "rollback_module", "deactivate_module", "remove_module_version", "remove_module", "start_job", "stop_job", "get_job_status", "list_jobs", "job_send_event", "ui_notify", "cancel_operation"]
+            orchestrator_commands = ["ping", "collect", "list_modules", "update", "install_module_package", "exec_script", "get_manifest", "list_tools", "run_tool", "call_tool", "run_recipe", "list_installed_modules", "activate_module", "rollback_module", "deactivate_module", "remove_module_version", "remove_module", "start_job", "stop_job", "get_job_status", "list_jobs", "job_send_event", "ui_notify", "cancel_operation"]
             
             if command in orchestrator_commands:
                 logger.info(f"📨 Делегирую команду '{command}' оркестратору")   

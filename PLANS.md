@@ -1,5 +1,29 @@
 # Diagnostic Capabilities Full Implementation Plan
 
+## Active Agent Recipe Runner Production Slice
+
+Goal: add `agent_recipe` as a production execution target backed by a protected managed `agent_recipe_runner` module. Recipes are persisted DB records, not generated ZIP modules; execution uses a first-class `run_recipe` Protocol V3 command and produces operations plus diagnostic evidence.
+
+Hard constraints for this slice:
+
+- No arbitrary PowerShell/Bash/Python command runner.
+- No remediation/side effects in the first release.
+- No macOS support; only `win32` and `linux`.
+- Do not break existing managed modules, `run_tool`, playbooks, observer, diagnostics or Capability Studio.
+- Keep primitive execution inside the managed runner module; agent core only resolves and delegates.
+
+Implementation plan:
+
+- [ ] Add failing tests for `agent_recipe` target validation, recipe tables, readiness states, execution enqueue, agent bridge and basic primitives.
+- [ ] Reuse `diagnostic_capabilities` / `diagnostic_capability_versions` for capability identity/version contracts; add recipe-specific tables and version contract fields.
+- [ ] Add server recipe repo/service, admin recipe APIs and registry projection for published recipe capabilities.
+- [ ] Extend readiness and execution router so `agent_recipe` routes to `RecipeExecutionService`, not `ToolExecutionService.run_tool`.
+- [ ] Add `run_recipe` Protocol V3 command path and command-result evidence projection for `agent_recipe` operations.
+- [ ] Add agent `RecipeRunnerBridge` and protected managed module package `agent_recipe_runner` with read-only primitives.
+- [ ] Extend Capability Studio with Agent Recipe authoring MVP and runner provider visibility.
+- [ ] Update docs/CODEMAP/navigation for the new tables, endpoints, command and agent module contract.
+- [ ] Run targeted backend, agent and frontend checks; then deploy through the standard remote scripts and browser-check the admin UI.
+
 ## Goal
 
 Build the full diagnostic capabilities model on top of the existing module/tool system:

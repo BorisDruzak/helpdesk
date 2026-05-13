@@ -88,3 +88,15 @@ Builtin evidence markings:
 - `resources`
 
 Wire-format ответа сохраняет `ToolResponse`, но канонический structured result находится в `data.result`.
+# Agent Recipe Runner
+
+`agent_recipe_runner` is a protected managed module. It can be updated independently from Maria Agent through the normal managed-module lifecycle, but it is not a support-visible tool module.
+
+Agent core handles only the stable bridge:
+
+- locate the active `agent_recipe_runner`;
+- verify `min_runner_version`;
+- call `describe_primitives`, `validate_recipe` and `run_recipe`;
+- return a ToolResponse-compatible `command_result`.
+
+The runner module contains the read-only primitive implementations. It does not provide arbitrary shell, PowerShell, Bash or Python command execution and does not implement remediation in the first release. Supported platforms are `win32` and `linux`; macOS is unsupported.

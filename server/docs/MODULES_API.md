@@ -279,3 +279,8 @@ Builtin providers such as `system` and `screen` use the same contract vocabulary
 ## Historical note
 
 Legacy `module.tool` naming and the old risk vocabulary remain only as internal compatibility layers. The public canon now centers on semantic tool ids and the shared contract vocabulary.
+# Agent Recipe Runner note
+
+`agent_recipe_runner` is a protected managed module, but individual recipe capabilities are not ZIP modules. The server stores recipe capability contracts in `diagnostic_capabilities` / `diagnostic_capability_versions` and concrete recipes in `agent_recipe_versions`. The runner package is still managed through the existing module lifecycle (`preferred`, install, live test, rollout, rollback), while recipe authoring uses `/api/web/admin/agent-recipes*`.
+
+Protected runner manifests may set `system_module=true` and `protected=true` and declare no support-visible tools. The server must not generate a normal support tool for `agent_recipe_runner`; recipe execution uses Protocol V3 `run_recipe`, not `run_tool`.

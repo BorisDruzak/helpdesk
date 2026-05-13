@@ -149,3 +149,8 @@ Typed builder сейчас сохраняет только `diagnostic`-блок
 - `python -m pytest server/tests/test_ticket_passport_service.py -q --tb=short`
 - `pnpm --dir webapp run test -- --run src/features/playbooks/playbook-builder-panel.test.tsx src/features/forms-builder/forms-builder-panel.test.tsx src/features/agent-updates/device-update-panel.test.tsx`
 - `pnpm --dir webapp run build`
+# Agent Recipe capabilities
+
+Published `agent_recipe` capabilities appear in the diagnostics capability catalog alongside server builtins, connectors, observer, remote assist, manual and agent module tools. Playbook steps should treat them as provider-aware capabilities and route through `CapabilityExecutionRouter`, which delegates `agent_recipe` to `RecipeExecutionService`.
+
+First release recipe capabilities are read-only diagnostics. Remediation and side-effect recipes must not be enabled until a separate approval/governance phase defines risk gates, dry-run semantics and rollout controls.

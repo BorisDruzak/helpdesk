@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Dict, Optional
 
 from diagnostics.capability_models import CapabilityDescriptor, CapabilityReadiness
@@ -38,6 +39,8 @@ class CapabilityReadinessService:
         common = self._common_readiness(capability, context)
         if common is not None:
             return common
+        if target == "agent_recipe":
+            return self._agent_recipe_readiness(capability, context)
         if target in {"agent_builtin", "agent_managed_module"}:
             return self._agent_readiness(capability, context)
         if target == "server_builtin":
@@ -167,6 +170,89 @@ class CapabilityReadinessService:
         if capability.requires_consent:
             return self._consent_required(capability)
         return self._status(capability, "available", None, ["run"])
+
+    def _agent_recipe_readiness(
+        self,
+        capability: CapabilityDescriptor,
+        context: ReadinessContext,
+    ) -> CapabilityReadiness:
+        if not context.device_id:
+            return self._status(
+                capability,
+                "unavailable",
+                "Device is required",
+                [],
+                reason_code="DEVICE_REQUIRED",
+            )
+        if capability.requires_agent_online and not self._is_agent_online(context.device_id):
+            return self._status(
+                capability,
+                "agent_offline",
+                "Agent is offline",
+                [],
+                reason_code="AGENT_OFFLINE",
+            )
+        if not self._platform_supported(capability, context.device_platform):
+            return self._status(
+                capability,
+                "unsupported_platform",
+                f"Recipe is not supported on platform '{context.device_platform}'",
+                [],
+                reason_code="PLATFORM_UNSUPPORTED",
+            )
+        if getattr(capability, "recipe_status", None) not in (None, "", "published", "active"):
+            return self._status(
+                capability,
+                "recipe_not_published",
+                "Recipe capability version is not published",
+                [],
+                reason_code="RECIPE_NOT_PUBLISHED",
+            )
+
+        runner_provider_id = capability.runner_provider_id or capability.provider_id or "agent_recipe_runner"
+        installed_modules = context.installed_modules or {}
+        runner_state = installed_modules.get(runner_provider_id)
+        runner_version = self._module_version(runner_state)
+        runner_active = self._module_active(runner_state)
+        runner_state_name = self._module_state_name(runner_state)
+        if runner_state_name in {"installing", "activating", "queued", "pending"}:
+            return self._status(
+                capability,
+                "runner_installing",
+                "Agent Recipe Runner installation is in progress",
+                [],
+                reason_code="RUNNER_INSTALLING",
+            )
+        if not runner_active or not runner_version:
+            return self._status(
+                capability,
+                "runner_not_installed",
+                "Agent Recipe Runner is not installed on the device",
+                ["install_runner"],
+                reason_code="RUNNER_NOT_INSTALLED",
+            )
+        min_runner_version = capability.min_runner_version or "0.0.0"
+        if self._compare_versions(runner_version, min_runner_version) < 0:
+            return self._status(
+                capability,
+                "runner_outdated",
+                f"Agent Recipe Runner {runner_version} is below required {min_runner_version}",
+                ["upgrade_runner"],
+                reason_code="RUNNER_OUTDATED",
+            )
+        primitive_key = f"{runner_provider_id}:{capability.primitive_id}" if capability.primitive_id else None
+        dependency_status = context.dependency_status or {}
+        if primitive_key and dependency_status.get(primitive_key) is False:
+            return self._status(
+                capability,
+                "primitive_not_supported",
+                "Installed Agent Recipe Runner does not support the required primitive",
+                ["upgrade_runner"],
+                reason_code="PRIMITIVE_NOT_SUPPORTED",
+            )
+        if capability.requires_consent:
+            return self._consent_required(capability)
+        return self._status(capability, "available", None, ["run", "test"])
 
     def _server_connector_readiness(
         self,
@@ -332,6 +418,39 @@ class CapabilityReadinessService:
         elif desired:
             return "installing"
         return None
+
+    def _module_version(self, raw_state: Any) -> Optional[str]:
+        if isinstance(raw_state, dict):
+            value = raw_state.get("version") or raw_state.get("active_version")
+            return str(value).strip() if value else None
+        return None
+
+    def _module_active(self, raw_state: Any) -> bool:
+        if isinstance(raw_state, dict):
+            if raw_state.get("active") is True:
+                return True
+            return str(raw_state.get("state") or "").strip().lower() == "active"
+        return bool(raw_state)
+
+    def _module_state_name(self, raw_state: Any) -> Optional[str]:
+        if isinstance(raw_state, dict):
+            return str(raw_state.get("state") or "").strip().lower() or None
+        return "active" if raw_state else None
+
+    def _compare_versions(self, left: str, right: str) -> int:
+        left_key = self._version_key(left)
+        right_key = self._version_key(right)
+        if left_key < right_key:
+            return -1
+        if left_key > right_key:
+            return 1
+        return 0
+
+    def _version_key(self, value: str) -> tuple[int, ...]:
+        match = re.match(r"^(\d+)\.(\d+)\.(\d+)", str(value or "").strip())
+        if not match:
+            return (0, 0, 0)
+        return tuple(int(part) for part in match.groups())
 
     def _is_agent_online(self, device_id: str) -> bool:
         if self.state and hasattr(self.state, "is_agent_online"):

@@ -398,6 +398,11 @@ from tech.handlers import (
     handle_tech_signature_detail,
 )
 from diagnostics.handlers import (
+    handle_agent_recipe_create,
+    handle_agent_recipe_primitives,
+    handle_agent_recipe_publish,
+    handle_agent_recipe_validate,
+    handle_agent_recipes_list,
     handle_diagnostics_capabilities,
     handle_diagnostics_provider_config_get,
     handle_diagnostics_provider_config_put,
@@ -571,6 +576,11 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/capabilities/provider-configs', handle_diagnostics_provider_configs),
         web.get('/api/web/admin/capabilities/provider-configs/{provider_id}', handle_diagnostics_provider_config_get),
         web.put('/api/web/admin/capabilities/provider-configs/{provider_id}', handle_diagnostics_provider_config_put),
+        web.get('/api/web/admin/agent-recipes/primitives', handle_agent_recipe_primitives),
+        web.get('/api/web/admin/agent-recipes', handle_agent_recipes_list),
+        web.post('/api/web/admin/agent-recipes', handle_agent_recipe_create),
+        web.post('/api/web/admin/agent-recipes/{recipe_id}/validate', handle_agent_recipe_validate),
+        web.post('/api/web/admin/agent-recipes/{recipe_id}/publish', handle_agent_recipe_publish),
         web.get('/api/web/admin/diagnostics/providers/configs', handle_diagnostics_provider_configs),
         web.get('/api/web/admin/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_get),
         web.put('/api/web/admin/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_put),

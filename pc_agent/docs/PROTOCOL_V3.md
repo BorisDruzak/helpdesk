@@ -619,3 +619,10 @@ Protocol V3 identity v1:
 - [WSOutboxFlusher документация](SENDER.md) — детали отправки событий
 - [AgentOrchestrator документация](ORCHESTRATOR.md) — обработка команд
 - [BOTTLENECKS_AND_RISKS.md](../../docs/archive/BOTTLENECKS_AND_RISKS.md) — исторические узкие места и риски проекта
+## 2026-05-13 Agent Recipe command
+
+`run_recipe` is a Protocol V3 command handled by the agent orchestrator as an internal bridge to the protected managed
+module `agent_recipe_runner`. The agent core does not implement recipe primitives itself: `RecipeRunnerBridge` resolves
+the active runner module, checks `min_runner_version`, verifies the requested primitive is supported, delegates
+`validate_recipe` / `run_recipe`, and returns a ToolResponse-compatible `command_result`. `run_recipe` is background and
+idempotent by operation id like other outbox commands, but it must not be exposed as a normal support-visible tool.

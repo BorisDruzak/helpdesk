@@ -464,6 +464,22 @@ class CommandResultEventPublisher:
                                 result_event[1],
                                 payload,
                             )
+                    if (
+                        operation
+                        and operation.ticket_id
+                        and operation.kind == "agent_recipe"
+                        and lifecycle_outcome.status in {"succeeded", "failed", "canceled", "timed_out"}
+                    ):
+                        try:
+                            from diagnostics.projection import DiagnosticProjectionService
+
+                            await DiagnosticProjectionService(session).project_operation_result(operation.operation_id)
+                            await session.commit()
+                        except Exception as exc:
+                            logger.warning(
+                                f"[command_result] agent_recipe evidence projection failed: "
+                                f"operation_id={operation.operation_id} error={exc}"
+                            )
                     if operation and ui_publisher is not None:
                         await ui_publisher.push_operation_updated(operation)
             except Exception as exc:
