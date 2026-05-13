@@ -21,7 +21,9 @@ if "loguru" not in sys.modules:
 
 from pc_agent.core.loader import DynamicModuleLoader
 from pc_agent.core.module_manager import ModuleManager
+from pc_agent.core.orchestrator import AgentOrchestrator
 from pc_agent.core.recipe_runner_bridge import RecipeRunnerBridge
+from pc_agent.config.config_loader import ConfigLoader, init_config
 
 
 RUNNER_MODULE = """
@@ -118,3 +120,30 @@ class RecipeRunnerBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["data"]["observations"]["exists"], True)
         self.assertEqual(result["meta"]["module_versions"]["agent_recipe_runner"], "1.0.0")
+
+    def test_orchestrator_run_recipe_wraps_bridge_dict_as_tool_response(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _write_runner(root, "1.0.0")
+            ConfigLoader._instance = None
+            ConfigLoader._config = None
+            init_config(root)
+            orchestrator = AgentOrchestrator(data_root=root, agent_uuid="device-1")
+            result = asyncio.run(
+                orchestrator.handle_command(
+                    {
+                        "cmd": "run_recipe",
+                        "request_id": "req-1",
+                        "device_id": "device-1",
+                        "ticket_id": "ticket-1",
+                        "operation_id": "req-1",
+                        "trace_id": "trace-1",
+                        "min_runner_version": "1.0.0",
+                        "primitive_id": "file.exists",
+                        "recipe": {"params": {"path": "/tmp/example"}},
+                    }
+                )
+            )
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["meta"]["request_id"], "req-1")
+        self.assertEqual(result["data"]["observations"]["exists"], True)

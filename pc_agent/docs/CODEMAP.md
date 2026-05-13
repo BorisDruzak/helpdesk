@@ -146,6 +146,7 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
+- **run_recipe, agent recipe** — `core/orchestrator.py` handles the Protocol V3 `run_recipe` command and delegates to `core/recipe_runner_bridge.py`; bridge results must be normalized to `ToolResponse` before common command-result post-processing.
 - **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
 - **device_seq, agent_seq** — тип события только по ним; outbox в `core/database.py`
 - **модули (загрузка, registry, rollback)** — `core/module_manager.py`, `core/loader.py`, `core/registry.py`, `core/orchestrator.py` (cached context, rebuild), `modules/__init__.py`

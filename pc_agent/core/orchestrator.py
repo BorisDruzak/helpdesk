@@ -536,9 +536,14 @@ class AgentOrchestrator:
                         "trace_id": command.get("trace_id"),
                         "platform": command.get("platform"),
                     }
-                    result = await RecipeRunnerBridge(self.module_manager, self.loader).run_recipe(
+                    bridge_result = await RecipeRunnerBridge(self.module_manager, self.loader).run_recipe(
                         recipe_payload,
                         runtime_context,
+                    )
+                    result = (
+                        ToolResponse.model_validate(bridge_result)
+                        if isinstance(bridge_result, dict)
+                        else bridge_result
                     )
                     
                 case 'start_job':
