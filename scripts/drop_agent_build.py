@@ -22,7 +22,7 @@ from urllib.parse import quote
 import ssl
 
 
-BASE_URL_DEFAULT = os.environ.get("BASE_URL", "http://192.168.100.17:8666")
+BASE_URL_DEFAULT = os.environ.get("BASE_URL", "https://192.168.100.17:9443")
 
 
 def _request(

@@ -2,6 +2,8 @@ import pytest
 
 from tech.handlers import _build_alerts_from_metrics
 
+pytestmark = pytest.mark.no_db
+
 
 def _kinds(alerts):
     return {a["kind"] for a in alerts}

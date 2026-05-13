@@ -11,7 +11,8 @@
 - Правки и коммиты делаются только в локальной копии на диске машины.
 - На шару и на Linux-хост отправляется только проверенное состояние.
 - В GitHub публикуется только то, что уже прошло проверку.
-- Канонический порядок: локальные правки -> локальные проверки -> локальный commit -> green CI artifact для коммита -> deploy на Linux -> remote start/smoke/browser -> stop -> push проверенных изменений.
+- Канонический порядок для финального release/push: локальные правки -> локальные проверки -> локальный commit -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> push проверенных изменений.
+- Для быстрой итерации на Linux-стенде допускается явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
 - Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный Windows-remote: `linux`; Linux working copy `/var/chat_bot/pc_client` использует `origin`.
@@ -98,7 +99,7 @@ python scripts/sync_local_to_share.py --apply
 python scripts/deploy_workspace_to_remote.py
 ```
 
-`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию требуют green CI artifact для текущего commit. Экстренный bypass допускается только явным `--skip-ci-check`, причём для полного `release_server_to_remote.py` этот флаг должен прокидываться и во внутренний шаг `deploy_workspace_to_remote.py`.
+`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию работают в `--gate full` и требуют green CI artifact для текущего commit. Для staging/итерационного deploy использовать явный `--gate quick`: это штатный быстрый режим без full-CI artifact gate, но с сохранением локальной проверки, deploy, migrations/web bundle upload, start/smoke и stop по настройкам release script. Экстренный старый bypass `--skip-ci-check` оставлен для совместимости и считается эквивалентом quick gate; для полного `release_server_to_remote.py` он прокидывается во внутренний шаг `deploy_workspace_to_remote.py`.
 
 12. Поднять сервер на Linux и прогнать smoke:
 
@@ -113,9 +114,9 @@ python scripts/manage_remote_stack.py smoke server
 
 13. Если менялся GUI сервера, дополнительно проверить:
 
-- [admin](http://192.168.100.17:8666/admin)
-- [help](http://192.168.100.17:8666/help)
-- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
+- [admin](https://192.168.100.17:9443/admin)
+- [help](https://192.168.100.17:9443/help)
+- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:
@@ -159,13 +160,14 @@ git status --short
 5. Для длинных задач вести `PLANS.md`.
 6. Если задача затрагивает локальный агент, использовать `python scripts/manage_local_agent.py ...` и проверять нужный сценарий на отдельном инстансе.
 7. Только после проверок делать локальный commit.
-8. Только после локальной проверки и green CI artifact выкладывать состояние на Linux через `python scripts/deploy_workspace_to_remote.py`.
+8. Для финального verified deploy только после локальной проверки и green CI artifact выкладывать состояние на Linux через `python scripts/deploy_workspace_to_remote.py` или `python scripts/release_server_to_remote.py` в дефолтном `--gate full`.
+   Для быстрой проверки на стенде разрешён явный `--gate quick`, но результат такого deploy нельзя считать финально проверенным для GitHub push/release.
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
 11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
-12. Если менялся веб-интерфейс, обязательно открыть [admin](http://192.168.100.17:8666/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
-13. Для полного verified server-flow предпочитать `python scripts/release_server_to_remote.py`; emergency bypass CI gate допускается только через `--skip-ci-check`.
-14. В GitHub публиковать только изменения, которые уже прошли проверки, получили green CI artifact и были запущены по нужному сценарию.
+12. Если менялся веб-интерфейс, обязательно открыть [admin](https://192.168.100.17:9443/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
+13. Для полного verified server-flow предпочитать `python scripts/release_server_to_remote.py` в дефолтном `--gate full`; для итерационного стенда допустим `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
+14. В GitHub публиковать только изменения, которые уже прошли проверки, получили green CI artifact через full gate и были запущены по нужному сценарию.
 
 ## Observer guard and live canaries
 

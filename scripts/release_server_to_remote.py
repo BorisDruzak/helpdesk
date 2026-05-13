@@ -47,6 +47,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gate",
+        choices=("full", "quick"),
+        default="full",
+        help=(
+            "Release verification gate. `full` requires a green CI artifact for the target "
+            "commit. `quick` is for staging/iteration and runs the release flow without "
+            "the full-CI artifact requirement."
+        ),
+    )
+    parser.add_argument(
         "--skip-verify",
         action="store_true",
         help="Skip local workspace verification before deploy.",
@@ -54,7 +64,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-ci-check",
         action="store_true",
-        help="Skip the green CI artifact requirement for the target commit.",
+        help="Emergency bypass for the green CI artifact requirement; equivalent to quick gate.",
     )
     parser.add_argument(
         "--skip-smoke",
@@ -217,9 +227,15 @@ def main() -> None:
 
     try:
         commit = detect_commit(workspace)
-        if not args.skip_ci_check:
+        effective_gate = "quick" if args.skip_ci_check else args.gate
+        if effective_gate == "full":
             summary_path = require_green_ci_artifact(workspace, commit)
             print(f"[ci] using green artifact {summary_path}")
+        else:
+            print(
+                "[ci] quick gate selected; skipping green CI artifact requirement. "
+                "Use full gate before final release/push."
+            )
 
         if not args.skip_verify:
             run_step(
@@ -231,7 +247,7 @@ def main() -> None:
         bundle_archive = prepare_webapp_bundle_archive(
             workspace,
             commit,
-            skip_ci_check=args.skip_ci_check,
+            skip_ci_check=effective_gate == "quick",
         )
 
         deploy_command = [sys.executable, str(workspace / "scripts" / "deploy_workspace_to_remote.py")]
@@ -239,6 +255,7 @@ def main() -> None:
             deploy_command.extend(["--branch", args.branch])
         if args.allow_local_dirty:
             deploy_command.append("--allow-local-dirty")
+        deploy_command.extend(["--gate", effective_gate])
         if args.skip_ci_check:
             deploy_command.append("--skip-ci-check")
         run_step(deploy_command, cwd=workspace, label="deploy")

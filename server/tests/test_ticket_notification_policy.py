@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytestmark = pytest.mark.no_db
+
 
 def _ticket(notification_policy: dict) -> SimpleNamespace:
     return SimpleNamespace(

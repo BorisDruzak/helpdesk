@@ -26,6 +26,8 @@
    - `python scripts/deploy_workspace_to_remote.py`
    - `python scripts/release_server_to_remote.py`
    - `python scripts/manage_remote_stack.py start|stop|restart|status|smoke|logs server|agent|control`
+   - Для итерационного стенда допускается явный `--gate quick`; он пропускает только full-CI artifact gate и не заменяет `verify_workspace`, релевантные pytest, remote smoke или browser checks.
+   - Для финального release, GitHub push и публикации проверенного состояния использовать `--gate full` или дефолтный режим без `--gate`; full требует green CI artifact текущего commit.
 8. После проверок на Linux останавливать сервер: `python scripts/manage_remote_stack.py stop server`, если пользователь явно не просил оставить его запущенным.
 9. В GitHub публиковать только проверенное состояние.
 
@@ -114,7 +116,7 @@ Observer docs поддерживаются в актуальном состоя�
 
 ## Browser Canon
 
-- Для браузерных проверок использовать только `http://192.168.100.17:8666/admin`.
+- Для браузерных проверок использовать только `https://192.168.100.17:9443/admin`.
 - Любые изменения веб-интерфейса сервера проверять в браузере через MCP, а не только smoke-тестом.
 - Если менялась техпанель или server-control flow, обязательно проверить status, health, full logs и confirm для `stop/restart`.
 

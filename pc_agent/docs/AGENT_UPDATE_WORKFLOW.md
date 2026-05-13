@@ -104,7 +104,7 @@
 
 1. `python -m pytest server/tests/test_p0_workbench_update_contracts.py -v --tb=short`
 2. `python -m pytest server/tests/test_admin_tech_api.py -v --tb=short`
-3. browser check на `http://192.168.100.17:8666/admin`
+3. browser check на `https://192.168.100.17:9443/admin`
 
 Если полный `verify_workspace.py` падает из-за уже существующего чужого WIP вне этой задачи, это надо явно зафиксировать в отчёте. Для проверки своей области допустимо дополнительно прогнать `python scripts/verify_workspace.py --skip-docs-drift`.
 

@@ -221,7 +221,7 @@ python scripts/manage_remote_stack.py smoke server
 python scripts/bootstrap_web_toolchain.py
 python scripts/check_webapp_cutover.py --json
 pnpm --dir webapp run build
-pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443
 ```
 
 ## Contract / Boundary Change Mode
@@ -339,10 +339,16 @@ python scripts/verify_workspace.py
 
 Deploy только после локального commit.
 
+Gate semantics:
+
+- `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and is mandatory before final release, GitHub push, or publishing a verified state.
+- `--gate quick` is an explicit staging/iteration mode; it skips only the green full-CI artifact requirement and still requires local verification, relevant focused tests, remote smoke, and browser/live checks for the touched area.
+- `--skip-ci-check` remains an emergency compatibility bypass and should be treated as equivalent to quick gate, not as a normal release path.
+
 Полный предпочтительный путь:
 
 ```powershell
-python scripts/release_server_to_remote.py
+python scripts/release_server_to_remote.py --gate full
 python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py smoke server
 ```
@@ -350,15 +356,23 @@ python scripts/manage_remote_stack.py smoke server
 Более простой sync, если полный release flow не нужен:
 
 ```powershell
-python scripts/deploy_workspace_to_remote.py
+python scripts/deploy_workspace_to_remote.py --gate full
 python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py smoke server
 ```
 
+Быстрый staging-путь для проверки на Linux без ожидания полного CI artifact:
+
+```powershell
+python scripts/release_server_to_remote.py --gate quick
+```
+
+После quick gate нельзя делать финальный push/release-claim, пока текущий commit не прошёл `python scripts/run_ci_suite.py` и full gate.
+
 Если менялся web UI, проверить браузером каноничный адрес:
 
 ```text
-http://192.168.100.17:8666/admin
+https://192.168.100.17:9443/admin
 ```
 
 После проверок остановить сервер, если пользователь явно не попросил оставить его запущенным:

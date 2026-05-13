@@ -58,7 +58,7 @@ python scripts/check_webapp_cutover.py --json
 2. Прогнать live signoff helper:
 
 ```powershell
-pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443
 ```
 
 3. Убедиться, что helper подтвердил:

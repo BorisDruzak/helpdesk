@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from runtime_control import _parse_systemd_timestamp, get_unit_status, start_target, stop_target
+
+pytestmark = pytest.mark.no_db
 
 
 def test_parse_systemd_timestamp_supports_usec_value():

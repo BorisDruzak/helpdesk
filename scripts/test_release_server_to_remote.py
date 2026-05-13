@@ -13,6 +13,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
         "branch": None,
         "remote": "altserver@192.168.100.17",
         "allow_local_dirty": False,
+        "gate": "full",
         "skip_verify": False,
         "skip_ci_check": False,
         "skip_smoke": False,
@@ -109,6 +110,62 @@ def test_main_passes_skip_ci_check_to_deploy(monkeypatch: pytest.MonkeyPatch) ->
 
     deploy_command = next(command for label, command in calls if label == "deploy")
     assert "--skip-ci-check" in deploy_command
+
+
+def test_main_quick_gate_skips_green_ci_and_passes_quick_gate_to_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release, "parse_args", lambda: make_args(gate="quick"))
+    calls: list[tuple[str, list[str]]] = []
+    green_checks: list[tuple[Path, str]] = []
+
+    def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
+        calls.append((label, command))
+
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        release,
+        "require_green_ci_artifact",
+        lambda workspace, commit: green_checks.append((workspace, commit)),
+    )
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "release_temp" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: None)
+    monkeypatch.setattr(release, "run_step", fake_run_step)
+    monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
+
+    release.main()
+
+    deploy_command = next(command for label, command in calls if label == "deploy")
+    assert green_checks == []
+    assert "--gate" in deploy_command
+    assert deploy_command[deploy_command.index("--gate") + 1] == "quick"
+    assert "--skip-ci-check" not in deploy_command
+
+
+def test_main_full_gate_passes_full_gate_to_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release, "parse_args", lambda: make_args())
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
+        calls.append((label, command))
+
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(release, "require_green_ci_artifact", lambda workspace, commit: workspace / "summary.json")
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda archive, *, cwd, remote, remote_worktree: None)
+    monkeypatch.setattr(release, "run_step", fake_run_step)
+    monkeypatch.setattr(release, "run_smoke_with_retries", lambda command, *, cwd, attempts, delay_seconds: calls.append(("smoke", command)))
+
+    release.main()
+
+    deploy_command = next(command for label, command in calls if label == "deploy")
+    assert deploy_command[deploy_command.index("--gate") + 1] == "full"
 
 
 def test_main_skips_optional_steps(monkeypatch: pytest.MonkeyPatch) -> None:

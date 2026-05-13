@@ -41,9 +41,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gate",
+        choices=("full", "quick"),
+        default="full",
+        help=(
+            "Verification gate for this deploy. `full` requires a green CI artifact for "
+            "the target commit. `quick` is for staging/iteration and skips that full-CI "
+            "artifact requirement."
+        ),
+    )
+    parser.add_argument(
         "--skip-ci-check",
         action="store_true",
-        help="Skip the green CI artifact requirement for the target commit.",
+        help="Emergency bypass for the green CI artifact requirement; equivalent to quick gate.",
     )
     return parser.parse_args()
 
@@ -156,9 +166,15 @@ def main() -> None:
     branch = args.branch or detect_branch(args.workspace, env)
     print(f"Deploy branch: {branch}")
     commit = detect_commit(args.workspace)
-    if not args.skip_ci_check:
+    effective_gate = "quick" if args.skip_ci_check else args.gate
+    if effective_gate == "full":
         summary_path = require_green_ci_artifact(args.workspace, commit)
         print(f"Using green CI artifact: {summary_path}")
+    else:
+        print(
+            "WARNING: quick deploy gate selected; skipping green CI artifact requirement. "
+            "Use full gate before final release/push."
+        )
 
     try:
         run([git_binary, "push", args.remote_name, branch], cwd=args.workspace, env=env)

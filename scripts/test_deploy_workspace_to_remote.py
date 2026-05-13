@@ -35,6 +35,7 @@ def test_main_refuses_dirty_workspace_without_override(monkeypatch: pytest.Monke
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=False,
+            gate="full",
             skip_ci_check=True,
         ),
     )
@@ -65,6 +66,7 @@ def test_main_allows_dirty_workspace_with_override(
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=True,
+            gate="full",
             skip_ci_check=True,
         ),
     )
@@ -94,33 +96,54 @@ def test_main_allows_dirty_workspace_with_override(
     assert any(len(command) >= 2 and command[1] == "push" for command in calls)
 
 
-def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        deploy,
-        "parse_args",
-        lambda: argparse.Namespace(
-            workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
-            remote_name="linux",
-            remote_host="altserver@192.168.100.17",
-            remote_worktree="/var/chat_bot/pc_client",
-            branch="main",
-            allow_local_dirty=False,
-            skip_ci_check=False,
-        ),
-    )
+def make_args(**overrides: object) -> argparse.Namespace:
+    values: dict[str, object] = {
+        "workspace": Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+        "remote_name": "linux",
+        "remote_host": "altserver@192.168.100.17",
+        "remote_worktree": "/var/chat_bot/pc_client",
+        "branch": "master",
+        "allow_local_dirty": False,
+        "gate": "full",
+        "skip_ci_check": False,
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def test_main_requires_green_ci_when_gate_is_full(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[tuple[Path, str]] = []
+
+    monkeypatch.setattr(deploy, "parse_args", lambda: make_args())
     monkeypatch.setattr(deploy, "git_env", lambda: {})
     monkeypatch.setattr(deploy, "get_local_dirty_entries", lambda workspace, env, *, git_binary: [])
     monkeypatch.setattr(deploy, "detect_commit", lambda workspace: "abc123")
-
-    recorded: list[tuple[Path, str]] = []
-
-    def fake_require_green(workspace: Path, commit: str) -> Path:
-        recorded.append((workspace, commit))
-        return workspace / "artifacts" / "ci" / commit / "summary.json"
-
-    monkeypatch.setattr(deploy, "require_green_ci_artifact", fake_require_green)
+    monkeypatch.setattr(
+        deploy,
+        "require_green_ci_artifact",
+        lambda workspace, commit: recorded.append((workspace, commit)) or workspace / "summary.json",
+    )
     monkeypatch.setattr(deploy, "run", lambda command, *, cwd, env=None: "ok")
 
     deploy.main()
 
     assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]
+
+
+def test_main_skips_green_ci_when_gate_is_quick(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[tuple[Path, str]] = []
+
+    monkeypatch.setattr(deploy, "parse_args", lambda: make_args(gate="quick"))
+    monkeypatch.setattr(deploy, "git_env", lambda: {})
+    monkeypatch.setattr(deploy, "get_local_dirty_entries", lambda workspace, env, *, git_binary: [])
+    monkeypatch.setattr(deploy, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        deploy,
+        "require_green_ci_artifact",
+        lambda workspace, commit: recorded.append((workspace, commit)) or workspace / "summary.json",
+    )
+    monkeypatch.setattr(deploy, "run", lambda command, *, cwd, env=None: "ok")
+
+    deploy.main()
+
+    assert recorded == []

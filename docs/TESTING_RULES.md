@@ -28,6 +28,8 @@ Layer meanings:
 - `not no_db and not agent_ws`: DB/API/server contract tests without the in-process WS agent.
 - `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
 
+Pure server tests that do not request `test_client`, `test_app`, `test_engine`, `patched_get_session`, `test_database_url`, `test_database_admin_url` or `run_migrations` should set module-level `pytestmark = pytest.mark.no_db`. This keeps them out of the DB/API layer and avoids paying the migration/cleanup cost for tests that do not touch PostgreSQL.
+
 The full local CI runner executes these same layers:
 
 ```powershell
@@ -66,7 +68,7 @@ pnpm --dir webapp test:e2e -- admin-workspace.spec.ts
 Use the in-app browser for live UI checks on the canonical URL:
 
 ```text
-http://192.168.100.17:8666/admin
+https://192.168.100.17:9443/admin
 ```
 
 ## CI Diagnostics
@@ -80,6 +82,8 @@ http://192.168.100.17:8666/admin
 
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
 
+On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
+
 ## When To Run What
 
 - Docs-only or script metadata: `python scripts/verify_workspace.py` plus the matching `scripts/test_*.py`.
@@ -87,6 +91,7 @@ If a test runs longer than the watchdog value, `server/tests/conftest.py` prints
 - WebSocket, `run_tool`, outbox, in-process agent, UI realtime: server `agent_ws` layer.
 - Agent runtime, launcher, tray, local UI bridge: focused `pc_agent/tests/*`, then live local agent status if runtime behavior changed.
 - Admin/support web UI: focused server API tests, `pnpm --dir webapp run build`, relevant Playwright spec, then browser check.
-- Release/deploy: full `python scripts/run_ci_suite.py`, remote deploy/release script, remote smoke, and browser/live agent checks.
+- Iterative staging deploy: focused local verification for the touched area, then `python scripts/release_server_to_remote.py --gate quick`, remote smoke, and browser/live checks when the UI/runtime changed. Quick gate skips only the green full-CI artifact requirement.
+- Final release / GitHub push: full `python scripts/run_ci_suite.py`, `python scripts/release_server_to_remote.py --gate full` or the default gate, remote smoke, and browser/live agent checks.
 
 Do not raise timeouts as the first response to slow tests. First look at `--durations=80`, split the layer if needed, and optimize repeated heavy fixture setup such as `test_agent`.

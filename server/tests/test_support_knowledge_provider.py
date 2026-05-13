@@ -1,5 +1,7 @@
 ﻿from types import SimpleNamespace
 
+import pytest
+
 from tickets.knowledge_provider import (
     KnowledgeArticleSuggestion,
     KnowledgeCatalogEntry,
@@ -9,6 +11,8 @@ from tickets.knowledge_provider import (
     search_catalog_articles_for_ticket,
     ticket_knowledge_search_text,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 def test_knowledge_catalog_loader_reads_external_json_source(tmp_path):

@@ -4,8 +4,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
+
 from tickets.public_access import build_public_access_message
 from tickets.requester_timeline import build_requester_timeline_projection
+
+pytestmark = pytest.mark.no_db
 
 
 @dataclass

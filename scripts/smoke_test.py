@@ -3,7 +3,7 @@
 Быстрая проверка после изменений сервера/фронта.
 Запуск: из корня репозитория, после перезапуска сервера.
   python scripts/smoke_test.py
-  BASE_URL=http://192.168.100.17:8666 python scripts/smoke_test.py
+  BASE_URL=https://192.168.100.17:9443 python scripts/smoke_test.py
 """
 import os
 import sys
