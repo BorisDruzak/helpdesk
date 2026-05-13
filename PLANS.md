@@ -650,3 +650,54 @@ Release note:
 - `observer_query`, `remote_assist` and `manual` targets now route through server providers. Remote Assist uses the existing session service and may enqueue its existing `remote_assist.request` command; it does not use ordinary `ToolExecutionService.run_tool`.
 - Diagnostic Center UI now exists in the React ticket detail and provider config UI exists under admin modules. Live browser signoff found and fixed a compact-layout drawer hit-testing issue and web-session diagnostics alias gaps. Remaining UI hardening is now implemented end-to-end: ticket-scoped capabilities return full descriptor metadata (`params_schema`, `output_schema`, `output_contract`, aliases, artifacts), arbitrary capability params render through a schema-driven editor and selected run params are sent to the capability router; blocked readiness states show RBAC/readiness-specific disabled copy with stable `reason_code` when available.
 - Existing unrelated dirty worktree files predate this task and must not be reverted as part of this plan.
+
+## Ticket System P0 Contract Hardening
+
+Classification: cross-cutting / release-control. Scope touched ticket status contract, Alembic migrations, DB invariants, unauthenticated public queue API/UI, workflow side effects, policy health admin/auditor API/UI, docs and tests.
+
+Discovery report:
+
+- Legacy `triaged` appeared in status constants, workflow profile allowed statuses, public/admin/support/observer UI status labels, reports, docs, tests and historical migrations.
+- Canonical status drift existed between `statuses.py`, model comments, migrations, docs and UI labels.
+- Public queue ticket projection exposed internal identifiers and requester-sensitive fields through the same raw row shape used internally.
+- Workflow transitions swallowed OLA/SLA/approval side-effect failures with broad exception handling.
+- Status migrations existed historically, but no current canonical DB check/backfill enforced the final status set.
+- `tickets.requester_id` was nullable in the model/DB, with legacy rows and tests creating tickets without a requester boundary value.
+- Timeline/replay ordering relied on implicit ordering in some paths; the hardening migration adds explicit event indexes and docs pin `created_at, id`.
+- Existing tests covered ticket creation/device binding/form policy flows, but lacked drift guards, recursive public privacy assertions, side-effect failure audit assertions and policy health API/service coverage.
+
+Design decisions:
+
+- `server/tickets/statuses.py` is the sole status contract module. Legacy aliases are accepted only at input boundaries; DB writes must call canonical assertion or rely on DB constraints.
+- `triaged` backfills to `assigned` when `assignee_id` is nonblank; otherwise it backfills to `queued`.
+- `requester_id` is required for new tickets. Legacy/model fallback order is explicit: preserve nonblank requester, then `device:<device_id>`, then `legacy:<ticket_id>`, with `legacy:unknown` only as a last insert-time guard.
+- Public queue serializers are separate from internal/admin projections and return only ticket code, public position/status, public queue code, wait bucket and rounded update time.
+- Side-effect failures are never silent. Non-critical OLA/notification-style failures audit/log/metric but allow transition; critical SLA integrity and required approval creation failures abort according to the documented decision matrix.
+- Policy Health is a read-only admin/auditor governance surface. Simulation is dry-run only and returns `would_create_ticket: false`.
+
+Implementation phases:
+
+- Status contract: canonical sets, Russian labels, requester projection, legacy alias normalization metadata and canonical assertion.
+- DB invariants: Alembic revision `081` (`20260513_1600_081_ticket_contract_hardening.py`) with requester/status backfill, NOT NULL/check constraints and ticket event ordering indexes.
+- Public queue privacy: sanitized handlers and static public queue page/script.
+- Workflow observability: `server/tickets/side_effects.py`, workflow transition wrappers, audit event `workflow_side_effect_failed`, redacted logging and metric counter.
+- Policy health: backend service, admin/auditor API handlers, React admin page and dry-run panel.
+- Docs/CODEMAP/navigation: ticket system, database, request form builder, security/auth, CODEMAP, quick lookup, architecture boundaries and navigation catalog updated.
+
+Verification log:
+
+- Targeted pytest: `python -m pytest server\tests\test_ticket_status_contract_no_db.py server\tests\test_ticket_status_usage_no_db.py server\tests\test_ticket_requester_boundary_no_db.py server\tests\test_ticket_create_contracts.py server\tests\test_ticket_device_binding.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> `78 passed`.
+- Webapp verification: `pnpm --dir webapp exec tsc --noEmit` and `pnpm --dir webapp run build` passed.
+- Workspace verification: `python scripts\verify_workspace.py` passed.
+- Compile/static: `python -m compileall -q server\tickets server\web_api server\routes.py server\app\db\models.py scripts\navigation_catalog.py`, `python -m alembic -c alembic.ini heads`, `git diff --check`, `rg -n -U "except Exception:\s*\r?\n\s*pass" server\tickets`, and `rg -n "triaged" server webapp\src` passed with only allowed legacy/docs/test/migration occurrences.
+- Full server suite: `python -m pytest server\tests -m "not manual" -q --tb=short` ended with `861 passed, 2 failed`; the two failures were existing/order-sensitive module workbench live-agent harness failures (`Agent ... not connected`) and both passed in isolation.
+- Remote deploy/migration: committed state `7fe3cda` pushed to `origin/codex/helpdesk-process-model`, deployed with quick gate, remote Alembic `upgrade head` applied revision `081`, and remote server smoke passed.
+- Browser check: `https://192.168.100.17:9443/app/admin/policy-health` loaded the Policy Health dashboard, showed template rows/details, and dry-run returned a structured preview with `would_create_ticket: false`.
+- Public queue browser/API check: `https://192.168.100.17:9443/queue` showed sanitized columns only; unauthenticated `/public_api/queues`, `/public_api/queue/tickets`, `/public_api/queue/stats` returned 200 with no recursive forbidden public keys; `/public_api/queue/tickets?ticket_code=T-000005` returned only `ticket_code`, `public_position`, `public_status`, `public_status_label`, `queue_code`, `wait_bucket`, `updated_at`.
+
+Known risks / rollback notes:
+
+- The release used the project quick gate because no current full CI artifact was available. Use the default/full release gate for final production promotion.
+- The full local server suite still has two order-sensitive module workbench failures unrelated to ticket hardening; both pass when isolated and should be tracked separately.
+- Existing untracked `tmp/` remains untouched and is not part of this change.
+- Rollback is a normal code rollback plus Alembic downgrade of revision `081` where feasible; data normalized from legacy aliases remains canonical by design.
