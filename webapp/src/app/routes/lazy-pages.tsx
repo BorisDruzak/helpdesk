@@ -46,6 +46,10 @@ export const AdminAccessPage = lazy(() =>
   import("../../pages/admin/access-page").then((module) => ({ default: module.AdminAccessPage })),
 );
 
+export const AdminCapabilitiesPage = lazy(() =>
+  import("../../pages/admin/capabilities-page").then((module) => ({ default: module.AdminCapabilitiesPage })),
+);
+
 export const AdminFormsPage = lazy(() =>
   import("../../pages/admin/forms-page").then((module) => ({ default: module.AdminFormsPage })),
 );

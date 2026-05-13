@@ -5,6 +5,7 @@ import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
 import {
   AdminAgentUpdatesPage,
+  AdminCapabilitiesPage,
   AdminDevicePage,
   AdminAccessPage,
   AdminFormsPage,
@@ -295,6 +296,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminModulesPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/capabilities",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminCapabilitiesPage />
               </WorkspaceAccessGate>
             )
           },

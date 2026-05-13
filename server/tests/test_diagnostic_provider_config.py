@@ -258,6 +258,51 @@ async def test_provider_config_web_admin_aliases_use_same_redacted_contract(test
 
 
 @pytest.mark.asyncio
+async def test_capability_studio_admin_aliases_use_existing_diagnostics_contract(test_client):
+    catalog_resp = await test_client.get("/api/web/admin/capabilities", headers=_admin_auth())
+    assert catalog_resp.status == 200
+    catalog_data = await catalog_resp.json()
+
+    assert catalog_data["status"] == "ok"
+    assert catalog_data["count"] >= 1
+    assert any(item["id"] == "server.dns.resolve" for item in catalog_data["capabilities"])
+
+    payload = {
+        "provider_type": "server_connector",
+        "integration_key": "zabbix",
+        "enabled": True,
+        "config": {
+            "url": "https://zabbix.local",
+            "api_token": "must-not-leak",
+            "mappings": {"zabbix.host": {"source": "device.hostname"}},
+        },
+        "credential_refs": [
+            {"credential_key": "api_token", "secret_ref": "vault://zabbix/api-token", "status": "ready"}
+        ],
+    }
+
+    put_resp = await test_client.put(
+        "/api/web/admin/capabilities/provider-configs/zabbix_connector",
+        json=payload,
+        headers=_admin_auth(),
+    )
+    get_resp = await test_client.get(
+        "/api/web/admin/capabilities/provider-configs/zabbix_connector",
+        headers=_admin_auth(),
+    )
+    list_resp = await test_client.get("/api/web/admin/capabilities/provider-configs", headers=_admin_auth())
+
+    assert put_resp.status == 200
+    assert get_resp.status == 200
+    assert list_resp.status == 200
+    get_data = await get_resp.json()
+    list_data = await list_resp.json()
+    assert get_data["provider_config"]["config"]["api_token"] == "***redacted***"
+    assert get_data["provider_config"]["credential_refs"][0]["secret_ref"] == "***redacted***"
+    assert list_data["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_zabbix_capability_run_uses_persisted_provider_config(monkeypatch, test_client, test_engine):
     calls = []
 

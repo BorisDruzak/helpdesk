@@ -238,6 +238,89 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
   });
 
+  it("opens Capability Studio for admin users", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createAdminSession()
+        });
+      }
+
+      if (url === "/api/web/admin/capabilities") {
+        return jsonResponse({
+          status: "ok",
+          count: 2,
+          capabilities: [
+            {
+              id: "server.dns.resolve",
+              title: "DNS resolve",
+              description: "Resolve DNS from server",
+              provider_id: "server_builtin",
+              provider_type: "server_builtin",
+              execution_target: "server_builtin",
+              tool_kind: "diagnostic",
+              risk_level: "low",
+              readiness: "available",
+              reason: null,
+              actions: ["run"],
+              requires_consent: false,
+              requires_integration: false,
+              install_required_on_agent: false,
+              evidence: {
+                produces_evidence: true,
+                kind: "network.dns",
+                domain: "network",
+                perspective: "server",
+                passport_eligible: true
+              },
+              artifacts: { may_produce_artifacts: false, artifact_kinds: [] }
+            },
+            {
+              id: "zabbix.problems.lookup",
+              title: "Zabbix problems",
+              provider_id: "zabbix",
+              provider_type: "server_connector",
+              execution_target: "server_connector",
+              tool_kind: "diagnostic",
+              risk_level: "low",
+              readiness: "integration_not_configured",
+              reason: "Integration is not configured",
+              actions: ["configure_integration"],
+              requires_consent: false,
+              requires_integration: true,
+              integration_key: "zabbix",
+              install_required_on_agent: false,
+              evidence: {
+                produces_evidence: true,
+                kind: "monitoring.problems",
+                domain: "monitoring",
+                perspective: "monitoring",
+                passport_eligible: true
+              },
+              artifacts: { may_produce_artifacts: false, artifact_kinds: [] }
+            }
+          ]
+        });
+      }
+
+      if (url === "/api/web/admin/capabilities/provider-configs") {
+        return jsonResponse({ status: "ok", provider_configs: [], count: 0 });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderApp(["/app/admin/capabilities"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Capabilities" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Возможности/ })).toBeInTheDocument();
+    expect(await screen.findByText("server.dns.resolve")).toBeInTheDocument();
+    expect(await screen.findByText("zabbix.problems.lookup")).toBeInTheDocument();
+  });
+
   it("opens requester help without a web session", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

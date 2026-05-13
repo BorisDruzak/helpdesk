@@ -102,10 +102,18 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Модули",
-    description: "Preferred версии и rollout",
+    description: "ZIP/SDK-модули агента",
     icon: Layers3,
     section: "admin",
     to: "/app/admin/modules",
+    permission: "admin.modules.view",
+  },
+  {
+    label: "Возможности",
+    description: "Диагностика, провайдеры, evidence",
+    icon: Layers3,
+    section: "admin",
+    to: "/app/admin/capabilities",
     permission: "admin.modules.view",
   },
   {

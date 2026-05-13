@@ -19,6 +19,14 @@ The current work completed the backward-compatible foundation. This plan tracks 
 
 ## Current State
 
+Active slice for this task:
+
+- Goal: add `/app/admin/capabilities` as a top-level Capability Studio MVP over the existing diagnostics capability registry, provider config APIs and Modules Workbench.
+- Scope: admin React route/page, catalog/providers/evidence/readiness/SDK tabs, detail drawer, create wizard skeleton, typed admin aliases if needed.
+- Non-goals: no ToolExecutionService changes, no playbook/runtime rewrites, no DB schema, no declarative recipe runner, no automation runner, no new Zabbix SDK.
+- Current state: implemented route aliases, React Capability Studio page/components, navigation entry, Modules Workbench link and focused tests.
+- Verification: backend alias tests pass; `pnpm --dir webapp exec vitest run src/app/router.test.tsx` passes; `pnpm --dir webapp run build` passes; Playwright MCP verified `/app/admin/capabilities` catalog, nav item, detail drawer, Providers tab, Evidence Mapping tab and create modal with mocked API payloads; `python scripts/docs_inventory.py --check-links` and `python scripts/verify_workspace.py` pass.
+
 Stage 1 foundation is implemented:
 
 - Manifest/tool contract accepts optional `execution`, `deployment`, `safety`, `evidence`, and `artifacts`.
