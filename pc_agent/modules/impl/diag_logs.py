@@ -33,13 +33,7 @@ except ImportError:
 
 
 def _agent_app_log_sources() -> List[str]:
-    try:
-        from pc_agent.config.config_loader import get_config_base
-
-        data_root = get_config_base() or resolve_data_root()
-    except Exception:
-        data_root = resolve_data_root()
-    return [str(resolve_logs_dir(Path(data_root)).resolve())]
+    return [str(resolve_logs_dir(resolve_data_root()).resolve())]
 
 
 class DiagLogsCollectParams(BaseModel):

@@ -71,6 +71,7 @@ Builtin evidence markings:
 - `screen.collect` produces endpoint screenshot evidence and screenshot artifacts.
 - `screen.record` produces endpoint screen recording evidence and recording artifacts.
 - `diag.logs.collect` produces `logs.bundle` evidence from endpoint perspective, is passport-eligible and may produce `logs_zip` artifacts.
+- `diag.logs.collect` app preset resolves the agent runtime logs directory from the current runtime data root (`PC_AGENT_DATA_DIR` or OS default), so diagnostic log collection does not depend on a stale config-loader singleton.
 
 Каждый tool spec должен нести:
 
