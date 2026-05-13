@@ -240,6 +240,8 @@ Observer coverage for this flow is first-class:
 - terminal install/run failures create an `observer_error_occurrences` row;
 - preferred-gate failures create `observer_traces.root_kind = module_preferred_gate` and return `observer_trace_id` next to `MODULE_WINDOWS_LIVE_TEST_REQUIRED`.
 
+Protected `agent_recipe_runner` versions are the exception to the normal Windows `run_tool` live-test gate. They deliberately declare no support-visible tools and execute only through Protocol V3 `run_recipe`, so preferred assignment is allowed when the manifest is `owner_scope=core|platform`, `system_module=true` or `protected=true`, has no tools, and the module preflight/server harness has passed. This exception does not apply to vendor/user ZIP modules.
+
 ## Tool output contracts for playbooks
 
 `output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and compact support-facing display.

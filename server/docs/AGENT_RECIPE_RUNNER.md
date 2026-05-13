@@ -35,6 +35,7 @@ Ticket-bound auto-install/auto-upgrade is intentionally narrower than fleet roll
 - Parent operations keep the existing status lifecycle and use `operations.phase` for `waiting_dependency`, `installing_dependency`, `sending_run_recipe`, `running_recipe`, `completed` and `failed`.
 - The runner version resolver uses the module preferred assignment from `ModuleRolloutRepo`; it does not install an arbitrary latest version.
 - Target runner versions must satisfy the recipe `min_runner_version` / `runner_version_constraint`, support the device platform, advertise the requested primitive, and be a protected/core-platform module.
+- Preferred assignment for the protected `agent_recipe_runner` uses the module preflight/server-harness gate because the runner intentionally declares no support-visible tools and is executed through `run_recipe`, not `run_tool`. The ordinary Windows live-test gate still applies to normal Windows ZIP modules.
 - Auto-install/upgrade is policy gated by role, read-only diagnostic tool kind, side-effect flag and risk level.
 - Install/upgrade uses `device_desired_modules` plus `modules.reconcile.reconcile_device`; new code must not download or write module ZIPs directly.
 - Resume is idempotent: if the parent operation already has a `run_recipe` outbox command, subsequent resume attempts do not enqueue another one.

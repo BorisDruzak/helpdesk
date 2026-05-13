@@ -274,9 +274,11 @@ def _has_passed_windows_live_test(validation_json: Optional[dict], *, min_agent_
 
 def _preferred_gate_for_module(module: object) -> Optional[dict]:
     manifest_json = get_module_manifest(module)
+    validation_json = get_module_validation(module)
+    if _is_preflight_passed_protected_recipe_runner(manifest_json, validation_json):
+        return None
     if not _module_targets_windows(manifest_json):
         return None
-    validation_json = get_module_validation(module)
     min_agent_version = _module_min_agent_version(manifest_json)
     if _has_passed_windows_live_test(validation_json, min_agent_version=min_agent_version):
         return None
@@ -290,6 +292,21 @@ def _preferred_gate_for_module(module: object) -> Optional[dict]:
         "min_agent_version": min_agent_version or None,
         "hint": "Run POST /api/modules/{module_name}/{version}/live_tests against a Windows lab agent, then set preferred again.",
     }
+
+
+def _is_preflight_passed_protected_recipe_runner(manifest_json: dict, validation_json: dict) -> bool:
+    module_name = str(manifest_json.get("module_name") or "").strip()
+    owner_scope = str(manifest_json.get("owner_scope") or "").strip().lower()
+    if module_name != "agent_recipe_runner" or owner_scope not in {"core", "platform"}:
+        return False
+    if not (manifest_json.get("system_module") is True or manifest_json.get("protected") is True):
+        return False
+    if manifest_json.get("tools") not in (None, []):
+        return False
+    status = str(validation_json.get("validation_status") or validation_json.get("preflight_status") or "").strip().lower()
+    harness = validation_json.get("server_harness") if isinstance(validation_json.get("server_harness"), dict) else {}
+    harness_status = str(harness.get("status") or "").strip().lower()
+    return status == "passed" or harness_status == "passed"
 
 
 def _is_payload_success(response: object) -> bool:

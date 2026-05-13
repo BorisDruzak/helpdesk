@@ -564,6 +564,56 @@ async def test_windows_module_preferred_requires_passed_windows_live_test(test_c
 
 
 @pytest.mark.asyncio
+async def test_protected_agent_recipe_runner_preferred_uses_preflight_gate(test_client, test_engine):
+    manifest_json = {
+        "manifest_version": 2,
+        "module_name": "agent_recipe_runner",
+        "module_version": "1.0.0",
+        "module_api_version": "1.0.0",
+        "owner_scope": "platform",
+        "entrypoint": "module:register",
+        "platforms": ["win32", "linux"],
+        "tools": [],
+        "system_module": True,
+        "protected": True,
+    }
+    validation_json = {
+        "validation_status": "passed",
+        "preflight_status": "passed",
+        "server_harness": {"status": "passed", "required_before_publish": True},
+    }
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Module(
+                module_name="agent_recipe_runner",
+                version="1.0.0",
+                sha256=(uuid.uuid4().hex + uuid.uuid4().hex)[:64],
+                size=128,
+                storage_path="agent_recipe_runner/1.0.0/module.zip",
+                uploaded_by="admin",
+                manifest_json=manifest_json,
+                validation_json=validation_json,
+                manifest_summary={},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.patch(
+        "/api/modules/agent_recipe_runner/preferred",
+        json={"version": "1.0.0"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    assert data["status"] == "ok"
+    assert data["module_name"] == "agent_recipe_runner"
+    assert data["preferred_version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
 async def test_windows_authoring_publish_set_preferred_requires_live_test(test_client, test_engine):
     module_name = f"win_publish_gate_{uuid.uuid4().hex[:8]}"
     response = await test_client.post(
