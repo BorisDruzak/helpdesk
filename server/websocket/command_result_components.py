@@ -122,7 +122,7 @@ class CommandResultArtifactHandler:
             return
 
         from app.db import get_session
-        from app.repos import DevicesRepo, OperationsRepo, ToolsetSnapshotsRepo
+        from app.repos import DeviceModulesRepo, DevicesRepo, OperationsRepo, ToolsetSnapshotsRepo
         from utils.toolset_hash import compute_toolset_hash, sort_tools
         from websocket.modules_sync import flatten_modules_list, sync_modules_inventory
 
@@ -133,6 +133,30 @@ class CommandResultArtifactHandler:
                 return
 
             command_name = operation.command_name
+            if command_name == "install_module_package":
+                observations = normalized.data_payload.get("observations")
+                result = normalized.data_payload.get("result")
+                install_data = observations if isinstance(observations, dict) else result if isinstance(result, dict) else {}
+                module_name = install_data.get("module_name") or install_data.get("installed") or install_data.get("name")
+                version = install_data.get("version") or install_data.get("module_version")
+                if module_name and version:
+                    await DeviceModulesRepo(session).upsert_device_module(
+                        device_id=device_id,
+                        module_name=str(module_name),
+                        version=str(version),
+                        installed=True,
+                        active=True,
+                        state="active",
+                        source="command_result",
+                        update_last_seen=True,
+                    )
+                    await session.commit()
+                    logger.info(
+                        "[command_result] synced device_modules from install_module_package: "
+                        f"device_id={device_id} module={module_name}@{version}"
+                    )
+                return
+
             if command_name == "list_installed_modules":
                 modules_list = observations.get("modules")
                 if not isinstance(modules_list, list):

@@ -20,7 +20,7 @@ The capability execution target is `agent_recipe`. It is distinct from `agent_ma
 3. If the runner is ready, the service creates an `operations` row with `kind=agent_recipe` and enqueues a Protocol V3 `run_recipe` command in `device_outbox`.
 4. If readiness reports `runner_not_installed`, `runner_outdated` or `primitive_not_supported`, the service creates the parent recipe operation in `phase=waiting_dependency`, records an `operation_dependencies` row, selects the compatible preferred `agent_recipe_runner` version, writes `device_desired_modules`, and invokes the existing module reconcile/install path.
 5. The HTTP request returns immediately with the parent `operation_id` and dependency state. It does not wait for install/upgrade completion.
-6. When `install_module_package` completes or the agent emits `module_state_changed` / `tools_changed`, the server re-checks readiness and resumes the parent operation by enqueuing `run_recipe` exactly once.
+6. When `install_module_package` completes, the command result updates `device_modules` for the installed runner version before dependency resume. `module_state_changed` / `tools_changed` remain additional resume triggers. The server then re-checks readiness and resumes the parent operation by enqueuing `run_recipe` exactly once.
 7. The agent core `RecipeRunnerBridge` locates the active protected runner module and delegates `validate_recipe` / `run_recipe`.
 8. The normal `command_result` pipeline completes the operation.
 9. Terminal `agent_recipe` operations are projected into `diagnostic_evidence`.
@@ -32,14 +32,14 @@ The capability execution target is `agent_recipe`. It is distinct from `agent_ma
 Ticket-bound auto-install/auto-upgrade is intentionally narrower than fleet rollout:
 
 - Dependency linkage is persisted in `operation_dependencies`.
-- Parent operations keep the existing status lifecycle and use `operations.phase` for `waiting_dependency`, `installing_dependency`, `sending_run_recipe`, `running_recipe`, `completed` and `failed`.
+- Parent operations keep the existing status lifecycle and use `operations.phase` for `waiting_dependency`, `installing_dependency`, `sending_run_recipe`, `running_recipe`, `completed` and `failed`. While waiting for the runner dependency, the parent operation remains active with a dependency-aware deadline so the generic queued delivery timeout does not fail the recipe before runner install/upgrade can finish.
 - The runner version resolver uses the module preferred assignment from `ModuleRolloutRepo`; it does not install an arbitrary latest version.
 - Target runner versions must satisfy the recipe `min_runner_version` / `runner_version_constraint`, support the device platform, advertise the requested primitive, and be a protected/core-platform module.
 - Preferred assignment for the protected `agent_recipe_runner` uses the module preflight/server-harness gate because the runner intentionally declares no support-visible tools and is executed through `run_recipe`, not `run_tool`. The ordinary Windows live-test gate still applies to normal Windows ZIP modules.
 - Auto-install/upgrade is policy gated by role, read-only diagnostic tool kind, side-effect flag and risk level.
 - Install/upgrade uses `device_desired_modules` plus `modules.reconcile.reconcile_device`; new code must not download or write module ZIPs directly.
 - Resume is idempotent: if the parent operation already has a `run_recipe` outbox command, subsequent resume attempts do not enqueue another one.
-- Timeout is handled by the operation watchdog through the dependency timeout timestamp and fails the parent operation with a clear runner dependency error.
+- Timeout is handled by the operation watchdog through the dependency timeout timestamp and fails the parent operation with a clear runner dependency error. Intermediate `waiting_dependency` responses are not persisted as diagnostic evidence; evidence is created from terminal recipe execution results.
 
 ## Readiness
 

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import DeviceOutbox, Operation
+from app.db.models import DeviceModule, DeviceOutbox, Operation
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.services.operation_service import OperationService
 import websocket.agent_services as agent_services
@@ -100,6 +100,72 @@ async def test_command_result_succeeds_sent_command_and_delivers_outbox(test_cli
     assert operation.finished_at is not None
     assert operation.deadline_at is None
     assert outbox.status == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_install_module_package_result_syncs_device_module_inventory(test_client, monkeypatch):
+    monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
+    monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)
+    operation_id = "44444444-4444-4444-8444-444444444444"
+    device_id = "device-lifecycle-install-sync"
+
+    async with get_session() as session:
+        await _create_sent_operation(session, operation_id=operation_id, device_id=device_id)
+        session.add(
+            DeviceModule(
+                device_id=device_id,
+                module_name="agent_recipe_runner",
+                version="1.0.0",
+                installed=False,
+                active=False,
+                state="missing",
+                source="test",
+            )
+        )
+        await session.commit()
+
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id=device_id,
+    )
+
+    await CommandResultService().handle(
+        {
+            "type": "command_result",
+            "request_id": operation_id,
+            "payload": {
+                "status": "success",
+                "data": {
+                    "observations": {
+                        "installed": "agent_recipe_runner",
+                        "version": "1.0.0",
+                        "path": "/tmp/modules/agent_recipe_runner/1.0.0",
+                        "mode": "package",
+                    }
+                },
+                "error": {},
+                "meta": {"request_id": operation_id},
+            },
+        },
+        ctx,
+    )
+
+    async with get_session() as session:
+        module = (
+            await session.execute(
+                select(DeviceModule).where(
+                    DeviceModule.device_id == device_id,
+                    DeviceModule.module_name == "agent_recipe_runner",
+                    DeviceModule.version == "1.0.0",
+                )
+            )
+        ).scalar_one()
+
+    assert module.installed is True
+    assert module.active is True
+    assert module.state == "active"
 
 
 @pytest.mark.asyncio

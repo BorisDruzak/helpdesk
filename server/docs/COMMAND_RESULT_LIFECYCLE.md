@@ -211,6 +211,8 @@ elif status == "consent_required":
 
 - `list_installed_modules` success:
   сервер берёт `payload.data.observations.modules`, приводит в flattened inventory и обновляет `device_modules` через `sync_modules_inventory(..., source="command_result")`.
+- `install_module_package` success:
+  the server reads `payload.data.observations.installed` / `module_name` and `version`, then upserts that module as `installed=true`, `active=true`, `state=active` with `source="command_result"`. This closes the gap where a protected runner install can finish before a separate `module_state_changed` / `list_installed_modules` inventory refresh arrives, allowing Agent Recipe Runner dependency resume to re-check readiness immediately.
 - `list_tools` success:
   сервер берёт `payload.data.observations.tools`, канонически сортирует список, вычисляет `toolset_hash`, создаёт/переиспользует запись в `device_toolset_snapshots`, обновляет `devices.current_toolset_hash`, `current_toolset_snapshot_id` и `last_toolset_refresh_at`.
   Implementation note: command-result post-processing snapshots ORM scalar fields from `Device` before later async DB writes, so `list_tools` side effects do not trigger SQLAlchemy async lazy-load/`greenlet_spawn` warnings after auto-install follow-up refreshes.

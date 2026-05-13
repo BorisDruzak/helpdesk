@@ -158,7 +158,13 @@ def _result_should_persist_as_evidence(capability, result: dict) -> bool:
         return False
     if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
         return False
-    if capability.execution_target == "agent_recipe" and result.get("status") in {"queued", "accepted", "running"}:
+    if capability.execution_target == "agent_recipe" and result.get("status") in {
+        "queued",
+        "accepted",
+        "running",
+        "waiting_dependency",
+        "installing_dependency",
+    }:
         return False
     if capability.execution_target == "manual" and result.get("evidence_id"):
         return False

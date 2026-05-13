@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Artifact, DiagnosticBundle, DiagnosticEvidence, DiagnosticFinding, DiagnosticSession, Operation, RemoteAccessSession, Ticket, TicketEvent, TicketEvidenceItem
 from diagnostics.bundle import DiagnosticBundleService
+from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.findings import DiagnosticFindingService
+from diagnostics.handlers import _result_should_persist_as_evidence
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
 from diagnostics.projection import DiagnosticProjectionService
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
@@ -35,6 +37,17 @@ def _ticket(ticket_id: str, device_id: str, *, root_trace_id: str | None = None)
         updated_at=datetime.now(timezone.utc),
         observer_root_trace_id=root_trace_id,
     )
+
+
+def test_agent_recipe_waiting_dependency_result_does_not_persist_evidence():
+    capability = CapabilityDescriptor(
+        id="endpoint.file.exists",
+        title="File exists",
+        execution_target="agent_recipe",
+        evidence={"produces_evidence": True},
+    )
+
+    assert _result_should_persist_as_evidence(capability, {"status": "waiting_dependency"}) is False
 
 
 @pytest.mark.asyncio

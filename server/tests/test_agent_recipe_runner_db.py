@@ -360,6 +360,7 @@ async def test_recipe_execution_missing_runner_creates_runtime_dependency(test_e
     assert dependency.status == "installing"
     assert dependency.dependency_operation_id
     assert dependency.metadata_json["runtime_params"] == {"sample": True}
+    assert operation.deadline_at is None or operation.deadline_at >= dependency.timeout_at
     assert desired is not None
     assert desired.desired_version == "1.0.0"
     assert outbox is None

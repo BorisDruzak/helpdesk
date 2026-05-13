@@ -339,6 +339,7 @@ class RecipeExecutionService:
             }
 
         operation_id = idempotency_key if idempotency_key and self._looks_uuid(idempotency_key) else str(uuid.uuid4())
+        parent_timeout_sec = int(plan_result["plan"].timeout_sec) + (int(timeout_ms / 1000) if timeout_ms else 120)
         operation = await OperationService(self.session).enqueue_operation(
             operation_id=operation_id,
             device_id=device_id,
@@ -347,8 +348,9 @@ class RecipeExecutionService:
             ticket_id=ticket_id,
             tool_name=resolved.capability.capability_id,
             command_name="run_recipe",
-            timeout_override_sec=int(timeout_ms / 1000) if timeout_ms else None,
+            timeout_override_sec=parent_timeout_sec,
             max_retries=3,
+            initial_status="running",
             initial_phase="waiting_dependency",
         )
         dependency = await RuntimeDependencyWorkflow(self.session, state=self.state).create_runner_dependency(
