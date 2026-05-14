@@ -37,6 +37,21 @@
 - Кастомная frameless-шапка не должна вызывать Qt native `startSystemMove()` / `startSystemResize()` на Windows: эти calls могут создавать `_q_titlebar` helper windows, которые попадают в Taskbar/Alt-Tab как отдельные окна `python`. Drag/resize держать на ручном fallback в `window_chrome.py`.
 - Внутренние элементы главного окна нельзя оставлять parentless и затем делать visible: пустые orphan `QLabel`/`QWidget` становятся отдельными top-level окнами `python` / `pc_agent` в Taskbar/Alt-Tab. Служебные элементы должны иметь parent или быть добавлены в layout до показа.
 
+## Service Catalog create-ticket flow
+
+The always-on GUI create-ticket wizard consumes the server safe catalog through
+`TicketApiClient.get_service_catalog_current()` and caches it next to the
+request-template form pack. When the catalog endpoint is unavailable, the GUI
+falls back to the legacy form-pack flow instead of blocking ticket creation.
+
+Catalog Service and Offering are process choices (`service_code`,
+`offering_code`) and are distinct from CMDB/service picker fields inside a
+dynamic form. Preview and submit requests include the catalog codes plus the
+linked `request_template_key`, diagnostic consent, attachments and existing
+device/profile metadata. The GUI must display only requester-safe titles,
+descriptions, deadlines and approval/diagnostic hints; queue ids, raw policy
+JSON, approver internals and registry ids are not exposed in the agent UI.
+
 ## Runtime logs
 
 - Канонический helper: `pc_agent/core/runtime_logging.py`

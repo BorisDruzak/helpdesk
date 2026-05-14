@@ -89,6 +89,18 @@ class WebReportsRequestKindItem(BaseModel):
     count: int
 
 
+class WebReportsServiceCatalogItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_code: str | None = None
+    offering_code: str | None = None
+    label: str
+    count: int
+    open_count: int = 0
+    breached_sla_count: int = 0
+    avg_resolution_minutes: float | None = None
+
+
 class WebReportsRecentTicketItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,4 +128,6 @@ class WebReportsPayload(BaseModel):
     top_queues: list[WebReportsTopQueueItem] = Field(default_factory=list)
     top_requesters: list[WebReportsTopRequesterItem] = Field(default_factory=list)
     request_kinds: list[WebReportsRequestKindItem] = Field(default_factory=list)
+    tickets_by_service: list[WebReportsServiceCatalogItem] = Field(default_factory=list)
+    tickets_by_offering: list[WebReportsServiceCatalogItem] = Field(default_factory=list)
     recent_tickets: list[WebReportsRecentTicketItem] = Field(default_factory=list)

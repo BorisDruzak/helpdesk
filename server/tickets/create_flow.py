@@ -207,6 +207,15 @@ async def create_ticket_with_side_effects(
     service_id: Optional[int] = None,
     subcategory_id: Optional[int] = None,
     sla_policy_id: Optional[int] = None,
+    catalog_service_id: Optional[str] = None,
+    catalog_offering_id: Optional[str] = None,
+    service_code: Optional[str] = None,
+    offering_code: Optional[str] = None,
+    request_type: Optional[str] = None,
+    business_criticality: Optional[str] = None,
+    reporting_category: Optional[str] = None,
+    service_owner_actor_id: Optional[str] = None,
+    support_group_code: Optional[str] = None,
     extra_custom_fields: Optional[dict[str, Any]] = None,
     state: Any | None = None,
 ) -> Dict[str, Any]:
@@ -224,6 +233,15 @@ async def create_ticket_with_side_effects(
         service_id=service_id,
         subcategory_id=subcategory_id,
         sla_policy_id=sla_policy_id,
+        catalog_service_id=catalog_service_id,
+        catalog_offering_id=catalog_offering_id,
+        service_code=service_code,
+        offering_code=offering_code,
+        request_type=request_type,
+        business_criticality=business_criticality,
+        reporting_category=reporting_category,
+        service_owner_actor_id=service_owner_actor_id,
+        support_group_code=support_group_code,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})

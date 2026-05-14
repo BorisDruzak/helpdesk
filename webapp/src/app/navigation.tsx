@@ -4,6 +4,7 @@ import {
   BookOpen,
   Building2,
   ClipboardCheck,
+  FolderKanban,
   DownloadCloud,
   KeyRound,
   Layers3,
@@ -123,6 +124,14 @@ export const appNavigation: AppNavItem[] = [
     icon: Workflow,
     section: "admin",
     to: "/app/admin/forms",
+    permission: "admin.forms.view",
+  },
+  {
+    label: "Service Catalog",
+    description: "Услуги, offerings и publication gates",
+    icon: FolderKanban,
+    section: "admin",
+    to: "/app/admin/service-catalog",
     permission: "admin.forms.view",
   },
   {

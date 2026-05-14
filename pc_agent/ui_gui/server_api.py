@@ -514,6 +514,9 @@ class TicketApiClient:
         form_payload: Optional[dict] = None,
         diagnostic_consent: Optional[dict] = None,
         ticket_type: Optional[str] = None,
+        service_code: Optional[str] = None,
+        offering_code: Optional[str] = None,
+        offering_full_code: Optional[str] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -562,6 +565,12 @@ class TicketApiClient:
             payload["diagnostic_consent"] = diagnostic_consent
         if ticket_type is not None:
             payload["ticket_type"] = ticket_type
+        if service_code is not None:
+            payload["service_code"] = service_code
+        if offering_code is not None:
+            payload["offering_code"] = offering_code
+        if offering_full_code is not None:
+            payload["offering_full_code"] = offering_full_code
         trace = self._trace_context(
             action="ticket.create",
             category="ticket",
@@ -626,6 +635,9 @@ class TicketApiClient:
         form_pack_version: Optional[str] = None,
         form_payload: Optional[dict] = None,
         ticket_type: Optional[str] = None,
+        service_code: Optional[str] = None,
+        offering_code: Optional[str] = None,
+        offering_full_code: Optional[str] = None,
     ) -> dict:
         """Возвращает серверный предпросмотр маршрута, приоритета и сроков перед созданием обращения."""
         url = f"{self.base_url}/tickets/create/preview"
@@ -642,6 +654,12 @@ class TicketApiClient:
             payload["form_payload"] = form_payload
         if ticket_type is not None:
             payload["ticket_type"] = ticket_type
+        if service_code is not None:
+            payload["service_code"] = service_code
+        if offering_code is not None:
+            payload["offering_code"] = offering_code
+        if offering_full_code is not None:
+            payload["offering_full_code"] = offering_full_code
 
         session = await self._get_session()
         headers = self._get_headers()
@@ -655,6 +673,21 @@ class TicketApiClient:
             logger.info(f"Предпросмотр создания обращения недоступен: {exc}")
             raise Exception(f"Network error: {exc}")
     
+    async def get_service_catalog_current(self) -> dict:
+        """Fetch requester-safe Service Catalog for the local agent wizard."""
+        url = f"{self.base_url}/service-catalog/current"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}: {response_text}")
+                return json.loads(response_text)
+        except aiohttp.ClientError as exc:
+            logger.info("Service catalog sync unavailable: %s", exc)
+            raise Exception(f"Network error: {exc}")
+
     async def get_ticket_form_pack_current(
         self,
         pack_key: str = "request_forms",

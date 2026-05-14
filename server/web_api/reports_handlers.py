@@ -28,6 +28,7 @@ from web_api.dto.reports import (
     WebReportsPeriod,
     WebReportsRecentTicketItem,
     WebReportsRequestKindItem,
+    WebReportsServiceCatalogItem,
     WebReportsStatusAgeItem,
     WebReportsSummary,
     WebReportsTopQueueItem,
@@ -110,6 +111,8 @@ def _empty_reports_payload(*, days: int, queue_id: int | None, start_at: datetim
         top_queues=[],
         top_requesters=[],
         request_kinds=[],
+        tickets_by_service=[],
+        tickets_by_offering=[],
         recent_tickets=[],
     )
 
@@ -246,6 +249,72 @@ async def _fetch_recent_tickets(
     ]
 
 
+async def _fetch_service_catalog_aggregates(
+    repo: TicketEventsRepo,
+    *,
+    period_start: datetime,
+    period_end: datetime,
+    queue_id: int | None,
+    dimension: str,
+) -> list[WebReportsServiceCatalogItem]:
+    if dimension not in {"service", "offering"}:
+        raise ValueError("unsupported report dimension")
+    if dimension == "service":
+        code_expr = "NULLIF(t.service_code, '')"
+        title_expr = "COALESCE(hs.public_title, hs.name, NULLIF(t.service_code, ''), 'Без каталога / Legacy')"
+        join_sql = "LEFT JOIN helpdesk_services hs ON hs.code = NULLIF(t.service_code, '')"
+        service_select = "NULLIF(t.service_code, '')"
+        offering_select = "NULL::text"
+        group_expr = "NULLIF(t.service_code, ''), label"
+    else:
+        code_expr = "NULLIF(t.offering_code, '')"
+        title_expr = "COALESCE(hso.public_title, hso.name, NULLIF(t.offering_code, ''), 'Без каталога / Legacy')"
+        join_sql = "LEFT JOIN helpdesk_service_offerings hso ON hso.full_code = NULLIF(t.offering_code, '')"
+        service_select = "NULLIF(t.service_code, '')"
+        offering_select = "NULLIF(t.offering_code, '')"
+        group_expr = "NULLIF(t.service_code, ''), NULLIF(t.offering_code, ''), label"
+    stmt = text(
+        f"""
+        SELECT
+            {service_select} AS service_code,
+            {offering_select} AS offering_code,
+            {title_expr} AS label,
+            count(*)::int AS total_count,
+            count(*) FILTER (WHERE t.status NOT IN ('resolved', 'closed', 'canceled'))::int AS open_count,
+            count(*) FILTER (
+                WHERE t.first_response_breached_at IS NOT NULL
+                   OR t.resolution_breached_at IS NOT NULL
+            )::int AS breached_sla_count,
+            avg(EXTRACT(EPOCH FROM (COALESCE(t.resolution_at, t.closed_at) - t.created_at)) / 60.0)
+                FILTER (WHERE COALESCE(t.resolution_at, t.closed_at) IS NOT NULL) AS avg_resolution_minutes
+        FROM tickets t
+        {join_sql}
+        WHERE t.created_at >= :start
+          AND t.created_at < :end
+          AND (CAST(:qid AS bigint) IS NULL OR t.queue_id = :qid)
+        GROUP BY {group_expr}
+        ORDER BY total_count DESC, label ASC
+        LIMIT 12
+        """
+    )
+    result = await repo.session.execute(stmt, {"start": period_start, "end": period_end, "qid": queue_id})
+    rows = []
+    for row in result.all():
+        avg_value = row[6]
+        rows.append(
+            WebReportsServiceCatalogItem(
+                service_code=str(row[0]) if row[0] else None,
+                offering_code=str(row[1]) if row[1] else None,
+                label=str(row[2] or "Без каталога / Legacy"),
+                count=int(row[3] or 0),
+                open_count=int(row[4] or 0),
+                breached_sla_count=int(row[5] or 0),
+                avg_resolution_minutes=round(float(avg_value), 1) if avg_value is not None else None,
+            )
+        )
+    return rows
+
+
 @require_auth("admin", "support")
 async def handle_web_reports_summary(request: web.Request) -> web.Response:
     days = _normalize_days(request.query.get("days"))
@@ -290,6 +359,20 @@ async def handle_web_reports_summary(request: web.Request) -> web.Response:
                 period_end=period_end,
                 queue_id=queue_id,
                 label_map=request_kind_labels,
+            )
+            tickets_by_service = await _fetch_service_catalog_aggregates(
+                repo,
+                period_start=period_start,
+                period_end=period_end,
+                queue_id=queue_id,
+                dimension="service",
+            )
+            tickets_by_offering = await _fetch_service_catalog_aggregates(
+                repo,
+                period_start=period_start,
+                period_end=period_end,
+                queue_id=queue_id,
+                dimension="offering",
             )
             recent_tickets = await _fetch_recent_tickets(
                 repo,
@@ -382,6 +465,8 @@ async def handle_web_reports_summary(request: web.Request) -> web.Response:
             for row in top.get("top_requesters", [])
         ],
         request_kinds=request_kinds,
+        tickets_by_service=tickets_by_service,
+        tickets_by_offering=tickets_by_offering,
         recent_tickets=recent_tickets,
     )
     return json_model_response(SuccessResponse[WebReportsPayload](data=payload))

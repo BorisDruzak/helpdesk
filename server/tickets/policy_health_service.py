@@ -10,6 +10,7 @@ import uuid
 from app.db.models import Ticket
 from app.repos import TicketEventsRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from tickets.approval_policy import _approval_mode, _resolve_approval_source
 from tickets.diagnostic_policy import collect_diagnostic_policy_auto_run_triggers
@@ -20,6 +21,8 @@ from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import WAITING_STATUSES
 from tickets.visibility_policy import apply_ticket_visibility_payload_async
+from tickets.service_catalog_runtime import ServiceCatalogRuntimeResolver
+from tickets.service_catalog_publication import ServiceCatalogPublicationService
 
 
 POLICY_KINDS = (
@@ -179,7 +182,33 @@ class PolicyHealthService:
         templates = await repo.list_request_templates(include_inactive=False)
         policies = await repo.list_policies(include_inactive=False)
         queues = await admin_repo.list_queues(include_inactive=False)
-        return self.evaluate(templates=templates, policies=policies, queues=queues)
+        dashboard = self.evaluate(templates=templates, policies=policies, queues=queues)
+        catalog_repo = ServiceCatalogRepo(self.session)
+        publication = ServiceCatalogPublicationService(self.session)
+        services = await catalog_repo.list_services(include_retired=True)
+        offerings = await catalog_repo.list_offerings()
+        service_items = []
+        for service in services:
+            try:
+                validation = await publication.validate_service(str(service.get("code") or ""))
+            except ValueError:
+                validation = {"status": "error", "issues": [], "blocking": True}
+            service_items.append(self._catalog_health_item("service", service, validation))
+        offering_items = []
+        for offering in offerings:
+            try:
+                validation = await publication.validate_offering(str(offering.get("full_code") or ""))
+            except ValueError:
+                validation = {"status": "error", "issues": [], "blocking": True}
+            offering_items.append(self._catalog_health_item("offering", offering, validation))
+        dashboard["services"] = service_items
+        dashboard["offerings"] = offering_items
+        dashboard["summary"]["services"] = len(service_items)
+        dashboard["summary"]["offerings"] = len(offering_items)
+        dashboard["summary"]["catalog_errors"] = sum(
+            1 for item in [*service_items, *offering_items] if item["health_status"] == "error"
+        )
+        return dashboard
 
     async def get_health(self, template_code: str) -> dict[str, Any] | None:
         dashboard = await self.list_health()
@@ -191,8 +220,20 @@ class PolicyHealthService:
     async def simulate(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self.session is None:
             raise RuntimeError("session is required")
-        template_code = str(payload.get("template_code") or "").strip()
+        template_code = str(payload.get("template_code") or payload.get("request_template_key") or "").strip()
         repo = HelpdeskPolicyRepo(self.session)
+        catalog_selection = None
+        if payload.get("service_code") or payload.get("offering_code") or payload.get("offering_full_code"):
+            catalog_selection = await ServiceCatalogRuntimeResolver(self.session).resolve_selection(
+                service_code=str(payload.get("service_code") or "").strip() or None,
+                offering_code=str(payload.get("offering_code") or "").strip() or None,
+                offering_full_code=str(payload.get("offering_full_code") or payload.get("full_offering_code") or "").strip() or None,
+                request_template_key=template_code or None,
+                actor_role="admin",
+                require_catalog=True,
+            )
+            if catalog_selection.request_template_key:
+                template_code = catalog_selection.request_template_key
         effective = await repo.resolve_effective_request_template(
             template_code=template_code,
             raise_if_missing=False,
@@ -234,6 +275,11 @@ class PolicyHealthService:
                 "template_context": template_context,
             },
         )
+        if catalog_selection is not None:
+            validated_submission = await ServiceCatalogRuntimeResolver(self.session).apply_to_validated_submission(
+                validated_submission,
+                catalog_selection,
+            )
         template_context = validated_submission.get("template_context") or template_context
         if not isinstance(template_context, dict):
             template_context = {}
@@ -280,6 +326,9 @@ class PolicyHealthService:
             created_at=now,
             updated_at=now,
         )
+        catalog_fields = validated_submission.get("catalog_fields") if isinstance(validated_submission.get("catalog_fields"), dict) else {}
+        for field_name, value in catalog_fields.items():
+            setattr(ticket, field_name, value)
         ticket.sla_policy_id = template_context.get("sla_policy_id")
 
         ticket_repo = TicketEventsRepo(self.session)
@@ -370,6 +419,7 @@ class PolicyHealthService:
 
         return {
             "template_code": template_code,
+            "service_catalog": template_context.get("service_catalog") if isinstance(template_context.get("service_catalog"), dict) else None,
             "routing": routing_payload,
             "priority": {
                 "policy_code": _policy_ref_code(template_context, "priority"),
@@ -417,6 +467,43 @@ class PolicyHealthService:
                 "warning": sum(1 for item in items if item["health_status"] == "warning"),
                 "error": sum(1 for item in items if item["health_status"] == "error"),
             },
+        }
+
+    def _catalog_health_item(self, object_type: str, obj: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+        issues = [
+            {
+                "severity": issue.get("severity", "warning"),
+                "kind": issue.get("kind", "publication_gate"),
+                "policy_kind": "service_catalog",
+                "message": issue.get("message", ""),
+                "path": issue.get("path"),
+                "reference": issue.get("object_code"),
+                "suggested_fix": issue.get("suggested_fix"),
+            }
+            for issue in validation.get("issues", [])
+            if isinstance(issue, dict)
+        ]
+        severity_counts = {severity: 0 for severity in ("critical", "error", "warning", "info")}
+        for issue in issues:
+            severity_counts[issue["severity"]] += 1
+        health_status = validation.get("status") or ("error" if validation.get("blocking") else "ok")
+        code = obj.get("full_code") if object_type == "offering" else obj.get("code")
+        return {
+            "object_type": object_type,
+            "object_code": code,
+            "service_code": obj.get("service_code") or obj.get("code"),
+            "template_code": obj.get("request_template_key"),
+            "title": obj.get("public_title") or obj.get("name") or code,
+            "status": obj.get("lifecycle_status"),
+            "visibility": obj.get("visibility"),
+            "health_status": health_status,
+            "health_score": max(0, 100 - sum(SEVERITY_WEIGHT.get(issue["severity"], 0) for issue in issues)),
+            "conflict_count": sum(1 for issue in issues if issue["kind"] == "conflict"),
+            "issue_count": len(issues),
+            "issues_by_severity": severity_counts,
+            "issues": issues,
+            "publication_blocking": bool(validation.get("blocking")),
+            "last_checked_at": _now_iso(),
         }
 
     def _evaluate_template(

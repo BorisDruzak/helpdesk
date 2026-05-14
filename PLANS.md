@@ -1,62 +1,127 @@
-# P0 Ticket System Contract Hardening
+# P1 Service Catalog + Runtime Process Governance
 
-Goal: bring the service-desk ticket system to a strict production contract before further feature work. This is a cross-cutting / release-control change because it touches DB migrations, ticket workflow, API contracts, unauthenticated public endpoints, admin UI, docs and tests.
+Goal: add a managed Service Catalog layer above the stabilized ticket engine:
 
-## Discovery Report
+`Service Catalog Service -> Service Offering -> Request Template / Form Schema -> Effective Policy Bundle -> Ticket`
 
-- Status source of truth: `server/tickets/statuses.py` already has the target canonical set, waiting/terminal/operator/action-required groupings, Russian labels and requester-facing projection. Gaps: no explicit `LEGACY_STATUS_ALIASES`, no boundary-only `normalize_status_for_input(...)` metadata result and no write-boundary `assert_canonical_status(...)`.
-- Legacy `triaged` drift remains in production surfaces: `server/admin.js`, `server/admin.css`, `server/web_api/reports_handlers.py`, `server/app/db/models.py`, `webapp/src/features/tickets/status-presentation.ts`, plus legacy docs and historical migrations. It must remain only as an input alias/backfill/test/docs-compatibility term.
-- Public queue privacy drift: `server/tickets/queue_position_service.py` produces internal rows, and `server/tickets/public_queue_handlers.py` currently serializes `ticket_id`, `requester_id`, `requester_display_name`, `urgency`, `importance`, internal `queue_id`, priority and exact wait seconds to unauthenticated clients.
-- Silent workflow side effects: `server/tickets/workflow_service.py` has `except Exception: pass` around OLA pause/resume/close. SLA and approval side effects are critical paths but do not yet create side-effect failure audit events when they fail.
-- DB invariants: `Ticket.requester_id` is nullable in `server/app/db/models.py`; ticket status has no canonical DB `CHECK`; event ordering is deterministic in `TicketEventsRepo.get_events()` by `agent_seq NULLS LAST, created_at, id`, but the DB lacks explicit `ticket_id, created_at, id` and `ticket_id, event_type, created_at, id` helper indexes.
-- Existing migrations include legacy status normalization through revision `058`; the next linear migration after `080` must backfill `triaged` to `assigned` when `assignee_id` is present, otherwise `queued`, backfill requester identity, and enforce constraints.
-- Policy/form surface exists across `form_catalog`, `form_process_preview`, `helpdesk_policy_runtime`, `admin_config_service` and admin handlers. There is no production policy-health service/API/dashboard with per-template checks and dry-run simulation.
+Classification: cross-cutting / release-control. This touches DB migrations, ticket create/preview contracts, policy runtime, Policy Health, reporting, typed web API, React admin/requester UI, Qt agent GUI, docs and verification gates.
+
+## Discovery
+
+- CMDB/registry service already exists as `registry_services` via `RegistryService`, `RegistryRepo` and `RegistrySnapshotService`. It represents business/IT systems and inventory context, not requester-facing process catalog. Existing registry snapshots/options expose it to admin and picker fields.
+- `tickets.service_id` and `request_templates.service_id` are legacy numeric category/service fields, not unambiguous CMDB or catalog service identifiers. Do not overload them for P1 reporting.
+- Request-template/process model already exists: `ticket_types`, `form_schemas`, `request_templates`, versioned policy tables and `HelpdeskPolicyRepo.resolve_effective_request_template(...)`.
+- Existing policy inheritance is `system -> ticket_type -> category -> request_template`. P1 must insert service/offering layers without weakening request-template explicit refs.
+- Existing create paths are authenticated `/api/tickets/create`, `/api/tickets/create/preview`, unauthenticated `/public_api/tickets/create`, shared `create_ticket_with_side_effects(...)` and `resolve_create_form_submission(...)`.
+- Policy Health simulation currently starts from `template_code` and uses real runtime routing/priority/SLA/OLA/approval/closure/visibility/diagnostic resolvers on a synthetic ticket. It needs catalog input resolution and source reporting.
+- Requester web flow `/app/help` currently pulls `/public_api/ticket_forms/current?pack_key=request_forms`, picks a form directly and submits legacy form payload. It must become catalog-first while preserving direct forms fallback.
+- Agent GUI currently uses `TicketApiClient.get_ticket_form_pack_current(...)`, `CreateTicketTypeGrid`, dynamic form widgets, server preview and create payloads with `request_template_key`. It needs service/offering steps and a fallback to the old form pack if catalog API is unavailable.
+- Admin React route model already has `/app/admin/forms` and `/app/admin/policy-health`; new catalog UI should be another admin route, not a replacement for the form builder.
 
 ## Design Decisions
 
-- `server/tickets/statuses.py` remains the only status contract module. Boundary normalization accepts aliases; storage assertions reject aliases.
-- Existing DB rows with `triaged` migrate to `assigned` only when an assignee exists, otherwise `queued`; downgrades must not resurrect `triaged` as a normal status.
-- Public queue handlers will own a sanitized public serializer. Internal/admin queue rows may keep richer fields, but unauthenticated handlers must never forward raw rows.
-- Workflow side effects will use a shared runner that logs structured failures, records a `workflow_side_effect_failed` ticket event, increments a local metric counter and returns a structured result. SLA and required approval creation are critical; OLA and notifications are non-critical but audited.
-- SLA due-timestamp checks will stay at service/application level unless the current policy model proves that both due timestamps are universally mandatory. The DB will enforce safe invariants only: canonical status, non-empty requester, SLA tickets have priority.
-- Timeline/replay ordering keeps the existing public contract and adds explicit DB indexes to support deterministic ordering.
+- Add first-class catalog entities `helpdesk_services` and `helpdesk_service_offerings`. They are process/catalog records, separate from CMDB `registry_services`.
+- Link catalog service to CMDB with nullable `registry_service_id`. This keeps affected-system/service picker semantics separate from requester catalog choice.
+- Add explicit ticket reporting/enrichment fields: `catalog_service_id`, `catalog_offering_id`, `service_code`, `offering_code`, `request_type`, `business_criticality`, `reporting_category`, `service_owner_actor_id`, `support_group_code`. Keep legacy `tickets.service_id` untouched.
+- Store a requester-safe but support-auditable catalog snapshot in `custom_fields.service_catalog` including selected service/offering titles, template/version, ticket type, effective policy refs/sources, reporting tags and selected-by mode.
+- Policy inheritance order for P1 is `system -> ticket_type -> category -> service -> offering -> request_template`. Request-template explicit refs remain strongest; offering overrides service.
+- Public/requester/agent serializers must not expose internal queue IDs, raw policy JSON, approver internals, internal registry IDs, device/requester IDs or raw custom fields.
+- Publication gates are required before `published`: missing owner/support queue/template/ticket type/SLA-required policy/approval approvers/unsafe visibility/invalid registry link block publication.
+- Simulation must use the same catalog runtime resolver as create/preview and must not insert tickets, events, approvals, diagnostics, operations or sessions.
+
+## Migration Plan
+
+- Add Alembic revision `082_service_catalog_process_layer`.
+- Create `helpdesk_services`, `helpdesk_service_offerings` and `helpdesk_service_catalog_audit`.
+- Add ticket enrichment columns and indexes for reporting.
+- Add constraints for lifecycle (`draft|published|retired`), visibility (`public|internal|restricted`), business criticality (`low|medium|high|critical`) and safe code shape.
+- Avoid destructive cascade into tickets; catalog deletes should be blocked or detached through retire semantics.
+- Downgrade drops P1 tables/columns where feasible without touching legacy request templates or registry rows.
+
+## API Contract
+
+- Admin/auditor endpoints under `/api/web/admin/service-catalog` for dashboard, service/offering draft save, validate, publish, retire, detail and simulation.
+- Requester/agent safe catalog endpoints under `/api/service-catalog/current`, `/api/service-catalog/services/{service_code}` and `/api/service-catalog/offerings/{full_code}`; public aliases only if requester help needs anonymous catalog access.
+- Create/preview accepts `service_code`, `offering_code`, `offering_full_code`, `request_template_key`, legacy `form_key` and form payload. Legacy form-only behavior remains valid.
 
 ## Implementation Phases
 
-- [x] Add/adjust contract tests for canonical statuses, legacy alias normalization, write-boundary assertion and drift guard.
-- [x] Add public queue privacy tests with recursive forbidden-key checks and sanitized ETag body expectations.
-- [x] Add workflow side-effect observability tests for non-critical and critical failures.
-- [x] Implement status contract helpers and replace production `triaged` UI/API/report drift.
-- [x] Add migration `081` and model constraints for requester/status/SLA-safe invariants plus event-order indexes.
-- [x] Harden public queue serializers and public queue UI data model.
-- [x] Implement side-effect runner and replace silent workflow OLA blocks; wrap SLA/approval critical paths.
-- [x] Implement policy-health service, admin/auditor API, dry-run simulation and admin UI dashboard.
-- [x] Sync `TICKET_SYSTEM.md`, `DATABASE.md`, `REQUEST_FORM_BUILDER.md`, `SECURITY_AND_AUTH.md`, `CODEMAP.md`, `QUICK_LOOKUP.md`, `ARCHITECTURE_BOUNDARIES.md`, runbook docs and `scripts/navigation_catalog.py`.
-- [x] Run targeted pytest, migration verification, `verify_workspace.py`, full non-manual server tests, frontend build/tests and browser checks for changed admin/public UI.
+- [x] Add TDD contract tests for catalog constants, safe serializers and policy inheritance ordering.
+- [x] Add migration/models/repo for services, offerings, ticket enrichment and catalog audit.
+- [x] Add service catalog serializers, runtime resolver and publication service.
+- [x] Extend policy runtime so service/offering policy refs participate in effective policy resolution with explainable sources.
+- [x] Extend authenticated/public create and preview paths to resolve catalog input, validate visibility and store ticket fields/snapshot.
+- [x] Extend Policy Health service/API/simulation to include catalog service/offering health and source reporting.
+- [x] Add service/offering dimensions to reports.
+- [x] Add admin API handlers and route registration.
+- [x] Add React `/app/admin/service-catalog` UI with list/edit/publish/simulation/inheritance panels.
+- [x] Update requester `/app/help` catalog-first UX with safe preview and legacy form fallback.
+- [x] Update Qt agent `TicketApiClient` and create wizard to fetch catalog, select service/offering, preview and submit catalog payloads with legacy fallback.
+- [x] Update docs/CODEMAP/navigation and rebuild context index.
+- [ ] Run targeted server/agent/webapp tests, P0 regression tests, migrations, `verify_workspace.py`, full suites where feasible and browser checks.
+
+## Test Plan
+
+- Server no-db/domain: `server/tests/test_service_catalog_contract_no_db.py`.
+- Server DB/API: `test_service_catalog_migration.py`, `test_service_catalog_repo.py`, `test_service_catalog_publication.py`, `test_service_catalog_runtime.py`, `test_service_catalog_api.py`, `test_ticket_create_service_catalog.py`, `test_policy_health_service_catalog.py`, `test_reports_service_catalog.py`.
+- Agent: `pc_agent/tests/test_ticket_api_client_service_catalog.py`, `pc_agent/tests/test_ticket_create_wizard_service_catalog.py` plus existing chat panel and attachment tests.
+- Regressions: P0/P0.1 status, public queue privacy, workflow side-effect observability, policy health and create contracts.
+
+## Verification Plan
+
+- Targeted server catalog tests first.
+- P0 regression pack.
+- `python -m compileall -q server pc_agent scripts`.
+- Alembic upgrade head on clean/current test DB path where available.
+- `python scripts/verify_workspace.py`.
+- Webapp type/build after React changes.
+- Browser check on `https://192.168.100.17:9443/admin` for `/app/admin/service-catalog`, `/app/admin/policy-health` and `/app/help`.
+- Agent GUI changes verified by unit/helper tests; no Protocol V3 change planned.
+- Full/default gate before production release claim.
 
 ## Verification Log
 
-- Targeted P0 tests before requester-boundary hook: `python -m pytest server\tests\test_ticket_status_contract_no_db.py server\tests\test_ticket_create_contracts.py server\tests\test_ticket_device_binding.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 75 passed.
-- Full server non-manual suite initially exposed legacy direct-ORM `Ticket` inserts without `requester_id`; after adding the model boundary fallback, representative failures passed: `python -m pytest server\tests\test_ticket_requester_boundary_no_db.py server\tests\test_admin_tech_api.py::test_tech_observer_search_correlates_by_operation_id server\tests\test_diagnostic_layer.py::test_empty_diagnostics_overview_is_unknown server\tests\test_trace_overlay_api.py::test_trace_overlay_marks_orphaned_tool_dispatch_as_error_signature -q --tb=short` -> 6 passed.
-- Full server non-manual retry initially exposed a test harness isolation bug: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 861 passed, 2 failed in `server/tests/test_modules_workbench_api.py` because `test_agent` cleared server `modules.*` from `sys.modules`; the live-test route held the old handler function while `patch("modules.handlers.send_ws_command")` patched a new import.
-- Harness fix verification: `python -m pytest server\tests\test_cancel_operations.py server\tests\test_modules_workbench_api.py::test_module_live_test_records_windows_pass_and_unblocks_preferred server\tests\test_modules_workbench_api.py::test_module_live_test_writes_observer_trace_for_selected_agent -q --tb=short` -> 7 passed; broader reproducer -> 64 passed; `python -m pytest server\tests\test_modules_workbench_api.py -q --tb=short` -> 19 passed; full non-manual suite -> `863 passed, 12 warnings`.
-- Final targeted P0 tests after requester-boundary hook: `python -m pytest server\tests\test_ticket_status_contract_no_db.py server\tests\test_ticket_status_usage_no_db.py server\tests\test_ticket_requester_boundary_no_db.py server\tests\test_ticket_create_contracts.py server\tests\test_ticket_device_binding.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 78 passed.
-- Frontend type/build: `pnpm --dir webapp exec tsc --noEmit` and `pnpm --dir webapp run build` passed.
-- Project verification: `python scripts\verify_workspace.py` -> passed after final changes.
-- Migration sanity: `python -m alembic -c alembic.ini heads` from `server/` -> `081 (head)`.
-- Static guards after final changes: `rg -n -U "except Exception:\s*\r?\n\s*pass" server\tickets` returned no matches; `rg -n "triaged" server webapp\src` showed only legacy docs/migrations/tests/status contract occurrences.
+- Passed: `python -m pytest server/tests/test_service_catalog_contract_no_db.py -q`.
+- Passed: `python -m pytest server/tests/test_service_catalog_repo.py server/tests/test_service_catalog_api.py -q --tb=short`.
+- Passed: `python -m pytest server/tests/test_service_catalog_repo.py -q --tb=short` after adding policy-ref/approval publication gate coverage.
+- Passed: `python -m pytest server/tests/test_reports_service_catalog.py -q --tb=short`.
+- Passed: `python -m pytest server/tests/test_policy_health_service_catalog.py server/tests/test_policy_health_api.py -q --tb=short`.
+- Passed: `python -m pytest server/tests/test_ticket_create_service_catalog.py -q --tb=short`.
+- Passed: `python -m pytest pc_agent/tests/test_ticket_api_client_service_catalog.py -q`.
+- Passed: `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q`.
+- Passed: `python -m pytest server/tests/test_service_catalog_contract_no_db.py server/tests/test_service_catalog_repo.py server/tests/test_service_catalog_api.py server/tests/test_reports_service_catalog.py server/tests/test_policy_health_service_catalog.py server/tests/test_ticket_create_service_catalog.py -q --tb=short` (11 passed).
+- Passed: `python -m pytest server/tests/test_ticket_status_usage_no_db.py server/tests/test_public_queue_privacy.py server/tests/test_workflow_side_effect_observability.py server/tests/test_policy_health_service.py server/tests/test_policy_health_api.py server/tests/test_ticket_create_contracts.py -q --tb=short` (32 passed).
+- Passed: `python -m pytest server/tests/test_form_process_preview.py server/tests/test_form_business_validation.py server/tests/test_helpdesk_policy_registry.py -q --tb=short` (44 passed).
+- Passed: `python -m pytest pc_agent/tests/test_ticket_api_client_service_catalog.py pc_agent/tests/test_chat_panel_helpers.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` (131 passed).
+- Passed: `python -m pytest pc_agent/tests -m "not manual" -q --tb=short` (303 passed, 4 deselected).
+- Passed: `python -m pytest server/tests -m "not manual" -q --tb=short` (881 passed, 12 warnings).
+- Passed: `pnpm --dir webapp build`.
+- Passed: `python -m alembic heads` from `server` reports `082 (head)`.
+- Passed: final `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py` and `python scripts/build_context_index.py --force` after docs/navigation updates.
+- Pending: remote/browser signoff after deploy.
 
 ## Rollback Notes
 
-- Migration rollback can drop newly added constraints/indexes and make `requester_id` nullable again. It intentionally should not convert canonical statuses back to `triaged`.
-- Public queue privacy is forward-only at the API contract level; clients must use `ticket_code`, public position/status and queue code instead of internal ids.
-- Side-effect auditing is additive: the new `workflow_side_effect_failed` events can be ignored by old consumers.
+- Catalog rollout is additive. Rollback can retire catalog entries and keep legacy direct `request_template_key` / `form_key` create paths active.
+- DB downgrade removes catalog tables and explicit ticket enrichment columns but does not touch registry services, request templates, ticket types or existing P0 invariants.
+- If catalog API is unavailable, requester/agent flows must continue through the legacy request-form pack path.
 
 ## Known Risks
 
-- Historical docs and migrations will still contain `triaged` for legacy compatibility; tests must guard production code rather than historical records.
-- Policy-health has broad surface area. The first production implementation should reuse existing resolvers where available and limit conflict detection to practical deterministic checks, then expand.
-- Existing worktree has unrelated untracked `tmp/` diagnostic artifacts; they are out of scope and must not be staged or reverted.
+- The largest risk is semantic drift between CMDB service, legacy numeric `service_id` and new catalog service. The chosen mitigation is explicit P1 field names plus docs/tests around serializer boundaries.
+- Public/requester safe projection must be guarded recursively to avoid leaking raw policy refs, queue IDs or registry internals.
+- Policy inheritance source reporting must stay aligned between create, Policy Health simulation and admin UI.
+
+# P0 Ticket System Contract Hardening
+
+Status: completed and archived as the baseline for P1. Keep this section compact; P1 must not reopen or weaken these contracts.
+
+- Canonical ticket status contract lives in `server/tickets/statuses.py`; `triaged` is legacy input/backfill compatibility only.
+- Migration `081_ticket_contract_hardening` enforces canonical status, non-empty requester identity, SLA-safe priority invariant and deterministic event-order indexes.
+- Public queue unauthenticated responses use a sanitized projection and reject numeric queue probing.
+- Workflow side-effect failures are observable through structured log/audit/metric paths.
+- Policy Health exists at `/api/web/admin/helpdesk/policy-health*` and `/app/admin/policy-health`; simulation is a dry-run over runtime resolvers.
+- Last recorded P0 verification: targeted P0 suite `78 passed`, full server non-manual suite `863 passed, 12 warnings`, webapp type/build passed, `python scripts/verify_workspace.py` passed.
 
 # Diagnostic Capabilities Full Implementation Plan
 

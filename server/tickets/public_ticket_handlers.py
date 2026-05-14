@@ -46,6 +46,7 @@ from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from tickets.request_template_submission import resolve_create_form_submission
+from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
 
@@ -100,6 +101,9 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
     urgency_reason_input = data.get("urgency_reason")
     importance_reason_input = data.get("importance_reason")
     request_template_key = str(data.get("request_template_key") or "").strip()
+    service_code = str(data.get("service_code") or "").strip()
+    offering_code = str(data.get("offering_code") or "").strip()
+    offering_full_code = str(data.get("offering_full_code") or data.get("full_offering_code") or "").strip()
     form_key = str(data.get("form_key") or request_template_key or "").strip()
     pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = str(data.get("form_pack_version") or "").strip() or None
@@ -147,7 +151,23 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
             ticket_repo = TicketEventsRepo(db_session)
             extra_custom_fields: dict[str, Any] | None = None
             template_context: dict[str, Any] = {}
+            catalog_process_fields: dict[str, Any] = {}
             ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
+            catalog_selection = None
+            if service_code or offering_code or offering_full_code or request_template_key:
+                try:
+                    catalog_selection = await ServiceCatalogRuntimeResolver(db_session).resolve_selection(
+                        service_code=service_code or None,
+                        offering_code=offering_code or None,
+                        offering_full_code=offering_full_code or None,
+                        request_template_key=request_template_key or None,
+                        actor_role="requester",
+                    )
+                    if catalog_selection.request_template_key:
+                        request_template_key = catalog_selection.request_template_key
+                        form_key = form_key or request_template_key
+                except ServiceCatalogResolutionError as exc:
+                    return _validation_error(exc.details)
             if form_key:
                 try:
                     validated_submission = await resolve_create_form_submission(
@@ -158,13 +178,21 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                         request_template_key=request_template_key,
                         raw_values=form_payload or {},
                     )
+                    if catalog_selection is not None:
+                        validated_submission = await ServiceCatalogRuntimeResolver(db_session).apply_to_validated_submission(
+                            validated_submission,
+                            catalog_selection,
+                        )
                     validated_submission = await apply_effective_registry_policies(db_session, validated_submission)
                     extra_custom_fields = build_form_custom_fields(validated_submission)
+                    catalog_process_fields = validated_submission.get("catalog_fields") if isinstance(validated_submission.get("catalog_fields"), dict) else {}
                     diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
                     if diagnostic_consent:
                         extra_custom_fields["diagnostic_consent"] = diagnostic_consent
                     ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
                     template_context = validated_submission.get("template_context") or {}
+                    if isinstance(template_context, dict) and isinstance(template_context.get("service_catalog"), dict):
+                        extra_custom_fields["service_catalog"] = template_context["service_catalog"]
                     priority_policy = template_context.get("priority_policy") or {}
                     if priority_policy:
                         normalized_priority = compute_priority_from_policy(
@@ -182,6 +210,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 description=description,
                 status="new",
                 requester_id=requester_id,
+                **catalog_process_fields,
             )
             custom_fields = merge_requester_custom_fields(
                 getattr(ticket, "custom_fields", None),

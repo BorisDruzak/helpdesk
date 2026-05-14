@@ -34,7 +34,10 @@ from ui_gui.chat_panel import (  # noqa: E402
     merge_ticket_stream,
     build_ticket_create_error_message,
     message_visual_role,
+    catalog_offering_for_request_template,
+    enrich_form_with_catalog_selection,
     normalize_ticket_form_pack,
+    normalize_service_catalog,
     prepend_ticket_stream,
     should_apply_ticket_form_pack_update,
     ticket_form_priority_field_keys,
@@ -64,6 +67,78 @@ def test_ticket_matches_query_checks_multiple_fields():
     assert ticket_matches_query(ticket, "abc-42")
     assert ticket_matches_query(ticket, "ivan")
     assert not ticket_matches_query(ticket, "network")
+
+
+def test_service_catalog_normalization_keeps_requester_safe_offerings():
+    catalog = normalize_service_catalog(
+        {
+            "catalog_version": "v1",
+            "services": [
+                {
+                    "service_code": "workplace",
+                    "title": "Рабочее место",
+                    "queue_id": 99,
+                    "offerings": [
+                        {
+                            "offering_code": "laptop_broken",
+                            "full_code": "workplace.laptop_broken",
+                            "title": "Сломался ноутбук",
+                            "request_template_key": "laptop_incident",
+                            "queue_id": 99,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    offering = catalog_offering_for_request_template(catalog, "laptop_incident")
+    assert offering is not None
+    assert offering["service_code"] == "workplace"
+    assert offering["offering_code"] == "laptop_broken"
+    assert "queue_id" not in offering
+
+
+def test_enrich_form_with_catalog_selection_only_for_unambiguous_template():
+    form = {"key": "laptop_incident", "request_template_key": "laptop_incident"}
+    catalog = normalize_service_catalog(
+        {
+            "services": [
+                {
+                    "service_code": "workplace",
+                    "title": "Рабочее место",
+                    "offerings": [
+                        {
+                            "offering_code": "laptop_broken",
+                            "full_code": "workplace.laptop_broken",
+                            "title": "Сломался ноутбук",
+                            "request_template_key": "laptop_incident",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    enriched = enrich_form_with_catalog_selection(form, catalog)
+    assert enriched["service_code"] == "workplace"
+    assert enriched["offering_code"] == "laptop_broken"
+    assert enriched["offering_full_code"] == "workplace.laptop_broken"
+
+    ambiguous_catalog = normalize_service_catalog(
+        {
+            "services": [
+                {
+                    "service_code": "a",
+                    "offerings": [
+                        {"offering_code": "one", "full_code": "a.one", "request_template_key": "laptop_incident"},
+                        {"offering_code": "two", "full_code": "a.two", "request_template_key": "laptop_incident"},
+                    ],
+                }
+            ]
+        }
+    )
+    assert enrich_form_with_catalog_selection(form, ambiguous_catalog) == form
 
 
 def test_message_visual_role_treats_agent_messages_as_outgoing_for_gui():

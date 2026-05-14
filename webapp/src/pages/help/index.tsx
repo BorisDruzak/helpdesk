@@ -10,6 +10,7 @@ import { Select } from "../../components/ui/select";
 import {
   createPublicTicket,
   fetchPublicFormPack,
+  fetchServiceCatalogCurrent,
 } from "../../features/requester/api";
 import type { PublicTicketCreateResult, RequestFormDefinition, RequestFormField } from "../../features/requester/types";
 
@@ -126,6 +127,8 @@ function FieldControl({
 }
 
 export function HelpPage() {
+  const [selectedServiceCode, setSelectedServiceCode] = useState("");
+  const [selectedOfferingFullCode, setSelectedOfferingFullCode] = useState("");
   const [selectedFormKey, setSelectedFormKey] = useState("");
   const [fieldValues, setFieldValues] = useState<FieldValues>({});
   const [displayName, setDisplayName] = useState("");
@@ -145,7 +148,25 @@ export function HelpPage() {
     retry: false,
   });
 
+  const catalogQuery = useQuery({
+    queryKey: ["service-catalog-current"],
+    queryFn: fetchServiceCatalogCurrent,
+    retry: false,
+  });
+
   const forms = formsQuery.data?.forms ?? [];
+  const services = catalogQuery.data?.services ?? [];
+  const selectedService = useMemo(
+    () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
+    [selectedServiceCode, services],
+  );
+  const selectedOffering = useMemo(
+    () =>
+      selectedService?.offerings.find((offering) => offering.full_code === selectedOfferingFullCode) ??
+      selectedService?.offerings[0] ??
+      null,
+    [selectedOfferingFullCode, selectedService],
+  );
   const selectedForm = useMemo(
     () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
     [forms, selectedFormKey],
@@ -154,6 +175,24 @@ export function HelpPage() {
     () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
     [fieldValues, selectedForm],
   );
+
+  useEffect(() => {
+    if (!selectedServiceCode && services[0]) {
+      setSelectedServiceCode(services[0].service_code);
+    }
+  }, [selectedServiceCode, services]);
+
+  useEffect(() => {
+    if (selectedService?.offerings[0] && !selectedOfferingFullCode) {
+      setSelectedOfferingFullCode(selectedService.offerings[0].full_code);
+    }
+  }, [selectedOfferingFullCode, selectedService]);
+
+  useEffect(() => {
+    if (selectedOffering?.request_template_key) {
+      setSelectedFormKey(selectedOffering.request_template_key);
+    }
+  }, [selectedOffering?.request_template_key]);
 
   useEffect(() => {
     if (!selectedFormKey && forms[0]) {
@@ -199,6 +238,10 @@ export function HelpPage() {
               form_pack_version: formsQuery.data.version,
               form_payload: formPayload,
               ticket_type: selectedForm.request_kind || selectedForm.key,
+              request_template_key: selectedOffering?.request_template_key ?? selectedForm.key,
+              service_code: selectedService?.service_code,
+              offering_code: selectedOffering?.offering_code,
+              offering_full_code: selectedOffering?.full_code,
             }
           : {}),
       });
@@ -279,10 +322,70 @@ export function HelpPage() {
                 </div>
               ) : null}
 
+              {catalogQuery.isLoading ? (
+                <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+                  Загружаем каталог услуг...
+                </div>
+              ) : null}
+
+              {services.length ? (
+                <div className="grid gap-3">
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    <span>Услуга</span>
+                    <Select
+                      onChange={(event) => {
+                        const nextCode = event.currentTarget.value;
+                        setSelectedServiceCode(nextCode);
+                        const nextService = services.find((service) => service.service_code === nextCode);
+                        setSelectedOfferingFullCode(nextService?.offerings[0]?.full_code ?? "");
+                      }}
+                      value={selectedService?.service_code ?? ""}
+                    >
+                      {services.map((service) => (
+                        <option key={service.service_code} value={service.service_code}>
+                          {service.title || service.service_code}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  {selectedService?.offerings.length ? (
+                    <label className="grid gap-2 text-sm font-medium text-slate-700">
+                      <span>Тип обращения</span>
+                      <Select
+                        onChange={(event) => setSelectedOfferingFullCode(event.currentTarget.value)}
+                        value={selectedOffering?.full_code ?? ""}
+                      >
+                        {selectedService.offerings.map((offering) => (
+                          <option key={offering.full_code} value={offering.full_code}>
+                            {offering.title || offering.offering_code}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  ) : null}
+                  {selectedOffering ? (
+                    <div className="rounded-[1rem] border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-950">{selectedOffering.title}</p>
+                      {selectedOffering.description ? <p className="mt-1">{selectedOffering.description}</p> : null}
+                      <p className="mt-2 text-xs text-slate-600">
+                        {[
+                          selectedOffering.expected_response ? `Ответ: ${selectedOffering.expected_response}` : null,
+                          selectedOffering.expected_resolution ? `Решение: ${selectedOffering.expected_resolution}` : null,
+                          selectedOffering.approval_required ? "Потребуется согласование" : null,
+                          selectedOffering.diagnostic_consent_required ? "Потребуется согласие на диагностику" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Маршрут и сроки будут рассчитаны безопасным предпросмотром процесса."}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               {forms.length ? (
                 <>
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span>Тип обращения</span>
+                    <span>{services.length ? "Форма обращения" : "Тип обращения"}</span>
                     <Select
                       onChange={(event) => setSelectedFormKey(event.currentTarget.value)}
                       value={selectedForm?.key ?? ""}
@@ -351,6 +454,15 @@ export function HelpPage() {
               <CardDescription>Если заявка уже создана, откройте ее по ссылке и коду доступа.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-slate-600">
+              {selectedService || selectedOffering ? (
+                <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3">
+                  <p className="font-semibold text-slate-950">Безопасный preview</p>
+                  <p className="mt-1">
+                    {[selectedService?.title, selectedOffering?.title].filter(Boolean).join(" / ") ||
+                      "Каталог услуг пока не выбран."}
+                  </p>
+                </div>
+              ) : null}
               {ticketId ? (
                 <>
                   <p className="font-semibold text-slate-950">Код доступа: {accessCode}</p>

@@ -74,6 +74,10 @@ export const AdminPolicyHealthPage = lazy(() =>
   import("../../pages/admin/policy-health-page").then((module) => ({ default: module.AdminPolicyHealthPage })),
 );
 
+export const AdminServiceCatalogPage = lazy(() =>
+  import("../../pages/admin/service-catalog-page").then((module) => ({ default: module.AdminServiceCatalogPage })),
+);
+
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );

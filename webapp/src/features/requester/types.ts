@@ -32,6 +32,34 @@ export type RequestFormPack = {
   forms: RequestFormDefinition[];
 };
 
+export type ServiceCatalogOffering = {
+  offering_code: string;
+  full_code: string;
+  title: string;
+  description?: string | null;
+  request_type_label?: string | null;
+  request_template_key?: string | null;
+  expected_response?: string | null;
+  expected_resolution?: string | null;
+  approval_required?: boolean;
+  diagnostic_consent_required?: boolean;
+  requires_attachment?: boolean;
+};
+
+export type ServiceCatalogService = {
+  service_code: string;
+  title: string;
+  description?: string | null;
+  icon?: string | null;
+  offerings: ServiceCatalogOffering[];
+};
+
+export type ServiceCatalogCurrent = {
+  catalog_version: string;
+  services: ServiceCatalogService[];
+  fallback?: unknown;
+};
+
 export type PublicTicket = {
   ticket_id: string;
   ticket_code?: string | null;
@@ -100,6 +128,10 @@ export type PublicTicketCreatePayload = {
   form_pack_version?: string;
   form_payload?: Record<string, unknown>;
   ticket_type?: string;
+  service_code?: string;
+  offering_code?: string;
+  offering_full_code?: string;
+  request_template_key?: string;
 };
 
 export type PublicTicketCreateResult = {

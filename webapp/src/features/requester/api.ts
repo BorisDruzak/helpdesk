@@ -3,6 +3,7 @@ import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
   PublicTicketDetail,
+  ServiceCatalogCurrent,
   RequestFormPack,
 } from "./types";
 
@@ -67,6 +68,14 @@ export async function fetchPublicFormPack(): Promise<RequestFormPack> {
   });
   const payload = await readOk<{ pack: RequestFormPack }>(response, "Не удалось загрузить форму заявки");
   return payload.pack;
+}
+
+export async function fetchServiceCatalogCurrent(): Promise<ServiceCatalogCurrent> {
+  const response = await fetch("/api/service-catalog/current", {
+    cache: "no-store",
+  });
+  const payload = await readOk<ServiceCatalogCurrent>(response, "Не удалось загрузить каталог услуг");
+  return payload;
 }
 
 export async function createPublicTicket(payload: PublicTicketCreatePayload): Promise<PublicTicketCreateResult> {

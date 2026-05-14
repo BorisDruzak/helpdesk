@@ -64,6 +64,23 @@ class Ticket(Base):
     category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     service_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     subcategory_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    catalog_service_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("helpdesk_services.service_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    catalog_offering_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("helpdesk_service_offerings.offering_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    business_criticality: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    reporting_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    service_owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    support_group_code: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     next_action_owner: Mapped[str] = mapped_column(String(30), nullable=False, server_default="support", index=True)
@@ -125,6 +142,10 @@ class Ticket(Base):
         Index("ix_tickets_queue_status_priority", "queue_id", "status", "priority"),
         Index("ix_tickets_assignee_status", "assignee_id", "status"),
         Index("ix_tickets_requester_created", "requester_id", "created_at"),
+        Index("ix_tickets_service_offering_created", "service_code", "offering_code", "created_at"),
+        Index("ix_tickets_catalog_service_created", "catalog_service_id", "created_at"),
+        Index("ix_tickets_catalog_offering_created", "catalog_offering_id", "created_at"),
+        Index("ix_tickets_reporting_category_created", "reporting_category", "created_at"),
         Index("ix_tickets_status_updated", "status", "updated_at"),
         Index("ix_tickets_first_response_due", "first_response_due_at"),
         Index("ix_tickets_resolution_due", "resolution_due_at"),
@@ -2024,6 +2045,181 @@ class RequestTemplate(Base):
         Index("ix_request_templates_active", "template_code", "is_active"),
         Index("ix_request_templates_type_category", "ticket_type", "category_id"),
         Index("ix_request_templates_published_at", "published_at"),
+    )
+
+
+class HelpdeskService(Base):
+    """Requester-facing Service Catalog service."""
+
+    __tablename__ = "helpdesk_services"
+
+    service_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    public_title: Mapped[str] = mapped_column(Text, nullable=False)
+    short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    icon: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="draft")
+    visibility: Mapped[str] = mapped_column(String(24), nullable=False, server_default="internal")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    business_criticality: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_person_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    owner_queue_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    support_group_code: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    registry_service_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_services.service_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    default_ticket_type_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    default_queue_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    default_priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_routing_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_sla_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_ola_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_approval_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_diagnostic_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_closure_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_visibility_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_notification_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_reporting_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reporting_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    retired_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_helpdesk_services_code_safe"),
+        sa.CheckConstraint("lifecycle_status IN ('draft', 'published', 'retired')", name="ck_helpdesk_services_lifecycle"),
+        sa.CheckConstraint("visibility IN ('public', 'internal', 'restricted')", name="ck_helpdesk_services_visibility"),
+        sa.CheckConstraint("business_criticality IN ('low', 'medium', 'high', 'critical')", name="ck_helpdesk_services_criticality"),
+        Index("ix_helpdesk_services_status_visibility", "lifecycle_status", "visibility"),
+        Index("ix_helpdesk_services_registry_service", "registry_service_id"),
+        Index("ix_helpdesk_services_sort", "sort_order", "code"),
+    )
+
+
+class HelpdeskServiceOffering(Base):
+    """Requester-facing offering inside a Service Catalog service."""
+
+    __tablename__ = "helpdesk_service_offerings"
+
+    offering_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("helpdesk_services.service_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
+    full_code: Mapped[str] = mapped_column(String(220), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    public_title: Mapped[str] = mapped_column(Text, nullable=False)
+    short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(24), nullable=False, server_default="draft")
+    visibility: Mapped[str] = mapped_column(String(24), nullable=False, server_default="internal")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    ticket_type_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request_template_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    request_template_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    form_schema_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    default_queue_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        sa.ForeignKey("ticket_queues.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    priority_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    routing_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sla_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ola_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    approval_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    diagnostic_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    closure_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    visibility_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notification_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reporting_policy_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reporting_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    kb_article_refs: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    availability_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    retired_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("service_id", "code", name="uq_helpdesk_service_offerings_service_code"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_helpdesk_offerings_code_safe"),
+        sa.CheckConstraint("full_code ~ '^[a-z0-9][a-z0-9_-]*[.][a-z0-9][a-z0-9_-]*$'", name="ck_helpdesk_offerings_full_code_safe"),
+        sa.CheckConstraint("lifecycle_status IN ('draft', 'published', 'retired')", name="ck_helpdesk_offerings_lifecycle"),
+        sa.CheckConstraint("visibility IN ('public', 'internal', 'restricted')", name="ck_helpdesk_offerings_visibility"),
+        Index("ix_helpdesk_offerings_service_status_visibility", "service_id", "lifecycle_status", "visibility", "sort_order"),
+        Index("ix_helpdesk_offerings_template", "request_template_key"),
+        Index("ix_helpdesk_offerings_full_code", "full_code"),
+    )
+
+
+class HelpdeskServiceCatalogAudit(Base):
+    """Audit trail for Service Catalog publication and governance actions."""
+
+    __tablename__ = "helpdesk_service_catalog_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    object_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_code: Mapped[str] = mapped_column(String(220), nullable=False)
+    action: Mapped[str] = mapped_column(String(60), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    before_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    after_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    issues_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_helpdesk_service_catalog_audit_object", "object_type", "object_code", "created_at"),
     )
 
 

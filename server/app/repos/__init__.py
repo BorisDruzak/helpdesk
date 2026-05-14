@@ -29,6 +29,7 @@ from app.repos.registry_repo import RegistryRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
 from app.repos.diagnostic_provider_config_repo import DiagnosticProviderConfigRepo
+from app.repos.service_catalog_repo import ServiceCatalogRepo
 
 __all__ = [
     "JobEventsRepo",
@@ -59,4 +60,5 @@ __all__ = [
     "RemoteAccessRepo",
     "DiagnosticRepo",
     "DiagnosticProviderConfigRepo",
+    "ServiceCatalogRepo",
 ]

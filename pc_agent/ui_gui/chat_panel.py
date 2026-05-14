@@ -973,6 +973,92 @@ def should_apply_ticket_form_pack_update(current_pack: Any, server_result: Any, 
     return _ticket_form_pack_fingerprint(current_pack) != _ticket_form_pack_fingerprint(next_pack)
 
 
+def _safe_catalog_string(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def normalize_service_catalog(raw_catalog: Any) -> dict[str, Any]:
+    catalog = raw_catalog if isinstance(raw_catalog, dict) else {}
+    normalized = {
+        "catalog_version": str(catalog.get("catalog_version") or catalog.get("version") or "").strip(),
+        "services": [],
+        "fallback": catalog.get("fallback") if isinstance(catalog.get("fallback"), dict) else {},
+    }
+    for raw_service in catalog.get("services") if isinstance(catalog.get("services"), list) else []:
+        if not isinstance(raw_service, dict):
+            continue
+        service_code = _safe_catalog_string(raw_service, "service_code", "code")
+        if not service_code:
+            continue
+        service = {
+            "service_code": service_code,
+            "title": _safe_catalog_string(raw_service, "title", "public_title", "name") or service_code,
+            "description": _safe_catalog_string(raw_service, "description", "short_description"),
+            "icon": _safe_catalog_string(raw_service, "icon"),
+            "offerings": [],
+        }
+        for raw_offering in raw_service.get("offerings") if isinstance(raw_service.get("offerings"), list) else []:
+            if not isinstance(raw_offering, dict):
+                continue
+            offering_code = _safe_catalog_string(raw_offering, "offering_code", "code")
+            full_code = _safe_catalog_string(raw_offering, "full_code")
+            if not full_code and offering_code:
+                full_code = f"{service_code}.{offering_code}"
+            if not offering_code or not full_code:
+                continue
+            offering = {
+                "service_code": service_code,
+                "service_title": service["title"],
+                "offering_code": offering_code,
+                "full_code": full_code,
+                "title": _safe_catalog_string(raw_offering, "title", "public_title", "name") or offering_code,
+                "description": _safe_catalog_string(raw_offering, "description", "short_description"),
+                "request_type_label": _safe_catalog_string(raw_offering, "request_type_label"),
+                "request_template_key": _safe_catalog_string(raw_offering, "request_template_key", "form_key"),
+                "expected_response": _safe_catalog_string(raw_offering, "expected_response"),
+                "expected_resolution": _safe_catalog_string(raw_offering, "expected_resolution"),
+                "approval_required": bool(raw_offering.get("approval_required")),
+                "diagnostic_consent_required": bool(raw_offering.get("diagnostic_consent_required")),
+                "requires_attachment": bool(raw_offering.get("requires_attachment")),
+            }
+            service["offerings"].append(offering)
+        normalized["services"].append(service)
+    return normalized
+
+
+def catalog_offering_for_request_template(catalog: Any, request_template_key: Any) -> Optional[dict[str, Any]]:
+    template_key = str(request_template_key or "").strip()
+    if not template_key:
+        return None
+    normalized = normalize_service_catalog(catalog)
+    matches: list[dict[str, Any]] = []
+    for service in normalized.get("services") or []:
+        for offering in service.get("offerings") or []:
+            if str(offering.get("request_template_key") or "").strip() == template_key:
+                matches.append(dict(offering))
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def enrich_form_with_catalog_selection(form: dict[str, Any], catalog: Any) -> dict[str, Any]:
+    template_key = str(form.get("request_template_key") or form.get("key") or "").strip()
+    offering = catalog_offering_for_request_template(catalog, template_key)
+    if not offering:
+        return form
+    enriched = dict(form)
+    enriched.setdefault("service_code", offering.get("service_code"))
+    enriched.setdefault("offering_code", offering.get("offering_code"))
+    enriched.setdefault("offering_full_code", offering.get("full_code"))
+    enriched.setdefault("catalog_service_title", offering.get("service_title"))
+    enriched.setdefault("catalog_offering_title", offering.get("title"))
+    return enriched
+
+
 def ticket_form_field_visible(field_def: dict[str, Any], values: dict[str, Any]) -> bool:
     rule = field_def.get("visible_when")
     if not isinstance(rule, dict):
@@ -2307,11 +2393,12 @@ class TicketCreateDialog(QDialog):
 
     def _selected_form(self) -> Optional[dict[str, Any]]:
         form_key = self.form_selector.currentData()
+        catalog = self.panel.service_catalog() if hasattr(self.panel, "service_catalog") else {}
         for form in self.panel.ticket_form_pack().get("forms") or []:
             if form.get("key") == form_key:
-                return form
+                return enrich_form_with_catalog_selection(form, catalog)
         forms = self.panel.ticket_form_pack().get("forms") or []
-        return forms[0] if forms else None
+        return enrich_form_with_catalog_selection(forms[0], catalog) if forms else None
 
     def _on_form_changed(self, *_args) -> None:
         form = self._selected_form()
@@ -2409,6 +2496,9 @@ class TicketCreateDialog(QDialog):
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
             "attachment_paths": list(dict.fromkeys(attachment_paths)),
         }
+        for key in ("service_code", "offering_code", "offering_full_code"):
+            if selected_form.get(key):
+                payload[key] = selected_form.get(key)
         if consent_payload is not None:
             payload["diagnostic_consent"] = consent_payload
         return payload
@@ -2943,6 +3033,9 @@ class TicketCreateWizardWidget(QFrame):
                 form_pack_version=payload.get("form_pack_version"),
                 form_payload=payload.get("form_payload") if isinstance(payload.get("form_payload"), dict) else {},
                 ticket_type=payload.get("ticket_type"),
+                service_code=payload.get("service_code"),
+                offering_code=payload.get("offering_code"),
+                offering_full_code=payload.get("offering_full_code"),
             )
         except Exception as exc:
             logger.debug(f"Предпросмотр создания обращения недоступен: {exc}")
@@ -2978,11 +3071,12 @@ class TicketCreateWizardWidget(QFrame):
 
     def _selected_form(self) -> Optional[dict[str, Any]]:
         form_key = self.form_selector.currentData()
+        catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
         for form in self._panel.ticket_form_pack().get("forms") or []:
             if form.get("key") == form_key:
-                return form
+                return enrich_form_with_catalog_selection(form, catalog)
         forms = self._panel.ticket_form_pack().get("forms") or []
-        return forms[0] if forms else None
+        return enrich_form_with_catalog_selection(forms[0], catalog) if forms else None
 
     def _refresh_template_list(self, *_args) -> None:
         if not hasattr(self, "template_list"):
@@ -3379,6 +3473,9 @@ class TicketCreateWizardWidget(QFrame):
             "ticket_type": selected_form.get("ticket_type") or selected_form.get("request_kind") or selected_form.get("key") or "request",
             "attachment_paths": list(dict.fromkeys(attachment_paths)),
         }
+        for key in ("service_code", "offering_code", "offering_full_code"):
+            if selected_form.get(key):
+                payload[key] = selected_form.get(key)
         if consent_payload is not None:
             payload["diagnostic_consent"] = consent_payload
         return payload
@@ -3867,6 +3964,8 @@ class ChatPanel(QWidget):
         self._profiles_data = self._load_profiles()
         self._ticket_form_pack_path = resolve_data_root() / "ticket_form_pack.json"
         self._ticket_form_pack = self._load_ticket_form_pack()
+        self._service_catalog_path = resolve_data_root() / "service_catalog.json"
+        self._service_catalog = self._load_service_catalog()
         self._registry_options_path = resolve_data_root() / "registry_options.json"
         self._registry_options = self._load_registry_options()
 
@@ -4231,6 +4330,29 @@ class ChatPanel(QWidget):
     def ticket_form_pack(self) -> dict[str, Any]:
         return self._ticket_form_pack
 
+    def _load_service_catalog(self) -> dict[str, Any]:
+        try:
+            if self._service_catalog_path.exists():
+                raw = json.loads(self._service_catalog_path.read_text(encoding="utf-8"))
+                return normalize_service_catalog(raw)
+        except Exception as exc:
+            logger.warning(f"Не удалось загрузить каталог услуг: {exc}")
+        return normalize_service_catalog({})
+
+    def _save_service_catalog(self) -> None:
+        self._profiles_dir_ready()
+        self._service_catalog_path.write_text(
+            json.dumps(self._service_catalog, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def service_catalog(self) -> dict[str, Any]:
+        return self._service_catalog if isinstance(self._service_catalog, dict) else normalize_service_catalog({})
+
+    def _apply_service_catalog(self, raw_catalog: Any) -> None:
+        self._service_catalog = normalize_service_catalog(raw_catalog)
+        self._save_service_catalog()
+
     def _load_registry_options(self) -> dict[str, Any]:
         try:
             if self._registry_options_path.exists():
@@ -4275,6 +4397,10 @@ class ChatPanel(QWidget):
                 self._apply_ticket_form_pack(result.get("pack"))
         except Exception as exc:
             logger.info(f"Каталог форм недоступен, используем кеш: {exc}")
+        try:
+            self._apply_service_catalog(await self.ticket_client.get_service_catalog_current())
+        except Exception as exc:
+            logger.info(f"Каталог услуг недоступен, используем кеш: {exc}")
         try:
             self._apply_registry_options(await self.ticket_client.get_registry_options())
         except Exception as exc:
@@ -5834,6 +5960,9 @@ class ChatPanel(QWidget):
                 form_payload=payload.get("form_payload"),
                 diagnostic_consent=payload.get("diagnostic_consent"),
                 ticket_type=payload.get("ticket_type"),
+                service_code=payload.get("service_code"),
+                offering_code=payload.get("offering_code"),
+                offering_full_code=payload.get("offering_full_code"),
                 trace_parent_action_id=action_id,
             )
             if result.get("status") != "ok":

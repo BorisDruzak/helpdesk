@@ -15,6 +15,15 @@
 - Workflow side effects are observable. SLA and required approval side effects are critical; OLA, public-session revocation on `closed`, and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages.
 - Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied. Simulation is dry-run but runtime-equivalent: it overlays effective registry policies, builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers.
 
+## P1 Service Catalog and Runtime Governance (2026-05-14)
+
+- Service Catalog is a process/requester layer, not a replacement for CMDB `registry_services`. Catalog services live in `helpdesk_services`, offerings live in `helpdesk_service_offerings`, and either may link to existing registry data without changing registry snapshots or service picker semantics.
+- Create/preview payloads may include `service_code`, `offering_code` or `offering_full_code` plus `request_template_key`. The runtime resolver maps service/offering to a request template/form, applies catalog policy defaults/overrides, and preserves legacy `form_key` / `request_template_key` flows when no unambiguous offering exists.
+- Policy inheritance order is `system -> ticket_type -> category -> service -> offering -> request_template`; request-template explicit refs remain strongest. Created tickets store explicit catalog/reporting fields plus `custom_fields.service_catalog` snapshot for audit/reporting.
+- Admin APIs live under `/api/web/admin/service-catalog*`; requester/agent-safe catalog projection lives under `/api/service-catalog/*` and never exposes queue ids, raw policies, approver internals, requester ids, device ids or raw custom fields.
+- `/app/admin/service-catalog`, `/app/help` and the Qt agent create wizard consume the same safe catalog. `/api/web/reports/summary` now includes service/offering aggregates from indexed ticket columns.
+- Full contract and rollback notes: [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
+
 ## Источники создания тикета и инварианты
 
 **Канонические источники создания тикета (DB-first):**
@@ -27,6 +36,7 @@
 - Для корректного RBAC (список «мои заявки» для requester) при создании тикета должен быть задан `requester_id`.
 - Сообщения chat_message в payload должны содержать каноническое поле `sender_role` (см. CHAT_MESSAGE_CONTRACT.md).
 - `/api/tickets/create`, WS `chat_raise` и legacy `POST /api/chat_raise` используют общий DB-first create flow в `server/tickets/create_flow.py`: routing, SLA, OLA, auto-assign и initial chat event должны совпадать.
+- Catalog create stores `tickets.service_code`, `tickets.offering_code`, `tickets.request_type`, reporting dimensions and `custom_fields.service_catalog`. Legacy `tickets.service_id` remains category/service hierarchy compatibility and is not overloaded as catalog service identity.
 - Support ticket list включает queue-less active tickets как triage backlog; detail/snapshot для таких тикетов не должен давать `403`.
 - `GET /api/tickets/{ticket_id}` поддерживает `since_event_id` для incremental refresh и reverse pagination через `before_event_id` + `limit`; агентский GUI открывает тикет с tail-page и догружает старую историю вверх без полного reload всей ленты.
 - При переходе в `resolved` support/admin отправляет requester structured `confirmation_request`, если effective `closure_policy.requester_confirmation.required` не отключён; `closed` для таких тикетов разрешён только после подтверждения requester.
