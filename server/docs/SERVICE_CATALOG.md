@@ -34,6 +34,12 @@ P1.1 adds a real requester fallback. Safe catalog projection always exposes `oth
 
 Requester-safe preview is `POST /api/service-catalog/preview`. It wraps the real catalog/form/policy runtime resolvers and returns only requester-safe labels, expected response/resolution text, approval/diagnostic summaries, next action, warnings and blockers. It does not insert tickets, events, approvals, diagnostics, notifications, public sessions or operations.
 
+## Knowledge Integration
+
+P2 Knowledge Platform binds published knowledge to `service_code`, `offering_code` and `request_template_key`. Requester `/app/help` and the local agent wizard call `POST /api/knowledge/suggest` after service/offering selection, show only requester-safe published suggestions, record helpful/not-helpful/deflected feedback, and include safe `knowledge_attempts` when ticket creation continues after failed self-service.
+
+Policy Health includes a knowledge gap warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog remains the process layer; Knowledge Platform owns content lifecycle, versions, chunks/search, graph relations and deflection metrics. See [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
+
 ## Publication Gates
 
 `server/tickets/service_catalog_publication.py` validates service/offering publication:
@@ -81,8 +87,8 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 ## UX
 
 - `/app/admin/service-catalog`: service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
-- `/app/help`: requester chooses service, offering, linked form, runs runtime-backed safe preview before catalog submit, and submits `service_code`, `offering_code`, `offering_full_code` and `request_template_key`. Legacy form-only submit remains available when the catalog is unavailable.
-- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`; it keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` without changing Protocol V3.
+- `/app/help`: requester chooses service, offering, sees requester-safe knowledge suggestions/deflection actions, fills the linked form, runs runtime-backed safe preview before catalog submit, and submits `service_code`, `offering_code`, `offering_full_code`, `request_template_key` and safe `knowledge_attempts` when applicable. Legacy form-only submit remains available when the catalog is unavailable.
+- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`; it fetches requester-safe knowledge suggestions after offering selection, records feedback, keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` and safe `knowledge_attempts` without changing Protocol V3.
 
 ## Reporting
 

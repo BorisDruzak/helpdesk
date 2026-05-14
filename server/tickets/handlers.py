@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.serializers import serialize_datetime_recursive, ticket_to_dict
 from app.db import get_session
+from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
+from knowledge.feedback_service import KnowledgeFeedbackService
 from observer.service import ObserverOverlayService
 from app.repos import (
     ArtifactsRepo,
@@ -905,6 +907,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
     pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = str(data.get("form_pack_version") or "").strip() or None
     form_payload = data.get("form_payload")
+    knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="agent_gui" if auth_context.actor_role == "agent" else "requester_portal")
 
     if auth_context.actor_role == "agent":
         device_id = auth_context.actor_id
@@ -971,6 +974,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
+        extra_custom_fields = attach_knowledge_attempts(extra_custom_fields or {}, knowledge_attempts)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -990,6 +994,20 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             extra_custom_fields=extra_custom_fields,
             state=request.app.get("state"),
         )
+        if knowledge_attempts:
+            ticket = created["ticket"]
+            await KnowledgeFeedbackService(session).record_event(
+                {
+                    "event_type": "ticket_created_after_view",
+                    "ticket_id": created["ticket_id"],
+                    "service_code": service_code or getattr(ticket, "service_code", None),
+                    "offering_code": offering_full_code or offering_code or getattr(ticket, "offering_code", None),
+                    "surface": "agent_gui" if auth_context.actor_role == "agent" else "requester_portal",
+                    "metadata": {"knowledge_attempts": knowledge_attempts},
+                },
+                actor_role=auth_context.actor_role,
+                actor_id=auth_context.actor_id,
+            )
         await session.commit()
         ticket_data = await _ticket_payload(session, created["ticket"])
 
@@ -2576,7 +2594,7 @@ async def handle_ticket_kb_links_post(request: web.Request) -> web.Response:
             created_by=auth_context.actor_id,
         )
         await session.commit()
-        return _json_ok(kb_link=serialize_datetime_recursive(kb_link))
+        return _json_ok(kb_link=_serialize_ticket_kb_link(kb_link))
 
 
 async def handle_ticket_kb_links_list(request: web.Request) -> web.Response:
@@ -2585,7 +2603,7 @@ async def handle_ticket_kb_links_list(request: web.Request) -> web.Response:
         if error:
             return error
         kb_links = await repo.list_kb_links(ticket.ticket_id)
-        return _json_ok(kb_links=serialize_datetime_recursive(kb_links))
+        return _json_ok(kb_links=[_serialize_ticket_kb_link(kb_link) for kb_link in kb_links])
 
 
 async def handle_ticket_kb_links_delete(request: web.Request) -> web.Response:

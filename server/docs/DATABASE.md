@@ -40,6 +40,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Service Catalog (migration 082):** `helpdesk_services`, `helpdesk_service_offerings`, `helpdesk_service_catalog_audit`. Catalog services are requester-facing process objects and may link to CMDB `registry_services`; offerings link services to `request_templates` / form schemas and policy overrides. Indexes cover lifecycle/visibility, offering full code, offering template key and ticket service/offering/reporting dimensions. P1.1 adds no schema migration; baseline catalog data is managed by the idempotent `scripts/seed_service_catalog.py` setup command and should be retired, not deleted, if tickets reference it. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
+**Knowledge Platform (migration 083):** `knowledge_spaces`, `knowledge_items`, `knowledge_item_versions`, `knowledge_chunks`, `knowledge_bindings`, `knowledge_nodes`, `knowledge_edges`, `knowledge_entity_mentions`, `knowledge_feedback_events`, `knowledge_ingestion_jobs`, and `ticket_knowledge_links`. These tables implement universal knowledge spaces/items, lifecycle/versioning, chunked search/retrieval foundation, service/offering/request-template bindings, PostgreSQL graph relations, ingestion job tracking, usage/deflection metrics and normalized ticket knowledge links. Existing `ticket_kb_links` remains compatible. See [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
+
 **Diagnostic Layer (migration 074):** `diagnostic_sessions`, `diagnostic_steps`, `diagnostic_evidence`, `diagnostic_findings`, `diagnostic_bundles`. These tables are ticket-scoped diagnostic state, not ticket workflow state. They normalize existing operations, playbook runs, observer root traces, remote assist sessions, artifacts and manual checks into support-facing evidence/findings/bundles while leaving `tickets.status`, playbook execution and `ToolExecutionService.run_tool` semantics unchanged. Main repo/service entrypoints: `server/app/repos/diagnostics_repo.py` and `server/diagnostics/*`.
 
 **Diagnostic Provider Config (migration 075):** `diagnostic_providers`, `diagnostic_capabilities`, `diagnostic_capability_versions`, `diagnostic_provider_configs`, `diagnostic_provider_credential_refs`, `diagnostic_provider_audit`. Capability descriptors still remain computed from manifests/providers for runtime compatibility, while these tables persist provider configuration lifecycle, credential references, redacted integration config and audit rows for server connectors such as Zabbix. Main entrypoints: `server/app/repos/diagnostic_provider_config_repo.py`, `server/diagnostics/provider_config.py`, and `/api/diagnostics/providers/configs*`.
@@ -199,6 +201,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 | `artifacts_repo.py` | artifacts |
 | `job_events_repo.py` | job_events |
 | `agent_builds_repo.py` | agent_builds |
+| `knowledge_repo.py` | knowledge_spaces, knowledge_items, knowledge_item_versions, knowledge_chunks, knowledge_bindings |
 
 Тикеты создаются/читаются через `TicketEventsRepo` (модель `Ticket` в том же модуле).
 
@@ -243,6 +246,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `038_ticket_queue_rework.py` — snake_case статусы, importance/reasons, ui_users.last_ticket_assigned_at (Stage 10.6)
 - `081_ticket_contract_hardening.py` — canonical ticket status check, legacy `triaged` backfill, `requester_id` NOT NULL/non-empty check, SLA priority check, deterministic ticket event ordering indexes.
 - `082_service_catalog_process_layer.py` — `helpdesk_services`, `helpdesk_service_offerings`, `helpdesk_service_catalog_audit`, explicit ticket catalog/reporting fields and service/offering reporting indexes.
+- `083_knowledge_platform.py` — universal knowledge platform tables: spaces, items, item versions, chunks, bindings, graph nodes/edges/entity mentions, feedback events, ingestion jobs and `ticket_knowledge_links`; keeps existing `ticket_kb_links` compatibility.
 - `039_add_servicedesk_test_queue.py` — upsert очереди `servicedesk_test` (active) для публичной ссылки `/queue/test`
 - `062_access_control_groups.py` — access groups, group permissions, group queue grants and access_audit для `/app/admin/access`
 - `072_support_queue_saved_views.py` — `support_queue_saved_views` for DB-backed support Queue Mode saved views and column presets.

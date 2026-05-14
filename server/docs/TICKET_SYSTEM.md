@@ -24,6 +24,15 @@
 - `/app/admin/service-catalog`, `/app/help` and the Qt agent create wizard consume the same safe catalog. Admin uses structured service/offering editors with Advanced JSON as fallback; requester and agent flows explicitly select service and offering and run safe preview before catalog submit. `/api/web/reports/summary` now includes service/offering aggregates from indexed ticket columns.
 - Full contract and rollback notes: [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
+## P2 Universal Knowledge Platform and Deflection (2026-05-14)
+
+- Knowledge Platform is a universal company knowledge layer, not a ticket-only article table. It introduces knowledge spaces, universal items, versions, chunks, bindings, graph relations, ingestion jobs and feedback/deflection metrics. `article` is one item type alongside FAQ, runbook, policy, known error, workaround, troubleshooting tree, document, glossary and resolution draft.
+- Existing ticket KB compatibility remains: `POST/GET/DELETE /api/tickets/{id}/kb_links` still works and still emits `kb_linked` / `kb_unlinked`. P2 adds normalized knowledge tables and platform suggestions without removing legacy links.
+- Requester `/app/help` calls `POST /api/knowledge/suggest` after service/offering selection, shows only requester-safe published knowledge, records `helpful`, `not_helpful` or `deflected` feedback, and stores safe `knowledge_attempts` when the user creates a ticket after failed self-service.
+- Agent Qt GUI uses HTTP-only `TicketApiClient.get_knowledge_suggestions()` / `record_knowledge_feedback()` and includes `knowledge_attempts` in the existing ticket create payload. Protocol V3 wire contract is unchanged.
+- Support workspace knowledge suggestions merge the legacy provider with P2 platform suggestions. `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft` now creates a persisted draft `knowledge_item` and first version from the resolution passport, inherits service/offering/template bindings, records stale warnings, and never auto-publishes.
+- Policy Health checks Service Catalog knowledge gaps: a published public service/offering with no requester-safe published knowledge binding gets a warning. Full model, API, ACL and rollback contract: [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
+
 ## Источники создания тикета и инварианты
 
 **Канонические источники создания тикета (DB-first):**

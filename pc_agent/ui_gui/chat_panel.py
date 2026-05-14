@@ -2641,6 +2641,9 @@ class TicketCreateWizardWidget(QFrame):
         self._last_created_ticket_id = ""
         self._selected_catalog_service_code = ""
         self._selected_catalog_offering_full_code = ""
+        self._knowledge_suggestions: list[dict[str, Any]] = []
+        self._knowledge_attempts: list[dict[str, Any]] = []
+        self._knowledge_request_seq = 0
         self.setObjectName("ProfileSidebar")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
 
@@ -2762,6 +2765,29 @@ class TicketCreateWizardWidget(QFrame):
         self.selected_template_card.setWordWrap(True)
         self.selected_template_card.setObjectName("ProfileHint")
         self.selected_template_card.hide()
+
+        self.knowledge_group = QGroupBox("Возможно, поможет")
+        knowledge_layout = QVBoxLayout(self.knowledge_group)
+        self.knowledge_summary_label = QLabel("Выберите раздел и тип обращения, чтобы получить инструкции.")
+        self.knowledge_summary_label.setWordWrap(True)
+        self.knowledge_summary_label.setObjectName("ProfileHint")
+        knowledge_layout.addWidget(self.knowledge_summary_label)
+        knowledge_actions = QHBoxLayout()
+        self.knowledge_open_btn = QPushButton("Открыть")
+        self.knowledge_open_btn.setObjectName("SecondaryButton")
+        self.knowledge_open_btn.clicked.connect(lambda: self._record_knowledge_attempt("viewed"))
+        self.knowledge_deflect_btn = QPushButton("Помогло, заявку не создавать")
+        self.knowledge_deflect_btn.setObjectName("SecondaryButton")
+        self.knowledge_deflect_btn.clicked.connect(lambda: self._record_knowledge_attempt("deflected"))
+        self.knowledge_not_helpful_btn = QPushButton("Не помогло")
+        self.knowledge_not_helpful_btn.setObjectName("SecondaryButton")
+        self.knowledge_not_helpful_btn.clicked.connect(lambda: self._record_knowledge_attempt("not_helpful"))
+        knowledge_actions.addWidget(self.knowledge_open_btn)
+        knowledge_actions.addWidget(self.knowledge_deflect_btn)
+        knowledge_actions.addWidget(self.knowledge_not_helpful_btn)
+        knowledge_actions.addStretch(1)
+        knowledge_layout.addLayout(knowledge_actions)
+        group_layout.addWidget(self.knowledge_group)
 
         self.form_selector = QComboBox()
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
@@ -2968,6 +2994,10 @@ class TicketCreateWizardWidget(QFrame):
         self.importance_reason_input.clear()
         self.dynamic_fields_widget.clear_validation_feedback()
         self.priority_dynamic_fields_widget.clear_validation_feedback()
+        self._knowledge_suggestions = []
+        self._knowledge_attempts = []
+        self._knowledge_request_seq += 1
+        self._update_knowledge_panel()
         self._cleanup_temporary_attachments()
         self._attachment_paths.clear()
         self._sync_attachments_list()
@@ -3182,6 +3212,93 @@ class TicketCreateWizardWidget(QFrame):
                 self.preview_warning_label.setVisible(False)
             self._update_creation_preview()
 
+    def _update_knowledge_panel(self) -> None:
+        if not hasattr(self, "knowledge_summary_label"):
+            return
+        if not self._knowledge_suggestions:
+            self.knowledge_summary_label.setText("Инструкции не найдены или сервис знаний временно недоступен. Можно продолжить создание заявки.")
+            for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
+                button.setEnabled(False)
+            return
+        lines: list[str] = []
+        for item in self._knowledge_suggestions[:3]:
+            title = str(item.get("title") or item.get("slug") or item.get("item_id") or "").strip()
+            summary = str(item.get("summary") or item.get("snippet") or "").strip()
+            if title:
+                lines.append(f"{title}: {summary}" if summary else title)
+        self.knowledge_summary_label.setText("\n".join(lines) or "Есть подходящие инструкции.")
+        for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
+            button.setEnabled(True)
+
+    def _schedule_knowledge_suggestions(self) -> None:
+        self._knowledge_request_seq += 1
+        self._knowledge_suggestions = []
+        self._update_knowledge_panel()
+        form = self._selected_form()
+        if not form or not getattr(self._panel, "ticket_client", None):
+            return
+        if not (form.get("service_code") or form.get("offering_code") or form.get("request_template_key")):
+            return
+        self._spawn_gui_task(
+            self._async_refresh_knowledge_suggestions(self._knowledge_request_seq),
+            name="ticket_create.knowledge_suggest",
+            silent_if_no_loop=True,
+        )
+
+    async def _async_refresh_knowledge_suggestions(self, request_seq: int) -> None:
+        try:
+            payload = self._payload()
+            result = await self._panel.ticket_client.get_knowledge_suggestions(
+                service_code=payload.get("service_code"),
+                offering_code=payload.get("offering_full_code") or payload.get("offering_code"),
+                request_template_key=payload.get("request_template_key"),
+                query=payload.get("description") or payload.get("title"),
+                form_payload=payload.get("form_payload") if isinstance(payload.get("form_payload"), dict) else {},
+            )
+        except Exception as exc:
+            logger.debug(f"Knowledge suggestions unavailable: {exc}")
+            return
+        if request_seq != self._knowledge_request_seq or not isinstance(result, dict):
+            return
+        suggestions = result.get("suggestions") if isinstance(result.get("suggestions"), list) else []
+        self._knowledge_suggestions = [dict(item) for item in suggestions if isinstance(item, dict)]
+        self._update_knowledge_panel()
+
+    def _record_knowledge_attempt(self, result: str) -> None:
+        if not self._knowledge_suggestions:
+            return
+        item = self._knowledge_suggestions[0]
+        attempt = {
+            "item_id": str(item.get("item_id") or "").strip(),
+            "version_id": str(item.get("version_id") or "").strip() or None,
+            "result": result,
+            "surface": "agent_gui",
+            "occurred_at": datetime.utcnow().isoformat() + "Z",
+        }
+        if not attempt["item_id"]:
+            return
+        self._knowledge_attempts = [
+            existing
+            for existing in self._knowledge_attempts
+            if not (existing.get("item_id") == attempt["item_id"] and existing.get("result") == result)
+        ]
+        self._knowledge_attempts.append(attempt)
+        self._spawn_gui_task(
+            self._panel.ticket_client.record_knowledge_feedback(
+                item_id=attempt["item_id"],
+                version_id=attempt.get("version_id"),
+                event_type=result,
+                service_code=(self._selected_form() or {}).get("service_code"),
+                offering_code=(self._selected_form() or {}).get("offering_full_code") or (self._selected_form() or {}).get("offering_code"),
+            ),
+            name="ticket_create.knowledge_feedback",
+            silent_if_no_loop=True,
+        )
+        if result == "deflected":
+            self._set_status("Отмечено: инструкция помогла, заявку можно не создавать.", error=False)
+        elif result == "not_helpful":
+            self._set_status("Отмечено: инструкция не помогла. Продолжайте создание заявки.", error=False)
+
     def _catalog_services(self) -> list[dict[str, Any]]:
         catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
         return catalog_services_for_wizard(catalog)
@@ -3384,6 +3501,7 @@ class TicketCreateWizardWidget(QFrame):
         self._update_navigation_state()
         self._update_creation_preview()
         self._schedule_server_creation_preview()
+        self._schedule_knowledge_suggestions()
 
     def _on_form_fields_changed(self) -> None:
         self.dynamic_fields_widget.validate_required_fields(show_feedback=False)
@@ -3682,6 +3800,8 @@ class TicketCreateWizardWidget(QFrame):
                 payload[key] = selected_form.get(key)
         if consent_payload is not None:
             payload["diagnostic_consent"] = consent_payload
+        if self._knowledge_attempts:
+            payload["knowledge_attempts"] = list(self._knowledge_attempts)
         return payload
 
     def _on_submit_clicked(self) -> None:
@@ -6167,6 +6287,7 @@ class ChatPanel(QWidget):
                 service_code=payload.get("service_code"),
                 offering_code=payload.get("offering_code"),
                 offering_full_code=payload.get("offering_full_code"),
+                knowledge_attempts=payload.get("knowledge_attempts"),
                 trace_parent_action_id=action_id,
             )
             if result.get("status") != "ok":

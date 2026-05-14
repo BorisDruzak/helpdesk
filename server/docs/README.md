@@ -866,6 +866,7 @@ SERVER_CAPABILITIES = [
 
 - [DATABASE.md](DATABASE.md) — PostgreSQL: таблицы, назначение, где используются, репозитории, миграции
 - [TICKET_SYSTEM.md](TICKET_SYSTEM.md) — тикетная система: маршрутизация, SLA, workflow, RBAC, уведомления, очереди, UI, календари, retention (этапы 2–12)
+- [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md) — universal knowledge platform: spaces/items/versions/chunks, ACL, search/suggestions, helpdesk deflection, support usage and passport drafts
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — безопасность, аутентификация (токены, handshake, middleware)
 - [PROTOCOL_V3.md](PROTOCOL_V3.md) — требования сервера к Protocol V3 и ссылка на полную спецификацию
 - [Документация агента](../../pc_agent/docs/README.md) — общая документация агента

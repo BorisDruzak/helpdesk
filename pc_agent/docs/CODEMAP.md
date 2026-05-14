@@ -126,6 +126,8 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 | `pc_agent/ui_gui/wait_for_auth_dialog.py` | Диалог ожидания авторизации; читает `connection_request_error.json` и показывает пользователю `TOKEN_LIMIT_EXCEEDED`, когда сервер отказал в выпуске третьего активного токена |
 
 ### 2.6 Конфигурация
+
+P2 Knowledge Platform agent integration is HTTP-only and does not change Protocol V3. `pc_agent/ui_gui/server_api.py` exposes `get_knowledge_suggestions()` and `record_knowledge_feedback()` for `/api/knowledge/suggest|feedback`, and `create_ticket()` accepts safe `knowledge_attempts`. `pc_agent/ui_gui/chat_panel.py` requests requester-safe suggestions after Service Catalog offering selection, records viewed/not-helpful/deflected feedback, includes attempts when ticket creation continues, and falls back to the existing catalog/form flow if the knowledge API is unavailable.
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/config/config_loader.py` | Загрузка настроек |

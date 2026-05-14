@@ -329,6 +329,14 @@ def test_ticket_create_wizard_uses_server_backed_preview():
     assert "server_preview=self._server_creation_preview" in source
 
 
+def test_ticket_create_wizard_uses_knowledge_suggestions_and_attempts():
+    source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
+
+    assert "get_knowledge_suggestions" in source
+    assert "record_knowledge_feedback" in source
+    assert "knowledge_attempts" in source
+
+
 def test_ticket_create_wizard_has_structured_process_preview_panel():
     source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_priority_step)
 

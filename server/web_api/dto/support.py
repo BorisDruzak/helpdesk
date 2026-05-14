@@ -932,6 +932,13 @@ class SupportTicketKnowledgeDraftPayload(BaseModel):
     resolution: str
     repeat_guidance: str
     source_passport_id: int
+    item_id: str | None = None
+    version_id: str | None = None
+    status: str = "draft"
+    item_type: str | None = None
+    edit_url: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    bindings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SupportToolActionResult(BaseModel):

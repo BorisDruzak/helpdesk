@@ -854,6 +854,13 @@ export type SupportTicketKnowledgeDraftPayload = {
   resolution: string;
   repeat_guidance: string;
   source_passport_id: number;
+  item_id?: string | null;
+  version_id?: string | null;
+  status?: string | null;
+  item_type?: string | null;
+  edit_url?: string | null;
+  warnings?: string[];
+  bindings?: Array<Record<string, unknown>>;
 };
 
 export type SupportTicketKnowledgeSuggestionsPayload = {

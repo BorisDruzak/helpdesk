@@ -1,3 +1,107 @@
+# P2 Universal Knowledge Platform + Helpdesk Deflection
+
+Status: implementation complete; verification in progress. P0/P0.1/P1/P1.1 remain baseline contracts and must not be weakened. This phase is cross-cutting / release-control because it adds schema, backend services, web/API surfaces, requester self-service, support workspace knowledge usage, agent GUI knowledge suggestions, docs and verification gates.
+
+Goal: build a universal company knowledge platform, then use it for helpdesk self-service deflection and support knowledge workflows:
+
+`Knowledge Space -> Knowledge Item -> Version -> Chunks/Search -> Bindings/Graph -> Feedback/Metrics -> Helpdesk Deflection`
+
+## Discovery
+
+- Existing helpdesk KB linkage is `ticket_kb_links` through `POST/GET/DELETE /api/tickets/{ticket_id}/kb_links`; it stores `article_ref`, title/source/creator and is used by support suggestions. It must remain compatible.
+- Existing support suggestions are not a platform: `server/tickets/knowledge_provider.py` combines legacy ticket links, a JSON catalog file and similar-ticket search into a support-only payload.
+- Existing support route `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` returns articles/similar tickets/diagnostics for the support workspace. It can become a compatibility wrapper over the P2 suggestion service.
+- Existing passport draft route `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft` currently returns a draft payload only; it does not persist a knowledge item/version, lifecycle state, bindings or review requirement.
+- Ticket resolution passports exist in `ticket_resolution_passports`; evidence and action logs already provide source material for draft-from-passport.
+- Service Catalog is first-class: `helpdesk_services`, `helpdesk_service_offerings`, explicit ticket `service_code`, `offering_code`, `request_type`, `reporting_category` and `custom_fields.service_catalog`.
+- Requester portal `/app/help` is catalog-first and runtime-preview-backed, but it does not call knowledge suggestions or record deflection/failed-article attempts.
+- Agent GUI already has explicit Service -> Offering -> Dynamic form -> Preview -> Submit and HTTP create/preview boundaries, but no knowledge suggestion or feedback calls. No Protocol V3 change is needed.
+- Support workspace `/app/tickets/:ticketId` already has a Knowledge right tab and a passport draft action, but it is tied to the legacy support suggestion payload.
+- Admin webapp has an old `/app/knowledge` route/name in navigation, but there is no universal `/app/admin/knowledge` management surface for spaces/items/versions/graph/ingestion/metrics.
+- No first-class knowledge tables exist yet: no spaces, universal items, item versions, chunks, bindings, graph nodes/edges, ingestion jobs or feedback events.
+- Context index reported stale state for `PLANS.md`; rebuild after docs/code updates with `python scripts/build_context_index.py --force`.
+
+## Design Decisions
+
+- `knowledge_item` is the universal object. `article` is one `item_type`, not the whole model.
+- PostgreSQL remains the foundation for P2. Add relational graph tables and chunk/search tables; do not add mandatory Neo4j, Elastic or OpenSearch.
+- Search starts with PostgreSQL-compatible filters plus LIKE/ILIKE/full-text-ready chunk data. Vector/embedding fields remain nullable metadata/future-ready only if the project already supports them.
+- ACL is enforced before search results, suggestions, graph expansion and any retrieval/RAG foundation. Requester/agent projections only return published requester-safe knowledge.
+- Keep `ticket_kb_links` endpoints and events compatible. If normalized ticket-knowledge links are added, legacy endpoints remain wrappers.
+- Imported/manual text and markdown ingestion creates draft items/versions/chunks and requires review. No imported document auto-publishes.
+- Passport-to-knowledge creates a draft item/version with source refs, service/offering bindings and stale warnings; it never auto-publishes and must not invent facts outside passport/evidence data.
+- Agent integration uses HTTP API methods on `TicketApiClient` for suggestions/feedback and sends `knowledge_attempts` in the existing create payload. Protocol V3 is unchanged.
+- Requester/self-service deflection records feedback and can avoid ticket creation only after explicit user action. Urgent or fallback ticket creation remains unblocked.
+
+## Implementation Phases
+
+- [x] Run mandatory intake/context commands and read canonical docs.
+- [x] Perform discovery of `kb_links`, passport draft, service catalog, requester help, support workspace and agent GUI boundaries.
+- [x] Add TDD red tests for knowledge contracts, repo/lifecycle, visibility, search, suggestions, feedback, graph, ingestion, passport draft, API, metrics and compatibility.
+- [x] Add Alembic revision `083` for knowledge spaces/items/versions/chunks/bindings/graph/feedback/ingestion and normalized ticket knowledge links.
+- [x] Implement backend contracts, repository, visibility, serializers, search, suggestions, feedback, graph, ingestion, passport draft and metrics services.
+- [x] Add admin/support/requester API endpoints and route registration with RBAC and safe projections.
+- [x] Integrate requester `/app/help` suggestions, deflection, not-helpful continuation and `knowledge_attempts`.
+- [x] Extend agent GUI/API client with safe suggestions, feedback and `knowledge_attempts` fallback behavior.
+- [x] Add `/app/admin/knowledge` and strengthen support workspace Knowledge panel/passport draft flow.
+- [x] Integrate Service Catalog/Policy Health knowledge gap indicators.
+- [x] Update docs, CODEMAP, navigation catalog and context index.
+- [ ] Run targeted tests, P0/P1 regressions, agent tests, webapp build/typecheck, workspace verification, full suite and browser signoff.
+
+## API / UI Contracts
+
+- Admin/support management:
+  - `/api/web/knowledge/spaces*`
+  - `/api/web/knowledge/items*`
+  - `/api/web/knowledge/graph/*`
+  - `/api/web/knowledge/ingestion/jobs*`
+  - `/api/web/knowledge/metrics/*`
+- Shared safe knowledge:
+  - `POST /api/knowledge/search`
+  - `POST /api/knowledge/suggest`
+  - `POST /api/knowledge/feedback`
+- Ticket integration:
+  - Existing `/api/tickets/{ticket_id}/kb_links` stays compatible.
+  - Support knowledge panel can use `/api/web/support/tickets/{ticket_id}/knowledge*` wrappers.
+  - `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft` creates a persisted draft item/version and returns item/version ids.
+- Web routes:
+  - Add `/app/admin/knowledge`.
+  - Extend `/app/help` with requester-safe suggestions/deflection.
+  - Extend `/app/tickets/:ticketId` Knowledge tab with user-tried, linked, suggested and draft actions.
+- Agent:
+  - Add `TicketApiClient.get_knowledge_suggestions(...)` and `record_knowledge_feedback(...)`.
+  - Create/preview payloads may include `knowledge_attempts`.
+
+## Security / Privacy
+
+- Requester/agent endpoints must not return internal bodies, support/admin/security items, raw chunks for restricted items, source ticket/passport ids, requester/device ids, raw custom fields, internal graph edges, internal queue/policy ids, trace/operation ids or extraction/confidence internals unless explicitly safe.
+- Support sees support-internal plus requester-safe knowledge. Admin sees all except any future security-restricted role split. Auditor is read-only.
+- Validation errors and ingestion errors are redacted.
+- Mutation endpoints audit actor/action where practical.
+
+## Verification Plan
+
+- Targeted server tests: `test_knowledge_contract_no_db.py`, `test_knowledge_migration.py`, `test_knowledge_repo.py`, `test_knowledge_visibility.py`, `test_knowledge_search.py`, `test_knowledge_suggestions.py`, `test_knowledge_feedback.py`, `test_knowledge_graph.py`, `test_knowledge_ingestion.py`, `test_knowledge_passport_draft.py`, `test_knowledge_api.py`, `test_ticket_knowledge_links_compat.py`, `test_knowledge_metrics.py`.
+- Regressions: P0/P0.1 ticket contracts/public queue/side effects/policy health/create contracts and P1/P1.1 service catalog fallback/preview/publication/API/create/reports.
+- Agent tests: new knowledge suggestion tests plus service catalog wizard/chat helper/attachment regressions.
+- Static and workspace: compileall, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`.
+- Webapp: `pnpm --dir webapp build`, typecheck/lint if configured.
+- Browser signoff: `/app/admin/knowledge`, `/app/help`, `/app/tickets/:ticketId`, security direct-id denial, and agent GUI helper/manual limitation notes.
+
+## Verification Log
+
+- Targeted P2 backend tests passed during implementation: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py -q --tb=short` -> 24 passed.
+- Policy Health catalog knowledge gap focused test: `python -m pytest server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 2 passed.
+- Agent focused tests: `python -m pytest pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_ticket_api_client_service_catalog.py -q --tb=short` -> 126 passed.
+- Webapp build passed during implementation: `pnpm --dir webapp build`.
+- Pending final gate: fresh targeted regressions, compile/static checks, context index rebuild, full/non-manual suites where feasible, remote deploy/browser signoff.
+
+## Rollback Notes
+
+- Schema rollback should drop P2 knowledge tables only after ensuring no tickets depend on normalized ticket-knowledge links. Existing `ticket_kb_links` remains the compatibility fallback.
+- Operational rollback can disable requester/agent suggestions and keep Service Catalog ticket creation intact.
+- Knowledge items should be archived/retired rather than deleted once linked to tickets, feedback or passport drafts.
+
 # P1.1 Catalog UX & Governance Hardening
 
 Status: completed for release candidate. P0/P0.1 is the non-negotiable baseline and remains archived below; P1 Service Catalog is the foundation commit, not the final production UX.

@@ -127,6 +127,14 @@ export const appNavigation: AppNavItem[] = [
     permission: "admin.forms.view",
   },
   {
+    label: "Knowledge",
+    description: "Spaces, items, versions, ACL и deflection",
+    icon: BookOpen,
+    section: "admin",
+    to: "/app/admin/knowledge",
+    permission: "admin.forms.view",
+  },
+  {
     label: "Service Catalog",
     description: "Услуги, offerings и publication gates",
     icon: FolderKanban,

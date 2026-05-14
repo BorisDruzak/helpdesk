@@ -3,6 +3,7 @@ import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
   PublicTicketDetail,
+  KnowledgeSuggestResult,
   ServiceCatalogPreviewPayload,
   ServiceCatalogSafePreview,
   ServiceCatalogCurrent,
@@ -98,6 +99,45 @@ export async function previewServiceCatalogRequest(
     body: JSON.stringify(payload),
   });
   return readOk<ServiceCatalogSafePreview>(response, "Не удалось построить безопасный preview обращения");
+}
+
+export async function suggestKnowledge(payload: {
+  service_code?: string;
+  offering_code?: string;
+  request_template_key?: string;
+  query?: string;
+  form_payload?: Record<string, unknown>;
+  surface: "requester_portal" | "agent_gui" | "support_workspace";
+}): Promise<KnowledgeSuggestResult> {
+  const response = await fetch("/api/knowledge/suggest", {
+    method: "POST",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  const result = await readOk<KnowledgeSuggestResult>(response, "Не удалось подобрать инструкции");
+  return {
+    suggestions: result.suggestions ?? [],
+    known_errors: result.known_errors ?? [],
+    workarounds: result.workarounds ?? [],
+  };
+}
+
+export async function recordKnowledgeFeedback(payload: {
+  item_id?: string | null;
+  version_id?: string | null;
+  event_type: "suggested" | "viewed" | "helpful" | "not_helpful" | "deflected" | "ticket_created_after_view";
+  service_code?: string;
+  offering_code?: string;
+  request_template_key?: string;
+  surface: "requester_portal" | "agent_gui" | "support_workspace";
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const response = await fetch("/api/knowledge/feedback", {
+    method: "POST",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  await readOk<unknown>(response, "Не удалось сохранить оценку знания");
 }
 
 export async function authorizePublicTicket(

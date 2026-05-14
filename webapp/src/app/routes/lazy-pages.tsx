@@ -78,6 +78,10 @@ export const AdminServiceCatalogPage = lazy(() =>
   import("../../pages/admin/service-catalog-page").then((module) => ({ default: module.AdminServiceCatalogPage })),
 );
 
+export const AdminKnowledgePage = lazy(() =>
+  import("../../pages/admin/knowledge-page").then((module) => ({ default: module.AdminKnowledgePage })),
+);
+
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );

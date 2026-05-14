@@ -12,10 +12,14 @@ import {
   fetchPublicFormPack,
   fetchServiceCatalogCurrent,
   previewServiceCatalogRequest,
+  recordKnowledgeFeedback,
+  suggestKnowledge,
 } from "../../features/requester/api";
 import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
+  KnowledgeAttempt,
+  KnowledgeSuggestionItem,
   RequestFormDefinition,
   RequestFormField,
   ServiceCatalogPreviewPayload,
@@ -149,6 +153,8 @@ export function HelpPage() {
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [createdTicket, setCreatedTicket] = useState<PublicTicketCreateResult | null>(null);
   const [previewKey, setPreviewKey] = useState("");
+  const [knowledgeAttempts, setKnowledgeAttempts] = useState<KnowledgeAttempt[]>([]);
+  const [openedKnowledge, setOpenedKnowledge] = useState<KnowledgeSuggestionItem | null>(null);
 
   const formsQuery = useQuery({
     queryKey: ["requester-form-pack"],
@@ -183,13 +189,14 @@ export function HelpPage() {
     () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
     [fieldValues, selectedForm],
   );
+  const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const currentPreviewKey = useMemo(
     () =>
       JSON.stringify({
         service: selectedService?.service_code,
         offering: selectedOffering?.full_code,
         form: selectedForm?.key,
-        payload: collectVisiblePayload(selectedForm, fieldValues),
+        payload: visiblePayload,
         description,
         displayName,
         fullName,
@@ -203,7 +210,7 @@ export function HelpPage() {
       building,
       description,
       displayName,
-      fieldValues,
+      visiblePayload,
       fullName,
       importance,
       phone,
@@ -214,6 +221,53 @@ export function HelpPage() {
       urgency,
     ],
   );
+
+  const knowledgeQuery = useQuery({
+    queryKey: [
+      "knowledge-suggest",
+      selectedService?.service_code,
+      selectedOffering?.full_code,
+      selectedForm?.key,
+      description.slice(0, 240),
+      visiblePayload,
+    ],
+    queryFn: () =>
+      suggestKnowledge({
+        service_code: selectedService?.service_code,
+        offering_code: selectedOffering?.full_code,
+        request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
+        query: description || selectedOffering?.title || selectedService?.title || "",
+        form_payload: visiblePayload,
+        surface: "requester_portal",
+      }),
+    enabled: Boolean(selectedOffering),
+    retry: false,
+  });
+
+  function appendKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
+    const attempt: KnowledgeAttempt = {
+      item_id: item.item_id,
+      version_id: item.version_id ?? null,
+      result,
+      surface: "requester_portal",
+      timestamp: new Date().toISOString(),
+    };
+    setKnowledgeAttempts((current) => [...current.filter((entry) => entry.item_id !== item.item_id || entry.result !== result), attempt]);
+    return attempt;
+  }
+
+  function recordKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
+    appendKnowledgeAttempt(item, result);
+    void recordKnowledgeFeedback({
+      item_id: item.item_id,
+      version_id: item.version_id,
+      event_type: result === "deflected" ? "deflected" : result === "not_helpful" ? "not_helpful" : result === "helpful" ? "helpful" : "viewed",
+      service_code: selectedService?.service_code,
+      offering_code: selectedOffering?.full_code,
+      request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
+      surface: "requester_portal",
+    });
+  }
 
   function buildCreatePayload(): PublicTicketCreatePayload {
     if (!displayName.trim()) {
@@ -226,7 +280,7 @@ export function HelpPage() {
     if (missing.length) {
       throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
     }
-    const formPayload = collectVisiblePayload(selectedForm, fieldValues);
+    const formPayload = visiblePayload;
     return {
       title: selectedForm ? `Заявка: ${selectedForm.title || selectedForm.key}` : "Заявка с веб-страницы",
       description: description.trim(),
@@ -252,6 +306,7 @@ export function HelpPage() {
             service_code: selectedService?.service_code,
             offering_code: selectedOffering?.offering_code,
             offering_full_code: selectedOffering?.full_code,
+            knowledge_attempts: knowledgeAttempts,
           }
         : {}),
     };
@@ -472,6 +527,73 @@ export function HelpPage() {
                           .filter(Boolean)
                           .join(" · ") || "Маршрут и сроки будут рассчитаны безопасным предпросмотром процесса."}
                       </p>
+                    </div>
+                  ) : null}
+                  {selectedOffering ? (
+                    <div className="rounded-[1rem] border border-border bg-white px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">Возможно, поможет</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Инструкции подобраны по выбранной услуге и типу обращения. Можно продолжить создание заявки в любой момент.
+                          </p>
+                        </div>
+                        {knowledgeQuery.isFetching ? <span className="text-xs text-slate-500">Ищем...</span> : null}
+                      </div>
+                      {knowledgeQuery.isError ? (
+                        <p className="mt-3 text-xs text-amber-700">Инструкции временно недоступны, заявка создается обычным способом.</p>
+                      ) : null}
+                      {(knowledgeQuery.data?.suggestions ?? []).length ? (
+                        <div className="mt-3 grid gap-2">
+                          {(knowledgeQuery.data?.suggestions ?? []).slice(0, 3).map((item) => (
+                            <div className="rounded-xl border border-slate-200 bg-surface-subtle px-3 py-2" key={item.item_id}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-950">{item.title}</p>
+                                  {item.summary ? <p className="mt-1 text-xs text-slate-600">{item.summary}</p> : null}
+                                  {openedKnowledge?.item_id === item.item_id && item.snippet ? (
+                                    <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">{item.snippet}</p>
+                                  ) : null}
+                                </div>
+                                <Button
+                                  onClick={() => {
+                                    setOpenedKnowledge((current) => (current?.item_id === item.item_id ? null : item));
+                                    recordKnowledgeAttempt(item, "viewed");
+                                  }}
+                                  size="sm"
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  {openedKnowledge?.item_id === item.item_id ? "Скрыть" : "Открыть"}
+                                </Button>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button
+                                  onClick={() => {
+                                    recordKnowledgeAttempt(item, "deflected");
+                                    setFeedback({ tone: "success", text: "Отмечено: инструкция помогла, заявка не создавалась." });
+                                  }}
+                                  size="sm"
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  Помогло
+                                </Button>
+                                <Button
+                                  onClick={() => recordKnowledgeAttempt(item, "not_helpful")}
+                                  size="sm"
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  Не помогло
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : !knowledgeQuery.isFetching ? (
+                        <p className="mt-3 text-xs text-slate-500">Подходящих опубликованных инструкций пока нет.</p>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

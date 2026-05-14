@@ -91,6 +91,33 @@ export type ServiceCatalogSafePreview = {
   would_create_ticket: false;
 };
 
+export type KnowledgeSuggestionItem = {
+  item_id: string;
+  slug: string;
+  type: string;
+  title: string;
+  summary?: string | null;
+  snippet?: string | null;
+  version_id?: string | null;
+  reason?: string | null;
+  visibility?: string | null;
+  actions?: string[];
+};
+
+export type KnowledgeSuggestResult = {
+  suggestions: KnowledgeSuggestionItem[];
+  known_errors?: KnowledgeSuggestionItem[];
+  workarounds?: KnowledgeSuggestionItem[];
+};
+
+export type KnowledgeAttempt = {
+  item_id: string;
+  version_id?: string | null;
+  result: "viewed" | "helpful" | "not_helpful" | "deflected" | "skipped";
+  surface: "requester_portal" | "agent_gui" | "support_workspace";
+  timestamp: string;
+};
+
 export type PublicTicket = {
   ticket_id: string;
   ticket_code?: string | null;
@@ -163,6 +190,7 @@ export type PublicTicketCreatePayload = {
   offering_code?: string;
   offering_full_code?: string;
   request_template_key?: string;
+  knowledge_attempts?: KnowledgeAttempt[];
 };
 
 export type PublicTicketCreateResult = {

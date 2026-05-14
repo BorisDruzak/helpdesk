@@ -56,6 +56,18 @@ descriptions, deadlines and approval/diagnostic hints; queue ids, raw policy
 JSON, approver internals and registry ids are not exposed in the agent UI. This
 does not change Protocol V3.
 
+## Knowledge suggestions in create-ticket flow
+
+P2 adds requester-safe knowledge suggestions to the same local GUI flow. After a
+Service Catalog offering is selected, `TicketApiClient.get_knowledge_suggestions()`
+calls `POST /api/knowledge/suggest` with service/offering/template context and
+surface `agent_gui`. The wizard displays safe titles/snippets, can record
+viewed/not-helpful/deflected feedback through `POST /api/knowledge/feedback`,
+and includes sanitized `knowledge_attempts` in ticket creation when the requester
+continues after failed self-service. If the knowledge endpoint is unavailable,
+the GUI continues with the existing form/preview/submit flow. This is HTTP-only
+and does not change Protocol V3.
+
 ## Runtime logs
 
 - Канонический helper: `pc_agent/core/runtime_logging.py`

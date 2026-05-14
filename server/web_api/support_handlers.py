@@ -77,6 +77,8 @@ from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
 from tickets.evidence_service import TicketEvidenceService
 from tickets.knowledge_provider import build_knowledge_suggestions
+from knowledge.suggestion_service import KnowledgeSuggestionService
+from knowledge.passport_draft_service import KnowledgePassportDraftService
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
@@ -3113,6 +3115,28 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
     ticket_id = str(getattr(ticket, "ticket_id", "") or "")
     kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
     suggestions = await build_knowledge_suggestions(session, ticket, kb_links)
+    custom_fields = getattr(ticket, "custom_fields", None) if isinstance(getattr(ticket, "custom_fields", None), dict) else {}
+    request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
+    p2_suggestions = await KnowledgeSuggestionService(session).suggest(
+        {
+            "service_code": getattr(ticket, "service_code", None),
+            "offering_code": getattr(ticket, "offering_code", None),
+            "request_template_key": request_template.get("key") or request_template.get("template_code"),
+            "ticket_type": getattr(ticket, "ticket_type", None),
+            "query": f"{getattr(ticket, 'title', '')} {getattr(ticket, 'description', '')}".strip(),
+            "surface": "support_workspace",
+        },
+        actor_role="support",
+    )
+    p2_articles = [
+        SupportKnowledgeArticle(
+            id=str(item.get("slug") or item.get("item_id") or ""),
+            title=str(item.get("title") or item.get("slug") or ""),
+            url=f"/app/knowledge?item={item.get('slug') or item.get('item_id')}",
+        )
+        for item in p2_suggestions.get("suggestions", [])
+        if isinstance(item, dict) and (item.get("slug") or item.get("item_id")) and item.get("title")
+    ]
     return SupportTicketKnowledgeSuggestionsPayload(
         ticket_id=ticket_id,
         similar_tickets=[
@@ -3127,7 +3151,7 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
         articles=[
             SupportKnowledgeArticle(id=item.id, title=item.title, url=item.url)
             for item in suggestions.articles
-        ],
+        ] + p2_articles,
         ai_summary=SupportKnowledgeAiSummary(
             text=suggestions.ai_summary.text,
             sources=suggestions.ai_summary.sources,
@@ -4598,6 +4622,13 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_knowledge_draft(request: web.Request):
+    request_payload: dict[str, Any] = {}
+    if request.can_read_body:
+        try:
+            raw_payload = await _read_support_json(request)
+            request_payload = raw_payload if isinstance(raw_payload, dict) else {}
+        except Exception:
+            request_payload = {}
     try:
         async with get_session() as session:
             ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
@@ -4611,6 +4642,12 @@ async def handle_web_support_ticket_passport_knowledge_draft(request: web.Reques
             if not passport:
                 payload = await TicketPassportService(session).generate(ticket.ticket_id, actor_id=None, mode="create")
                 passport = payload["passport"]
+            draft_result = await KnowledgePassportDraftService(session).create_draft_from_ticket(
+                ticket.ticket_id,
+                item_type=str(request_payload.get("item_type") or "article"),
+                actor_id=auth_context.actor_id,
+            )
+            await session.commit()
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_passport_knowledge_draft] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
@@ -4631,6 +4668,16 @@ async def handle_web_support_ticket_passport_knowledge_draft(request: web.Reques
         repeat_guidance=sections.get("repeat_guidance") or "При повторе создать заявку с деталями ошибки.",
         source_passport_id=int(passport["passport_id"]),
     )
+    item = draft_result["item"]
+    version = draft_result["version"]
+    draft.title = item["title"]
+    draft.item_id = item["item_id"]
+    draft.version_id = version["version_id"]
+    draft.status = item["status"]
+    draft.item_type = item["item_type"]
+    draft.edit_url = f"/app/admin/knowledge?item={item['item_id']}"
+    draft.warnings = draft_result.get("warnings") or []
+    draft.bindings = draft_result.get("bindings") or []
     return json_model_response(SuccessResponse[SupportTicketKnowledgeDraftPayload](data=draft))
 
 

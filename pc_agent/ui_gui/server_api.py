@@ -517,6 +517,7 @@ class TicketApiClient:
         service_code: Optional[str] = None,
         offering_code: Optional[str] = None,
         offering_full_code: Optional[str] = None,
+        knowledge_attempts: Optional[list] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -571,6 +572,8 @@ class TicketApiClient:
             payload["offering_code"] = offering_code
         if offering_full_code is not None:
             payload["offering_full_code"] = offering_full_code
+        if knowledge_attempts is not None:
+            payload["knowledge_attempts"] = knowledge_attempts
         trace = self._trace_context(
             action="ticket.create",
             category="ticket",
@@ -686,6 +689,76 @@ class TicketApiClient:
                 return json.loads(response_text)
         except aiohttp.ClientError as exc:
             logger.info("Service catalog sync unavailable: %s", exc)
+            raise Exception(f"Network error: {exc}")
+
+    async def get_knowledge_suggestions(
+        self,
+        *,
+        service_code: Optional[str] = None,
+        offering_code: Optional[str] = None,
+        request_template_key: Optional[str] = None,
+        query: Optional[str] = None,
+        form_payload: Optional[dict] = None,
+    ) -> dict:
+        """Fetch requester-safe knowledge suggestions for the local agent wizard."""
+        url = f"{self.base_url}/knowledge/suggest"
+        payload: dict[str, Any] = {"surface": "agent_gui"}
+        if service_code is not None:
+            payload["service_code"] = service_code
+        if offering_code is not None:
+            payload["offering_code"] = offering_code
+        if request_template_key is not None:
+            payload["request_template_key"] = request_template_key
+        if query is not None:
+            payload["query"] = query
+        if form_payload is not None:
+            payload["form_payload"] = form_payload
+
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}: {response_text}")
+                return json.loads(response_text)
+        except aiohttp.ClientError as exc:
+            logger.info("Knowledge suggestions unavailable: %s", exc)
+            raise Exception(f"Network error: {exc}")
+
+    async def record_knowledge_feedback(
+        self,
+        *,
+        item_id: str,
+        version_id: Optional[str] = None,
+        event_type: str,
+        service_code: Optional[str] = None,
+        offering_code: Optional[str] = None,
+    ) -> dict:
+        """Record requester-safe knowledge feedback from the local agent wizard."""
+        url = f"{self.base_url}/knowledge/feedback"
+        payload: dict[str, Any] = {
+            "item_id": item_id,
+            "event_type": event_type,
+            "surface": "agent_gui",
+        }
+        if version_id is not None:
+            payload["version_id"] = version_id
+        if service_code is not None:
+            payload["service_code"] = service_code
+        if offering_code is not None:
+            payload["offering_code"] = offering_code
+
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}: {response_text}")
+                return json.loads(response_text)
+        except aiohttp.ClientError as exc:
+            logger.info("Knowledge feedback unavailable: %s", exc)
             raise Exception(f"Network error: {exc}")
 
     async def get_ticket_form_pack_current(
