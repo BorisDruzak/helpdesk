@@ -168,6 +168,31 @@ def _clear_agent_runtime_modules() -> None:
             sys.modules.pop(mod_name, None)
 
 
+def _snapshot_agent_shadowed_modules() -> dict[str, object]:
+    prefixes = (
+        "modules.",
+        "config.",
+        "utils.",
+        "core.",
+    )
+    exact = {
+        "modules",
+        "config",
+        "utils",
+        "core",
+    }
+    return {
+        mod_name: module
+        for mod_name, module in sys.modules.items()
+        if mod_name in exact or mod_name.startswith(prefixes)
+    }
+
+
+def _restore_module_snapshot(snapshot: dict[str, object]) -> None:
+    for mod_name, module in snapshot.items():
+        sys.modules[mod_name] = module
+
+
 def _shared_test_db_allowed() -> bool:
     return os.getenv("PC_CLIENT_ALLOW_SHARED_TEST_DB") == "1"
 
@@ -883,6 +908,7 @@ async def test_agent(tmp_path, test_client):
     project_root = Path(__file__).resolve().parent.parent.parent
     pc_agent_dir = project_root / "pc_agent"
     server_dir = Path(__file__).resolve().parent.parent
+    shadowed_modules = _snapshot_agent_shadowed_modules()
 
     server_path_str = str(server_dir)
     server_in_path = server_path_str in sys.path
@@ -1035,6 +1061,7 @@ async def test_agent(tmp_path, test_client):
             _clear_agent_runtime_modules()
     finally:
         _clear_agent_runtime_modules()
+        _restore_module_snapshot(shadowed_modules)
         if not pc_agent_dir_in_path:
             while pc_agent_dir_str in sys.path:
                 sys.path.remove(pc_agent_dir_str)
