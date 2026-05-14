@@ -3,6 +3,8 @@ import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
   PublicTicketDetail,
+  ServiceCatalogPreviewPayload,
+  ServiceCatalogSafePreview,
   ServiceCatalogCurrent,
   RequestFormPack,
 } from "./types";
@@ -85,6 +87,17 @@ export async function createPublicTicket(payload: PublicTicketCreatePayload): Pr
     body: JSON.stringify(payload),
   });
   return readOk<PublicTicketCreateResult>(response, "Не удалось создать заявку");
+}
+
+export async function previewServiceCatalogRequest(
+  payload: ServiceCatalogPreviewPayload,
+): Promise<ServiceCatalogSafePreview> {
+  const response = await fetch("/api/service-catalog/preview", {
+    method: "POST",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readOk<ServiceCatalogSafePreview>(response, "Не удалось построить безопасный preview обращения");
 }
 
 export async function authorizePublicTicket(

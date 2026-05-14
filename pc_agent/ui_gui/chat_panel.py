@@ -986,8 +986,9 @@ def normalize_service_catalog(raw_catalog: Any) -> dict[str, Any]:
     normalized = {
         "catalog_version": str(catalog.get("catalog_version") or catalog.get("version") or "").strip(),
         "services": [],
-        "fallback": catalog.get("fallback") if isinstance(catalog.get("fallback"), dict) else {},
+        "fallback": {},
     }
+    fallback_raw = catalog.get("fallback") if isinstance(catalog.get("fallback"), dict) else {}
     for raw_service in catalog.get("services") if isinstance(catalog.get("services"), list) else []:
         if not isinstance(raw_service, dict):
             continue
@@ -1027,6 +1028,41 @@ def normalize_service_catalog(raw_catalog: Any) -> dict[str, Any]:
             }
             service["offerings"].append(offering)
         normalized["services"].append(service)
+    if fallback_raw:
+        fallback_service_code = _safe_catalog_string(fallback_raw, "service_code", "code") or "other"
+        fallback_offering_code = _safe_catalog_string(fallback_raw, "offering_code") or "unknown"
+        fallback_full_code = _safe_catalog_string(fallback_raw, "full_code") or f"{fallback_service_code}.{fallback_offering_code}"
+        fallback = {
+            "service_code": fallback_service_code,
+            "service_title": _safe_catalog_string(fallback_raw, "service_title") or _safe_catalog_string(fallback_raw, "title") or "Другое / Не знаю",
+            "offering_code": fallback_offering_code,
+            "full_code": fallback_full_code,
+            "title": _safe_catalog_string(fallback_raw, "title", "public_title", "name") or "Другое / Не знаю",
+            "description": _safe_catalog_string(fallback_raw, "description", "short_description"),
+            "request_type_label": _safe_catalog_string(fallback_raw, "request_type_label"),
+            "request_template_key": _safe_catalog_string(fallback_raw, "request_template_key", "form_key"),
+            "expected_response": _safe_catalog_string(fallback_raw, "expected_response"),
+            "expected_resolution": _safe_catalog_string(fallback_raw, "expected_resolution"),
+            "approval_required": bool(fallback_raw.get("approval_required")),
+            "diagnostic_consent_required": bool(fallback_raw.get("diagnostic_consent_required")),
+            "requires_attachment": bool(fallback_raw.get("requires_attachment")),
+        }
+        normalized["fallback"] = dict(fallback)
+        fallback_service = next(
+            (service for service in normalized["services"] if service.get("service_code") == fallback_service_code),
+            None,
+        )
+        if fallback_service is None:
+            fallback_service = {
+                "service_code": fallback_service_code,
+                "title": fallback["service_title"],
+                "description": fallback["description"],
+                "icon": "",
+                "offerings": [],
+            }
+            normalized["services"].append(fallback_service)
+        if not any(item.get("full_code") == fallback_full_code for item in fallback_service.get("offerings") or []):
+            fallback_service.setdefault("offerings", []).append(fallback)
     return normalized
 
 
@@ -1057,6 +1093,86 @@ def enrich_form_with_catalog_selection(form: dict[str, Any], catalog: Any) -> di
     enriched.setdefault("catalog_service_title", offering.get("service_title"))
     enriched.setdefault("catalog_offering_title", offering.get("title"))
     return enriched
+
+
+def catalog_services_for_wizard(catalog: Any) -> list[dict[str, Any]]:
+    normalized = normalize_service_catalog(catalog)
+    services: list[dict[str, Any]] = []
+    for service in normalized.get("services") or []:
+        if not isinstance(service, dict):
+            continue
+        service_code = str(service.get("service_code") or "").strip()
+        if not service_code:
+            continue
+        services.append(
+            {
+                "key": service_code,
+                "service_code": service_code,
+                "title": str(service.get("title") or service_code).strip(),
+                "description": str(service.get("description") or "").strip(),
+            }
+        )
+    return services
+
+
+def catalog_offerings_for_service(catalog: Any, service_code: Any) -> list[dict[str, Any]]:
+    target = str(service_code or "").strip()
+    if not target:
+        return []
+    normalized = normalize_service_catalog(catalog)
+    for service in normalized.get("services") or []:
+        if str(service.get("service_code") or "").strip() != target:
+            continue
+        cards: list[dict[str, Any]] = []
+        for offering in service.get("offerings") or []:
+            if not isinstance(offering, dict):
+                continue
+            full_code = str(offering.get("full_code") or "").strip()
+            if not full_code:
+                continue
+            description_parts = [
+                str(offering.get("description") or "").strip(),
+                f"Ответ: {offering.get('expected_response')}" if offering.get("expected_response") else "",
+                f"Решение: {offering.get('expected_resolution')}" if offering.get("expected_resolution") else "",
+                "Потребуется согласование" if offering.get("approval_required") else "",
+                "Может потребоваться диагностика" if offering.get("diagnostic_consent_required") else "",
+            ]
+            cards.append(
+                {
+                    **offering,
+                    "key": full_code,
+                    "title": str(offering.get("title") or offering.get("offering_code") or full_code).strip(),
+                    "description": " · ".join(part for part in description_parts if part),
+                }
+            )
+        return cards
+    return []
+
+
+def form_with_catalog_selection_for_offering(
+    form_pack: Any,
+    catalog: Any,
+    service_code: Any,
+    offering_full_code: Any,
+) -> Optional[dict[str, Any]]:
+    target_service = str(service_code or "").strip()
+    target_offering = str(offering_full_code or "").strip()
+    if not target_service or not target_offering:
+        return None
+    for offering in catalog_offerings_for_service(catalog, target_service):
+        if str(offering.get("full_code") or "").strip() != target_offering:
+            continue
+        template_key = str(offering.get("request_template_key") or "").strip()
+        for form in (form_pack if isinstance(form_pack, dict) else {}).get("forms") or []:
+            if str(form.get("key") or form.get("request_template_key") or "").strip() == template_key:
+                enriched = dict(form)
+                enriched["service_code"] = target_service
+                enriched["offering_code"] = offering.get("offering_code")
+                enriched["offering_full_code"] = target_offering
+                enriched["catalog_service_title"] = offering.get("service_title")
+                enriched["catalog_offering_title"] = offering.get("title")
+                return enriched
+    return None
 
 
 def ticket_form_field_visible(field_def: dict[str, Any], values: dict[str, Any]) -> bool:
@@ -2523,6 +2639,8 @@ class TicketCreateWizardWidget(QFrame):
         self._attachment_paths: list[str] = []
         self._temporary_attachment_paths: set[str] = set()
         self._last_created_ticket_id = ""
+        self._selected_catalog_service_code = ""
+        self._selected_catalog_offering_full_code = ""
         self.setObjectName("ProfileSidebar")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
 
@@ -2541,7 +2659,7 @@ class TicketCreateWizardWidget(QFrame):
         self._subtitle.setWordWrap(True)
         outer.addWidget(self._subtitle)
 
-        self.progress_bar = CreateTicketProgressBar(["Тип обращения", "Описание", "Подтверждение", "Готово"])
+        self.progress_bar = CreateTicketProgressBar(["Каталог", "Описание", "Preview", "Готово"])
         self.progress_bar.stepRequested.connect(self._go_to_step)
         outer.addWidget(self.progress_bar)
 
@@ -2616,6 +2734,16 @@ class TicketCreateWizardWidget(QFrame):
         profile_layout.addWidget(self.manage_profiles_btn, 0, Qt.AlignmentFlag.AlignLeft)
         group_layout.addWidget(profile_card)
 
+        self.service_grid_label = QLabel("Раздел обращения")
+        self.service_grid_label.setObjectName("ProfileFieldLabel")
+        group_layout.addWidget(self.service_grid_label)
+        self.service_grid = CreateTicketTypeGrid()
+        self.service_grid.typeSelected.connect(self._on_service_card_selected)
+        group_layout.addWidget(self.service_grid)
+
+        self.type_grid_label = QLabel("Тип обращения")
+        self.type_grid_label.setObjectName("ProfileFieldLabel")
+        group_layout.addWidget(self.type_grid_label)
         self.type_grid = CreateTicketTypeGrid()
         self.type_grid.typeSelected.connect(self._on_type_card_selected)
         group_layout.addWidget(self.type_grid)
@@ -3054,6 +3182,50 @@ class TicketCreateWizardWidget(QFrame):
                 self.preview_warning_label.setVisible(False)
             self._update_creation_preview()
 
+    def _catalog_services(self) -> list[dict[str, Any]]:
+        catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
+        return catalog_services_for_wizard(catalog)
+
+    def _sync_form_selector_to_catalog_offering(self) -> None:
+        catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
+        form = form_with_catalog_selection_for_offering(
+            self._panel.ticket_form_pack(),
+            catalog,
+            self._selected_catalog_service_code,
+            self._selected_catalog_offering_full_code,
+        )
+        if not form:
+            return
+        index = self.form_selector.findData(form.get("key"))
+        if index >= 0 and index != self.form_selector.currentIndex():
+            self.form_selector.setCurrentIndex(index)
+
+    def _refresh_catalog_cards(self) -> bool:
+        catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
+        services = catalog_services_for_wizard(catalog)
+        if not services:
+            if hasattr(self, "service_grid"):
+                self.service_grid.hide()
+                self.service_grid_label.hide()
+                self.type_grid_label.setText("Тип обращения")
+            return False
+
+        known_service_keys = {str(service.get("key") or "") for service in services}
+        if self._selected_catalog_service_code not in known_service_keys:
+            self._selected_catalog_service_code = str(services[0].get("service_code") or services[0].get("key") or "")
+        offerings = catalog_offerings_for_service(catalog, self._selected_catalog_service_code)
+        known_offering_keys = {str(offering.get("key") or "") for offering in offerings}
+        if self._selected_catalog_offering_full_code not in known_offering_keys:
+            self._selected_catalog_offering_full_code = str((offerings[0] if offerings else {}).get("full_code") or "")
+
+        self.service_grid.show()
+        self.service_grid_label.show()
+        self.type_grid_label.setText("Тип обращения")
+        self.service_grid.set_templates(services, current_key=self._selected_catalog_service_code)
+        self.type_grid.set_templates(offerings, current_key=self._selected_catalog_offering_full_code)
+        self._sync_form_selector_to_catalog_offering()
+        return True
+
     def _refresh_forms(self) -> None:
         form_pack = self._panel.ticket_form_pack()
         forms = list(form_pack.get("forms") or [])
@@ -3066,12 +3238,21 @@ class TicketCreateWizardWidget(QFrame):
             index = self.form_selector.findData(current_key)
             self.form_selector.setCurrentIndex(index if index >= 0 else 0)
         self.form_selector.blockSignals(False)
-        self._refresh_template_list()
+        if not self._refresh_catalog_cards():
+            self._refresh_template_list()
         self._on_form_changed()
 
     def _selected_form(self) -> Optional[dict[str, Any]]:
         form_key = self.form_selector.currentData()
         catalog = self._panel.service_catalog() if hasattr(self._panel, "service_catalog") else {}
+        explicit_form = form_with_catalog_selection_for_offering(
+            self._panel.ticket_form_pack(),
+            catalog,
+            self._selected_catalog_service_code,
+            self._selected_catalog_offering_full_code,
+        )
+        if explicit_form:
+            return explicit_form
         for form in self._panel.ticket_form_pack().get("forms") or []:
             if form.get("key") == form_key:
                 return enrich_form_with_catalog_selection(form, catalog)
@@ -3080,6 +3261,13 @@ class TicketCreateWizardWidget(QFrame):
 
     def _refresh_template_list(self, *_args) -> None:
         if not hasattr(self, "template_list"):
+            return
+        if self._catalog_services():
+            self.template_list.clear()
+            self.template_search_input.hide()
+            self.template_list.hide()
+            self.selected_template_card.show()
+            self._refresh_catalog_cards()
             return
         forms = list(self._panel.ticket_form_pack().get("forms") or [])
         current_key = str(self.form_selector.currentData() or "").strip()
@@ -3137,7 +3325,19 @@ class TicketCreateWizardWidget(QFrame):
         if index >= 0 and index != self.form_selector.currentIndex():
             self.form_selector.setCurrentIndex(index)
 
+    def _on_service_card_selected(self, service_code: str) -> None:
+        self._selected_catalog_service_code = str(service_code or "").strip()
+        self._selected_catalog_offering_full_code = ""
+        self._refresh_catalog_cards()
+        self._on_form_changed()
+
     def _on_type_card_selected(self, form_key: str) -> None:
+        if self._catalog_services():
+            self._selected_catalog_offering_full_code = str(form_key or "").strip()
+            self._sync_form_selector_to_catalog_offering()
+            self._refresh_catalog_cards()
+            self._on_form_changed()
+            return
         index = self.form_selector.findData(form_key)
         if index >= 0 and index != self.form_selector.currentIndex():
             self.form_selector.setCurrentIndex(index)
@@ -3157,7 +3357,11 @@ class TicketCreateWizardWidget(QFrame):
         else:
             self._sync_template_list_selection(form.get("key"))
             if hasattr(self, "type_grid"):
-                self.type_grid.set_selected_key(form.get("key"))
+                if self._catalog_services():
+                    self.service_grid.set_selected_key(self._selected_catalog_service_code)
+                    self.type_grid.set_selected_key(self._selected_catalog_offering_full_code)
+                else:
+                    self.type_grid.set_selected_key(form.get("key"))
             self.form_summary.setText(
                 form.get("description") or "Уточните детали, чтобы обращение сразу попало в нужный поток."
             )
@@ -3384,9 +3588,9 @@ class TicketCreateWizardWidget(QFrame):
         self._cancel_btn.setEnabled(not self._submitting and self._current_step < 3)
 
         captions = {
-            0: "Шаг 1 из 4. Выберите тип обращения и проверьте профиль инициатора.",
+            0: "Шаг 1 из 4. Выберите раздел и тип обращения, затем проверьте профиль инициатора.",
             1: "Шаг 2 из 4. Опишите проблему и при желании приложите материалы.",
-            2: "Шаг 3 из 4. Проверьте влияние, сроки и данные обращения.",
+            2: "Шаг 3 из 4. Проверьте preview процесса, влияние, сроки и данные обращения.",
             3: "Шаг 4 из 4. Обращение создано.",
         }
         self._step_caption.setText(captions.get(self._current_step, ""))

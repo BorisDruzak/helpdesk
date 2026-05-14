@@ -12,7 +12,14 @@ from tickets.service_catalog_contract import (
     CATALOG_POLICY_KINDS,
     full_offering_code,
     normalize_catalog_code,
+    serialize_offering_for_requester,
     serialize_service_for_requester,
+)
+from tickets.service_catalog_defaults import (
+    FALLBACK_FULL_CODE,
+    FALLBACK_SERVICE_CODE,
+    fallback_offering_dict,
+    fallback_service_dict,
 )
 
 
@@ -89,6 +96,16 @@ def _apply_catalog_policy_refs(
         result["policy_refs"] = refs
     if sources:
         result["effective_policy_sources"] = sources
+    default_queue_id = None
+    if offering and offering.get("default_queue_id") is not None:
+        default_queue_id = offering.get("default_queue_id")
+    elif service and service.get("default_queue_id") is not None:
+        default_queue_id = service.get("default_queue_id")
+    if default_queue_id is not None:
+        routing_policy = result.get("routing_policy") if isinstance(result.get("routing_policy"), dict) else {}
+        routing_policy = {**routing_policy, "default_queue_id": default_queue_id}
+        result["routing_policy"] = routing_policy
+        result.setdefault("default_queue_id", default_queue_id)
     return result
 
 
@@ -193,13 +210,32 @@ class ServiceCatalogRuntimeResolver:
         by_service: dict[str, list[dict[str, Any]]] = {}
         for offering in offerings:
             by_service.setdefault(str(offering.get("service_code") or ""), []).append(offering)
+        if FALLBACK_SERVICE_CODE not in {str(service.get("code") or "") for service in services}:
+            services.append(fallback_service_dict())
+            by_service[FALLBACK_SERVICE_CODE] = [fallback_offering_dict()]
+        fallback_service = next(
+            (service for service in services if str(service.get("code") or "") == FALLBACK_SERVICE_CODE),
+            fallback_service_dict(),
+        )
+        fallback_offering = next(
+            (
+                offering
+                for offering in by_service.get(FALLBACK_SERVICE_CODE, [])
+                if str(offering.get("full_code") or "") == FALLBACK_FULL_CODE
+                or str(offering.get("code") or "") == "unknown"
+            ),
+            fallback_offering_dict(),
+        )
+        fallback_payload = serialize_offering_for_requester(fallback_offering)
+        fallback_payload["service_code"] = FALLBACK_SERVICE_CODE
+        fallback_payload["service_title"] = fallback_service.get("public_title") or fallback_service.get("name")
         return {
             "catalog_version": "runtime",
             "services": [
                 serialize_service_for_requester(service, offerings=by_service.get(str(service.get("code") or ""), []))
                 for service in services
             ],
-            "fallback": None,
+            "fallback": fallback_payload,
         }
 
     async def apply_to_validated_submission(

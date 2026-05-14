@@ -30,12 +30,15 @@ from ui_gui.chat_panel import (  # noqa: E402
     build_priority_facts_payload_from_form,
     build_ticket_sla_user_summary,
     can_user_confirm_close,
+    catalog_offerings_for_service,
+    catalog_services_for_wizard,
     diagnostic_consent_required,
     merge_ticket_stream,
     build_ticket_create_error_message,
     message_visual_role,
     catalog_offering_for_request_template,
     enrich_form_with_catalog_selection,
+    form_with_catalog_selection_for_offering,
     normalize_ticket_form_pack,
     normalize_service_catalog,
     prepend_ticket_stream,
@@ -97,6 +100,83 @@ def test_service_catalog_normalization_keeps_requester_safe_offerings():
     assert offering["service_code"] == "workplace"
     assert offering["offering_code"] == "laptop_broken"
     assert "queue_id" not in offering
+
+
+def test_service_catalog_normalization_promotes_safe_fallback_for_explicit_agent_choice():
+    catalog = normalize_service_catalog(
+        {
+            "catalog_version": "v1",
+            "services": [],
+            "fallback": {
+                "service_code": "other",
+                "offering_code": "unknown",
+                "full_code": "other.unknown",
+                "title": "Другое / Не знаю",
+                "description": "Если вы не знаете, к какой услуге отнести обращение",
+                "request_template_key": "general_request",
+                "queue_id": 99,
+            },
+        }
+    )
+
+    assert catalog["fallback"]["full_code"] == "other.unknown"
+    fallback_service = next(service for service in catalog["services"] if service["service_code"] == "other")
+    assert fallback_service["title"] == "Другое / Не знаю"
+    assert fallback_service["offerings"][0]["request_template_key"] == "general_request"
+    assert "queue_id" not in fallback_service["offerings"][0]
+
+
+def test_agent_catalog_wizard_helpers_bind_service_offering_to_form():
+    catalog = normalize_service_catalog(
+        {
+            "services": [
+                {
+                    "service_code": "workplace",
+                    "title": "Рабочее место",
+                    "offerings": [
+                        {
+                            "offering_code": "laptop_broken",
+                            "full_code": "workplace.laptop_broken",
+                            "title": "Сломался ноутбук",
+                            "request_template_key": "laptop_incident",
+                            "expected_response": "до 30 минут",
+                        }
+                    ],
+                }
+            ],
+            "fallback": {
+                "service_code": "other",
+                "offering_code": "unknown",
+                "full_code": "other.unknown",
+                "title": "Другое / Не знаю",
+                "request_template_key": "general_request",
+            },
+        }
+    )
+    form_pack = {
+        "forms": [
+            {"key": "laptop_incident", "title": "Ноутбук", "fields": []},
+            {"key": "general_request", "title": "Другое", "fields": []},
+        ]
+    }
+
+    services = catalog_services_for_wizard(catalog)
+    assert [service["key"] for service in services] == ["workplace", "other"]
+    offerings = catalog_offerings_for_service(catalog, "workplace")
+    assert offerings[0]["key"] == "workplace.laptop_broken"
+    assert "Ответ: до 30 минут" in offerings[0]["description"]
+
+    selected = form_with_catalog_selection_for_offering(
+        form_pack,
+        catalog,
+        "workplace",
+        "workplace.laptop_broken",
+    )
+    assert selected is not None
+    assert selected["key"] == "laptop_incident"
+    assert selected["service_code"] == "workplace"
+    assert selected["offering_code"] == "laptop_broken"
+    assert selected["offering_full_code"] == "workplace.laptop_broken"
 
 
 def test_enrich_form_with_catalog_selection_only_for_unambiguous_template():
@@ -487,11 +567,14 @@ def test_ticket_create_wizard_first_step_combines_type_and_profile():
 
     assert "_build_profile_step()" not in init_source
     assert "Шаг 1. Тип обращения" in form_step_source
+    assert "self.service_grid" in form_step_source
+    assert "Раздел обращения" in form_step_source
+    assert "Тип обращения" in form_step_source
     assert "profile_selector" in form_step_source
     assert "manage_profiles_btn" in form_step_source
     assert "return self._panel.has_active_profile()" not in ready_source
     assert "bool(self._selected_form())" in ready_source
-    assert "Выберите тип обращения" in caption_source
+    assert "Выберите раздел и тип обращения" in caption_source
 
 
 def test_ticket_create_wizard_type_step_does_not_render_legacy_template_list_or_dynamic_fields():

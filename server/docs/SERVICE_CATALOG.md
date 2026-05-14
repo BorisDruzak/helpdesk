@@ -30,6 +30,10 @@ The resolver checks lifecycle/visibility for the actor and applies catalog defau
 
 Request-template explicit refs remain strongest. Offering overrides beat service defaults. Policy Health and simulation expose catalog selection and effective policy sources without creating tickets.
 
+P1.1 adds a real requester fallback. Safe catalog projection always exposes `other.unknown` (`Другое / Не знаю`) through `server/tickets/service_catalog_defaults.py`. Explicit invalid `service_code` / `offering_code` remains a validation error; the fallback is used only when the user selects it or when the catalog would otherwise be empty.
+
+Requester-safe preview is `POST /api/service-catalog/preview`. It wraps the real catalog/form/policy runtime resolvers and returns only requester-safe labels, expected response/resolution text, approval/diagnostic summaries, next action, warnings and blockers. It does not insert tickets, events, approvals, diagnostics, notifications, public sessions or operations.
+
 ## Publication Gates
 
 `server/tickets/service_catalog_publication.py` validates service/offering publication:
@@ -38,6 +42,7 @@ Request-template explicit refs remain strongest. Offering overrides beat service
 - offerings need title, request type, active request template unless explicit no-form/no-ticket, valid parent and safe public description warnings;
 - service default policy refs and offering policy override refs must point to active policies;
 - required approval policies must declare a resolvable approver source before publication;
+- offering validation runs a runtime dry-run simulation and blocks publication when routing cannot resolve or simulation fails;
 - errors/critical issues block publication; warnings are surfaced for admin acknowledgement.
 
 Publish/retire attempts are audited through `helpdesk_service_catalog_audit`.
@@ -59,16 +64,25 @@ Admin/auditor:
 Requester/agent safe projection:
 
 - `GET /api/service-catalog/current`
+- `POST /api/service-catalog/preview`
 - `GET /api/service-catalog/services/{service_code}`
 - `GET /api/service-catalog/offerings/{full_code}`
 
 Safe projection never includes queue ids, raw policy JSON, approver internals, requester ids, device ids, raw custom fields or trace/operation ids.
 
+Seed/setup:
+
+- `python scripts/seed_service_catalog.py --dry-run`
+- `python scripts/seed_service_catalog.py`
+- `python scripts/seed_service_catalog.py --force`
+
+The seed is idempotent, creates baseline services (`workplace`, `access`, `network`, `mail`, `other`) and offerings, creates missing minimal request templates, reports missing dependencies and does not overwrite admin edits without `--force`.
+
 ## UX
 
-- `/app/admin/service-catalog`: service/offering dashboard, filters, publication gates, policy inheritance summary, draft JSON editor, publish/retire actions and runtime simulation.
-- `/app/help`: requester chooses service, offering, linked form, sees a safe process preview summary and submits catalog codes with the ticket create payload.
-- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` when a template maps to exactly one published offering.
+- `/app/admin/service-catalog`: service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
+- `/app/help`: requester chooses service, offering, linked form, runs runtime-backed safe preview before catalog submit, and submits `service_code`, `offering_code`, `offering_full_code` and `request_template_key`. Legacy form-only submit remains available when the catalog is unavailable.
+- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`; it keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` without changing Protocol V3.
 
 ## Reporting
 
@@ -76,4 +90,4 @@ Safe projection never includes queue ids, raw policy JSON, approver internals, r
 
 ## Rollback
 
-Migration `082` is additive. Rolling back drops service catalog tables and ticket enrichment columns, leaving legacy `tickets.service_id`, request templates, form packs and registry services intact. Existing legacy create flows continue to work without catalog selection.
+Migration `082` is additive. P1.1 has no schema migration. Rollback is operational: retire seeded catalog entries instead of deleting rows referenced by tickets, disable catalog-first UI by falling back to legacy forms, and keep legacy `form_key` / `request_template_key` create payloads intact.

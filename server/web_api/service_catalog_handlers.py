@@ -7,6 +7,7 @@ from app.db import get_session
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from auth.middleware import require_auth
 from tickets.service_catalog_publication import ServiceCatalogPublicationService
+from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogRuntimeResolver
 
 
@@ -206,6 +207,27 @@ async def handle_service_catalog_current(request: web.Request) -> web.Response:
     async with get_session() as session:
         payload = await ServiceCatalogRuntimeResolver(session).current_catalog_for_requester()
     return web.json_response({"status": "ok", **payload})
+
+
+async def handle_service_catalog_preview(request: web.Request) -> web.Response:
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            preview = await build_requester_service_catalog_preview(session, payload)
+        return web.json_response({"status": "ok", **preview})
+    except ServiceCatalogPreviewError as exc:
+        return web.json_response(
+            {"status": "error", "error": "validation_error", "details": exc.details},
+            status=400,
+        )
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": "validation_error", "details": str(exc)},
+            status=400,
+        )
+    except Exception:
+        logger.exception("[service_catalog] requester preview failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
 
 
 async def handle_service_catalog_service(request: web.Request) -> web.Response:

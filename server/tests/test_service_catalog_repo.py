@@ -227,3 +227,56 @@ async def test_service_catalog_publication_blocks_invalid_policy_refs_and_empty_
     assert any(issue["path"] == "default_sla_policy_code" for issue in service_validation["issues"])
     assert offering_validation["blocking"] is True
     assert any(issue["path"] == "approval_policy_code" for issue in offering_validation["issues"])
+
+
+@pytest.mark.asyncio
+async def test_service_catalog_publication_blocks_offering_when_runtime_simulation_cannot_route(test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    service_code = f"runtime_gate_{suffix}"
+    template_code = f"runtime_gate_template_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Runtime gate template",
+                ticket_type="service_request",
+                config_json={"no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        repo = ServiceCatalogRepo(session)
+        await repo.upsert_service_draft(
+            {
+                "code": service_code,
+                "public_title": "Runtime gate",
+                "short_description": "Runtime gate service",
+                "visibility": "public",
+                "owner_actor_id": "owner",
+                "reporting_category": "governance",
+                "metadata": {"no_ticket": True},
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        offering = await repo.upsert_offering_draft(
+            {
+                "service_code": service_code,
+                "code": "unroutable",
+                "public_title": "Unroutable offering",
+                "short_description": "Offering has no runtime route",
+                "request_type": "service_request",
+                "request_template_key": template_code,
+                "visibility": "public",
+                "reporting_category": "governance",
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+
+        validation = await ServiceCatalogPublicationService(session).validate_offering(offering["full_code"])
+
+    assert validation["blocking"] is True
+    assert any(issue["kind"] == "runtime_simulation_failed" for issue in validation["issues"])

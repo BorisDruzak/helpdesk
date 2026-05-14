@@ -87,8 +87,64 @@ class ServiceCatalogPublicationService:
         if offering.get("visibility") == "public" and not offering.get("short_description"):
             issues.append(_issue("warning", "missing_public_description", "offering", code, "short_description", "Public offering should have a short safe description"))
         issues.extend(await self._policy_ref_issues("offering", code, offering, default_prefix=False))
+        issues.extend(await self._runtime_simulation_issues(service, offering))
         status = _status_from_issues(issues)
         return {"status": status, "issues": issues, "blocking": any(item["severity"] in {"critical", "error"} for item in issues)}
+
+    async def _runtime_simulation_issues(
+        self,
+        service: dict[str, Any] | None,
+        offering: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        metadata = offering.get("metadata") if isinstance(offering.get("metadata"), dict) else {}
+        if metadata.get("no_ticket"):
+            return []
+        full_code = str(offering.get("full_code") or "")
+        template_key = str(offering.get("request_template_key") or "").strip()
+        if not template_key:
+            return []
+        try:
+            from tickets.policy_health_service import PolicyHealthService
+
+            simulation = await PolicyHealthService(self.session).simulate(
+                {
+                    "service_code": (service or {}).get("code") or offering.get("service_code"),
+                    "offering_code": offering.get("code"),
+                    "offering_full_code": offering.get("full_code"),
+                    "template_code": template_key,
+                    "request_template_key": template_key,
+                    "request_form_data": _sample_request_form_data(),
+                    "custom_fields": {},
+                    "device_metadata": {},
+                    "requester_context": {},
+                }
+            )
+        except Exception as exc:
+            return [
+                _issue(
+                    "error",
+                    "runtime_simulation_failed",
+                    "offering",
+                    full_code,
+                    "simulation",
+                    f"Runtime simulation failed: {type(exc).__name__}",
+                    suggested_fix="Run simulation from Service Catalog and fix routing/form/policy blockers before publication.",
+                )
+            ]
+        routing = simulation.get("routing") if isinstance(simulation, dict) and isinstance(simulation.get("routing"), dict) else {}
+        if routing.get("queue_id") is None and not routing.get("queue_code"):
+            return [
+                _issue(
+                    "error",
+                    "runtime_simulation_failed",
+                    "offering",
+                    full_code,
+                    "routing",
+                    "Runtime simulation did not resolve an active support queue",
+                    suggested_fix="Configure service/offering routing or a default queue before publication.",
+                )
+            ]
+        return []
 
     async def _policy_ref_issues(
         self,
@@ -160,3 +216,14 @@ def _approval_requires_approvers(config: dict[str, Any]) -> bool:
             "group_codes",
         )
     )
+
+
+def _sample_request_form_data() -> dict[str, Any]:
+    return {
+        "summary": "Publication gate dry-run",
+        "description": "Publication gate dry-run",
+        "details": "Publication gate dry-run",
+        "impact_scope": "single_user",
+        "work_continuity": "workaround_available",
+        "business_importance": "normal",
+    }

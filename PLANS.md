@@ -1,3 +1,148 @@
+# P1.1 Catalog UX & Governance Hardening
+
+Status: completed for release candidate. P0/P0.1 is the non-negotiable baseline and remains archived below; P1 Service Catalog is the foundation commit, not the final production UX.
+
+Goal: harden the existing P1 Service Catalog so requesters, agents and admins can use it safely in production:
+
+`Fallback catalog -> runtime-safe preview -> explicit requester/agent Service -> Offering flow -> structured admin governance -> publish simulation -> seed/setup`
+
+Classification: cross-cutting / release-control. Scope touches requester-safe API, ticket create preview, publication gates, seed/setup scripts, React requester/admin UI, Qt agent wizard, docs/CODEMAP/context index and full verification. No Protocol V3 change is planned.
+
+## Discovery
+
+- `ServiceCatalogRuntimeResolver.current_catalog_for_requester()` currently returns `fallback: None`; there is no real default `other.unknown` service/offering in the safe response when the catalog is empty.
+- `/api/service-catalog/current` is unauthenticated GET-only and safe-projected, but no requester-safe POST preview endpoint exists under service-catalog. Existing `/api/tickets/create/preview` requires an authenticated actor and returns internal preview fields such as target queue id/name and raw request-template context.
+- `/app/help` is catalog-first and submits `service_code`, `offering_code`, `offering_full_code` and `request_template_key`, but its sidebar preview is static text; it does not call a runtime-backed safe preview before submit.
+- The Qt agent already fetches and caches `/api/service-catalog/current`, but the wizard enriches forms by unique template mapping. There is no explicit Service -> Offering step; `CreateTicketTypeGrid` still renders request templates as the first choice.
+- `TicketApiClient.preview_ticket_create(...)` and `create_ticket(...)` already accept service/offering fields, so the agent HTTP boundary does not need Protocol V3 changes.
+- `/app/admin/service-catalog` has dashboard, validation, simulation, publish/retire and JSON draft save, but JSON is still the main edit surface. Structured service/offering fields and selector-style inputs need to become the normal path.
+- `ServiceCatalogPublicationService` validates required fields and references, but offering publication is not yet blocked by a runtime-equivalent dry-run simulation.
+- No idempotent seed/setup command exists for baseline services and offerings. Seed must be dry-run capable and must not overwrite admin edits without `--force`.
+- Policy Health already includes catalog objects and simulation input, but P1.1 must keep its simulation result aligned with the new requester-safe preview and publication simulation.
+
+## Design Decisions
+
+- Add a shared fallback/default catalog definition in server code and use it for safe projection and seed. `other.unknown` is the only fallback and it maps to a general fallback request template/form.
+- Invalid explicit service/offering selections remain validation errors. Fallback is used only when the user explicitly selects `other.unknown` or when safe catalog projection needs a non-blocking fallback card.
+- Requester preview is a sanitized wrapper around real runtime resolvers. It may instantiate synthetic ticket/request context but must not insert tickets, events, approvals, diagnostics, notifications, public sessions or operations.
+- Publication simulation will run through the same service-catalog preview/dry-run path with generated safe sample form payload. Critical/error simulation failures block offering publication and are written to catalog audit issues.
+- Admin UI keeps JSON as an Advanced/debug path only. The primary editor uses typed service/offering fields and saves through existing draft endpoints.
+- The agent wizard becomes catalog-aware without changing Protocol V3: Service selection, Offering selection, dynamic form/details, preview, submit/success. If catalog fetch fails, legacy form-pack selection remains available.
+- Seed is an idempotent script first (`scripts/seed_service_catalog.py`) and may be exposed in admin UI as a setup action if the existing admin API pattern supports it cleanly.
+
+## API / UI Contracts
+
+- Requester-safe catalog:
+  - `GET /api/service-catalog/current` always returns safe `services[]` and a real safe `fallback` object for `other.unknown`.
+  - Safe projection must recursively exclude queue ids, raw policy refs/config, approver ids, registry ids, device/requester ids, raw custom fields and trace/operation ids.
+- Requester-safe preview:
+  - `POST /api/service-catalog/preview` accepts `service_code`, `offering_code`, `offering_full_code`, `request_template_key`, form payload and safe requester/device context.
+  - Response includes only safe service/offering labels, request type label, public status after create, expected first response/resolution text, approval/diagnostic summaries, next action, warnings and blockers.
+- Admin catalog:
+  - Existing `/api/web/admin/service-catalog*` endpoints remain.
+  - Add seed/setup endpoint only if needed by the structured admin panel; otherwise the canonical setup entrypoint is the script.
+- Agent GUI:
+  - `TicketApiClient` keeps existing methods backward-compatible and sends catalog fields for preview/create.
+  - Wizard labels distinguish catalog service (`Раздел обращения`) from CMDB affected service (`Затронутая система/услуга`).
+
+## Implementation Phases
+
+- [x] Complete mandatory discovery/intake commands and classify as cross-cutting / release-control.
+- [x] Archive P0/P0.1 as baseline and create this P1.1 working section.
+- [x] Add red tests for fallback safe catalog, requester preview, publication simulation, seed idempotency and agent explicit catalog helper behavior.
+- [x] Implement shared fallback/default catalog definitions and seed/setup script.
+- [x] Add requester-safe preview service/handler/route and recursive forbidden-key coverage.
+- [x] Extend publication gates to run runtime simulation and audit validation attempts.
+- [x] Update `/app/help` to require runtime-safe preview before submit while preserving legacy form fallback.
+- [x] Replace JSON-first admin editing with structured service/offering forms and keep JSON as Advanced.
+- [x] Update Qt agent wizard to expose Service -> Offering -> Dynamic form -> Preview -> Submit and preserve legacy fallback.
+- [x] Extend Policy Health linkage where needed so fallback and publish blockers remain visible.
+- [x] Update docs, CODEMAP, navigation catalog and rebuild context index.
+- [x] Run targeted tests, P0/P0.1 regressions, webapp build, agent tests, full/default gates and browser signoff on remote.
+
+## Test Plan
+
+- Server:
+  - `server/tests/test_service_catalog_fallback.py`
+  - `server/tests/test_service_catalog_preview.py`
+  - `server/tests/test_service_catalog_publication.py`
+  - `server/tests/test_service_catalog_api.py`
+  - `server/tests/test_policy_health_service_catalog.py`
+  - `server/tests/test_ticket_create_service_catalog.py`
+  - `server/tests/test_service_catalog_seed.py`
+- Agent:
+  - `pc_agent/tests/test_ticket_api_client_service_catalog.py`
+  - `pc_agent/tests/test_ticket_create_wizard_service_catalog.py`
+  - `pc_agent/tests/test_chat_panel_helpers.py`
+  - `pc_agent/tests/test_ticket_api_client_attachments.py`
+- Regressions:
+  - P0/P0.1 status/public queue/side-effect/policy-health/create contracts.
+  - Form process/business validation and helpdesk policy registry.
+- Static/UI:
+  - `python -m compileall -q server pc_agent scripts`
+  - `git diff --check`
+  - `python scripts/verify_workspace.py`
+  - `pnpm --dir webapp build`
+  - Browser signoff at `https://192.168.100.17:9443/admin` for `/app/admin/service-catalog`, `/app/admin/policy-health` and `/app/help`.
+
+## Verification Log
+
+- Red-first checks:
+  - `server/tests/test_service_catalog_fallback.py` initially failed because safe catalog returned `fallback: None`.
+  - `server/tests/test_service_catalog_preview.py::test_requester_service_catalog_preview_returns_safe_validation_error` initially failed with 404.
+  - `server/tests/test_service_catalog_seed.py` initially failed because `scripts.seed_service_catalog` did not exist.
+  - `server/tests/test_service_catalog_repo.py::test_service_catalog_publication_blocks_offering_when_runtime_simulation_cannot_route` initially allowed publishing without a route.
+  - Agent fallback helper test initially failed because normalized catalog did not promote the safe fallback.
+- Green targeted checks so far:
+  - `python -m pytest server/tests/test_service_catalog_fallback.py server/tests/test_service_catalog_preview.py server/tests/test_service_catalog_seed.py -q --tb=short` -> 7 passed.
+  - `python -m pytest server/tests/test_service_catalog_repo.py::test_service_catalog_publication_blocks_offering_when_runtime_simulation_cannot_route server/tests/test_policy_health_service_catalog.py -q --tb=short` -> 2 passed.
+  - `python -m pytest pc_agent/tests/test_chat_panel_helpers.py -q --tb=short` -> 119 passed.
+  - `pnpm --dir webapp build` -> passed.
+- Consolidated targeted verification:
+  - `python -m pytest server/tests/test_service_catalog_fallback.py server/tests/test_service_catalog_preview.py server/tests/test_service_catalog_repo.py server/tests/test_service_catalog_api.py server/tests/test_policy_health_service_catalog.py server/tests/test_ticket_create_service_catalog.py server/tests/test_reports_service_catalog.py server/tests/test_service_catalog_seed.py -q --tb=short` -> 15 passed.
+  - `python -m pytest server/tests/test_ticket_status_usage_no_db.py server/tests/test_public_queue_privacy.py server/tests/test_workflow_side_effect_observability.py -q --tb=short` -> 13 passed.
+  - `python -m pytest server/tests/test_policy_health_service.py server/tests/test_policy_health_api.py -q --tb=short` -> 6 passed.
+  - `python -m pytest server/tests/test_ticket_create_contracts.py -q --tb=short` -> 13 passed.
+  - `python -m pytest server/tests/test_form_process_preview.py server/tests/test_form_business_validation.py -q --tb=short` -> 18 passed.
+  - `python -m pytest server/tests/test_helpdesk_policy_registry.py -q --tb=short` -> 26 passed.
+  - `python -m pytest server/tests/test_service_catalog_contract_no_db.py pc_agent/tests/test_ticket_api_client_service_catalog.py pc_agent/tests/test_ticket_api_client_attachments.py -q --tb=short` -> 18 passed.
+  - `python -m pytest pc_agent/tests/test_ticket_api_client_service_catalog.py pc_agent/tests/test_ticket_api_client_attachments.py pc_agent/tests/test_chat_panel_helpers.py -q --tb=short` -> 133 passed.
+  - `python -m pytest pc_agent/tests -m "not manual" -q --tb=short` -> 305 passed, 4 deselected.
+  - `python -m pytest server/tests -m "not manual" -q --tb=short` -> 889 passed, 11 warnings.
+- Static/build verification:
+  - `pnpm --dir webapp build` -> passed.
+  - `python -m compileall -q server pc_agent scripts` -> passed.
+  - `git diff --check` -> passed with only line-ending warnings.
+  - `python scripts/verify_workspace.py` -> passed.
+  - `python scripts/build_context_index.py --force` -> passed.
+- Full/default gate:
+  - Initial `python scripts/run_ci_suite.py` attempt on the same commit timed out in `server_pytest_db_api` at the old 2700s per-step limit, with tests still progressing and no failure reported.
+  - `python scripts/run_ci_suite.py --server-pytest-timeout 5400` -> green artifact: `verify_workspace` passed, webapp bundle built, server no-db 307 passed, server DB/API 552 passed, server agent_ws 30 passed, pc_agent 305 passed.
+- Seed/setup:
+  - Local `python scripts/seed_service_catalog.py --dry-run` exited 0 and printed offline baseline plan because local PostgreSQL was not running.
+  - Remote `server/venv/bin/python scripts/seed_service_catalog.py --dry-run` against `/var/chat_bot/pc_client` reported five services and nine offerings would be created with no missing dependencies.
+  - Remote `server/venv/bin/python scripts/seed_service_catalog.py` created baseline services `workplace`, `access`, `network`, `mail`, `other`, baseline offerings including `other.unknown`, and missing seed request templates; no `--force` updates were applied.
+- Remote release/browser signoff:
+  - `python scripts/release_server_to_remote.py --allow-local-dirty` used the green CI artifact, deployed committed state, ran remote Alembic `upgrade head`, uploaded the React bundle and passed remote smoke after one retry.
+  - Browser MCP verified `https://192.168.100.17:9443/app/admin/service-catalog`: page loads, seeded services and fallback are visible, structured service/offering editors are visible, publication gates show blocking status, and runtime simulation runs from the admin panel.
+  - Browser MCP verified `https://192.168.100.17:9443/app/admin/policy-health`: page loads and includes seeded fallback/template rows such as `general_request`.
+  - Browser MCP verified `https://192.168.100.17:9443/app/help`: requester can select `Другое / Не знаю`, run a safe preview, and submit a ticket; test ticket access code `6WT8G22X` was created.
+  - Browser-side recursive check of `/api/service-catalog/current` returned 200, five safe services, real fallback `other.unknown`, and no forbidden safe-projection keys.
+  - Browser console check returned 0 errors/warnings; server logs showed ticket create/routing/SLA activity and expected unauthenticated public ticket WebSocket warnings, with no server error in the checked tail.
+  - Remote server was stopped after signoff: `python scripts/manage_remote_stack.py stop server`; follow-up status reported inactive/dead.
+
+## Rollback Notes
+
+- Rollback is additive: retire seeded catalog services/offerings instead of deleting rows referenced by tickets.
+- Disable catalog-first UI by falling back to the legacy request-form pack; do not remove legacy `form_key` / `request_template_key` create support.
+- No schema migration is planned for P1.1 unless discovery exposes a hard blocker; seed data can be rolled back by retiring entries.
+
+## Known Risks
+
+- The biggest implementation risk is turning the Qt wizard into explicit catalog flow without destabilizing existing dynamic fields, attachments and diagnostic consent. Keep changes localized to selection helpers/widgets and preserve the old form path.
+- Requester preview must avoid reusing internal `/api/tickets/create/preview` payload directly because that endpoint exposes internal routing details.
+- Seeded offerings should not be published if dependencies cannot pass publication gates; the script must report draft/skipped status clearly.
+
 # P1 Service Catalog + Runtime Process Governance
 
 Goal: add a managed Service Catalog layer above the stabilized ticket engine:

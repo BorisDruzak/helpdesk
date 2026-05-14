@@ -18,10 +18,10 @@
 ## P1 Service Catalog and Runtime Governance (2026-05-14)
 
 - Service Catalog is a process/requester layer, not a replacement for CMDB `registry_services`. Catalog services live in `helpdesk_services`, offerings live in `helpdesk_service_offerings`, and either may link to existing registry data without changing registry snapshots or service picker semantics.
-- Create/preview payloads may include `service_code`, `offering_code` or `offering_full_code` plus `request_template_key`. The runtime resolver maps service/offering to a request template/form, applies catalog policy defaults/overrides, and preserves legacy `form_key` / `request_template_key` flows when no unambiguous offering exists.
+- Create/preview payloads may include `service_code`, `offering_code` or `offering_full_code` plus `request_template_key`. The runtime resolver maps service/offering to a request template/form, applies catalog policy defaults/overrides, and preserves legacy `form_key` / `request_template_key` flows when no unambiguous offering exists. P1.1 adds safe fallback `other.unknown` (`Другое / Не знаю`) and requester-safe runtime preview `POST /api/service-catalog/preview`.
 - Policy inheritance order is `system -> ticket_type -> category -> service -> offering -> request_template`; request-template explicit refs remain strongest. Created tickets store explicit catalog/reporting fields plus `custom_fields.service_catalog` snapshot for audit/reporting.
 - Admin APIs live under `/api/web/admin/service-catalog*`; requester/agent-safe catalog projection lives under `/api/service-catalog/*` and never exposes queue ids, raw policies, approver internals, requester ids, device ids or raw custom fields.
-- `/app/admin/service-catalog`, `/app/help` and the Qt agent create wizard consume the same safe catalog. `/api/web/reports/summary` now includes service/offering aggregates from indexed ticket columns.
+- `/app/admin/service-catalog`, `/app/help` and the Qt agent create wizard consume the same safe catalog. Admin uses structured service/offering editors with Advanced JSON as fallback; requester and agent flows explicitly select service and offering and run safe preview before catalog submit. `/api/web/reports/summary` now includes service/offering aggregates from indexed ticket columns.
 - Full contract and rollback notes: [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
 ## Источники создания тикета и инварианты

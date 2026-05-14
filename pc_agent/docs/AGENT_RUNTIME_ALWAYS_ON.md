@@ -46,11 +46,15 @@ falls back to the legacy form-pack flow instead of blocking ticket creation.
 
 Catalog Service and Offering are process choices (`service_code`,
 `offering_code`) and are distinct from CMDB/service picker fields inside a
-dynamic form. Preview and submit requests include the catalog codes plus the
-linked `request_template_key`, diagnostic consent, attachments and existing
+dynamic form. P1.1 makes the flow explicit in the local GUI:
+`Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`.
+The fallback `other.unknown` (`Другое / Не знаю`) is shown when the server safe
+catalog provides it. Preview and submit requests include the catalog codes plus
+the linked `request_template_key`, diagnostic consent, attachments and existing
 device/profile metadata. The GUI must display only requester-safe titles,
 descriptions, deadlines and approval/diagnostic hints; queue ids, raw policy
-JSON, approver internals and registry ids are not exposed in the agent UI.
+JSON, approver internals and registry ids are not exposed in the agent UI. This
+does not change Protocol V3.
 
 ## Runtime logs
 

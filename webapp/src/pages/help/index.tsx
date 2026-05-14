@@ -11,8 +11,15 @@ import {
   createPublicTicket,
   fetchPublicFormPack,
   fetchServiceCatalogCurrent,
+  previewServiceCatalogRequest,
 } from "../../features/requester/api";
-import type { PublicTicketCreateResult, RequestFormDefinition, RequestFormField } from "../../features/requester/types";
+import type {
+  PublicTicketCreatePayload,
+  PublicTicketCreateResult,
+  RequestFormDefinition,
+  RequestFormField,
+  ServiceCatalogPreviewPayload,
+} from "../../features/requester/types";
 
 type FieldValues = Record<string, string | boolean>;
 
@@ -141,6 +148,7 @@ export function HelpPage() {
   const [importance, setImportance] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [createdTicket, setCreatedTicket] = useState<PublicTicketCreateResult | null>(null);
+  const [previewKey, setPreviewKey] = useState("");
 
   const formsQuery = useQuery({
     queryKey: ["requester-form-pack"],
@@ -175,6 +183,97 @@ export function HelpPage() {
     () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
     [fieldValues, selectedForm],
   );
+  const currentPreviewKey = useMemo(
+    () =>
+      JSON.stringify({
+        service: selectedService?.service_code,
+        offering: selectedOffering?.full_code,
+        form: selectedForm?.key,
+        payload: collectVisiblePayload(selectedForm, fieldValues),
+        description,
+        displayName,
+        fullName,
+        phone,
+        building,
+        room,
+        urgency,
+        importance,
+      }),
+    [
+      building,
+      description,
+      displayName,
+      fieldValues,
+      fullName,
+      importance,
+      phone,
+      room,
+      selectedForm,
+      selectedOffering?.full_code,
+      selectedService?.service_code,
+      urgency,
+    ],
+  );
+
+  function buildCreatePayload(): PublicTicketCreatePayload {
+    if (!displayName.trim()) {
+      throw new Error("Укажите, как к вам обращаться.");
+    }
+    if (!description.trim()) {
+      throw new Error("Опишите проблему.");
+    }
+    const missing = missingRequiredFields(selectedForm, fieldValues);
+    if (missing.length) {
+      throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
+    }
+    const formPayload = collectVisiblePayload(selectedForm, fieldValues);
+    return {
+      title: selectedForm ? `Заявка: ${selectedForm.title || selectedForm.key}` : "Заявка с веб-страницы",
+      description: description.trim(),
+      user_display_name: displayName.trim(),
+      requester_profile: {
+        full_name: fullName.trim() || displayName.trim(),
+        building: building.trim(),
+        room: room.trim(),
+        phone: phone.trim(),
+      },
+      urgency,
+      importance,
+      urgency_reason: urgency ? "requester_marked_urgent" : "requester_did_not_mark_urgent",
+      importance_reason: importance ? "requester_marked_important" : "requester_did_not_mark_important",
+      ...(selectedForm && formsQuery.data
+        ? {
+            form_key: selectedForm.key,
+            form_pack_key: formsQuery.data.pack_key,
+            form_pack_version: formsQuery.data.version,
+            form_payload: formPayload,
+            ticket_type: selectedForm.request_kind || selectedForm.key,
+            request_template_key: selectedOffering?.request_template_key ?? selectedForm.key,
+            service_code: selectedService?.service_code,
+            offering_code: selectedOffering?.offering_code,
+            offering_full_code: selectedOffering?.full_code,
+          }
+        : {}),
+    };
+  }
+
+  function buildPreviewPayload(): ServiceCatalogPreviewPayload {
+    const createPayload = buildCreatePayload();
+    return {
+      service_code: createPayload.service_code,
+      offering_code: createPayload.offering_code,
+      offering_full_code: createPayload.offering_full_code,
+      request_template_key: createPayload.request_template_key,
+      form_key: createPayload.form_key,
+      form_pack_key: createPayload.form_pack_key,
+      form_pack_version: createPayload.form_pack_version,
+      form_payload: createPayload.form_payload,
+      description: createPayload.description,
+      requester_context: {
+        requester_profile: createPayload.requester_profile,
+      },
+    };
+  }
 
   useEffect(() => {
     if (!selectedServiceCode && services[0]) {
@@ -204,47 +303,42 @@ export function HelpPage() {
     setFieldValues(buildDefaultFieldValues(selectedForm));
   }, [selectedForm?.key]);
 
+  const previewMutation = useMutation({
+    mutationFn: () => previewServiceCatalogRequest(buildPreviewPayload()),
+    onSuccess: (result) => {
+      setPreviewKey(currentPreviewKey);
+      const blockers = result.blockers ?? [];
+      const warnings = result.warnings ?? [];
+      setFeedback({
+        tone: blockers.length ? "error" : "success",
+        text: blockers.length
+          ? blockers.join(" ")
+          : warnings.length
+            ? `Preview рассчитан. Предупреждения: ${warnings.join(" ")}`
+            : "Preview рассчитан. Можно отправлять заявку.",
+      });
+    },
+    onError: (error) => {
+      setPreviewKey("");
+      setFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Не удалось построить безопасный preview обращения.",
+      });
+    },
+  });
+
+  const previewIsFresh =
+    Boolean(selectedOffering) &&
+    previewKey === currentPreviewKey &&
+    Boolean(previewMutation.data?.ok) &&
+    !(previewMutation.data?.blockers ?? []).length;
+
   const createMutation = useMutation({
     mutationFn: () => {
-      if (!displayName.trim()) {
-        throw new Error("Укажите, как к вам обращаться.");
+      if (selectedOffering && !previewIsFresh) {
+        throw new Error("Сначала выполните безопасный preview заявки.");
       }
-      if (!description.trim()) {
-        throw new Error("Опишите проблему.");
-      }
-      const missing = missingRequiredFields(selectedForm, fieldValues);
-      if (missing.length) {
-        throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
-      }
-      const formPayload = collectVisiblePayload(selectedForm, fieldValues);
-      return createPublicTicket({
-        title: selectedForm ? `Заявка: ${selectedForm.title || selectedForm.key}` : "Заявка с веб-страницы",
-        description: description.trim(),
-        user_display_name: displayName.trim(),
-        requester_profile: {
-          full_name: fullName.trim() || displayName.trim(),
-          building: building.trim(),
-          room: room.trim(),
-          phone: phone.trim(),
-        },
-        urgency,
-        importance,
-        urgency_reason: urgency ? "requester_marked_urgent" : "requester_did_not_mark_urgent",
-        importance_reason: importance ? "requester_marked_important" : "requester_did_not_mark_important",
-        ...(selectedForm && formsQuery.data
-          ? {
-              form_key: selectedForm.key,
-              form_pack_key: formsQuery.data.pack_key,
-              form_pack_version: formsQuery.data.version,
-              form_payload: formPayload,
-              ticket_type: selectedForm.request_kind || selectedForm.key,
-              request_template_key: selectedOffering?.request_template_key ?? selectedForm.key,
-              service_code: selectedService?.service_code,
-              offering_code: selectedOffering?.offering_code,
-              offering_full_code: selectedOffering?.full_code,
-            }
-          : {}),
-      });
+      return createPublicTicket(buildCreatePayload());
     },
     onSuccess: (result) => {
       const ticketId = result.ticket.ticket_id;
@@ -252,6 +346,7 @@ export function HelpPage() {
         sessionStorage.setItem(tokenStorageKey(ticketId), result.public_token);
       }
       setCreatedTicket(result);
+      setPreviewKey("");
       setFeedback({ tone: "success", text: "Заявка создана." });
     },
     onError: (error) => {
@@ -440,9 +535,23 @@ export function HelpPage() {
                 </div>
               ) : null}
 
-              <Button disabled={createMutation.isPending} leadingIcon={<Send className="h-4 w-4" />} type="submit">
-                Создать заявку
-              </Button>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Button
+                  disabled={!selectedOffering || previewMutation.isPending || createMutation.isPending}
+                  onClick={() => previewMutation.mutate()}
+                  type="button"
+                  variant="secondary"
+                >
+                  {previewMutation.isPending ? "Проверяем..." : "Проверить заявку"}
+                </Button>
+                <Button
+                  disabled={createMutation.isPending || Boolean(selectedOffering && !previewIsFresh)}
+                  leadingIcon={<Send className="h-4 w-4" />}
+                  type="submit"
+                >
+                  {createMutation.isPending ? "Создаем..." : "Создать заявку"}
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
@@ -457,10 +566,46 @@ export function HelpPage() {
               {selectedService || selectedOffering ? (
                 <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3">
                   <p className="font-semibold text-slate-950">Безопасный preview</p>
-                  <p className="mt-1">
-                    {[selectedService?.title, selectedOffering?.title].filter(Boolean).join(" / ") ||
-                      "Каталог услуг пока не выбран."}
-                  </p>
+                  {previewMutation.data ? (
+                    <div className="mt-2 space-y-2">
+                      <p>
+                        {[previewMutation.data.service?.title, previewMutation.data.offering?.title]
+                          .filter(Boolean)
+                          .join(" / ") || "Каталог услуг пока не выбран."}
+                      </p>
+                      <div className="grid gap-1 text-xs text-slate-600">
+                        {previewMutation.data.request_type_label ? (
+                          <span>Тип: {previewMutation.data.request_type_label}</span>
+                        ) : null}
+                        {previewMutation.data.expected_first_response ? (
+                          <span>Ответ: {previewMutation.data.expected_first_response}</span>
+                        ) : null}
+                        {previewMutation.data.expected_resolution ? (
+                          <span>Решение: {previewMutation.data.expected_resolution}</span>
+                        ) : null}
+                        <span>{previewMutation.data.approval?.text ?? "Согласование будет определено автоматически."}</span>
+                        <span>{previewMutation.data.diagnostics?.text ?? "Диагностика будет определена автоматически."}</span>
+                      </div>
+                      {previewMutation.data.next_action ? (
+                        <p className="text-xs text-slate-600">{previewMutation.data.next_action}</p>
+                      ) : null}
+                      {previewMutation.data.warnings?.length ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {previewMutation.data.warnings.join(" ")}
+                        </div>
+                      ) : null}
+                      {previewMutation.data.blockers?.length ? (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                          {previewMutation.data.blockers.join(" ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-1">
+                      {[selectedService?.title, selectedOffering?.title].filter(Boolean).join(" / ") ||
+                        "Каталог услуг пока не выбран."}
+                    </p>
+                  )}
                 </div>
               ) : null}
               {ticketId ? (

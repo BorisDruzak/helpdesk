@@ -313,6 +313,7 @@ from web_api.policy_health_handlers import (
 from web_api.service_catalog_handlers import (
     handle_service_catalog_current,
     handle_service_catalog_offering,
+    handle_service_catalog_preview,
     handle_service_catalog_service,
     handle_web_admin_service_catalog,
     handle_web_admin_service_catalog_offering,
@@ -717,6 +718,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.get('/api/service-catalog/current', handle_service_catalog_current),
+        web.post('/api/service-catalog/preview', handle_service_catalog_preview),
         web.get('/api/service-catalog/services/{service_code}', handle_service_catalog_service),
         web.get('/api/service-catalog/offerings/{full_code}', handle_service_catalog_offering),
         web.get('/api/web/reports/summary', handle_web_reports_summary),

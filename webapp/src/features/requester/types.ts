@@ -57,7 +57,38 @@ export type ServiceCatalogService = {
 export type ServiceCatalogCurrent = {
   catalog_version: string;
   services: ServiceCatalogService[];
-  fallback?: unknown;
+  fallback?: ServiceCatalogOffering & { service_code?: string | null; service_title?: string | null };
+};
+
+export type ServiceCatalogPreviewPayload = {
+  service_code?: string;
+  offering_code?: string;
+  offering_full_code?: string;
+  request_template_key?: string;
+  form_key?: string;
+  form_pack_key?: string;
+  form_pack_version?: string;
+  form_payload?: Record<string, unknown>;
+  requester_context?: Record<string, unknown>;
+  device_metadata?: Record<string, unknown>;
+  description?: string;
+  diagnostic_consent?: Record<string, unknown>;
+};
+
+export type ServiceCatalogSafePreview = {
+  ok: boolean;
+  service: { code?: string | null; title?: string | null };
+  offering: { code?: string | null; full_code?: string | null; title?: string | null };
+  request_type_label?: string | null;
+  public_status_after_create?: string | null;
+  expected_first_response?: string | null;
+  expected_resolution?: string | null;
+  approval: { required: boolean; text?: string | null };
+  diagnostics: { required: boolean; consent_required: boolean; text?: string | null };
+  next_action?: string | null;
+  warnings: string[];
+  blockers: string[];
+  would_create_ticket: false;
 };
 
 export type PublicTicket = {

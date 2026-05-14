@@ -238,6 +238,8 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.method == "GET" and request.path.startswith("/api/service-catalog"):
         return await handler(request)
+    if request.method == "POST" and request.path == "/api/service-catalog/preview":
+        return await handler(request)
     if request.path.startswith("/api/connection_request"):
         return await handler(request)
 

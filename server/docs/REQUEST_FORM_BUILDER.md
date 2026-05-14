@@ -2,7 +2,7 @@
 
 Документ описывает рабочий сценарий администратора для каталога входящих заявок `request_forms`.
 
-P1 Service Catalog sits above this builder: a catalog offering points to a `request_template_key` / form schema, and create/preview accepts `service_code`, `offering_code` or `offering_full_code` before resolving the linked form. Legacy `/help`, public form-pack and agent form-only flows remain compatible; if a template maps to exactly one published offering, the runtime attaches a catalog snapshot, otherwise it preserves legacy behavior. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
+P1/P1.1 Service Catalog sits above this builder: a catalog offering points to a `request_template_key` / form schema, and create/preview accepts `service_code`, `offering_code` or `offering_full_code` before resolving the linked form. Legacy `/help`, public form-pack and agent form-only flows remain compatible; if a template maps to exactly one published offering, the runtime attaches a catalog snapshot, otherwise it preserves legacy behavior. The requester portal and agent GUI use the safe `other.unknown` fallback and call runtime-backed safe preview before catalog submit. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
 ## Канонические поверхности
 
