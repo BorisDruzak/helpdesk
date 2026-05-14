@@ -70,6 +70,10 @@ describe("HelpPage", () => {
             url: "https://intranet.local",
           },
           ticket_type: "site_down",
+          urgency: false,
+          importance: false,
+          urgency_reason: "requester_did_not_mark_urgent",
+          importance_reason: "requester_did_not_mark_important",
         });
         return jsonResponse({
           status: "ok",
@@ -99,6 +103,6 @@ describe("HelpPage", () => {
       "href",
       "/app/ticket/T-100?code=A1B2C3",
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   });
 });

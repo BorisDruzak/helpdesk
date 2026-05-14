@@ -229,8 +229,8 @@ export function HelpPage() {
         },
         urgency,
         importance,
-        urgency_reason: urgency ? "Указано пользователем при создании" : "",
-        importance_reason: importance ? "Указано пользователем при создании" : "",
+        urgency_reason: urgency ? "requester_marked_urgent" : "requester_did_not_mark_urgent",
+        importance_reason: importance ? "requester_marked_important" : "requester_did_not_mark_important",
         ...(selectedForm && formsQuery.data
           ? {
               form_key: selectedForm.key,
