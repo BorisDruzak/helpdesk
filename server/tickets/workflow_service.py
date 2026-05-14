@@ -691,18 +691,30 @@ class TicketWorkflowService:
             )
 
         if to_status == "closed":
-            try:
+            async def _revoke_public_sessions() -> dict[str, object]:
                 auth_repo = AuthTokensRepo(self.session)
                 revoked = await auth_repo.revoke_ticket_public_sessions(ticket_id, commit=False)
-                if revoked:
-                    logger.info(
-                        f"[Workflow] revoked public ticket sessions: ticket_id={ticket_id} count={revoked}"
-                    )
-            except Exception as revoke_err:
-                logger.warning(
-                    f"[Workflow] failed to revoke public ticket sessions: "
-                    f"ticket_id={ticket_id} err={revoke_err}"
-                )
+                return {
+                    "status": "executed" if revoked else "no_op",
+                    "revoked_count": int(revoked or 0),
+                }
+
+            await run_workflow_side_effect(
+                ticket_repo=self.ticket_repo,
+                ticket_id=ticket_id,
+                device_id=current_device_id,
+                side_effect="public_session",
+                action="revoke",
+                trigger="ticket_closed",
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                critical=False,
+                operation=_revoke_public_sessions,
+                event_payload=event_payload,
+                correlation_id=side_effect_correlation_id,
+            )
 
         if from_status in ("resolved", "closed") and to_status == "new":
             await self.sla_service.on_reopen(ticket_id)

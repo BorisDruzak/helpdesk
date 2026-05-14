@@ -702,3 +702,32 @@ Known risks / rollback notes:
 - The previous order-sensitive module workbench live-agent harness failures are resolved by restoring server modules after the in-process agent fixture clears agent-shadowed imports.
 - Existing untracked `tmp/` remains untouched and is not part of this change.
 - Rollback is a normal code rollback plus Alembic downgrade of revision `081` where feasible; data normalized from legacy aliases remains canonical by design.
+
+### Follow-up: Production Contract Drift Closure
+
+Current scope:
+
+- Remove the remaining `Triaged` docs drift where it is still listed as a normal UI/API status.
+- Add a guard that permits `triaged` only in legacy compatibility text, historical/backfill migrations and legacy-normalization tests.
+- Close unauthenticated public queue probing by rejecting `queue_id`, accepting only `queue_code` / `public_queue_code`, and removing public `queue_name` exposure.
+- Convert public ticket session revocation on close from warning-only handling into the same side-effect audit/log/metric path used for SLA/OLA/approval.
+- Make Policy Health simulation runtime-equivalent: dry-run should use the same create/form policy overlay, routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers that ticket creation/lifecycle uses.
+
+Design decisions:
+
+- Public queue endpoints do not accept numeric queue ids at all. Numeric ids remain internal/admin-only.
+- Public queue labels use `queue_code` only until a dedicated non-sensitive public alias/display field exists.
+- Public session revocation after `closed` is non-critical for the status transition but must be observable as `workflow_side_effect_failed` plus metric when it fails.
+- Policy Health simulation remains side-effect-free: it may instantiate an unsaved `Ticket` object and call resolver methods, but it must not insert tickets, approvals, events or operations.
+
+Verification targets:
+
+- Red run confirmed the expected failures in the new guards before implementation: old `Triaged` docs line, public `queue_id` probe/`queue_name`, warning-only public-session revoke and dashboard-only simulation.
+- Implemented: public queue now rejects `queue_id` before DB access, accepts `queue_code` / `public_queue_code`, and exposes no internal queue names; close-time public-session revoke uses `run_workflow_side_effect(side_effect="public_session", action="revoke", critical=False)`; Policy Health simulation builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic runtime resolvers.
+- Targeted green run: `python -m pytest server/tests/test_ticket_status_usage_no_db.py server/tests/test_public_queue_privacy.py server/tests/test_workflow_side_effect_observability.py server/tests/test_policy_health_api.py -q --tb=short` -> `16 passed`.
+- Broader targeted green run: `python -m pytest server/tests/test_ticket_status_usage_no_db.py server/tests/test_public_queue_privacy.py server/tests/test_workflow_side_effect_observability.py server/tests/test_policy_health_service.py server/tests/test_policy_health_api.py -q --tb=short` -> `19 passed`.
+- Neighbor regression green run: `python -m pytest server/tests/test_form_process_preview.py server/tests/test_form_business_validation.py server/tests/test_helpdesk_policy_registry.py server/tests/test_ticket_create_contracts.py -q --tb=short` -> `57 passed`.
+- Static/compile: `python -m compileall -q server\tickets server\web_api server\routes.py server\app\db\models.py`, `python -m compileall -q scripts\navigation_catalog.py server\tickets\policy_health_service.py server\tickets\public_queue_handlers.py server\tickets\workflow_service.py`, `git diff --check`, `rg -n -i "triaged" server docs\QUICK_LOOKUP.md webapp\src`, `rg -n 'request\.query\.get\("queue_id"\)|"queue_name"|requester_display_name|urgency|importance|ticket_id|assignee_id|device_id|custom_fields' server\tickets\public_queue_handlers.py`, and `rg -n -U "except Exception:\s*\r?\n\s*pass" server\tickets` completed with no new blocking drift; `triaged` results are limited to legacy/docs/migration/tests.
+- Context index refreshed: `python scripts\build_context_index.py --force`.
+- Workspace verification: `python scripts\verify_workspace.py` -> passed after updating `scripts/navigation_catalog.py`.
+- Browser check was not rerun for this follow-up because no web/static UI files changed; public queue and Policy Health behavior changes are backend/API contract changes covered by tests.

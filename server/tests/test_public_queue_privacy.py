@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from tickets.public_queue_handlers import _etag_from_body, _public_ticket_row
+from tickets import public_queue_handlers
+from tickets.public_queue_handlers import (
+    _etag_from_body,
+    _public_ticket_row,
+    handle_public_queue_stats,
+    handle_public_queue_tickets,
+)
 
 
 pytestmark = pytest.mark.no_db
@@ -128,3 +134,45 @@ def test_public_queue_static_assets_do_not_render_sensitive_columns() -> None:
         "queue_id",
     ):
         assert forbidden not in combined
+
+
+class _FakeRequest:
+    def __init__(self, query: dict[str, str]):
+        self.query = query
+        self.headers: dict[str, str] = {}
+
+
+class _ForbiddenSessionFactory:
+    def __call__(self):
+        raise AssertionError("queue_id probing must be rejected before DB access")
+
+
+@pytest.mark.asyncio
+async def test_public_queue_tickets_rejects_queue_id_without_db_probe(monkeypatch) -> None:
+    monkeypatch.setattr(public_queue_handlers, "DB_AVAILABLE", True)
+    monkeypatch.setattr(public_queue_handlers, "get_session", _ForbiddenSessionFactory())
+
+    response = await handle_public_queue_tickets(_FakeRequest({"queue_id": "42", "limit": "10"}))
+
+    assert response.status == 400
+    assert "queue_id" in response.text
+    assert "queue_code" in response.text
+
+
+@pytest.mark.asyncio
+async def test_public_queue_stats_rejects_queue_id_without_db_probe(monkeypatch) -> None:
+    monkeypatch.setattr(public_queue_handlers, "DB_AVAILABLE", True)
+    monkeypatch.setattr(public_queue_handlers, "get_session", _ForbiddenSessionFactory())
+
+    response = await handle_public_queue_stats(_FakeRequest({"queue_id": "42"}))
+
+    assert response.status == 400
+    assert "queue_id" in response.text
+    assert "queue_code" in response.text
+
+
+def test_public_queue_handler_source_does_not_expose_queue_names_or_query_queue_id() -> None:
+    source = (PROJECT_ROOT / "server" / "tickets" / "public_queue_handlers.py").read_text(encoding="utf-8")
+
+    assert 'request.query.get("queue_id")' not in source
+    assert '"queue_name"' not in source

@@ -11,9 +11,9 @@
 - `server/tickets/statuses.py` is the only status contract source. `CANONICAL_STATUSES` is exactly: `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`.
 - `triaged` is legacy compatibility only. It may be accepted at external input boundaries through `normalize_status_for_input()` and is migrated to `assigned` when `assignee_id` is set, otherwise `queued`. `assert_canonical_status()` must run before DB writes and rejects aliases including `triaged`.
 - Migration `081_ticket_contract_hardening` backfills legacy statuses/requesters, sets `tickets.requester_id` to `NOT NULL`, rejects blank requester ids, enforces `ck_tickets_status_canonical`, and adds deterministic ticket-event ordering indexes. `Ticket` model insert/update hooks apply the same requester fallback for legacy direct ORM inserts: `device:<device_id>` first, then `legacy:<ticket_id>`. Timeline/replay order is `created_at ASC, id ASC`.
-- Public unauthenticated queue APIs use a separate sanitized serializer. They may expose `ticket_code`, `public_position`, requester-facing status/label, `queue_code`, `wait_bucket`, rounded/update timestamps and aggregate counts; they must not expose internal `ticket_id`, requester identity, urgency/importance/priority, assignee/queue ids, device/asset refs, raw custom fields or trace/operation ids.
-- Workflow side effects are observable. SLA and required approval side effects are critical; OLA and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages.
-- Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied.
+- Public unauthenticated queue APIs use a separate sanitized serializer. They may expose `ticket_code`, `public_position`, requester-facing status/label, `queue_code`, `wait_bucket`, rounded/update timestamps and aggregate counts; they must not expose internal `ticket_id`, requester identity, urgency/importance/priority, assignee/queue ids, internal queue names, device/asset refs, raw custom fields or trace/operation ids. Public queue filters accept only `queue_code` or `public_queue_code`; numeric `queue_id` is internal/admin-only and is rejected before DB access.
+- Workflow side effects are observable. SLA and required approval side effects are critical; OLA, public-session revocation on `closed`, and notification-style side effects are non-critical unless their policy explicitly marks them critical. Failures are logged with structured context, counted by workflow side-effect metrics, attached to the transition payload and written as `workflow_side_effect_failed` ticket events with redacted error messages.
+- Policy Health lives at `server/tickets/policy_health_service.py`, `server/web_api/policy_health_handlers.py` and `/app/admin/policy-health`. Admin/auditor endpoints are `GET /api/web/admin/helpdesk/policy-health`, `GET /api/web/admin/helpdesk/policy-health/{template_code}`, and `POST /api/web/admin/helpdesk/policy-health/simulate`; support/requester/public are denied. Simulation is dry-run but runtime-equivalent: it overlays effective registry policies, builds an unsaved ticket context and calls the real routing, priority, SLA, OLA, approval, closure, visibility and diagnostic resolvers.
 
 ## Источники создания тикета и инварианты
 
@@ -134,7 +134,7 @@
 
 **statuses.py (tickets/):** канонические статусы: New, Queued, Assigned, In Progress, Waiting on User, Waiting on Internal Team, Waiting on Vendor, Waiting on Approval, Scheduled, Resolved, Closed, Canceled. `normalize_status(raw)` — soft-нормализация; неизвестный → 400 validation_error. Пользовательский mapping: accepted / in_work / needs_requester / review_solution / closed / canceled.
 
-**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — подтверждение/возврат решения). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (`resolved_at`, `closed_at`, `canceled_at`, reopen, SLA pause/resume, wait ledger, `next_action_owner`, `requester_status`) и проверка workflow transition gates, `approval_policy` / `closure_policy` перед guarded-переходами. Workflow actions now record typed action metadata/results: notification markers, SLA pause/resume/no-op/terminal-stop skips, approval request create/skip markers, plus configured `log_fields` values for audit. SLA resume/pause uses the transition target status and configured transition `trigger` when present, so policy conditions such as `waiting_user` and `requester_replied` are satisfied by the workflow gate instead of depending on the old persisted status or internal status-change marker. `apply_triggered_transition(...)` выполняет настроенные `trigger`/`auto` переходы, например `requester_replied`; если профиль не настроен, legacy fallback сохраняет прежний target. Событие `status_changed` несёт owner/status и `workflow_trigger` для UI/аудита.
+**workflow_service.py (tickets/):** матрица переходов (support/admin — полная FSM; requester — подтверждение/возврат решения). `TicketWorkflowService.apply_status_transition(...)` — обновление тикета + side effects (`resolved_at`, `closed_at`, `canceled_at`, reopen, SLA pause/resume, wait ledger, `next_action_owner`, `requester_status`) и проверка workflow transition gates, `approval_policy` / `closure_policy` перед guarded-переходами. Workflow actions now record typed action metadata/results: notification markers, SLA pause/resume/no-op/terminal-stop skips, approval request create/skip markers, public-session revoke results on close, plus configured `log_fields` values for audit. SLA resume/pause uses the transition target status and configured transition `trigger` when present, so policy conditions such as `waiting_user` and `requester_replied` are satisfied by the workflow gate instead of depending on the old persisted status or internal status-change marker. `apply_triggered_transition(...)` выполняет настроенные `trigger`/`auto` переходы, например `requester_replied`; если профиль не настроен, legacy fallback сохраняет прежний target. Событие `status_changed` несёт owner/status и `workflow_trigger` для UI/аудита.
 
 **RBAC:** support/admin — reroute, classify, queue, любые переходы; requester — только свои тикеты, только Resolved → New (reopen). POST /message, /close: роль только из AuthContext; from_role/closed_by_role в body — legacy, deprecation_warning.
 
@@ -337,8 +337,8 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 
 **Публичные (без auth):**
 - GET /public_api/queues — список очередей с open_count; по умолчанию только с open_count &gt; 0; `include_empty=true` — все активные.
-- GET /public_api/queue/tickets — queue_id, limit, offset, ticket_code; позиция, код, статус, приоритет, ФИО (`requester_display_name`), `urgency`, `importance`, ожидание; ETag/304.
-- GET /public_api/queue/stats — days, queue_id; KPI; ETag/304.
+- GET /public_api/queue/tickets — `queue_code` или `public_queue_code`, limit, offset, ticket_code; sanitized projection only: код талона, публичная позиция, requester-facing статус/label, `queue_code`, wait bucket, rounded/update timestamp; ETag/304. `queue_id`, ФИО/requester identity, urgency/importance/internal priority and raw custom fields are not exposed.
+- GET /public_api/queue/stats — days, optional `queue_code` / `public_queue_code`; public KPI projection and top queue load by `queue_code` only; ETag/304. Numeric `queue_id` is rejected before DB lookup.
 
 **Внутренние (admin/support):**
 - POST /api/tickets/{id}/order — body direction (up|down|top|bottom), reason. Событие `queue_reordered`.
@@ -363,14 +363,14 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 
 ### Admin UI
 
-- В строке тикета: кнопки «Взять себе» (для `new` и без assignee), «Очередь» (модалка) и «Открыть». Модалка: Статус, Назначить, Очередь (смена очереди, приоритет, Reroute). Русские подписи статусов в UI; в API — канонические имена (New, Triaged, In Progress, Waiting on User, Waiting on Vendor, Resolved, Closed).
+- В строке тикета: кнопки «Взять себе» (для `new` и без assignee), «Очередь» (модалка) и «Открыть». Модалка: Статус, Назначить, Очередь (смена очереди, приоритет, Reroute). UI показывает русские подписи из status contract; API принимает и возвращает только canonical snake_case statuses: `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`.
 
 ---
 
 ## Этап 10.3.1: Русификация UI очереди + защита API
 
 - На публичной очереди: русские подписи статусов и приоритетов (канонические значения в БД/API не меняются). Приоритеты: P1→Критический, P2→Высокий и т.д.
-- GET /public_api/queue/tickets: обязательный queue_id; limit 1..200, offset 0..10000; при невалидных — 400 validation_error.
+- GET /public_api/queue/tickets: обязательный `queue_code` или `public_queue_code`; `queue_id` не принимается; limit 1..200, offset 0..10000; при невалидных — 400 validation_error.
 - GET /public_api/queue/stats: days 1..90; при невалидных — 400.
 
 ---

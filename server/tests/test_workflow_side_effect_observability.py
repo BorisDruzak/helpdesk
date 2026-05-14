@@ -94,3 +94,12 @@ def test_no_silent_except_pass_in_workflow_service() -> None:
     path = SERVER_ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
     workflow_source = (SERVER_ROOT / "tickets" / "workflow_service.py").read_text(encoding="utf-8")
     assert "except Exception:\n                pass" not in workflow_source
+
+
+def test_public_session_revocation_uses_workflow_side_effect_observability() -> None:
+    server_root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    workflow_source = (server_root / "tickets" / "workflow_service.py").read_text(encoding="utf-8")
+
+    assert "side_effect=\"public_session\"" in workflow_source
+    assert "action=\"revoke\"" in workflow_source
+    assert "failed to revoke public ticket sessions" not in workflow_source

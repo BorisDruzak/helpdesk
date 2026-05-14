@@ -4,7 +4,9 @@ Stage 10.3.1: Валидация limit/offset/days — при невалидны
 
 GET /public_api/queues
 GET /public_api/queue/tickets?queue_code=...&limit=...&offset=...&ticket_code=...
+GET /public_api/queue/tickets?public_queue_code=...&limit=...&offset=...&ticket_code=...
 GET /public_api/queue/stats?days=7&queue_code=...
+GET /public_api/queue/stats?days=7&public_queue_code=...
 
 Только безопасные поля. ETag/304 для tickets и stats. Limit 1..200, offset 0..10000, days 1..90.
 """
@@ -55,6 +57,20 @@ def _parse_positive_int(value: Optional[str], default: int, min_val: int, max_va
 
 def _etag_from_body(body: bytes) -> str:
     return '"' + sha256(body).hexdigest()[:32] + '"'
+
+
+def _public_queue_code_param(request: web.Request) -> str | None:
+    return (
+        (request.query.get("queue_code") or "").strip()
+        or (request.query.get("public_queue_code") or "").strip()
+        or None
+    )
+
+
+def _reject_internal_queue_identifier(request: web.Request) -> web.Response | None:
+    if "queue_id" in request.query:
+        return _validation_error_response("queue_id is not supported; use queue_code or public_queue_code")
+    return None
 
 
 def _wait_bucket(wait_seconds: object) -> str | None:
@@ -108,7 +124,6 @@ async def handle_public_queues(request: web.Request) -> web.Response:
                 open_count = await admin_repo.count_open_tickets_in_queue(q.id)
                 items.append({
                     "queue_code": q.code,
-                    "queue_name": q.name,
                     "open_count": open_count,
                 })
             if not include_empty:
@@ -129,19 +144,16 @@ async def handle_public_queue_tickets(request: web.Request) -> web.Response:
     """GET /public_api/queue/tickets — тикеты очереди. ETag/304. Limit max 200."""
     if not DB_AVAILABLE or get_session is None:
         return web.json_response({"status": "error", "error": "service_unavailable"}, status=503)
-    queue_id_param = request.query.get("queue_id")
-    queue_code_param = (request.query.get("queue_code") or "").strip() or None
-    if not queue_id_param and not queue_code_param:
+    reject = _reject_internal_queue_identifier(request)
+    if reject is not None:
+        return reject
+    queue_code_param = _public_queue_code_param(request)
+    if not queue_code_param:
         return web.json_response(
             {"status": "error", "error": "validation_error", "details": "queue required"},
             status=400,
         )
     queue_id = None
-    if queue_id_param:
-        try:
-            queue_id = int(queue_id_param)
-        except (TypeError, ValueError):
-            return _validation_error_response("invalid queue_id")
     limit, err = _parse_positive_int(
         request.query.get("limit"), 100, 1, PUBLIC_API_MAX_LIMIT
     )
@@ -156,14 +168,9 @@ async def handle_public_queue_tickets(request: web.Request) -> web.Response:
         async with get_session() as session:
             ticket_repo = TicketEventsRepo(session)
             admin_repo = TicketAdminConfigRepo(session)
-            q = None
-            if queue_id is not None:
-                q = await admin_repo.get_queue(queue_id)
-            elif queue_code_param is not None:
-                queues = await admin_repo.list_queues(include_inactive=False)
-                q = next((candidate for candidate in queues if candidate.code == queue_code_param), None)
-                if q is not None:
-                    queue_id = q.id
+            q = await admin_repo.get_queue_by_code(queue_code_param)
+            if q is not None:
+                queue_id = q.id
             if q is None or queue_id is None:
                 return _validation_error_response("invalid queue")
             queue_code = q.code
@@ -194,16 +201,14 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
     """GET /public_api/queue/stats?days=7&queue_code=... — public KPI projection. ETag/304."""
     if not DB_AVAILABLE or get_session is None:
         return web.json_response({"status": "error", "error": "service_unavailable"}, status=503)
+    reject = _reject_internal_queue_identifier(request)
+    if reject is not None:
+        return reject
     days, err = _parse_positive_int(request.query.get("days"), 7, 1, 90)
     if err is not None:
         return _validation_error_response("days " + err)
-    queue_id = request.query.get("queue_id")
-    queue_code = (request.query.get("queue_code") or "").strip() or None
-    if queue_id is not None:
-        try:
-            queue_id = int(queue_id)
-        except (TypeError, ValueError):
-            return _validation_error_response("invalid queue_id")
+    queue_id = None
+    queue_code = _public_queue_code_param(request)
     period_end = datetime.now(timezone.utc)
     period_start = period_end - timedelta(days=days)
     today_start = period_end.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -214,8 +219,7 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
             metrics_svc = TicketMetricsService(default_days=7, max_days=365)
             if queue_id is None and queue_code is not None:
                 admin_repo = TicketAdminConfigRepo(session)
-                queues = await admin_repo.list_queues(include_inactive=False)
-                q = next((candidate for candidate in queues if candidate.code == queue_code), None)
+                q = await admin_repo.get_queue_by_code(queue_code)
                 if q is None:
                     return _validation_error_response("invalid queue")
                 queue_id = q.id
@@ -241,7 +245,6 @@ async def handle_public_queue_stats(request: web.Request) -> web.Response:
                     q = await admin_repo.get_queue(item["queue_id"])
                     load_with_names.append({
                         "queue_code": q.code if q else None,
-                        "queue_name": q.name if q else None,
                         "open_count": item["open_count"],
                     })
                 top_queue_load = load_with_names
