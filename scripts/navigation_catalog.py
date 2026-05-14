@@ -287,7 +287,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, connection request flow, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification surfaces, typed notification preferences returning plain JSON payloads, and security invariants.",
+        summary="Token sources, AuthContext, connection request flow, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification surfaces, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering, and security invariants.",
         aliases=(
             "auth",
             "token",
@@ -302,6 +302,9 @@ TOPICS: tuple[Topic, ...] = (
             "connection_request",
             "notification auth",
             "notifications preferences",
+            "knowledge auth",
+            "knowledge deflection",
+            "public knowledge suggestions",
             "web_auth",
             "web auth",
             "web_auth_failed",

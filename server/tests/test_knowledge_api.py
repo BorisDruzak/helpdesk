@@ -104,6 +104,31 @@ async def test_knowledge_api_admin_crud_and_requester_safe_suggest(test_client) 
     assert payload["suggestions"][0]["slug"] == "vpn-api"
     assert _forbidden_paths(payload) == []
 
+    public_suggest_resp = await test_client.post(
+        "/api/knowledge/suggest",
+        json={"service_code": "network", "offering_code": "network.vpn_issue", "query": "VPN", "surface": "requester_portal"},
+    )
+    assert public_suggest_resp.status == 200
+    public_payload = await public_suggest_resp.json()
+    assert public_payload["suggestions"][0]["slug"] == "vpn-api"
+    assert _forbidden_paths(public_payload) == []
+
+    public_feedback_resp = await test_client.post(
+        "/api/knowledge/feedback",
+        json={
+            "item_id": item["item_id"],
+            "version_id": version["version_id"],
+            "event_type": "deflected",
+            "service_code": "network",
+            "offering_code": "network.vpn_issue",
+            "surface": "requester_portal",
+        },
+    )
+    assert public_feedback_resp.status == 200
+    feedback_payload = await public_feedback_resp.json()
+    assert feedback_payload["event"]["actor_role"] == "requester"
+    assert _forbidden_paths(feedback_payload) == []
+
 
 @pytest.mark.asyncio
 async def test_knowledge_api_denies_requester_mutation(test_client) -> None:
