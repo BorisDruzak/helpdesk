@@ -18,7 +18,10 @@ from app.db.models import (
     Ticket,
 )
 from app.repos.knowledge_repo import serialize_item
+from knowledge.content_templates import CONTENT_TEMPLATES as STRUCTURED_CONTENT_TEMPLATES
 from knowledge.contracts import actor_visible_visibilities, lint_requester_safe_publication
+from knowledge.gap_service import KnowledgeGapService
+from knowledge.quality_service import KnowledgeQualityService
 
 
 def _new_id() -> str:
@@ -37,6 +40,8 @@ CONTENT_TEMPLATES: tuple[dict[str, Any], ...] = (
     {"type": "workaround", "title": "Workaround", "sections": ["Когда применять", "Шаги", "Риски"]},
     {"type": "service_description", "title": "Описание услуги", "sections": ["Что входит", "Сроки", "Ограничения"]},
 )
+
+CONTENT_TEMPLATES = STRUCTURED_CONTENT_TEMPLATES
 
 
 class KnowledgeOperationsService:
@@ -101,16 +106,11 @@ class KnowledgeOperationsService:
         return {"item": serialize_item(item), "event": metadata["review_events"][-1]}
 
     async def quality_summary(self, *, actor_role: str = "admin") -> dict[str, Any]:
-        allowed = set(actor_visible_visibilities(actor_role))
-        rows = (
-            await self.session.execute(
-                select(KnowledgeItem)
-                .where(KnowledgeItem.visibility.in_(allowed))
-                .order_by(KnowledgeItem.updated_at.desc())
-            )
-        ).scalars().all()
-        items = [await self._score_item(row) for row in rows]
-        return {"items": items, "average_quality_score": (sum(item["quality_score"] for item in items) / len(items)) if items else 0.0}
+        summary = await KnowledgeQualityService(self.session).summary(actor_role=actor_role)
+        return {
+            **summary,
+            "items": [{**item, "quality_score": item["score"], "issues": [issue["code"] for issue in item["issues"]]} for item in summary["items"]],
+        }
 
     async def _score_item(self, item: KnowledgeItem) -> dict[str, Any]:
         score = 35
@@ -181,37 +181,21 @@ class KnowledgeOperationsService:
         }
 
     async def detect_gaps(self, *, actor_role: str = "admin") -> dict[str, Any]:
-        services = (
-            await self.session.execute(select(HelpdeskService).where(HelpdeskService.lifecycle_status == "published", HelpdeskService.visibility == "public"))
-        ).scalars().all()
-        offerings = (
-            await self.session.execute(select(HelpdeskServiceOffering).where(HelpdeskServiceOffering.lifecycle_status == "published", HelpdeskServiceOffering.visibility == "public"))
-        ).scalars().all()
-        service_by_id = {service.service_id: service for service in services}
-        gaps: list[dict[str, Any]] = []
-        for offering in offerings:
-            service = service_by_id.get(offering.service_id)
-            if service is None:
+        result = await KnowledgeGapService(self.session).recompute(actor_id=None)
+        gaps = []
+        for finding in result["findings"]:
+            if finding["status"] == "dismissed":
                 continue
-            has_knowledge = await self._has_requester_safe_binding(service.code, offering.full_code)
-            ticket_count = (
-                await self.session.execute(select(func.count(Ticket.ticket_id)).where(Ticket.service_code == service.code, Ticket.offering_code == offering.full_code))
-            ).scalar_one()
-            feedback_counts = await self._feedback_counts(service.code, offering.full_code)
-            if not has_knowledge:
-                gaps.append(
-                    {
-                        "gap_type": "missing_requester_safe_knowledge",
-                        "service_code": service.code,
-                        "offering_code": offering.full_code,
-                        "service_title": service.public_title or service.name,
-                        "offering_title": offering.public_title or offering.name,
-                        "ticket_count": int(ticket_count),
-                        "ticket_created_after_view_count": feedback_counts.get("ticket_created_after_view", 0),
-                        "not_helpful_count": feedback_counts.get("not_helpful", 0),
-                        "severity": "high" if ticket_count or feedback_counts else "medium",
-                    }
-                )
+            evidence = finding.get("evidence") or {}
+            gaps.append(
+                {
+                    **finding,
+                    "gap_type": "missing_requester_safe_knowledge" if finding["gap_type"] == "no_requester_article" else finding["gap_type"],
+                    "ticket_count": int(evidence.get("ticket_count") or 0),
+                    "ticket_created_after_view_count": int(evidence.get("ticket_created_after_view_count") or 0),
+                    "not_helpful_count": int(evidence.get("not_helpful_count") or 0),
+                }
+            )
         return {"gaps": gaps, "count": len(gaps)}
 
     async def _has_requester_safe_binding(self, service_code: str, offering_code: str) -> bool:

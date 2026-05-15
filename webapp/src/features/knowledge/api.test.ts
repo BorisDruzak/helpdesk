@@ -8,7 +8,9 @@ import {
   fetchKnowledgeRolloutPolicies,
   fetchKnowledgeTemplates,
   saveKnowledgeRolloutPolicy,
+  submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
+  submitKnowledgeReviewTaskAction,
 } from "./api";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -27,9 +29,9 @@ describe("knowledge operations api", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: "ok", templates: [{ type: "article", title: "Article", sections: ["Steps"] }] }))
-      .mockResolvedValueOnce(jsonResponse({ status: "ok", review_queue: { count: 1, items: [{ item_id: "ki-1", title: "VPN", reason: "needs_review" }] } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", count: 1, tasks: [{ task_id: "rt-1", item_id: "ki-1", task_type: "scheduled_review", severity: "warning", status: "open", reason: "needs_review", item: { item_id: "ki-1", space_id: "ks-1", slug: "vpn", item_type: "article", type: "article", title: "VPN", status: "needs_review", visibility: "requester" } }] }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", quality: { average_quality_score: 84, items: [{ item_id: "ki-1", quality_score: 84, issues: [] }] } }))
-      .mockResolvedValueOnce(jsonResponse({ status: "ok", gaps: { count: 1, gaps: [{ service_code: "network", offering_code: "network.vpn", ticket_count: 2 }] } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", count: 1, findings: [{ finding_id: "kg-1", service_code: "network", offering_code: "network.vpn", gap_type: "no_requester_article", severity: "high", status: "open", evidence: { ticket_count: 2 } }] }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", policies: [{ policy_id: "kp-1", surface: "requester_portal", enabled: false, rollout_percent: 0 }] }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -40,9 +42,9 @@ describe("knowledge operations api", () => {
     await expect(fetchKnowledgeRolloutPolicies()).resolves.toHaveLength(1);
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/templates", { credentials: "same-origin" });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/review-queue", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/review/tasks", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/web/knowledge/quality", { credentials: "same-origin" });
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/gaps", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/gap-findings", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/web/knowledge/rollout-policies", { credentials: "same-origin" });
   });
 
@@ -51,11 +53,15 @@ describe("knowledge operations api", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ status: "ok", result: { status: "installed", source_hash: "sha", items: [] } }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", result: { item: { item_id: "ki-1" }, event: { action: "approve" } } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", task: { task_id: "rt-1", item_id: "ki-1", task_type: "scheduled_review", severity: "warning", status: "done", reason: "done" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", finding: { finding_id: "kg-1", status: "dismissed" } }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", policy: { policy_id: "kp-1", surface: "requester_portal", enabled: true, rollout_percent: 100 } }));
     vi.stubGlobal("fetch", fetchMock);
 
     await applyKnowledgeContentPack({ pack: { code: "baseline", version: 1, title: "Baseline" }, dry_run: true, force: false });
     await submitKnowledgeReviewAction("ki-1", { action: "approve", note: "checked" });
+    await submitKnowledgeReviewTaskAction("rt-1", { action: "complete", note: "checked" });
+    await submitKnowledgeGapAction("kg-1", "dismiss", { reason: "covered elsewhere" });
     await saveKnowledgeRolloutPolicy({ surface: "requester_portal", enabled: true, rollout_percent: 100 });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -72,6 +78,16 @@ describe("knowledge operations api", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ action: "approve", note: "checked" });
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "/api/web/knowledge/review/tasks/rt-1/complete",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/gaps/kg-1/dismiss",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "/api/web/knowledge/rollout-policies",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );

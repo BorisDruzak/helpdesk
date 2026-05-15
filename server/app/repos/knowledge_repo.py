@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import re
 from typing import Any
@@ -30,6 +30,7 @@ from knowledge.contracts import (
     lint_requester_safe_publication,
     normalize_knowledge_slug,
 )
+from knowledge.content_lint import lint_knowledge_content
 
 
 def _new_id() -> str:
@@ -557,6 +558,23 @@ class KnowledgeRepo:
                 metadata={**metadata, **(_dict(version.metadata_json) if version is not None else {})},
             )
         )
+        if item.review_due_at is None:
+            item.review_due_at = datetime.now(timezone.utc) + timedelta(days=90)
+        lint = lint_knowledge_content(
+            item_type=item.item_type,
+            visibility=item.visibility,
+            title=(version.title if version is not None else None) or item.title,
+            summary=(version.summary if version is not None else None) or item.summary or item.title,
+            body=version.body if version is not None else "",
+            owner_actor_id=item.owner_actor_id,
+            reviewer_actor_id=item.reviewer_actor_id,
+            review_due_at=item.review_due_at,
+            bindings=[],
+            source_refs=version.source_refs if version is not None else [],
+            metadata={**metadata, **(_dict(version.metadata_json) if version is not None else {})},
+            acknowledged_warning_codes={"missing_required_sections", "missing_self_service_binding"},
+        )
+        blockers.extend(lint["errors"])
         return blockers
 
     async def add_binding(

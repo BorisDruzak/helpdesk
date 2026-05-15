@@ -1066,6 +1066,130 @@ class KnowledgeRolloutPolicy(Base):
     )
 
 
+class KnowledgeReviewTask(Base):
+    """Operational review/curation task for knowledge lifecycle work."""
+
+    __tablename__ = "knowledge_review_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="SET NULL"), nullable=True)
+    task_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="warning")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    assigned_to_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    source_kind: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("task_type IN ('draft_review', 'scheduled_review', 'stale_content', 'negative_feedback', 'gap_candidate', 'passport_draft', 'ingestion_review', 'unsafe_visibility')", name="ck_knowledge_review_tasks_type"),
+        sa.CheckConstraint("severity IN ('critical', 'error', 'warning', 'info')", name="ck_knowledge_review_tasks_severity"),
+        sa.CheckConstraint("status IN ('open', 'assigned', 'in_progress', 'done', 'dismissed')", name="ck_knowledge_review_tasks_status"),
+        UniqueConstraint("item_id", "task_type", "source_kind", "source_ref", "status", name="uq_knowledge_review_tasks_open_source"),
+        Index("ix_knowledge_review_tasks_status_due", "status", "due_at"),
+        Index("ix_knowledge_review_tasks_item", "item_id"),
+        Index("ix_knowledge_review_tasks_assignee", "assigned_to_actor_id", "status"),
+    )
+
+
+class KnowledgeReviewComment(Base):
+    """Comment/audit entry on a knowledge review task."""
+
+    __tablename__ = "knowledge_review_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_review_tasks.task_id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (Index("ix_knowledge_review_comments_task", "task_id", "created_at"),)
+
+
+class KnowledgeQualitySnapshot(Base):
+    """Optional cached explainable quality score for a knowledge item/version."""
+
+    __tablename__ = "knowledge_quality_snapshots"
+
+    snapshot_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="SET NULL"), nullable=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    grade: Mapped[str] = mapped_column(String(2), nullable=False)
+    dimensions_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    issues_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint("score >= 0 AND score <= 100", name="ck_knowledge_quality_snapshots_score"),
+        Index("ix_knowledge_quality_snapshots_item", "item_id", "computed_at"),
+    )
+
+
+class KnowledgeGapFinding(Base):
+    """Persistent knowledge coverage/usefulness finding."""
+
+    __tablename__ = "knowledge_gap_findings"
+
+    finding_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    request_template_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    gap_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="warning")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    evidence_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    suggested_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("gap_type IN ('no_requester_article', 'no_support_runbook', 'high_volume_no_kb', 'high_not_helpful', 'zero_result_search', 'unresolved_passport_drafts', 'repeated_issue_without_known_error')", name="ck_knowledge_gap_findings_type"),
+        sa.CheckConstraint("severity IN ('critical', 'error', 'warning', 'info', 'high', 'medium', 'low')", name="ck_knowledge_gap_findings_severity"),
+        sa.CheckConstraint("status IN ('open', 'accepted', 'dismissed', 'resolved')", name="ck_knowledge_gap_findings_status"),
+        UniqueConstraint("service_code", "offering_code", "request_template_key", "gap_type", "evidence_hash", name="uq_knowledge_gap_findings_evidence"),
+        Index("ix_knowledge_gap_findings_status", "status", "severity"),
+        Index("ix_knowledge_gap_findings_scope", "service_code", "offering_code"),
+    )
+
+
+class KnowledgeSearchEvent(Base):
+    """Privacy-preserving search analytics event."""
+
+    __tablename__ = "knowledge_search_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="search")
+    query_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_text_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    clicked_item_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="SET NULL"), nullable=True)
+    created_ticket_after_search: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("surface IN ('requester_portal', 'agent_gui', 'support_workspace', 'admin', 'api', 'search')", name="ck_knowledge_search_events_surface"),
+        Index("ix_knowledge_search_events_scope", "service_code", "offering_code", "created_at"),
+        Index("ix_knowledge_search_events_zero", "result_count", "created_at"),
+    )
+
+
 class TicketWorklog(Base):
     """Трудозатраты по тикету (минуты + заметка)."""
     __tablename__ = "ticket_worklogs"

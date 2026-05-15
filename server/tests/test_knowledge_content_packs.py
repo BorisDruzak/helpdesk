@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import KnowledgeContentPack, KnowledgeContentPackItem
-from knowledge.content_pack_service import KnowledgeContentPackService
+from knowledge.content_pack_service import KnowledgeContentPackService, load_content_pack_file
 from knowledge.graph_service import KnowledgeGraphService
 
 
@@ -131,3 +131,35 @@ async def test_content_pack_installs_declared_graph_nodes_and_edges(test_engine)
     relation_types = {edge["relation_type"] for edge in neighborhood["edges"]}
     assert "concept:vpn" in node_keys
     assert "mentions" in relation_types
+
+
+def test_required_baseline_content_packs_are_present_and_safe() -> None:
+    required = {
+        "it-self-service-baseline": 6,
+        "support-runbooks-baseline": 5,
+        "known-errors-baseline": 2,
+        "glossary-baseline": 8,
+    }
+    for code, minimum_items in required.items():
+        pack = load_content_pack_file(f"content_packs/knowledge/{code}.yaml")
+        assert pack["code"] == code
+        assert len(pack["items"]) >= minimum_items
+        for item in pack["items"]:
+            body = str(item.get("body") or "").lower()
+            if item.get("visibility") in {"requester", "public", "agent_requester_safe"}:
+                assert "queue_id" not in body
+                assert "device_id" not in body
+                assert "requester_id" not in body
+                assert "run command" not in body
+
+
+@pytest.mark.asyncio
+async def test_unsafe_requester_content_pack_item_fails_lint(test_engine) -> None:
+    pack = _baseline_pack(body="Ask support to run command and inspect queue_id=42.")
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        result = await KnowledgeContentPackService(session).apply_pack(pack, actor_id="admin-test")
+        await session.commit()
+
+    assert result["summary"]["failed"] == 1
+    assert result["items"][0]["install_status"] == "failed"

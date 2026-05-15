@@ -104,7 +104,16 @@ export type KnowledgeTemplate = {
 
 export type KnowledgeReviewQueue = {
   count: number;
-  items: Array<KnowledgeItem & { reason: string; review_due_at?: string | null }>;
+  items: Array<
+    KnowledgeItem & {
+      reason: string;
+      review_due_at?: string | null;
+      task_id?: string;
+      task_type?: string;
+      severity?: string;
+      suggested_action?: string | null;
+    }
+  >;
 };
 
 export type KnowledgeQualitySummary = {
@@ -121,6 +130,7 @@ export type KnowledgeQualitySummary = {
 export type KnowledgeGapSummary = {
   count: number;
   gaps: Array<{
+    finding_id?: string;
     gap_type: string;
     service_code: string;
     offering_code: string;
@@ -131,6 +141,35 @@ export type KnowledgeGapSummary = {
     not_helpful_count: number;
     severity: string;
   }>;
+};
+
+export type KnowledgeReviewTask = {
+  task_id: string;
+  item_id: string;
+  version_id?: string | null;
+  task_type: string;
+  severity: string;
+  status: string;
+  assigned_to_actor_id?: string | null;
+  owner_actor_id?: string | null;
+  due_at?: string | null;
+  source_kind?: string | null;
+  source_ref?: string | null;
+  reason: string;
+  suggested_action?: string | null;
+  item?: KnowledgeItem;
+};
+
+export type KnowledgeGapFinding = {
+  finding_id: string;
+  service_code?: string | null;
+  offering_code?: string | null;
+  request_template_key?: string | null;
+  gap_type: string;
+  severity: string;
+  status: string;
+  evidence?: Record<string, unknown>;
+  suggested_action?: string | null;
 };
 
 export type KnowledgeRolloutPolicy = {
@@ -255,9 +294,33 @@ export async function fetchKnowledgeTemplates(): Promise<KnowledgeTemplate[]> {
 }
 
 export async function fetchKnowledgeReviewQueue(): Promise<KnowledgeReviewQueue> {
-  const response = await fetch("/api/web/knowledge/review-queue", { credentials: "same-origin" });
+  const response = await fetch("/api/web/knowledge/review/tasks", { credentials: "same-origin" });
   const payload = await readJson<{ review_queue: KnowledgeReviewQueue }>(response, "Не удалось загрузить review queue");
-  return payload.review_queue;
+  if (payload.review_queue) {
+    return payload.review_queue;
+  }
+  const tasks = (payload as { tasks?: KnowledgeReviewTask[]; count?: number }).tasks ?? [];
+  return {
+    count: (payload as { count?: number }).count ?? tasks.length,
+    items: tasks.map((task) => ({
+      ...(task.item ?? {
+        item_id: task.item_id,
+        space_id: "",
+        slug: task.source_ref ?? task.item_id,
+        item_type: "article",
+        type: "article",
+        title: task.reason,
+        status: "needs_review",
+        visibility: "support_internal",
+      }),
+      reason: task.task_type,
+      review_due_at: task.due_at,
+      task_id: task.task_id,
+      task_type: task.task_type,
+      severity: task.severity,
+      suggested_action: task.suggested_action,
+    })),
+  };
 }
 
 export async function submitKnowledgeReviewAction(itemIdOrSlug: string, payload: { action: string; note?: string | null }) {
@@ -270,6 +333,19 @@ export async function submitKnowledgeReviewAction(itemIdOrSlug: string, payload:
   return readJson<{ result: { item: KnowledgeItem; event: Record<string, unknown> } }>(response, "Не удалось выполнить review action");
 }
 
+export async function submitKnowledgeReviewTaskAction(
+  taskId: string,
+  payload: { action: "assign" | "start" | "complete" | "dismiss"; note?: string | null; assigned_to_actor_id?: string | null },
+) {
+  const response = await fetch(`/api/web/knowledge/review/tasks/${encodeURIComponent(taskId)}/${encodeURIComponent(payload.action)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ task: KnowledgeReviewTask }>(response, "Failed to update knowledge review task");
+}
+
 export async function fetchKnowledgeQuality(): Promise<KnowledgeQualitySummary> {
   const response = await fetch("/api/web/knowledge/quality", { credentials: "same-origin" });
   const payload = await readJson<{ quality: KnowledgeQualitySummary }>(response, "Не удалось загрузить quality score");
@@ -277,9 +353,48 @@ export async function fetchKnowledgeQuality(): Promise<KnowledgeQualitySummary> 
 }
 
 export async function fetchKnowledgeGaps(): Promise<KnowledgeGapSummary> {
-  const response = await fetch("/api/web/knowledge/gaps", { credentials: "same-origin" });
+  const response = await fetch("/api/web/knowledge/gap-findings", { credentials: "same-origin" });
   const payload = await readJson<{ gaps: KnowledgeGapSummary }>(response, "Не удалось загрузить knowledge gaps");
-  return payload.gaps;
+  if (payload.gaps) {
+    return payload.gaps;
+  }
+  const findings = (payload as { findings?: KnowledgeGapFinding[]; count?: number }).findings ?? [];
+  return {
+    count: (payload as { count?: number }).count ?? findings.length,
+    gaps: findings.map((finding) => {
+      const evidence = finding.evidence ?? {};
+      return {
+        finding_id: finding.finding_id,
+        gap_type: finding.gap_type,
+        service_code: String(finding.service_code ?? ""),
+        offering_code: String(finding.offering_code ?? ""),
+        service_title: typeof evidence.service_title === "string" ? evidence.service_title : null,
+        offering_title: typeof evidence.offering_title === "string" ? evidence.offering_title : null,
+        ticket_count: Number(evidence.ticket_count ?? 0),
+        ticket_created_after_view_count: Number(evidence.ticket_created_after_view_count ?? 0),
+        not_helpful_count: Number(evidence.not_helpful_count ?? 0),
+        severity: finding.severity,
+      };
+    }),
+  };
+}
+
+export async function recomputeKnowledgeGaps() {
+  const response = await fetch("/api/web/knowledge/gaps/recompute", {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  return readJson<{ findings: KnowledgeGapFinding[]; count: number }>(response, "Failed to recompute knowledge gaps");
+}
+
+export async function submitKnowledgeGapAction(findingId: string, action: "accept" | "dismiss" | "create-draft", payload?: Record<string, unknown>) {
+  const response = await fetch(`/api/web/knowledge/gaps/${encodeURIComponent(findingId)}/${encodeURIComponent(action)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+  return readJson<Record<string, unknown>>(response, "Failed to update knowledge gap");
 }
 
 export async function fetchKnowledgeRolloutPolicies(): Promise<KnowledgeRolloutPolicy[]> {

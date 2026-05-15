@@ -23,7 +23,7 @@ def _pack_paths(pack_code: str | None) -> list[Path]:
     if pack_code:
         candidates = [PACK_DIR / f"{pack_code}.yaml", PACK_DIR / f"{pack_code}.yml", PACK_DIR / f"{pack_code}.json"]
         return [path for path in candidates if path.exists()]
-    return sorted([*PACK_DIR.glob("*.yaml"), *PACK_DIR.glob("*.yml")])
+    return sorted([*PACK_DIR.glob("*.yaml"), *PACK_DIR.glob("*.yml"), *PACK_DIR.glob("*.json")])
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -43,6 +43,8 @@ async def _run(args: argparse.Namespace) -> int:
                     actor_id=args.actor,
                     dry_run=args.dry_run,
                     force=args.force,
+                    retire_missing=args.retire_missing,
+                    publish=args.publish,
                 )
                 results.append({"path": str(path), **result})
             if not args.dry_run:
@@ -55,11 +57,16 @@ async def _run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install idempotent Knowledge Platform content packs.")
-    parser.add_argument("--pack", help="Pack code to install. Defaults to all content_packs/knowledge/*.yaml.")
+    parser.add_argument("--pack", help="Pack code to install.")
+    parser.add_argument("--all", action="store_true", help="Install all content_packs/knowledge/*.yaml|*.yml|*.json packs. This is the default when --pack is omitted.")
     parser.add_argument("--dry-run", action="store_true", help="Report actions without writing pack state or content.")
     parser.add_argument("--force", action="store_true", help="Overwrite changed pack-managed items by creating a new version.")
+    parser.add_argument("--retire-missing", action="store_true", help="Archive pack-managed items missing from the selected pack file.")
+    parser.add_argument("--publish", action="store_true", help="Allow publishing internal pack entries that are explicitly marked published.")
     parser.add_argument("--actor", default="codex", help="Actor id stored in audit fields.")
     args = parser.parse_args()
+    if args.pack and args.all:
+        parser.error("--pack and --all are mutually exclusive")
     return asyncio.run(_run(args))
 
 

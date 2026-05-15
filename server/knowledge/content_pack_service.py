@@ -83,6 +83,8 @@ class KnowledgeContentPackService:
         actor_id: str | None,
         dry_run: bool = False,
         force: bool = False,
+        retire_missing: bool = False,
+        publish: bool = False,
     ) -> dict[str, Any]:
         normalized = self._normalize_pack(pack)
         source_hash = _canonical_hash(normalized)
@@ -134,12 +136,18 @@ class KnowledgeContentPackService:
                     result = await self._record_item(normalized, raw_item, item_hash, "conflict", existing.item_id, existing.current_version_id)
                     summary["conflict"] += 1
                 else:
-                    result = await self._install_item(repo, normalized, raw_item, item_hash, actor_id=actor_id, force=force)
+                    result = await self._install_item(repo, normalized, raw_item, item_hash, actor_id=actor_id, force=force, publish=publish)
                     summary[result["install_status"]] += 1
                 item_results.append(result)
             except Exception as exc:
                 summary["failed"] += 1
                 item_results.append(await self._record_item(normalized, raw_item, item_hash, "failed", None, None, error=_redact_error(exc)))
+
+        if retire_missing:
+            current_slugs = {normalize_knowledge_slug(item.get("slug") or item.get("title")) for item in normalized["items"]}
+            retired = await self._retire_missing_items(repo, normalized, current_slugs, actor_id=actor_id)
+            item_results.extend(retired)
+            summary["retired"] += len(retired)
 
         if normalized["graph"]["nodes"] or normalized["graph"]["edges"]:
             try:
@@ -183,6 +191,7 @@ class KnowledgeContentPackService:
         *,
         actor_id: str | None,
         force: bool,
+        publish: bool,
     ) -> dict[str, Any]:
         slug = normalize_knowledge_slug(raw_item.get("slug") or raw_item.get("title"))
         existing = await repo.get_item_row(slug)
@@ -239,9 +248,51 @@ class KnowledgeContentPackService:
         for binding in raw_item.get("bindings") or []:
             if isinstance(binding, dict):
                 await repo.add_binding(item_id, binding, actor_id=actor_id, actor_role="admin")
-        if raw_item.get("status") == "published":
+        should_publish = raw_item.get("status") == "published"
+        if raw_item.get("visibility") == "support_internal" and not publish:
+            should_publish = False
+        if should_publish:
             await repo.publish_item(item_id, version["version_id"], actor_id=actor_id, actor_role="admin", review_note="Content pack baseline review")
         return await self._record_item(pack, raw_item, item_hash, status, item_id, version["version_id"])
+
+    async def _retire_missing_items(
+        self,
+        repo: KnowledgeRepo,
+        pack: dict[str, Any],
+        current_slugs: set[str],
+        *,
+        actor_id: str | None,
+    ) -> list[dict[str, Any]]:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeContentPackItem)
+                .where(KnowledgeContentPackItem.pack_code == pack["code"], KnowledgeContentPackItem.pack_version == pack["version"], KnowledgeContentPackItem.item_id.is_not(None))
+                .order_by(KnowledgeContentPackItem.installed_at.desc(), KnowledgeContentPackItem.id.desc())
+            )
+        ).scalars().all()
+        seen: set[str] = set()
+        retired: list[dict[str, Any]] = []
+        for row in rows:
+            if row.item_slug in seen or row.item_slug in current_slugs:
+                continue
+            seen.add(row.item_slug)
+            item = await repo.get_item_row(row.item_slug)
+            if item is None:
+                continue
+            item.status = "archived"
+            item.archived_at = datetime.now(timezone.utc)
+            item.updated_by = actor_id
+            retired.append(
+                await self._record_item(
+                    pack,
+                    {"slug": row.item_slug, "title": row.item_slug},
+                    row.content_hash,
+                    "retired",
+                    item.item_id,
+                    item.current_version_id,
+                )
+            )
+        return retired
 
     async def _install_graph(self, repo: KnowledgeRepo, graph_payload: dict[str, Any], *, actor_id: str | None) -> None:
         graph = KnowledgeGraphService(self.session)

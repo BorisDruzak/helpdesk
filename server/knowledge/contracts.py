@@ -176,6 +176,10 @@ KNOWLEDGE_SAFE_PROJECTION_FORBIDDEN_KEYS: frozenset[str] = frozenset(
 )
 
 REQUESTER_SAFE_CONTENT_MARKERS: tuple[str, ...] = (
+    "internal queue",
+    "admin only",
+    "run command",
+    "registry id",
     "queue_id",
     "device_id",
     "requester_id",

@@ -33,10 +33,13 @@ import {
   fetchKnowledgeSpaces,
   fetchKnowledgeTemplates,
   publishKnowledgeItem,
+  recomputeKnowledgeGaps,
   retireKnowledgeContentPack,
   saveKnowledgeSpace,
   saveKnowledgeRolloutPolicy,
+  submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
+  submitKnowledgeReviewTaskAction,
   type KnowledgeItem,
 } from "./api";
 
@@ -103,6 +106,7 @@ type KnowledgeAdminPanelProps = {
 export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps) {
   const queryClient = useQueryClient();
   const canManage = mode === "admin";
+  const canOperate = mode === "admin" || mode === "support";
   const [search, setSearch] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
   const [selectedVersionId, setSelectedVersionId] = useState("");
@@ -123,7 +127,7 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
   );
   const [contentPackForce, setContentPackForce] = useState(false);
   const [contentPackResult, setContentPackResult] = useState("");
-  const [reviewActionDraft, setReviewActionDraft] = useState("approve");
+  const [reviewActionDraft, setReviewActionDraft] = useState("complete");
   const [rolloutDraft, setRolloutDraft] = useState({
     service_code: "",
     offering_code: "",
@@ -286,14 +290,34 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
     },
   });
-  const reviewActionMutation = useMutation({
-    mutationFn: (payload: { itemId: string; action: string }) =>
-      submitKnowledgeReviewAction(payload.itemId, { action: payload.action, note: emptyToNull(reviewNote) }),
+  const reviewActionMutation = useMutation<unknown, Error, { itemId: string; taskId?: string; action: string }>({
+    mutationFn: (payload: { itemId: string; taskId?: string; action: string }) => {
+      if (payload.taskId && ["assign", "start", "complete", "dismiss"].includes(payload.action)) {
+        return submitKnowledgeReviewTaskAction(payload.taskId, {
+          action: payload.action as "assign" | "start" | "complete" | "dismiss",
+          note: emptyToNull(reviewNote),
+        });
+      }
+      return submitKnowledgeReviewAction(payload.itemId, { action: payload.action, note: emptyToNull(reviewNote) });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
     },
+  });
+  const gapActionMutation = useMutation({
+    mutationFn: (payload: { findingId: string; action: "dismiss" | "create-draft" }) =>
+      submitKnowledgeGapAction(payload.findingId, payload.action, payload.action === "create-draft" ? { item_type: "article" } : { reason: "Handled from operations dashboard" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-gaps"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+    },
+  });
+  const gapRecomputeMutation = useMutation({
+    mutationFn: recomputeKnowledgeGaps,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["knowledge-gaps"] }),
   });
   const rolloutPolicyMutation = useMutation({
     mutationFn: () =>
@@ -477,8 +501,8 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => reviewActionMutation.mutate({ itemId: item.item_id, action: reviewActionDraft })}
-                            disabled={!canManage || reviewActionMutation.isPending}
+                            onClick={() => reviewActionMutation.mutate({ itemId: item.item_id, taskId: item.task_id, action: reviewActionDraft })}
+                            disabled={!canOperate || reviewActionMutation.isPending}
                           >
                             Apply
                           </Button>
@@ -493,11 +517,10 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                 <label className="text-sm font-medium">
                   Review action
                   <select className={fieldClass} value={reviewActionDraft} onChange={(event) => setReviewActionDraft(event.target.value)}>
-                    <option value="approve">approve</option>
-                    <option value="submit_review">submit_review</option>
-                    <option value="request_changes">request_changes</option>
-                    <option value="mark_needs_review">mark_needs_review</option>
-                    <option value="archive">archive</option>
+                    <option value="assign">assign</option>
+                    <option value="start">start</option>
+                    <option value="complete">complete</option>
+                    <option value="dismiss">dismiss</option>
                   </select>
                 </label>
                 <label className="text-sm font-medium">
@@ -557,8 +580,13 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
               <CardDescription>Service Catalog offerings без requester-safe знаний, с ticket/feedback сигналами.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              {canOperate ? (
+                <Button variant="outline" size="sm" onClick={() => gapRecomputeMutation.mutate()} disabled={gapRecomputeMutation.isPending}>
+                  Recompute gaps
+                </Button>
+              ) : null}
               {gaps.slice(0, 8).map((gap) => (
-                <div key={`${gap.service_code}:${gap.offering_code}`} className="rounded-md border border-slate-200 p-3 text-sm">
+                <div key={gap.finding_id ?? `${gap.service_code}:${gap.offering_code}:${gap.gap_type}`} className="rounded-md border border-slate-200 p-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium">{gap.offering_title || gap.offering_code}</p>
@@ -569,6 +597,16 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                   <p className="mt-2 text-xs text-slate-600">
                     Tickets: {gap.ticket_count}; after view: {gap.ticket_created_after_view_count}; not helpful: {gap.not_helpful_count}
                   </p>
+                  {canOperate && gap.finding_id ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => gapActionMutation.mutate({ findingId: gap.finding_id!, action: "create-draft" })} disabled={gapActionMutation.isPending}>
+                        Create draft
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => gapActionMutation.mutate({ findingId: gap.finding_id!, action: "dismiss" })} disabled={gapActionMutation.isPending}>
+                        Dismiss
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {!gaps.length ? <p className="text-sm text-slate-500">Гэпы по опубликованному Service Catalog не найдены.</p> : null}

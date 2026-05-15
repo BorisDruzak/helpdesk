@@ -143,6 +143,7 @@ async def test_policy_health_counts_requester_safe_catalog_knowledge(test_engine
                 "title": "Reconnect VPN",
                 "summary": "Requester-safe VPN troubleshooting",
                 "visibility": "requester",
+                "owner_actor_id": "owner-test",
                 "reviewer_actor_id": "reviewer-test",
             },
             actor_id="admin-test",

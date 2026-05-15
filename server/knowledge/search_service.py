@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import KnowledgeBinding, KnowledgeChunk, KnowledgeItem, KnowledgeItemVersion
 from app.repos.knowledge_repo import serialize_item
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
+from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 
 
 def _snippet(text: str, query: str) -> str:
@@ -33,6 +34,8 @@ class KnowledgeSearchService:
         service_code: str | None = None,
         offering_code: str | None = None,
         request_template_key: str | None = None,
+        surface: str = "search",
+        session_id: str | None = None,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         allowed = actor_visible_visibilities(actor_role)
@@ -76,4 +79,14 @@ class KnowledgeSearchService:
             if current is None or score > current[0]:
                 scored[item.item_id] = (score, payload)
         ordered = sorted(scored.values(), key=lambda item: (-item[0], str(item[1].get("title") or "")))
-        return [payload for _score, payload in ordered[: max(1, min(limit, 50))]]
+        results = [payload for _score, payload in ordered[: max(1, min(limit, 50))]]
+        await KnowledgeSearchAnalyticsService(self.session).record_search_event(
+            actor_role=actor_role,
+            surface=surface,
+            session_id=session_id,
+            query_text=q,
+            service_code=service_code,
+            offering_code=offering_code,
+            result_count=len(results),
+        )
+        return results

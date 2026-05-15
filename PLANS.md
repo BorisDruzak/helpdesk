@@ -1,6 +1,48 @@
 # P2.2 Knowledge Operations & Content Rollout
 
-Status: implemented locally; release verification in progress. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
+Status: next operational hardening stage implemented locally; verification in progress. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
+
+## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
+
+### Scope
+
+- Expand baseline packs into four idempotent packs: `it-self-service-baseline`, `support-runbooks-baseline`, `known-errors-baseline` and `glossary-baseline`.
+- Move content templates and linting into dedicated services: `content_templates.py` and `content_lint.py`.
+- Add first-class review task, quality snapshot, gap finding and search analytics tables/services while preserving the existing P2/P2.1 contracts.
+- Keep requester-safe publication blocked by lint and keep runbooks/known errors internal by default unless explicitly safe.
+- Extend admin/support APIs and UI over real backend data, not mocks.
+
+### Non-Goals
+
+- No Protocol V3 changes.
+- No AI-generated-content primary workflow.
+- No weakening of ACL/search/graph filtering.
+- No public/requester content with internal commands, queue ids, device/requester ids, raw custom fields or infrastructure names.
+
+### Data Model Decisions
+
+- Add migration `086` for `knowledge_review_tasks`, optional `knowledge_review_comments`, `knowledge_quality_snapshots`, `knowledge_gap_findings` and `knowledge_search_events`.
+- Keep old `KnowledgeOperationsService` endpoints compatible by delegating to focused services.
+- Store raw search query text only after redaction and keep a hash for analytics correlation.
+
+### Content Pack Strategy
+
+- Pack install remains idempotent and preserves admin edits unless `--force`.
+- `--all` installs all packs explicitly; `--pack <code>` installs one pack; `--retire-missing` is supported but defaults off.
+- Default publish behavior publishes only requester-safe, approved baseline content; uncertain internal runbooks and known errors stay draft or in review.
+
+### Tests
+
+- [x] RED: content pack baseline/script/all/retire-missing and unsafe requester pack tests.
+- [x] RED: content templates and lint validators.
+- [x] RED: first-class review task generation/action/RBAC tests.
+- [x] RED: explainable quality service tests.
+- [x] RED: persistent gap detection and create-draft tests.
+- [x] RED: search analytics/redaction tests.
+- [x] GREEN: server implementation and API compatibility.
+- [x] GREEN: webapp API/admin panel refinements for first-class review tasks and gap findings.
+- [x] Local verification and full CI runner.
+- [ ] Remote deploy/browser signoff.
 
 ## Discovery
 
@@ -82,11 +124,21 @@ Status: implemented locally; release verification in progress. Classification: c
 
 Current local verification:
 
-- `python -m pytest server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_operations.py server\tests\test_knowledge_api.py server\tests\test_knowledge_migration.py -q --tb=short` -> 11 passed.
-- Full knowledge regression: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py server\tests\test_knowledge_publish_flow.py server\tests\test_knowledge_db_constraints.py server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_operations.py -q --tb=short` -> 46 passed.
-- P0/P1 regression: `python -m pytest server\tests\test_ticket_status_usage_no_db.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_ticket_create_contracts.py server\tests\test_service_catalog_fallback.py server\tests\test_service_catalog_preview.py server\tests\test_service_catalog_repo.py server\tests\test_service_catalog_api.py server\tests\test_ticket_create_service_catalog.py server\tests\test_reports_service_catalog.py server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 46 passed.
-- Agent focused regression: `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_ticket_api_client_service_catalog.py pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 137 passed.
+- `python -m pytest server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_content_templates.py server\tests\test_knowledge_content_lint.py server\tests\test_knowledge_review_tasks.py server\tests\test_knowledge_quality.py server\tests\test_knowledge_gaps.py server\tests\test_knowledge_search_analytics.py -q --tb=short` -> 18 passed.
+- Full knowledge regression: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py server\tests\test_knowledge_publish_flow.py server\tests\test_knowledge_db_constraints.py server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_operations.py server\tests\test_knowledge_content_templates.py server\tests\test_knowledge_content_lint.py server\tests\test_knowledge_review_tasks.py server\tests\test_knowledge_quality.py server\tests\test_knowledge_gaps.py server\tests\test_knowledge_search_analytics.py -q --tb=short` -> 61 passed.
+- P0 regression: `python -m pytest server\tests\test_ticket_status_usage_no_db.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_ticket_create_contracts.py -q --tb=short` -> 32 passed.
+- P1 regression: `python -m pytest server\tests\test_service_catalog_fallback.py server\tests\test_service_catalog_preview.py server\tests\test_service_catalog_api.py server\tests\test_ticket_create_service_catalog.py server\tests\test_reports_service_catalog.py server\tests\test_service_catalog_repo.py server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 14 passed. The requested `test_service_catalog_publication.py` file is not present in this branch.
+- Agent focused regression: `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_knowledge_rollout_agent.py pc_agent\tests\test_agent_knowledge_attempts.py -q` -> 5 passed.
+- Agent full non-manual: `python -m pytest pc_agent\tests -m "not manual" -q --tb=short` -> 311 passed, 4 deselected.
 - `pnpm --dir webapp exec vitest run src/features/knowledge/api.test.ts` -> 2 passed.
+- `pnpm --dir webapp build` -> passed.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed with CRLF warnings only.
+- `python scripts\verify_workspace.py` -> passed.
+- `python scripts\build_context_index.py --force` -> built 14,012 items.
+- `python scripts\run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> passed. CI layers: verify_workspace passed; webapp bundle passed; server no-db 311 passed / 640 deselected; server db-api 610 passed / 341 deselected; server agent-ws 30 passed / 921 deselected; pc_agent 311 passed / 4 deselected.
+- Direct `python -m pytest server\tests -m "not manual" -q --tb=short` timed out at 30 minutes without a final pytest report; replaced by the canonical layered CI runner above, which completed successfully.
+- Remote deploy/browser signoff: pending for this checkpoint until commit/push and remote release workflow are run.
 - `pnpm --dir webapp run build` -> passed.
 - `git diff --check` -> passed; line-ending warnings only.
 - `python scripts\docs_inventory.py --check-links` -> passed.

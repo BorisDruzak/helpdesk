@@ -5,7 +5,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import KnowledgeContentPack, KnowledgeIngestionJob, KnowledgeNode, KnowledgeSpace
+from app.db.models import KnowledgeContentPack, KnowledgeGapFinding, KnowledgeIngestionJob, KnowledgeNode, KnowledgeReviewTask, KnowledgeSpace
 from app.repos.knowledge_repo import KnowledgeRepo
 from auth.middleware import require_auth
 from knowledge.contracts import (
@@ -19,6 +19,8 @@ from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.metrics_service import KnowledgeMetricsService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
+from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
+from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
 from knowledge.search_service import KnowledgeSearchService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
@@ -161,8 +163,11 @@ async def handle_knowledge_search(request: web.Request) -> web.Response:
                 service_code=payload.get("service_code"),
                 offering_code=payload.get("offering_code"),
                 request_template_key=payload.get("request_template_key"),
+                surface=str(payload.get("surface") or payload.get("source_surface") or "search"),
+                session_id=payload.get("session_id"),
                 limit=int(payload.get("limit") or 10),
             )
+            await session.commit()
         return web.json_response({"status": "ok", "results": results})
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
@@ -263,6 +268,50 @@ async def handle_web_knowledge_review_queue(request: web.Request) -> web.Respons
     return web.json_response({"status": "ok", "review_queue": review_queue})
 
 
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_review_tasks(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    async with get_session() as session:
+        service = KnowledgeReviewTaskService(session)
+        if request.method == "POST":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            result = await service.generate_tasks(actor_id=actor_id)
+            await session.commit()
+            return web.json_response({"status": "ok", **result})
+        result = await service.list_tasks(actor_role=role, actor_id=actor_id, status=request.query.get("status"))
+    return web.json_response({"status": "ok", **result})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_review_task_detail(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    task_id = str(request.match_info.get("task_id") or "")
+    async with get_session() as session:
+        row = (await session.execute(select(KnowledgeReviewTask).where(KnowledgeReviewTask.task_id == task_id))).scalar_one_or_none()
+        if row is None:
+            return web.json_response({"status": "error", "error": "not_found"}, status=404)
+        if request.method == "POST":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            payload = await _json_payload(request)
+            action = str(request.match_info.get("action") or payload.get("action") or "")
+            service = KnowledgeReviewTaskService(session)
+            if action == "assign":
+                result = await service.assign_task(task_id, actor_id=actor_id, assigned_to_actor_id=payload.get("assigned_to_actor_id") or actor_id)
+            elif action == "start":
+                result = await service.start_task(task_id, actor_id=actor_id)
+            elif action == "complete":
+                result = await service.complete_task(task_id, actor_id=actor_id, note=payload.get("note"))
+            elif action == "dismiss":
+                result = await service.dismiss_task(task_id, actor_id=actor_id, reason=payload.get("reason") or payload.get("note"))
+            else:
+                return web.json_response({"status": "error", "error": "validation_error", "details": "unsupported action"}, status=400)
+            await session.commit()
+            return web.json_response({"status": "ok", **result})
+        return web.json_response({"status": "ok", "task": serialize_review_task(row)})
+
+
 @require_auth("admin", "support")
 async def handle_web_knowledge_review_action(request: web.Request) -> web.Response:
     actor_id, _role = _actor(request)
@@ -296,6 +345,46 @@ async def handle_web_knowledge_gaps(request: web.Request) -> web.Response:
     async with get_session() as session:
         gaps = await KnowledgeOperationsService(session).detect_gaps(actor_role=role)
     return web.json_response({"status": "ok", "gaps": gaps})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_gap_findings(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    async with get_session() as session:
+        service = KnowledgeGapService(session)
+        if request.method == "POST":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            result = await service.recompute(actor_id=actor_id)
+            await session.commit()
+            return web.json_response({"status": "ok", **result})
+        rows = (await session.execute(select(KnowledgeGapFinding).order_by(KnowledgeGapFinding.updated_at.desc()))).scalars().all()
+        findings = [serialize_gap_finding(row) for row in rows]
+    return web.json_response({"status": "ok", "findings": findings, "count": len(findings)})
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_gap_action(request: web.Request) -> web.Response:
+    actor_id, _role = _actor(request)
+    finding_id = str(request.match_info.get("finding_id") or "")
+    action = str(request.match_info.get("action") or "")
+    payload = await _json_payload(request)
+    async with get_session() as session:
+        service = KnowledgeGapService(session)
+        if action == "dismiss":
+            result = {"finding": await service.dismiss(finding_id, actor_id=actor_id, reason=payload.get("reason"))}
+        elif action == "accept":
+            row = (await session.execute(select(KnowledgeGapFinding).where(KnowledgeGapFinding.finding_id == finding_id))).scalar_one_or_none()
+            if row is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            row.status = "accepted"
+            result = {"finding": serialize_gap_finding(row)}
+        elif action == "create-draft":
+            result = await service.create_draft(finding_id, actor_id=actor_id, item_type=str(payload.get("item_type") or "article"))
+        else:
+            return web.json_response({"status": "error", "error": "validation_error", "details": "unsupported action"}, status=400)
+        await session.commit()
+    return web.json_response({"status": "ok", **result})
 
 
 @require_auth("admin", "support", "auditor")

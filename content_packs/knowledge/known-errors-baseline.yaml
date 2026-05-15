@@ -1,0 +1,60 @@
+code: known-errors-baseline
+version: 1
+title: Known Errors Baseline
+description: Neutral known-error placeholders kept internal/draft until local facts are reviewed.
+spaces:
+  - code: known-errors
+    title: Known Errors
+    visibility: support_internal
+    lifecycle_status: active
+    owner: servicedesk
+    reviewer: servicedesk
+items:
+  - slug: known-error-connectivity-generic-placeholder
+    type: known_error
+    space: known-errors
+    title: "Generic connectivity symptom placeholder"
+    summary: "Draft placeholder for repeated connectivity symptoms; replace with real verified facts before publication."
+    visibility: support_internal
+    status: draft
+    owner: servicedesk
+    reviewer: servicedesk
+    tags: [known_error, placeholder]
+    body_format: markdown
+    body: |
+      ## Symptoms
+      Multiple users report a similar connectivity symptom.
+      ## Affected services/offerings
+      Placeholder: add real service/offering after review.
+      ## Root cause, if known
+      Unknown until confirmed by support investigation.
+      ## Workaround
+      Unknown. Do not publish requester-facing workaround without verification.
+      ## Permanent fix
+      Unknown.
+      ## Status
+      draft
+      ## Linked tickets/problems
+      Add verified references during curation.
+  - slug: workaround-generic-temporary-steps-placeholder
+    type: workaround
+    space: known-errors
+    title: "Generic workaround placeholder"
+    summary: "Draft placeholder for a temporary workaround that needs review."
+    visibility: support_internal
+    status: draft
+    owner: servicedesk
+    reviewer: servicedesk
+    tags: [workaround, placeholder]
+    body_format: markdown
+    body: |
+      ## Applies to
+      Placeholder: define the exact service/offering after review.
+      ## Temporary steps
+      Placeholder: add verified safe steps only.
+      ## Risk/side effects
+      Unknown until reviewed.
+      ## Reversal
+      Unknown until reviewed.
+      ## Expiry/review date
+      Set before any publication.

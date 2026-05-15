@@ -1,0 +1,180 @@
+code: glossary-baseline
+version: 1
+title: Glossary Baseline
+description: Requester-safe glossary terms for support and self-service content.
+spaces:
+  - code: glossary
+    title: Glossary
+    visibility: requester
+    lifecycle_status: active
+    owner: servicedesk
+    reviewer: servicedesk
+items:
+  - slug: glossary-vpn
+    type: glossary_term
+    space: glossary
+    title: VPN
+    summary: "Secure connection used to reach work resources from another network."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, vpn]
+    body_format: markdown
+    body: |
+      ## Definition
+      VPN is a secure connection used to reach work resources from another network.
+      ## Synonyms
+      Remote access connection.
+      ## Related terms
+      MFA, Access request.
+      ## Related services/offerings
+      Network / VPN.
+  - slug: glossary-mfa
+    type: glossary_term
+    space: glossary
+    title: MFA
+    summary: "Additional sign-in check used with a password."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, mfa]
+    body_format: markdown
+    body: |
+      ## Definition
+      MFA means multi-factor authentication: an additional sign-in check used with a password.
+      ## Synonyms
+      Multi-factor authentication, second factor.
+      ## Related terms
+      Access request, VPN.
+      ## Related services/offerings
+      Access.
+  - slug: glossary-sla
+    type: glossary_term
+    space: glossary
+    title: SLA
+    summary: "Expected response or resolution target for a service."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, sla]
+    body_format: markdown
+    body: |
+      ## Definition
+      SLA is a service level agreement: an expected response or resolution target.
+      ## Synonyms
+      Service level agreement.
+      ## Related terms
+      OLA.
+      ## Related services/offerings
+      Support process.
+  - slug: glossary-ola
+    type: glossary_term
+    space: glossary
+    title: OLA
+    summary: "Internal operational target between support teams."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, ola]
+    body_format: markdown
+    body: |
+      ## Definition
+      OLA is an internal operational target between support teams.
+      ## Synonyms
+      Operational level agreement.
+      ## Related terms
+      SLA.
+      ## Related services/offerings
+      Support process.
+  - slug: glossary-access-request
+    type: glossary_term
+    space: glossary
+    title: Access request
+    summary: "Request to receive or change access to a system or service."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, access]
+    body_format: markdown
+    body: |
+      ## Definition
+      An access request asks support to grant, change or remove access to a system or service.
+      ## Synonyms
+      Permission request.
+      ## Related terms
+      MFA, Service offering.
+      ## Related services/offerings
+      Access.
+  - slug: glossary-service-offering
+    type: glossary_term
+    space: glossary
+    title: Service offering
+    summary: "Specific requestable option inside a service."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, service_catalog]
+    body_format: markdown
+    body: |
+      ## Definition
+      A service offering is a specific requestable option inside a broader service.
+      ## Synonyms
+      Offering, request option.
+      ## Related terms
+      Access request, SLA.
+      ## Related services/offerings
+      Service Catalog.
+  - slug: glossary-known-error
+    type: glossary_term
+    space: glossary
+    title: Known error
+    summary: "Documented recurring problem with current status and handling guidance."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, known_error]
+    body_format: markdown
+    body: |
+      ## Definition
+      A known error is a documented recurring problem with current status and handling guidance.
+      ## Synonyms
+      Known issue.
+      ## Related terms
+      Workaround.
+      ## Related services/offerings
+      Knowledge base.
+  - slug: glossary-workaround
+    type: glossary_term
+    space: glossary
+    title: Workaround
+    summary: "Temporary safe steps used until a permanent fix exists."
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    review_due_days: 180
+    tags: [glossary, workaround]
+    body_format: markdown
+    body: |
+      ## Definition
+      A workaround is a temporary set of safe steps used until a permanent fix exists.
+      ## Synonyms
+      Temporary fix.
+      ## Related terms
+      Known error.
+      ## Related services/offerings
+      Knowledge base.
