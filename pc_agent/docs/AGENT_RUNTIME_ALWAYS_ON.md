@@ -68,6 +68,12 @@ continues after failed self-service. If the knowledge endpoint is unavailable,
 the GUI continues with the existing form/preview/submit flow. This is HTTP-only
 and does not change Protocol V3.
 
+P2.2 Knowledge Operations adds server-side rollout controls for requester/agent
+deflection. The agent still calls the same `agent_gui` suggestion endpoint; the
+server may return no suggestions when rollout is paused for a service/offering or
+surface. The GUI must treat that as an ordinary no-suggestion state and continue
+ticket creation without exposing rollout policy internals.
+
 ## Runtime logs
 
 - Канонический helper: `pc_agent/core/runtime_logging.py`

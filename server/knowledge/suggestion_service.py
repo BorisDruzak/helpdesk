@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from knowledge.operations_service import KnowledgeOperationsService
 from knowledge.search_service import KnowledgeSearchService
 
 
@@ -12,6 +13,9 @@ class KnowledgeSuggestionService:
         self.session = session
 
     async def suggest(self, context: dict[str, Any], *, actor_role: str) -> dict[str, Any]:
+        rollout = await KnowledgeOperationsService(self.session).rollout_decision(context, actor_role=actor_role)
+        if rollout.get("enabled") is False:
+            return {"suggestions": [], "known_errors": [], "workarounds": [], "rollout": rollout}
         query = str(context.get("query") or context.get("title") or context.get("description") or "").strip()
         results = await KnowledgeSearchService(self.session).search(
             query=query,
@@ -45,4 +49,5 @@ class KnowledgeSuggestionService:
             "suggestions": suggestions,
             "known_errors": [item for item in suggestions if item.get("type") == "known_error"],
             "workarounds": [item for item in suggestions if item.get("type") == "workaround"],
+            "rollout": rollout,
         }

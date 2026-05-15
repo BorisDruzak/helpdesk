@@ -993,6 +993,79 @@ class TicketKnowledgeLink(Base):
     )
 
 
+class KnowledgeContentPack(Base):
+    """Idempotent operational content pack install state."""
+
+    __tablename__ = "knowledge_content_packs"
+
+    pack_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    installed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    installed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="installed")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("code", "version", name="uq_knowledge_content_packs_code_version"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_knowledge_content_packs_code_safe"),
+        sa.CheckConstraint("status IN ('installed', 'partially_installed', 'failed', 'retired')", name="ck_knowledge_content_packs_status"),
+        Index("ix_knowledge_content_packs_code_status", "code", "status"),
+    )
+
+
+class KnowledgeContentPackItem(Base):
+    """Per-item audit row for knowledge content pack application."""
+
+    __tablename__ = "knowledge_content_pack_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pack_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    pack_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    item_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    item_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="SET NULL"), nullable=True)
+    version_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="SET NULL"), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    install_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    last_error_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    installed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("install_status IN ('created', 'skipped', 'updated', 'conflict', 'failed', 'retired')", name="ck_knowledge_content_pack_items_status"),
+        Index("ix_knowledge_content_pack_items_pack", "pack_code", "pack_version"),
+        Index("ix_knowledge_content_pack_items_slug", "item_slug"),
+    )
+
+
+class KnowledgeRolloutPolicy(Base):
+    """Rollout gate for requester/agent self-service deflection."""
+
+    __tablename__ = "knowledge_rollout_policies"
+
+    policy_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    request_template_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="requester_portal")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    rollout_percent: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("service_code", "offering_code", "request_template_key", "surface", name="uq_knowledge_rollout_policy_scope"),
+        sa.CheckConstraint("surface IN ('requester_portal', 'agent_gui', 'support_workspace', 'admin', 'api', 'search')", name="ck_knowledge_rollout_policies_surface"),
+        sa.CheckConstraint("rollout_percent >= 0 AND rollout_percent <= 100", name="ck_knowledge_rollout_policies_percent"),
+        Index("ix_knowledge_rollout_policies_scope", "service_code", "offering_code", "request_template_key", "surface"),
+    )
+
+
 class TicketWorklog(Base):
     """Трудозатраты по тикету (минуты + заметка)."""
     __tablename__ = "ticket_worklogs"

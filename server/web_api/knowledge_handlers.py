@@ -5,7 +5,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import KnowledgeIngestionJob, KnowledgeNode, KnowledgeSpace
+from app.db.models import KnowledgeContentPack, KnowledgeIngestionJob, KnowledgeNode, KnowledgeSpace
 from app.repos.knowledge_repo import KnowledgeRepo
 from auth.middleware import require_auth
 from knowledge.contracts import (
@@ -13,10 +13,12 @@ from knowledge.contracts import (
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
 )
+from knowledge.content_pack_service import KnowledgeContentPackService
 from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.metrics_service import KnowledgeMetricsService
+from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
 from knowledge.search_service import KnowledgeSearchService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
@@ -181,6 +183,134 @@ async def handle_web_knowledge_metrics_summary(request: web.Request) -> web.Resp
     async with get_session() as session:
         summary = await KnowledgeMetricsService(session).summary(actor_role=role)
     return web.json_response({"status": "ok", "summary": summary})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_content_packs(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    if role != "admin":
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(KnowledgeContentPack).order_by(KnowledgeContentPack.installed_at.desc(), KnowledgeContentPack.code.asc())
+            )
+        ).scalars().all()
+        return web.json_response(
+            {
+                "status": "ok",
+                "packs": [
+                    {
+                        "pack_id": row.pack_id,
+                        "code": row.code,
+                        "title": row.title,
+                        "version": row.version,
+                        "description": row.description,
+                        "installed_at": row.installed_at.isoformat() if row.installed_at else None,
+                        "installed_by": row.installed_by,
+                        "source_hash": row.source_hash,
+                        "status": row.status,
+                        "metadata": row.metadata_json or {},
+                    }
+                    for row in rows
+                ],
+            }
+        )
+
+
+@require_auth("admin")
+async def handle_web_knowledge_content_pack_apply(request: web.Request) -> web.Response:
+    actor_id, _role = _actor(request)
+    payload = await _json_payload(request)
+    pack = payload.get("pack")
+    if not isinstance(pack, dict):
+        return web.json_response({"status": "error", "error": "validation_error", "details": "pack is required"}, status=400)
+    try:
+        async with get_session() as session:
+            result = await KnowledgeContentPackService(session).apply_pack(
+                pack,
+                actor_id=actor_id,
+                dry_run=bool(payload.get("dry_run")),
+                force=bool(payload.get("force")),
+            )
+            if not payload.get("dry_run"):
+                await session.commit()
+        return web.json_response({"status": "ok", "result": result})
+    except Exception as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin")
+async def handle_web_knowledge_content_pack_retire(request: web.Request) -> web.Response:
+    actor_id, _role = _actor(request)
+    code = str(request.match_info.get("pack_code") or "")
+    async with get_session() as session:
+        result = await KnowledgeContentPackService(session).retire_pack(code, actor_id=actor_id)
+        await session.commit()
+    return web.json_response({"status": "ok", "result": result})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_templates(request: web.Request) -> web.Response:
+    return web.json_response({"status": "ok", "templates": list(CONTENT_TEMPLATES)})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_review_queue(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    async with get_session() as session:
+        review_queue = await KnowledgeOperationsService(session).review_queue(actor_role=role)
+    return web.json_response({"status": "ok", "review_queue": review_queue})
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_review_action(request: web.Request) -> web.Response:
+    actor_id, _role = _actor(request)
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    payload = await _json_payload(request)
+    try:
+        async with get_session() as session:
+            result = await KnowledgeOperationsService(session).review_action(
+                item_id,
+                action=str(payload.get("action") or ""),
+                actor_id=actor_id,
+                note=payload.get("note"),
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", "result": result})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_quality(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    async with get_session() as session:
+        quality = await KnowledgeOperationsService(session).quality_summary(actor_role=role)
+    return web.json_response({"status": "ok", "quality": quality})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_gaps(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    async with get_session() as session:
+        gaps = await KnowledgeOperationsService(session).detect_gaps(actor_role=role)
+    return web.json_response({"status": "ok", "gaps": gaps})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_rollout_policies(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    async with get_session() as session:
+        ops = KnowledgeOperationsService(session)
+        if request.method == "POST":
+            if role != "admin":
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            result = await ops.upsert_rollout_policy(await _json_payload(request), actor_id=actor_id)
+            await session.commit()
+            return web.json_response({"status": "ok", "policy": result})
+        result = await ops.list_rollout_policies()
+    return web.json_response({"status": "ok", **result})
 
 
 @require_auth("admin", "support", "auditor")

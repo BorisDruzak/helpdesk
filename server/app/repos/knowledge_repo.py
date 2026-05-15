@@ -27,6 +27,7 @@ from knowledge.contracts import (
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
     can_read_knowledge_visibility,
+    lint_requester_safe_publication,
     normalize_knowledge_slug,
 )
 
@@ -547,6 +548,15 @@ class KnowledgeRepo:
                     "suggested_fix": "Remove internal evidence or change visibility.",
                 }
             )
+        blockers.extend(
+            lint_requester_safe_publication(
+                visibility=item.visibility,
+                title=version.title if version is not None else item.title,
+                summary=version.summary if version is not None else item.summary,
+                body=version.body if version is not None else "",
+                metadata={**metadata, **(_dict(version.metadata_json) if version is not None else {})},
+            )
+        )
         return blockers
 
     async def add_binding(

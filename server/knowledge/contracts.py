@@ -175,6 +175,20 @@ KNOWLEDGE_SAFE_PROJECTION_FORBIDDEN_KEYS: frozenset[str] = frozenset(
     }
 )
 
+REQUESTER_SAFE_CONTENT_MARKERS: tuple[str, ...] = (
+    "queue_id",
+    "device_id",
+    "requester_id",
+    "raw_custom_fields",
+    "custom_fields",
+    "internal command",
+    "internal runbook",
+    "security token",
+    "secret",
+    "trace_id",
+    "operation_id",
+)
+
 SAFE_REQUESTER_ITEM_KEYS: frozenset[str] = frozenset(
     {
         "item_id",
@@ -264,3 +278,30 @@ def sanitize_requester_knowledge_projection(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize_requester_knowledge_projection(item) for item in value]
     return value
+
+
+def lint_requester_safe_publication(
+    *,
+    visibility: str | None,
+    title: str | None = None,
+    summary: str | None = None,
+    body: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Return blockers when requester-safe content appears to expose internals."""
+
+    if str(visibility or "") not in set(REQUESTER_SAFE_VISIBILITIES):
+        return []
+    haystack = "\n".join(str(part or "") for part in (title, summary, body)).lower()
+    metadata_text = str(metadata or {}).lower()
+    hits = sorted({marker for marker in REQUESTER_SAFE_CONTENT_MARKERS if marker in haystack or marker in metadata_text})
+    if not hits:
+        return []
+    return [
+        {
+            "severity": "error",
+            "code": "unsafe_requester_content",
+            "message": "requester-safe knowledge contains internal markers",
+            "suggested_fix": "Remove internal commands, ids, raw custom fields or security details before publishing.",
+        }
+    ]

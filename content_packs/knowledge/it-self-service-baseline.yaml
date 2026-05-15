@@ -1,0 +1,100 @@
+code: it-self-service-baseline
+version: 1
+title: IT Self-Service Baseline
+description: Requester-safe starter knowledge plus support operational runbooks.
+spaces:
+  - code: it-self-service
+    title: IT Self-Service
+    visibility: requester
+    lifecycle_status: active
+    default_reviewer_actor_id: servicedesk
+  - code: support-runbooks
+    title: Support Runbooks
+    visibility: support_internal
+    lifecycle_status: active
+    default_reviewer_actor_id: servicedesk
+items:
+  - slug: vpn-reconnect-basic
+    type: article
+    space: it-self-service
+    title: Как переподключить VPN
+    summary: Безопасная инструкция для пользователя при сбое VPN.
+    visibility: requester
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    tags: [vpn, remote_work]
+    review_due_days: 90
+    bindings:
+      - service_code: network
+        offering_code: network.vpn_issue
+        weight: 1.0
+    body_format: markdown
+    body: |
+      ## Когда использовать
+
+      Используйте эту инструкцию, если VPN не подключается или соединение разорвалось.
+
+      ## Шаги
+
+      1. Отключите VPN.
+      2. Подождите 30 секунд.
+      3. Подключитесь снова.
+      4. Если ошибка повторяется, создайте обращение.
+    quality:
+      source: baseline_pack
+      reviewed: true
+  - slug: vpn-support-triage-runbook
+    type: runbook
+    space: support-runbooks
+    title: VPN support triage runbook
+    summary: Support-only checklist for VPN incidents.
+    visibility: support_internal
+    status: published
+    owner: servicedesk
+    reviewer: servicedesk
+    tags: [vpn, support]
+    review_due_days: 90
+    bindings:
+      - service_code: network
+        offering_code: network.vpn_issue
+        weight: 1.0
+    body_format: markdown
+    body: |
+      ## Symptoms
+
+      VPN client cannot establish a connection after basic requester self-service.
+
+      ## Checks
+
+      1. Confirm the requester tried the requester-safe VPN article.
+      2. Check service status and recent network incidents.
+      3. Escalate to the network queue when multiple users are affected.
+    quality:
+      source: baseline_pack
+      reviewed: true
+graph:
+  nodes:
+    - stable_key: concept:vpn
+      node_type: concept
+      label: VPN
+      visibility: requester
+      service_code: network
+      offering_code: network.vpn_issue
+    - stable_key: concept:remote-work
+      node_type: concept
+      label: Remote work
+      visibility: requester
+  edges:
+    - source: knowledge_item:vpn-reconnect-basic
+      target: concept:vpn
+      relation_type: mentions
+      visibility: requester
+    - source: knowledge_item:vpn-reconnect-basic
+      target: concept:remote-work
+      relation_type: mentions
+      visibility: requester
+    - source: knowledge_item:vpn-support-triage-runbook
+      target: concept:vpn
+      relation_type: mentions
+      visibility: support_internal

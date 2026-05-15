@@ -67,6 +67,85 @@ export type KnowledgeMetricsSummary = {
   deflection_rate?: number;
 };
 
+export type KnowledgeContentPack = {
+  pack_id: string;
+  code: string;
+  title: string;
+  version: number;
+  description?: string | null;
+  installed_at?: string | null;
+  installed_by?: string | null;
+  source_hash?: string | null;
+  status: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgeContentPackApplyResult = {
+  status: string;
+  source_hash: string;
+  dry_run?: boolean;
+  items: Array<{
+    item_slug: string;
+    install_status?: string;
+    status?: string;
+    item_id?: string | null;
+    version_id?: string | null;
+    reason?: string | null;
+    error?: string | null;
+  }>;
+  summary?: Record<string, number>;
+};
+
+export type KnowledgeTemplate = {
+  type: string;
+  title: string;
+  sections: string[];
+};
+
+export type KnowledgeReviewQueue = {
+  count: number;
+  items: Array<KnowledgeItem & { reason: string; review_due_at?: string | null }>;
+};
+
+export type KnowledgeQualitySummary = {
+  average_quality_score: number;
+  items: Array<
+    KnowledgeItem & {
+      quality_score: number;
+      issues: string[];
+      feedback?: Record<string, number>;
+    }
+  >;
+};
+
+export type KnowledgeGapSummary = {
+  count: number;
+  gaps: Array<{
+    gap_type: string;
+    service_code: string;
+    offering_code: string;
+    service_title?: string | null;
+    offering_title?: string | null;
+    ticket_count: number;
+    ticket_created_after_view_count: number;
+    not_helpful_count: number;
+    severity: string;
+  }>;
+};
+
+export type KnowledgeRolloutPolicy = {
+  policy_id: string;
+  service_code?: string | null;
+  offering_code?: string | null;
+  request_template_key?: string | null;
+  surface: string;
+  enabled: boolean;
+  rollout_percent: number;
+  reason?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -143,4 +222,78 @@ export async function fetchKnowledgeMetricsSummary(): Promise<KnowledgeMetricsSu
   const response = await fetch("/api/web/knowledge/metrics/summary", { credentials: "same-origin" });
   const payload = await readJson<{ summary: KnowledgeMetricsSummary }>(response, "Не удалось загрузить метрики знаний");
   return payload.summary;
+}
+
+export async function fetchKnowledgeContentPacks(): Promise<KnowledgeContentPack[]> {
+  const response = await fetch("/api/web/knowledge/content-packs", { credentials: "same-origin" });
+  const payload = await readJson<{ packs: KnowledgeContentPack[] }>(response, "Не удалось загрузить content packs");
+  return payload.packs ?? [];
+}
+
+export async function applyKnowledgeContentPack(payload: { pack: Record<string, unknown>; dry_run?: boolean; force?: boolean }) {
+  const response = await fetch("/api/web/knowledge/content-packs/apply", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ result: KnowledgeContentPackApplyResult }>(response, "Не удалось применить content pack");
+}
+
+export async function retireKnowledgeContentPack(packCode: string) {
+  const response = await fetch(`/api/web/knowledge/content-packs/${encodeURIComponent(packCode)}/retire`, {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  return readJson<{ result: Record<string, unknown> }>(response, "Не удалось retire content pack");
+}
+
+export async function fetchKnowledgeTemplates(): Promise<KnowledgeTemplate[]> {
+  const response = await fetch("/api/web/knowledge/templates", { credentials: "same-origin" });
+  const payload = await readJson<{ templates: KnowledgeTemplate[] }>(response, "Не удалось загрузить шаблоны знаний");
+  return payload.templates ?? [];
+}
+
+export async function fetchKnowledgeReviewQueue(): Promise<KnowledgeReviewQueue> {
+  const response = await fetch("/api/web/knowledge/review-queue", { credentials: "same-origin" });
+  const payload = await readJson<{ review_queue: KnowledgeReviewQueue }>(response, "Не удалось загрузить review queue");
+  return payload.review_queue;
+}
+
+export async function submitKnowledgeReviewAction(itemIdOrSlug: string, payload: { action: string; note?: string | null }) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/review-action`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ result: { item: KnowledgeItem; event: Record<string, unknown> } }>(response, "Не удалось выполнить review action");
+}
+
+export async function fetchKnowledgeQuality(): Promise<KnowledgeQualitySummary> {
+  const response = await fetch("/api/web/knowledge/quality", { credentials: "same-origin" });
+  const payload = await readJson<{ quality: KnowledgeQualitySummary }>(response, "Не удалось загрузить quality score");
+  return payload.quality;
+}
+
+export async function fetchKnowledgeGaps(): Promise<KnowledgeGapSummary> {
+  const response = await fetch("/api/web/knowledge/gaps", { credentials: "same-origin" });
+  const payload = await readJson<{ gaps: KnowledgeGapSummary }>(response, "Не удалось загрузить knowledge gaps");
+  return payload.gaps;
+}
+
+export async function fetchKnowledgeRolloutPolicies(): Promise<KnowledgeRolloutPolicy[]> {
+  const response = await fetch("/api/web/knowledge/rollout-policies", { credentials: "same-origin" });
+  const payload = await readJson<{ policies: KnowledgeRolloutPolicy[] }>(response, "Не удалось загрузить rollout policies");
+  return payload.policies ?? [];
+}
+
+export async function saveKnowledgeRolloutPolicy(payload: Partial<KnowledgeRolloutPolicy>) {
+  const response = await fetch("/api/web/knowledge/rollout-policies", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ policy: KnowledgeRolloutPolicy }>(response, "Не удалось сохранить rollout policy");
 }

@@ -146,3 +146,69 @@ async def test_knowledge_api_denies_requester_mutation(test_client) -> None:
         json={"space_code": "it", "slug": "forbidden", "title": "Forbidden"},
     )
     assert resp.status in {401, 403}
+
+
+@pytest.mark.asyncio
+async def test_knowledge_operations_api_exposes_real_packs_quality_gaps_and_rollout(test_client) -> None:
+    pack = {
+        "code": "it-self-service-api",
+        "version": 1,
+        "title": "IT Self-Service API",
+        "spaces": [{"code": "it-self-service-api", "title": "IT Self-Service API", "visibility": "requester", "lifecycle_status": "active"}],
+        "items": [
+            {
+                "slug": "vpn-api-pack",
+                "type": "article",
+                "space": "it-self-service-api",
+                "title": "VPN API Pack",
+                "summary": "Requester safe",
+                "visibility": "requester",
+                "status": "published",
+                "reviewer": "servicedesk",
+                "bindings": [{"service_code": "network", "offering_code": "network.vpn_issue"}],
+                "body_format": "markdown",
+                "body": "## Steps\nReconnect VPN safely.",
+            }
+        ],
+    }
+    dry_run = await test_client.post("/api/web/knowledge/content-packs/apply", headers=_admin_headers(), json={"pack": pack, "dry_run": True})
+    assert dry_run.status == 200
+    dry_payload = await dry_run.json()
+    assert dry_payload["result"]["status"] == "dry_run"
+    assert dry_payload["result"]["summary"]["created"] == 1
+
+    install = await test_client.post("/api/web/knowledge/content-packs/apply", headers=_admin_headers(), json={"pack": pack})
+    assert install.status == 200
+    install_payload = await install.json()
+    assert install_payload["result"]["summary"]["created"] == 1
+
+    templates = await test_client.get("/api/web/knowledge/templates", headers=_admin_headers())
+    assert templates.status == 200
+    template_payload = await templates.json()
+    assert any(entry["type"] == "runbook" for entry in template_payload["templates"])
+
+    quality = await test_client.get("/api/web/knowledge/quality", headers=_admin_headers())
+    assert quality.status == 200
+    quality_payload = await quality.json()
+    assert any(entry["slug"] == "vpn-api-pack" for entry in quality_payload["quality"]["items"])
+
+    review = await test_client.get("/api/web/knowledge/review-queue", headers=_admin_headers())
+    assert review.status == 200
+    assert "items" in (await review.json())["review_queue"]
+
+    rollout = await test_client.post(
+        "/api/web/knowledge/rollout-policies",
+        headers=_admin_headers(),
+        json={"service_code": "network", "offering_code": "network.vpn_issue", "surface": "requester_portal", "enabled": False},
+    )
+    assert rollout.status == 200
+
+    suggest = await test_client.post(
+        "/api/knowledge/suggest",
+        headers=_requester_headers(),
+        json={"service_code": "network", "offering_code": "network.vpn_issue", "surface": "requester_portal"},
+    )
+    assert suggest.status == 200
+    suggest_payload = await suggest.json()
+    assert suggest_payload["suggestions"] == []
+    assert suggest_payload["rollout"]["enabled"] is False

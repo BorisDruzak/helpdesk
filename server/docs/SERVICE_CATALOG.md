@@ -40,6 +40,8 @@ P2 Knowledge Platform binds published knowledge to `service_code`, `offering_cod
 
 Policy Health includes a knowledge gap warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog remains the process layer; Knowledge Platform owns content lifecycle, versions, chunks/search, graph relations and deflection metrics. See [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
 
+P2.2 Knowledge Operations uses the same published public catalog as the gap source of truth. `GET /api/web/knowledge/gaps` combines missing requester-safe bindings with ticket counts and knowledge feedback (`ticket_created_after_view`, `not_helpful`) so admins can prioritize which service/offering needs content next. This does not change catalog runtime resolution or the `other.unknown` fallback.
+
 ## Publication Gates
 
 `server/tickets/service_catalog_publication.py` validates service/offering publication:
