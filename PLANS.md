@@ -1,6 +1,6 @@
 # P2.1 Knowledge Platform Acceptance Hardening
 
-Status: implementation complete; local verification complete; remote/browser signoff pending. This is acceptance hardening for the already implemented P2 knowledge platform, not a scope expansion. P0/P0.1/P1/P1.1 contracts remain baseline and must not be weakened.
+Status: accepted / release-candidate. Local full verification, full CI artifact, remote release, migration apply, smoke and browser signoff are complete for P2.1 acceptance hardening. This is acceptance hardening for the already implemented P2 knowledge platform, not a scope expansion. P0/P0.1/P1/P1.1 contracts remain baseline and must not be weakened.
 
 Classification: cross-cutting / release-control. Scope touches knowledge lifecycle/API, ACL and safe projection boundaries, DB migrations, React admin/support routes, passport publication governance, docs/CODEMAP and final verification.
 
@@ -42,7 +42,7 @@ Classification: cross-cutting / release-control. Scope touches knowledge lifecyc
 - [x] Ensure `/app/knowledge` is role-appropriate and docs match route behavior.
 - [x] Update docs, CODEMAP, navigation/context index.
 - [x] Run targeted tests, P0/P1 regressions, full server/agent suites, webapp build/typecheck and workspace verification.
-- [ ] Run remote/browser signoff on the deployed stack.
+- [x] Run remote/browser signoff on the deployed stack.
 
 ## Verification Plan
 
@@ -63,6 +63,9 @@ Classification: cross-cutting / release-control. Scope touches knowledge lifecyc
 - Full server suite: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 923 passed, 11 warnings in 0:57:36. Warnings are `NotAppKeyWarning` in `tests/test_web_session_api.py`.
 - Static/build: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts\verify_workspace.py`, `python scripts\build_context_index.py --force`, `python scripts\bootstrap_web_toolchain.py`, and `pnpm --dir webapp build` all completed successfully. `webapp/package.json` has no separate `typecheck` or `lint` script; build includes `tsc --noEmit`.
 - A parallel DB pytest attempt hit transient `ConnectionDoesNotExistError` from simultaneous shared test database cleanup; the same tests passed when rerun sequentially.
+- Full CI artifact: `python scripts\run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green for commit `08863b071b7a8740ead083d32ae2d6f3405d111f`; the default 2700s server DB/API layer timeout was too short for this workspace and timed out before the 582 selected DB/API tests completed.
+- Remote release: `python scripts\release_server_to_remote.py --allow-local-dirty --leave-running` used the green artifact, deployed commit `08863b071b7a8740ead083d32ae2d6f3405d111f`, applied Alembic `083 -> 084`, uploaded webapp bundle and passed remote server smoke on retry 2/10.
+- Browser signoff on `https://192.168.100.17:9443`: `/app/admin/knowledge` created `it-support` space, created `P2.1 smoke publish article`, created version `v1`, and published it from UI while `current_version_id` was initially null; metrics showed item/published counts. `/app/knowledge` opened as a support entry without the admin create space/item forms. `/app/help` showed requester-safe knowledge suggestion, recorded the `Помогло` deflection action without ticket creation, and runtime preview returned safe response/resolution/approval/diagnostic text with submit enabled. `/app/tickets/:ticketId` Knowledge tab opened and showed the linked published knowledge item. Browser console had 0 errors after the signoff flow.
 
 ## Rollback Notes
 
