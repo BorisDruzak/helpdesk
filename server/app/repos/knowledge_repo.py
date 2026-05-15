@@ -22,7 +22,11 @@ from knowledge.contracts import (
     KNOWLEDGE_ITEM_STATUSES,
     KNOWLEDGE_ITEM_TYPES,
     KNOWLEDGE_VISIBILITIES,
+    KnowledgePublicationBlockedError,
     KnowledgeValidationError,
+    actor_visible_visibilities,
+    can_mutate_knowledge_visibility,
+    can_read_knowledge_visibility,
     normalize_knowledge_slug,
 )
 
@@ -231,19 +235,32 @@ class KnowledgeRepo:
             await self.session.execute(select(KnowledgeSpace).where(KnowledgeSpace.code == normalize_knowledge_slug(code)))
         ).scalar_one_or_none()
 
-    async def list_spaces(self) -> list[dict[str, Any]]:
+    async def list_spaces(self, *, actor_role: str = "admin") -> list[dict[str, Any]]:
+        allowed = set(actor_visible_visibilities(actor_role))
         rows = (
-            await self.session.execute(select(KnowledgeSpace).order_by(KnowledgeSpace.lifecycle_status.asc(), KnowledgeSpace.code.asc()))
+            await self.session.execute(
+                select(KnowledgeSpace)
+                .where(KnowledgeSpace.visibility.in_(allowed))
+                .order_by(KnowledgeSpace.lifecycle_status.asc(), KnowledgeSpace.code.asc())
+            )
         ).scalars().all()
         return [serialize_space(row) for row in rows]
 
-    async def create_item_draft(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
+    async def create_item_draft(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
         space = await self.get_space_by_code(str(payload.get("space_code") or ""))
         if space is None:
             raise ValueError("knowledge space not found")
         slug = normalize_knowledge_slug(payload.get("slug") or payload.get("title"))
         item_type = _validate_choice(str(payload.get("item_type") or "article"), KNOWLEDGE_ITEM_TYPES, "item_type")
         visibility = _validate_choice(str(payload.get("visibility") or space.visibility), KNOWLEDGE_VISIBILITIES, "visibility")
+        if not can_mutate_knowledge_visibility(actor_role, visibility):
+            raise KnowledgeValidationError("actor cannot create knowledge with this visibility")
         now = datetime.now(timezone.utc)
         row = KnowledgeItem(
             item_id=str(payload.get("item_id") or _new_id()),
@@ -292,24 +309,59 @@ class KnowledgeRepo:
 
     async def get_item(self, item_id_or_slug: str, *, actor_role: str = "admin") -> dict[str, Any]:
         item = await self.get_item_row(item_id_or_slug)
-        if item is None:
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
+        if str(actor_role or "").lower() not in {"admin", "support", "auditor", "security"} and item.status != "published":
             raise ValueError("knowledge item not found")
         return serialize_item(item, current_version=await self._current_version(item))
 
-    async def list_items(self, *, include_archived: bool = True) -> list[dict[str, Any]]:
-        stmt = select(KnowledgeItem).order_by(KnowledgeItem.updated_at.desc(), KnowledgeItem.slug.asc())
+    async def list_items(self, *, actor_role: str = "admin", include_archived: bool = True) -> list[dict[str, Any]]:
+        allowed = set(actor_visible_visibilities(actor_role))
+        stmt = (
+            select(KnowledgeItem)
+            .where(KnowledgeItem.visibility.in_(allowed))
+            .order_by(KnowledgeItem.updated_at.desc(), KnowledgeItem.slug.asc())
+        )
         if not include_archived:
             stmt = stmt.where(KnowledgeItem.status != "archived")
+        if str(actor_role or "").lower() not in {"admin", "support", "auditor", "security"}:
+            stmt = stmt.where(KnowledgeItem.status == "published")
         rows = (await self.session.execute(stmt)).scalars().all()
         result: list[dict[str, Any]] = []
         for row in rows:
             result.append(serialize_item(row, current_version=await self._current_version(row)))
         return result
 
-    async def create_version(self, item_id_or_slug: str, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
+    async def list_versions(self, item_id_or_slug: str, *, actor_role: str = "admin") -> list[dict[str, Any]]:
         item = await self.get_item_row(item_id_or_slug)
-        if item is None:
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
             raise ValueError("knowledge item not found")
+        rows = (
+            await self.session.execute(
+                select(KnowledgeItemVersion)
+                .where(KnowledgeItemVersion.item_id == item.item_id)
+                .order_by(KnowledgeItemVersion.version_number.desc(), KnowledgeItemVersion.created_at.desc())
+            )
+        ).scalars().all()
+        return [serialize_version(row) for row in rows]
+
+    async def get_latest_version(self, item_id_or_slug: str, *, actor_role: str = "admin") -> dict[str, Any] | None:
+        versions = await self.list_versions(item_id_or_slug, actor_role=actor_role)
+        return versions[0] if versions else None
+
+    async def create_version(
+        self,
+        item_id_or_slug: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
+        item = await self.get_item_row(item_id_or_slug)
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise KnowledgeValidationError("actor cannot create a version for this knowledge item")
         body_format = _validate_choice(str(payload.get("body_format") or "markdown"), KNOWLEDGE_BODY_FORMATS, "body_format")
         number = (
             await self.session.execute(
@@ -355,14 +407,30 @@ class KnowledgeRepo:
             )
         await self.session.flush()
 
-    async def publish_item(self, item_id_or_slug: str, version_id: str | None, *, actor_id: str | None) -> dict[str, Any]:
+    async def publish_item(
+        self,
+        item_id_or_slug: str,
+        version_id: str | None,
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+        acknowledge_stale_passport: bool = False,
+        review_note: str | None = None,
+    ) -> dict[str, Any]:
         item = await self.get_item_row(item_id_or_slug)
         if item is None:
             raise ValueError("knowledge item not found")
-        if not item.reviewer_actor_id:
-            raise ValueError("reviewer is required before publishing")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
         if not version_id:
-            raise ValueError("version_id is required before publishing")
+            blockers = self._publish_blockers(
+                item,
+                None,
+                version_id=version_id,
+                acknowledge_stale_passport=acknowledge_stale_passport,
+                review_note=review_note,
+            )
+            raise KnowledgePublicationBlockedError(blockers)
         version = (
             await self.session.execute(
                 select(KnowledgeItemVersion).where(
@@ -373,7 +441,22 @@ class KnowledgeRepo:
         ).scalar_one_or_none()
         if version is None:
             raise ValueError("knowledge version not found")
+        blockers = self._publish_blockers(
+            item,
+            version,
+            version_id=version_id,
+            acknowledge_stale_passport=acknowledge_stale_passport,
+            review_note=review_note,
+        )
+        if blockers:
+            raise KnowledgePublicationBlockedError(blockers)
         now = datetime.now(timezone.utc)
+        if review_note:
+            metadata = _dict(version.metadata_json)
+            metadata["publish_review"] = {"note": review_note, "acknowledge_stale_passport": bool(acknowledge_stale_passport)}
+            version.metadata_json = metadata
+            version.reviewed_by = version.reviewed_by or actor_id
+            version.reviewed_at = version.reviewed_at or now
         version.published_at = version.published_at or now
         version.published_by = actor_id
         item.current_version_id = version.version_id
@@ -384,10 +467,101 @@ class KnowledgeRepo:
         await self.session.flush()
         return serialize_item(item, current_version=version)
 
-    async def add_binding(self, item_id_or_slug: str, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
+    def _publish_blockers(
+        self,
+        item: KnowledgeItem,
+        version: KnowledgeItemVersion | None,
+        *,
+        version_id: str | None,
+        acknowledge_stale_passport: bool,
+        review_note: str | None,
+    ) -> list[dict[str, str]]:
+        blockers: list[dict[str, str]] = []
+        if not version_id:
+            blockers.append(
+                {
+                    "severity": "error",
+                    "code": "missing_version",
+                    "message": "version_id is required before publishing",
+                    "suggested_fix": "Create or select a knowledge version before publishing.",
+                }
+            )
+        if not item.reviewer_actor_id:
+            blockers.append(
+                {
+                    "severity": "error",
+                    "code": "missing_reviewer",
+                    "message": "reviewer is required before publishing",
+                    "suggested_fix": "Assign a reviewer to the knowledge item.",
+                }
+            )
+        if item.status == "archived":
+            blockers.append(
+                {
+                    "severity": "error",
+                    "code": "archived_item",
+                    "message": "archived knowledge items cannot be published",
+                    "suggested_fix": "Create a new draft or unarchive through a governed path.",
+                }
+            )
+        if version is not None and not str(version.body or "").strip():
+            blockers.append(
+                {
+                    "severity": "error",
+                    "code": "empty_body",
+                    "message": "knowledge version body is required before publishing",
+                    "suggested_fix": "Add reviewed content to the selected version.",
+                }
+            )
+        metadata = _dict(item.metadata_json)
+        warnings = metadata.get("warnings")
+        stale_warning = False
+        if isinstance(warnings, list):
+            stale_warning = any("stale" in str(entry).lower() for entry in warnings)
+        passport_stale = bool(metadata.get("passport_stale") or stale_warning)
+        if item.source_kind == "ticket_passport" or metadata.get("review_required") or passport_stale:
+            if metadata.get("review_required") and not (review_note or acknowledge_stale_passport):
+                blockers.append(
+                    {
+                        "severity": "error",
+                        "code": "review_required",
+                        "message": "passport-derived knowledge requires explicit review before publishing",
+                        "suggested_fix": "Record a review note or acknowledgement before publishing.",
+                    }
+                )
+            if passport_stale and not acknowledge_stale_passport:
+                blockers.append(
+                    {
+                        "severity": "error",
+                        "code": "stale_passport",
+                        "message": "stale passport draft cannot be published without acknowledgement",
+                        "suggested_fix": "Review the source passport and acknowledge the stale source.",
+                    }
+                )
+        if item.visibility in {"public", "requester", "agent_requester_safe"} and metadata.get("internal_evidence_markers"):
+            blockers.append(
+                {
+                    "severity": "error",
+                    "code": "internal_evidence_in_safe_item",
+                    "message": "requester-safe knowledge cannot expose internal evidence",
+                    "suggested_fix": "Remove internal evidence or change visibility.",
+                }
+            )
+        return blockers
+
+    async def add_binding(
+        self,
+        item_id_or_slug: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
         item = await self.get_item_row(item_id_or_slug)
-        if item is None:
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
             raise ValueError("knowledge item not found")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise KnowledgeValidationError("actor cannot add bindings to this knowledge item")
         row = KnowledgeBinding(
             binding_id=str(payload.get("binding_id") or _new_id()),
             item_id=item.item_id,

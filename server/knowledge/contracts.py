@@ -69,6 +69,19 @@ KNOWLEDGE_INGESTION_STATUSES: tuple[str, ...] = (
     "canceled",
 )
 
+KNOWLEDGE_INGESTION_SOURCE_KINDS: tuple[str, ...] = (
+    "manual_upload",
+    "text",
+    "markdown",
+    "html",
+    "pdf",
+    "docx",
+    "external_url",
+    "ticket_passport",
+    "git_repo",
+    "api",
+)
+
 KNOWLEDGE_NODE_TYPES: tuple[str, ...] = (
     "knowledge_item",
     "article",
@@ -117,7 +130,20 @@ REQUESTER_SAFE_VISIBILITIES: tuple[str, ...] = ("public", "requester", "agent_re
 
 SUPPORT_VISIBLE_VISIBILITIES: tuple[str, ...] = REQUESTER_SAFE_VISIBILITIES + ("support_internal",)
 
+AUDITOR_VISIBLE_VISIBILITIES: tuple[str, ...] = SUPPORT_VISIBLE_VISIBILITIES + ("auditor_read",)
+
 ADMIN_VISIBLE_VISIBILITIES: tuple[str, ...] = KNOWLEDGE_VISIBILITIES
+
+KNOWLEDGE_ACTOR_ROLES: tuple[str, ...] = (
+    "public",
+    "requester",
+    "user",
+    "agent",
+    "support",
+    "admin",
+    "auditor",
+    "security",
+)
 
 KNOWLEDGE_SAFE_PROJECTION_FORBIDDEN_KEYS: frozenset[str] = frozenset(
     {
@@ -170,6 +196,15 @@ class KnowledgeValidationError(ValueError):
     """Raised when knowledge platform input violates the public contract."""
 
 
+class KnowledgePublicationBlockedError(KnowledgeValidationError):
+    """Raised when a knowledge item fails publish governance gates."""
+
+    def __init__(self, blockers: list[dict[str, str]]):
+        details = "; ".join(str(blocker.get("message") or blocker.get("code") or "blocked") for blocker in blockers)
+        super().__init__(details or "knowledge publish blocked")
+        self.blockers = blockers
+
+
 def normalize_knowledge_slug(value: Any) -> str:
     text = str(value or "").strip().lower().replace(" ", "-")
     text = re.sub(r"-+", "-", text)
@@ -196,10 +231,23 @@ def actor_visible_visibilities(actor_role: str | None) -> tuple[str, ...]:
     if role in {"admin", "security"}:
         return ADMIN_VISIBLE_VISIBILITIES
     if role == "auditor":
-        return ADMIN_VISIBLE_VISIBILITIES
+        return AUDITOR_VISIBLE_VISIBILITIES
     if role == "support":
         return SUPPORT_VISIBLE_VISIBILITIES
     return REQUESTER_SAFE_VISIBILITIES
+
+
+def can_read_knowledge_visibility(actor_role: str | None, visibility: str | None) -> bool:
+    return str(visibility or "") in set(actor_visible_visibilities(actor_role))
+
+
+def can_mutate_knowledge_visibility(actor_role: str | None, visibility: str | None) -> bool:
+    role = str(actor_role or "").lower()
+    if role in {"admin", "security"}:
+        return str(visibility or "") in set(ADMIN_VISIBLE_VISIBILITIES)
+    if role == "support":
+        return str(visibility or "") in set(SUPPORT_VISIBLE_VISIBILITIES)
+    return False
 
 
 def sanitize_requester_knowledge_projection(value: Any) -> Any:

@@ -75,6 +75,14 @@ async def test_knowledge_api_admin_crud_and_requester_safe_suggest(test_client) 
     assert version_resp.status == 200
     version = (await version_resp.json())["version"]
 
+    versions_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/versions",
+        headers=_admin_headers(),
+    )
+    assert versions_resp.status == 200
+    versions_payload = await versions_resp.json()
+    assert versions_payload["versions"][0]["version_id"] == version["version_id"]
+
     publish_resp = await test_client.post(
         f"/api/web/knowledge/items/{item['item_id']}/publish",
         headers=_admin_headers(),

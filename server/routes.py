@@ -744,6 +744,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/knowledge/items', handle_web_knowledge_items),
         web.post('/api/web/knowledge/items', handle_web_knowledge_items),
         web.get('/api/web/knowledge/items/{item_id_or_slug}', handle_web_knowledge_item_detail),
+        web.get('/api/web/knowledge/items/{item_id_or_slug}/versions', handle_web_knowledge_item_versions),
         web.post('/api/web/knowledge/items/{item_id_or_slug}/versions', handle_web_knowledge_item_versions),
         web.post('/api/web/knowledge/items/{item_id_or_slug}/publish', handle_web_knowledge_item_publish),
         web.get('/api/web/knowledge/graph/nodes', handle_web_knowledge_graph_nodes),

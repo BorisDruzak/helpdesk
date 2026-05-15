@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpenCheck, GitBranch, Search, ShieldCheck, UploadCloud } from "lucide-react";
 
@@ -9,6 +9,7 @@ import { PageHeading } from "../../components/ui/page-heading";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
+  fetchKnowledgeItemVersions,
   fetchKnowledgeItems,
   fetchKnowledgeMetricsSummary,
   fetchKnowledgeSpaces,
@@ -55,10 +56,18 @@ function itemTypeLabel(type: string) {
   return labels[type] ?? type;
 }
 
-export function KnowledgeAdminPanel() {
+type KnowledgeAdminPanelProps = {
+  mode?: "admin" | "support";
+};
+
+export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps) {
   const queryClient = useQueryClient();
+  const canManage = mode === "admin";
   const [search, setSearch] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
+  const [selectedVersionId, setSelectedVersionId] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [acknowledgeStalePassport, setAcknowledgeStalePassport] = useState(false);
   const [spaceDraft, setSpaceDraft] = useState({
     code: "it-support",
     title: "IT Support",
@@ -105,6 +114,22 @@ export function KnowledgeAdminPanel() {
     );
   }, [items, search]);
   const selectedItem = items.find((item) => item.item_id === selectedItemId) ?? filteredItems[0] ?? null;
+  const versionsQuery = useQuery({
+    queryKey: ["knowledge-item-versions", selectedItem?.item_id],
+    queryFn: () => fetchKnowledgeItemVersions(selectedItem?.item_id ?? ""),
+    enabled: Boolean(selectedItem?.item_id),
+  });
+  const versions = versionsQuery.data ?? [];
+  const latestVersion = versions[0] ?? null;
+  const selectedVersion = versions.find((version) => version.version_id === selectedVersionId) ?? latestVersion;
+
+  useEffect(() => {
+    if (!selectedItem?.item_id) {
+      setSelectedVersionId("");
+      return;
+    }
+    setSelectedVersionId(selectedItem.current_version_id ?? latestVersion?.version_id ?? "");
+  }, [latestVersion?.version_id, selectedItem?.current_version_id, selectedItem?.item_id]);
 
   const saveSpaceMutation = useMutation({
     mutationFn: () =>
@@ -145,14 +170,29 @@ export function KnowledgeAdminPanel() {
   });
   const createVersionMutation = useMutation({
     mutationFn: () => createKnowledgeVersion(selectedItem?.item_id ?? "", versionDraft),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["knowledge-items"] }),
+    onSuccess: (result) => {
+      setSelectedVersionId(result.version.version_id);
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
+    },
   });
   const publishMutation = useMutation({
-    mutationFn: () => publishKnowledgeItem(selectedItem?.item_id ?? "", selectedItem?.current_version_id ?? ""),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["knowledge-items"] }),
+    mutationFn: () =>
+      publishKnowledgeItem(selectedItem?.item_id ?? "", selectedVersionId, {
+        acknowledge_stale_passport: acknowledgeStalePassport,
+        review_note: emptyToNull(reviewNote),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
+    },
   });
 
   const metrics = metricsQuery.data;
+  const deflectedCount = metrics?.deflection?.deflected_count ?? metrics?.deflection_events ?? 0;
+  const helpfulCount = metrics?.helpfulness?.helpful_count ?? metrics?.helpful_events ?? 0;
+  const notHelpfulCount = metrics?.helpfulness?.not_helpful_count ?? metrics?.not_helpful_events ?? 0;
+  const ticketAfterViewCount = metrics?.deflection?.ticket_created_after_view_count ?? metrics?.ticket_created_after_view_events ?? 0;
 
   return (
     <section className="space-y-6">
@@ -182,7 +222,7 @@ export function KnowledgeAdminPanel() {
             <CardTitle>Deflection</CardTitle>
             <CardDescription>Помогло без тикета</CardDescription>
           </CardHeader>
-          <CardContent className="text-3xl font-semibold">{metrics?.deflection_events ?? 0}</CardContent>
+          <CardContent className="text-3xl font-semibold">{deflectedCount}</CardContent>
         </Card>
         <Card>
           <CardHeader>
@@ -190,13 +230,16 @@ export function KnowledgeAdminPanel() {
             <CardDescription>Полезно / не полезно</CardDescription>
           </CardHeader>
           <CardContent className="text-lg font-semibold">
-            {metrics?.helpful_events ?? 0} / {metrics?.not_helpful_events ?? 0}
+            {helpfulCount} / {notHelpfulCount}
           </CardContent>
         </Card>
       </div>
+      {ticketAfterViewCount ? <p className="text-sm text-slate-500">Ticket after knowledge view: {ticketAfterViewCount}</p> : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-6">
+          {canManage ? (
+          <>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -323,6 +366,8 @@ export function KnowledgeAdminPanel() {
               </div>
             </CardContent>
           </Card>
+          </>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -378,6 +423,22 @@ export function KnowledgeAdminPanel() {
                     <Badge tone={tone(selectedItem.visibility)}>{selectedItem.visibility}</Badge>
                     <Badge tone="neutral">{itemTypeLabel(selectedItem.item_type)}</Badge>
                   </div>
+                  <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
+                    Current published: {selectedItem.current_version?.version_number ?? "none"}. Latest version: {latestVersion?.version_number ?? "none"}. Selected version: {selectedVersion?.version_number ?? "none"}.
+                  </div>
+                  {canManage ? (
+                    <label className="text-sm font-medium">
+                      Selected version
+                      <select className={fieldClass} value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
+                        <option value="">Select a version</option>
+                        {versions.map((version) => (
+                          <option key={version.version_id} value={version.version_id}>
+                            v{version.version_number} {version.published_at ? "(published)" : "(draft)"} {version.version_id.slice(0, 8)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="text-sm font-medium">
                     Version title
                     <input className={fieldClass} value={versionDraft.title || selectedItem.title} onChange={(event) => setVersionDraft({ ...versionDraft, title: event.target.value })} />
@@ -386,14 +447,22 @@ export function KnowledgeAdminPanel() {
                     Body
                     <textarea className={`${fieldClass} min-h-48`} value={versionDraft.body} onChange={(event) => setVersionDraft({ ...versionDraft, body: event.target.value })} />
                   </label>
+                  <label className="text-sm font-medium">
+                    Review note
+                    <input className={fieldClass} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={acknowledgeStalePassport} onChange={(event) => setAcknowledgeStalePassport(event.target.checked)} />
+                    Acknowledge stale passport source
+                  </label>
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => createVersionMutation.mutate()} disabled={!versionDraft.body || createVersionMutation.isPending}>
+                    <Button onClick={() => createVersionMutation.mutate()} disabled={!canManage || !versionDraft.body || createVersionMutation.isPending}>
                       Создать версию
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => publishMutation.mutate()}
-                      disabled={!selectedItem.current_version_id || publishMutation.isPending}
+                      disabled={!canManage || !selectedVersionId || publishMutation.isPending}
                     >
                       Опубликовать
                     </Button>

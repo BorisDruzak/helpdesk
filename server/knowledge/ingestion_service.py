@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
+from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
 
 
 def _new_id() -> str:
@@ -29,15 +30,18 @@ class KnowledgeIngestionService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def ingest_text(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
+    async def ingest_text(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
         repo = KnowledgeRepo(self.session)
         space = await repo.get_space_by_code(str(payload.get("space_code") or ""))
         if space is None:
             raise ValueError("knowledge space not found")
+        source_kind = str(payload.get("source_kind") or "text")
+        if source_kind not in KNOWLEDGE_INGESTION_SOURCE_KINDS:
+            raise KnowledgeValidationError(f"unsupported ingestion source_kind: {source_kind}")
         job = KnowledgeIngestionJob(
             job_id=_new_id(),
             space_id=space.space_id,
-            source_kind=str(payload.get("source_kind") or "text"),
+            source_kind=source_kind,
             source_name=str(payload.get("source_name") or payload.get("title") or "manual text"),
             status="queued",
             created_by=actor_id,
@@ -58,6 +62,7 @@ class KnowledgeIngestionService:
                 "reviewer_actor_id": payload.get("reviewer_actor_id") or actor_id,
             },
             actor_id=actor_id,
+            actor_role=actor_role,
         )
         version = await repo.create_version(
             item["item_id"],
@@ -69,6 +74,7 @@ class KnowledgeIngestionService:
                 "change_summary": "Imported draft",
             },
             actor_id=actor_id,
+            actor_role=actor_role,
         )
         job.status = "review_required"
         job.created_item_id = item["item_id"]

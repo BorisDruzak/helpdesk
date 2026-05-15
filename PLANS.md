@@ -1,3 +1,75 @@
+# P2.1 Knowledge Platform Acceptance Hardening
+
+Status: implementation complete; local verification complete; remote/browser signoff pending. This is acceptance hardening for the already implemented P2 knowledge platform, not a scope expansion. P0/P0.1/P1/P1.1 contracts remain baseline and must not be weakened.
+
+Classification: cross-cutting / release-control. Scope touches knowledge lifecycle/API, ACL and safe projection boundaries, DB migrations, React admin/support routes, passport publication governance, docs/CODEMAP and final verification.
+
+## Discovery
+
+- Admin publish flow has a real blocker: `webapp/src/features/knowledge/knowledge-admin-panel.tsx` publishes `selectedItem.current_version_id`, so a newly created draft item with a newly created version cannot be published from the UI because `current_version_id` is still null.
+- `KnowledgeRepo.create_version()` returns the created version id, but the UI does not retain it as a publish target. There is no repo/API method to list versions or choose latest draft/current published/selected version.
+- Web knowledge management endpoints currently call `KnowledgeRepo.list_items(include_archived=True)` and `get_item(...)` without role-aware visibility filtering, so direct-id/list access can leak `admin_internal` or `security_restricted` items to support/auditor paths.
+- `actor_visible_visibilities()` currently treats auditor as all-visible. P2.1 policy will make auditor read-only and exclude `admin_internal` / `security_restricted` unless a future explicit security role policy says otherwise.
+- Search and suggestions already use visibility filtering before requester-safe results, but shared contract constants need the same support/auditor policy and direct-id hardening.
+- `KnowledgeGraphService.neighborhood()` filters edge visibility before checking the neighbor node visibility, which can leak an edge to an invisible node.
+- Graph node list and ingestion job list handlers are admin/support authenticated, but need role-aware filtering/redaction and mutation visibility checks.
+- Knowledge metrics backend returns nested `deflection` / `helpfulness`, while the web UI expects flat aliases such as `deflection_events`; both shapes must be supported.
+- Passport draft service records stale warnings only as free-form metadata. `KnowledgeRepo.publish_item()` currently checks reviewer/version ownership only and can publish stale passport drafts without explicit acknowledgement.
+- Migration `083` created the knowledge tables. Enum-like graph, feedback and ingestion fields still need DB CHECK constraints and matching SQLAlchemy model constraints.
+- `/app/admin/knowledge` is the governance route. `/app/knowledge` must remain a real role-appropriate entry point, not a misleading placeholder or unrestricted admin surface.
+
+## Design Decisions
+
+- Add version listing and explicit publish target selection. Publishing always takes an explicit `version_id`; `current_version_id` is only the current published pointer.
+- Support can read/requester-safe plus `support_internal` knowledge and can mutate only non-admin/non-security visibility items. Auditor is read-only and sees requester-safe/support/auditor-readable knowledge, not admin/security restricted items.
+- Admin can manage normal knowledge, including `admin_internal`; `security_restricted` remains admin-accessible until a dedicated security role exists, and the docs will state this decision.
+- Direct-id denial uses the project’s existing validation/404-style behavior without leaking item titles/snippets.
+- Passport-derived items require lifecycle gates: reviewer, non-empty version, non-archived item, publishable visibility, and explicit stale acknowledgement when `passport_stale` / stale warnings are present.
+- Metrics API returns canonical nested fields plus flat compatibility aliases. The UI prefers nested fields and falls back to aliases.
+- DB constraints are added in a new Alembic revision `084`, with safe named CHECK constraints and downgrade drops.
+
+## Implementation Plan
+
+- [x] Read mandatory project docs and run intake/context commands.
+- [x] Map acceptance blockers in `PLANS.md`.
+- [x] Add/extend failing tests for publish version flow, ACL/direct-id hardening, metrics shape, passport stale gates, graph/ingestion visibility and DB constraints.
+- [x] Implement role-aware visibility/mutation helpers and wire repo/API endpoints to them.
+- [x] Add version list/latest APIs and fix React admin publish state.
+- [x] Add publish gate validation and stale passport acknowledgement support.
+- [x] Align metrics backend and UI DTO/display.
+- [x] Add migration `084` and SQLAlchemy CHECK constraints for graph/feedback/ingestion enums.
+- [x] Harden graph neighborhood/list and ingestion job visibility/redaction.
+- [x] Ensure `/app/knowledge` is role-appropriate and docs match route behavior.
+- [x] Update docs, CODEMAP, navigation/context index.
+- [x] Run targeted tests, P0/P1 regressions, full server/agent suites, webapp build/typecheck and workspace verification.
+- [ ] Run remote/browser signoff on the deployed stack.
+
+## Verification Plan
+
+- Targeted P2.1 tests: `test_knowledge_publish_flow.py`, `test_knowledge_acl_hardening.py`, `test_knowledge_db_constraints.py`, plus existing knowledge repo/API/metrics/graph/ingestion/passport tests.
+- Regressions: P0/P0.1 ticket contract/public queue/workflow/policy health/create tests and P1/P1.1 service catalog fallback/preview/publication/API/create/reports tests.
+- Agent: knowledge suggestions and service catalog wizard/helper suites.
+- Static/UI: `compileall`, `git diff --check`, `verify_workspace.py`, `build_context_index.py --force`, `pnpm --dir webapp build`, typecheck/lint if present.
+- Browser signoff on `https://192.168.100.17:9443/admin`: `/app/admin/knowledge`, `/app/knowledge`, `/app/help`, support ticket knowledge panel and direct-id/restricted visibility checks.
+
+## Verification Results
+
+- Targeted P2/P2.1 knowledge suite: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py server\tests\test_knowledge_publish_flow.py server\tests\test_knowledge_db_constraints.py -q --tb=short` -> 33 passed.
+- P0/P0.1 regression: `python -m pytest server\tests\test_ticket_status_usage_no_db.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_ticket_create_contracts.py -q --tb=short` -> 32 passed, 1 existing shared-DB cleanup warning.
+- P1/P1.1 service catalog regression: `python -m pytest server\tests\test_service_catalog_fallback.py server\tests\test_service_catalog_preview.py server\tests\test_service_catalog_repo.py server\tests\test_service_catalog_api.py server\tests\test_ticket_create_service_catalog.py server\tests\test_reports_service_catalog.py server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 14 passed. The acceptance-list name `test_service_catalog_publication.py` is not present in this checkout; publication behavior is covered by `test_service_catalog_repo.py`.
+- Form/process regression: `python -m pytest server\tests\test_form_process_preview.py server\tests\test_form_business_validation.py server\tests\test_helpdesk_policy_registry.py -q --tb=short` -> 44 passed.
+- Agent focused regression: `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_ticket_api_client_service_catalog.py pc_agent\tests\test_chat_panel_helpers.py pc_agent\tests\test_ticket_api_client_attachments.py -q --tb=short` -> 137 passed. The acceptance-list name `test_ticket_create_wizard_service_catalog.py` is not present in this checkout.
+- Full agent suite: `python -m pytest pc_agent\tests -m "not manual" -q --tb=short` -> 309 passed, 4 deselected.
+- Full server suite: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 923 passed, 11 warnings in 0:57:36. Warnings are `NotAppKeyWarning` in `tests/test_web_session_api.py`.
+- Static/build: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts\verify_workspace.py`, `python scripts\build_context_index.py --force`, `python scripts\bootstrap_web_toolchain.py`, and `pnpm --dir webapp build` all completed successfully. `webapp/package.json` has no separate `typecheck` or `lint` script; build includes `tsc --noEmit`.
+- A parallel DB pytest attempt hit transient `ConnectionDoesNotExistError` from simultaneous shared test database cleanup; the same tests passed when rerun sequentially.
+
+## Rollback Notes
+
+- Code rollback plus Alembic downgrade of revision `084` removes only new CHECK constraints; P2 schema/data remains intact.
+- If publish governance blocks live content unexpectedly, admins can keep items in draft/in-review while correcting reviewer/version/stale acknowledgement metadata.
+- ACL tightening may hide previously visible internal items from support/auditor; this is intentional P2.1 behavior and should be resolved by changing item visibility, not by bypassing filters.
+
 # P2 Universal Knowledge Platform + Helpdesk Deflection
 
 Status: implementation complete; verification in progress. P0/P0.1/P1/P1.1 remain baseline contracts and must not be weakened. This phase is cross-cutting / release-control because it adds schema, backend services, web/API surfaces, requester self-service, support workspace knowledge usage, agent GUI knowledge suggestions, docs and verification gates.

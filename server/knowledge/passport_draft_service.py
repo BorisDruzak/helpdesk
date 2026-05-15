@@ -61,7 +61,8 @@ class KnowledgePassportDraftService:
         )
         warnings: list[str] = []
         source_payload = passport.source_payload if isinstance(passport.source_payload, dict) else {}
-        if source_payload.get("stale") or source_payload.get("stale_reasons"):
+        passport_stale = bool(source_payload.get("stale") or source_payload.get("stale_reasons"))
+        if passport_stale:
             warnings.append("Passport is stale and must be reviewed before publication.")
         item = await repo.create_item_draft(
             {
@@ -76,9 +77,25 @@ class KnowledgePassportDraftService:
                 "source_passport_id": passport.id,
                 "owner_actor_id": actor_id,
                 "reviewer_actor_id": actor_id,
-                "metadata": {"warnings": warnings},
+                "metadata": {
+                    "warnings": warnings,
+                    "passport_stale": passport_stale,
+                    "review_required": True,
+                    "publish_blockers": (
+                        [
+                            {
+                                "severity": "error",
+                                "code": "stale_passport",
+                                "message": "Stale passport source must be reviewed and acknowledged before publication.",
+                            }
+                        ]
+                        if passport_stale
+                        else []
+                    ),
+                },
             },
             actor_id=actor_id,
+            actor_role="support",
         )
         version = await repo.create_version(
             item["item_id"],
@@ -91,6 +108,7 @@ class KnowledgePassportDraftService:
                 "source_refs": [{"ticket_id": ticket.ticket_id, "passport_id": passport.id, "created_at": datetime.now(timezone.utc).isoformat()}],
             },
             actor_id=actor_id,
+            actor_role="support",
         )
         bindings = []
         bindings.append(
@@ -103,6 +121,7 @@ class KnowledgePassportDraftService:
                     "reporting_category": ticket.reporting_category,
                 },
                 actor_id=actor_id,
+                actor_role="support",
             )
         )
         await KnowledgeGraphService(self.session).ensure_item_binding_edges(

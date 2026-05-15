@@ -28,13 +28,15 @@ Supported item types are:
 
 Item statuses are `draft`, `in_review`, `published`, `needs_review`, `archived`.
 
-Published items must have a current version. Passport-generated and ingested items are drafts by default and require review before publication. Operational rollback should archive or retire items rather than delete linked knowledge.
+Published items must have a current version. The admin publish flow is explicit: create a draft item, create one or more `knowledge_item_versions`, select the latest draft or another version, then publish with that `version_id`. `knowledge_items.current_version_id` is only the current published pointer and is not required before the first publish.
+
+Passport-generated and ingested items are drafts by default and require review before publication. Passport drafts carry `metadata.passport_stale`, `metadata.review_required` and structured `publish_blockers` when the source passport is stale. A stale passport draft cannot publish until an allowed actor supplies explicit stale acknowledgement and a review note. Operational rollback should archive or retire items rather than delete linked knowledge.
 
 ## Visibility And ACL
 
 Visibility levels are `public`, `requester`, `agent_requester_safe`, `support_internal`, `admin_internal`, `security_restricted`, `auditor_read`.
 
-Requester and local agent surfaces only receive published requester-safe knowledge. Support can see support-internal and requester-safe knowledge. Admin can manage spaces/items according to web-session RBAC. Search, suggestions, graph neighborhood and future retrieval/RAG must filter by ACL before returning any result.
+Requester and local agent surfaces only receive published requester-safe knowledge. Support can see requester-safe plus `support_internal` knowledge. Auditor is read-only and can see requester-safe, `support_internal` and `auditor_read`, but not `admin_internal` or `security_restricted`. Admin can manage normal knowledge including `admin_internal`; `security_restricted` is admin-accessible until a dedicated security role exists. Search, suggestions, direct item/version reads, graph node lists, graph neighborhoods, ingestion job lists, metrics and future retrieval/RAG must filter by ACL before returning any result.
 
 Requester/agent projections must not expose internal body for restricted items, source ticket/passport ids, requester/device ids, raw custom fields, internal graph edges, queue/policy ids, trace ids, operation ids or raw chunks for restricted items.
 
@@ -87,7 +89,7 @@ Admin/support management:
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
 - `GET /api/web/knowledge/items/{item_id_or_slug}`
-- `POST /api/web/knowledge/items/{item_id_or_slug}/versions`
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/versions`
 - `POST /api/web/knowledge/items/{item_id_or_slug}/publish`
 - `GET|POST /api/web/knowledge/graph/nodes`
 - `GET /api/web/knowledge/graph/nodes/{node_id}/neighborhood`
@@ -103,14 +105,26 @@ Ticket compatibility:
 
 ## UI
 
-- `/app/admin/knowledge`: spaces, item draft/version/publish workflow, metrics, graph/ingestion foundation and requester-safe preview context.
-- `/app/knowledge`: support-facing knowledge entry, using the same real backend component.
+- `/app/admin/knowledge`: governance/editor route with spaces, item draft/version/publish workflow, selected-version publish controls, stale-passport acknowledgement, metrics, graph/ingestion foundation and requester-safe preview context.
+- `/app/knowledge`: support-facing knowledge entry using the same real backend data but without admin-first mutation controls. Support cannot create `admin_internal` / `security_restricted` content through this route.
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.
 - `/app/tickets/:ticketId`: existing Knowledge tab receives platform-backed support suggestions and passport-to-draft results.
 
 ## Metrics
 
-`KnowledgeMetricsService` exposes item totals, published count, deflection events, viewed/helpful/not_helpful counts, tickets created after failed knowledge and knowledge gaps by service/offering foundation. Metrics must not include requester PII.
+`KnowledgeMetricsService` exposes canonical nested metrics:
+
+- `summary.deflection.deflected_count`
+- `summary.deflection.ticket_created_after_view_count`
+- `summary.deflection.deflection_rate`
+- `summary.helpfulness.helpful_count`
+- `summary.helpfulness.not_helpful_count`
+- `summary.helpfulness.helpfulness_rate`
+- `summary.totals.suggested_count`
+- `summary.totals.viewed_count`
+- `summary.totals.feedback_count`
+
+Flat aliases remain for compatibility: `deflection_events`, `helpful_events`, `not_helpful_events`, `ticket_created_after_view_events`. Metrics must not include requester PII.
 
 ## Service Catalog Integration
 
@@ -118,4 +132,4 @@ Knowledge binds to service/offering/request-template. Policy Health includes a w
 
 ## Rollback
 
-Migration `083` is additive. Operational rollback can disable requester/agent suggestions while leaving Service Catalog and ticket creation intact. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.
+Migration `083` is additive. P2.1 migration `084` adds DB CHECK constraints for graph node/edge enums, entity mention states, feedback event/surface roles, ingestion source/status values and ticket-knowledge link enums. Operational rollback can disable requester/agent suggestions while leaving Service Catalog and ticket creation intact; downgrade of `084` removes only those acceptance constraints. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.

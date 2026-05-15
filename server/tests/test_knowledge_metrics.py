@@ -21,4 +21,10 @@ async def test_knowledge_metrics_count_deflection_and_no_pii(test_engine) -> Non
 
     assert summary["deflection"]["deflected_count"] == 1
     assert summary["deflection"]["ticket_created_after_view_count"] == 1
+    assert summary["helpfulness"]["helpful_count"] == 0
+    assert summary["totals"]["feedback_count"] == 2
+    assert summary["deflection_events"] == 1
+    assert summary["ticket_created_after_view_events"] == 1
+    assert summary["helpful_events"] == 0
+    assert summary["not_helpful_events"] == 0
     assert "requester-secret" not in str(summary)

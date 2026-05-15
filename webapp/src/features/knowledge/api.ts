@@ -44,11 +44,27 @@ export type KnowledgeItem = {
 };
 
 export type KnowledgeMetricsSummary = {
-  events_by_type: Record<string, number>;
-  deflection_events: number;
-  helpful_events: number;
-  not_helpful_events: number;
-  deflection_rate: number;
+  deflection?: {
+    deflected_count?: number;
+    ticket_created_after_view_count?: number;
+    deflection_rate?: number;
+  };
+  helpfulness?: {
+    helpful_count?: number;
+    not_helpful_count?: number;
+    helpfulness_rate?: number;
+  };
+  totals?: {
+    suggested_count?: number;
+    viewed_count?: number;
+    feedback_count?: number;
+  };
+  events_by_type?: Record<string, number>;
+  deflection_events?: number;
+  helpful_events?: number;
+  not_helpful_events?: number;
+  ticket_created_after_view_events?: number;
+  deflection_rate?: number;
 };
 
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
@@ -101,12 +117,24 @@ export async function createKnowledgeVersion(itemIdOrSlug: string, payload: Reco
   return readJson<{ version: KnowledgeItemVersion }>(response, "Не удалось создать версию знания");
 }
 
-export async function publishKnowledgeItem(itemIdOrSlug: string, versionId: string) {
+export async function fetchKnowledgeItemVersions(itemIdOrSlug: string): Promise<KnowledgeItemVersion[]> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/versions`, {
+    credentials: "same-origin",
+  });
+  const payload = await readJson<{ versions: KnowledgeItemVersion[] }>(response, "Не удалось загрузить версии знания");
+  return payload.versions ?? [];
+}
+
+export async function publishKnowledgeItem(
+  itemIdOrSlug: string,
+  versionId: string,
+  options?: { acknowledge_stale_passport?: boolean; review_note?: string | null },
+) {
   const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/publish`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version_id: versionId }),
+    body: JSON.stringify({ version_id: versionId, ...(options ?? {}) }),
   });
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось опубликовать знание");
 }

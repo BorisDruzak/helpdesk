@@ -831,6 +831,10 @@ class KnowledgeNode(Base):
     updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
+        sa.CheckConstraint("node_type IN ('knowledge_item', 'article', 'known_error', 'workaround', 'glossary_term', 'service', 'offering', 'ticket', 'asset', 'registry_service', 'diagnostic_playbook', 'external_entity', 'concept', 'document')", name="ck_knowledge_nodes_node_type"),
+        sa.CheckConstraint("visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')", name="ck_knowledge_nodes_visibility"),
+        sa.CheckConstraint("status IN ('proposed', 'confirmed', 'rejected', 'archived')", name="ck_knowledge_nodes_status"),
+        sa.CheckConstraint("confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)", name="ck_knowledge_nodes_confidence"),
         Index("ix_knowledge_nodes_type_status", "node_type", "status"),
         Index("ix_knowledge_nodes_item", "linked_item_id"),
         Index("ix_knowledge_nodes_service_offering", "service_code", "offering_code"),
@@ -861,6 +865,12 @@ class KnowledgeEdge(Base):
     updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
+        sa.CheckConstraint("relation_type IN ('explains', 'causes', 'caused_by', 'depends_on', 'affects', 'affected_by', 'has_workaround', 'has_permanent_fix', 'requires', 'replaces', 'duplicates', 'similar_to', 'belongs_to_service', 'belongs_to_offering', 'suggested_for', 'tried_in_ticket', 'resolved_by', 'source_of', 'mentions', 'synonym_of', 'contradicts', 'supersedes')", name="ck_knowledge_edges_relation_type"),
+        sa.CheckConstraint("visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')", name="ck_knowledge_edges_visibility"),
+        sa.CheckConstraint("status IN ('proposed', 'confirmed', 'rejected', 'archived')", name="ck_knowledge_edges_status"),
+        sa.CheckConstraint("confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)", name="ck_knowledge_edges_confidence"),
+        sa.CheckConstraint("weight >= 0", name="ck_knowledge_edges_weight_nonnegative"),
+        sa.CheckConstraint("source_node_id <> target_node_id", name="ck_knowledge_edges_no_self_relation"),
         UniqueConstraint("source_node_id", "target_node_id", "relation_type", "source_ref", name="uq_knowledge_edges_exact"),
         Index("ix_knowledge_edges_source", "source_node_id", "relation_type"),
         Index("ix_knowledge_edges_target", "target_node_id", "relation_type"),
@@ -889,6 +899,9 @@ class KnowledgeEntityMention(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
+        sa.CheckConstraint("extraction_method IN ('manual', 'rule', 'model', 'import')", name="ck_knowledge_mentions_extraction_method"),
+        sa.CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_knowledge_mentions_status"),
+        sa.CheckConstraint("confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)", name="ck_knowledge_mentions_confidence"),
         Index("ix_knowledge_mentions_item_version", "item_id", "version_id"),
         Index("ix_knowledge_mentions_node", "node_id"),
     )
@@ -917,6 +930,9 @@ class KnowledgeFeedbackEvent(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
+        sa.CheckConstraint("source_surface IN ('requester_portal', 'agent_gui', 'support_workspace', 'admin', 'api', 'search')", name="ck_knowledge_feedback_source_surface"),
+        sa.CheckConstraint("event_type IN ('suggested', 'viewed', 'helpful', 'not_helpful', 'deflected', 'ticket_created_after_view', 'support_linked', 'support_used', 'draft_created', 'published', 'archived')", name="ck_knowledge_feedback_event_type"),
+        sa.CheckConstraint("actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')", name="ck_knowledge_feedback_actor_role"),
         Index("ix_knowledge_feedback_item_event_created", "item_id", "event_type", "created_at"),
         Index("ix_knowledge_feedback_service_offering_created", "service_code", "offering_code", "created_at"),
         Index("ix_knowledge_feedback_ticket", "ticket_id"),
@@ -946,6 +962,8 @@ class KnowledgeIngestionJob(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
+        sa.CheckConstraint("source_kind IN ('manual_upload', 'text', 'markdown', 'html', 'pdf', 'docx', 'external_url', 'ticket_passport', 'git_repo', 'api')", name="ck_knowledge_ingestion_source_kind"),
+        sa.CheckConstraint("status IN ('queued', 'parsing', 'chunking', 'indexing', 'review_required', 'completed', 'failed', 'canceled')", name="ck_knowledge_ingestion_status"),
         Index("ix_knowledge_ingestion_jobs_space_status", "space_id", "status"),
         Index("ix_knowledge_ingestion_jobs_created", "created_at"),
     )
@@ -967,6 +985,8 @@ class TicketKnowledgeLink(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
+        sa.CheckConstraint("link_type IN ('suggested', 'user_tried', 'support_linked', 'used_for_resolution', 'generated_from_ticket')", name="ck_ticket_knowledge_links_link_type"),
+        sa.CheckConstraint("visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')", name="ck_ticket_knowledge_links_visibility"),
         UniqueConstraint("ticket_id", "item_id", "link_type", name="uq_ticket_knowledge_links_ticket_item_type"),
         Index("ix_ticket_knowledge_links_ticket", "ticket_id", "created_at"),
         Index("ix_ticket_knowledge_links_item", "item_id"),

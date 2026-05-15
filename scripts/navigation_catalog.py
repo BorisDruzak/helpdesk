@@ -883,7 +883,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="knowledge_platform",
         title="Knowledge Platform / Deflection",
-        summary="P2 universal knowledge platform: spaces, universal knowledge items, versions, chunks/search foundation, service/offering/request-template bindings, PostgreSQL graph nodes/edges, ingestion jobs, feedback/deflection metrics, requester/agent-safe suggestions, support knowledge panel integration, existing kb_links compatibility and passport-to-knowledge draft lifecycle.",
+        summary="P2/P2.1 universal knowledge platform: spaces, universal knowledge items, explicit selected-version publish flow, chunks/search foundation, service/offering/request-template bindings, PostgreSQL graph nodes/edges with DB enum constraints, ingestion jobs, feedback/deflection metrics, requester/agent-safe suggestions, support knowledge panel integration, existing kb_links compatibility, ACL-filtered direct reads/graph/ingestion/metrics and stale passport-to-knowledge publish governance.",
         aliases=(
             "knowledge platform",
             "knowledge",
@@ -898,6 +898,7 @@ TOPICS: tuple[Topic, ...] = (
             "knowledge_attempts",
             "passport knowledge draft",
             "knowledge-draft",
+            "084_knowledge_acceptance_constraints",
             "kb_links",
             "/api/knowledge/suggest",
             "/api/web/knowledge",
@@ -949,10 +950,10 @@ TOPICS: tuple[Topic, ...] = (
         skills=(DOCS_SYNC_SKILL, MIGRATIONS_SKILL, PLANS_SKILL, TESTS_SKILL, BROWSER_CHECK_SKILL, AGENT_RUNTIME_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
-            "python -m pytest server/tests/test_knowledge_contract_no_db.py server/tests/test_knowledge_migration.py server/tests/test_knowledge_repo.py server/tests/test_knowledge_visibility.py server/tests/test_knowledge_search.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_graph.py server/tests/test_knowledge_ingestion.py server/tests/test_knowledge_passport_draft.py server/tests/test_knowledge_api.py server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_metrics.py -q --tb=short",
+            "python -m pytest server/tests/test_knowledge_contract_no_db.py server/tests/test_knowledge_migration.py server/tests/test_knowledge_repo.py server/tests/test_knowledge_visibility.py server/tests/test_knowledge_acl_hardening.py server/tests/test_knowledge_search.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_graph.py server/tests/test_knowledge_ingestion.py server/tests/test_knowledge_passport_draft.py server/tests/test_knowledge_api.py server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_metrics.py server/tests/test_knowledge_publish_flow.py server/tests/test_knowledge_db_constraints.py -q --tb=short",
             "python -m pytest pc_agent/tests/test_knowledge_suggestions.py pc_agent/tests/test_chat_panel_helpers.py -q --tb=short",
             "pnpm --dir webapp run build",
-            "Browser signoff at https://192.168.100.17:9443/admin for /app/admin/knowledge, /app/help and /app/tickets/:ticketId after deploy",
+            "Browser signoff at https://192.168.100.17:9443/admin for /app/admin/knowledge, /app/knowledge, /app/help and /app/tickets/:ticketId after deploy",
         ),
         plan_required=True,
         docs_to_update=(

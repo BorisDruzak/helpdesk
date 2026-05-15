@@ -181,11 +181,13 @@ class KnowledgeGraphService:
                 )
             ).scalars().all()
             for edge in rows:
-                edges[edge.edge_id] = edge
                 neighbor_id = edge.target_node_id if edge.source_node_id == node_id else edge.source_node_id
                 if neighbor_id not in nodes:
                     neighbor = (await self.session.execute(select(KnowledgeNode).where(KnowledgeNode.node_id == neighbor_id))).scalar_one()
                     if neighbor.visibility in allowed:
                         nodes[neighbor.node_id] = neighbor
                         queue.append((neighbor.node_id, current_depth + 1))
+                        edges[edge.edge_id] = edge
+                else:
+                    edges[edge.edge_id] = edge
         return {"nodes": [_serialize_node(row) for row in nodes.values()], "edges": [_serialize_edge(row) for row in edges.values()]}
