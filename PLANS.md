@@ -1,6 +1,6 @@
 # P2.2 Knowledge Operations & Content Rollout
 
-Status: next operational hardening stage implemented locally; verification in progress. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
+Status: accepted / release-candidate. Local verification, full CI, remote release, migration apply, baseline pack seed/idempotency check, smoke and browser signoff are complete for P2.2 Knowledge Operations & Content Rollout. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
 
 ## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
 
@@ -42,7 +42,7 @@ Status: next operational hardening stage implemented locally; verification in pr
 - [x] GREEN: server implementation and API compatibility.
 - [x] GREEN: webapp API/admin panel refinements for first-class review tasks and gap findings.
 - [x] Local verification and full CI runner.
-- [ ] Remote deploy/browser signoff.
+- [x] Remote deploy/browser signoff.
 
 ## Discovery
 
@@ -138,7 +138,10 @@ Current local verification:
 - `python scripts\build_context_index.py --force` -> built 14,012 items.
 - `python scripts\run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> passed. CI layers: verify_workspace passed; webapp bundle passed; server no-db 311 passed / 640 deselected; server db-api 610 passed / 341 deselected; server agent-ws 30 passed / 921 deselected; pc_agent 311 passed / 4 deselected.
 - Direct `python -m pytest server\tests -m "not manual" -q --tb=short` timed out at 30 minutes without a final pytest report; replaced by the canonical layered CI runner above, which completed successfully.
-- Remote deploy/browser signoff: pending for this checkpoint until commit/push and remote release workflow are run.
+- Remote release: `python scripts\release_server_to_remote.py --gate full --allow-local-dirty --leave-running --smoke-attempts 8 --smoke-delay 5` deployed commit `7987114212ac533c279767026652439b9150791e`, applied Alembic `085 -> 086`, uploaded webapp assets and passed remote smoke on attempt 2.
+- Remote baseline seed: `scripts/seed_knowledge_content.py --dry-run --all --actor codex-release` previewed 21 creates; install created 4 packs / 21 pack items; repeated dry-run skipped all entries with no conflicts or failures.
+- Browser signoff at `https://192.168.100.17:9443/admin`: `/app/admin/knowledge` showed 4 installed packs, 24 items and 16 published items; review/quality/gaps/rollout sections loaded from real API endpoints; `/app/knowledge` loaded support knowledge view without admin-only pack controls; `/app/help` showed requester-safe seeded suggestions and deflection actions; `/app/tickets/8aa0050b-f553-4f5a-8fb0-59f39fe67541` Knowledge tab showed linked seeded knowledge. Browser console warnings/errors: 0. Relevant API/network calls returned 200.
+- Remote cleanup: `python scripts\manage_remote_stack.py stop server` stopped the server after browser signoff.
 - `pnpm --dir webapp run build` -> passed.
 - `git diff --check` -> passed; line-ending warnings only.
 - `python scripts\docs_inventory.py --check-links` -> passed.
