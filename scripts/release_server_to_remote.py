@@ -234,7 +234,7 @@ def main() -> None:
         else:
             print(
                 "[ci] quick gate selected; skipping green CI artifact requirement. "
-                "Use full gate before final release/push."
+                "Use full gate only after an explicit final release-checkpoint request."
             )
 
         if not args.skip_verify:

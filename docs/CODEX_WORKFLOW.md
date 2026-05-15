@@ -307,7 +307,7 @@ git push -u origin <current-branch>
 
 Если upstream для ветки уже настроен, использовать обычный `git push`. Первый push новой ветки делать через `git push -u origin <current-branch>`.
 
-Обычный push dev-ветки в GitHub не требует отдельного строгого secret-scan или полного `run_ci_suite.py`: проект находится в стадии локальной разработки и рассчитан на локальный запуск. Достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов. Full CI остаётся gate-ом для финального release/deploy-claim.
+Обычный push dev-ветки в GitHub не требует отдельного строгого secret-scan или полного `run_ci_suite.py`: проект находится в стадии локальной разработки и рассчитан на локальный запуск. Достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов. Full CI остаётся важным финальным release-checkpoint-ом, но запускается только по явному запросу пользователя.
 
 Если есть unrelated dirty files, они остаются unstaged. В финальном отчёте назвать, что они не включены.
 
@@ -328,9 +328,10 @@ python scripts/verify_workspace.py
 ```powershell
 python -m pytest server/tests/ -v --tb=short
 python -m pytest pc_agent/tests/ -v --tb=short
-python scripts/run_ci_suite.py
 python scripts/docs_inventory.py --check-links
 ```
+
+`python scripts/run_ci_suite.py` не входит в обычный completion/commit gate. Codex должен предложить его как финальный full-check в конце блока изменений и спросить пользователя, запускать ли его сейчас, если задача выполняется частями или ещё не ясно, что это последняя итерация.
 
 Для docs-only изменений допустим focused set:
 
@@ -346,11 +347,11 @@ Deploy только после локального commit.
 
 Gate semantics:
 
-- `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and is mandatory before final release or publishing a verified release state. Routine GitHub pushes of dev branches happen immediately after local commit and do not require full gate.
+- `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and remains the important final release-checkpoint before publishing a verified release state. Codex must run full gate only after an explicit user request or confirmation. Routine GitHub pushes of dev branches happen immediately after local commit and do not require full gate.
 - `--gate quick` is an explicit staging/iteration mode; it skips only the green full-CI artifact requirement and still requires local verification, relevant focused tests, remote smoke, and browser/live checks for the touched area.
 - `--skip-ci-check` remains an emergency compatibility bypass and should be treated as equivalent to quick gate, not as a normal release path.
 
-Полный предпочтительный путь:
+Полный release-checkpoint, запускать только по явному запросу пользователя:
 
 ```powershell
 python scripts/release_server_to_remote.py --gate full
@@ -358,7 +359,7 @@ python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py smoke server
 ```
 
-Более простой sync, если полный release flow не нужен:
+Более простой full sync, если пользователь явно запросил full gate, но полный release flow не нужен:
 
 ```powershell
 python scripts/deploy_workspace_to_remote.py --gate full
@@ -372,7 +373,7 @@ python scripts/manage_remote_stack.py smoke server
 python scripts/release_server_to_remote.py --gate quick
 ```
 
-После quick gate нельзя делать финальный release-claim, пока текущий commit не прошёл `python scripts/run_ci_suite.py` и full gate. Обычный push dev-ветки в `origin` всё равно выполняется сразу после локального commit.
+После quick gate нельзя делать финальный release-claim. В конце блока изменений Codex должен напомнить, что для финальной публикации проверенного release-состояния нужен `python scripts/run_ci_suite.py` и full gate, и уточнить у пользователя, запускать ли их сейчас. Обычный push dev-ветки в `origin` всё равно выполняется сразу после локального commit.
 
 Если менялся web UI, проверить браузером каноничный адрес:
 
@@ -437,5 +438,6 @@ Codex должен остановиться и сообщить пользова
 - какие файлы важны;
 - что проверено с командами;
 - что не проверено и почему;
+- был ли full CI/full gate явно запрошен; если нет, напомнить, что это финальный release-checkpoint и уточнить, нужен ли запуск сейчас;
 - что осталось unstaged/uncommitted, если есть;
 - был ли remote server запущен и остановлен.

@@ -103,7 +103,7 @@ flowchart TB
 | Agent update / launcher / rollout | `server/agents/*`, `server/app/repos/agent_rollout_repo.py`, `pc_agent/launcher/*`, `pc_agent/launcher_portable_main.py`, `pc_agent/build_windows_release_v2.py`, `pc_agent/ws_agent.py`, `pc_agent/ui_bridge/api_server.py`, `pc_agent/ui_gui/main_window.py` | Build upload, rollout policy, recommendation, pending update, launcher apply/rollback, GUI update CTA | Agent update API, handshake update report fields, single-flight pending update state | agent update docs/tests, launcher canary flow, release artifact verification |
 | Local GUI and UI bridge | `pc_agent/ui_bridge/*`, `pc_agent/ui_gui/*`, `pc_agent/ui_gui/server_api.py` | Local Qt UI, SSE/API bridge, runtime status/logs/shutdown/update, chat panel | `/ui/agent/*` local API, GUI auth/update states, server API client behavior | UI bridge tests, local agent GUI smoke when visible behavior changes |
 | Database, repos and migrations | `server/app/db/models.py`, `server/app/db/migrations/versions/*`, `server/app/repos/*`, `pc_agent/core/database.py` | PostgreSQL schema, repos, migration lifecycle, test DB behavior, agent SQLite schema | Table/column semantics, migration order, repo transaction behavior, local DB schema version | migration-aware tests, DB-backed server pytest, pc_agent DB tests |
-| Release, deploy and remote control | `scripts/release_server_to_remote.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/manage_remote_stack.py`, `scripts/run_ci_suite.py`, `scripts/bootstrap_web_toolchain.py`, `scripts/check_webapp_cutover.py`, `docs/LOCAL_WORKFLOW.md`, `docs/WEBAPP_CUTOVER_CHECKLIST.md` | Verified release path, remote stack lifecycle, CI layering, web bundle cutover, remote smoke/browser signoff | Deploy script contract, artifact layout, remote server/control lifecycle, canonical ports | `python scripts/run_ci_suite.py`, remote smoke, browser signoff, stop server after checks |
+| Release, deploy and remote control | `scripts/release_server_to_remote.py`, `scripts/deploy_workspace_to_remote.py`, `scripts/manage_remote_stack.py`, `scripts/run_ci_suite.py`, `scripts/bootstrap_web_toolchain.py`, `scripts/check_webapp_cutover.py`, `docs/LOCAL_WORKFLOW.md`, `docs/WEBAPP_CUTOVER_CHECKLIST.md` | Verified release path, remote stack lifecycle, CI layering, web bundle cutover, remote smoke/browser signoff | Deploy script contract, artifact layout, remote server/control lifecycle, canonical ports | focused local checks by default; `python scripts/run_ci_suite.py` and full gate only by explicit user request, then remote smoke, browser signoff, stop server after checks |
 
 ## Contract Surfaces
 
@@ -176,7 +176,7 @@ Examples:
 - Change webapp bundle cutover behavior.
 - Change agent build upload, rollout recommendation, launcher apply/rollback.
 
-Expected discipline: follow `docs/LOCAL_WORKFLOW.md`, update release/update docs, run release-oriented checks, and stop remote server after verification unless explicitly asked otherwise.
+Expected discipline: follow `docs/LOCAL_WORKFLOW.md`, update release/update docs, run focused release-oriented checks by default, and stop remote server after verification unless explicitly asked otherwise. Full CI/full gate are important final release checkpoints, but Codex should run them only by explicit user request and should remind/ask at the end of a partial change block.
 
 ## High-Risk Couplings
 

@@ -30,7 +30,7 @@ Layer meanings:
 
 Pure server tests that do not request `test_client`, `test_app`, `test_engine`, `patched_get_session`, `test_database_url`, `test_database_admin_url` or `run_migrations` should set module-level `pytestmark = pytest.mark.no_db`. This keeps them out of the DB/API layer and avoids paying the migration/cleanup cost for tests that do not touch PostgreSQL.
 
-The full local CI runner executes these same layers:
+The full local CI runner executes these same layers. It is an important final release checkpoint, but Codex should run it only after explicit user request or confirmation:
 
 ```powershell
 python scripts/run_ci_suite.py
@@ -92,6 +92,6 @@ On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` onc
 - Agent runtime, launcher, tray, local UI bridge: focused `pc_agent/tests/*`, then live local agent status if runtime behavior changed.
 - Admin/support web UI: focused server API tests, `pnpm --dir webapp run build`, relevant Playwright spec, then browser check.
 - Iterative staging deploy: focused local verification for the touched area, then `python scripts/release_server_to_remote.py --gate quick`, remote smoke, and browser/live checks when the UI/runtime changed. Quick gate skips only the green full-CI artifact requirement.
-- Final release / GitHub push: full `python scripts/run_ci_suite.py`, `python scripts/release_server_to_remote.py --gate full` or the default gate, remote smoke, and browser/live agent checks.
+- Final release checkpoint by explicit request: full `python scripts/run_ci_suite.py`, `python scripts/release_server_to_remote.py --gate full` or the default gate, remote smoke, and browser/live agent checks. Routine GitHub pushes do not wait for this checkpoint.
 
 Do not raise timeouts as the first response to slow tests. First look at `--durations=80`, split the layer if needed, and optimize repeated heavy fixture setup such as `test_agent`.

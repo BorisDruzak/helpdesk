@@ -173,7 +173,7 @@ def main() -> None:
     else:
         print(
             "WARNING: quick deploy gate selected; skipping green CI artifact requirement. "
-            "Use full gate before final release/push."
+            "Use full gate only after an explicit final release-checkpoint request."
         )
 
     try:

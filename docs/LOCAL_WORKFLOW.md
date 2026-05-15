@@ -12,8 +12,8 @@
 - На шару и на Linux-хост отправляется только проверенное состояние.
 - Каждый локальный commit публикуется в GitHub `origin` сразу после commit: локальный commit и GitHub push являются одним checkpoint-ом.
 - Для обычного push dev-ветки в GitHub не нужен отдельный строгий secret-scan или full CI artifact; достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов.
-- Канонический порядок для финального release: локальные правки -> локальные проверки -> локальный commit -> push в GitHub `origin` -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> release-отчёт.
-- Для быстрой итерации на Linux-стенде допускается явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
+- Канонический финальный release-checkpoint: локальные правки -> локальные проверки -> локальный commit -> push в GitHub `origin` -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> release-отчёт. Codex запускает full CI/full gate только по явному запросу пользователя; если блок изменений ещё идёт частями, Codex должен напомнить об этом checkpoint-е и уточнить, запускать ли его сейчас.
+- Для быстрой итерации на Linux-стенде использовать явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
 - Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный Windows-remote: `linux`; Linux working copy `/var/chat_bot/pc_client` использует `origin`.
@@ -67,7 +67,7 @@ git push -u origin <current-branch>
 
 Если upstream для ветки уже настроен, использовать `git push`.
 
-7. Подготовить green CI artifact для целевого коммита:
+7. Если пользователь явно запросил финальный full-checkpoint, подготовить green CI artifact для целевого коммита:
 
 ```powershell
 python scripts/run_ci_suite.py
@@ -97,13 +97,13 @@ python scripts/sync_local_to_share.py
 python scripts/sync_local_to_share.py --apply
 ```
 
-11. Выложить локальную копию на Linux-хост:
+11. Для итерационной проверки выложить локальную копию на Linux-хост через quick gate:
 
 ```powershell
-python scripts/deploy_workspace_to_remote.py
+python scripts/deploy_workspace_to_remote.py --gate quick
 ```
 
-`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию работают в `--gate full` и требуют green CI artifact для текущего commit. Для staging/итерационного deploy использовать явный `--gate quick`: это штатный быстрый режим без full-CI artifact gate, но с сохранением локальной проверки, deploy, migrations/web bundle upload, start/smoke и stop по настройкам release script. Экстренный старый bypass `--skip-ci-check` оставлен для совместимости и считается эквивалентом quick gate; для полного `release_server_to_remote.py` он прокидывается во внутренний шаг `deploy_workspace_to_remote.py`.
+`deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию работают в `--gate full` и требуют green CI artifact для текущего commit. Поэтому Codex не запускает их без явного `--gate quick` во время итераций и не запускает full gate без явного запроса пользователя. Экстренный старый bypass `--skip-ci-check` оставлен для совместимости и считается эквивалентом quick gate; для полного `release_server_to_remote.py` он прокидывается во внутренний шаг `deploy_workspace_to_remote.py`.
 
 12. Поднять сервер на Linux и прогнать smoke:
 
@@ -144,7 +144,7 @@ git push -u origin <current-branch>
 git push
 ```
 
-GitHub push dev-ветки не ждёт `python scripts/run_ci_suite.py`; full CI нужен для финального release/deploy-claim и публикации проверенного release-состояния.
+GitHub push dev-ветки не ждёт `python scripts/run_ci_suite.py`; full CI нужен для финального release/deploy-claim и публикации проверенного release-состояния, но запускается только по явному запросу пользователя. Если план идёт частями, в конце очередного блока Codex должен напомнить об этом и уточнить, запускать ли full-checkpoint сейчас.
 
 Если нужно обновить именно Linux working copy через Git, рабочий цикл такой:
 
@@ -171,14 +171,14 @@ git status --short
 5. Для длинных задач вести `PLANS.md`.
 6. Если задача затрагивает локальный агент, использовать `python scripts/manage_local_agent.py ...` и проверять нужный сценарий на отдельном инстансе.
 7. Только после проверок делать локальный commit и сразу push в GitHub `origin`.
-8. Для финального verified deploy только после локальной проверки и green CI artifact выкладывать состояние на Linux через `python scripts/deploy_workspace_to_remote.py` или `python scripts/release_server_to_remote.py` в дефолтном `--gate full`.
-   Для быстрой проверки на стенде разрешён явный `--gate quick`, но результат такого deploy нельзя считать финально проверенным для release/deploy-claim.
+8. Для итерационной проверки на стенде использовать явный `--gate quick`; результат такого deploy нельзя считать финально проверенным для release/deploy-claim.
+   Full CI и дефолтный/full deploy (`--gate full` или deploy/release без `--gate`) запускать только по явному запросу пользователя.
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
 11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
 12. Если менялся веб-интерфейс, обязательно открыть [admin](https://192.168.100.17:9443/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
-13. Для полного verified server-flow предпочитать `python scripts/release_server_to_remote.py` в дефолтном `--gate full`; для итерационного стенда допустим `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
-14. GitHub push выполняется сразу после каждого локального commit. Green CI artifact и full gate обязательны не для самого dev-branch push, а для финального release/deploy-claim.
+13. Для полного verified server-flow по явному запросу пользователя использовать `python scripts/release_server_to_remote.py` в дефолтном `--gate full`; для итерационного стенда использовать `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
+14. GitHub push выполняется сразу после каждого локального commit. Green CI artifact и full gate обязательны не для самого dev-branch push, а для финального release/deploy-claim; Codex напоминает о них в конце блока изменений и уточняет запуск, если план выполняется частями.
 
 ## Observer guard and live canaries
 
