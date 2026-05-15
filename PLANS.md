@@ -73,9 +73,48 @@ Classification: cross-cutting / release-control. Scope touches knowledge lifecyc
 - If publish governance blocks live content unexpectedly, admins can keep items in draft/in-review while correcting reviewer/version/stale acknowledgement metadata.
 - ACL tightening may hide previously visible internal items from support/auditor; this is intentional P2.1 behavior and should be resolved by changing item visibility, not by bypassing filters.
 
+# P2/P2.1 Closure Hotfix — Knowledge Graph Visibility
+
+Status: local verification complete; release CI/deploy/browser signoff pending. This is a privacy-hardening hotfix for the accepted P2/P2.1 Knowledge Platform release candidate, not a new functional phase.
+
+Classification: release-control / security privacy hotfix. Scope is limited to graph neighborhood traversal, graph ACL tests, Knowledge Platform docs and P2/P2.1 status closure.
+
+## Issue
+
+`KnowledgeGraphService.neighborhood()` must never return a graph edge unless both endpoint nodes are visible to the actor and included in the response. The acceptance blocker is the possible leak shape `visible root -> visible edge -> hidden node`, where the hidden node is omitted but the edge id or hidden endpoint id can reveal a restricted relation.
+
+## Root Cause
+
+The graph traversal filtered candidate edge visibility and skipped hidden neighbor nodes, but it did not enforce a final response invariant that every returned edge has both endpoints in the returned visible node set. A dangling or future traversal path could also raise on a missing endpoint through `scalar_one()` instead of safely excluding the edge.
+
+## Fix
+
+- Added graph ACL tests for hidden target, hidden source, hidden intermediate traversal, returned-edge endpoint invariants, admin-visible internal graph access and API-level hidden id suppression.
+- Hardened `KnowledgeGraphService.neighborhood()` so BFS only queues visible nodes, skips missing or invisible neighbor endpoints, does not traverse through hidden nodes and applies a final safety pass that drops any edge whose `source_node_id` or `target_node_id` is absent from the visible node set.
+- Documented the graph visibility invariant in `server/docs/KNOWLEDGE_PLATFORM.md`.
+
+## Verification
+
+- Initial focused graph ACL check before the code hardening: `python -m pytest server\tests\test_knowledge_acl_hardening.py -q --tb=short` -> 10 passed.
+- Focused graph/API after the hardening: `python -m pytest server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_api.py -q --tb=short` -> 14 passed.
+- Targeted P2/P2.1 knowledge suite: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py server\tests\test_knowledge_publish_flow.py server\tests\test_knowledge_db_constraints.py -q --tb=short` -> 38 passed.
+- P0/P0.1 regression: `python -m pytest server\tests\test_ticket_status_usage_no_db.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_ticket_create_contracts.py -q --tb=short` -> 32 passed.
+- P1/P1.1 regression: `python -m pytest server\tests\test_service_catalog_fallback.py server\tests\test_service_catalog_preview.py server\tests\test_service_catalog_repo.py server\tests\test_service_catalog_api.py server\tests\test_ticket_create_service_catalog.py server\tests\test_reports_service_catalog.py server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 14 passed. The acceptance-list filename `test_service_catalog_publication.py` is not present in this checkout; publication coverage is in `test_service_catalog_repo.py`.
+- Agent focused tests: `python -m pytest pc_agent\tests\test_knowledge_suggestions.py -q`, `python -m pytest pc_agent\tests\test_ticket_api_client_service_catalog.py -q`, `python -m pytest pc_agent\tests\test_chat_panel_helpers.py -q`, `python -m pytest pc_agent\tests\test_ticket_api_client_attachments.py -q` -> 3 passed, 3 passed, 120 passed and 11 passed.
+- Full agent suite: `python -m pytest pc_agent\tests -m "not manual" -q --tb=short` -> 309 passed, 4 deselected.
+- Static/build: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts\verify_workspace.py`, `python scripts\build_context_index.py --force`, `python scripts\bootstrap_web_toolchain.py` and `pnpm --dir webapp build` completed successfully. `webapp/package.json` has no separate `typecheck` or `lint` script; build runs `tsc --noEmit`.
+- Full server suite: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 928 passed, 11 existing `NotAppKeyWarning` warnings in `tests/test_web_session_api.py`.
+- Parallel DB-backed pytest attempts hit the known shared-test-DB cleanup race (`ConnectionDoesNotExistError`) when suites were launched concurrently; the same suites passed when run sequentially.
+- Full CI artifact, remote release and browser/API signoff for the committed hotfix: pending.
+
+## Rollback Notes
+
+- No migration is needed for this hotfix.
+- Rollback is a normal code revert of the hotfix commit; P2 migrations `083` and `084` remain intact.
+
 # P2 Universal Knowledge Platform + Helpdesk Deflection
 
-Status: implementation complete; verification in progress. P0/P0.1/P1/P1.1 remain baseline contracts and must not be weakened. This phase is cross-cutting / release-control because it adds schema, backend services, web/API surfaces, requester self-service, support workspace knowledge usage, agent GUI knowledge suggestions, docs and verification gates.
+Status: accepted / release-candidate after P2.1 acceptance hardening and the P2/P2.1 Closure Hotfix. P0/P0.1/P1/P1.1 remain baseline contracts and must not be weakened. This phase is cross-cutting / release-control because it adds schema, backend services, web/API surfaces, requester self-service, support workspace knowledge usage, agent GUI knowledge suggestions, docs and verification gates.
 
 Goal: build a universal company knowledge platform, then use it for helpdesk self-service deflection and support knowledge workflows:
 
@@ -121,7 +160,7 @@ Goal: build a universal company knowledge platform, then use it for helpdesk sel
 - [x] Add `/app/admin/knowledge` and strengthen support workspace Knowledge panel/passport draft flow.
 - [x] Integrate Service Catalog/Policy Health knowledge gap indicators.
 - [x] Update docs, CODEMAP, navigation catalog and context index.
-- [ ] Run targeted tests, P0/P1 regressions, agent tests, webapp build/typecheck, workspace verification, full suite and browser signoff.
+- [x] Run targeted tests, P0/P1 regressions, agent tests, webapp build/typecheck, workspace verification, full suite and browser signoff.
 
 ## API / UI Contracts
 

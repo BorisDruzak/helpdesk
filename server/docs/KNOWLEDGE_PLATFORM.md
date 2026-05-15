@@ -76,6 +76,8 @@ P2 supports manual text/markdown ingestion. Ingestion creates a job, draft item,
 
 Bindings create service/offering graph edges. Knowledge attempts can create ticket-tried relations. Passport drafts create source relations. P2 exposes a practical neighborhood API with max depth 2 and visibility filtering.
 
+Neighborhood responses are a fully visible subgraph. An edge is returned only when the edge visibility is allowed for the actor and both endpoint nodes are also visible and present in `nodes`; traversal never passes through hidden intermediate nodes, and orphan edges to missing or restricted endpoints are dropped before serialization.
+
 ## APIs
 
 Requester/agent safe:

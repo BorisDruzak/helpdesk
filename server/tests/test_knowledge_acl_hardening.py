@@ -127,6 +127,261 @@ async def test_graph_neighborhood_hides_edges_to_invisible_nodes(test_engine) ->
 
 
 @pytest.mark.asyncio
+async def test_graph_neighborhood_hides_edges_from_invisible_source(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        visible = KnowledgeNode(
+            node_id="node-visible-target",
+            stable_key="concept:visible-target",
+            node_type="concept",
+            label="Visible target",
+            visibility="support_internal",
+        )
+        hidden = KnowledgeNode(
+            node_id="node-hidden-source",
+            stable_key="concept:hidden-source",
+            node_type="concept",
+            label="Hidden source",
+            visibility="admin_internal",
+        )
+        session.add_all([visible, hidden])
+        await session.flush()
+        session.add(
+            KnowledgeEdge(
+                edge_id="edge-hidden-source",
+                source_node_id=hidden.node_id,
+                target_node_id=visible.node_id,
+                relation_type="mentions",
+                visibility="support_internal",
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        neighborhood = await KnowledgeGraphService(session).neighborhood(
+            stable_key="concept:visible-target",
+            actor_role="support",
+            depth=1,
+        )
+
+    assert [node["stable_key"] for node in neighborhood["nodes"]] == ["concept:visible-target"]
+    assert neighborhood["edges"] == []
+
+
+@pytest.mark.asyncio
+async def test_graph_neighborhood_does_not_traverse_hidden_intermediate(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        root = KnowledgeNode(
+            node_id="node-visible-root",
+            stable_key="concept:visible-root",
+            node_type="concept",
+            label="Visible root",
+            visibility="support_internal",
+        )
+        hidden = KnowledgeNode(
+            node_id="node-hidden-middle",
+            stable_key="concept:hidden-middle",
+            node_type="concept",
+            label="Hidden middle",
+            visibility="admin_internal",
+        )
+        reachable = KnowledgeNode(
+            node_id="node-visible-through-hidden",
+            stable_key="concept:visible-through-hidden",
+            node_type="concept",
+            label="Visible through hidden",
+            visibility="support_internal",
+        )
+        session.add_all([root, hidden, reachable])
+        await session.flush()
+        session.add_all(
+            [
+                KnowledgeEdge(
+                    edge_id="edge-root-hidden",
+                    source_node_id=root.node_id,
+                    target_node_id=hidden.node_id,
+                    relation_type="mentions",
+                    visibility="support_internal",
+                ),
+                KnowledgeEdge(
+                    edge_id="edge-hidden-reachable",
+                    source_node_id=hidden.node_id,
+                    target_node_id=reachable.node_id,
+                    relation_type="mentions",
+                    visibility="support_internal",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        neighborhood = await KnowledgeGraphService(session).neighborhood(
+            stable_key="concept:visible-root",
+            actor_role="support",
+            depth=2,
+        )
+
+    assert [node["stable_key"] for node in neighborhood["nodes"]] == ["concept:visible-root"]
+    assert neighborhood["edges"] == []
+
+
+@pytest.mark.asyncio
+async def test_graph_neighborhood_edges_have_visible_endpoints_invariant(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        root = KnowledgeNode(
+            node_id="node-visible-invariant-root",
+            stable_key="concept:visible-invariant-root",
+            node_type="concept",
+            label="Visible invariant root",
+            visibility="support_internal",
+        )
+        peer = KnowledgeNode(
+            node_id="node-visible-invariant-peer",
+            stable_key="concept:visible-invariant-peer",
+            node_type="concept",
+            label="Visible invariant peer",
+            visibility="support_internal",
+        )
+        hidden = KnowledgeNode(
+            node_id="node-hidden-invariant",
+            stable_key="concept:hidden-invariant",
+            node_type="concept",
+            label="Hidden invariant",
+            visibility="admin_internal",
+        )
+        session.add_all([root, peer, hidden])
+        await session.flush()
+        session.add_all(
+            [
+                KnowledgeEdge(
+                    edge_id="edge-visible-invariant",
+                    source_node_id=root.node_id,
+                    target_node_id=peer.node_id,
+                    relation_type="mentions",
+                    visibility="support_internal",
+                ),
+                KnowledgeEdge(
+                    edge_id="edge-hidden-invariant",
+                    source_node_id=root.node_id,
+                    target_node_id=hidden.node_id,
+                    relation_type="mentions",
+                    visibility="support_internal",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        neighborhood = await KnowledgeGraphService(session).neighborhood(
+            stable_key="concept:visible-invariant-root",
+            actor_role="support",
+            depth=2,
+        )
+
+    returned_node_ids = {node["node_id"] for node in neighborhood["nodes"]}
+    assert "node-hidden-invariant" not in returned_node_ids
+    for edge in neighborhood["edges"]:
+        assert edge["source_node_id"] in returned_node_ids
+        assert edge["target_node_id"] in returned_node_ids
+
+
+@pytest.mark.asyncio
+async def test_graph_neighborhood_admin_can_see_admin_internal_when_allowed(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        root = KnowledgeNode(
+            node_id="node-admin-root",
+            stable_key="concept:admin-root",
+            node_type="concept",
+            label="Admin root",
+            visibility="support_internal",
+        )
+        admin_node = KnowledgeNode(
+            node_id="node-admin-visible",
+            stable_key="concept:admin-visible",
+            node_type="concept",
+            label="Admin visible",
+            visibility="admin_internal",
+        )
+        session.add_all([root, admin_node])
+        await session.flush()
+        session.add(
+            KnowledgeEdge(
+                edge_id="edge-admin-visible",
+                source_node_id=root.node_id,
+                target_node_id=admin_node.node_id,
+                relation_type="mentions",
+                visibility="admin_internal",
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        support_neighborhood = await KnowledgeGraphService(session).neighborhood(
+            stable_key="concept:admin-root",
+            actor_role="support",
+            depth=1,
+        )
+        admin_neighborhood = await KnowledgeGraphService(session).neighborhood(
+            stable_key="concept:admin-root",
+            actor_role="admin",
+            depth=1,
+        )
+
+    assert support_neighborhood["edges"] == []
+    assert {node["stable_key"] for node in admin_neighborhood["nodes"]} == {
+        "concept:admin-root",
+        "concept:admin-visible",
+    }
+    assert [edge["edge_id"] for edge in admin_neighborhood["edges"]] == ["edge-admin-visible"]
+
+
+@pytest.mark.asyncio
+async def test_graph_neighborhood_api_does_not_return_hidden_edge_or_node_ids(test_client, test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        root = KnowledgeNode(
+            node_id="node-api-visible-root",
+            stable_key="concept:api-visible-root",
+            node_type="concept",
+            label="API visible root",
+            visibility="support_internal",
+        )
+        hidden = KnowledgeNode(
+            node_id="node-api-hidden-target",
+            stable_key="concept:api-hidden-target",
+            node_type="concept",
+            label="API hidden target",
+            visibility="admin_internal",
+        )
+        session.add_all([root, hidden])
+        await session.flush()
+        session.add(
+            KnowledgeEdge(
+                edge_id="edge-api-hidden-target",
+                source_node_id=root.node_id,
+                target_node_id=hidden.node_id,
+                relation_type="mentions",
+                visibility="support_internal",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/knowledge/graph/nodes/node-api-visible-root/neighborhood?depth=1",
+        headers=_support_headers(),
+    )
+    assert response.status == 200
+    payload = await response.json()
+    assert {node["node_id"] for node in payload["nodes"]} == {"node-api-visible-root"}
+    assert payload["edges"] == []
+    assert "node-api-hidden-target" not in str(payload)
+    assert "edge-api-hidden-target" not in str(payload)
+
+
+@pytest.mark.asyncio
 async def test_graph_node_list_filters_by_actor_role(test_client, test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:

@@ -182,12 +182,24 @@ class KnowledgeGraphService:
             ).scalars().all()
             for edge in rows:
                 neighbor_id = edge.target_node_id if edge.source_node_id == node_id else edge.source_node_id
-                if neighbor_id not in nodes:
-                    neighbor = (await self.session.execute(select(KnowledgeNode).where(KnowledgeNode.node_id == neighbor_id))).scalar_one()
-                    if neighbor.visibility in allowed:
-                        nodes[neighbor.node_id] = neighbor
-                        queue.append((neighbor.node_id, current_depth + 1))
-                        edges[edge.edge_id] = edge
-                else:
+                if neighbor_id in nodes:
                     edges[edge.edge_id] = edge
-        return {"nodes": [_serialize_node(row) for row in nodes.values()], "edges": [_serialize_edge(row) for row in edges.values()]}
+                    continue
+
+                neighbor = (
+                    await self.session.execute(select(KnowledgeNode).where(KnowledgeNode.node_id == neighbor_id))
+                ).scalar_one_or_none()
+                if neighbor is None or neighbor.visibility not in allowed:
+                    continue
+
+                nodes[neighbor.node_id] = neighbor
+                queue.append((neighbor.node_id, current_depth + 1))
+                edges[edge.edge_id] = edge
+
+        visible_node_ids = set(nodes)
+        visible_edges = {
+            edge_id: edge
+            for edge_id, edge in edges.items()
+            if edge.source_node_id in visible_node_ids and edge.target_node_id in visible_node_ids
+        }
+        return {"nodes": [_serialize_node(row) for row in nodes.values()], "edges": [_serialize_edge(row) for row in visible_edges.values()]}
