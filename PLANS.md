@@ -75,7 +75,7 @@ Classification: cross-cutting / release-control. Scope touches knowledge lifecyc
 
 # P2/P2.1 Closure Hotfix — Knowledge Graph Visibility
 
-Status: local verification complete; release CI/deploy/browser signoff pending. This is a privacy-hardening hotfix for the accepted P2/P2.1 Knowledge Platform release candidate, not a new functional phase.
+Status: accepted / release-candidate. Local verification, full CI artifact, remote release, graph API privacy smoke and browser smoke are complete for this P2/P2.1 closure hotfix. This is a privacy-hardening hotfix for the accepted P2/P2.1 Knowledge Platform release candidate, not a new functional phase.
 
 Classification: release-control / security privacy hotfix. Scope is limited to graph neighborhood traversal, graph ACL tests, Knowledge Platform docs and P2/P2.1 status closure.
 
@@ -105,7 +105,10 @@ The graph traversal filtered candidate edge visibility and skipped hidden neighb
 - Static/build: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts\verify_workspace.py`, `python scripts\build_context_index.py --force`, `python scripts\bootstrap_web_toolchain.py` and `pnpm --dir webapp build` completed successfully. `webapp/package.json` has no separate `typecheck` or `lint` script; build runs `tsc --noEmit`.
 - Full server suite: `python -m pytest server\tests -m "not manual" -q --tb=short` -> 928 passed, 11 existing `NotAppKeyWarning` warnings in `tests/test_web_session_api.py`.
 - Parallel DB-backed pytest attempts hit the known shared-test-DB cleanup race (`ConnectionDoesNotExistError`) when suites were launched concurrently; the same suites passed when run sequentially.
-- Full CI artifact, remote release and browser/API signoff for the committed hotfix: pending.
+- Full CI artifact: `python scripts\run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green for commit `d8993be9e942f64c70e77b347b72aa1487a9b0de`. CI summary: server no-DB 311 selected passed, server DB/API 587 passed / 341 deselected, server agent/ws 30 passed / 898 deselected, pc_agent 309 passed / 4 deselected, webapp bundle and `verify_workspace` passed.
+- Remote release: `python scripts\release_server_to_remote.py --allow-local-dirty --leave-running` deployed committed state `d8993be`, reused the green full/default gate artifact, applied Alembic head with no new migration for this hotfix, uploaded the webapp bundle and passed remote `/api/health` smoke on retry 2/10. Follow-up `python scripts\manage_remote_stack.py smoke server` also passed.
+- Graph API privacy smoke: created a support-visible root node, an `admin_internal` hidden neighbor and a support-visible edge; a support-role request to `/api/web/knowledge/graph/nodes/{root}/neighborhood?depth=1` returned only the root node, `edges: []`, and did not include the hidden node key/label/id.
+- Browser smoke on `https://192.168.100.17:9443`: logged in as `admin`, opened `/app/admin/knowledge`, `/app/knowledge`, `/app/help` and `/app/tickets`; the admin/support knowledge entry points loaded, `/app/help` showed the service/offering catalog and knowledge suggestion section, the ticket workspace Knowledge sidebar opened with its empty-state/support knowledge panel, and browser console reported 0 errors. The live default help selection had no published suggestion to exercise the `Помогло` click in this hotfix smoke; the deflection path remains covered by the P2.1 browser signoff above and knowledge feedback/requester tests.
 
 ## Rollback Notes
 
