@@ -1320,7 +1320,7 @@ Verification targets:
 - Browser check was not rerun for this follow-up because no web/static UI files changed; public queue and Policy Health behavior changes are backend/API contract changes covered by tests.
 # P2.2.1 Knowledge Pack Binding Alignment + Rollout Hardening
 
-Status: local verified / full CI green; remote repair/browser signoff pending.
+Status: accepted / release-candidate. Local verification, full CI, remote release, Alembic migration `086 -> 087`, installed binding repair, smoke and browser signoff are complete for P2.2.1. This remains targeted production hardening after P2.2, not a Knowledge Platform redesign.
 
 ## Discovery
 
@@ -1413,13 +1413,20 @@ Local verification completed:
 - `pnpm --dir webapp test` -> 36 files passed, 196 tests passed.
 - `python scripts/build_context_index.py --force` -> rebuilt context index with 14084 items.
 - `python scripts/verify_workspace.py` -> passed.
-- `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/396e4dbc92df4fe50a0a74ec4a146495e2c38723/summary.json`; layers: verify_workspace passed, webapp bundle passed, server no-db 311 passed, server DB/API 642 passed, server agent-ws 30 passed, pc_agent 311 passed.
+- `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green for commit `356b473d231a52d7f77b0690c94e6e93c11dce47`, artifact `artifacts/ci/356b473d231a52d7f77b0690c94e6e93c11dce47/summary.json`; layers: verify_workspace passed, webapp bundle passed, server no-db 311 passed / 672 deselected, server DB/API 642 passed / 341 deselected, server agent-ws 30 passed / 953 deselected, pc_agent 311 passed / 4 deselected.
 
 ## Browser / Release Verification
 
-- Required local checks: validator strict, repair dry-run, targeted pytest, `python scripts/verify_workspace.py`, webapp build/typecheck where available.
-- Required remote/browser signoff after local commit/deploy: `/app/help`, `/app/admin/knowledge`, agent GUI rollout fallback.
-- Full CI/full gate is final release checkpoint and must be explicitly confirmed before running per project workflow.
+- Release: `python scripts/release_server_to_remote.py --allow-local-dirty --leave-running` used the green full-gate artifact, deployed commit `356b473d231a52d7f77b0690c94e6e93c11dce47`, applied Alembic `086 -> 087`, uploaded the webapp bundle and passed remote server smoke on retry 2/10.
+- Remote validation: `python3 scripts/validate_knowledge_pack_bindings.py --strict` on `/var/chat_bot/pc_client` -> OK.
+- Remote seed dry-run: `python3 scripts/seed_knowledge_content.py --dry-run --all` connected to the remote DB. Glossary and known-errors packs skipped unchanged; changed version-2 requester/support packs reported content conflicts as expected because seed still preserves installed article bodies/titles without `--force`.
+- Remote repair dry-run before apply found 11 installed pack-managed binding repairs: 6 requester baseline items and 5 support runbooks.
+- Remote repair apply: `python3 scripts/repair_knowledge_pack_bindings.py --all --json` repaired those 11 bindings and graph binding edges without changing article bodies/versions.
+- Remote repair idempotency: repeated `python3 scripts/repair_knowledge_pack_bindings.py --dry-run --all --json` reported `bindings_repaired=0`, with requester/support baseline items skipped and no missing entries.
+- Browser `/app/admin/knowledge`: structured Deflection rollout editor rendered scope, surface, percent, min/max, no-suggestions, API-unavailable, require/skip, urgency/impact bypass, deflection prompt, known errors, quality and freshness fields; quality/gaps/registry sections loaded from the live API.
+- Browser `/app/help`: Service Catalog selections returned canonical seeded requester articles for VPN, password reset, mail, laptop, printer and other/unknown contexts.
+- Browser rollout/API signoff: effective preview for `requester_portal` VPN returned full default policy fields with deterministic `rollout_bucket=6`, `max_suggestions=5`, `allow_submit` defaults and safe labels enabled; requester VPN suggestions returned requester-visible items only.
+- Agent-surface smoke through the browser session: `/api/knowledge/suggest` with `surface=agent_gui`, `mail/mail.mailbox_issue/mail_issue` returned the requester-safe mail article with rollout enabled and no internal visibility leakage.
 - Local seed/repair dry-runs now load `DATABASE_URL` from env/server `.env` and support `--database-url`, matching service-catalog seed behavior. The local Windows `server/.env` resolves to `127.0.0.1:5432/pc_client`, but that listener is not reachable from this shell, so installed-state seed/repair dry-run must be executed on the remote stand or with an explicit reachable database URL.
 
 ## Rollback Notes
