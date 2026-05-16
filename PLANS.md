@@ -2,6 +2,72 @@
 
 Status: accepted / release-candidate. Local verification, full CI, remote release, migration apply, baseline pack seed/idempotency check, smoke and browser signoff are complete for P2.2 Knowledge Operations & Content Rollout. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
 
+## Active Checkpoint: Suggestion Policy Enforcement
+
+Goal: finish P2.2.1 rollout policy enforcement for requester `/app/help`, `KnowledgeSuggestionService`, and the Qt agent create-ticket wizard.
+
+Scope:
+- Apply `no_suggestions_behavior`, `api_unavailable_behavior`, `min_suggestions`, quality/freshness label toggles, known-error visibility, and urgency/impact bypass in requester help.
+- Treat `max_suggestions=0` as an explicit no-suggestions policy instead of forcing one result.
+- Filter `known_error` items from every visible suggestion bucket when `show_known_errors=false`.
+- Keep agent GUI ticket creation non-blocking by default for API-unavailable/no-policy states, but honor server rollout gates when present.
+
+Completed:
+- Added focused regression coverage in server, webapp and pc_agent test files.
+- Wired policy helpers into requester `/app/help`, `KnowledgeSuggestionService`, requester-safe labels, and the Qt create-ticket wizard.
+- Updated Knowledge Platform, Agent runtime, CODEMAP, Quick Lookup and navigation-catalog docs for the enforced rollout behavior.
+
+Verification:
+- RED runs confirmed missing behavior before implementation: web helper import failed, agent `knowledge_submit_gate_state` import failed, and DB-backed server tests could not reach assertions because the isolated Postgres harness closed during Alembic setup.
+- `python -m pytest pc_agent\tests\test_knowledge_suggestions.py::test_agent_reads_rollout_from_knowledge_suggest_response pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass -q --tb=short` -> 3 passed.
+- `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_knowledge_rollout_agent.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_uses_knowledge_suggestions_and_attempts pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass -q --tb=short` -> 8 passed.
+- `pnpm --dir webapp exec vitest run src/pages/help/index.test.tsx src/features/requester/api.test.ts` -> 2 files passed, 8 tests passed.
+- `pnpm --dir webapp exec tsc --noEmit` -> passed.
+- `python -m py_compile server\knowledge\suggestion_service.py server\knowledge\search_service.py pc_agent\ui_gui\chat_panel.py` -> passed.
+- `python -m pytest server\tests\test_knowledge_contract_no_db.py -q --tb=short` -> 4 passed.
+- `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_suggestions.py::test_show_known_errors_false_removes_known_error_from_all_suggestion_buckets server\tests\test_knowledge_suggestions.py::test_rollout_max_suggestions_zero_returns_no_suggestions -q --tb=short` -> 6 passed.
+- `python scripts/docs_inventory.py --check-links` -> all local markdown links are valid.
+- `python scripts/verify_workspace.py` -> passed after updating `scripts/navigation_catalog.py`.
+- `git diff --check` -> passed; Git printed only existing LF-to-CRLF working-copy warnings.
+
+## Active Checkpoint: Test Harness Stabilization and CI Layering
+
+Goal: make the local/CI test harness deterministic after the audit found root `pytest` import collisions and flaky long DB/API runs on Windows shared test DB.
+
+Scope:
+- Migrate `pc_agent` runtime and tests away from top-level `core.*`, `modules.*`, `ui_gui.*`, `ui_bridge.*`, `network.*`, and `utils.*` imports where they collide with server packages during mixed root collection.
+- Preserve managed module compatibility where external module packages still import `modules.base_module` / `core.registry`.
+- Configure PostgreSQL test access so full DB/API runs use isolated `pc_support_test_<runid>` databases instead of shared `pc_support_test` fallback.
+- Split the expensive server DB/API pytest layer into domain layers while keeping the existing no-db and agent-ws contracts.
+- Update testing docs/CODEMAP/navigation metadata and verify with focused RED/GREEN commands.
+
+Decisions:
+- Treat `python -m pytest --collect-only -q` from repo root as a required regression target for the import cleanup.
+- Treat shared test DB fallback as acceptable for narrow local debugging only, not as a trusted full DB/API gate.
+- Do not change application DB schema; remote PostgreSQL work is limited to test-role/database privileges.
+
+Next Steps:
+- [x] RED: reproduce root pytest collection import errors.
+- [x] GREEN: normalize `pc_agent` package imports while preserving legacy managed-module imports through loader paths.
+- [x] SSH: grant the remote `chatbot` test role `CREATEDB` and `pg_signal_backend`, and add local peer auth for OS `postgres` administration.
+- [x] Optimize: add domain-specific server DB/API CI steps and tests for command construction.
+- [x] Verify: run root collect, `verify_workspace`, scripts tests, pc_agent tests, server no-db, all DB/API domain layers, and agent_ws.
+
+Verification:
+- `python -m pytest --collect-only -q` -> 1413 tests collected, no import errors.
+- `python -m pytest scripts -q --tb=short` -> 110 passed.
+- `python -m pytest pc_agent/tests -m "not manual" --tb=short --durations=20` -> 314 passed, 4 deselected.
+- `python -m pytest server/tests -m "not manual and no_db" -q --tb=short --durations=20` -> 311 passed, 674 deselected.
+- `python -m pytest server/tests/test_test_harness_no_db.py server/tests/test_shared_test_db_harness.py -q` -> 10 passed.
+- `python -m pytest server/tests/test_knowledge_suggestions.py::test_show_known_errors_false_removes_known_error_from_all_suggestion_buckets -q --tb=short --durations=10` -> 1 passed after adding valid known-error metadata.
+- `server_pytest_db_knowledge` domain command -> 90 passed, 9 deselected.
+- `server_pytest_db_tickets` domain command -> 267 passed, 61 deselected.
+- `server_pytest_db_observer_diagnostics` domain command -> 74 passed, 28 deselected.
+- `server_pytest_db_agent_runtime` domain command -> 84 passed, 93 deselected.
+- `server_pytest_db_web_api` domain command -> 129 passed, 150 deselected.
+- `python -m pytest server/tests -m "not manual and agent_ws" -q --durations=30 --tb=short` -> 30 passed, 955 deselected.
+- `python scripts/verify_workspace.py` -> passed.
+
 ## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
 
 ### Scope

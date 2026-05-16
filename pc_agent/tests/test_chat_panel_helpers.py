@@ -8,12 +8,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import ui_gui.chat_panel as chat_panel_module
-import ui_gui.main_window as main_window_module
+import pc_agent.ui_gui.chat_panel as chat_panel_module
+import pc_agent.ui_gui.main_window as main_window_module
 
 from PySide6.QtWidgets import QApplication, QComboBox, QDateEdit, QDateTimeEdit, QLabel, QListWidget, QLineEdit, QTextEdit  # noqa: E402
 
-from ui_gui.chat_panel import (  # noqa: E402
+from pc_agent.ui_gui.chat_panel import (  # noqa: E402
     ChatPanel,
     build_post_create_process_summary,
     build_post_create_result_labels,
@@ -35,6 +35,7 @@ from ui_gui.chat_panel import (  # noqa: E402
     diagnostic_consent_required,
     merge_ticket_stream,
     build_ticket_create_error_message,
+    knowledge_submit_gate_state,
     message_visual_role,
     catalog_offering_for_request_template,
     enrich_form_with_catalog_selection,
@@ -49,8 +50,8 @@ from ui_gui.chat_panel import (  # noqa: E402
     ticket_status_label,
     validate_create_attachment_paths,
 )
-from ui_gui import theme  # noqa: E402
-from ui_gui.ticket_view_models import (  # noqa: E402
+from pc_agent.ui_gui import theme  # noqa: E402
+from pc_agent.ui_gui.ticket_view_models import (  # noqa: E402
     build_next_action_view_model,
     format_datetime_local,
     format_due_label,
@@ -337,6 +338,56 @@ def test_ticket_create_wizard_uses_knowledge_suggestions_and_attempts():
     assert "knowledge_attempts" in source
 
 
+def test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled():
+    state = knowledge_submit_gate_state(
+        rollout={
+            "require_suggestions_before_submit": True,
+            "allow_skip": False,
+            "min_suggestions": 1,
+            "no_suggestions_behavior": "block_submit",
+        },
+        suggestion_count=0,
+        request_finished=True,
+        api_unavailable=False,
+        skipped=False,
+    )
+
+    assert state["can_submit"] is False
+    assert state["reason"] == "no_suggestions_block"
+
+
+def test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass():
+    unavailable = knowledge_submit_gate_state(
+        rollout={
+            "require_suggestions_before_submit": True,
+            "allow_skip": False,
+            "api_unavailable_behavior": "show_warning",
+        },
+        suggestion_count=0,
+        request_finished=True,
+        api_unavailable=True,
+        skipped=False,
+    )
+    bypassed = knowledge_submit_gate_state(
+        rollout={
+            "require_suggestions_before_submit": True,
+            "allow_skip": False,
+            "min_suggestions": 1,
+            "no_suggestions_behavior": "block_submit",
+            "bypass_applied": True,
+        },
+        suggestion_count=0,
+        request_finished=True,
+        api_unavailable=False,
+        skipped=False,
+    )
+
+    assert unavailable["can_submit"] is True
+    assert unavailable["reason"] == "api_unavailable_warning"
+    assert bypassed["can_submit"] is True
+    assert bypassed["reason"] == "bypass"
+
+
 def test_ticket_create_wizard_has_structured_process_preview_panel():
     source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget._build_priority_step)
 
@@ -355,7 +406,7 @@ def test_ticket_create_wizard_has_searchable_template_chooser():
 
 
 def test_ticket_create_wizard_has_post_create_result_panel():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
 
     source = "\n".join(
         [
@@ -373,7 +424,7 @@ def test_ticket_create_wizard_has_post_create_result_panel():
 
 
 def test_create_ticket_success_panel_renders_reference_done_screen():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketSuccessPanel
 
     app = QApplication.instance() or QApplication([])
     panel = CreateTicketSuccessPanel()
@@ -421,7 +472,7 @@ def test_requester_helpdesk_stylesheet_is_applied_to_chat_panel_theme():
 
 
 def test_create_ticket_progress_bar_renders_four_human_steps_and_emits_selection():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar
 
     app = QApplication.instance() or QApplication([])
     selected_steps: list[int] = []
@@ -443,7 +494,7 @@ def test_create_ticket_progress_bar_renders_four_human_steps_and_emits_selection
 
 
 def test_create_ticket_wizard_cards_use_qss_state_properties_instead_of_inline_styles():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar, CreateTicketTypeGrid
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketProgressBar, CreateTicketTypeGrid
 
     app = QApplication.instance() or QApplication([])
     progress = CreateTicketProgressBar(["Тип обращения", "Описание", "Подтверждение", "Готово"])
@@ -474,7 +525,7 @@ def test_create_ticket_wizard_cards_use_qss_state_properties_instead_of_inline_s
 
 
 def test_create_ticket_type_grid_renders_cards_and_emits_template_key():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketTypeGrid
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketTypeGrid
 
     app = QApplication.instance() or QApplication([])
     selected_keys: list[str] = []
@@ -510,7 +561,7 @@ def test_create_ticket_type_grid_renders_cards_and_emits_template_key():
 
 
 def test_create_ticket_confirmation_panel_renders_summary_without_inline_checkbox():
-    from ui_gui.ticket_create_wizard_widgets import CreateTicketConfirmationPanel
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketConfirmationPanel
 
     app = QApplication.instance() or QApplication([])
     panel = CreateTicketConfirmationPanel()
@@ -1883,7 +1934,7 @@ def test_build_next_action_view_model_uses_server_next_action_and_first_response
 
 
 def test_ticket_info_panel_marks_first_response_done_when_server_sends_fact():
-    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_info_panel_view_model
 
     model = build_ticket_info_panel_view_model(
         {
@@ -1998,7 +2049,7 @@ def test_map_ticket_event_to_user_timeline_item_prefers_server_projection():
 
 
 def test_next_action_card_renders_only_next_action_without_duplicate_due_dates():
-    from ui_gui.ticket_detail_widgets import NextActionCard
+    from pc_agent.ui_gui.ticket_detail_widgets import NextActionCard
 
     app = QApplication.instance() or QApplication([])
     card = NextActionCard()
@@ -2024,7 +2075,7 @@ def test_next_action_card_renders_only_next_action_without_duplicate_due_dates()
 
 
 def test_next_action_card_uses_compact_layout_for_ticket_detail():
-    from ui_gui.ticket_detail_widgets import NextActionCard
+    from pc_agent.ui_gui.ticket_detail_widgets import NextActionCard
 
     source = inspect.getsource(NextActionCard.__init__)
     app = QApplication.instance() or QApplication([])
@@ -2037,8 +2088,8 @@ def test_next_action_card_uses_compact_layout_for_ticket_detail():
 
 
 def test_ticket_detail_status_styles_use_qss_properties_instead_of_inline_status_qss():
-    from ui_gui.ticket_detail_widgets import NextActionCard, TicketHeaderWidget
-    from ui_gui.ticket_view_models import NextActionViewModel, TicketHeaderViewModel
+    from pc_agent.ui_gui.ticket_detail_widgets import NextActionCard, TicketHeaderWidget
+    from pc_agent.ui_gui.ticket_view_models import NextActionViewModel, TicketHeaderViewModel
 
     app = QApplication.instance() or QApplication([])
     next_card = NextActionCard()
@@ -2077,7 +2128,7 @@ def test_chat_panel_wires_next_action_card_into_detail_header():
 
 
 def test_ticket_header_view_model_uses_number_title_status_and_access_actions():
-    from ui_gui.ticket_view_models import build_ticket_header_view_model
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_header_view_model
 
     model = build_ticket_header_view_model(
         {
@@ -2097,8 +2148,8 @@ def test_ticket_header_view_model_uses_number_title_status_and_access_actions():
 
 
 def test_ticket_header_widget_renders_actions_without_raw_public_url():
-    from ui_gui.ticket_detail_widgets import TicketHeaderWidget
-    from ui_gui.ticket_view_models import build_ticket_header_view_model
+    from pc_agent.ui_gui.ticket_detail_widgets import TicketHeaderWidget
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_header_view_model
 
     app = QApplication.instance() or QApplication([])
     widget = TicketHeaderWidget()
@@ -2127,8 +2178,8 @@ def test_ticket_header_widget_renders_actions_without_raw_public_url():
 
 
 def test_ticket_header_actions_include_resolved_resolution_choices():
-    from ui_gui.ticket_detail_widgets import TicketHeaderWidget
-    from ui_gui.ticket_view_models import build_ticket_header_view_model
+    from pc_agent.ui_gui.ticket_detail_widgets import TicketHeaderWidget
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_header_view_model
 
     app = QApplication.instance() or QApplication([])
     widget = TicketHeaderWidget()
@@ -2177,7 +2228,7 @@ def test_chat_panel_wires_ticket_header_into_detail_header():
 
 
 def test_ticket_info_panel_view_model_uses_requester_deadlines_access_and_device():
-    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_info_panel_view_model
 
     model = build_ticket_info_panel_view_model(
         {
@@ -2226,8 +2277,8 @@ def test_ticket_info_panel_view_model_uses_requester_deadlines_access_and_device
 
 
 def test_ticket_right_info_panel_renders_visual_sla_without_raw_url_text():
-    from ui_gui.ticket_detail_widgets import TicketRightInfoPanel
-    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+    from pc_agent.ui_gui.ticket_detail_widgets import TicketRightInfoPanel
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_info_panel_view_model
 
     app = QApplication.instance() or QApplication([])
     panel = TicketRightInfoPanel()
@@ -2266,7 +2317,7 @@ def test_ticket_right_info_panel_renders_visual_sla_without_raw_url_text():
 
 
 def test_ticket_info_panel_does_not_mark_missing_device_as_offline():
-    from ui_gui.ticket_view_models import build_ticket_info_panel_view_model
+    from pc_agent.ui_gui.ticket_view_models import build_ticket_info_panel_view_model
 
     model = build_ticket_info_panel_view_model(
         {
@@ -2293,8 +2344,8 @@ def test_chat_panel_wires_right_info_panel_into_detail_header():
 
 
 def test_timeline_item_widget_renders_diagnostic_result_without_raw_event_type():
-    from ui_gui.ticket_detail_widgets import TimelineItemWidget
-    from ui_gui.ticket_view_models import TimelineItem
+    from pc_agent.ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from pc_agent.ui_gui.ticket_view_models import TimelineItem
 
     app = QApplication.instance() or QApplication([])
     widget = TimelineItemWidget(
@@ -2326,8 +2377,8 @@ def test_timeline_item_widget_renders_diagnostic_result_without_raw_event_type()
 
 
 def test_timeline_item_widget_renders_attachment_card_without_raw_url():
-    from ui_gui.ticket_detail_widgets import TimelineItemWidget
-    from ui_gui.ticket_view_models import TimelineItem
+    from pc_agent.ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from pc_agent.ui_gui.ticket_view_models import TimelineItem
 
     app = QApplication.instance() or QApplication([])
     widget = TimelineItemWidget(
@@ -2356,8 +2407,8 @@ def test_timeline_item_widget_renders_attachment_card_without_raw_url():
 
 
 def test_timeline_item_widget_renders_user_and_support_message_bubbles():
-    from ui_gui.ticket_detail_widgets import TimelineItemWidget
-    from ui_gui.ticket_view_models import TimelineItem
+    from pc_agent.ui_gui.ticket_detail_widgets import TimelineItemWidget
+    from pc_agent.ui_gui.ticket_view_models import TimelineItem
 
     app = QApplication.instance() or QApplication([])
     user_widget = TimelineItemWidget(
@@ -2482,7 +2533,7 @@ def test_chat_panel_aligns_mapped_user_and_support_message_events_like_chat_bubb
 
 
 def test_ticket_composer_widget_controls_send_and_terminal_state():
-    from ui_gui.ticket_detail_widgets import TicketComposerWidget
+    from pc_agent.ui_gui.ticket_detail_widgets import TicketComposerWidget
 
     app = QApplication.instance() or QApplication([])
     composer = TicketComposerWidget()

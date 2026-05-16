@@ -14,6 +14,7 @@
 ### Truth baseline
 
 - Корневой pytest-контур: `pytest.ini` (markers `unit`, `integration`, `manual`, `no_db`).
+- Agent runtime/tests use package imports (`pc_agent.core.*`, `pc_agent.modules.*`, `pc_agent.ui_gui.*`) so root `python -m pytest --collect-only` can collect server, agent and scripts together without top-level `core` / `modules` collisions. Managed external modules may still use legacy `modules.base_module` / `core.registry` through the dynamic loader path.
 - Agent baseline: `python -m pytest pc_agent/tests -m "not manual"`.
 - Exploratory suite `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не входит в обычный CI.
 - Для совместного server+agent baseline используется `scripts/run_ci_suite.py`.
@@ -127,7 +128,7 @@ New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains 
 
 ### 2.6 Конфигурация
 
-P2 Knowledge Platform agent integration is HTTP-only and does not change Protocol V3. `pc_agent/ui_gui/server_api.py` exposes `get_knowledge_suggestions()` and `record_knowledge_feedback()` for `/api/knowledge/suggest|feedback`, and `create_ticket()` accepts safe `knowledge_attempts`. `pc_agent/ui_gui/chat_panel.py` requests requester-safe suggestions after Service Catalog offering selection, records viewed/not-helpful/deflected feedback, includes attempts when ticket creation continues, and falls back to the existing catalog/form flow if the knowledge API is unavailable. P2.2/P2.2.1 rollout policies are enforced server-side for the same `agent_gui` suggestion surface; the agent sends urgency/impact context, respects the server's safe projection and max-suggestion limit, treats rollout-disabled/no-suggestion/API-unavailable states as non-blocking by default, and needs no new wire protocol or local policy cache.
+P2 Knowledge Platform agent integration is HTTP-only and does not change Protocol V3. `pc_agent/ui_gui/server_api.py` exposes `get_knowledge_suggestions()` and `record_knowledge_feedback()` for `/api/knowledge/suggest|feedback`, and `create_ticket()` accepts safe `knowledge_attempts`. `pc_agent/ui_gui/chat_panel.py` requests requester-safe suggestions after Service Catalog offering selection, records viewed/not-helpful/deflected feedback, includes attempts when ticket creation continues, and falls back to the existing catalog/form flow if the knowledge API is unavailable. P2.2/P2.2.1 rollout policies are enforced server-side for the same `agent_gui` suggestion surface; the agent sends urgency/impact context, reads returned rollout, respects safe projection plus min/max suggestion gates, treats rollout-disabled/no-policy/API-unavailable states as non-blocking by default, honors explicit blocking no-suggestion/API-unavailable policies, and needs no new wire protocol or local policy cache.
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/config/config_loader.py` | Загрузка настроек |

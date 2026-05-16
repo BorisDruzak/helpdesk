@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -20,6 +21,31 @@ def _snippet(text: str, query: str) -> str:
         index = max(0, text.lower().find(q) - 40)
         return text[index : index + 180]
     return text[:180]
+
+
+def _quality_label(confidence_score: Any) -> str | None:
+    if confidence_score is None:
+        return None
+    try:
+        score = float(confidence_score)
+    except (TypeError, ValueError):
+        return None
+    if score >= 0.85:
+        return "Проверено"
+    if score >= 0.6:
+        return "Средняя уверенность"
+    return "Требует проверки"
+
+
+def _freshness_label(review_due_at: Any) -> str | None:
+    if review_due_at is None:
+        return None
+    if not hasattr(review_due_at, "astimezone"):
+        return None
+    due_at = review_due_at
+    if due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=timezone.utc)
+    return "Актуально" if due_at.astimezone(timezone.utc) > datetime.now(timezone.utc) else "Нужно обновить"
 
 
 class KnowledgeSearchService:
@@ -73,6 +99,8 @@ class KnowledgeSearchService:
             payload = serialize_item(item, current_version=version)
             payload["version_id"] = version.version_id
             payload["snippet"] = _snippet(chunk.text if chunk is not None else version.body, q)
+            payload["quality_label"] = _quality_label(item.confidence_score)
+            payload["freshness_label"] = _freshness_label(item.review_due_at)
             if actor_role in {"requester", "agent", "public"}:
                 payload = sanitize_requester_knowledge_projection(payload)
             current = scored.get(item.item_id)

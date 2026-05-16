@@ -70,7 +70,7 @@ The requester portal `/app/help` now inserts a knowledge step after service/offe
 
 The local Qt agent wizard uses the same safe suggestion and feedback APIs through `TicketApiClient.get_knowledge_suggestions()` and `record_knowledge_feedback()`. It continues ticket creation if the knowledge API is unavailable. Protocol V3 is unchanged.
 
-P2.2.1 rollout decisions are returned with suggestion responses and control whether suggestions are shown before or after the form, whether suggestions are required before submit, whether skip is allowed, urgent/high-impact bypass, `max_suggestions`, deflection prompt visibility, known-error visibility, quality/freshness labels and no-suggestions/API-unavailable fallback. Defaults are non-blocking for requester and agent surfaces; admins must explicitly configure `block_submit`.
+P2.2.1 rollout decisions are returned with suggestion responses and control whether suggestions are shown before or after the form, whether suggestions are required before submit, whether skip is allowed, urgent/high-impact bypass, `min_suggestions`, `max_suggestions`, deflection prompt visibility, known-error visibility, quality/freshness safe labels and no-suggestions/API-unavailable fallback. `max_suggestions=0` intentionally returns no suggestions. Defaults are non-blocking for requester and agent surfaces; admins must explicitly configure `block_submit`.
 
 ## Support Workspace
 

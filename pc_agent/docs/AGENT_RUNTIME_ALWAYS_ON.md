@@ -75,8 +75,12 @@ urgent/high-impact bypass policy. The server may return no suggestions when
 rollout is paused for a service/offering/surface or when deterministic rollout
 bucketing excludes the current context. The GUI must treat rollout-disabled,
 no-suggestion and API-unavailable states as non-blocking by default, continue
-ticket creation, respect the server's `max_suggestions` projection, and avoid
-exposing rollout policy internals or internal/support knowledge metadata.
+ticket creation, respect the server's `min_suggestions`/`max_suggestions`
+projection, honor `require_suggestions_before_submit`/`allow_skip` at wizard
+state level, keep urgent/high-impact bypass non-blocking, and avoid exposing
+rollout policy internals or internal/support knowledge metadata. If suggestion
+API availability is unknown or no rollout was returned, the safe local default
+is `allow_submit`.
 
 ## Runtime logs
 

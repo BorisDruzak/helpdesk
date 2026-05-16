@@ -883,7 +883,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="knowledge_platform",
         title="Knowledge Platform / Deflection",
-        summary="P2/P2.1/P2.2/P2.2.1 universal knowledge platform: spaces, universal knowledge items, explicit selected-version publish flow, chunks/search foundation, canonical Service Catalog service/offering/request-template bindings, binding validator and repair tooling, PostgreSQL graph nodes/edges with DB enum constraints, ingestion jobs, feedback/deflection metrics, requester/agent-safe suggestions, idempotent content packs, templates/lint, first-class review tasks, quality scores, persisted Service Catalog gap findings, privacy-preserving search analytics, production rollout policies, support knowledge panel integration, existing kb_links compatibility, ACL-filtered direct reads/graph/ingestion/metrics/operations and stale passport-to-knowledge publish governance.",
+        summary="P2/P2.1/P2.2/P2.2.1 universal knowledge platform: spaces, universal knowledge items, explicit selected-version publish flow, chunks/search foundation, canonical Service Catalog service/offering/request-template bindings, binding validator and repair tooling, PostgreSQL graph nodes/edges with DB enum constraints, ingestion jobs, feedback/deflection metrics, requester/agent-safe suggestions, rollout-enforced min/max/no-suggestions/API-unavailable/known-error/label gates for `/app/help` and Agent GUI ticket creation, idempotent content packs, templates/lint, first-class review tasks, quality scores, persisted Service Catalog gap findings, privacy-preserving search analytics, production rollout policies, support knowledge panel integration, existing kb_links compatibility, ACL-filtered direct reads/graph/ingestion/metrics/operations and stale passport-to-knowledge publish governance.",
         aliases=(
             "knowledge platform",
             "knowledge",
@@ -913,6 +913,13 @@ TOPICS: tuple[Topic, ...] = (
             "knowledge gaps",
             "knowledge search analytics",
             "rollout policies",
+            "no_suggestions_behavior",
+            "api_unavailable_behavior",
+            "min_suggestions",
+            "show_known_errors",
+            "show_quality_badge",
+            "show_review_freshness",
+            "urgency_bypass",
             "kb_links",
             "/api/knowledge/suggest",
             "/api/web/knowledge",
@@ -1746,7 +1753,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="agent_runtime",
         title="Agent runtime / tray / logs",
-        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets including requester helpdesk objectName/dynamic-property QSS from theme.requester_helpdesk_stylesheet() and refresh_qss_state(), sidebar agent-status/update card, auto-collapsing sidebar icon rail for ticket/create focus, protected-connection footer, recording STOP overlay windowing, orphan sidebar label windowing, frameless chrome without Qt `_q_titlebar` helper windows, request-form wizard live path with visible type cards and hidden legacy selector/list compatibility state, scrollable description/confirmation steps, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, requester-facing timeline cards and user/support message bubbles, detail layout without legacy left meta panel/raw access strip and without misleading offline device card for missing inventory, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
+        summary="Always-on runtime lifecycle, tray behavior, Qt Widgets GUI shell/theme/assets including requester helpdesk objectName/dynamic-property QSS from theme.requester_helpdesk_stylesheet() and refresh_qss_state(), sidebar agent-status/update card, auto-collapsing sidebar icon rail for ticket/create focus, protected-connection footer, recording STOP overlay windowing, orphan sidebar label windowing, frameless chrome without Qt `_q_titlebar` helper windows, request-form wizard live path with visible type cards and hidden legacy selector/list compatibility state, scrollable description/confirmation steps, requester-safe hiding of internal process fields and internal SLA/OLA pause/resume events, requester-facing timeline cards and user/support message bubbles, detail layout without legacy left meta panel/raw access strip and without misleading offline device card for missing inventory, native date/datetime controls, file replace/clear with missing/oversized attachment checks, inline form validation, structured process preview with exact server due dates/suggested diagnostics, knowledge suggestion rollout gates for require-before-submit, allow-skip, unavailable-API warning/block behavior and urgent bypass, preview-unavailable warning and post-create result panel that prefers requester_view/public_view, expected due dates, passport and user-result summaries before legacy flat fields, auth-block system notifications, runtime diagnostics/logging, mojibake-free localized lifecycle text, agent_observer_batch telemetry upload from action_trace, sticky local update request state (`requesting` / `requested` / `pending_restart`) and shutdown tracing.",
         aliases=(
             "always-on",
             "always on",
@@ -1783,6 +1790,10 @@ TOPICS: tuple[Topic, ...] = (
             "agent_observer_batch",
             "agent observer telemetry",
             "action trace upload",
+            "knowledge suggestions",
+            "require_suggestions_before_submit",
+            "allow_skip",
+            "urgency_bypass",
             "трей",
             "закрытие окна",
             "логи агента",
@@ -2345,7 +2356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, marker/domain layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",

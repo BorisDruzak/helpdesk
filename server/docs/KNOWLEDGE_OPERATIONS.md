@@ -160,6 +160,8 @@ Effective policy resolution order is template exact match, offering exact match,
 
 Requester and agent defaults are non-blocking: when the knowledge API is unavailable or suggestions are empty, ticket creation continues unless an admin explicitly configured a blocking behavior. Rollout never changes ACL or visibility filtering; requester and agent surfaces still receive only requester-safe published items.
 
+`max_suggestions=0` is an explicit empty-result policy and does not force a minimum of one result. `min_suggestions` is enforced by requester and agent submit gates when the effective policy requires suggestions. When `show_known_errors=false`, `known_error` items are removed from the main `suggestions` list and from the `known_errors` bucket. Quality and freshness are returned only as requester-safe labels and are omitted when their rollout toggles are disabled.
+
 Operational rollback for deflection is to disable rollout globally, disable it per service/offering/template, set `rollout_percent=0`, or set unavailable/no-suggestions behavior to `allow_submit`; do not remove knowledge content as a rollout rollback.
 
 ## Support Workflow
@@ -180,7 +182,7 @@ Requester `/app/help` and the Qt agent GUI continue to call `POST /api/knowledge
 
 If rollout is disabled or the knowledge API is unavailable, ticket creation continues. The agent must not cache support-internal content locally and must not display internal/source metadata. Safe `knowledge_attempts` can still be attached to ticket creation when the user continues after failed self-service.
 
-P2.2.1 requester and agent flows consume the effective rollout decision from `POST /api/knowledge/suggest`. `/app/help` applies `show_before_form`, `require_suggestions_before_submit`, `allow_skip`, urgent/high-impact bypass and `max_suggestions`; the Qt agent GUI sends urgency/impact context and relies on the server projection and limit. Both surfaces keep create-ticket flow available by default when rollout disables suggestions, rollout bucket excludes the context, no suggestions are returned or the API is temporarily unavailable.
+P2.2.1 requester and agent flows consume the effective rollout decision from `POST /api/knowledge/suggest`. `/app/help` applies `show_before_form`, `require_suggestions_before_submit`, `allow_skip`, `min_suggestions`, no-suggestions/API-unavailable behavior, known-error hiding, quality/freshness label toggles, urgent/high-impact bypass and `max_suggestions`. The Qt agent GUI sends urgency/impact context, reads the returned rollout, applies the same submit gate at wizard state level, and uses safe default `allow_submit` if the API is unavailable before a policy is known. Both surfaces keep create-ticket flow available by default when rollout disables suggestions, rollout bucket excludes the context, no suggestions are returned or the API is temporarily unavailable.
 
 ## Search Analytics
 

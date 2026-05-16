@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { QueryProvider } from "../../app/providers/query-provider";
-import { HelpPage } from "./index";
+import { evaluateKnowledgeSubmitGate, HelpPage, visibleKnowledgeSuggestions } from "./index";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -29,6 +29,77 @@ afterEach(() => {
 });
 
 describe("HelpPage", () => {
+  it("applies no-suggestions, API-unavailable, min-suggestions and urgent bypass policy", () => {
+    expect(
+      evaluateKnowledgeSubmitGate({
+        rollout: {
+          require_suggestions_before_submit: true,
+          allow_skip: false,
+          min_suggestions: 1,
+          no_suggestions_behavior: "block_submit",
+        },
+        suggestionsLoaded: true,
+        suggestionCount: 0,
+      }),
+    ).toMatchObject({ canSubmit: false, reason: "no_suggestions_block" });
+
+    expect(
+      evaluateKnowledgeSubmitGate({
+        rollout: {
+          require_suggestions_before_submit: true,
+          allow_skip: false,
+          min_suggestions: 2,
+          no_suggestions_behavior: "block_submit",
+        },
+        suggestionsLoaded: true,
+        suggestionCount: 1,
+      }),
+    ).toMatchObject({ canSubmit: false, reason: "min_suggestions_block" });
+
+    expect(
+      evaluateKnowledgeSubmitGate({
+        rollout: {
+          require_suggestions_before_submit: true,
+          allow_skip: false,
+          api_unavailable_behavior: "show_warning",
+        },
+        apiUnavailable: true,
+        suggestionsLoaded: true,
+        suggestionCount: 0,
+      }),
+    ).toMatchObject({ canSubmit: true, warning: true, reason: "api_unavailable_warning" });
+
+    expect(
+      evaluateKnowledgeSubmitGate({
+        rollout: {
+          require_suggestions_before_submit: true,
+          allow_skip: false,
+          min_suggestions: 2,
+          no_suggestions_behavior: "block_submit",
+          bypass_applied: true,
+        },
+        suggestionsLoaded: true,
+        suggestionCount: 0,
+      }),
+    ).toMatchObject({ canSubmit: true, reason: "bypass" });
+  });
+
+  it("hides known-error suggestions and safe labels according to rollout", () => {
+    const items = visibleKnowledgeSuggestions(
+      [
+        { item_id: "known", slug: "known", type: "known_error", title: "Known", quality_label: "Verified" },
+        { item_id: "article", slug: "article", type: "article", title: "Article", freshness_label: "Fresh" },
+      ],
+      {
+        show_known_errors: false,
+        show_quality_badge: false,
+        show_review_freshness: false,
+      },
+    );
+
+    expect(items).toEqual([{ item_id: "article", slug: "article", type: "article", title: "Article" }]);
+  });
+
   it("creates a public ticket from the selected request form", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

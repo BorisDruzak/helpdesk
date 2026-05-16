@@ -100,6 +100,72 @@ PICKER_OPTION_KEYS = {
     "service_picker": "services",
 }
 
+DEFAULT_KNOWLEDGE_ROLLOUT = {
+    "enabled": True,
+    "require_suggestions_before_submit": False,
+    "allow_skip": True,
+    "urgency_bypass": True,
+    "impact_bypass": True,
+    "min_suggestions": 0,
+    "max_suggestions": 5,
+    "show_known_errors": True,
+    "show_quality_badge": True,
+    "show_review_freshness": True,
+    "no_suggestions_behavior": "allow_submit",
+    "api_unavailable_behavior": "allow_submit",
+    "bypass_applied": False,
+}
+
+
+def _rollout_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_knowledge_rollout(value: Any) -> dict[str, Any]:
+    rollout = dict(DEFAULT_KNOWLEDGE_ROLLOUT)
+    if isinstance(value, dict):
+        rollout.update(value)
+    rollout["min_suggestions"] = max(0, _rollout_int(rollout.get("min_suggestions"), 0))
+    rollout["max_suggestions"] = max(0, _rollout_int(rollout.get("max_suggestions"), 5))
+    return rollout
+
+
+def knowledge_submit_gate_state(
+    *,
+    rollout: dict[str, Any] | None,
+    suggestion_count: int,
+    request_finished: bool,
+    api_unavailable: bool,
+    skipped: bool,
+) -> dict[str, Any]:
+    effective = normalize_knowledge_rollout(rollout)
+    count = max(0, int(suggestion_count or 0))
+    if effective.get("bypass_applied"):
+        return {"can_submit": True, "warning": False, "reason": "bypass"}
+    if api_unavailable:
+        behavior = str(effective.get("api_unavailable_behavior") or "allow_submit")
+        if behavior == "block_submit":
+            return {"can_submit": False, "warning": False, "reason": "api_unavailable_block"}
+        return {
+            "can_submit": True,
+            "warning": behavior == "show_warning",
+            "reason": "api_unavailable_warning" if behavior == "show_warning" else "api_unavailable_allow",
+        }
+    if skipped and effective.get("allow_skip") is not False:
+        return {"can_submit": True, "warning": False, "reason": "skipped"}
+    if request_finished:
+        if count == 0 and effective.get("no_suggestions_behavior") == "block_submit":
+            return {"can_submit": False, "warning": False, "reason": "no_suggestions_block"}
+        if count < int(effective.get("min_suggestions") or 0):
+            return {"can_submit": False, "warning": False, "reason": "min_suggestions_block"}
+        return {"can_submit": True, "warning": False, "reason": "loaded"}
+    if effective.get("require_suggestions_before_submit"):
+        return {"can_submit": False, "warning": False, "reason": "suggestions_required"}
+    return {"can_submit": True, "warning": False, "reason": "not_required"}
+
 DEFAULT_PRIORITY_POLICY = {
     "impact_field": "impact_scope",
     "urgency_field": "work_continuity",
@@ -2643,6 +2709,10 @@ class TicketCreateWizardWidget(QFrame):
         self._selected_catalog_offering_full_code = ""
         self._knowledge_suggestions: list[dict[str, Any]] = []
         self._knowledge_attempts: list[dict[str, Any]] = []
+        self._knowledge_rollout: dict[str, Any] = normalize_knowledge_rollout(None)
+        self._knowledge_request_finished = False
+        self._knowledge_api_unavailable = False
+        self._knowledge_skipped = False
         self._knowledge_request_seq = 0
         self.setObjectName("ProfileSidebar")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
@@ -2782,9 +2852,14 @@ class TicketCreateWizardWidget(QFrame):
         self.knowledge_not_helpful_btn = QPushButton("Не помогло")
         self.knowledge_not_helpful_btn.setObjectName("SecondaryButton")
         self.knowledge_not_helpful_btn.clicked.connect(lambda: self._record_knowledge_attempt("not_helpful"))
+        self.knowledge_skip_btn = QPushButton("Пропустить")
+        self.knowledge_skip_btn.setObjectName("SecondaryButton")
+        self.knowledge_skip_btn.clicked.connect(self._skip_knowledge_suggestions)
+        self.knowledge_skip_btn.hide()
         knowledge_actions.addWidget(self.knowledge_open_btn)
         knowledge_actions.addWidget(self.knowledge_deflect_btn)
         knowledge_actions.addWidget(self.knowledge_not_helpful_btn)
+        knowledge_actions.addWidget(self.knowledge_skip_btn)
         knowledge_actions.addStretch(1)
         knowledge_layout.addLayout(knowledge_actions)
         group_layout.addWidget(self.knowledge_group)
@@ -2996,6 +3071,10 @@ class TicketCreateWizardWidget(QFrame):
         self.priority_dynamic_fields_widget.clear_validation_feedback()
         self._knowledge_suggestions = []
         self._knowledge_attempts = []
+        self._knowledge_rollout = normalize_knowledge_rollout(None)
+        self._knowledge_request_finished = False
+        self._knowledge_api_unavailable = False
+        self._knowledge_skipped = False
         self._knowledge_request_seq += 1
         self._update_knowledge_panel()
         self._cleanup_temporary_attachments()
@@ -3215,10 +3294,27 @@ class TicketCreateWizardWidget(QFrame):
     def _update_knowledge_panel(self) -> None:
         if not hasattr(self, "knowledge_summary_label"):
             return
+        gate = self._knowledge_gate_state()
+        if not self._knowledge_suggestions and self._knowledge_api_unavailable and gate.get("warning"):
+            self.knowledge_summary_label.setText("Сервис знаний временно недоступен. Можно продолжить создание обращения.")
+            for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
+                button.setEnabled(False)
+            self.knowledge_skip_btn.setVisible(False)
+            self._update_navigation_state()
+            return
+        if not self._knowledge_suggestions and not gate.get("can_submit"):
+            self.knowledge_summary_label.setText("Инструкции обязательны по политике, но подходящих материалов пока нет.")
+            for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
+                button.setEnabled(False)
+            self.knowledge_skip_btn.setVisible(bool(self._knowledge_rollout.get("allow_skip")))
+            self.knowledge_skip_btn.setEnabled(bool(self._knowledge_rollout.get("allow_skip")) and not self._knowledge_skipped)
+            self._update_navigation_state()
+            return
         if not self._knowledge_suggestions:
             self.knowledge_summary_label.setText("Инструкции не найдены или сервис знаний временно недоступен. Можно продолжить создание заявки.")
             for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
                 button.setEnabled(False)
+            self.knowledge_skip_btn.setVisible(False)
             return
         lines: list[str] = []
         for item in self._knowledge_suggestions:
@@ -3229,10 +3325,17 @@ class TicketCreateWizardWidget(QFrame):
         self.knowledge_summary_label.setText("\n".join(lines) or "Есть подходящие инструкции.")
         for button in (self.knowledge_open_btn, self.knowledge_deflect_btn, self.knowledge_not_helpful_btn):
             button.setEnabled(True)
+        self.knowledge_skip_btn.setVisible(bool(self._knowledge_rollout.get("allow_skip")))
+        self.knowledge_skip_btn.setEnabled(not self._knowledge_skipped)
+        self._update_navigation_state()
 
     def _schedule_knowledge_suggestions(self) -> None:
         self._knowledge_request_seq += 1
         self._knowledge_suggestions = []
+        self._knowledge_rollout = normalize_knowledge_rollout(None)
+        self._knowledge_request_finished = False
+        self._knowledge_api_unavailable = False
+        self._knowledge_skipped = False
         self._update_knowledge_panel()
         form = self._selected_form()
         if not form or not getattr(self._panel, "ticket_client", None):
@@ -3259,12 +3362,40 @@ class TicketCreateWizardWidget(QFrame):
             )
         except Exception as exc:
             logger.debug(f"Knowledge suggestions unavailable: {exc}")
+            if request_seq == self._knowledge_request_seq:
+                self._knowledge_api_unavailable = True
+                self._knowledge_request_finished = True
+                self._knowledge_rollout = normalize_knowledge_rollout(None)
+                self._update_knowledge_panel()
             return
         if request_seq != self._knowledge_request_seq or not isinstance(result, dict):
             return
+        self._knowledge_request_finished = True
+        self._knowledge_api_unavailable = False
+        self._knowledge_rollout = normalize_knowledge_rollout(result.get("rollout"))
         suggestions = result.get("suggestions") if isinstance(result.get("suggestions"), list) else []
-        self._knowledge_suggestions = [dict(item) for item in suggestions if isinstance(item, dict)]
+        self._knowledge_suggestions = [
+            dict(item)
+            for item in suggestions
+            if isinstance(item, dict) and (self._knowledge_rollout.get("show_known_errors", True) or item.get("type") != "known_error")
+        ]
         self._update_knowledge_panel()
+
+    def _skip_knowledge_suggestions(self) -> None:
+        if self._knowledge_rollout.get("allow_skip") is False:
+            return
+        self._knowledge_skipped = True
+        self._set_status("Инструкции пропущены. Продолжайте создание обращения.", error=False)
+        self._update_knowledge_panel()
+
+    def _knowledge_gate_state(self) -> dict[str, Any]:
+        return knowledge_submit_gate_state(
+            rollout=self._knowledge_rollout,
+            suggestion_count=len(self._knowledge_suggestions),
+            request_finished=self._knowledge_request_finished,
+            api_unavailable=self._knowledge_api_unavailable,
+            skipped=self._knowledge_skipped,
+        )
 
     def _record_knowledge_attempt(self, result: str) -> None:
         if not self._knowledge_suggestions:
@@ -3602,7 +3733,7 @@ class TicketCreateWizardWidget(QFrame):
         self._set_media_controls_enabled(False)
         self._set_status("Создаю скриншот для заявки...", error=False)
         try:
-            from modules.impl.screen import ScreenCollector
+            from pc_agent.modules.impl.screen import ScreenCollector
 
             collector = ScreenCollector()
             result = await collector.collect()
@@ -3628,7 +3759,7 @@ class TicketCreateWizardWidget(QFrame):
             error=False,
         )
         try:
-            from modules.impl.screen import ScreenCollector
+            from pc_agent.modules.impl.screen import ScreenCollector
 
             collector = ScreenCollector()
             result = await collector.record(duration_sec=duration_sec)
@@ -3668,7 +3799,7 @@ class TicketCreateWizardWidget(QFrame):
         return True
 
     def _all_required_steps_ready(self) -> bool:
-        return all(self._step_ready(step) for step in range(3))
+        return all(self._step_ready(step) for step in range(3)) and bool(self._knowledge_gate_state().get("can_submit"))
 
     def _go_to_step(self, step: int, *, force: bool = False) -> None:
         if not force:
@@ -3726,6 +3857,13 @@ class TicketCreateWizardWidget(QFrame):
                 return "Заполните обязательные поля: " + ", ".join(missing_fields)
             return "Опишите проблему, чтобы можно было создать заявку."
         if step == 2:
+            gate = self._knowledge_gate_state()
+            if not gate.get("can_submit"):
+                if gate.get("reason") == "api_unavailable_block":
+                    return "Сервис знаний временно недоступен, а политика запрещает отправку без проверки инструкций."
+                if gate.get("reason") == "suggestions_required":
+                    return "Дождитесь подбора инструкций перед отправкой обращения."
+                return "Перед отправкой нужно выполнить политику инструкций для выбранного типа обращения."
             missing_fields = self.priority_dynamic_fields_widget.validate_required_fields(show_feedback=True)
             if missing_fields:
                 return "Заполните поля для расчета приоритета: " + ", ".join(missing_fields)
@@ -4227,7 +4365,7 @@ class ChatPanel(QWidget):
 
         self.device_id = device_id
         try:
-            from core.identity import IdentityManager
+            from pc_agent.core.identity import IdentityManager
 
             identity = IdentityManager().load_or_create()
             self.device_id = identity.get("uuid", device_id)

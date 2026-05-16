@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ui_gui.server_api import TicketApiClient
+from pc_agent.ui_gui.server_api import TicketApiClient
 
 
 class FakeResponse:
@@ -62,6 +62,32 @@ async def test_agent_fetches_knowledge_suggestions_with_service_context(monkeypa
     assert call["json"]["service_code"] == "network"
     assert call["json"]["surface"] == "agent_gui"
     assert call["headers"]["Authorization"] == "Bearer token-123"
+
+
+@pytest.mark.asyncio
+async def test_agent_reads_rollout_from_knowledge_suggest_response(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            text_payload=(
+                '{"status":"ok","suggestions":[],"rollout":'
+                '{"require_suggestions_before_submit":true,"allow_skip":false,'
+                '"api_unavailable_behavior":"show_warning"}}'
+            ),
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_knowledge_suggestions(query="VPN")
+
+    assert result["rollout"]["require_suggestions_before_submit"] is True
+    assert result["rollout"]["allow_skip"] is False
+    assert result["rollout"]["api_unavailable_behavior"] == "show_warning"
 
 
 @pytest.mark.asyncio

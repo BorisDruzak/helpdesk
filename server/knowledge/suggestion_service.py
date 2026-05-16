@@ -16,7 +16,11 @@ class KnowledgeSuggestionService:
         rollout = await KnowledgeOperationsService(self.session).rollout_decision(context, actor_role=actor_role)
         if rollout.get("enabled") is False:
             return {"suggestions": [], "known_errors": [], "workarounds": [], "rollout": rollout}
-        max_suggestions = max(1, min(int(rollout.get("max_suggestions") or 5), int(context.get("limit") or 50), 50))
+        rollout_max = int(rollout.get("max_suggestions") if rollout.get("max_suggestions") is not None else 5)
+        context_limit = int(context.get("limit") if context.get("limit") is not None else 50)
+        max_suggestions = max(0, min(rollout_max, context_limit, 50))
+        if max_suggestions == 0:
+            return {"suggestions": [], "known_errors": [], "workarounds": [], "rollout": rollout}
         query = str(context.get("query") or context.get("title") or context.get("description") or "").strip()
         results = await KnowledgeSearchService(self.session).search(
             query=query,
@@ -45,10 +49,16 @@ class KnowledgeSuggestionService:
             item = dict(result)
             item["reason"] = "Подходит по контексту: " + ", ".join(reason_parts) if reason_parts else "Подходит по тексту обращения"
             item["actions"] = ["view", "mark_helpful", "mark_not_helpful"]
+            if not rollout.get("show_quality_badge", True):
+                item.pop("quality_label", None)
+            if not rollout.get("show_review_freshness", True):
+                item.pop("freshness_label", None)
             suggestions.append(item)
+        if not rollout.get("show_known_errors", True):
+            suggestions = [item for item in suggestions if item.get("type") != "known_error"]
         return {
             "suggestions": suggestions[:max_suggestions],
-            "known_errors": [item for item in suggestions if item.get("type") == "known_error"] if rollout.get("show_known_errors", True) else [],
+            "known_errors": [item for item in suggestions if item.get("type") == "known_error"],
             "workarounds": [item for item in suggestions if item.get("type") == "workaround"],
             "rollout": rollout,
         }

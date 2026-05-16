@@ -202,6 +202,8 @@ SAFE_REQUESTER_ITEM_KEYS: frozenset[str] = frozenset(
         "title",
         "summary",
         "snippet",
+        "quality_label",
+        "freshness_label",
         "visibility",
         "version_id",
         "actions",
