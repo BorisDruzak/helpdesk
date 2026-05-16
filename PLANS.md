@@ -42,43 +42,84 @@ Verification:
 - Browser smoke: `https://192.168.100.17:9443/app/help` loaded from the deployed bundle, knowledge suggestions and safe labels rendered, and browser console errors were absent.
 - Post-check lifecycle: `python scripts/manage_remote_stack.py stop server` stopped the remote server; control-plane remained running.
 
-## Active Checkpoint: Test Harness Stabilization and CI Layering
+## P2.3 Test Harness Stabilization & CI Layering
+
+P2.3 Test Harness Stabilization & CI Layering Status: accepted / release-candidate.
 
 Goal: make the local/CI test harness deterministic after the audit found root `pytest` import collisions and flaky long DB/API runs on Windows shared test DB.
 
-Scope:
-- Migrate `pc_agent` runtime and tests away from top-level `core.*`, `modules.*`, `ui_gui.*`, `ui_bridge.*`, `network.*`, and `utils.*` imports where they collide with server packages during mixed root collection.
-- Preserve managed module compatibility where external module packages still import `modules.base_module` / `core.registry`.
-- Configure PostgreSQL test access so full DB/API runs use isolated `pc_support_test_<runid>` databases instead of shared `pc_support_test` fallback.
-- Split the expensive server DB/API pytest layer into domain layers while keeping the existing no-db and agent-ws contracts.
-- Update testing docs/CODEMAP/navigation metadata and verify with focused RED/GREEN commands.
+Discovery and exact root cause:
+- Existing P2.3 code changes were already committed and pushed as `39e5eb6` when this checkpoint was resumed, but `PLANS.md` still showed an active checkpoint and two acceptance gaps remained.
+- `scripts/agent_find.py` currently accepts only `--dir server|pc_agent`; the required `--dir .` / `--dir scripts` discovery commands failed with argument validation, so repo-wide/script searches were completed with `rg`.
+- Root collection was made stable by package-qualifying agent imports through `pc_agent.*`; remaining risk was managed-module compatibility leaking top-level `modules` / `core` aliases.
+- DB/API layers were already split, but `run_ci_suite.py` did not yet support `--layer <name>` selection, and generated DB names were still `pc_support_test_<runid>` without a domain/worker component.
 
-Decisions:
-- Treat `python -m pytest --collect-only -q` from repo root as a required regression target for the import cleanup.
-- Treat shared test DB fallback as acceptable for narrow local debugging only, not as a trusted full DB/API gate.
-- Do not change application DB schema; remote PostgreSQL work is limited to test-role/database privileges.
+Changed files:
+- Test harness and CI runner: `server/tests/conftest.py`, `scripts/run_ci_suite.py`.
+- Harness tests: `server/tests/test_test_harness_no_db.py`, `server/tests/test_shared_test_db_harness.py`, `scripts/test_run_ci_suite.py`, `pc_agent/tests/test_registry_and_module_loading.py`.
+- Agent import boundary: `pc_agent/core/loader.py`.
+- Docs/navigation: `docs/TESTING_RULES.md`, `docs/QUICK_LOOKUP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `server/tests/README.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md`, `scripts/navigation_catalog.py`.
 
-Next Steps:
-- [x] RED: reproduce root pytest collection import errors.
-- [x] GREEN: normalize `pc_agent` package imports while preserving legacy managed-module imports through loader paths.
-- [x] SSH: grant the remote `chatbot` test role `CREATEDB` and `pg_signal_backend`, and add local peer auth for OS `postgres` administration.
-- [x] Optimize: add domain-specific server DB/API CI steps and tests for command construction.
-- [x] Verify: run root collect, `verify_workspace`, scripts tests, pc_agent tests, server no-db, all DB/API domain layers, and agent_ws.
+Test DB isolation model:
+- Full DB/API gates use ephemeral names shaped as `pc_support_test_<domain>_<pid_or_worker>_<short_hash>`.
+- `run_ci_suite.py` injects `PC_CLIENT_TEST_DB_DOMAIN` per DB-backed server layer and `PC_CLIENT_TEST_DB_RUN_ID=<commit-prefix>`.
+- `--keep-test-db` sets `PC_CLIENT_KEEP_TEST_DB=1` for explicit debugging; otherwise isolated DBs are dropped after the pytest session.
+- Shared `pc_support_test` remains explicit/debug-only via `PC_CLIENT_ALLOW_SHARED_TEST_DB=1` or Windows auto-fallback when the admin DB is unavailable. The fallback warning states it is not valid for the full DB/API gate.
+- No application DB schema or Alembic migration was introduced.
+
+CI layer definitions:
+- `verify_workspace`
+- `webapp_bundle`
+- `server_pytest_no_db`
+- `server_pytest_db_knowledge`
+- `server_pytest_db_tickets`
+- `server_pytest_db_observer_diagnostics`
+- `server_pytest_db_agent_runtime`
+- `server_pytest_db_web_api`
+- `server_pytest_agent_ws`
+- `pc_agent_pytest`
+
+Commits:
+- Base P2.3 implementation: `39e5eb6` (`tests: stabilize pytest harness and CI layers`).
+- Acceptance-gap closure: `cd21c1a` (`tests: close CI layer selection and DB isolation gaps`).
+- Final status commit: pending in the follow-up docs commit that records this section.
 
 Verification:
-- `python -m pytest --collect-only -q` -> 1413 tests collected, no import errors.
-- `python -m pytest scripts -q --tb=short` -> 110 passed.
-- `python -m pytest pc_agent/tests -m "not manual" --tb=short --durations=20` -> 314 passed, 4 deselected.
-- `python -m pytest server/tests -m "not manual and no_db" -q --tb=short --durations=20` -> 311 passed, 674 deselected.
-- `python -m pytest server/tests/test_test_harness_no_db.py server/tests/test_shared_test_db_harness.py -q` -> 10 passed.
-- `python -m pytest server/tests/test_knowledge_suggestions.py::test_show_known_errors_false_removes_known_error_from_all_suggestion_buckets -q --tb=short --durations=10` -> 1 passed after adding valid known-error metadata.
-- `server_pytest_db_knowledge` domain command -> 90 passed, 9 deselected.
-- `server_pytest_db_tickets` domain command -> 267 passed, 61 deselected.
-- `server_pytest_db_observer_diagnostics` domain command -> 74 passed, 28 deselected.
-- `server_pytest_db_agent_runtime` domain command -> 84 passed, 93 deselected.
-- `server_pytest_db_web_api` domain command -> 129 passed, 150 deselected.
-- `python -m pytest server/tests -m "not manual and agent_ws" -q --durations=30 --tb=short` -> 30 passed, 955 deselected.
+- `python -m pytest --collect-only -q` -> 1418 tests collected, no import errors.
+- `python -m pytest scripts/test_run_ci_suite.py -q --tb=short` -> 11 passed.
+- `python -m pytest server/tests/test_test_harness_no_db.py server/tests/test_shared_test_db_harness.py -q --tb=short` -> 12 passed.
+- `python -m pytest pc_agent/tests/test_registry_and_module_loading.py -q --tb=short` -> 8 passed.
+- `python -m pytest scripts -q --tb=short` -> 112 passed.
+- `python -m pytest server/tests -m "not manual and no_db" -q --tb=short --durations=20` -> 313 passed, 674 deselected.
+- `python -m pytest pc_agent/tests -m "not manual" -q --tb=short --durations=20` -> 315 passed, 4 deselected.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed; Git reported only existing LF-to-CRLF working-copy warnings.
 - `python scripts/verify_workspace.py` -> passed.
+- `python scripts/bootstrap_web_toolchain.py` -> Node.js 24.15.0, pnpm 10.33.0 ready.
+- `pnpm --dir webapp build` -> passed; this includes `tsc --noEmit`.
+- `python scripts/build_context_index.py --force` -> rebuilt `artifacts/context_index/pc_client.sqlite` with 14119 items, 551 routes, 10820 symbols and 1353 tests.
+- Individual `run_ci_suite.py --layer ...` checks:
+  - `server_pytest_db_knowledge` -> 90 passed, 9 deselected.
+  - `server_pytest_db_tickets` -> 267 passed, 61 deselected.
+  - `server_pytest_db_observer_diagnostics` -> 74 passed, 28 deselected.
+  - `server_pytest_db_agent_runtime` -> 84 passed, 93 deselected.
+  - `server_pytest_db_web_api` -> 129 passed, 152 deselected.
+  - `server_pytest_agent_ws` -> 30 passed, 957 deselected.
+- Full canonical CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green for commit `cd21c1abbf02ce73d3b987555a01361430c321fc`.
+- Full CI artifact: `artifacts/ci/cd21c1abbf02ce73d3b987555a01361430c321fc/summary.json`.
+- Full CI step results: `verify_workspace` passed; `webapp_bundle` passed; `server_pytest_no_db` 313 passed / 674 deselected; `server_pytest_db_knowledge` 90 passed / 9 deselected; `server_pytest_db_tickets` 267 passed / 61 deselected; `server_pytest_db_observer_diagnostics` 74 passed / 28 deselected; `server_pytest_db_agent_runtime` 84 passed / 93 deselected; `server_pytest_db_web_api` 129 passed / 152 deselected; `server_pytest_agent_ws` 30 passed / 957 deselected; `pc_agent_pytest` 315 passed / 4 deselected.
+
+Remote/browser status:
+- Browser signoff is not required for P2.3 because no product UI source files changed; web verification is limited to the bundle/typecheck layer.
+- Remote server smoke is not required for the behavior under test: changes are test harness, CI runner, docs, and the Windows agent dynamic-loader compatibility boundary. The Linux stand can be fast-forwarded as a mirror after push, but P2.3 acceptance is the local full layered CI artifact above.
+
+Remaining risks:
+- DB-backed server layers still spend about three minutes on first-test migration/setup per layer; the new layering makes that cost visible instead of hiding it in one large DB/API bucket.
+- Shared DB fallback remains available for local debugging only and must not be used to claim a full DB/API gate.
+
+Rollback notes:
+- Revert `cd21c1a` and this status docs commit to return to the earlier P2.3 baseline.
+- No DB schema rollback is needed; no Alembic migration was added.
 
 ## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
 
