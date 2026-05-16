@@ -8,8 +8,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import ui_gui.main as gui_main_module
-import ws_agent as ws_agent_module
+import pc_agent.ui_gui.main as gui_main_module
+import pc_agent.ws_agent as ws_agent_module
 
 
 class _FakeIdentityManager:

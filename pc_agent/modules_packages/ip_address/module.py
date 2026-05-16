@@ -6,8 +6,8 @@
 import socket
 from typing import Dict, Any
 
-from modules.base_module import BaseCollector
-from core.registry import exposed_tool
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
 
 
 def _get_primary_ip() -> str:

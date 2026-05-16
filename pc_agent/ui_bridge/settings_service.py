@@ -17,8 +17,8 @@ import yaml
 from loguru import logger
 
 from pc_agent.config.config_loader import ConfigLoader, Settings, get_config, get_config_base
-from core.database import db_manager
-from core.identity import IdentityManager
+from pc_agent.core.database import db_manager
+from pc_agent.core.identity import IdentityManager
 from pc_agent.core.runtime_paths import resolve_data_root
 
 

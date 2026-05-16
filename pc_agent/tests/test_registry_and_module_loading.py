@@ -19,10 +19,10 @@ if "loguru" not in sys.modules:
     loguru_module.logger = _LoggerStub()
     sys.modules["loguru"] = loguru_module
 
-from core.registry import ModuleRegistry, exposed_tool
-from core.loader import DynamicModuleLoader
-from modules import ModuleFactory
-from modules.impl.input import InputCollector
+from pc_agent.core.registry import ModuleRegistry, exposed_tool
+from pc_agent.core.loader import DynamicModuleLoader
+from pc_agent.modules import ModuleFactory
+from pc_agent.modules.impl.input import InputCollector
 
 
 CUSTOM_MODULE_TEMPLATE = """

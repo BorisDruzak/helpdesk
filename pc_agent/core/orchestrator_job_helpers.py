@@ -1,6 +1,6 @@
 from typing import Optional
 
-from core.tool_response import ToolData, ToolMeta, ToolResponse, fail, ok
+from pc_agent.core.tool_response import ToolData, ToolMeta, ToolResponse, fail, ok
 from pc_agent.core.orchestrator_shared import logger
 
 

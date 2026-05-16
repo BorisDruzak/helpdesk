@@ -7,8 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.orchestrator import AgentOrchestrator
-from core.tool_response import ToolMeta
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.tool_response import ToolMeta
 from pc_agent.config.config_loader import ConfigLoader, init_config
 
 

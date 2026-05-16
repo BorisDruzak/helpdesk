@@ -13,8 +13,8 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from modules.base_module import BaseCollector
-from core.registry import exposed_tool
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
 
 
 class _LastInputInfo(Structure):

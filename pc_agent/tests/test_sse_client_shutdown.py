@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ui_gui.sse_client import SseClient
+from pc_agent.ui_gui.sse_client import SseClient
 
 
 class FakeResponse:

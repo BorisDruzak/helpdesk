@@ -5,7 +5,7 @@
 - FileUploader: Класс для загрузки файлов на сервер
 """
 
-from network.uploader import (
+from pc_agent.network.uploader import (
     FileUploader,
     get_uploader,
     FileUploadError,
@@ -20,4 +20,3 @@ __all__ = [
     'AuthorizationError',
     'ServerConnectionError',
 ]
-

@@ -7,12 +7,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.orchestrator import AgentOrchestrator
-from core.registry import exposed_tool
-from core.tool_response import ToolMeta
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.registry import exposed_tool
+from pc_agent.core.tool_response import ToolMeta
 from pc_agent.core.action_trace import configure_action_trace, search_action_trace
 from pc_agent.config.config_loader import ConfigLoader, init_config
-from modules.base_module import BaseCollector
+from pc_agent.modules.base_module import BaseCollector
 
 
 def _meta(command: str = "run_tool", trace_id: str | None = None) -> ToolMeta:

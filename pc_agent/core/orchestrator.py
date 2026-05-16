@@ -27,22 +27,22 @@ try:
     import aiohttp
 except ImportError:
     aiohttp = None
-from modules import ModuleFactory, BaseCollector
-from core.database import DatabaseManager
-from core.validator import CodeValidator
-from core.loader import DynamicModuleLoader
-from core.process_provider import ProcessProvider
-from core.registry import ModuleRegistry
-from core.tool_response import ToolResponse, ToolMeta, ToolData, ErrorInfo, ok, fail, partial
-from core.artifacts import ArtifactIntent, ArtifactManager
-from core.tools import ToolSpec, check_policy, ToolMetadata
-from core.policy_engine import PolicyEngine
-from core.consent_service import ConsentService, ConsentState
-from network.uploader import get_uploader
-from core.identity import IdentityManager
-from core.module_manager import ModuleManager
-from core.job_manager import JobManager
-from core.recording_controller import get_recording_controller
+from pc_agent.modules import ModuleFactory, BaseCollector
+from pc_agent.core.database import DatabaseManager
+from pc_agent.core.validator import CodeValidator
+from pc_agent.core.loader import DynamicModuleLoader
+from pc_agent.core.process_provider import ProcessProvider
+from pc_agent.core.registry import ModuleRegistry
+from pc_agent.core.tool_response import ToolResponse, ToolMeta, ToolData, ErrorInfo, ok, fail, partial
+from pc_agent.core.artifacts import ArtifactIntent, ArtifactManager
+from pc_agent.core.tools import ToolSpec, check_policy, ToolMetadata
+from pc_agent.core.policy_engine import PolicyEngine
+from pc_agent.core.consent_service import ConsentService, ConsentState
+from pc_agent.network.uploader import get_uploader
+from pc_agent.core.identity import IdentityManager
+from pc_agent.core.module_manager import ModuleManager
+from pc_agent.core.job_manager import JobManager
+from pc_agent.core.recording_controller import get_recording_controller
 from pc_agent.config.config_loader import CORE_ENABLED_MODULES, get_config
 from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
 from pc_agent.core.action_trace import get_action_trace_recorder
@@ -56,7 +56,7 @@ from pc_agent.core.orchestrator_job_helpers import (
     handle_stop_job as helper_handle_stop_job,
 )
 from pc_agent.core.orchestrator_shared import logger
-from utils.toolset_hash import compute_toolset_hash
+from pc_agent.utils.toolset_hash import compute_toolset_hash
 import inspect
 try:
     from shared.tool_contracts import ToolExecutionEnvelope, ToolExecutionMetrics
@@ -4077,7 +4077,7 @@ async def test_tool_response_format():
     """
     Unit-тесты для проверки формата ToolResponse.
     """
-    from core.database import db_manager
+    from pc_agent.core.database import db_manager
     
     logger.info("=" * 70)
     logger.info("Unit-тесты формата ToolResponse")
@@ -4197,7 +4197,7 @@ async def test_orchestrator():
     """
     Тестовая функция для проверки работы AgentOrchestrator.
     """
-    from core.database import db_manager
+    from pc_agent.core.database import db_manager
     
     logger.info("=" * 70)
     logger.info("Начало тестирования AgentOrchestrator")

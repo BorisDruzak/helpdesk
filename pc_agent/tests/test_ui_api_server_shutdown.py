@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ui_bridge.api_server import UiApiServer
-from ui_bridge.event_bus import EventBus
+from pc_agent.ui_bridge.api_server import UiApiServer
+from pc_agent.ui_bridge.event_bus import EventBus
 
 
 @pytest.mark.asyncio

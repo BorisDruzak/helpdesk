@@ -26,8 +26,8 @@ import pytest
 # Добавляем путь к модулям PC Agent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.database import DatabaseManager
-from core.job_manager import JobManager
+from pc_agent.core.database import DatabaseManager
+from pc_agent.core.job_manager import JobManager
 from loguru import logger
 
 pytestmark = pytest.mark.manual

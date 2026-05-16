@@ -13,8 +13,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
-from core.orchestrator import AgentOrchestrator
-from core.database import db_manager
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.database import db_manager
 
 
 async def example_basic_usage():

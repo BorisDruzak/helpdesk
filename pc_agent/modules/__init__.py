@@ -88,9 +88,9 @@ class ModuleFactory:
                             extra_paths=extra_paths,
                         )
                     
-                    # Если не найден в extra_paths, пытаемся стандартный путь
+                    # Если не найден в extra_paths, пытаемся стандартный package path.
                     if imported_module is None:
-                        module_path = f"modules.impl.{module_name}"
+                        module_path = f"pc_agent.modules.impl.{module_name}"
                         logger.debug(f"Попытка импорта модуля: {module_path}")
                         imported_module = importlib.import_module(module_path)
                         logger.debug(f"Модуль {module_path} успешно импортирован")
@@ -251,7 +251,7 @@ class ModuleFactory:
 
 
 # Удобный алиас для импорта
-# Теперь можно использовать: from modules import create_modules
+# Теперь можно использовать: from pc_agent.modules import create_modules
 create_modules = ModuleFactory.create_modules
 
 

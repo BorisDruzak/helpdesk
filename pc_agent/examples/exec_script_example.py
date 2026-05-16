@@ -7,8 +7,8 @@
 
 import asyncio
 from loguru import logger
-from core.orchestrator import AgentOrchestrator
-from core.database import db_manager
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.database import db_manager
 
 
 async def example_1_simple_module_usage():

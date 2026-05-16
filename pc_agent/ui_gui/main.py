@@ -103,8 +103,8 @@ async def get_stored_token() -> Optional[str]:
     
     # 2. Проверяем БД агента (основной источник)
     try:
-        from core.identity import IdentityManager
-        from core.database import db_manager  # Используем глобальный экземпляр
+        from pc_agent.core.identity import IdentityManager
+        from pc_agent.core.database import db_manager  # Используем глобальный экземпляр
         
         identity_manager = IdentityManager()
         identity_data = identity_manager.load_or_create()
@@ -155,8 +155,8 @@ async def show_token_dialog_async(device_uuid: str) -> Optional[str]:
                     # Используем СИНХРОННЫЙ метод чтобы избежать проблем с event loop
                     if token:
                         try:
-                            from core.identity import IdentityManager
-                            from core.database import db_manager
+                            from pc_agent.core.identity import IdentityManager
+                            from pc_agent.core.database import db_manager
                             
                             identity_manager = IdentityManager()
                             identity_manager.load_or_create()
@@ -402,7 +402,7 @@ async def run_gui(
     
     # Получаем device UUID для диалога
     try:
-        from core.identity import IdentityManager
+        from pc_agent.core.identity import IdentityManager
         identity_manager = IdentityManager()
         identity_data = identity_manager.load_or_create()
         device_uuid = identity_data.get('uuid', 'Unknown')
@@ -461,7 +461,7 @@ async def run_gui(
                 if token:
                     valid_token = token
                     try:
-                        from core.database import db_manager
+                        from pc_agent.core.database import db_manager
                         if db_manager:
                             import sqlite3
                             conn = sqlite3.connect(db_manager._db_path)

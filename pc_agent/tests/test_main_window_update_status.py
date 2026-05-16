@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ui_gui.main_window import MainWindow
+from pc_agent.ui_gui.main_window import MainWindow
 
 
 class _FakeLabel:

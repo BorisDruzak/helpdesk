@@ -18,10 +18,10 @@ import mss.tools
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from modules.base_module import BaseCollector
+from pc_agent.modules.base_module import BaseCollector
 from pc_agent.config.config_loader import get_config
-from core.registry import exposed_tool
-from core.recording_controller import get_recording_controller
+from pc_agent.core.registry import exposed_tool
+from pc_agent.core.recording_controller import get_recording_controller
 
 SIZE_LIMIT_BYTES = 200 * 1024 * 1024
 

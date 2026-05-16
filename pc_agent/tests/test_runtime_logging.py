@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from loguru import logger
 
-from core.runtime_logging import RuntimeLogBuffer, configure_runtime_logging, read_log_tail, format_log_tail
+from pc_agent.core.runtime_logging import RuntimeLogBuffer, configure_runtime_logging, read_log_tail, format_log_tail
 
 
 class _LoggingConfig:

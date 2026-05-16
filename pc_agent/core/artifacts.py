@@ -15,8 +15,8 @@ from typing import Any
 
 from loguru import logger
 
-from core.tool_response import ArtifactDescriptor, ErrorInfo
-from network.uploader import FileUploader
+from pc_agent.core.tool_response import ArtifactDescriptor, ErrorInfo
+from pc_agent.network.uploader import FileUploader
 
 
 @dataclass
@@ -43,8 +43,8 @@ class ArtifactManager:
     
     Пример использования:
         ```python
-        from network.uploader import FileUploader
-        from core.identity import IdentityManager
+        from pc_agent.network.uploader import FileUploader
+        from pc_agent.core.identity import IdentityManager
         from pc_agent.config.config_loader import get_config
         config = get_config()
         
@@ -269,4 +269,3 @@ class ArtifactManager:
             logger.warning(f"⚠️  Неудачных загрузок: {len(errors)}")
         
         return descriptors, errors
-

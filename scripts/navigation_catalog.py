@@ -2356,12 +2356,14 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, marker/domain layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, root pytest collection, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, marker/domain layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
             "smoke",
             "browser",
+            "pytest collect",
+            "collect-only",
             "remote stack",
             "verify workspace",
             "релиз",
@@ -2394,6 +2396,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         suggested_commands=(
             "python scripts/verify_workspace.py",
+            "python -m pytest --collect-only -q",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
@@ -2404,6 +2407,7 @@ TOPICS: tuple[Topic, ...] = (
         skills=(RELEASE_SKILL, TESTS_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
+            "python -m pytest --collect-only -q",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",

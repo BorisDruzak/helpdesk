@@ -7,8 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import ui_gui.server_api as server_api_module
-from ui_gui.server_api import TicketApiClient
+import pc_agent.ui_gui.server_api as server_api_module
+from pc_agent.ui_gui.server_api import TicketApiClient
 
 
 class FakeResponse:

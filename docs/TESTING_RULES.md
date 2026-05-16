@@ -18,14 +18,15 @@ Use these layers instead of the old single long `server/tests` run when you need
 
 ```powershell
 python -m pytest server/tests -m "not manual and no_db" -vv --durations=80
-python -m pytest server/tests -m "not manual and not no_db and not agent_ws" -vv --durations=80
+python -m pytest server/tests/test_knowledge_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
+python -m pytest server/tests/test_ticket_*.py server/tests/test_helpdesk_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80
 ```
 
 Layer meanings:
 
 - `no_db`: pure unit/contract checks that must not require PostgreSQL setup or cleanup.
-- `not no_db and not agent_ws`: DB/API/server contract tests without the in-process WS agent.
+- DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split by filename into knowledge, tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by `scripts/run_ci_suite.py`.
 - `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
 
 Pure server tests that do not request `test_client`, `test_app`, `test_engine`, `patched_get_session`, `test_database_url`, `test_database_admin_url` or `run_migrations` should set module-level `pytestmark = pytest.mark.no_db`. This keeps them out of the DB/API layer and avoids paying the migration/cleanup cost for tests that do not touch PostgreSQL.
@@ -83,6 +84,8 @@ https://192.168.100.17:9443/admin
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
+
+On Windows default DB-backed pytest, the harness opens the configured SSH tunnel and creates an isolated `pc_support_test_<runid>` database through `TEST_DATABASE_ADMIN_URL` semantics. Shared `pc_support_test` is for explicit fallback/debug only (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) or automatic fallback when the admin database cannot be reached.
 
 ## When To Run What
 

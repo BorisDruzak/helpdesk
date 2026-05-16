@@ -225,7 +225,7 @@ class IdentityManager:
     @property
     def has_token(self) -> bool:
         try:
-            from core.database import db_manager
+            from pc_agent.core.database import db_manager
 
             if db_manager:
                 import asyncio

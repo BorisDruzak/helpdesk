@@ -2342,7 +2342,7 @@ class MainWindow(QMainWindow):
     def _load_device_uuid(self):
         """Загружает device UUID из identity manager."""
         try:
-            from core.identity import IdentityManager
+            from pc_agent.core.identity import IdentityManager
             identity_manager = IdentityManager()
             identity_data = identity_manager.load_or_create()
             device_uuid = identity_data.get('uuid', self._repair_text('Недоступно'))

@@ -22,12 +22,12 @@ from pc_agent.config.config_loader import get_config
 from pc_agent.core.runtime_paths import resolve_data_root, resolve_logs_dir
 
 try:
-    from modules.base_module import BaseCollector
+    from pc_agent.modules.base_module import BaseCollector
 except ImportError:
     from pc_agent.modules.base_module import BaseCollector
 
 try:
-    from core.registry import exposed_tool
+    from pc_agent.core.registry import exposed_tool
 except ImportError:
     from pc_agent.core.registry import exposed_tool
 

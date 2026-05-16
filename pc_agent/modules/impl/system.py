@@ -11,8 +11,8 @@ import psutil
 from loguru import logger
 from pydantic import BaseModel
 
-from modules.base_module import BaseCollector
-from core.registry import exposed_tool
+from pc_agent.modules.base_module import BaseCollector
+from pc_agent.core.registry import exposed_tool
 
 
 SYSTEM_PRESETS: dict[str, dict[str, bool]] = {

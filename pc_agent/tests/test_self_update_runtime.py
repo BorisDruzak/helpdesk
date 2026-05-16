@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pc_agent.launcher import installer as installer_module
 from pc_agent.launcher.installer import _safe_join, apply_update, extract_artifact
 from pc_agent.ws_agent import WSAgent
-from core.orchestrator import AgentOrchestrator
-from core.tool_response import ToolMeta
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.tool_response import ToolMeta
 from pc_agent.core.action_trace import ActionTraceRecorder, configure_action_trace
 from pc_agent.config.config_loader import ConfigLoader, init_config
 

@@ -46,6 +46,7 @@ async def test_terminate_other_test_database_backends_terminates_shared_db_sessi
     args, kwargs = run_admin_sql.await_args
     assert args[0] == "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
     assert "pg_terminate_backend" in args[1]
+    assert "usename = current_user" in args[1]
     assert kwargs == {"db_name": "pc_support_test"}
 
 

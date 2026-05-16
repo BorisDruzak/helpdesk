@@ -37,17 +37,13 @@ project_root = agent_dir.parent  # /var/chat_bot/pc_client
 project_root_str = str(project_root)
 if project_root_str not in sys.path:
     sys.path.insert(0, project_root_str)
-# Также добавляем саму директорию pc_agent для относительных импортов
-agent_dir_str = str(agent_dir)
-if agent_dir_str not in sys.path:
-    sys.path.insert(0, agent_dir_str)
-
-from core.database import DatabaseManager
-from core.orchestrator import AgentOrchestrator
-from core.identity import IdentityManager
-from core.sender import WSOutboxFlusher
-from core.job_manager import JobManager
-from core.http_client import AioHttpClient
+# Legacy managed modules still get their own import path from the module loader.
+from pc_agent.core.database import DatabaseManager
+from pc_agent.core.orchestrator import AgentOrchestrator
+from pc_agent.core.identity import IdentityManager
+from pc_agent.core.sender import WSOutboxFlusher
+from pc_agent.core.job_manager import JobManager
+from pc_agent.core.http_client import AioHttpClient
 from pc_agent.config.config_loader import get_config, init_config
 from pc_agent.core import runtime_paths
 from pc_agent.core.runtime_logging import RuntimeLogBuffer, configure_runtime_logging, read_log_tail, format_log_tail
@@ -57,12 +53,12 @@ from pc_agent.core.action_trace import (
     resolve_action_trace_text_filter,
     search_action_trace,
 )
-from network.uploader import get_uploader
-from ui_bridge import EventBus, UiApiServer
-from ui_bridge.models import ConsentDecision
-from ui_gui.server_api import TicketApiClient
-from ui_bridge.settings_service import AgentSettingsService
-from core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
+from pc_agent.network.uploader import get_uploader
+from pc_agent.ui_bridge import EventBus, UiApiServer
+from pc_agent.ui_bridge.models import ConsentDecision
+from pc_agent.ui_gui.server_api import TicketApiClient
+from pc_agent.ui_bridge.settings_service import AgentSettingsService
+from pc_agent.core.database import PROTOCOL_VERSION, DB_SCHEMA_VERSION
 from pc_agent.version import AGENT_VERSION, EXIT_UPDATE_PENDING
 from pc_agent.core.single_instance import SingleInstanceLock
 from pc_agent.auth.connection_request import run_connection_request_flow
@@ -2387,7 +2383,7 @@ class WSAgent:
                 uptime = time.time() - self.start_time
                 
                 # Возвращаем в формате ToolResponse
-                from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
+                from pc_agent.core.tool_response import ToolResponse, ToolMeta, ToolData, ok
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2422,7 +2418,7 @@ class WSAgent:
             
             elif command == "search_action_trace":
                 """Поиск action trace для tech/observer drilldown."""
-                from core.tool_response import ToolMeta, ToolData, ok
+                from pc_agent.core.tool_response import ToolMeta, ToolData, ok
 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2465,7 +2461,7 @@ class WSAgent:
 
             elif command == "get_info":
                 """Получить системную информацию (быстрый запрос без модулей)"""
-                from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
+                from pc_agent.core.tool_response import ToolResponse, ToolMeta, ToolData, ok
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2493,7 +2489,7 @@ class WSAgent:
             
             elif command == "get_history":
                 """Получить историю событий из БД"""
-                from core.tool_response import ToolResponse, ToolMeta, ToolData, ok
+                from pc_agent.core.tool_response import ToolResponse, ToolMeta, ToolData, ok
                 
                 limit = params.get("limit", 10)
                 module = params.get("module")
@@ -2527,7 +2523,7 @@ class WSAgent:
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
             else:
-                from core.tool_response import ToolResponse, ToolMeta, fail
+                from pc_agent.core.tool_response import ToolResponse, ToolMeta, fail
                 
                 meta = ToolMeta(
                     timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2564,7 +2560,7 @@ class WSAgent:
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения команды {command}: {e}")
             logger.exception(e)
-            from core.tool_response import ToolResponse, ToolMeta, fail
+            from pc_agent.core.tool_response import ToolResponse, ToolMeta, fail
             
             meta = ToolMeta(
                 timestamp_iso=datetime.now(timezone.utc).isoformat(),
@@ -2763,7 +2759,7 @@ class WSAgent:
                                 tools_list = self.orchestrator._build_tools_list()
                                 tools_count = len(tools_list)
                                 # Вычислить toolset_hash (compute_toolset_hash сама отсортирует tools_list)
-                                from utils.toolset_hash import compute_toolset_hash
+                                from pc_agent.utils.toolset_hash import compute_toolset_hash
                                 toolset_hash = compute_toolset_hash(tools_list) if tools_list else None
                             except Exception as e:
                                 logger.warning(f"⚠️ Ошибка при вычислении toolset_hash: {e}")
@@ -3475,7 +3471,7 @@ async def main_async(
                     finally:
                         agent.ui_api_task = True
 
-                from ui_gui.main import run_gui
+                from pc_agent.ui_gui.main import run_gui
                 host = ui_config.host
                 port = ui_config.port
                 logger.info(f"🖥️  Запускаю GUI на {host}:{port} (ожидаю авторизации)...")

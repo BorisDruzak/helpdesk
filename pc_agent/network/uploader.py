@@ -21,7 +21,7 @@ UPLOAD_MAX_RETRIES = 3
 UPLOAD_BACKOFF_BASE_SEC = 1.0
 
 from pc_agent.config.config_loader import get_config
-from core.identity import IdentityManager
+from pc_agent.core.identity import IdentityManager
 
 
 # Маппинг расширений файлов на MIME-типы
@@ -73,7 +73,7 @@ class FileUploader:
     Пример использования:
         ```python
         from pc_agent.config.config_loader import config
-        from core.identity import IdentityManager
+        from pc_agent.core.identity import IdentityManager
         
         identity = IdentityManager()
         identity.load_or_create()
@@ -414,7 +414,7 @@ def get_uploader(identity_manager: Optional[IdentityManager] = None) -> FileUplo
         ValueError: Если identity_manager не передан при первом вызове
         
     Example:
-        >>> from core.identity import IdentityManager
+        >>> from pc_agent.core.identity import IdentityManager
         >>> identity = IdentityManager()
         >>> identity.load_or_create()
         >>> 
@@ -441,4 +441,3 @@ def get_uploader(identity_manager: Optional[IdentityManager] = None) -> FileUplo
         logger.debug("🌍 Создан глобальный экземпляр FileUploader")
     
     return _uploader_instance
-

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from loguru import logger
-from core.artifacts import ArtifactManager
+from pc_agent.core.artifacts import ArtifactManager
 try:
     from shared.tool_contracts import (
         ToolMetadata,

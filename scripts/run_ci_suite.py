@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import queue
@@ -41,6 +42,64 @@ DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
 STEP_TIMEOUT_EXIT_CODE = 124
+
+SERVER_DB_API_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "server_pytest_db_knowledge",
+        (
+            "test_knowledge_*.py",
+            "test_support_knowledge_provider.py",
+        ),
+    ),
+    (
+        "server_pytest_db_tickets",
+        (
+            "test_ticket_*.py",
+            "test_helpdesk_*.py",
+            "test_form_*.py",
+            "test_policy_health*.py",
+            "test_public_queue_privacy.py",
+            "test_service_catalog_*.py",
+            "test_reports_service_catalog.py",
+            "test_requester_timeline_projection.py",
+            "test_stage8.py",
+            "test_support_playbook_readiness.py",
+            "test_registry_*.py",
+        ),
+    ),
+    (
+        "server_pytest_db_observer_diagnostics",
+        (
+            "test_admin_tech_api.py",
+            "test_control_plane_api.py",
+            "test_diagnostic_*.py",
+            "test_manual_capability_provider.py",
+            "test_observer_*.py",
+            "test_trace_overlay_api.py",
+            "test_workflow_side_effect_observability.py",
+            "test_zabbix_provider_no_db.py",
+        ),
+    ),
+    (
+        "server_pytest_db_agent_runtime",
+        (
+            "test_agent_*.py",
+            "test_cancel_operations.py",
+            "test_command_result_*.py",
+            "test_device_*.py",
+            "test_handshake_module_reconcile.py",
+            "test_modules_*.py",
+            "test_operation_*.py",
+            "test_outbox_*.py",
+            "test_protocol_*.py",
+            "test_remote_assist_*.py",
+            "test_state_manager_agent_registry.py",
+            "test_subscription_registry.py",
+            "test_tool_*.py",
+            "test_tools_*.py",
+        ),
+    ),
+)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -302,12 +361,13 @@ def _server_pytest_env() -> dict[str, str]:
     return {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
 
 
-def _server_pytest_command(marker_expr: str, junit_path: Path) -> list[str]:
+def _server_pytest_command(marker_expr: str, junit_path: Path, paths: list[Path | str] | None = None) -> list[str]:
+    test_paths = [str(path) for path in (paths or ["server/tests"])]
     return [
         sys.executable,
         "-m",
         "pytest",
-        "server/tests",
+        *test_paths,
         "-m",
         marker_expr,
         "-vv",
@@ -315,6 +375,56 @@ def _server_pytest_command(marker_expr: str, junit_path: Path) -> list[str]:
         "--junitxml",
         str(junit_path),
     ]
+
+
+def _classify_server_db_api_test_file(filename: str) -> str:
+    for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
+        if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
+            return layer_name
+    return "server_pytest_db_web_api"
+
+
+def _server_db_api_layer_paths(workspace: Path) -> list[tuple[str, list[Path]]]:
+    tests_dir = workspace / "server" / "tests"
+    test_files = sorted(tests_dir.glob("test_*.py"))
+    if not test_files:
+        return [("server_pytest_db_api", [Path("server/tests")])]
+
+    grouped: dict[str, list[Path]] = {}
+    for path in test_files:
+        layer_name = _classify_server_db_api_test_file(path.name)
+        grouped.setdefault(layer_name, []).append(path.relative_to(workspace))
+
+    layer_order = [name for name, _patterns in SERVER_DB_API_LAYER_RULES] + ["server_pytest_db_web_api"]
+    return [(name, grouped[name]) for name in layer_order if grouped.get(name)]
+
+
+def _server_db_api_layer_steps(
+    *,
+    workspace: Path,
+    artifact_dir: Path,
+    logs_dir: Path,
+    timeout_seconds: float,
+    idle_timeout_seconds: float,
+) -> list[tuple[str, list[str], Path, float, float, dict[str, str]]]:
+    steps = []
+    for layer_name, paths in _server_db_api_layer_paths(workspace):
+        junit_name = layer_name.replace("server_pytest_", "junit-server-").replace("_", "-")
+        steps.append(
+            (
+                layer_name,
+                _server_pytest_command(
+                    "not manual and not no_db and not agent_ws",
+                    artifact_dir / f"{junit_name}.xml",
+                    paths,
+                ),
+                logs_dir / f"{layer_name}.log",
+                timeout_seconds,
+                idle_timeout_seconds,
+                _server_pytest_env(),
+            )
+        )
+    return steps
 
 
 def main() -> None:
@@ -366,16 +476,12 @@ def main() -> None:
             float(args.idle_timeout),
             _server_pytest_env(),
         ),
-        (
-            "server_pytest_db_api",
-            _server_pytest_command(
-                "not manual and not no_db and not agent_ws",
-                artifact_dir / "junit-server-db-api.xml",
-            ),
-            logs_dir / "server_pytest_db_api.log",
-            float(args.server_pytest_timeout),
-            float(args.idle_timeout),
-            _server_pytest_env(),
+        *_server_db_api_layer_steps(
+            workspace=args.workspace,
+            artifact_dir=artifact_dir,
+            logs_dir=logs_dir,
+            timeout_seconds=float(args.server_pytest_timeout),
+            idle_timeout_seconds=float(args.idle_timeout),
         ),
         (
             "server_pytest_agent_ws",
@@ -441,7 +547,13 @@ def main() -> None:
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
                 "junit_server_no_db": str(artifact_dir / "junit-server-no-db.xml"),
-                "junit_server_db_api": str(artifact_dir / "junit-server-db-api.xml"),
+                "junit_server_db_api_layers": {
+                    layer_name: str(
+                        artifact_dir
+                        / f"{layer_name.replace('server_pytest_', 'junit-server-').replace('_', '-')}.xml"
+                    )
+                    for layer_name, _paths in _server_db_api_layer_paths(args.workspace)
+                },
                 "junit_server_agent_ws": str(artifact_dir / "junit-server-agent-ws.xml"),
                 "junit_pc_agent": str(artifact_dir / "junit-pc-agent.xml"),
             },

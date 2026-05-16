@@ -10,7 +10,7 @@ from pathlib import Path
 # Добавляем родительскую директорию в путь для импорта
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.database import db_manager
+from pc_agent.core.database import db_manager
 from loguru import logger
 
 

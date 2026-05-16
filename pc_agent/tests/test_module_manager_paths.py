@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.module_manager import ModuleManager
+from pc_agent.core.module_manager import ModuleManager
 
 
 def _make_version(store_root: Path, module_name: str, version: str) -> Path:

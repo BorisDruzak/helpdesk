@@ -110,6 +110,7 @@
 ## 2026-04-26 test and CI layering
 
 - Canonical testing rules live in `docs/TESTING_RULES.md`.
+- Root pytest collection is part of the baseline: agent runtime and tests import through the `pc_agent.*` package namespace so server, agent and scripts tests can be collected together without top-level `core` / `modules` collisions. Managed external modules may still rely on legacy loader aliases.
 - `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, domain DB/API layers (`server_pytest_db_knowledge`, `server_pytest_db_tickets`, `server_pytest_db_observer_diagnostics`, `server_pytest_db_agent_runtime`, `server_pytest_db_web_api`), and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
 - Every local commit must be pushed to GitHub `origin` immediately; local commit and GitHub push are one checkpoint. Routine dev-branch pushes do not require full CI or a separate strict secret scan, but still require intentional staging and `git diff --cached`.
 - Deploy/release scripts use `--gate full` by default and require a green CI artifact for the current commit, so Codex must use explicit `--gate quick` for staging/iteration on the Linux stand. Full CI/full gate are important final release checkpoints, but Codex runs them only after explicit user request or confirmation; at the end of a change block, remind the user and ask whether to run them now if the plan is being delivered in parts.
@@ -250,6 +251,7 @@ Historical docs больше не канон:
 Минимальный baseline перед commit:
 
 - `python scripts/verify_workspace.py`
+- `python -m pytest --collect-only -q`
 - `python -m pytest server/tests/ ...`
 - `python -m pytest pc_agent/tests/ ...`
 

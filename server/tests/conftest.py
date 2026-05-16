@@ -250,9 +250,11 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
         and explicit_test_url is None
         and os.getenv("TEST_DATABASE_ADMIN_URL") is None
     ):
-        shared_url = _default_windows_shared_test_database_url()
-        verify_test_database(shared_url, allow_shared=True)
-        return shared_url, _resolve_admin_url(shared_url), True
+        admin_url = _default_windows_test_database_admin_url()
+        generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
+        test_url = _render_url(make_url(admin_url).set(database=generated_name))
+        verify_test_database(test_url, allow_shared=False)
+        return test_url, admin_url, False
 
     if explicit_test_url:
         verify_test_database(explicit_test_url, allow_shared=False)
@@ -277,6 +279,14 @@ def _default_windows_shared_test_database_url() -> str:
     return (
         "postgresql+asyncpg://chatbot:chatbot@"
         f"{WINDOWS_TEST_DB_TUNNEL_HOST}:{WINDOWS_TEST_DB_TUNNEL_PORT}/{SHARED_TEST_DATABASE_NAME}"
+    )
+
+
+def _default_windows_test_database_admin_url() -> str:
+    _ensure_windows_test_db_tunnel()
+    return (
+        "postgresql+asyncpg://chatbot:chatbot@"
+        f"{WINDOWS_TEST_DB_TUNNEL_HOST}:{WINDOWS_TEST_DB_TUNNEL_PORT}/postgres"
     )
 
 
@@ -453,6 +463,7 @@ async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
         FROM pg_stat_activity
         WHERE datname = :db_name
           AND pid <> pg_backend_pid()
+          AND usename = current_user
         """,
         db_name=db_name,
     )
@@ -484,6 +495,7 @@ async def _terminate_other_test_database_backends(
             FROM pg_stat_activity
             WHERE datname = :db_name
               AND pid <> pg_backend_pid()
+              AND usename = current_user
             """,
             db_name=db_name,
         )

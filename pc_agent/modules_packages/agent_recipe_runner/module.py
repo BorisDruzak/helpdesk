@@ -12,7 +12,7 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-from modules.base_module import BaseCollector
+from pc_agent.modules.base_module import BaseCollector
 
 
 MODULE_VERSION = "1.0.0"

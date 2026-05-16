@@ -62,7 +62,7 @@ class WaitForAuthDialog(QDialog):
 
     def _connection_error_path(self) -> Optional[Path]:
         try:
-            from core.database import db_manager
+            from pc_agent.core.database import db_manager
             db_path = getattr(db_manager, "_db_path", None)
             if not db_path:
                 return None
@@ -103,7 +103,7 @@ class WaitForAuthDialog(QDialog):
         try:
             if self._show_connection_error_if_any():
                 return
-            from core.database import db_manager
+            from pc_agent.core.database import db_manager
             if not db_manager or not self.device_uuid:
                 return
             import sqlite3

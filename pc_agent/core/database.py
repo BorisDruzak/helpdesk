@@ -77,7 +77,7 @@ class DatabaseManager:
             cls._instance._db_path = Path(db_path)
             cls._instance._initialized = False
             logger.info(f"DatabaseManager создан с путем к БД: {db_path}")
-            # Обновляем глобальный db_manager в этом модуле (для "from core.database import db_manager"),
+            # Обновляем глобальный db_manager в этом модуле (для "from pc_agent.core.database import db_manager"),
             # чтобы использовался путь из точки входа, а не дефолт при импорте.
             import sys
             mod = sys.modules.get(cls.__module__)

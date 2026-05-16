@@ -2,9 +2,9 @@ import asyncio
 import pathlib
 from typing import List, Optional
 
-from core.artifacts import ArtifactIntent, ArtifactManager
-from core.tool_response import ErrorInfo, ToolData, ToolMeta, ToolResponse, fail, ok, partial
-from network.uploader import get_uploader
+from pc_agent.core.artifacts import ArtifactIntent, ArtifactManager
+from pc_agent.core.tool_response import ErrorInfo, ToolData, ToolMeta, ToolResponse, fail, ok, partial
+from pc_agent.network.uploader import get_uploader
 from pc_agent.core.orchestrator_shared import logger
 
 

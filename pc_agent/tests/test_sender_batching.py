@@ -9,8 +9,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.sender import WSOutboxFlusher
-from ws_agent import WSAgent
+from pc_agent.core.sender import WSOutboxFlusher
+from pc_agent.ws_agent import WSAgent
 
 
 pytestmark = pytest.mark.no_db

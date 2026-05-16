@@ -192,6 +192,16 @@ def test_write_output_ignores_console_oserror(monkeypatch, tmp_path):
 def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypatch):
     summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
     steps_seen: list[tuple[str, list[str], Path, float | None, dict[str, str] | None, float]] = []
+    tests_dir = tmp_path / "server" / "tests"
+    tests_dir.mkdir(parents=True)
+    for filename in (
+        "test_knowledge_api.py",
+        "test_ticket_closure_policy.py",
+        "test_observer_diagnostics_api.py",
+        "test_agent_services_pipeline.py",
+        "test_web_admin_api.py",
+    ):
+        (tests_dir / filename).write_text("def test_placeholder(): pass\n", encoding="utf-8")
 
     monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
     monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
@@ -233,7 +243,11 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "verify_workspace",
         "build_webapp_bundle",
         "server_pytest_no_db",
-        "server_pytest_db_api",
+        "server_pytest_db_knowledge",
+        "server_pytest_db_tickets",
+        "server_pytest_db_observer_diagnostics",
+        "server_pytest_db_agent_runtime",
+        "server_pytest_db_web_api",
         "server_pytest_agent_ws",
         "pc_agent_pytest",
     ]
@@ -252,7 +266,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["build_webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["server_pytest_db_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["server_pytest_db_knowledge"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["pc_agent_pytest"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
 
@@ -268,14 +283,22 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "--junitxml",
         str(summary_path.parent / "junit-server-no-db.xml"),
     ]
-    assert command_by_step["server_pytest_db_api"][-6:] == [
+    assert command_by_step["server_pytest_db_knowledge"][-6:] == [
         "-m",
         "not manual and not no_db and not agent_ws",
         "-vv",
         "--durations=80",
         "--junitxml",
-        str(summary_path.parent / "junit-server-db-api.xml"),
+        str(summary_path.parent / "junit-server-db-knowledge.xml"),
     ]
+    expected_knowledge_path = (
+        "server\\tests\\test_knowledge_api.py" if sys.platform == "win32" else "server/tests/test_knowledge_api.py"
+    )
+    expected_web_api_path = (
+        "server\\tests\\test_web_admin_api.py" if sys.platform == "win32" else "server/tests/test_web_admin_api.py"
+    )
+    assert command_by_step["server_pytest_db_knowledge"][3] == expected_knowledge_path
+    assert command_by_step["server_pytest_db_web_api"][3] == expected_web_api_path
     assert command_by_step["server_pytest_agent_ws"][-6:] == [
         "-m",
         "not manual and agent_ws",
@@ -289,12 +312,41 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
     }
     assert env_by_step["server_pytest_no_db"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
-    assert env_by_step["server_pytest_db_api"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_db_knowledge"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_db_web_api"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
     assert env_by_step["server_pytest_agent_ws"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
     timeout_by_step = {
         step_name: timeout
         for step_name, _command, _log_path, _idle_timeout, _env, timeout in steps_seen
     }
     assert timeout_by_step["server_pytest_no_db"] == 45 * 60
-    assert timeout_by_step["server_pytest_db_api"] == 45 * 60
+    assert timeout_by_step["server_pytest_db_knowledge"] == 45 * 60
+    assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60
     assert timeout_by_step["server_pytest_agent_ws"] == 45 * 60
+
+
+def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
+    tests_dir = tmp_path / "server" / "tests"
+    tests_dir.mkdir(parents=True)
+    for filename in (
+        "test_knowledge_search.py",
+        "test_ticket_closure_policy.py",
+        "test_observer_v2_api.py",
+        "test_device_dispatch_runtime.py",
+        "test_web_support_api.py",
+    ):
+        (tests_dir / filename).write_text("def test_placeholder(): pass\n", encoding="utf-8")
+
+    layers = run_ci_suite._server_db_api_layer_paths(tmp_path)
+
+    names = [name for name, _paths in layers]
+    flattened = [path for _name, paths in layers for path in paths]
+    assert names == [
+        "server_pytest_db_knowledge",
+        "server_pytest_db_tickets",
+        "server_pytest_db_observer_diagnostics",
+        "server_pytest_db_agent_runtime",
+        "server_pytest_db_web_api",
+    ]
+    assert sorted(path.name for path in flattened) == sorted(path.name for path in tests_dir.glob("test_*.py"))
+    assert len(flattened) == len(set(flattened))

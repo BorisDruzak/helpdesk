@@ -444,7 +444,7 @@ class UiApiServer:
                     "status": "error",
                     "error": "Missing required field: operation_id"
                 }, status=400, headers={"Access-Control-Allow-Origin": "*"})
-            from core.recording_controller import get_recording_controller
+            from pc_agent.core.recording_controller import get_recording_controller
             controller = get_recording_controller()
             if controller.signal_stop(operation_id):
                 return web.json_response({

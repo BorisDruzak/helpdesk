@@ -87,7 +87,7 @@ def test_should_auto_fallback_only_for_default_windows_flow(monkeypatch):
     assert test_harness._should_auto_fallback_to_shared_test_db() is False
 
 
-def test_windows_default_resolve_uses_shared_test_db(monkeypatch):
+def test_windows_default_resolve_uses_isolated_test_db(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
     monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
@@ -98,6 +98,8 @@ def test_windows_default_resolve_uses_shared_test_db(monkeypatch):
 
     test_db_url, admin_db_url, is_shared = test_harness._resolve_test_database_urls()
 
-    assert is_shared is True
-    assert test_db_url.endswith("/pc_support_test")
+    assert is_shared is False
+    assert "/pc_support_test_" in test_db_url
     assert admin_db_url.endswith("/postgres")
+    assert "127.0.0.1:55432" in test_db_url
+    assert "127.0.0.1:55432" in admin_db_url

@@ -12,7 +12,7 @@ PolicyEngine - движок политик безопасности для ин�
 
 from typing import TypedDict, Optional
 
-from core.tools import ToolMetadata
+from pc_agent.core.tools import ToolMetadata
 from pc_agent.config.config_loader import ConfigLoader
 
 
@@ -211,4 +211,3 @@ class PolicyEngine:
                 requires_consent=False,
                 required_role=None
             )
-

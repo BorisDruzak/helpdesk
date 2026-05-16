@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ui_gui.server_api import TicketApiClient
+from pc_agent.ui_gui.server_api import TicketApiClient
 
 
 class FakeResponse:

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from pc_agent.config.config_loader import init_config
-from core.orchestrator import AgentOrchestrator
+from pc_agent.core.orchestrator import AgentOrchestrator
 
 
 class _FakeDbManager:
