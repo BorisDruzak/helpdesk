@@ -2,7 +2,9 @@
 
 Status: accepted / release-candidate. Local verification, full CI, remote release, migration apply, baseline pack seed/idempotency check, smoke and browser signoff are complete for P2.2 Knowledge Operations & Content Rollout. Classification: cross-cutting / release-control. Scope adds operational governance on top of the accepted P2/P2.1 Knowledge Platform without changing Protocol V3 or weakening P0/P1/P2 contracts.
 
-## Active Checkpoint: Suggestion Policy Enforcement
+## P2.2.2 Suggestion Policy Enforcement
+
+Status: accepted / release-candidate. Commit `bbc7a6f` (`server: enforce knowledge suggestion rollout gates`) is pushed to GitHub `origin/codex/helpdesk-process-model` and deployed to the Linux stand `/var/chat_bot/pc_client`.
 
 Goal: finish P2.2.1 rollout policy enforcement for requester `/app/help`, `KnowledgeSuggestionService`, and the Qt agent create-ticket wizard.
 
@@ -17,18 +19,28 @@ Completed:
 - Wired policy helpers into requester `/app/help`, `KnowledgeSuggestionService`, requester-safe labels, and the Qt create-ticket wizard.
 - Updated Knowledge Platform, Agent runtime, CODEMAP, Quick Lookup and navigation-catalog docs for the enforced rollout behavior.
 
+Reserved / follow-up rollout flags:
+- `show_after_form` remains reserved for a later requester UX follow-up; P2.2.2 enforces the existing before-form suggestions flow only.
+- `deflection_prompt_enabled` remains reserved for a later UX follow-up; P2.2.2 records article attempts but does not add a separate deflection prompt surface.
+- `feedback_required_on_article_view` remains reserved for a later UX follow-up; P2.2.2 keeps article feedback optional and does not block submit after article view.
+
 Verification:
 - RED runs confirmed missing behavior before implementation: web helper import failed, agent `knowledge_submit_gate_state` import failed, and DB-backed server tests could not reach assertions because the isolated Postgres harness closed during Alembic setup.
 - `python -m pytest pc_agent\tests\test_knowledge_suggestions.py::test_agent_reads_rollout_from_knowledge_suggest_response pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass -q --tb=short` -> 3 passed.
 - `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_knowledge_rollout_agent.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_uses_knowledge_suggestions_and_attempts pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled pc_agent\tests\test_chat_panel_helpers.py::test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass -q --tb=short` -> 8 passed.
 - `pnpm --dir webapp exec vitest run src/pages/help/index.test.tsx src/features/requester/api.test.ts` -> 2 files passed, 8 tests passed.
 - `pnpm --dir webapp exec tsc --noEmit` -> passed.
+- `pnpm --dir webapp run build` -> passed during remote release bundle build.
 - `python -m py_compile server\knowledge\suggestion_service.py server\knowledge\search_service.py pc_agent\ui_gui\chat_panel.py` -> passed.
 - `python -m pytest server\tests\test_knowledge_contract_no_db.py -q --tb=short` -> 4 passed.
 - `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_suggestions.py::test_show_known_errors_false_removes_known_error_from_all_suggestion_buckets server\tests\test_knowledge_suggestions.py::test_rollout_max_suggestions_zero_returns_no_suggestions -q --tb=short` -> 6 passed.
 - `python scripts/docs_inventory.py --check-links` -> all local markdown links are valid.
 - `python scripts/verify_workspace.py` -> passed after updating `scripts/navigation_catalog.py`.
 - `git diff --check` -> passed; Git printed only existing LF-to-CRLF working-copy warnings.
+- Remote release used `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --skip-verify --leave-running` because unrelated local dirty files outside this checkpoint made release-time local verify fail; the deployed revision is the committed `bbc7a6f` state only.
+- Remote deploy/smoke: Git fast-forwarded `/var/chat_bot/pc_client` to `bbc7a6f`, remote Alembic `upgrade head` ran, webapp bundle uploaded, server started, and `python scripts/manage_remote_stack.py smoke server` returned `/api/health -> 200`.
+- Browser smoke: `https://192.168.100.17:9443/app/help` loaded from the deployed bundle, knowledge suggestions and safe labels rendered, and browser console errors were absent.
+- Post-check lifecycle: `python scripts/manage_remote_stack.py stop server` stopped the remote server; control-plane remained running.
 
 ## Active Checkpoint: Test Harness Stabilization and CI Layering
 
