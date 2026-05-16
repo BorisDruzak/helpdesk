@@ -699,6 +699,8 @@ class TicketApiClient:
         request_template_key: Optional[str] = None,
         query: Optional[str] = None,
         form_payload: Optional[dict] = None,
+        urgency: Optional[str] = None,
+        impact: Optional[str] = None,
     ) -> dict:
         """Fetch requester-safe knowledge suggestions for the local agent wizard."""
         url = f"{self.base_url}/knowledge/suggest"
@@ -713,6 +715,10 @@ class TicketApiClient:
             payload["query"] = query
         if form_payload is not None:
             payload["form_payload"] = form_payload
+        if urgency is not None:
+            payload["urgency"] = urgency
+        if impact is not None:
+            payload["impact"] = impact
 
         session = await self._get_session()
         headers = self._get_headers()

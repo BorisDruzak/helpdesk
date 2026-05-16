@@ -108,6 +108,8 @@ export async function suggestKnowledge(payload: {
   query?: string;
   form_payload?: Record<string, unknown>;
   surface: "requester_portal" | "agent_gui" | "support_workspace";
+  urgency?: string;
+  impact?: string;
 }): Promise<KnowledgeSuggestResult> {
   const response = await fetch("/api/knowledge/suggest", {
     method: "POST",
@@ -119,6 +121,7 @@ export async function suggestKnowledge(payload: {
     suggestions: result.suggestions ?? [],
     known_errors: result.known_errors ?? [],
     workarounds: result.workarounds ?? [],
+    rollout: result.rollout,
   };
 }
 

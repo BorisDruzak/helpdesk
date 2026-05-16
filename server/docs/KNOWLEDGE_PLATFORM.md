@@ -17,7 +17,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_feedback_events`: suggested/viewed/helpful/not_helpful/deflected/support-used/draft-created events for usage and deflection metrics.
 - `knowledge_ingestion_jobs`: manual text/markdown ingestion and document-source job tracking. Imported content creates drafts and never auto-publishes.
 - `knowledge_content_packs` / `knowledge_content_pack_items`: idempotent P2.2 install audit for versioned starter packs, dry-runs, unchanged skips, conflict detection, explicit force updates and retire/archive operations.
-- `knowledge_rollout_policies`: admin-controlled self-service deflection rollout gates by surface, service, offering and request template.
+- `knowledge_rollout_policies`: admin-controlled self-service deflection rollout gates by surface, service, offering and request template, including gating, skip/bypass, max suggestion and fallback behavior.
 - `knowledge_review_tasks` / `knowledge_review_comments`: first-class P2.2 review queue for drafts, scheduled reviews, stale content, negative feedback, gap candidates, passport drafts, ingestion review and unsafe visibility work.
 - `knowledge_quality_snapshots`: optional persisted explainable quality score snapshots for reporting and low-quality queues.
 - `knowledge_gap_findings`: persisted Service Catalog, ticket-volume and feedback-driven knowledge gap findings with accept/dismiss/create-draft workflow.
@@ -62,11 +62,15 @@ Requester/agent projections must not expose internal body for restricted items, 
 
 The service returns visibility-filtered suggestions, known errors and workarounds.
 
+Content-pack baseline bindings must use the same canonical Service Catalog defaults as ticket create/preview: for example VPN is `network` + `network.vpn_issue` + template `network`, password reset is `access` + `access.reset_password` + template `access`, mail is `mail` + `mail.mailbox_issue` + template `mail_issue`, laptop is `workplace` + `workplace.laptop_broken` + template `breakage`, and fallback is `other` + `other.unknown` + template `general_request`. `scripts/validate_knowledge_pack_bindings.py --strict` enforces this against `server/tickets/service_catalog_defaults.py`.
+
 ## Helpdesk Deflection
 
 The requester portal `/app/help` now inserts a knowledge step after service/offering selection. It calls `POST /api/knowledge/suggest`, shows safe suggestions, records helpful/not helpful/deflected feedback through `POST /api/knowledge/feedback`, and includes safe `knowledge_attempts` in ticket creation when the user continues after a failed article.
 
 The local Qt agent wizard uses the same safe suggestion and feedback APIs through `TicketApiClient.get_knowledge_suggestions()` and `record_knowledge_feedback()`. It continues ticket creation if the knowledge API is unavailable. Protocol V3 is unchanged.
+
+P2.2.1 rollout decisions are returned with suggestion responses and control whether suggestions are shown before or after the form, whether suggestions are required before submit, whether skip is allowed, urgent/high-impact bypass, `max_suggestions`, deflection prompt visibility, known-error visibility, quality/freshness labels and no-suggestions/API-unavailable fallback. Defaults are non-blocking for requester and agent surfaces; admins must explicitly configure `block_submit`.
 
 ## Support Workspace
 
@@ -82,12 +86,12 @@ P2 supports manual text/markdown ingestion. Ingestion creates a job, draft item,
 
 P2.2 makes the platform operable day-to-day without replacing the P2/P2.1 contracts.
 
-- Content packs live under `content_packs/knowledge/*.yaml` and are applied with `python scripts/seed_knowledge_content.py --dry-run|--force`. Packs are not migrations and not one-time SQL dumps: the service records source/content hashes, skips unchanged items, reports conflicts when admin-edited content would be overwritten, and requires explicit `--force` for overwrite.
+- Content packs live under `content_packs/knowledge/*.yaml` and are applied with `python scripts/seed_knowledge_content.py --dry-run|--force`. Packs are not migrations and not one-time SQL dumps: the service records source/content hashes, skips unchanged items, reports conflicts when admin-edited content would be overwritten, and requires explicit `--force` for overwrite. Pack binding drift is checked with `python scripts/validate_knowledge_pack_bindings.py --strict`; installed pack-managed binding drift is repaired with `python scripts/repair_knowledge_pack_bindings.py --dry-run --all` followed by the same command without `--dry-run`.
 - Content templates are served by `GET /api/web/knowledge/templates` and cover article/how-to, FAQ, troubleshooting, support runbook, known error, workaround, policy/process and glossary structures.
 - Review/curation is first-class through `GET /api/web/knowledge/review/tasks`, `POST /api/web/knowledge/review/generate` and task transition routes under `/api/web/knowledge/review/tasks/{task_id}/{assign|start|complete|dismiss}`. The older `GET /api/web/knowledge/review-queue` and item review-action route remain compatibility summaries.
 - Quality score is deterministic and explainable. `KnowledgeQualityService` computes completeness, governance, safety, usefulness, freshness and coverage dimensions, while `GET /api/web/knowledge/quality` remains the dashboard summary.
 - Gap detection is persisted through `GET /api/web/knowledge/gap-findings`, `POST /api/web/knowledge/gaps/recompute` and accept/dismiss/create-draft actions. It scans published public Service Catalog offerings, ticket counts and knowledge feedback, then reports missing requester articles, missing support runbooks, high-volume no-KB and high-not-helpful gaps.
-- Rollout policy management is exposed by `GET|POST /api/web/knowledge/rollout-policies`. Requester/agent suggestion calls honor the policy before search; support/admin/auditor and `support_workspace` remain visible so operations can continue during requester rollout pauses.
+- Rollout policy management is exposed by `GET|POST /api/web/knowledge/rollout-policies`, plus aliases `GET /api/web/knowledge/rollout`, `POST /api/web/knowledge/rollout/save` and `POST /api/web/knowledge/rollout/effective-preview`. Requester/agent suggestion calls honor the effective policy before search; support/admin/auditor and `support_workspace` remain visible so operations can continue during requester rollout pauses.
 - Search analytics are recorded by `KnowledgeSearchAnalyticsService` during knowledge search with hashed/redacted query text; raw requester identifiers, device identifiers and raw custom fields are not stored.
 
 Operational detail and rollback notes live in [KNOWLEDGE_OPERATIONS.md](KNOWLEDGE_OPERATIONS.md).
@@ -136,6 +140,9 @@ Admin/support management:
 - `POST /api/web/knowledge/gaps/recompute`
 - `POST /api/web/knowledge/gaps/{finding_id}/accept|dismiss|create-draft`
 - `GET|POST /api/web/knowledge/rollout-policies`
+- `GET /api/web/knowledge/rollout`
+- `POST /api/web/knowledge/rollout/save`
+- `POST /api/web/knowledge/rollout/effective-preview`
 
 Ticket compatibility:
 
@@ -168,8 +175,8 @@ Flat aliases remain for compatibility: `deflection_events`, `helpful_events`, `n
 
 ## Service Catalog Integration
 
-Knowledge binds to service/offering/request-template. Policy Health includes a warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog and requester preview may use knowledge counts/hints without exposing internal article names.
+Knowledge binds to service/offering/request-template. Policy Health and gap detection use canonical Service Catalog defaults, not stale content-pack aliases. Policy Health includes a warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog and requester preview may use knowledge counts/hints without exposing internal article names.
 
 ## Rollback
 
-Migration `083` is additive. P2.1 migration `084` adds DB CHECK constraints for graph node/edge enums, entity mention states, feedback event/surface roles, ingestion source/status values and ticket-knowledge link enums. P2.2 migration `085` is additive for content-pack audit and rollout policy tables. P2.2 migration `086` adds review tasks/comments, quality snapshots, gap findings and search analytics. Operational rollback can disable requester/agent suggestions with a rollout policy while leaving Service Catalog, support workspace and ticket creation intact; downgrade of `086` removes only operations state and downgrade of `085` removes only pack/rollout audit state. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.
+Migration `083` is additive. P2.1 migration `084` adds DB CHECK constraints for graph node/edge enums, entity mention states, feedback event/surface roles, ingestion source/status values and ticket-knowledge link enums. P2.2 migration `085` is additive for content-pack audit and rollout policy tables. P2.2 migration `086` adds review tasks/comments, quality snapshots, gap findings and search analytics. P2.2.1 migration `087` hardens rollout policies and content-pack binding repair audit status. Operational rollback can disable requester/agent suggestions with a rollout policy while leaving Service Catalog, support workspace and ticket creation intact; downgrade of `087` removes rollout hardening columns, downgrade of `086` removes only operations state and downgrade of `085` removes only pack/rollout audit state. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.

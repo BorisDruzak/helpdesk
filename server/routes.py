@@ -354,6 +354,7 @@ from web_api.knowledge_handlers import (
     handle_web_knowledge_review_task_detail,
     handle_web_knowledge_review_tasks,
     handle_web_knowledge_rollout_policies,
+    handle_web_knowledge_rollout_effective_preview,
     handle_web_knowledge_spaces,
     handle_web_knowledge_templates,
 )
@@ -777,6 +778,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/knowledge/gaps/{finding_id}/{action}', handle_web_knowledge_gap_action),
         web.get('/api/web/knowledge/rollout-policies', handle_web_knowledge_rollout_policies),
         web.post('/api/web/knowledge/rollout-policies', handle_web_knowledge_rollout_policies),
+        web.get('/api/web/knowledge/rollout', handle_web_knowledge_rollout_policies),
+        web.post('/api/web/knowledge/rollout/save', handle_web_knowledge_rollout_policies),
+        web.post('/api/web/knowledge/rollout/effective-preview', handle_web_knowledge_rollout_effective_preview),
         web.get('/api/web/knowledge/graph/nodes', handle_web_knowledge_graph_nodes),
         web.post('/api/web/knowledge/graph/nodes', handle_web_knowledge_graph_nodes),
         web.get('/api/web/knowledge/graph/nodes/{node_id}/neighborhood', handle_web_knowledge_graph_neighborhood),

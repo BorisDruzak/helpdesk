@@ -129,12 +129,28 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
   const [contentPackResult, setContentPackResult] = useState("");
   const [reviewActionDraft, setReviewActionDraft] = useState("complete");
   const [rolloutDraft, setRolloutDraft] = useState({
+    scope_type: "global",
     service_code: "",
     offering_code: "",
     request_template_key: "",
     surface: "requester_portal",
     enabled: true,
     rollout_percent: 100,
+    show_before_form: true,
+    show_after_form: false,
+    require_suggestions_before_submit: false,
+    allow_skip: true,
+    urgency_bypass: true,
+    impact_bypass: true,
+    min_suggestions: 0,
+    max_suggestions: 5,
+    deflection_prompt_enabled: true,
+    feedback_required_on_article_view: false,
+    show_known_errors: true,
+    show_quality_badge: true,
+    show_review_freshness: true,
+    no_suggestions_behavior: "allow_submit",
+    api_unavailable_behavior: "allow_submit",
     reason: "",
   });
   const [spaceDraft, setSpaceDraft] = useState({
@@ -323,9 +339,9 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
     mutationFn: () =>
       saveKnowledgeRolloutPolicy({
         ...rolloutDraft,
-        service_code: emptyToNull(rolloutDraft.service_code),
-        offering_code: emptyToNull(rolloutDraft.offering_code),
-        request_template_key: emptyToNull(rolloutDraft.request_template_key),
+        service_code: rolloutDraft.scope_type === "service" || rolloutDraft.scope_type === "offering" ? emptyToNull(rolloutDraft.service_code) : null,
+        offering_code: rolloutDraft.scope_type === "offering" ? emptyToNull(rolloutDraft.offering_code) : null,
+        request_template_key: rolloutDraft.scope_type === "template" ? emptyToNull(rolloutDraft.request_template_key) : null,
         reason: emptyToNull(rolloutDraft.reason),
         rollout_percent: rolloutDraft.rollout_percent,
       }),
@@ -625,12 +641,22 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
               <CardContent className="space-y-3">
                 <div className="grid gap-3">
                   <label className="text-sm font-medium">
+                    Scope
+                    <select className={fieldClass} value={rolloutDraft.scope_type} onChange={(event) => setRolloutDraft({ ...rolloutDraft, scope_type: event.target.value })}>
+                      <option value="global">global</option>
+                      <option value="service">service</option>
+                      <option value="offering">offering</option>
+                      <option value="template">template</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
                     Surface
                     <select className={fieldClass} value={rolloutDraft.surface} onChange={(event) => setRolloutDraft({ ...rolloutDraft, surface: event.target.value })}>
                       <option value="requester_portal">requester_portal</option>
-                      <option value="ticket_create">ticket_create</option>
                       <option value="agent_gui">agent_gui</option>
+                      <option value="support_workspace">support_workspace</option>
                       <option value="api">api</option>
+                      <option value="all">all</option>
                     </select>
                   </label>
                   <label className="text-sm font-medium">
@@ -657,6 +683,29 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                     />
                   </label>
                   <label className="text-sm font-medium">
+                    Min / max suggestions
+                    <div className="grid grid-cols-2 gap-2">
+                      <input className={fieldClass} type="number" min={0} value={rolloutDraft.min_suggestions} onChange={(event) => setRolloutDraft({ ...rolloutDraft, min_suggestions: Number(event.target.value) })} />
+                      <input className={fieldClass} type="number" min={0} value={rolloutDraft.max_suggestions} onChange={(event) => setRolloutDraft({ ...rolloutDraft, max_suggestions: Number(event.target.value) })} />
+                    </div>
+                  </label>
+                  <label className="text-sm font-medium">
+                    No suggestions
+                    <select className={fieldClass} value={rolloutDraft.no_suggestions_behavior} onChange={(event) => setRolloutDraft({ ...rolloutDraft, no_suggestions_behavior: event.target.value })}>
+                      <option value="allow_submit">allow_submit</option>
+                      <option value="show_message">show_message</option>
+                      <option value="block_submit">block_submit</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
+                    API unavailable
+                    <select className={fieldClass} value={rolloutDraft.api_unavailable_behavior} onChange={(event) => setRolloutDraft({ ...rolloutDraft, api_unavailable_behavior: event.target.value })}>
+                      <option value="allow_submit">allow_submit</option>
+                      <option value="show_warning">show_warning</option>
+                      <option value="block_submit">block_submit</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
                     Reason
                     <input className={fieldClass} value={rolloutDraft.reason} onChange={(event) => setRolloutDraft({ ...rolloutDraft, reason: event.target.value })} />
                   </label>
@@ -664,6 +713,28 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                     <input type="checkbox" checked={rolloutDraft.enabled} onChange={(event) => setRolloutDraft({ ...rolloutDraft, enabled: event.target.checked })} />
                     Enabled
                   </label>
+                  {[
+                    ["show_before_form", "Show before form"],
+                    ["show_after_form", "Show after form"],
+                    ["require_suggestions_before_submit", "Require before submit"],
+                    ["allow_skip", "Allow skip"],
+                    ["urgency_bypass", "Urgency bypass"],
+                    ["impact_bypass", "Impact bypass"],
+                    ["deflection_prompt_enabled", "Deflection prompt"],
+                    ["feedback_required_on_article_view", "Feedback required"],
+                    ["show_known_errors", "Known errors"],
+                    ["show_quality_badge", "Quality badge"],
+                    ["show_review_freshness", "Freshness label"],
+                  ].map(([key, label]) => (
+                    <label className="flex items-center gap-2 text-sm" key={key}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(rolloutDraft[key as keyof typeof rolloutDraft])}
+                        onChange={(event) => setRolloutDraft({ ...rolloutDraft, [key]: event.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ))}
                   <Button onClick={() => rolloutPolicyMutation.mutate()} disabled={rolloutPolicyMutation.isPending}>
                     Save policy
                   </Button>
@@ -676,7 +747,7 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
                         <Badge tone={policy.enabled ? "success" : "danger"}>{policy.enabled ? "enabled" : "disabled"}</Badge>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        {policy.service_code || "*"} / {policy.offering_code || "*"} · {policy.rollout_percent}% · {policy.reason || "no reason"}
+                        {policy.scope_type || "global"} · {policy.service_code || "*"} / {policy.offering_code || "*"} / {policy.request_template_key || "*"} · {policy.rollout_percent}% · max {policy.max_suggestions ?? 5} · {policy.reason || "no reason"}
                       </p>
                     </div>
                   ))}

@@ -249,7 +249,7 @@ describe("appRoutes", () => {
         });
       }
 
-      if (url === "/api/web/admin/capabilities") {
+      if (url.startsWith("/api/web/admin/capabilities?")) {
         return jsonResponse({
           status: "ok",
           count: 2,
@@ -306,7 +306,7 @@ describe("appRoutes", () => {
         });
       }
 
-      if (url === "/api/web/admin/capabilities/provider-configs") {
+      if (url.startsWith("/api/web/admin/capabilities/provider-configs?")) {
         return jsonResponse({ status: "ok", provider_configs: [], count: 0 });
       }
 

@@ -108,6 +108,17 @@ export type KnowledgeSuggestResult = {
   suggestions: KnowledgeSuggestionItem[];
   known_errors?: KnowledgeSuggestionItem[];
   workarounds?: KnowledgeSuggestionItem[];
+  rollout?: {
+    enabled?: boolean;
+    show_before_form?: boolean;
+    require_suggestions_before_submit?: boolean;
+    allow_skip?: boolean;
+    max_suggestions?: number;
+    api_unavailable_behavior?: string;
+    no_suggestions_behavior?: string;
+    bypass_applied?: boolean;
+    bypass_reason?: string | null;
+  };
 };
 
 export type KnowledgeAttempt = {

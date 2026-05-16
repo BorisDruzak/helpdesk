@@ -13,6 +13,7 @@ python scripts/seed_knowledge_content.py --all --force
 ```
 
 The script supports `--dry-run`, `--pack <code>`, `--all`, `--force`, `--retire-missing`, `--publish` and `--actor <id>`.
+It loads `DATABASE_URL` from the environment or `server/.env`; `--database-url` can override it for isolated maintenance runs.
 
 Pack installs are idempotent. `KnowledgeContentPackService` records `knowledge_content_packs` and `knowledge_content_pack_items`, hashes pack source and item content, skips unchanged entries, reports conflicts when admin-edited content differs, updates only with explicit `--force`, and can archive pack-managed items missing from a newer pack when `--retire-missing` is supplied.
 
@@ -20,10 +21,44 @@ Requester-safe pack content is linted before publication. Unsafe requester/publi
 
 Baseline packs:
 
-- `it-self-service-baseline`: requester-safe articles for VPN, password reset, mail, printer, laptop power and unknown category problem description.
-- `support-runbooks-baseline`: support-internal runbook drafts/in-review entries for first-line diagnostics.
+- `it-self-service-baseline` v2: requester-safe articles for VPN, password reset, mail, printer, laptop power and unknown category problem description, bound to the current Service Catalog baseline keys.
+- `support-runbooks-baseline` v2: support-internal first-line diagnostic runbooks, bound to the current Service Catalog baseline keys.
 - `known-errors-baseline`: generic internal draft placeholders for known error/workaround patterns without fake vendor facts.
 - `glossary-baseline`: requester-safe glossary entries for VPN, MFA, SLA, OLA, access request, service offering, known error and workaround.
+
+Canonical Service Catalog binding matrix for baseline content:
+
+| Scenario | service_code | offering_code | request_template_key |
+|---|---|---|---|
+| VPN | `network` | `network.vpn_issue` | `network` |
+| Internet | `network` | `network.internet_issue` | `network` |
+| Password reset | `access` | `access.reset_password` | `access` |
+| Grant access | `access` | `access.grant_access` | `access` |
+| Mail | `mail` | `mail.mailbox_issue` | `mail_issue` |
+| Printer | `workplace` | `workplace.printer_issue` | `printer` |
+| Laptop | `workplace` | `workplace.laptop_broken` | `breakage` |
+| Software | `workplace` | `workplace.software_install` | `software_install` |
+| Other | `other` | `other.unknown` | `general_request` |
+
+Validate pack bindings before seed or release:
+
+```powershell
+python scripts/validate_knowledge_pack_bindings.py --strict
+python scripts/validate_knowledge_pack_bindings.py --strict --json
+```
+
+The validator loads `server/tickets/service_catalog_defaults.py`, parses `content_packs/knowledge/*.yaml`, and rejects unknown services, unknown or mismatched offerings, stale template keys such as `password_reset`, `laptop_issue`, `printer_issue`, `other_unknown` and stale full codes such as `communications.mail_issue`, `access.password_reset`, `workplace.laptop_issue` unless the live catalog explicitly defines them.
+
+If packs were already installed before a binding correction, repair installed pack-managed bindings without overwriting article bodies:
+
+```powershell
+python scripts/repair_knowledge_pack_bindings.py --dry-run --all
+python scripts/repair_knowledge_pack_bindings.py --all
+python scripts/repair_knowledge_pack_bindings.py --dry-run --pack it-self-service-baseline
+```
+
+The repair path updates only pack-managed slugs from installed content-pack state, rewrites `knowledge_bindings` and binding graph edges to the pack YAML, records a `bindings_repaired` content-pack item audit with old/new bindings, and preserves item body/title/summary, versions, feedback and events. Rerunning the command is idempotent. Admin-edited article content is still protected by the normal seed conflict rules and is not overwritten without explicit `--force`.
+It uses the same `DATABASE_URL` resolution as the seed script and also supports `--database-url`.
 
 ## Templates And Lint
 
@@ -111,7 +146,21 @@ APIs:
 
 Existing rollout policies remain the self-service gate for requester and agent suggestions. Requester and agent suggestion calls honor effective rollout before search. Support workspace operations stay available when requester rollout is paused.
 
-Operational rollback for deflection is to disable rollout globally or for a service/offering, not to remove knowledge content.
+Revision `087` expands rollout policies from `enabled + rollout_percent` into an explicit self-service deflection policy:
+
+- scope: `global`, `service`, `offering` or `template`;
+- surface: `requester_portal`, `agent_gui`, `support_workspace`, `api` or `all`;
+- visibility controls: `show_before_form`, `show_after_form`, `show_known_errors`, `show_quality_badge`, `show_review_freshness`;
+- gating controls: `require_suggestions_before_submit`, `allow_skip`, `urgency_bypass`, `impact_bypass`, `min_suggestions`, `max_suggestions`;
+- fallback controls: `no_suggestions_behavior` and `api_unavailable_behavior` as `allow_submit`, `show_message`/`show_warning` or `block_submit`;
+- prompt/feedback controls: `deflection_prompt_enabled`, `feedback_required_on_article_view`;
+- optional `bypass_roles`, `effective_from`, `effective_until`, `reason` and `metadata_json`.
+
+Effective policy resolution order is template exact match, offering exact match, service exact match, global surface match, then global `all` surface match. Rollout percentage uses deterministic bucketing from stable request context, not per-request randomness. If the request is urgent or high impact and bypass is enabled, suggestions may still load but submit must not be blocked.
+
+Requester and agent defaults are non-blocking: when the knowledge API is unavailable or suggestions are empty, ticket creation continues unless an admin explicitly configured a blocking behavior. Rollout never changes ACL or visibility filtering; requester and agent surfaces still receive only requester-safe published items.
+
+Operational rollback for deflection is to disable rollout globally, disable it per service/offering/template, set `rollout_percent=0`, or set unavailable/no-suggestions behavior to `allow_submit`; do not remove knowledge content as a rollout rollback.
 
 ## Support Workflow
 
@@ -130,6 +179,8 @@ Support must not receive `admin_internal` or `security_restricted` items through
 Requester `/app/help` and the Qt agent GUI continue to call `POST /api/knowledge/suggest` and `POST /api/knowledge/feedback`. Protocol V3 is unchanged.
 
 If rollout is disabled or the knowledge API is unavailable, ticket creation continues. The agent must not cache support-internal content locally and must not display internal/source metadata. Safe `knowledge_attempts` can still be attached to ticket creation when the user continues after failed self-service.
+
+P2.2.1 requester and agent flows consume the effective rollout decision from `POST /api/knowledge/suggest`. `/app/help` applies `show_before_form`, `require_suggestions_before_submit`, `allow_skip`, urgent/high-impact bypass and `max_suggestions`; the Qt agent GUI sends urgency/impact context and relies on the server projection and limit. Both surfaces keep create-ticket flow available by default when rollout disables suggestions, rollout bucket excludes the context, no suggestions are returned or the API is temporarily unavailable.
 
 ## Search Analytics
 
@@ -152,7 +203,7 @@ Safety invariants:
 
 ## UI
 
-`/app/admin/knowledge` includes operations blocks for content packs, review tasks, quality, gap findings and rollout policies. The webapp API reads first-class review tasks from `/api/web/knowledge/review/tasks` and first-class gap findings from `/api/web/knowledge/gap-findings`, while preserving the older dashboard summary shape for rendering.
+`/app/admin/knowledge` includes operations blocks for content packs, review tasks, quality, gap findings and structured rollout policies. The rollout editor uses first-class fields instead of raw JSON for scope/surface, enabled percent, gating, bypass, max/min suggestions, known-error/quality/freshness labels and fallback behavior. The webapp API reads first-class review tasks from `/api/web/knowledge/review/tasks` and first-class gap findings from `/api/web/knowledge/gap-findings`, while preserving the older dashboard summary shape for rendering.
 
 `/app/knowledge` remains support-facing and must not show admin-only content pack controls in support mode.
 
@@ -164,3 +215,4 @@ Safety invariants:
 - Dismiss gap/review tasks with an auditable reason.
 - Keep `ticket_kb_links` compatibility as fallback for existing ticket knowledge links.
 - Alembic downgrade for migration `086` removes only P2.2 operations tables: review tasks/comments, quality snapshots, gap findings and search events.
+- Alembic downgrade for migration `087` removes rollout hardening columns and restores the previous rollout/content-pack audit status constraints.

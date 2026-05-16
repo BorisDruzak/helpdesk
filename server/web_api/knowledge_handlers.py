@@ -403,6 +403,15 @@ async def handle_web_knowledge_rollout_policies(request: web.Request) -> web.Res
 
 
 @require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_rollout_effective_preview(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    payload = await _json_payload(request)
+    async with get_session() as session:
+        decision = await KnowledgeOperationsService(session).rollout_decision(payload, actor_role=role)
+    return web.json_response({"status": "ok", "decision": decision})
+
+
+@require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_graph_nodes(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
     async with get_session() as session:

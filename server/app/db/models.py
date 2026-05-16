@@ -1035,7 +1035,7 @@ class KnowledgeContentPackItem(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
-        sa.CheckConstraint("install_status IN ('created', 'skipped', 'updated', 'conflict', 'failed', 'retired')", name="ck_knowledge_content_pack_items_status"),
+        sa.CheckConstraint("install_status IN ('created', 'skipped', 'updated', 'conflict', 'failed', 'retired', 'bindings_repaired')", name="ck_knowledge_content_pack_items_status"),
         Index("ix_knowledge_content_pack_items_pack", "pack_code", "pack_version"),
         Index("ix_knowledge_content_pack_items_slug", "item_slug"),
     )
@@ -1057,11 +1057,41 @@ class KnowledgeRolloutPolicy(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="global")
+    show_before_form: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    show_after_form: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    require_suggestions_before_submit: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    allow_skip: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    urgency_bypass: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    impact_bypass: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    min_suggestions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_suggestions: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
+    deflection_prompt_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    feedback_required_on_article_view: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    show_known_errors: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    show_quality_badge: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    show_review_freshness: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    no_suggestions_behavior: Mapped[str] = mapped_column(String(30), nullable=False, server_default="allow_submit")
+    api_unavailable_behavior: Mapped[str] = mapped_column(String(30), nullable=False, server_default="allow_submit")
+    bypass_roles: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    effective_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    effective_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("service_code", "offering_code", "request_template_key", "surface", name="uq_knowledge_rollout_policy_scope"),
-        sa.CheckConstraint("surface IN ('requester_portal', 'agent_gui', 'support_workspace', 'admin', 'api', 'search')", name="ck_knowledge_rollout_policies_surface"),
+        sa.CheckConstraint("surface IN ('requester_portal', 'agent_gui', 'support_workspace', 'api', 'all')", name="ck_knowledge_rollout_policies_surface"),
         sa.CheckConstraint("rollout_percent >= 0 AND rollout_percent <= 100", name="ck_knowledge_rollout_policies_percent"),
+        sa.CheckConstraint("scope_type IN ('global', 'service', 'offering', 'template')", name="ck_knowledge_rollout_scope_type"),
+        sa.CheckConstraint("min_suggestions >= 0 AND max_suggestions >= min_suggestions", name="ck_knowledge_rollout_suggestion_bounds"),
+        sa.CheckConstraint("no_suggestions_behavior IN ('allow_submit', 'show_message', 'block_submit')", name="ck_knowledge_rollout_no_suggestions_behavior"),
+        sa.CheckConstraint("api_unavailable_behavior IN ('allow_submit', 'show_warning', 'block_submit')", name="ck_knowledge_rollout_api_unavailable_behavior"),
+        sa.CheckConstraint(
+            "((scope_type = 'global' AND service_code IS NULL AND offering_code IS NULL AND request_template_key IS NULL) "
+            "OR (scope_type = 'service' AND service_code IS NOT NULL AND offering_code IS NULL AND request_template_key IS NULL) "
+            "OR (scope_type = 'offering' AND service_code IS NOT NULL AND offering_code IS NOT NULL) "
+            "OR (scope_type = 'template' AND request_template_key IS NOT NULL))",
+            name="ck_knowledge_rollout_scope_fields",
+        ),
         Index("ix_knowledge_rollout_policies_scope", "service_code", "offering_code", "request_template_key", "surface"),
     )
 

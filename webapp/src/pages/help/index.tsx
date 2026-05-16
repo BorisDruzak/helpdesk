@@ -155,6 +155,7 @@ export function HelpPage() {
   const [previewKey, setPreviewKey] = useState("");
   const [knowledgeAttempts, setKnowledgeAttempts] = useState<KnowledgeAttempt[]>([]);
   const [openedKnowledge, setOpenedKnowledge] = useState<KnowledgeSuggestionItem | null>(null);
+  const [knowledgeSkipped, setKnowledgeSkipped] = useState(false);
 
   const formsQuery = useQuery({
     queryKey: ["requester-form-pack"],
@@ -239,10 +240,19 @@ export function HelpPage() {
         query: description || selectedOffering?.title || selectedService?.title || "",
         form_payload: visiblePayload,
         surface: "requester_portal",
+        urgency: urgency ? "high" : "normal",
+        impact: importance ? "high" : "normal",
       }),
     enabled: Boolean(selectedOffering),
     retry: false,
   });
+  const rollout = knowledgeQuery.data?.rollout;
+  const rolloutEnabled = rollout?.enabled !== false;
+  const knowledgeVisible = Boolean(selectedOffering && rolloutEnabled && rollout?.show_before_form !== false);
+  const urgentBypass = Boolean(rollout?.bypass_applied);
+  const suggestionsLoaded = !knowledgeQuery.isFetching && Boolean(knowledgeQuery.data || knowledgeQuery.isError);
+  const suggestionsRequired = Boolean(knowledgeVisible && rollout?.require_suggestions_before_submit && !urgentBypass);
+  const suggestionsGateOpen = !suggestionsRequired || suggestionsLoaded || knowledgeSkipped;
 
   function appendKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
     const attempt: KnowledgeAttempt = {
@@ -393,6 +403,9 @@ export function HelpPage() {
       if (selectedOffering && !previewIsFresh) {
         throw new Error("Сначала выполните безопасный preview заявки.");
       }
+      if (!suggestionsGateOpen) {
+        throw new Error("Перед созданием заявки посмотрите инструкции.");
+      }
       return createPublicTicket(buildCreatePayload());
     },
     onSuccess: (result) => {
@@ -529,13 +542,16 @@ export function HelpPage() {
                       </p>
                     </div>
                   ) : null}
-                  {selectedOffering ? (
+                  {knowledgeVisible ? (
                     <div className="rounded-[1rem] border border-border bg-white px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-950">Возможно, поможет</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Инструкции подобраны по выбранной услуге и типу обращения. Можно продолжить создание заявки в любой момент.
+                            {suggestionsRequired ? "Перед созданием заявки посмотрите инструкции." : "Инструкции подобраны по выбранной услуге и типу обращения. Можно продолжить создание заявки в любой момент."}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {urgentBypass ? "Срочная заявка — инструкции не блокируют отправку." : rollout?.allow_skip ? "Можно пропустить." : "Пропуск отключен политикой."}
                           </p>
                         </div>
                         {knowledgeQuery.isFetching ? <span className="text-xs text-slate-500">Ищем...</span> : null}
@@ -545,7 +561,7 @@ export function HelpPage() {
                       ) : null}
                       {(knowledgeQuery.data?.suggestions ?? []).length ? (
                         <div className="mt-3 grid gap-2">
-                          {(knowledgeQuery.data?.suggestions ?? []).slice(0, 3).map((item) => (
+                          {(knowledgeQuery.data?.suggestions ?? []).map((item) => (
                             <div className="rounded-xl border border-slate-200 bg-surface-subtle px-3 py-2" key={item.item_id}>
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -593,6 +609,14 @@ export function HelpPage() {
                         </div>
                       ) : !knowledgeQuery.isFetching ? (
                         <p className="mt-3 text-xs text-slate-500">Подходящих опубликованных инструкций пока нет.</p>
+                      ) : null}
+                      {!knowledgeQuery.isFetching && !knowledgeQuery.isError && !(knowledgeQuery.data?.suggestions ?? []).length ? (
+                        <p className="mt-3 text-xs text-slate-500">Инструкций для выбранного типа обращения пока нет.</p>
+                      ) : null}
+                      {suggestionsRequired && rollout?.allow_skip ? (
+                        <Button className="mt-3" onClick={() => setKnowledgeSkipped(true)} size="sm" type="button" variant="secondary">
+                          Пропустить
+                        </Button>
                       ) : null}
                     </div>
                   ) : null}
@@ -667,7 +691,7 @@ export function HelpPage() {
                   {previewMutation.isPending ? "Проверяем..." : "Проверить заявку"}
                 </Button>
                 <Button
-                  disabled={createMutation.isPending || Boolean(selectedOffering && !previewIsFresh)}
+                  disabled={createMutation.isPending || Boolean(selectedOffering && (!previewIsFresh || !suggestionsGateOpen))}
                   leadingIcon={<Send className="h-4 w-4" />}
                   type="submit"
                 >

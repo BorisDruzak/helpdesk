@@ -9,10 +9,10 @@ from typing import Any
 import uuid
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import KnowledgeContentPack, KnowledgeContentPackItem, KnowledgeNode
+from app.db.models import KnowledgeBinding, KnowledgeContentPack, KnowledgeContentPackItem, KnowledgeEdge, KnowledgeNode
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.contracts import KnowledgeValidationError, normalize_knowledge_slug
 from knowledge.graph_service import KnowledgeGraphService
@@ -293,6 +293,129 @@ class KnowledgeContentPackService:
                 )
             )
         return retired
+
+    async def repair_pack_bindings(
+        self,
+        pack: dict[str, Any],
+        *,
+        actor_id: str | None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_pack(pack)
+        summary = {"bindings_repaired": 0, "skipped": 0, "missing": 0}
+        results: list[dict[str, Any]] = []
+        repo = KnowledgeRepo(self.session)
+        graph = KnowledgeGraphService(self.session)
+        for raw_item in normalized["items"]:
+            slug = normalize_knowledge_slug(raw_item.get("slug") or raw_item.get("title"))
+            desired_bindings = [deepcopy(binding) for binding in raw_item.get("bindings") or [] if isinstance(binding, dict)]
+            if not desired_bindings:
+                summary["skipped"] += 1
+                continue
+            managed = await self._latest_pack_item(normalized["code"], slug)
+            if managed is None or not managed.item_id:
+                summary["missing"] += 1
+                results.append({"item_slug": slug, "status": "missing_pack_managed_item"})
+                continue
+            item = await repo.get_item_row(managed.item_id)
+            if item is None:
+                summary["missing"] += 1
+                results.append({"item_slug": slug, "status": "missing_item"})
+                continue
+            current_rows = (
+                await self.session.execute(select(KnowledgeBinding).where(KnowledgeBinding.item_id == item.item_id).order_by(KnowledgeBinding.created_at, KnowledgeBinding.binding_id))
+            ).scalars().all()
+            old_bindings = [self._binding_payload(row) for row in current_rows]
+            new_bindings = [self._normalize_binding_payload(binding) for binding in desired_bindings]
+            if old_bindings == new_bindings:
+                summary["skipped"] += 1
+                results.append({"item_slug": slug, "status": "skipped"})
+                continue
+            summary["bindings_repaired"] += 1
+            result = {
+                "item_slug": slug,
+                "item_id": item.item_id,
+                "status": "bindings_repaired",
+                "old_bindings": old_bindings,
+                "new_bindings": new_bindings,
+            }
+            results.append(result)
+            if dry_run:
+                continue
+            await self.session.execute(delete(KnowledgeBinding).where(KnowledgeBinding.item_id == item.item_id))
+            await self._remove_item_binding_graph_edges(item.slug)
+            for binding in desired_bindings:
+                await repo.add_binding(item.item_id, binding, actor_id=actor_id, actor_role="admin")
+                await graph.ensure_item_binding_edges(
+                    item.item_id,
+                    service_code=str(binding.get("service_code") or "").strip() or None,
+                    offering_code=str(binding.get("offering_code") or "").strip() or None,
+                    actor_id=actor_id,
+                )
+            audit = KnowledgeContentPackItem(
+                pack_code=normalized["code"],
+                pack_version=normalized["version"],
+                item_slug=slug,
+                item_id=item.item_id,
+                version_id=item.current_version_id,
+                content_hash=_canonical_hash(raw_item),
+                install_status="bindings_repaired",
+                installed_at=datetime.now(timezone.utc),
+                metadata_json={
+                    "title": raw_item.get("title"),
+                    "old_bindings": old_bindings,
+                    "new_bindings": new_bindings,
+                    "actor": actor_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            self.session.add(audit)
+            await self.session.flush()
+        return {"status": "dry_run" if dry_run else "ok", "summary": summary, "items": results}
+
+    async def _latest_pack_item(self, pack_code: str, slug: str) -> KnowledgeContentPackItem | None:
+        return (
+            await self.session.execute(
+                select(KnowledgeContentPackItem)
+                .where(
+                    KnowledgeContentPackItem.pack_code == pack_code,
+                    KnowledgeContentPackItem.item_slug == slug,
+                    KnowledgeContentPackItem.item_id.is_not(None),
+                    KnowledgeContentPackItem.install_status.in_(("created", "updated", "skipped", "bindings_repaired")),
+                )
+                .order_by(KnowledgeContentPackItem.installed_at.desc(), KnowledgeContentPackItem.id.desc())
+            )
+        ).scalars().first()
+
+    @staticmethod
+    def _normalize_binding_payload(binding: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "service_code": str(binding.get("service_code") or "").strip() or None,
+            "offering_code": str(binding.get("offering_code") or "").strip() or None,
+            "request_template_key": str(binding.get("request_template_key") or "").strip() or None,
+            "weight": float(binding.get("weight") or 1),
+        }
+
+    def _binding_payload(self, row: KnowledgeBinding) -> dict[str, Any]:
+        return {
+            "service_code": row.service_code,
+            "offering_code": row.offering_code,
+            "request_template_key": row.request_template_key,
+            "weight": float(row.weight or 1),
+        }
+
+    async def _remove_item_binding_graph_edges(self, slug: str) -> None:
+        item_node = (
+            await self.session.execute(select(KnowledgeNode).where(KnowledgeNode.stable_key == f"knowledge_item:{slug}"))
+        ).scalar_one_or_none()
+        if item_node is None:
+            return
+        await self.session.execute(
+            delete(KnowledgeEdge).where(
+                KnowledgeEdge.source_node_id == item_node.node_id,
+                KnowledgeEdge.relation_type.in_(("belongs_to_service", "belongs_to_offering")),
+            )
+        )
 
     async def _install_graph(self, repo: KnowledgeRepo, graph_payload: dict[str, Any], *, actor_id: str | None) -> None:
         graph = KnowledgeGraphService(self.session)

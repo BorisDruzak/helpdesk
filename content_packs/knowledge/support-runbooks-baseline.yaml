@@ -1,5 +1,5 @@
 code: support-runbooks-baseline
-version: 1
+version: 2
 title: Support Runbooks Baseline
 description: Support-internal starter runbooks with placeholders requiring local curation.
 spaces:
@@ -16,13 +16,14 @@ items:
     title: "Первичная диагностика VPN"
     summary: "Generic support checklist for VPN triage; adapt environment-specific details during review."
     visibility: support_internal
-    status: in_review
+    status: published
     owner: servicedesk
     reviewer: servicedesk
     tags: [vpn, support_runbook]
     bindings:
       - service_code: network
         offering_code: network.vpn_issue
+        request_template_key: network
     body_format: markdown
     body: |
       ## Scope
@@ -49,13 +50,14 @@ items:
     title: "Первичная диагностика ноутбука"
     summary: "Generic support checklist for laptop power and startup triage."
     visibility: support_internal
-    status: in_review
+    status: published
     owner: servicedesk
     reviewer: servicedesk
     tags: [laptop, support_runbook]
     bindings:
       - service_code: workplace
-        offering_code: workplace.laptop_issue
+        offering_code: workplace.laptop_broken
+        request_template_key: breakage
     body_format: markdown
     body: |
       ## Scope
@@ -82,13 +84,14 @@ items:
     title: "Первичная диагностика почты"
     summary: "Generic support checklist for mail access, sending and receiving issues."
     visibility: support_internal
-    status: in_review
+    status: published
     owner: servicedesk
     reviewer: servicedesk
     tags: [mail, support_runbook]
     bindings:
-      - service_code: communications
-        offering_code: communications.mail_issue
+      - service_code: mail
+        offering_code: mail.mailbox_issue
+        request_template_key: mail_issue
     body_format: markdown
     body: |
       ## Scope
@@ -115,13 +118,14 @@ items:
     title: "Первичная диагностика принтера"
     summary: "Generic support checklist for printer and queue triage."
     visibility: support_internal
-    status: in_review
+    status: published
     owner: servicedesk
     reviewer: servicedesk
     tags: [printer, support_runbook]
     bindings:
       - service_code: workplace
         offering_code: workplace.printer_issue
+        request_template_key: printer
     body_format: markdown
     body: |
       ## Scope
@@ -148,13 +152,14 @@ items:
     title: "Проверка заявки \"Другое / Не знаю\""
     summary: "Generic triage checklist for unclear category requests."
     visibility: support_internal
-    status: in_review
+    status: published
     owner: servicedesk
     reviewer: servicedesk
     tags: [other, triage, support_runbook]
     bindings:
       - service_code: other
         offering_code: other.unknown
+        request_template_key: general_request
     body_format: markdown
     body: |
       ## Scope

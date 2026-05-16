@@ -38,33 +38,28 @@ async def _run(args: argparse.Namespace) -> int:
         async with get_session() as session:
             service = KnowledgeContentPackService(session)
             for path in paths:
-                pack = load_content_pack_file(path)
-                result = await service.apply_pack(
-                    pack,
+                result = await service.repair_pack_bindings(
+                    load_content_pack_file(path),
                     actor_id=args.actor,
                     dry_run=args.dry_run,
-                    force=args.force,
-                    retire_missing=args.retire_missing,
-                    publish=args.publish,
                 )
                 results.append({"path": str(path), **result})
             if not args.dry_run:
                 await session.commit()
-        print(json.dumps({"status": "ok", "dry_run": args.dry_run, "results": results}, ensure_ascii=False, indent=2))
+        payload = {"status": "ok", "dry_run": args.dry_run, "results": results}
+        print(json.dumps(payload, ensure_ascii=False, indent=2 if args.json else None))
         return 0
     finally:
         await shutdown_db()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install idempotent Knowledge Platform content packs.")
-    parser.add_argument("--pack", help="Pack code to install.")
-    parser.add_argument("--all", action="store_true", help="Install all content_packs/knowledge/*.yaml|*.yml|*.json packs. This is the default when --pack is omitted.")
-    parser.add_argument("--dry-run", action="store_true", help="Report actions without writing pack state or content.")
-    parser.add_argument("--force", action="store_true", help="Overwrite changed pack-managed items by creating a new version.")
-    parser.add_argument("--retire-missing", action="store_true", help="Archive pack-managed items missing from the selected pack file.")
-    parser.add_argument("--publish", action="store_true", help="Allow publishing internal pack entries that are explicitly marked published.")
-    parser.add_argument("--actor", default="codex", help="Actor id stored in audit fields.")
+    parser = argparse.ArgumentParser(description="Repair installed Knowledge content-pack bindings without overwriting article content.")
+    parser.add_argument("--pack", help="Pack code to repair.")
+    parser.add_argument("--all", action="store_true", help="Repair all content packs. Default when --pack is omitted.")
+    parser.add_argument("--dry-run", action="store_true", help="Report binding drift without mutation.")
+    parser.add_argument("--json", action="store_true", help="Pretty-print JSON output.")
+    parser.add_argument("--actor", default="codex", help="Actor id stored in audit metadata.")
     parser.add_argument("--database-url", default=None, help="DATABASE_URL override. Defaults to env/server/.env.")
     args = parser.parse_args()
     if args.pack and args.all:

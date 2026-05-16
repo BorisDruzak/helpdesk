@@ -42,6 +42,22 @@ Policy Health includes a knowledge gap warning when a published public service/o
 
 P2.2 Knowledge Operations uses the same published public catalog as the gap source of truth. `GET /api/web/knowledge/gap-findings` and `POST /api/web/knowledge/gaps/recompute` combine missing requester-safe bindings, missing support runbooks, ticket counts and knowledge feedback (`ticket_created_after_view`, `not_helpful`) so admins can prioritize which service/offering needs content next. This does not change catalog runtime resolution or the `other.unknown` fallback.
 
+Baseline Knowledge content packs must match `server/tickets/service_catalog_defaults.py` exactly. The current canonical matrix is:
+
+| Scenario | service_code | offering_code | request_template_key |
+|---|---|---|---|
+| VPN | `network` | `network.vpn_issue` | `network` |
+| Internet | `network` | `network.internet_issue` | `network` |
+| Password reset | `access` | `access.reset_password` | `access` |
+| Grant access | `access` | `access.grant_access` | `access` |
+| Mail | `mail` | `mail.mailbox_issue` | `mail_issue` |
+| Printer | `workplace` | `workplace.printer_issue` | `printer` |
+| Laptop | `workplace` | `workplace.laptop_broken` | `breakage` |
+| Software | `workplace` | `workplace.software_install` | `software_install` |
+| Other | `other` | `other.unknown` | `general_request` |
+
+Run `python scripts/validate_knowledge_pack_bindings.py --strict` before changing baseline packs. If old pack-managed bindings are already installed, use `python scripts/repair_knowledge_pack_bindings.py --dry-run --all` and then the non-dry-run command to align `knowledge_bindings` without overwriting article content.
+
 ## Publication Gates
 
 `server/tickets/service_catalog_publication.py` validates service/offering publication:

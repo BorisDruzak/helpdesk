@@ -1,5 +1,5 @@
 code: it-self-service-baseline
-version: 1
+version: 2
 title: IT Self-Service Baseline
 description: Requester-safe starter articles for common IT issues.
 spaces:
@@ -25,7 +25,7 @@ items:
     bindings:
       - service_code: network
         offering_code: network.vpn_issue
-        request_template_key: vpn_issue
+        request_template_key: network
         weight: 1.0
     body_format: markdown
     body: |
@@ -58,8 +58,8 @@ items:
     tags: [password, access]
     bindings:
       - service_code: access
-        offering_code: access.password_reset
-        request_template_key: password_reset
+        offering_code: access.reset_password
+        request_template_key: access
         weight: 1.0
     body_format: markdown
     body: |
@@ -90,8 +90,8 @@ items:
     review_due_days: 90
     tags: [mail, email]
     bindings:
-      - service_code: communications
-        offering_code: communications.mail_issue
+      - service_code: mail
+        offering_code: mail.mailbox_issue
         request_template_key: mail_issue
         weight: 1.0
     body_format: markdown
@@ -110,7 +110,7 @@ items:
       ## Если не помогло
       Создайте заявку и укажите, что именно не работает: вход, отправка, получение или вложения.
       ## Связанные услуги / типы обращения
-      Коммуникации / Почта.
+      Почта / Проблема с почтой.
   - slug: printer-basic-checks
     type: article
     space: it-self-service
@@ -125,7 +125,7 @@ items:
     bindings:
       - service_code: workplace
         offering_code: workplace.printer_issue
-        request_template_key: printer_issue
+        request_template_key: printer
         weight: 1.0
     body_format: markdown
     body: |
@@ -157,8 +157,8 @@ items:
     tags: [laptop, hardware]
     bindings:
       - service_code: workplace
-        offering_code: workplace.laptop_issue
-        request_template_key: laptop_issue
+        offering_code: workplace.laptop_broken
+        request_template_key: breakage
         weight: 1.0
     body_format: markdown
     body: |
@@ -176,7 +176,7 @@ items:
       ## Если не помогло
       Создайте заявку и укажите модель, состояние индикаторов и было ли падение или контакт с жидкостью.
       ## Связанные услуги / типы обращения
-      Рабочее место / Ноутбук.
+      Рабочее место / Сломался ноутбук.
   - slug: unknown-category-describe-problem
     type: article
     space: it-self-service
@@ -191,7 +191,7 @@ items:
     bindings:
       - service_code: other
         offering_code: other.unknown
-        request_template_key: other_unknown
+        request_template_key: general_request
         weight: 1.0
     body_format: markdown
     body: |

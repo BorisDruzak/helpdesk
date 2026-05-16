@@ -174,6 +174,7 @@ export type KnowledgeGapFinding = {
 
 export type KnowledgeRolloutPolicy = {
   policy_id: string;
+  scope_type?: string;
   service_code?: string | null;
   offering_code?: string | null;
   request_template_key?: string | null;
@@ -181,6 +182,24 @@ export type KnowledgeRolloutPolicy = {
   enabled: boolean;
   rollout_percent: number;
   reason?: string | null;
+  show_before_form?: boolean;
+  show_after_form?: boolean;
+  require_suggestions_before_submit?: boolean;
+  allow_skip?: boolean;
+  urgency_bypass?: boolean;
+  impact_bypass?: boolean;
+  min_suggestions?: number;
+  max_suggestions?: number;
+  deflection_prompt_enabled?: boolean;
+  feedback_required_on_article_view?: boolean;
+  show_known_errors?: boolean;
+  show_quality_badge?: boolean;
+  show_review_freshness?: boolean;
+  no_suggestions_behavior?: string;
+  api_unavailable_behavior?: string;
+  bypass_applied?: boolean;
+  bypass_reason?: string | null;
+  rollout_bucket?: number;
   updated_at?: string | null;
   updated_by?: string | null;
 };

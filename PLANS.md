@@ -1318,3 +1318,113 @@ Verification targets:
 - Context index refreshed: `python scripts\build_context_index.py --force`.
 - Workspace verification: `python scripts\verify_workspace.py` -> passed after updating `scripts/navigation_catalog.py`.
 - Browser check was not rerun for this follow-up because no web/static UI files changed; public queue and Policy Health behavior changes are backend/API contract changes covered by tests.
+# P2.2.1 Knowledge Pack Binding Alignment + Rollout Hardening
+
+Status: local verified / full CI green; remote repair/browser signoff pending.
+
+## Discovery
+
+- Source of truth for baseline Service Catalog keys: `server/tickets/service_catalog_defaults.py`.
+- Change classification: cross-cutting / release-control. It touches Knowledge Platform bindings, content-pack install/repair state, rollout policy DB/API, requester portal, agent GUI behavior, admin Knowledge UI and docs.
+- Existing worktree before P2.2.1 had only untracked `artifacts/` and `tmp/` outputs; no tracked code changes were present.
+- `scripts/task_intake.py` recommended explore-first and `build_context_pack.py` required a plan for this topic.
+- `scripts/agent_find.py` currently accepts only `--dir server|pc_agent`; prompt searches spanning `content_packs webapp/src pc_agent` were reproduced with `rg` for non-supported directories.
+
+## Binding Drift Map
+
+Canonical baseline matrix:
+
+| Offering | service_code | offering_code/full_code | request_template_key |
+|---|---|---|---|
+| VPN | `network` | `network.vpn_issue` | `network` |
+| Internet | `network` | `network.internet_issue` | `network` |
+| Password reset | `access` | `access.reset_password` | `access` |
+| Grant access | `access` | `access.grant_access` | `access` |
+| Mail | `mail` | `mail.mailbox_issue` | `mail_issue` |
+| Printer | `workplace` | `workplace.printer_issue` | `printer` |
+| Laptop | `workplace` | `workplace.laptop_broken` | `breakage` |
+| Software | `workplace` | `workplace.software_install` | `software_install` |
+| Other | `other` | `other.unknown` | `general_request` |
+
+Detected drift in `content_packs/knowledge/it-self-service-baseline.yaml`:
+
+- `vpn-basic-checks`: `request_template_key=vpn_issue`; target `network`.
+- `password-reset-before-ticket`: `offering_code=access.password_reset`, `request_template_key=password_reset`; target `access.reset_password`, `access`.
+- `mail-basic-diagnostics`: `service_code=communications`, `offering_code=communications.mail_issue`; target `mail`, `mail.mailbox_issue`.
+- `printer-basic-checks`: `request_template_key=printer_issue`; target `printer`.
+- `laptop-power-basic`: `offering_code=workplace.laptop_issue`, `request_template_key=laptop_issue`; target `workplace.laptop_broken`, `breakage`.
+- `unknown-category-describe-problem`: `request_template_key=other_unknown`; target `general_request`.
+
+Detected drift in `content_packs/knowledge/support-runbooks-baseline.yaml`:
+
+- `support-laptop-primary-diagnostics`: `offering_code=workplace.laptop_issue`; target `workplace.laptop_broken`, `breakage`.
+- `support-mail-primary-diagnostics`: `service_code=communications`, `offering_code=communications.mail_issue`; target `mail`, `mail.mailbox_issue`.
+- Support runbooks omit `request_template_key`; P2.2.1 will bind baseline runbooks to canonical template keys so exact service/offering/template lookups work consistently.
+
+`known-errors-baseline.yaml` and `glossary-baseline.yaml` have no structured `bindings`; leave them unbound and document that they are generic placeholders/glossary terms, not exact offering coverage.
+
+## Rollout Gap Map
+
+- Current `knowledge_rollout_policies` supports only scope columns, `surface`, `enabled`, `rollout_percent`, `reason`, `metadata_json`.
+- Current `rollout_decision()` returns only serialized policy fields or `{enabled: true, reason: null}` and has no deterministic rollout bucketing, max suggestions, bypass, no-suggestions behavior, API-unavailable behavior, labels, known-error toggles or structured scope resolution.
+- Current requester `/app/help` and agent GUI treat rollout mostly as server-side suppression; UI gating and safe non-blocking fallback need policy fields.
+
+## Implementation Plan
+
+- Add test-first validator coverage for Service Catalog-aligned content-pack bindings.
+- Fix baseline pack YAML versions and bindings; preserve pack codes and article bodies except obsolete visible labels.
+- Add `scripts/validate_knowledge_pack_bindings.py` with `--strict` and `--json`.
+- Add safe binding repair tooling through `KnowledgeContentPackService.repair_pack_bindings()` and `scripts/repair_knowledge_pack_bindings.py`.
+- Extend rollout policy model, migration, serializers and decision engine with production fields and backward-compatible old payloads.
+- Clamp suggestions to `max_suggestions`; suppress known errors when configured; never let rollout bypass ACL/visibility.
+- Update requester portal, agent API/GUI and admin UI to consume structured rollout policy.
+- Update docs/CODEMAP and context index.
+
+## Data Migration / Repair Strategy
+
+- Migration `087` adds nullable/defaulted columns and backfills `scope_type` from existing rows.
+- Existing rows remain valid; old payloads using only `enabled` and `rollout_percent` still upsert.
+- Repair command updates only pack-managed slugs from selected baseline packs, only `knowledge_bindings`, graph service/offering edges and content-pack audit rows.
+- Repair does not create item versions and does not overwrite title/body/summary/admin edits.
+- Repair is idempotent; second dry-run reports no drift.
+
+## Tests
+
+- Added `server/tests/test_knowledge_pack_bindings.py`.
+- Added `server/tests/test_knowledge_pack_binding_repair.py`.
+- Added `server/tests/test_knowledge_rollout_policy.py`.
+- Added `server/tests/test_knowledge_rollout_decision.py`.
+- Added `server/tests/test_knowledge_suggestions_seeded_baseline.py`.
+- Updated webapp route test fixture to accept current cache-busted Capability Studio API URLs.
+
+Local verification completed:
+
+- `python scripts/validate_knowledge_pack_bindings.py --strict` -> OK.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed, only CRLF warnings from Git.
+- `python -m pytest server/tests/test_knowledge_pack_bindings.py server/tests/test_knowledge_pack_binding_repair.py server/tests/test_knowledge_rollout_policy.py server/tests/test_knowledge_rollout_decision.py server/tests/test_knowledge_suggestions_seeded_baseline.py -q` -> 32 passed.
+- `python -m pytest server/tests/test_knowledge_content_packs.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_gaps.py server/tests/test_knowledge_api.py server/tests/test_knowledge_operations.py -q --tb=short` -> 16 passed.
+- P0/P0.1 regression command -> 32 passed.
+- P1/P1.1 current Service Catalog slice (`fallback`, `preview`, `seed`, `repo`, `api`, `ticket_create_service_catalog`, `reports`, `policy_health_service_catalog`) -> 16 passed. The prompt-listed `test_service_catalog_publication.py` file is not present in this checkout; publication coverage is in current repo/api/policy-health tests.
+- P2/P2.1/P2.2 plus P2.2.1 knowledge suite -> 93 passed. The prompt-listed `test_knowledge_ops_api.py` and `test_support_knowledge_ops.py` files are not present in this checkout; current operations coverage is `test_knowledge_operations.py`.
+- `python -m pytest pc_agent/tests/test_knowledge_suggestions.py pc_agent/tests/test_knowledge_rollout_agent.py pc_agent/tests/test_agent_knowledge_attempts.py -q` -> 5 passed.
+- `python -m pytest pc_agent/tests -m "not manual" -q --tb=short` -> 311 passed, 4 deselected.
+- `pnpm --dir webapp build` -> passed.
+- `pnpm --dir webapp test` -> 36 files passed, 196 tests passed.
+- `python scripts/build_context_index.py --force` -> rebuilt context index with 14084 items.
+- `python scripts/verify_workspace.py` -> passed.
+- `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/396e4dbc92df4fe50a0a74ec4a146495e2c38723/summary.json`; layers: verify_workspace passed, webapp bundle passed, server no-db 311 passed, server DB/API 642 passed, server agent-ws 30 passed, pc_agent 311 passed.
+
+## Browser / Release Verification
+
+- Required local checks: validator strict, repair dry-run, targeted pytest, `python scripts/verify_workspace.py`, webapp build/typecheck where available.
+- Required remote/browser signoff after local commit/deploy: `/app/help`, `/app/admin/knowledge`, agent GUI rollout fallback.
+- Full CI/full gate is final release checkpoint and must be explicitly confirmed before running per project workflow.
+- Local seed/repair dry-runs now load `DATABASE_URL` from env/server `.env` and support `--database-url`, matching service-catalog seed behavior. The local Windows `server/.env` resolves to `127.0.0.1:5432/pc_client`, but that listener is not reachable from this shell, so installed-state seed/repair dry-run must be executed on the remote stand or with an explicit reachable database URL.
+
+## Rollback Notes
+
+- Disable requester/agent deflection by global policy `enabled=false`, surface-specific policies, or `rollout_percent=0`.
+- Set `no_suggestions_behavior=allow_submit` and `api_unavailable_behavior=allow_submit` to remove blocking behavior.
+- Rollout never overrides ACL/visibility; requester and agent surfaces remain requester-safe only.
+- Binding repair is reversible with a controlled follow-up repair using prior audit metadata if needed; no article body/version data is overwritten by repair.

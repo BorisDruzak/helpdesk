@@ -3221,7 +3221,7 @@ class TicketCreateWizardWidget(QFrame):
                 button.setEnabled(False)
             return
         lines: list[str] = []
-        for item in self._knowledge_suggestions[:3]:
+        for item in self._knowledge_suggestions:
             title = str(item.get("title") or item.get("slug") or item.get("item_id") or "").strip()
             summary = str(item.get("summary") or item.get("snippet") or "").strip()
             if title:
@@ -3254,6 +3254,8 @@ class TicketCreateWizardWidget(QFrame):
                 request_template_key=payload.get("request_template_key"),
                 query=payload.get("description") or payload.get("title"),
                 form_payload=payload.get("form_payload") if isinstance(payload.get("form_payload"), dict) else {},
+                urgency=str(payload.get("urgency") or ""),
+                impact=str(payload.get("impact") or ""),
             )
         except Exception as exc:
             logger.debug(f"Knowledge suggestions unavailable: {exc}")
