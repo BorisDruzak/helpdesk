@@ -254,3 +254,34 @@ def register():
             result_v2 = asyncio.run(instance_v2.impl_status_v110())
             self.assertEqual(result_v2["version"], "1.1.0")
             self.assertEqual(result_v2["method"], "impl_status_v110")
+
+    def test_loader_legacy_imports_do_not_leak_global_aliases(self):
+        loader = DynamicModuleLoader()
+        legacy_keys = [
+            name
+            for name in list(sys.modules)
+            if name in {"modules", "core"} or name.startswith(("modules.", "core."))
+        ]
+        legacy_snapshot = {name: sys.modules[name] for name in legacy_keys}
+        for name in legacy_keys:
+            sys.modules.pop(name, None)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._write_package_module(root, "impl_status", "1.0.0")
+            original_sys_path = list(sys.path)
+
+            try:
+                instance = loader.load_module_from_path("demo", root, entrypoint="module:register")
+
+                self.assertEqual(asyncio.run(instance.impl_status())["version"], "1.0.0")
+                self.assertEqual(sys.path, original_sys_path)
+                self.assertNotIn("modules", sys.modules)
+                self.assertNotIn("modules.base_module", sys.modules)
+                self.assertNotIn("core", sys.modules)
+                self.assertNotIn("core.registry", sys.modules)
+            finally:
+                for name in list(sys.modules):
+                    if name in {"modules", "core"} or name.startswith(("modules.", "core.")):
+                        sys.modules.pop(name, None)
+                sys.modules.update(legacy_snapshot)

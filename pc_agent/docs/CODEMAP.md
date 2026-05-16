@@ -14,7 +14,7 @@
 ### Truth baseline
 
 - Корневой pytest-контур: `pytest.ini` (markers `unit`, `integration`, `manual`, `no_db`).
-- Agent runtime/tests use package imports (`pc_agent.core.*`, `pc_agent.modules.*`, `pc_agent.ui_gui.*`) so root `python -m pytest --collect-only` can collect server, agent and scripts together without top-level `core` / `modules` collisions. Managed external modules may still use legacy `modules.base_module` / `core.registry` through the dynamic loader path.
+- Agent runtime/tests use package imports (`pc_agent.core.*`, `pc_agent.modules.*`, `pc_agent.ui_gui.*`) so root `python -m pytest --collect-only` can collect server, agent and scripts together without top-level `core` / `modules` collisions. Managed external modules may still use legacy `modules.base_module` / `core.registry` only through the dynamic loader path; `pc_agent/core/loader.py` snapshots and restores legacy top-level imports and `sys.path` so the compatibility boundary does not leak into mixed root collection.
 - Agent baseline: `python -m pytest pc_agent/tests -m "not manual"`.
 - Exploratory suite `pc_agent/tests/test_support_chat_reliability.py` помечен как `manual` и не входит в обычный CI.
 - Для совместного server+agent baseline используется `scripts/run_ci_suite.py`.

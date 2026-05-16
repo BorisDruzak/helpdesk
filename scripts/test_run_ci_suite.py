@@ -241,7 +241,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
 
     assert [step_name for step_name, _command, _log_path, _idle_timeout, _env, _timeout in steps_seen] == [
         "verify_workspace",
-        "build_webapp_bundle",
+        "webapp_bundle",
         "server_pytest_no_db",
         "server_pytest_db_knowledge",
         "server_pytest_db_tickets",
@@ -254,7 +254,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     build_step = next(
         command
         for step_name, command, _log_path, _idle_timeout, _env, _timeout in steps_seen
-        if step_name == "build_webapp_bundle"
+        if step_name == "webapp_bundle"
     )
     assert "build_webapp_bundle.py" in build_step[1]
     assert "--output-dir" in build_step
@@ -264,7 +264,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         for step_name, _command, _log_path, idle_timeout, _env, _timeout in steps_seen
     }
     assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["build_webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_knowledge"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -312,9 +312,21 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
     }
     assert env_by_step["server_pytest_no_db"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
-    assert env_by_step["server_pytest_db_knowledge"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
-    assert env_by_step["server_pytest_db_web_api"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
-    assert env_by_step["server_pytest_agent_ws"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_db_knowledge"] == {
+        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
+        "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
+    }
+    assert env_by_step["server_pytest_db_web_api"] == {
+        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_DB_DOMAIN": "web_api",
+        "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
+    }
+    assert env_by_step["server_pytest_agent_ws"] == {
+        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_DB_DOMAIN": "agent_ws",
+        "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
+    }
     timeout_by_step = {
         step_name: timeout
         for step_name, _command, _log_path, _idle_timeout, _env, timeout in steps_seen
@@ -350,3 +362,86 @@ def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
     ]
     assert sorted(path.name for path in flattened) == sorted(path.name for path in tests_dir.glob("test_*.py"))
     assert len(flattened) == len(set(flattened))
+
+
+def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
+    summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
+    tests_dir = tmp_path / "server" / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_knowledge_api.py").write_text("def test_placeholder(): pass\n", encoding="utf-8")
+    steps_seen: list[str] = []
+
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_suite.py",
+            "--workspace",
+            str(tmp_path),
+            "--commit",
+            "deadbeef",
+            "--layer",
+            "server_pytest_db_knowledge",
+            "--keep-test-db",
+        ],
+    )
+
+    def fake_run_and_capture(
+        command: list[str],
+        *,
+        cwd: Path,
+        log_path: Path,
+        step_name: str,
+        timeout_seconds: float,
+        idle_timeout_seconds: float | None,
+        env_overrides: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        steps_seen.append(step_name)
+        assert env_overrides == {
+            "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+            "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
+            "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
+            "PC_CLIENT_KEEP_TEST_DB": "1",
+        }
+        return {
+            "name": step_name,
+            "command": command,
+            "started_at": "2026-04-20T00:00:00+00:00",
+            "finished_at": "2026-04-20T00:00:01+00:00",
+            "duration_seconds": 1.0,
+            "timeout_seconds": timeout_seconds,
+            "timed_out": False,
+            "timeout_reason": None,
+            "returncode": 0,
+            "log": str(log_path),
+        }
+
+    monkeypatch.setattr(run_ci_suite, "run_and_capture", fake_run_and_capture)
+
+    run_ci_suite.main()
+
+    assert steps_seen == ["server_pytest_db_knowledge"]
+    summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["requested_layers"] == ["server_pytest_db_knowledge"]
+    assert "webapp_bundle" in summary["available_layers"]
+
+
+def test_main_rejects_unknown_layer(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(
+        run_ci_suite,
+        "summary_path_for_commit",
+        lambda workspace, commit: tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_ci_suite.py", "--workspace", str(tmp_path), "--commit", "deadbeef", "--layer", "missing"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_ci_suite.main()
+
+    assert "Unknown CI layer" in str(exc_info.value)

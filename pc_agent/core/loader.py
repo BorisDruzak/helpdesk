@@ -14,6 +14,27 @@ from typing import Optional, Callable, Awaitable, Any, Dict
 from pc_agent.modules.base_module import BaseCollector
 from loguru import logger
 
+_LEGACY_IMPORT_ROOTS = ("modules", "core", "utils", "network", "ui_bridge", "ui_gui", "config")
+
+
+def _legacy_import_keys() -> set[str]:
+    return {
+        name
+        for name in sys.modules
+        if any(name == root or name.startswith(f"{root}.") for root in _LEGACY_IMPORT_ROOTS)
+    }
+
+
+def _snapshot_legacy_imports() -> dict[str, object]:
+    return {name: sys.modules[name] for name in _legacy_import_keys()}
+
+
+def _restore_legacy_imports(snapshot: dict[str, object]) -> None:
+    for name in _legacy_import_keys() - snapshot.keys():
+        sys.modules.pop(name, None)
+    for name, module in snapshot.items():
+        sys.modules[name] = module
+
 
 class FunctionWrapper(BaseCollector):
     """Wraps an async function so it behaves like a BaseCollector instance."""
@@ -110,27 +131,21 @@ class DynamicModuleLoader:
         project_root = agent_dir.parent
 
         module_path_str = str(module_path.resolve())
-        if module_path_str in sys.path:
-            sys.path.remove(module_path_str)
-        sys.path.insert(0, module_path_str)
-
         agent_dir_str = str(agent_dir.resolve())
-        if agent_dir_str in sys.path:
-            sys.path.remove(agent_dir_str)
-        sys.path.insert(1, agent_dir_str)
-        logger.debug(f"Ensured agent directory in sys.path: {agent_dir_str}")
-
         project_root_str = str(project_root.resolve())
-        if project_root_str in sys.path:
-            sys.path.remove(project_root_str)
-        sys.path.insert(2, project_root_str)
-        logger.debug(f"Ensured project root in sys.path: {project_root_str}")
-
-        logger.debug(f"Moved '{module_path_str}' to the front of sys.path")
-
+        original_sys_path = list(sys.path)
+        legacy_import_snapshot = _snapshot_legacy_imports()
         self.unload_module(module_name)
 
         try:
+            for path in (module_path_str, agent_dir_str, project_root_str):
+                while path in sys.path:
+                    sys.path.remove(path)
+            sys.path[:0] = [module_path_str, agent_dir_str, project_root_str]
+            logger.debug(f"Moved '{module_path_str}' to the front of sys.path")
+            logger.debug(f"Ensured agent directory in sys.path: {agent_dir_str}")
+            logger.debug(f"Ensured project root in sys.path: {project_root_str}")
+
             if entrypoint and ':' in entrypoint:
                 entry_module_name, func_name = [part.strip() for part in entrypoint.split(':', 1)]
                 logger.debug(
@@ -211,3 +226,6 @@ class DynamicModuleLoader:
         except Exception as exc:
             logger.error(f"Error while loading module '{module_name}': {exc}")
             raise
+        finally:
+            sys.path[:] = original_sys_path
+            _restore_legacy_imports(legacy_import_snapshot)

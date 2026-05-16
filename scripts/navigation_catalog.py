@@ -2356,7 +2356,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, root pytest collection, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, marker/domain layered pytest CI, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, root pytest collection, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, selectable marker/domain layered pytest CI with isolated test DBs, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
@@ -2399,6 +2399,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest --collect-only -q",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
+            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
             "python scripts/release_server_to_remote.py --gate full  # explicit final full-check request only",
         ),
@@ -2410,6 +2411,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest --collect-only -q",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
+            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
         ),
         plan_required=True,

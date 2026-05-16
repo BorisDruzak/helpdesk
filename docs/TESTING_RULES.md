@@ -37,6 +37,13 @@ The full local CI runner executes these same layers. It is an important final re
 python scripts/run_ci_suite.py
 ```
 
+To run a single canonical layer:
+
+```powershell
+python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+python scripts/run_ci_suite.py --layer pc_agent_pytest
+```
+
 ## Agent Pytest
 
 Run agent tests after changes under `pc_agent/`:
@@ -85,7 +92,7 @@ If a test runs longer than the watchdog value, `server/tests/conftest.py` prints
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 
-On Windows default DB-backed pytest, the harness opens the configured SSH tunnel and creates an isolated `pc_support_test_<runid>` database through `TEST_DATABASE_ADMIN_URL` semantics. Shared `pc_support_test` is for explicit fallback/debug only (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) or automatic fallback when the admin database cannot be reached.
+On Windows default DB-backed pytest, the harness opens the configured SSH tunnel and creates an isolated `pc_support_test_<domain>_<pid_or_worker>_<short_hash>` database through `TEST_DATABASE_ADMIN_URL` semantics. `run_ci_suite.py` passes the CI layer name as `PC_CLIENT_TEST_DB_DOMAIN`, and `--keep-test-db` keeps isolated DBs for debugging. Shared `pc_support_test` is for explicit fallback/debug only (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) or automatic fallback when the admin database cannot be reached; any shared fallback warning means the run is not valid for the full DB/API gate.
 
 ## When To Run What
 

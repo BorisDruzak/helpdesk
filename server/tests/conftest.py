@@ -2,6 +2,7 @@
 
 import asyncio
 import faulthandler
+import hashlib
 import importlib
 import os
 import re
@@ -238,6 +239,33 @@ def _validate_test_database_name(db_name: str) -> None:
         raise RuntimeError(f"Unsafe test database name: {db_name}")
 
 
+def _sanitize_test_database_part(value: str, *, fallback: str, max_length: int) -> str:
+    sanitized = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
+    return (sanitized or fallback)[:max_length]
+
+
+def _generated_test_database_name() -> str:
+    domain = _sanitize_test_database_part(
+        os.getenv("PC_CLIENT_TEST_DB_DOMAIN", "server"),
+        fallback="server",
+        max_length=24,
+    )
+    worker = _sanitize_test_database_part(
+        os.getenv("PYTEST_XDIST_WORKER") or str(os.getpid()),
+        fallback=str(os.getpid()),
+        max_length=16,
+    )
+    run_id = os.getenv("PC_CLIENT_TEST_DB_RUN_ID") or uuid.uuid4().hex
+    short_hash = hashlib.sha1(
+        f"{run_id}:{domain}:{worker}:{Path.cwd()}".encode("utf-8")
+    ).hexdigest()[:6]
+    return f"{TEST_DATABASE_PREFIX}{domain}_{worker}_{short_hash}"
+
+
+def _keep_test_database() -> bool:
+    return os.getenv("PC_CLIENT_KEEP_TEST_DB") == "1"
+
+
 def _resolve_test_database_urls() -> tuple[str, str, bool]:
     explicit_test_url = os.getenv("TEST_DATABASE_URL")
     if _shared_test_db_allowed():
@@ -251,7 +279,7 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
         and os.getenv("TEST_DATABASE_ADMIN_URL") is None
     ):
         admin_url = _default_windows_test_database_admin_url()
-        generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
+        generated_name = _generated_test_database_name()
         test_url = _render_url(make_url(admin_url).set(database=generated_name))
         verify_test_database(test_url, allow_shared=False)
         return test_url, admin_url, False
@@ -261,7 +289,7 @@ def _resolve_test_database_urls() -> tuple[str, str, bool]:
         return explicit_test_url, _resolve_admin_url(explicit_test_url), False
 
     admin_url = os.getenv("TEST_DATABASE_ADMIN_URL", _default_test_database_url("postgres"))
-    generated_name = f"{TEST_DATABASE_PREFIX}{uuid.uuid4().hex[:10]}"
+    generated_name = _generated_test_database_name()
     test_url = _render_url(make_url(admin_url).set(database=generated_name))
     return test_url, admin_url, False
 
@@ -432,8 +460,8 @@ def _maybe_fallback_to_shared_test_db(
 
         warnings.warn(
             "Admin test database is unavailable from this client; falling back to shared "
-            f"test DB {SHARED_TEST_DATABASE_NAME}. Set TEST_DATABASE_ADMIN_URL for isolated "
-            "ephemeral DB runs.",
+            f"test DB {SHARED_TEST_DATABASE_NAME}. shared test DB fallback: not valid for "
+            "full DB/API gate. Set TEST_DATABASE_ADMIN_URL for isolated ephemeral DB runs.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -551,7 +579,7 @@ def test_database_url() -> str:
         else:
             os.environ["PC_CLIENT_ALLOW_SHARED_TEST_DB"] = original_allow_shared
         _close_windows_test_db_tunnel()
-        if not is_shared:
+        if not is_shared and not _keep_test_database():
             asyncio.run(_drop_test_database(admin_db_url, db_name))
 
 

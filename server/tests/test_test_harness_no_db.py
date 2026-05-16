@@ -48,6 +48,7 @@ def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
     assert test_db_url.endswith("/pc_support_test")
     assert admin_db_url.endswith("/postgres")
     assert any("falling back to shared test DB" in str(item.message) for item in caught)
+    assert any("not valid for full DB/API gate" in str(item.message) for item in caught)
     assert probed == [
         "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres",
         "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test",
@@ -99,7 +100,26 @@ def test_windows_default_resolve_uses_isolated_test_db(monkeypatch):
     test_db_url, admin_db_url, is_shared = test_harness._resolve_test_database_urls()
 
     assert is_shared is False
-    assert "/pc_support_test_" in test_db_url
+    assert "/pc_support_test_nt_" in test_db_url or "/pc_support_test_server_" in test_db_url
     assert admin_db_url.endswith("/postgres")
     assert "127.0.0.1:55432" in test_db_url
     assert "127.0.0.1:55432" in admin_db_url
+
+
+def test_generated_test_database_name_includes_domain_worker_and_hash(monkeypatch):
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_DOMAIN", "knowledge")
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_RUN_ID", "abcdef123456")
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw3")
+
+    db_name = test_harness._generated_test_database_name()
+
+    assert db_name.startswith("pc_support_test_knowledge_gw3_")
+    assert len(db_name.rsplit("_", 1)[-1]) == 6
+
+
+def test_keep_test_database_env_flag(monkeypatch):
+    monkeypatch.delenv("PC_CLIENT_KEEP_TEST_DB", raising=False)
+    assert test_harness._keep_test_database() is False
+
+    monkeypatch.setenv("PC_CLIENT_KEEP_TEST_DB", "1")
+    assert test_harness._keep_test_database() is True

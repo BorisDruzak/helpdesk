@@ -11,11 +11,21 @@
 
 ## CI layers
 
-`scripts/run_ci_suite.py` runs server pytest in three layers so one slow group does not hide the rest of the signal:
+`scripts/run_ci_suite.py` runs server pytest in domain layers so one slow group does not hide the rest of the signal:
 
-1. Fast/pure tests: `python -m pytest server/tests -m "not manual and no_db" -vv --durations=80`
-2. DB/API tests: `python -m pytest server/tests -m "not manual and not no_db and not agent_ws" -vv --durations=80`
-3. WS/agent integration tests: `python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80`
+1. `server_pytest_no_db`: `python -m pytest server/tests -m "not manual and no_db" -vv --durations=80`
+2. `server_pytest_db_knowledge`
+3. `server_pytest_db_tickets`
+4. `server_pytest_db_observer_diagnostics`
+5. `server_pytest_db_agent_runtime`
+6. `server_pytest_db_web_api`
+7. `server_pytest_agent_ws`: `python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80`
+
+Run one layer with:
+
+```powershell
+python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+```
 
 The `agent_ws` marker is applied automatically to tests that request the `test_agent` fixture. Do not add it by hand unless a test starts the same in-process agent/runtime path without that fixture.
 
@@ -36,10 +46,10 @@ The default server pytest step timeout is 45 minutes per layer. If a layer appro
 
 Windows default:
 
-- If `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest uses shared `pc_support_test`.
-- In that default mode the harness opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
+- If `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
+- The default DB is isolated and named `pc_support_test_<domain>_<pid_or_worker>_<short_hash>`.
 - In shared fallback mode the harness terminates stale `pc_support_test` backends before cleanup and sets a short `lock_timeout`, so leaked sessions surface as a fast failure instead of an endless hang.
-- If you need isolated ephemeral test DBs from Windows, set `TEST_DATABASE_ADMIN_URL` explicitly.
+- Shared `pc_support_test` is not valid for a full DB/API gate; use it only through explicit debug fallback.
 
 По умолчанию server suite больше не должен использовать общий `pc_support_test`.
 
@@ -54,7 +64,7 @@ Windows default:
 
 Поведение по умолчанию:
 
-1. `conftest.py` создаёт уникальную БД вида `pc_support_test_<runid>`.
+1. `conftest.py` создаёт уникальную БД вида `pc_support_test_<domain>_<pid_or_worker>_<short_hash>`.
 2. Применяет Alembic migrations один раз на сессию.
 3. Держит один session-scoped async engine.
 4. Перед каждым DB-backed test делает `TRUNCATE ... RESTART IDENTITY CASCADE`.
@@ -64,6 +74,12 @@ Windows default:
 ```powershell
 $env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'
 python -m pytest server/tests/test_cancel_operations.py -q
+```
+
+Чтобы сохранить isolated DB для диагностики после падения слоя:
+
+```powershell
+python scripts/run_ci_suite.py --layer server_pytest_db_tickets --keep-test-db
 ```
 
 ## Recommended runs

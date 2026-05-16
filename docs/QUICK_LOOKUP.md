@@ -111,7 +111,7 @@
 
 - Canonical testing rules live in `docs/TESTING_RULES.md`.
 - Root pytest collection is part of the baseline: agent runtime and tests import through the `pc_agent.*` package namespace so server, agent and scripts tests can be collected together without top-level `core` / `modules` collisions. Managed external modules may still rely on legacy loader aliases.
-- `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, domain DB/API layers (`server_pytest_db_knowledge`, `server_pytest_db_tickets`, `server_pytest_db_observer_diagnostics`, `server_pytest_db_agent_runtime`, `server_pytest_db_web_api`), and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`.
+- `scripts/run_ci_suite.py` now splits server pytest into `server_pytest_no_db`, domain DB/API layers (`server_pytest_db_knowledge`, `server_pytest_db_tickets`, `server_pytest_db_observer_diagnostics`, `server_pytest_db_agent_runtime`, `server_pytest_db_web_api`), and `server_pytest_agent_ws`; each server layer runs with `-vv --durations=80`, a 45 minute step timeout, the configured idle timeout, and `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120`. Use `--layer <name>` for one layer and `--keep-test-db` to preserve isolated DBs after a failure.
 - Every local commit must be pushed to GitHub `origin` immediately; local commit and GitHub push are one checkpoint. Routine dev-branch pushes do not require full CI or a separate strict secret scan, but still require intentional staging and `git diff --cached`.
 - Deploy/release scripts use `--gate full` by default and require a green CI artifact for the current commit, so Codex must use explicit `--gate quick` for staging/iteration on the Linux stand. Full CI/full gate are important final release checkpoints, but Codex runs them only after explicit user request or confirmation; at the end of a change block, remind the user and ask whether to run them now if the plan is being delivered in parts.
 - `server/tests/conftest.py` auto-marks tests that use `test_agent` as `agent_ws`/`integration` and prints all Python thread stacks when a watched test exceeds the watchdog threshold.
@@ -290,7 +290,7 @@ Test DB env vars:
 
 Windows note:
 
-- On Windows, if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, server DB-backed pytest opens the local SSH tunnel and defaults to an isolated `pc_support_test_<runid>` database through the admin DB.
+- On Windows, if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, server DB-backed pytest opens the local SSH tunnel and defaults to an isolated `pc_support_test_<domain>_<pid_or_worker>_<short_hash>` database through the admin DB.
 - In that default mode the harness opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
 - Shared `pc_support_test` is now an explicit fallback/debug mode: set `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`, or let the Windows default fallback use it only if the admin DB is unavailable. In shared-DB fallback mode the harness terminates stale `pc_support_test` backends before `TRUNCATE` and uses a short lock timeout, so leaked sessions fail fast instead of hanging the suite.
 - For websocket-heavy pytest on Windows, `server/tests/conftest.py` now forces `WindowsSelectorEventLoopPolicy`, so the old trailing `unexpected connection_lost() call` noise is no longer a completion criterion.

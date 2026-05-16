@@ -8,6 +8,7 @@ import fnmatch
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -111,6 +112,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--commit")
+    parser.add_argument(
+        "--layer",
+        action="append",
+        default=[],
+        help="Run only the named CI layer. May be supplied multiple times.",
+    )
+    parser.add_argument(
+        "--keep-test-db",
+        action="store_true",
+        help="Keep isolated PostgreSQL test databases after DB-backed server layers.",
+    )
     parser.add_argument("--verify-timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--web-build-timeout", type=float, default=DEFAULT_WEB_BUILD_TIMEOUT_SECONDS)
     parser.add_argument("--server-pytest-timeout", type=float, default=DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS)
@@ -357,8 +369,29 @@ def write_summary(summary_path: Path, summary: dict[str, object]) -> None:
         handle.write("\n")
 
 
-def _server_pytest_env() -> dict[str, str]:
-    return {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
+def _test_db_domain_for_layer(layer_name: str) -> str:
+    domain = layer_name
+    for prefix in ("server_pytest_db_", "server_pytest_"):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix) :]
+            break
+    return re.sub(r"[^a-z0-9_]+", "_", domain.lower()).strip("_") or "server"
+
+
+def _server_pytest_env(
+    *,
+    layer_name: str | None = None,
+    commit: str | None = None,
+    keep_test_db: bool = False,
+) -> dict[str, str]:
+    env = {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
+    if layer_name and layer_name != "server_pytest_no_db":
+        env["PC_CLIENT_TEST_DB_DOMAIN"] = _test_db_domain_for_layer(layer_name)
+        if commit:
+            env["PC_CLIENT_TEST_DB_RUN_ID"] = commit[:12]
+        if keep_test_db:
+            env["PC_CLIENT_KEEP_TEST_DB"] = "1"
+    return env
 
 
 def _server_pytest_command(marker_expr: str, junit_path: Path, paths: list[Path | str] | None = None) -> list[str]:
@@ -406,6 +439,8 @@ def _server_db_api_layer_steps(
     logs_dir: Path,
     timeout_seconds: float,
     idle_timeout_seconds: float,
+    commit: str,
+    keep_test_db: bool,
 ) -> list[tuple[str, list[str], Path, float, float, dict[str, str]]]:
     steps = []
     for layer_name, paths in _server_db_api_layer_paths(workspace):
@@ -421,10 +456,25 @@ def _server_db_api_layer_steps(
                 logs_dir / f"{layer_name}.log",
                 timeout_seconds,
                 idle_timeout_seconds,
-                _server_pytest_env(),
+                _server_pytest_env(layer_name=layer_name, commit=commit, keep_test_db=keep_test_db),
             )
         )
     return steps
+
+
+def _filter_steps_by_layer(
+    steps: list[tuple[str, list[str], Path, float, float, dict[str, str] | None]],
+    requested_layers: list[str],
+) -> list[tuple[str, list[str], Path, float, float, dict[str, str] | None]]:
+    if not requested_layers:
+        return steps
+    requested = set(requested_layers)
+    available = {step_name for step_name, *_rest in steps}
+    unknown = sorted(requested - available)
+    if unknown:
+        available_text = ", ".join(sorted(available))
+        raise SystemExit(f"Unknown CI layer(s): {', '.join(unknown)}. Available layers: {available_text}")
+    return [step for step in steps if step[0] in requested]
 
 
 def main() -> None:
@@ -452,7 +502,7 @@ def main() -> None:
             None,
         ),
         (
-            "build_webapp_bundle",
+            "webapp_bundle",
             [
                 sys.executable,
                 str(args.workspace / "scripts" / "build_webapp_bundle.py"),
@@ -463,7 +513,7 @@ def main() -> None:
                 "--archive",
                 str(webapp_bundle_archive),
             ],
-            logs_dir / "build_webapp_bundle.log",
+            logs_dir / "webapp_bundle.log",
             float(args.web_build_timeout),
             float(args.idle_timeout),
             None,
@@ -474,7 +524,7 @@ def main() -> None:
             logs_dir / "server_pytest_no_db.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
-            _server_pytest_env(),
+            _server_pytest_env(layer_name="server_pytest_no_db", commit=commit, keep_test_db=args.keep_test_db),
         ),
         *_server_db_api_layer_steps(
             workspace=args.workspace,
@@ -482,6 +532,8 @@ def main() -> None:
             logs_dir=logs_dir,
             timeout_seconds=float(args.server_pytest_timeout),
             idle_timeout_seconds=float(args.idle_timeout),
+            commit=commit,
+            keep_test_db=args.keep_test_db,
         ),
         (
             "server_pytest_agent_ws",
@@ -489,7 +541,7 @@ def main() -> None:
             logs_dir / "server_pytest_agent_ws.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
-            _server_pytest_env(),
+            _server_pytest_env(layer_name="server_pytest_agent_ws", commit=commit, keep_test_db=args.keep_test_db),
         ),
         (
             "pc_agent_pytest",
@@ -509,6 +561,8 @@ def main() -> None:
             None,
         ),
     ]
+    available_layers = [step_name for step_name, *_rest in steps]
+    steps = _filter_steps_by_layer(steps, args.layer)
 
     results: list[dict[str, object]] = []
     status = "green"
@@ -542,6 +596,8 @@ def main() -> None:
             "status": status,
             "started_at": started_at,
             "finished_at": now_iso(),
+            "requested_layers": args.layer,
+            "available_layers": available_layers,
             "artifacts": {
                 "summary": str(summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
