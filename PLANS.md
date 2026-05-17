@@ -227,7 +227,7 @@ Rollback notes:
 
 ## P4 Problem Management / RCA
 
-P4 Problem Management / RCA Status: release verification in progress. Local implementation and full layered CI are green on the working tree; commit-scoped CI, remote release and browser signoff are next.
+P4 Problem Management / RCA Status: accepted / release-candidate. Implementation commit `2618616bc2e0045ed4cdcdf39aeed7c195b8149e` is pushed to GitHub `origin/codex/helpdesk-process-model`; full layered CI, Alembic upgrade, remote release, smoke and browser signoff are complete.
 
 Goal: turn repeated quality/ticket/knowledge/SLA signals into first-class Problem Management with candidates, problem lifecycle, RCA, known error/workaround linkage, affected objects, analytics, support/admin UI, docs, tests, full layered CI and remote/browser signoff.
 
@@ -286,7 +286,7 @@ Implementation status:
 - Added linked-problems display to the support ticket Quality tab. Requester ticket pages remain blind to problem/RCA internals.
 - Added `server/docs/PROBLEM_MANAGEMENT.md` and synchronized DATABASE, SECURITY, TICKET, SERVICE CATALOG, KNOWLEDGE, QUALITY, CODEMAP, QUICK_LOOKUP, ARCHITECTURE_BOUNDARIES and navigation catalog docs.
 
-Focused verification so far:
+Verification:
 - `python -m pytest server/tests/test_problem_contract_no_db.py ... server/tests/test_ticket_problem_links.py -q --tb=short --durations=20` -> 19 passed.
 - `python -m pytest server/tests/test_problem_api.py server/tests/test_ticket_problem_links.py -q --tb=short` -> 3 passed.
 - `pnpm --dir webapp test -- src/features/problems/api.test.ts src/features/problems/problem-workspace.test.tsx src/pages/tickets/list-page.test.tsx` -> 39 passed.
@@ -300,16 +300,20 @@ Focused verification so far:
 - Working-tree full CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green; artifact `artifacts/ci/5406ee277bbe8458b81e1ee29ae8600e6a0188cd`, summary status `green`.
 - Working-tree full CI layer counts: `server_pytest_no_db` 319 passed / 713 deselected; `server_pytest_db_knowledge` 90 passed / 9 deselected; `server_pytest_db_tickets` 275 passed / 61 deselected; `server_pytest_db_observer_diagnostics` 74 passed / 28 deselected; `server_pytest_db_agent_runtime` 84 passed / 93 deselected; `server_pytest_db_web_api` 160 passed / 158 deselected; `server_pytest_agent_ws` 30 passed / 1002 deselected; `pc_agent_pytest` 315 passed / 4 deselected.
 
-Verification plan:
-- Focused P4 pytest files first, then P2.3 layers: `server_pytest_no_db`, `server_pytest_db_tickets`, `server_pytest_db_knowledge`, `server_pytest_db_web_api`, `pc_agent_pytest`.
-- Static/workspace: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`.
-- Webapp: `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, targeted vitest.
-- Final: full canonical `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0`, commit/push, full remote release, smoke and browser signoff for problem workspace flows.
+Release verification:
+- Commit-scoped full CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green; artifact `artifacts/ci/2618616bc2e0045ed4cdcdf39aeed7c195b8149e`, started `2026-05-17T15:23:30Z`, finished `2026-05-17T16:39:32Z`.
+- Commit-scoped full CI layer counts: `verify_workspace` passed; `webapp_bundle` passed; `server_pytest_no_db` 319 passed / 713 deselected; `server_pytest_db_knowledge` 90 passed / 9 deselected; `server_pytest_db_tickets` 275 passed / 61 deselected; `server_pytest_db_observer_diagnostics` 74 passed / 28 deselected; `server_pytest_db_agent_runtime` 84 passed / 93 deselected; `server_pytest_db_web_api` 160 passed / 158 deselected; `server_pytest_agent_ws` 30 passed / 1002 deselected; `pc_agent_pytest` 315 passed / 4 deselected.
+- Remote release: `python scripts/release_server_to_remote.py --gate full --leave-running --smoke-attempts 8 --smoke-delay 5` deployed `2618616bc2e0045ed4cdcdf39aeed7c195b8149e`, applied Alembic `089 -> 090`, uploaded the webapp bundle, started the remote server and passed `/api/health` on smoke attempt 2/8.
+- Browser signoff at `https://192.168.100.17:9443`: `/app/admin/problems` rendered with real metrics and navigation; manual problem creation worked with legacy/uncategorized fallback; candidate scan returned without UI failure; problem transition to `investigating` worked; RCA create/approve worked; known error and workaround draft actions moved the problem to `workaround_available`; affected ticket `T-000432` linked to `PRB-000001`; `/app/tickets/8aa0050b-f553-4f5a-8fb0-59f39fe67541` Quality panel showed linked problem `PRB-000001 / workaround_available`; final checked page had 0 browser console errors. An earlier expected 400 validation response was produced by intentionally trying a nonexistent service/offering during smoke input and was not part of the accepted flow.
 
 Rollback notes:
 - Disable detection by disabling rules; keep existing problems read-only if needed.
 - Code rollback plus Alembic downgrade `090` removes new P4 tables/columns added after the legacy Stage 7 scaffold.
 - No ticket workflow/status rollback or Protocol V3 rollback is expected.
+
+Remaining risks:
+- Candidate scanning is manual/API-driven in P4; automatic scheduled scans can be added as a later production hardening item without changing the P4 data model.
+- Problem-to-change remains a continuous-improvement action placeholder until P5 Change Enablement introduces first-class change requests.
 
 # P2.1 Knowledge Platform Acceptance Hardening
 
