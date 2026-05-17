@@ -30,6 +30,8 @@ Supported item types are:
 
 `article`, `faq`, `runbook`, `policy`, `document`, `known_error`, `workaround`, `troubleshooting_tree`, `glossary_term`, `service_description`, `external_source`, `resolution_draft`.
 
+P4 Problem Management creates and links `known_error` and `workaround` items as Knowledge drafts through the normal Knowledge Platform lifecycle. These drafts default to `support_internal`; requester-safe publication still requires the usual lint/review/publish path and graph/ACL visibility filtering.
+
 ## Lifecycle
 
 Item statuses are `draft`, `in_review`, `published`, `needs_review`, `archived`.

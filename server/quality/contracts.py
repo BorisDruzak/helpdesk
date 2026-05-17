@@ -62,6 +62,10 @@ IMPROVEMENT_ACTION_TYPES = {
     "create_change_candidate",
     "contact_requester",
     "process_review",
+    "perform_rca",
+    "implement_permanent_fix",
+    "validate_workaround",
+    "update_known_error",
     "other",
 }
 
@@ -177,4 +181,3 @@ def requester_safe_quality_summary(payload: dict[str, Any]) -> dict[str, Any]:
             "comment": latest.get("comment"),
         }
     return safe
-

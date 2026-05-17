@@ -31,6 +31,7 @@ import {
   type SupportQueueScope,
   type SupportTicketWorkspacePayload,
 } from "../../features/queues/api";
+import { fetchTicketProblemLinks } from "../../features/problems/api";
 import { TicketListPage } from "./list-page";
 
 const logoutMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
@@ -84,6 +85,14 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
   };
 });
 
+vi.mock("../../features/problems/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../features/problems/api")>();
+  return {
+    ...actual,
+    fetchTicketProblemLinks: vi.fn(),
+  };
+});
+
 vi.mock("../../shared/realtime/client", () => ({
   getSharedWebRealtimeClient: () => realtimeClientMock,
 }));
@@ -120,6 +129,7 @@ const postSupportWorkspaceCleanupNoiseMock = vi.mocked(postSupportWorkspaceClean
 const createSupportQueueSavedViewMock = vi.mocked(createSupportQueueSavedView);
 const deleteSupportQueueSavedViewMock = vi.mocked(deleteSupportQueueSavedView);
 const updateSupportQueueSavedViewMock = vi.mocked(updateSupportQueueSavedView);
+const fetchTicketProblemLinksMock = vi.mocked(fetchTicketProblemLinks);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
   return {
@@ -1335,6 +1345,28 @@ describe("TicketListPage", () => {
         },
       }),
     );
+    fetchTicketProblemLinksMock.mockResolvedValue([
+      {
+        problem: {
+          problem_id: "problem-1",
+          problem_key: "PRB-000001",
+          title: "Repeated VPN outage",
+          description: "Repeated VPN outage",
+          status: "investigating",
+          severity: "high",
+          priority: "high",
+          service_code: "network",
+          offering_code: "network.vpn_issue",
+        },
+        link: {
+          link_id: "problem-link-1",
+          problem_id: "problem-1",
+          ticket_id: "ticket-1",
+          link_type: "confirmed",
+          evidence_summary: "Same symptom",
+        },
+      },
+    ]);
 
     renderTicketListPage("/app/tickets/ticket-1");
 
@@ -1504,6 +1536,8 @@ describe("TicketListPage", () => {
     expect(within(qualityPanel).getByText("Problem returned after closure.")).toBeInTheDocument();
     expect(within(qualityPanel).getAllByText("low_csat").length).toBeGreaterThan(0);
     expect(within(qualityPanel).getByText("Review reopened ticket")).toBeInTheDocument();
+    expect(await within(qualityPanel).findByText("PRB-000001")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("Repeated VPN outage / confirmed")).toBeInTheDocument();
   });
 
   it("opens passport focus guidance from a closure blocker action", async () => {

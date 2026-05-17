@@ -3,6 +3,7 @@ SQLAlchemy database models.
 """
 from datetime import datetime, timezone
 from typing import Optional
+import uuid
 
 from sqlalchemy import (
     BigInteger,
@@ -304,6 +305,8 @@ class ContinuousImprovementAction(Base):
     ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True)
     review_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete="SET NULL"), nullable=True)
     feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
+    problem_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="SET NULL"), nullable=True)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
     action_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -321,8 +324,8 @@ class ContinuousImprovementAction(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
-        sa.CheckConstraint("source_kind IN ('csat', 'reopen', 'qa_review', 'knowledge_gap', 'service_quality', 'sla_breach', 'problem_candidate', 'manual')", name="ck_continuous_improvement_source_kind"),
-        sa.CheckConstraint("action_type IN ('update_kb_article', 'create_kb_article', 'create_known_error', 'improve_request_form', 'update_routing_policy', 'adjust_sla_policy', 'add_diagnostic_playbook', 'train_support', 'open_problem_candidate', 'create_change_candidate', 'contact_requester', 'process_review', 'other')", name="ck_continuous_improvement_action_type"),
+        sa.CheckConstraint("source_kind IN ('csat', 'reopen', 'qa_review', 'knowledge_gap', 'service_quality', 'sla_breach', 'problem_candidate', 'problem', 'manual')", name="ck_continuous_improvement_source_kind"),
+        sa.CheckConstraint("action_type IN ('update_kb_article', 'create_kb_article', 'create_known_error', 'improve_request_form', 'update_routing_policy', 'adjust_sla_policy', 'add_diagnostic_playbook', 'train_support', 'open_problem_candidate', 'create_change_candidate', 'contact_requester', 'process_review', 'perform_rca', 'implement_permanent_fix', 'validate_workaround', 'update_known_error', 'other')", name="ck_continuous_improvement_action_type"),
         sa.CheckConstraint("status IN ('open', 'assigned', 'in_progress', 'blocked', 'done', 'dismissed')", name="ck_continuous_improvement_status"),
         sa.CheckConstraint("priority IN ('low', 'medium', 'high', 'critical')", name="ck_continuous_improvement_priority"),
         sa.CheckConstraint("btrim(title) <> ''", name="ck_continuous_improvement_title"),
@@ -1514,11 +1517,33 @@ class Problem(Base):
     """Stage 7: ITSM Problem. FSM: New -> Investigating -> Mitigated -> Resolved -> Closed."""
     __tablename__ = "problems"
     problem_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    problem_key: Mapped[str] = mapped_column(String(24), nullable=False, unique=True, default=lambda: f"PRB-{uuid.uuid4().hex[:8].upper()}")
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="New")
-    priority: Mapped[str] = mapped_column(String(5), nullable=False, server_default="P3")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="new")
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    impact: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    urgency: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reporting_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assignee_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    detected_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    investigation_started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    known_error_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    workaround_available_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    permanent_fix_planned_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    permanent_fix_in_progress_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    canceled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    target_resolution_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -1533,32 +1558,196 @@ class Problem(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    root_cause_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    root_cause_category: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     workaround: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    workaround_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    permanent_fix_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closure_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     kb_article_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_problems_status_priority_updated", "status", "priority", "updated_at"),
         Index("ix_problems_owner_status", "owner_id", "status"),
+        Index("ix_problems_service_offering", "service_code", "offering_code"),
     )
 
 
 class ProblemTicketLink(Base):
     """Stage 7: Связь problem <-> ticket."""
     __tablename__ = "problem_ticket_links"
+    link_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     problem_id: Mapped[str] = mapped_column(
-        String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), primary_key=True
+        String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False
     )
     ticket_id: Mapped[str] = mapped_column(
-        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), primary_key=True
+        String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
     )
+    link_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="suspected")
+    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    evidence_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    linked_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     linked_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
     linked_by: Mapped[str] = mapped_column(Text, nullable=False)
+    unlinked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
-    __table_args__ = (Index("ix_problem_ticket_links_ticket_id", "ticket_id"),)
+    __table_args__ = (
+        Index("ix_problem_ticket_links_ticket_id", "ticket_id"),
+        Index("ix_problem_ticket_links_problem_ticket", "problem_id", "ticket_id"),
+    )
+
+
+class ProblemRCARecord(Base):
+    """Versioned human-reviewed root cause analysis."""
+
+    __tablename__ = "problem_rca_records"
+
+    rca_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    methodology: Mapped[str] = mapped_column(String(40), nullable=False, server_default="narrative")
+    problem_statement: Mapped[str] = mapped_column(Text, nullable=False)
+    impact_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timeline_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    contributing_factors_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    root_cause: Mapped[str] = mapped_column(Text, nullable=False)
+    root_cause_category: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    evidence_refs_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    corrective_actions_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    preventive_actions_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    reviewer_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("problem_id", "version_number", name="uq_problem_rca_problem_version"),
+        Index("ix_problem_rca_problem_status", "problem_id", "status"),
+    )
+
+
+class ProblemKnownErrorLink(Base):
+    """Problem to Knowledge known-error/workaround link."""
+
+    __tablename__ = "problem_known_error_links"
+
+    link_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False, index=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False, index=True)
+    link_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(40), nullable=False, server_default="support_internal")
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+
+class ProblemAffectedObject(Base):
+    """Affected service, offering, registry object or asset."""
+
+    __tablename__ = "problem_affected_objects"
+
+    affected_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    problem_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=False, index=True)
+    object_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    impact: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+
+class ProblemDetectionRule(Base):
+    """Configurable candidate scanner rule."""
+
+    __tablename__ = "problem_detection_rules"
+
+    rule_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    scope_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="global")
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    window_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="168")
+    min_ticket_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
+    min_reopen_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
+    min_low_csat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
+    min_sla_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    min_failed_kb_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
+    similarity_mode: Mapped[str] = mapped_column(String(40), nullable=False, server_default="service_offering")
+    auto_create_candidate: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ProblemCandidate(Base):
+    """Detected candidate before conversion to a problem."""
+
+    __tablename__ = "problem_candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    rule_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_detection_rules.rule_id", ondelete="SET NULL"), nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String(220), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    signal_type: Mapped[str] = mapped_column(String(60), nullable=False, server_default="manual")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    evidence_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    ticket_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    reopen_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    low_csat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    sla_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    failed_kb_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    suggested_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
+    converted_problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    reviewed_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    dismissal_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_problem_candidates_status_service", "status", "service_code", "offering_code"),
+    )
+
+
+class ProblemActivityEvent(Base):
+    """Append-only problem activity timeline."""
+
+    __tablename__ = "problem_activity_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="CASCADE"), nullable=True, index=True)
+    candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="CASCADE"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class TicketAdminAudit(Base):

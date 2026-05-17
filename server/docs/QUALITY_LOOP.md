@@ -42,12 +42,14 @@ Support/admin/auditor:
 - Improvement actions are not tickets. They require source, action type, status, priority and audit fields; moving into assigned/in-progress requires an owner and closing requires outcome notes.
 - `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
 - `QualitySnapshotScheduler` runs from server startup when DB persistence is enabled. It recomputes daily and weekly snapshots through `ServiceQualityAnalyticsService`; the manual recompute endpoint remains available for operator/debug use.
+- P4 consumes quality signals as upstream evidence: low CSAT clusters, reopen reasons, SLA/QA/knowledge failures and improvement actions can feed problem candidates and confirmed problem records. Quality Loop remains the source for CSAT/reopen/QA/action data; Problem Management owns RCA/known-error/permanent-fix lifecycle.
 
 ## Surfaces
 
 - Requester ticket page shows CSAT and reopen controls for resolved/closed tickets.
 - Support ticket detail includes a Quality section with latest CSAT, reopen count, QA reviews and improvement actions.
 - Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics, the last snapshot timestamp, internal review/action work queues and a service/offering quality-policy override editor with effective-policy preview.
+- Admin `/app/admin/problems` and the support ticket Quality tab expose P4 problem candidates/links without exposing requester-internal problem/RCA data to requester pages.
 - Agent GUI is unchanged in P3; web/public requester surfaces are the canonical CSAT/reopen path and Protocol V3 is not changed.
 
 ## Privacy

@@ -74,6 +74,8 @@ It uses the same `DATABASE_URL` resolution as the seed script and also supports 
 - recommended service/offering binding for self-service items;
 - known error status plus workaround or permanent-fix information.
 
+P4 Problem Management uses these templates and lint rules when creating known-error and workaround drafts from a problem. Problem-created drafts are support-internal by default and should be reviewed, linted and explicitly published before any requester-safe exposure.
+
 `KnowledgeRepo.publish_item()` runs lint before publication. Lint errors block publish. Non-blocking template/binding warnings can be acknowledged by the server-side publish integration so legacy compatible content can still publish when the hard blockers are absent.
 
 ## Review Tasks

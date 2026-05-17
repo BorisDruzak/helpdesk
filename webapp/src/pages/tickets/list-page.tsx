@@ -106,6 +106,7 @@ import type {
   SupportWorkspaceToolItem,
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
+import { fetchTicketProblemLinks } from "../../features/problems/api";
 import { RemoteAssistPanel } from "../../features/remote-assist/remote-assist-panel";
 import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
 import { OperationsTable } from "./components/operations-table";
@@ -1673,6 +1674,11 @@ export function TicketListPage() {
   const firstQueueActionId = queueActionOptions[0]?.id ?? null;
   const firstStatusActionValue = statusActionOptions[0]?.value ?? null;
   const selectedTicketQuality = workspaceQuery.data?.detail.quality ?? null;
+  const selectedTicketProblemsQuery = useQuery({
+    enabled: Boolean(selectedTicketId && sidebarTab === "quality"),
+    queryKey: ["ticket", selectedTicketId, "problems"],
+    queryFn: () => fetchTicketProblemLinks(selectedTicketId ?? ""),
+  });
 
   const refreshSelectedTicketData = async () => {
     if (!selectedTicketId) {
@@ -3330,6 +3336,29 @@ export function TicketListPage() {
                     </div>
                   </section>
                 ) : null}
+
+                <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Linked problems</p>
+                  <div className="mt-3 space-y-2">
+                    {(selectedTicketProblemsQuery.data ?? []).length > 0 ? (
+                      selectedTicketProblemsQuery.data?.slice(0, 4).map((item) => (
+                        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2" key={item.link.link_id}>
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <strong className="text-white">{item.problem.problem_key}</strong>
+                            <span className="text-slate-300">{item.problem.status}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {item.problem.title} / {item.link.link_type}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-400">
+                        {selectedTicketProblemsQuery.isLoading ? "Loading problem links..." : "No linked problems."}
+                      </p>
+                    )}
+                  </div>
+                </section>
               </div>
             ) : null}
 

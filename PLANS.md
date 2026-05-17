@@ -225,6 +225,92 @@ Rollback notes:
 - Disable the scheduler by removing the startup hook if snapshots misbehave; manual recompute API remains.
 - Downgrade Alembic `089` to remove only the latest-feedback partial unique index; P3 tables from `088` remain intact.
 
+## P4 Problem Management / RCA
+
+P4 Problem Management / RCA Status: release verification in progress. Local implementation and full layered CI are green on the working tree; commit-scoped CI, remote release and browser signoff are next.
+
+Goal: turn repeated quality/ticket/knowledge/SLA signals into first-class Problem Management with candidates, problem lifecycle, RCA, known error/workaround linkage, affected objects, analytics, support/admin UI, docs, tests, full layered CI and remote/browser signoff.
+
+Discovery:
+- Current branch baseline is clean on `codex/helpdesk-process-model` and synced to origin before P4 work.
+- A legacy Stage 7 problem scaffold already exists: `problems`, `problem_ticket_links`, `server/app/repos/problems_repo.py`, `/api/problems*`, `/api/tickets/{ticket_id}/problems`, and `tickets.problems_statuses` with uppercase `New -> Investigating -> Mitigated -> Resolved -> Closed`.
+- The existing scaffold is not sufficient for P4: it has no `problem_key`, candidates, detection rules, RCA records, known-error/workaround knowledge links, affected objects, activity timeline, typed `/api/web/problems*` routes, analytics or webapp workspace.
+- P3/P3.1 quality signals are available as `ticket_feedback`, `ticket_reopen_events`, `ticket_quality_reviews`, `continuous_improvement_actions`, `service_quality_snapshots` and `quality_policies`.
+- Knowledge already supports `knowledge_items.item_type=known_error|workaround`, visibility lint/review and graph node/edge primitives; P4 should link to Knowledge items instead of duplicating published article state.
+- Service Catalog fields are explicit ticket columns (`service_code`, `offering_code`, `request_type`, `reporting_category`), and registry has service/asset tables suitable for affected-object refs.
+- Requester-facing Problem APIs are intentionally out of scope for P4. Requester-safe known errors/workarounds stay behind Knowledge Platform review/publish.
+
+Design decisions:
+- Extend the existing `problems` table and keep legacy `/api/problems` compatibility. New P4 services use lowercase lifecycle statuses and expose typed `/api/web/problems*` APIs.
+- Problem is a domain entity, not a ticket type. Ticket links stay many-to-many and become richer with `link_type`, confidence/evidence, active unlink metadata and actor audit.
+- Candidate scanner is deterministic and idempotent by fingerprint over rule/signal/service/offering/window. It stores aggregate evidence without requester comments or requester identifiers.
+- RCA is human-reviewed. P4 creates drafts, review/approve/reject transitions and version numbers; no AI auto-RCA conclusion is introduced.
+- Known error and workaround outputs are Knowledge drafts with default `support_internal` visibility. Requester-safe publication remains the Knowledge Platform lifecycle.
+- Continuous improvement actions remain the P3 mechanism. P4 adds problem/candidate links and new action types for RCA/permanent-fix/workaround follow-up.
+- Analytics are aggregate-only and must not include requester IDs, raw CSAT comments, internal RCA notes or raw evidence payloads in requester-accessible surfaces.
+
+Data model plan:
+- Add Alembic revision `090` after `089`.
+- Extend `problems` with `problem_key`, severity/impact/urgency/source/service/offering/request/reporting, owner/assignee/queue timestamps, RCA/workaround/permanent-fix/closure summaries, metadata and audit fields.
+- Extend `problem_ticket_links` with `link_id`, `link_type`, `confidence_score`, `evidence_summary`, `linked_by_actor_id`, `unlinked_at` and metadata while preserving existing `(problem_id, ticket_id)` compatibility.
+- Add `problem_rca_records`, `problem_known_error_links`, `problem_affected_objects`, `problem_detection_rules`, `problem_candidates`, `problem_activity_events`.
+- Extend `continuous_improvement_actions` with nullable `problem_id` / `problem_candidate_id` and allow P4 source/action values.
+
+Candidate detection rules:
+- Repeated incidents by service/offering.
+- Reopen reason clusters.
+- Low-CSAT clusters.
+- SLA breach clusters.
+- Failed knowledge / ticket-after-view clusters.
+- Failed QA review clusters.
+- Manual candidate creation from support/admin.
+
+API/UI plan:
+- Add typed support/admin APIs under `/api/web/problems`, `/api/web/problem-candidates`, `/api/web/problem-detection-rules` and `/api/web/problems/metrics/*`.
+- Add React `/app/admin/problems` workspace with overview metrics, candidates, problem list/detail, RCA actions, known-error/workaround draft actions and affected-object/linked-ticket surfaces.
+- Add support ticket workspace problem panel that shows linked problems and support actions; requester ticket views remain internal-problem blind.
+
+Security/privacy plan:
+- `admin`: full manage; `support`: create/operate candidates/problems/RCA drafts/links; `auditor`: read-only; requester/public: no internal problem APIs.
+- Problem list evidence is redacted to counts/sample IDs for support/admin and no requester comments or requester IDs are returned in aggregate analytics.
+- Known error/workaround visibility is governed only by Knowledge ACL and review/lint.
+
+Tests:
+- TDD-first server tests for contract constants, candidate scanner, problem lifecycle, RCA review/approval, known-error/workaround integration, quality/knowledge/service-catalog integration, web API, privacy, analytics and ticket-problem links.
+- Webapp tests for problem API wiring, candidate list/workspace behavior and support ticket problem panel.
+
+Implementation status:
+- Added migration `20260517_1900_090_problem_management_rca.py`, extended SQLAlchemy models and preserved the legacy Stage 7 `/api/problems` scaffold while introducing typed P4 services under `server/problem/*`.
+- Added `/api/web/problems*` and `/api/web/problem-candidates*` handlers for list/create/detail/transition/ticket-link/candidate-scan/convert/RCA/known-error/workaround and aggregate metrics.
+- Added `/app/admin/problems` with real API-backed problem metrics, candidate scan/convert, problem list, ticket-link control, RCA create/approve controls and known-error/workaround draft actions.
+- Added linked-problems display to the support ticket Quality tab. Requester ticket pages remain blind to problem/RCA internals.
+- Added `server/docs/PROBLEM_MANAGEMENT.md` and synchronized DATABASE, SECURITY, TICKET, SERVICE CATALOG, KNOWLEDGE, QUALITY, CODEMAP, QUICK_LOOKUP, ARCHITECTURE_BOUNDARIES and navigation catalog docs.
+
+Focused verification so far:
+- `python -m pytest server/tests/test_problem_contract_no_db.py ... server/tests/test_ticket_problem_links.py -q --tb=short --durations=20` -> 19 passed.
+- `python -m pytest server/tests/test_problem_api.py server/tests/test_ticket_problem_links.py -q --tb=short` -> 3 passed.
+- `pnpm --dir webapp test -- src/features/problems/api.test.ts src/features/problems/problem-workspace.test.tsx src/pages/tickets/list-page.test.tsx` -> 39 passed.
+- `pnpm --dir webapp build` -> passed.
+- `python -m pytest --collect-only -q` -> 1463 tests collected.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
+- `python scripts/build_context_index.py --force` -> rebuilt `artifacts/context_index/pc_client.sqlite` with 14,589 items, 585 routes, 11,203 symbols and 1,398 tests.
+- `pnpm --dir webapp test -- src/features/problems/problem-workspace.test.tsx` -> 1 passed after adding ticket-link UI.
+- Working-tree full CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green; artifact `artifacts/ci/5406ee277bbe8458b81e1ee29ae8600e6a0188cd`, summary status `green`.
+- Working-tree full CI layer counts: `server_pytest_no_db` 319 passed / 713 deselected; `server_pytest_db_knowledge` 90 passed / 9 deselected; `server_pytest_db_tickets` 275 passed / 61 deselected; `server_pytest_db_observer_diagnostics` 74 passed / 28 deselected; `server_pytest_db_agent_runtime` 84 passed / 93 deselected; `server_pytest_db_web_api` 160 passed / 158 deselected; `server_pytest_agent_ws` 30 passed / 1002 deselected; `pc_agent_pytest` 315 passed / 4 deselected.
+
+Verification plan:
+- Focused P4 pytest files first, then P2.3 layers: `server_pytest_no_db`, `server_pytest_db_tickets`, `server_pytest_db_knowledge`, `server_pytest_db_web_api`, `pc_agent_pytest`.
+- Static/workspace: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`.
+- Webapp: `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, targeted vitest.
+- Final: full canonical `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0`, commit/push, full remote release, smoke and browser signoff for problem workspace flows.
+
+Rollback notes:
+- Disable detection by disabling rules; keep existing problems read-only if needed.
+- Code rollback plus Alembic downgrade `090` removes new P4 tables/columns added after the legacy Stage 7 scaffold.
+- No ticket workflow/status rollback or Protocol V3 rollback is expected.
+
 # P2.1 Knowledge Platform Acceptance Hardening
 
 Status: accepted / release-candidate. Local full verification, full CI artifact, remote release, migration apply, smoke and browser signoff are complete for P2.1 acceptance hardening. This is acceptance hardening for the already implemented P2 knowledge platform, not a scope expansion. P0/P0.1/P1/P1.1 contracts remain baseline and must not be weakened.

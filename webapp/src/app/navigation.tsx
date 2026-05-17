@@ -4,6 +4,7 @@ import {
   BookOpen,
   Building2,
   ClipboardCheck,
+  FileSearch,
   FolderKanban,
   DownloadCloud,
   KeyRound,
@@ -156,6 +157,14 @@ export const appNavigation: AppNavItem[] = [
     icon: BarChart3,
     section: "admin",
     to: "/app/admin/quality",
+    permission: "admin.forms.view",
+  },
+  {
+    label: "Problems",
+    description: "Problem candidates, RCA, known errors and workarounds",
+    icon: FileSearch,
+    section: "admin",
+    to: "/app/admin/problems",
     permission: "admin.forms.view",
   },
   {
