@@ -123,7 +123,7 @@ Rollback notes:
 
 ## P3 Experience & Quality Loop
 
-P3 Experience & Quality Loop Status: active / implementation.
+P3 Experience & Quality Loop Status: accepted / release-candidate.
 
 Goal: add a structured quality loop after ticket resolution/closure without changing canonical ticket statuses, Protocol V3, Service Catalog fields, Knowledge Platform compatibility or requester privacy boundaries.
 
@@ -187,6 +187,17 @@ Rollback notes:
 - Operational rollback can disable feedback prompts and QA triggers through `quality_policies` while keeping data read-only.
 - Code rollback plus Alembic downgrade of revision `088` removes new quality tables; no ticket workflow/status rollback is expected.
 - If UI rollout needs pausing, leave APIs/data model in place and hide requester/admin navigation entries.
+
+Final release status:
+- Implementation commit: `71f2326de58ee31fa3eabb4f9bce31065411b269` (`quality: add experience quality loop`).
+- Support workspace quality-panel fix commit: `f826e3384e07ad0a21ac841434c8a89dccf4a1e1` (`webapp: surface ticket quality panel`).
+- Full P2.3 layered CI artifact for release SHA `f826e3384e07ad0a21ac841434c8a89dccf4a1e1`: `artifacts/ci/f826e3384e07ad0a21ac841434c8a89dccf4a1e1/summary.json`.
+- Full layered CI status: green. Layers passed: `verify_workspace`, `webapp_bundle`, `server_pytest_no_db` (317 passed / 690 deselected), `server_pytest_db_knowledge` (90 passed / 9 deselected), `server_pytest_db_tickets` (272 passed / 61 deselected), `server_pytest_db_observer_diagnostics` (74 passed / 28 deselected), `server_pytest_db_agent_runtime` (84 passed / 93 deselected), `server_pytest_db_web_api` (140 passed / 156 deselected), `server_pytest_agent_ws` (30 passed / 977 deselected), `pc_agent_pytest` (315 passed / 4 deselected).
+- Focused P3 verification passed before full CI: 20 server quality tests, requester/quality webapp API tests, support ticket workspace quality-panel test (36 passed), `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`, `pnpm --dir webapp build`.
+- Remote release: `python scripts/release_server_to_remote.py --gate full --leave-running --smoke-attempts 8 --smoke-delay 5` used the green CI artifact, fast-forwarded the Linux stand to `f826e33`, applied Alembic head, uploaded the React bundle and passed `/api/health` smoke after startup retry.
+- Browser signoff on `https://192.168.100.17:9443`: `/app/admin/quality` loaded real overview metrics, service/offering quality, QA review queue, improvement actions and policy controls; requester ticket `T-000566` accepted low CSAT and structured reopen, returning the ticket to support; `/app/tickets` Quality tab showed the same real feedback, reopen event and QA review signals for that ticket.
+- Agent GUI CSAT/reopen remains intentionally deferred for P3. Canonical CSAT/reopen surfaces are web/public ticket routes; no Protocol V3 change was made.
+- Remaining risks: DB/API layers remain slow because every isolated domain layer creates a separate test DB and applies migrations; quality snapshots are recomputed through API/manual workflow rather than a scheduler in this slice; initial browser setup attempts produced expected 400 validation errors while finding the valid public-ticket payload, and the final user-visible flows completed successfully.
 
 ## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
 
