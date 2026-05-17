@@ -13,12 +13,25 @@ export type ProblemRecord = {
   root_cause_summary?: string | null;
   workaround_summary?: string | null;
   permanent_fix_summary?: string | null;
+  investigation_due_at?: string | null;
+  known_error_due_at?: string | null;
+  workaround_due_at?: string | null;
+  rca_due_at?: string | null;
+  resolution_due_at?: string | null;
+  closure_due_at?: string | null;
+  breached_milestones?: string[];
+  next_due_milestone?: string | null;
+  next_due_at?: string | null;
+  is_overdue?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 };
 
 export type ProblemCandidate = {
   candidate_id: string;
+  fingerprint?: string | null;
+  fingerprint_version?: number;
+  evidence_hash?: string | null;
   status: string;
   signal_type: string;
   title: string;
@@ -32,6 +45,12 @@ export type ProblemCandidate = {
   failed_kb_count: number;
   confidence_score?: number | null;
   converted_problem_id?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  dismissed_until?: string | null;
+  merged_into_candidate_id?: string | null;
+  duplicate_count?: number;
+  evidence?: Record<string, unknown>;
 };
 
 export type ProblemTicketLink = {
@@ -54,9 +73,38 @@ export type ProblemSummary = {
   linked_ticket_count: number;
   unresolved_known_errors: number;
   problems_without_rca: number;
+  problems_without_workaround?: number;
+  overdue_problem_count?: number;
+  overdue_milestones?: Record<string, number>;
+  avg_time_to_known_error_hours?: number | null;
+  avg_time_to_workaround_hours?: number | null;
+  avg_time_to_rca_approval_hours?: number | null;
+  avg_time_to_resolution_hours?: number | null;
   problems_by_status: Record<string, number>;
   problems_by_severity: Record<string, number>;
   problems_by_service: Record<string, number>;
+};
+
+export type ProblemScannerRun = {
+  run_id: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  status: string;
+  triggered_by: string;
+  lookback_hours: number;
+  candidates_created: number;
+  candidates_updated: number;
+  candidates_skipped: number;
+  duration_ms?: number | null;
+};
+
+export type ProblemScannerStatus = {
+  enabled: boolean;
+  running: boolean;
+  interval_seconds: number;
+  lookback_hours: number;
+  dry_run: boolean;
+  last_run?: ProblemScannerRun | null;
 };
 
 export type ProblemRca = {
@@ -176,6 +224,33 @@ export async function scanProblemCandidates(): Promise<{ created: number; update
   const response = await fetch("/api/web/problem-candidates/scan", { method: "POST", credentials: "same-origin" });
   const payload = await readOk<{ scan: { created: number; updated: number; candidates: ProblemCandidate[] } }>(response, "Failed to scan problem candidates");
   return payload.scan;
+}
+
+export async function fetchProblemScannerStatus(): Promise<ProblemScannerStatus> {
+  const response = await fetch("/api/web/problem-scanner/status", { credentials: "same-origin" });
+  const payload = await readOk<{ scanner: ProblemScannerStatus }>(response, "Failed to load problem scanner status");
+  return payload.scanner;
+}
+
+export async function runProblemScanner(payload: { dry_run?: boolean; lookback_hours?: number } = {}): Promise<ProblemScannerRun> {
+  const response = await fetch("/api/web/problem-scanner/run", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readOk<{ run: ProblemScannerRun }>(response, "Failed to run problem scanner");
+  return result.run;
+}
+
+export async function mergeProblemCandidate(candidateId: string, targetCandidateId: string, reason?: string): Promise<{ source: ProblemCandidate; target: ProblemCandidate }> {
+  const response = await fetch(`/api/web/problem-candidates/${encodeURIComponent(candidateId)}/merge`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_candidate_id: targetCandidateId, reason: reason ?? "" }),
+  });
+  return readOk<{ source: ProblemCandidate; target: ProblemCandidate }>(response, "Failed to merge problem candidates");
 }
 
 export async function convertProblemCandidate(candidateId: string): Promise<{ problem: ProblemRecord }> {

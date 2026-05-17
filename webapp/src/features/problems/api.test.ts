@@ -8,9 +8,12 @@ import {
   createProblemRca,
   createWorkaroundDraft,
   fetchProblemCandidates,
+  fetchProblemScannerStatus,
   fetchProblemSummary,
   fetchProblems,
   fetchTicketProblemLinks,
+  mergeProblemCandidate,
+  runProblemScanner,
   scanProblemCandidates,
   transitionProblem,
 } from "./api";
@@ -57,6 +60,12 @@ describe("problem api", () => {
           candidates: [{ candidate_id: "c1", status: "open", signal_type: "low_csat_pattern", title: "VPN CSAT", summary: "CSAT", ticket_count: 2, reopen_count: 0, low_csat_count: 2, sla_breach_count: 0, failed_kb_count: 0 }],
         });
       }
+      if (url === "/api/web/problem-scanner/status") {
+        return jsonResponse({
+          status: "ok",
+          scanner: { enabled: false, running: false, interval_seconds: 86400, lookback_hours: 168, dry_run: false, last_run: null },
+        });
+      }
       if (url === "/api/web/problems?ticket_id=ticket-1") {
         return jsonResponse({
           status: "ok",
@@ -75,6 +84,7 @@ describe("problem api", () => {
     expect((await fetchProblemSummary()).open_problem_count).toBe(1);
     expect((await fetchProblems())[0]?.problem_key).toBe("PRB-000001");
     expect((await fetchProblemCandidates())[0]?.signal_type).toBe("low_csat_pattern");
+    expect((await fetchProblemScannerStatus()).enabled).toBe(false);
     expect((await fetchTicketProblemLinks("ticket-1"))[0]?.link.link_type).toBe("confirmed");
   });
 
@@ -93,6 +103,16 @@ describe("problem api", () => {
       if (url === "/api/web/problem-candidates/c1/convert") {
         return jsonResponse({ status: "ok", problem: { problem_id: "p1", problem_key: "PRB-000001", title: "VPN", description: "VPN", status: "candidate", severity: "medium", priority: "medium" } });
       }
+      if (url === "/api/web/problem-scanner/run") {
+        return jsonResponse({ status: "ok", run: { run_id: "run-1", status: "completed", triggered_by: "api", lookback_hours: 168, candidates_created: 1, candidates_updated: 0, candidates_skipped: 0 } });
+      }
+      if (url === "/api/web/problem-candidates/c1/merge") {
+        return jsonResponse({
+          status: "ok",
+          source: { candidate_id: "c1", status: "merged", signal_type: "low_csat_pattern", title: "A", summary: "A", ticket_count: 1, reopen_count: 0, low_csat_count: 1, sla_breach_count: 0, failed_kb_count: 0 },
+          target: { candidate_id: "c2", status: "open", signal_type: "reopen_pattern", title: "B", summary: "B", ticket_count: 2, reopen_count: 2, low_csat_count: 0, sla_breach_count: 0, failed_kb_count: 0 },
+        });
+      }
       if (url === "/api/web/problems/p1/rca") {
         return jsonResponse({ status: "ok", rca: { rca_id: "r1", problem_id: "p1", version_number: 1, status: "draft", methodology: "five_whys", problem_statement: "VPN", root_cause: "Gateway route" } });
       }
@@ -109,12 +129,14 @@ describe("problem api", () => {
     await createProblem({ title: "VPN", description: "VPN", severity: "medium", priority: "medium" });
     await transitionProblem("p1", { status: "investigating" });
     await scanProblemCandidates();
+    await runProblemScanner();
     await convertProblemCandidate("c1");
+    await mergeProblemCandidate("c1", "c2", "same root pattern");
     const rca = await createProblemRca("p1", { methodology: "five_whys", problem_statement: "VPN", root_cause: "Gateway route" });
     await approveProblemRca("p1", rca.rca_id);
     await createKnownErrorDraft("p1");
     await createWorkaroundDraft("p1");
 
-    expect(fetchMock).toHaveBeenCalledTimes(8);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 });

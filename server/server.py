@@ -245,6 +245,12 @@ async def on_startup(app: web.Application):
             app['quality_snapshot_scheduler'] = quality_snapshot_scheduler
             logger.success("✅ Quality snapshot scheduler started")
 
+            from app.services.problem_candidate_scheduler import get_problem_candidate_scheduler
+            problem_candidate_scheduler = get_problem_candidate_scheduler()
+            await problem_candidate_scheduler.start()
+            app['problem_candidate_scheduler'] = problem_candidate_scheduler
+            logger.success("✅ Problem candidate scheduler initialized")
+
             # Reconcile scheduler: периодически сверяет desired vs actual state модулей
             from app.services.module_reconcile_scheduler import start_reconcile_scheduler
             app['reconcile_task'] = asyncio.create_task(
@@ -337,6 +343,11 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping quality snapshot scheduler...")
         await app['quality_snapshot_scheduler'].stop()
         logger.success("✅ Quality snapshot scheduler stopped")
+
+    if 'problem_candidate_scheduler' in app:
+        logger.info("⏹️ Stopping problem candidate scheduler...")
+        await app['problem_candidate_scheduler'].stop()
+        logger.success("✅ Problem candidate scheduler stopped")
 
     # Stop reconcile scheduler
     if 'reconcile_task' in app:

@@ -55,6 +55,7 @@ PROBLEM_DETECTION_SIGNAL_TYPES = {
     "sla_breach_pattern",
     "failed_kb_pattern",
     "qa_failed_pattern",
+    "knowledge_gap_pattern",
     "manual",
 }
 

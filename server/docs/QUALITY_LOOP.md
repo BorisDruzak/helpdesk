@@ -42,7 +42,7 @@ Support/admin/auditor:
 - Improvement actions are not tickets. They require source, action type, status, priority and audit fields; moving into assigned/in-progress requires an owner and closing requires outcome notes.
 - `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
 - `QualitySnapshotScheduler` runs from server startup when DB persistence is enabled. It recomputes daily and weekly snapshots through `ServiceQualityAnalyticsService`; the manual recompute endpoint remains available for operator/debug use.
-- P4 consumes quality signals as upstream evidence: low CSAT clusters, reopen reasons, SLA/QA/knowledge failures and improvement actions can feed problem candidates and confirmed problem records. Quality Loop remains the source for CSAT/reopen/QA/action data; Problem Management owns RCA/known-error/permanent-fix lifecycle.
+- P4/P4.1 consumes quality signals as upstream evidence: low CSAT clusters, reopen reasons, SLA breach patterns, failed QA reviews, knowledge failures and improvement actions can feed scheduled/manual problem candidate scans and confirmed problem records. Quality Loop remains the source for CSAT/reopen/QA/action data; Problem Management owns scanner dedup/cooldown, candidate merge, RCA/known-error/permanent-fix lifecycle and problem SLO aging.
 
 ## Surfaces
 

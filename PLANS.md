@@ -315,6 +315,59 @@ Remaining risks:
 - Candidate scanning is manual/API-driven in P4; automatic scheduled scans can be added as a later production hardening item without changing the P4 data model.
 - Problem-to-change remains a continuous-improvement action placeholder until P5 Change Enablement introduces first-class change requests.
 
+## P4.1 Problem Management Production Hardening
+
+P4.1 Problem Management Production Hardening Status: implementation complete / remote release signoff pending.
+
+Goal: compact production hardening for accepted P4, not P5 Change Enablement. Scope closes the manual-scanner and basic-signal risks by adding scheduled/API scanner run records, stronger detection coverage, dedup/merge/cooldown metadata, and operational SLO/aging dashboards while keeping requester-facing problem/RCA APIs absent.
+
+Discovery:
+- P4 baseline is commit `2618616bc2e0045ed4cdcdf39aeed7c195b8149e`; current branch was clean and synced before P4.1 work.
+- `ProblemCandidateService.scan()` existed but only generated low-CSAT and reopen candidates with simple fingerprints and no run record, cooldown, merge, duplicate count, first/last seen or scheduler.
+- P3/P3.1 signals needed for hardening are present: ticket SLA breach timestamps, `ticket_quality_reviews`, `knowledge_feedback_events`, `knowledge_gap_findings`, `ticket_feedback` and `ticket_reopen_events`.
+- `QualitySnapshotScheduler` provides the canonical async scheduler pattern for start/stop, disabled-by-default config and failure isolation.
+- `/app/admin/problems` already used real APIs for candidates/problems/RCA/known-error/workaround, but it did not expose scanner status, merge controls or SLO/aging.
+
+Design decisions:
+- Add Alembic `091` only for P4.1 infra fields/tables; no ticket status, Protocol V3, Service Catalog, Knowledge or Quality Loop contracts change.
+- `PROBLEM_SCANNER_ENABLED` defaults false; scheduled scans are opt-in, manual/API scan remains available.
+- Scanner runs are first-class audit rows in `problem_scanner_runs`; failures are recorded and do not crash the server.
+- Candidate fingerprint version `1` is deterministic over signal/rule/service/offering/signal-key/window bucket. Repeated scans update existing open candidates and increment `duplicate_count`.
+- Dismissed candidates respect `dismissed_until`; accepted/converted/merged candidates are protected from recreation. Merge marks the source as `merged`, points it at the target and combines redacted evidence.
+- Problem SLO policy precedence is offering > service > severity > global, with safe defaults when no policy exists. Due timestamps are materialized on problem creation for operational visibility.
+- Evidence redaction keeps aggregate counts and sample ticket/item/finding IDs only; requester IDs, comments, internal notes and raw policy JSON remain out of list/analytics responses.
+
+Data model / API / UI:
+- Migration `20260517_2100_091_problem_management_production_hardening.py` adds problem SLO due columns, candidate dedup/cooldown/merge columns, detection rule thresholds for failed QA/knowledge gaps, `problem_scanner_runs` and `problem_slo_policies`.
+- Added `server/app/services/problem_candidate_scheduler.py`, `problem/slo_service.py`, expanded `ProblemCandidateService`, `ProblemAnalyticsService`, serializers and `/api/web/problem-scanner/*` plus candidate merge API.
+- `/app/admin/problems` now shows scanner status/run/dry-run controls, duplicate/first-seen/last-seen candidate metadata, merge action, overdue problem count and SLO milestone timeline.
+
+Tests:
+- TDD red pass first failed on missing `ProblemScannerRun` and `ProblemSLOPolicy`.
+- Focused P4.1 server suite: `python -m pytest server/tests/test_problem_scheduler.py ... server/tests/test_problem_operational_privacy.py -q --tb=short` -> 17 passed in 280.86s.
+- P4 regression suite: `python -m pytest server/tests/test_problem_contract_no_db.py ... server/tests/test_ticket_problem_links.py -q --tb=short` -> 19 passed in 278.41s.
+- Webapp focused tests: `pnpm --dir webapp test -- --run src/features/problems/api.test.ts src/features/problems/problem-workspace.test.tsx` -> 2 files / 3 tests passed.
+
+Release verification:
+- Root collection: `python -m pytest --collect-only -q` -> 1480 tests collected.
+- P2.3 core layers:
+  - `server_pytest_no_db` -> 319 passed.
+  - `server_pytest_db_tickets` -> 275 passed.
+  - `server_pytest_db_knowledge` -> 90 passed.
+  - `server_pytest_db_web_api` -> 177 passed.
+- Static/workspace: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force` -> passed.
+- Webapp: `pnpm --dir webapp build` -> passed; no separate `lint`/`typecheck` scripts exist, and build runs `tsc --noEmit`.
+- Full canonical CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/fbfdc1a702704e6ad07e2d14959c3b2f23f8bad7/summary.json`.
+  - Full CI pass counts: verify_workspace passed; webapp bundle passed; no-db 319; knowledge 90; tickets 275; observer/diagnostics 74; agent_runtime 84; web_api 177; agent_ws 30; pc_agent 315.
+- Local `python server/scripts/run_migrations.py upgrade head` could not connect to the DB from the Windows environment (`ConnectionRefusedError`). Alembic head is validated by isolated DB layers; remote release will apply migrations on the Linux stand.
+- Pending: implementation commit/push, remote release, `/api/health` smoke, browser signoff and final accepted/release-candidate status update.
+
+Rollback notes:
+- Disable `PROBLEM_SCANNER_ENABLED` and keep using manual/API scan.
+- Keep problem records read-only if candidate detection needs pausing.
+- Alembic downgrade `091` removes scheduler/SLO hardening artifacts only; P4 `090` problem model remains intact.
+- No ticket workflow/status rollback and no Protocol V3 rollback are expected.
+
 # P2.1 Knowledge Platform Acceptance Hardening
 
 Status: accepted / release-candidate. Local full verification, full CI artifact, remote release, migration apply, smoke and browser signoff are complete for P2.1 acceptance hardening. This is acceptance hardening for the already implemented P2 knowledge platform, not a scope expansion. P0/P0.1/P1/P1.1 contracts remain baseline and must not be weakened.

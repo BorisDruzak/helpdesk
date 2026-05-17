@@ -988,8 +988,8 @@ TOPICS: tuple[Topic, ...] = (
     ),
     Topic(
         key="problem_management",
-        title="P4 Problem Management / RCA",
-        summary="P4 problem management: problem candidates from quality/ticket/knowledge/SLA signals, first-class problem records, ticket links, lifecycle transitions, versioned RCA, known-error/workaround Knowledge drafts, affected objects, continuous-improvement action linkage, aggregate no-PII analytics, support/admin APIs under `/api/web/problems*` and `/api/web/problem-candidates*`, `/app/admin/problems` and support ticket linked-problems panel.",
+        title="P4/P4.1 Problem Management / RCA",
+        summary="P4/P4.1 problem management: scheduled/manual problem candidate scanner, scanner run records, candidate fingerprint/dedup/cooldown/merge, detection from quality/ticket/knowledge/SLA/failed-QA/failed-KB/gap signals, first-class problem records, SLO/aging milestones, ticket links, lifecycle transitions, versioned RCA, known-error/workaround Knowledge drafts, affected objects, continuous-improvement action linkage, aggregate no-PII analytics, support/admin APIs under `/api/web/problems*`, `/api/web/problem-candidates*` and `/api/web/problem-scanner*`, `/app/admin/problems` and support ticket linked-problems panel.",
         aliases=(
             "problem management",
             "P4",
@@ -1002,6 +1002,7 @@ TOPICS: tuple[Topic, ...] = (
             "workaround",
             "/api/web/problems",
             "/api/web/problem-candidates",
+            "/api/web/problem-scanner",
             "/app/admin/problems",
         ),
         first_files=(
@@ -1009,11 +1010,14 @@ TOPICS: tuple[Topic, ...] = (
             "server/problem/contracts.py",
             "server/problem/problem_service.py",
             "server/problem/candidate_service.py",
+            "server/problem/slo_service.py",
             "server/problem/rca_service.py",
             "server/problem/known_error_service.py",
             "server/problem/analytics_service.py",
+            "server/app/services/problem_candidate_scheduler.py",
             "server/web_api/problem_handlers.py",
             "server/app/db/migrations/versions/20260517_1900_090_problem_management_rca.py",
+            "server/app/db/migrations/versions/20260517_2100_091_problem_management_production_hardening.py",
             "webapp/src/features/problems/api.ts",
             "webapp/src/features/problems/problem-workspace.tsx",
             "webapp/src/pages/admin/problems-page.tsx",
@@ -1036,6 +1040,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "problem" --dir server',
             'python scripts/agent_find.py "known_error" --dir server',
+            "python -m pytest server/tests/test_problem_scheduler.py server/tests/test_problem_detection_sla_breach.py server/tests/test_problem_detection_failed_qa.py server/tests/test_problem_detection_failed_kb.py server/tests/test_problem_detection_knowledge_gaps.py server/tests/test_problem_candidate_dedup.py server/tests/test_problem_candidate_merge.py server/tests/test_problem_candidate_cooldown.py server/tests/test_problem_slo_policy.py server/tests/test_problem_aging_analytics.py server/tests/test_problem_scanner_api.py server/tests/test_problem_operational_privacy.py -q --tb=short",
             "python -m pytest server/tests/test_problem_contract_no_db.py server/tests/test_problem_repo.py server/tests/test_problem_candidate_service.py server/tests/test_problem_service.py server/tests/test_problem_rca_service.py server/tests/test_problem_known_error_integration.py server/tests/test_problem_quality_integration.py server/tests/test_problem_knowledge_integration.py server/tests/test_problem_service_catalog_integration.py server/tests/test_problem_api.py server/tests/test_problem_privacy.py server/tests/test_problem_analytics.py server/tests/test_problem_scanner_rules.py server/tests/test_ticket_problem_links.py -q --tb=short",
             "pnpm --dir webapp test -- src/features/problems/api.test.ts src/features/problems/problem-workspace.test.tsx src/pages/tickets/list-page.test.tsx",
             "pnpm --dir webapp build",
@@ -1049,7 +1054,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/run_ci_suite.py --layer server_pytest_db_web_api",
             "python scripts/run_ci_suite.py --layer pc_agent_pytest",
             "pnpm --dir webapp build",
-            "Browser signoff at https://192.168.100.17:9443/admin for /app/admin/problems and support ticket linked-problems panel after deploy",
+            "Browser signoff at https://192.168.100.17:9443/admin for /app/admin/problems scanner card, manual scan, candidate merge, SLO/overdue timeline and support ticket linked-problems panel after deploy",
         ),
         plan_required=True,
         docs_to_update=(
@@ -1073,6 +1078,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         exact_paths=(
             "server/app/db/models.py",
+            "server/app/services/problem_candidate_scheduler.py",
             "server/routes.py",
             "server/web_api/problem_handlers.py",
             "server/quality/contracts.py",

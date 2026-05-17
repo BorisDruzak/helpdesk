@@ -26,6 +26,7 @@ from problem.contracts import (
     validate_problem_resolution_payload,
 )
 from problem.serializers import problem_to_dict, ticket_link_to_dict
+from problem.slo_service import ProblemSLOService
 
 
 class ProblemService:
@@ -72,6 +73,7 @@ class ProblemService:
             updated_at=now,
         )
         self.session.add(row)
+        await ProblemSLOService(self.session).apply_due_dates(row, now=now)
         await self.session.flush()
         await self._activity(problem_id=row.problem_id, event_type="problem_created", actor_id=actor_id, payload={"status": row.status})
         return problem_to_dict(row)
@@ -122,6 +124,7 @@ class ProblemService:
             row.closed_at = now
         if status == "canceled" and row.canceled_at is None:
             row.canceled_at = now
+        ProblemSLOService(self.session).refresh_breached_milestones(row, now=now)
         await self.session.flush()
         await self._activity(problem_id=row.problem_id, event_type="status_changed", actor_id=actor_id, payload={"from": previous, "to": status})
         return problem_to_dict(row)

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, CheckCircle2, FileSearch, GitPullRequestDraft, Link2, RefreshCcw } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, Clock3, FileSearch, GitMerge, GitPullRequestDraft, Link2, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/button";
@@ -11,10 +11,13 @@ import {
   createProblem,
   createProblemRca,
   createWorkaroundDraft,
+  fetchProblemScannerStatus,
   fetchProblemCandidates,
   fetchProblems,
   fetchProblemSummary,
   linkProblemTicket,
+  mergeProblemCandidate,
+  runProblemScanner,
   scanProblemCandidates,
   transitionProblem,
   type ProblemRecord,
@@ -46,15 +49,18 @@ export function ProblemWorkspace() {
   const [rcaRootCause, setRcaRootCause] = useState("");
   const [linkTicketId, setLinkTicketId] = useState("");
   const [linkEvidence, setLinkEvidence] = useState("");
+  const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({});
   const summaryQuery = useQuery({ queryKey: ["problems", "summary"], queryFn: fetchProblemSummary });
   const problemsQuery = useQuery({ queryKey: ["problems", "list"], queryFn: () => fetchProblems() });
   const candidatesQuery = useQuery({ queryKey: ["problems", "candidates"], queryFn: fetchProblemCandidates });
+  const scannerStatusQuery = useQuery({ queryKey: ["problems", "scanner-status"], queryFn: fetchProblemScannerStatus });
 
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["problems", "summary"] }),
       queryClient.invalidateQueries({ queryKey: ["problems", "list"] }),
       queryClient.invalidateQueries({ queryKey: ["problems", "candidates"] }),
+      queryClient.invalidateQueries({ queryKey: ["problems", "scanner-status"] }),
     ]);
   };
 
@@ -90,6 +96,13 @@ export function ProblemWorkspace() {
   });
 
   const scanMutation = useMutation({ mutationFn: scanProblemCandidates, onSuccess: invalidate });
+  const scannerRunMutation = useMutation({ mutationFn: () => runProblemScanner(), onSuccess: invalidate });
+  const dryRunMutation = useMutation({ mutationFn: () => runProblemScanner({ dry_run: true }), onSuccess: invalidate });
+  const mergeCandidateMutation = useMutation({
+    mutationFn: (payload: { candidateId: string; targetCandidateId: string }) =>
+      mergeProblemCandidate(payload.candidateId, payload.targetCandidateId, "same root pattern"),
+    onSuccess: invalidate,
+  });
   const convertMutation = useMutation({
     mutationFn: convertProblemCandidate,
     onSuccess: async (result) => {
@@ -134,6 +147,7 @@ export function ProblemWorkspace() {
   });
 
   const summary = summaryQuery.data;
+  const scanner = scannerStatusQuery.data;
 
   return (
     <section className="workspace-page grid gap-5">
@@ -173,7 +187,56 @@ export function ProblemWorkspace() {
             <CardTitle>{valueLabel(summary?.problems_without_rca)}</CardTitle>
           </CardHeader>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Overdue problems</CardDescription>
+            <CardTitle>{valueLabel(summary?.overdue_problem_count ?? 0)}</CardTitle>
+          </CardHeader>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>Scanner operations</CardTitle>
+              <CardDescription>Scheduled and manual problem candidate detection with run history state.</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={scannerRunMutation.isPending} leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => scannerRunMutation.mutate()} type="button" variant="outline">
+                Run scanner
+              </Button>
+              <Button disabled={dryRunMutation.isPending} leadingIcon={<FileSearch className="h-4 w-4" />} onClick={() => dryRunMutation.mutate()} type="button" variant="outline">
+                Dry run
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-5">
+            <div>
+              <p className="text-xs uppercase text-slate-500">State</p>
+              <p className="font-semibold">{scanner?.enabled ? "enabled" : "disabled"}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-slate-500">Last status</p>
+              <p className="font-semibold">{scanner?.last_run?.status ?? "n/a"}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-slate-500">Created</p>
+              <p className="font-semibold">{valueLabel(scanner?.last_run?.candidates_created)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-slate-500">Updated</p>
+              <p className="font-semibold">{valueLabel(scanner?.last_run?.candidates_updated)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-slate-500">Duration</p>
+              <p className="font-semibold">{scanner?.last_run?.duration_ms ? `${scanner.last_run.duration_ms} ms` : "n/a"}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
         <Card>
@@ -200,6 +263,7 @@ export function ProblemWorkspace() {
                     <th className="px-3 py-2">Severity</th>
                     <th className="px-3 py-2">Service</th>
                     <th className="px-3 py-2">Offering</th>
+                    <th className="px-3 py-2">Next due</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -217,6 +281,11 @@ export function ProblemWorkspace() {
                       <td className="px-3 py-2">{problem.severity}</td>
                       <td className="px-3 py-2">{problem.service_code ?? "legacy"}</td>
                       <td className="px-3 py-2">{problem.offering_code ?? "uncategorized"}</td>
+                      <td className="px-3 py-2">
+                        <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${problem.is_overdue ? "border-red-200 bg-red-50 text-red-800" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                          {problem.next_due_milestone ?? "n/a"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -242,6 +311,20 @@ export function ProblemWorkspace() {
                   <p className="mt-1 text-xs text-slate-500">
                     {selectedProblem.service_code ?? "legacy"} / {selectedProblem.offering_code ?? "uncategorized"}
                   </p>
+                </div>
+                <div className="rounded-[0.75rem] border border-border px-3 py-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <Clock3 className="h-4 w-4" />
+                    SLO milestones
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+                    <span>Investigation: {selectedProblem.investigation_due_at ?? "n/a"}</span>
+                    <span>Known error: {selectedProblem.known_error_due_at ?? "n/a"}</span>
+                    <span>Workaround: {selectedProblem.workaround_due_at ?? "n/a"}</span>
+                    <span>RCA: {selectedProblem.rca_due_at ?? "n/a"}</span>
+                    <span>Resolution: {selectedProblem.resolution_due_at ?? "n/a"}</span>
+                    <span>Closure: {selectedProblem.closure_due_at ?? "n/a"}</span>
+                  </div>
                 </div>
                 <textarea
                   className="field-base min-h-24 px-3 py-2"
@@ -353,18 +436,40 @@ export function ProblemWorkspace() {
                   <span>SLA {candidate.sla_breach_count}</span>
                   <span>KB {candidate.failed_kb_count}</span>
                 </div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+                  <span>Duplicates {candidate.duplicate_count ?? 0}</span>
+                  <span>First seen {candidate.first_seen_at ?? "n/a"}</span>
+                  <span>Last seen {candidate.last_seen_at ?? "n/a"}</span>
+                </div>
                 {candidate.status === "open" ? (
-                  <Button
-                    className="mt-3"
-                    disabled={convertMutation.isPending}
-                    leadingIcon={<Link2 className="h-4 w-4" />}
-                    onClick={() => convertMutation.mutate(candidate.candidate_id)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Convert
-                  </Button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      disabled={convertMutation.isPending}
+                      leadingIcon={<Link2 className="h-4 w-4" />}
+                      onClick={() => convertMutation.mutate(candidate.candidate_id)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Convert
+                    </Button>
+                    <input
+                      className="field-base min-w-48 px-3 py-2 text-xs"
+                      onChange={(event) => setMergeTargets((current) => ({ ...current, [candidate.candidate_id]: event.currentTarget.value }))}
+                      placeholder="target candidate_id"
+                      value={mergeTargets[candidate.candidate_id] ?? ""}
+                    />
+                    <Button
+                      disabled={!mergeTargets[candidate.candidate_id]?.trim() || mergeCandidateMutation.isPending}
+                      leadingIcon={<GitMerge className="h-4 w-4" />}
+                      onClick={() => mergeCandidateMutation.mutate({ candidateId: candidate.candidate_id, targetCandidateId: mergeTargets[candidate.candidate_id].trim() })}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Merge
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             ))}

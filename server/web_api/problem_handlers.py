@@ -11,6 +11,7 @@ from problem.candidate_service import ProblemCandidateService
 from problem.known_error_service import ProblemKnownErrorService
 from problem.problem_service import ProblemService
 from problem.rca_service import RCAService
+from app.services.problem_candidate_scheduler import get_problem_candidate_scheduler
 
 
 def _ok(**payload: Any) -> web.Response:
@@ -158,6 +159,57 @@ async def handle_web_problem_candidate_convert(request: web.Request) -> web.Resp
             return _ok(**result)
     except ValueError as exc:
         return _error(str(exc), status=400)
+
+
+@require_auth("admin", "support")
+async def handle_web_problem_candidate_merge(request: web.Request) -> web.Response:
+    auth = _auth(request)
+    data = await _json(request)
+    try:
+        async with get_session() as session:
+            result = await ProblemCandidateService(session).merge_candidates(
+                request.match_info.get("candidate_id"),
+                str(data.get("target_candidate_id") or ""),
+                actor_id=auth.actor_id,
+                reason=data.get("reason"),
+            )
+            await session.commit()
+            return _ok(**result)
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_problem_scanner_status(request: web.Request) -> web.Response:
+    status = await get_problem_candidate_scheduler().status()
+    return _ok(scanner=status)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_problem_scanner_runs(request: web.Request) -> web.Response:
+    try:
+        limit = int(request.query.get("limit") or "20")
+    except ValueError:
+        limit = 20
+    runs = await get_problem_candidate_scheduler().recent_runs(limit=limit)
+    return _ok(runs=runs, count=len(runs))
+
+
+@require_auth("admin", "support")
+async def handle_web_problem_scanner_run(request: web.Request) -> web.Response:
+    auth = _auth(request)
+    data = await _json(request)
+    try:
+        lookback = int(data.get("lookback_hours") or get_problem_candidate_scheduler().lookback_hours)
+    except (TypeError, ValueError):
+        lookback = get_problem_candidate_scheduler().lookback_hours
+    result = await get_problem_candidate_scheduler().run_once(
+        triggered_by="api",
+        actor_id=auth.actor_id,
+        lookback_hours=lookback,
+        dry_run=bool(data.get("dry_run", False)),
+    )
+    return _ok(run=result)
 
 
 @require_auth("admin", "support", "auditor")

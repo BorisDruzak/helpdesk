@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -18,6 +18,7 @@ def primitive(value: Any) -> Any:
 
 
 def problem_to_dict(row: Any) -> dict[str, Any]:
+    operational = _problem_operational_status(row)
     return primitive(
         {
             "problem_id": row.problem_id,
@@ -41,6 +42,16 @@ def problem_to_dict(row: Any) -> dict[str, Any]:
             "opened_at": row.opened_at,
             "known_error_at": row.known_error_at,
             "workaround_available_at": row.workaround_available_at,
+            "investigation_due_at": getattr(row, "investigation_due_at", None),
+            "known_error_due_at": getattr(row, "known_error_due_at", None),
+            "workaround_due_at": getattr(row, "workaround_due_at", None),
+            "rca_due_at": getattr(row, "rca_due_at", None),
+            "resolution_due_at": getattr(row, "resolution_due_at", None),
+            "closure_due_at": getattr(row, "closure_due_at", None),
+            "breached_milestones": getattr(row, "breached_milestones", []) or [],
+            "next_due_milestone": operational["next_due_milestone"],
+            "next_due_at": operational["next_due_at"],
+            "is_overdue": operational["is_overdue"],
             "resolved_at": row.resolved_at,
             "closed_at": row.closed_at,
             "root_cause_summary": row.root_cause_summary or row.root_cause,
@@ -75,6 +86,8 @@ def candidate_to_dict(row: Any) -> dict[str, Any]:
         {
             "candidate_id": row.candidate_id,
             "fingerprint": row.fingerprint,
+            "fingerprint_version": getattr(row, "fingerprint_version", 1),
+            "evidence_hash": getattr(row, "evidence_hash", None),
             "status": row.status,
             "signal_type": row.signal_type,
             "title": row.title,
@@ -89,6 +102,11 @@ def candidate_to_dict(row: Any) -> dict[str, Any]:
             "failed_kb_count": row.failed_kb_count,
             "confidence_score": row.confidence_score,
             "converted_problem_id": row.converted_problem_id,
+            "first_seen_at": getattr(row, "first_seen_at", None),
+            "last_seen_at": getattr(row, "last_seen_at", None),
+            "dismissed_until": getattr(row, "dismissed_until", None),
+            "merged_into_candidate_id": getattr(row, "merged_into_candidate_id", None),
+            "duplicate_count": getattr(row, "duplicate_count", 0),
             "evidence": _redacted_evidence(row.evidence_json or {}),
             "created_at": row.created_at,
             "updated_at": row.updated_at,
@@ -117,6 +135,67 @@ def rca_to_dict(row: Any) -> dict[str, Any]:
     )
 
 
+def scanner_run_to_dict(row: Any) -> dict[str, Any]:
+    return primitive(
+        {
+            "run_id": row.run_id,
+            "started_at": row.started_at,
+            "finished_at": row.finished_at,
+            "status": row.status,
+            "triggered_by": row.triggered_by,
+            "lookback_hours": row.lookback_hours,
+            "rules_run": row.rules_run or [],
+            "candidates_created": row.candidates_created,
+            "candidates_updated": row.candidates_updated,
+            "candidates_skipped": row.candidates_skipped,
+            "errors": row.errors_json or [],
+            "duration_ms": row.duration_ms,
+            "metadata": row.metadata_json or {},
+        }
+    )
+
+
 def _redacted_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"ticket_ids", "ticket_count", "reopen_count", "low_csat_count", "sla_breach_count", "failed_kb_count", "top_reopen_reasons", "window_start", "window_end"}
+    allowed = {
+        "ticket_ids",
+        "ticket_count",
+        "reopen_count",
+        "low_csat_count",
+        "sla_breach_count",
+        "failed_kb_count",
+        "top_reopen_reasons",
+        "breach_type_counts",
+        "review_type_counts",
+        "event_type_counts",
+        "knowledge_item_ids",
+        "gap_finding_ids",
+        "gap_type_counts",
+        "window_start",
+        "window_end",
+    }
     return {key: value for key, value in evidence.items() if key in allowed}
+
+
+def _problem_operational_status(row: Any) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    breached = list(getattr(row, "breached_milestones", []) or [])
+    due_fields = [
+        ("investigation", getattr(row, "investigation_due_at", None), getattr(row, "investigation_started_at", None)),
+        ("known_error", getattr(row, "known_error_due_at", None), getattr(row, "known_error_at", None)),
+        ("workaround", getattr(row, "workaround_due_at", None), getattr(row, "workaround_available_at", None)),
+        ("rca", getattr(row, "rca_due_at", None), None),
+        ("resolution", getattr(row, "resolution_due_at", None), getattr(row, "resolved_at", None)),
+        ("closure", getattr(row, "closure_due_at", None), getattr(row, "closed_at", None)),
+    ]
+    for milestone, due_at, actual_at in due_fields:
+        if due_at and due_at < now and actual_at is None and milestone not in breached:
+            breached.append(milestone)
+    next_due = None
+    next_due_at = None
+    for milestone, due_at, actual_at in due_fields:
+        if actual_at is not None or due_at is None:
+            continue
+        if next_due_at is None or due_at < next_due_at:
+            next_due = milestone
+            next_due_at = due_at
+    return {"breached_milestones": breached, "next_due_milestone": next_due, "next_due_at": next_due_at, "is_overdue": bool(breached)}

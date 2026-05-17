@@ -30,7 +30,7 @@ Supported item types are:
 
 `article`, `faq`, `runbook`, `policy`, `document`, `known_error`, `workaround`, `troubleshooting_tree`, `glossary_term`, `service_description`, `external_source`, `resolution_draft`.
 
-P4 Problem Management creates and links `known_error` and `workaround` items as Knowledge drafts through the normal Knowledge Platform lifecycle. These drafts default to `support_internal`; requester-safe publication still requires the usual lint/review/publish path and graph/ACL visibility filtering.
+P4 Problem Management creates and links `known_error` and `workaround` items as Knowledge drafts through the normal Knowledge Platform lifecycle. These drafts default to `support_internal`; requester-safe publication still requires the usual lint/review/publish path and graph/ACL visibility filtering. P4.1 extends the evidence path into the scheduled problem scanner: `not_helpful` and `ticket_created_after_view` feedback can create failed-KB candidates, and open/accepted `knowledge_gap_findings` combined with repeated tickets can create knowledge-gap candidates. Candidate list APIs redact raw requester comments and internal evidence; known-error/workaround requester visibility remains owned by Knowledge Platform review and lint.
 
 ## Lifecycle
 
