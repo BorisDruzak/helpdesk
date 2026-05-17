@@ -317,7 +317,7 @@ Remaining risks:
 
 ## P4.1 Problem Management Production Hardening
 
-P4.1 Problem Management Production Hardening Status: implementation complete / remote release signoff pending.
+P4.1 Problem Management Production Hardening Status: accepted / release-candidate.
 
 Goal: compact production hardening for accepted P4, not P5 Change Enablement. Scope closes the manual-scanner and basic-signal risks by adding scheduled/API scanner run records, stronger detection coverage, dedup/merge/cooldown metadata, and operational SLO/aging dashboards while keeping requester-facing problem/RCA APIs absent.
 
@@ -349,6 +349,8 @@ Tests:
 - Webapp focused tests: `pnpm --dir webapp test -- --run src/features/problems/api.test.ts src/features/problems/problem-workspace.test.tsx` -> 2 files / 3 tests passed.
 
 Release verification:
+- Implementation commit: `f2ad8dbab9334ceb2ff674689a6d3e39dd8a948d` (`problem: harden scanner and SLO operations`).
+- Browser-fix commit: `f83f95d794fcd17028bb87d659902af4d26efe0f` (`webapp: fix problem candidate merge input`).
 - Root collection: `python -m pytest --collect-only -q` -> 1480 tests collected.
 - P2.3 core layers:
   - `server_pytest_no_db` -> 319 passed.
@@ -357,10 +359,19 @@ Release verification:
   - `server_pytest_db_web_api` -> 177 passed.
 - Static/workspace: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force` -> passed.
 - Webapp: `pnpm --dir webapp build` -> passed; no separate `lint`/`typecheck` scripts exist, and build runs `tsc --noEmit`.
-- Full canonical CI: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/fbfdc1a702704e6ad07e2d14959c3b2f23f8bad7/summary.json`.
+- Webapp focused regression after browser-discovered merge-input crash: `pnpm --dir webapp exec vitest run src/features/problems/problem-workspace.test.tsx src/features/problems/api.test.ts` -> 2 files / 3 tests passed. An earlier local attempt with unsupported Vitest option `--runInBand` failed as an invalid command flag and was replaced by the valid command.
+- Full canonical CI on implementation commit `f2ad8dbab9334ceb2ff674689a6d3e39dd8a948d`: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/f2ad8dbab9334ceb2ff674689a6d3e39dd8a948d/summary.json`.
+- Final full canonical CI on release commit `f83f95d794fcd17028bb87d659902af4d26efe0f`: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> green, artifact `artifacts/ci/f83f95d794fcd17028bb87d659902af4d26efe0f/summary.json`.
   - Full CI pass counts: verify_workspace passed; webapp bundle passed; no-db 319; knowledge 90; tickets 275; observer/diagnostics 74; agent_runtime 84; web_api 177; agent_ws 30; pc_agent 315.
-- Local `python server/scripts/run_migrations.py upgrade head` could not connect to the DB from the Windows environment (`ConnectionRefusedError`). Alembic head is validated by isolated DB layers; remote release will apply migrations on the Linux stand.
-- Pending: implementation commit/push, remote release, `/api/health` smoke, browser signoff and final accepted/release-candidate status update.
+- Local `python server/scripts/run_migrations.py upgrade head` could not connect to the DB from the Windows environment (`ConnectionRefusedError`). Alembic head is validated by isolated DB layers; remote release applied migrations on the Linux stand.
+- Remote release: `python scripts/release_server_to_remote.py --gate full --leave-running --smoke-attempts 8 --smoke-delay 5` used the final green CI artifact for `f83f95d794fcd17028bb87d659902af4d26efe0f`, fast-forwarded the Linux stand, applied Alembic head, uploaded the webapp bundle and passed `/api/health` smoke on retry 2/8.
+- Browser signoff at `https://192.168.100.17:9443`: `/app/admin/problems` rendered scanner status, manual run, candidate duplicate metadata, SLO/aging cards and real problem metrics. Manual scanner run created candidates, repeated run updated existing candidates without duplication, merge target input enabled Merge without console errors after fix, merge marked one candidate `merged` and updated the target duplicate count. Ticket workspace Quality panel for `/app/tickets/8aa0050b-f553-4f5a-8fb0-59f39fe67541` showed linked problem `PRB-000001 / workaround_available / confirmed`. Browser console errors/warnings were absent on final checked pages.
+- Remote server was stopped after signoff with `python scripts/manage_remote_stack.py stop server`.
+
+Remaining risks:
+- `PROBLEM_SCANNER_ENABLED` is intentionally false by default; production must opt in after choosing an interval/lookback policy.
+- Problem-to-change remains a placeholder action/link until P5 Change Enablement.
+- Scanner evidence grouping is deterministic and broader than P4, but still rule-based; no AI RCA/classification is introduced.
 
 Rollback notes:
 - Disable `PROBLEM_SCANNER_ENABLED` and keep using manual/API scan.
