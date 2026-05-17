@@ -455,7 +455,10 @@ export function ProblemWorkspace() {
                     </Button>
                     <input
                       className="field-base min-w-48 px-3 py-2 text-xs"
-                      onChange={(event) => setMergeTargets((current) => ({ ...current, [candidate.candidate_id]: event.currentTarget.value }))}
+                      onChange={(event) => {
+                        const targetCandidateId = event.currentTarget.value;
+                        setMergeTargets((current) => ({ ...current, [candidate.candidate_id]: targetCandidateId }));
+                      }}
                       placeholder="target candidate_id"
                       value={mergeTargets[candidate.candidate_id] ?? ""}
                     />
