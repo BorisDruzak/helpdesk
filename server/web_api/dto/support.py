@@ -1153,6 +1153,70 @@ class SupportTicketClosurePlanPayload(BaseModel):
     blockers: list[SupportTicketClosurePlanItem] = Field(default_factory=list)
 
 
+class SupportTicketQualityFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feedback_id: str
+    rating: int
+    sentiment: str | None = None
+    problem_resolved: bool | None = None
+    resolution_confirmed: bool | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    comment: str | None = None
+    source_surface: str | None = None
+    submitted_at: str | None = None
+
+
+class SupportTicketQualityReopenEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reopen_id: str
+    reason_code: str
+    reason_comment: str | None = None
+    previous_status: str | None = None
+    new_status: str | None = None
+    created_at: str | None = None
+
+
+class SupportTicketQualityReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str
+    review_type: str
+    severity: str
+    status: str
+    assigned_to_actor_id: str | None = None
+    score: int | None = None
+    due_at: str | None = None
+    created_at: str | None = None
+    closed_at: str | None = None
+
+
+class SupportTicketQualityAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: str
+    source_kind: str
+    action_type: str
+    title: str
+    status: str
+    priority: str
+    owner_actor_id: str | None = None
+    due_at: str | None = None
+    created_at: str | None = None
+    closed_at: str | None = None
+
+
+class SupportTicketQualityPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latest_feedback: SupportTicketQualityFeedback | None = None
+    reopen_events: list[SupportTicketQualityReopenEvent] = Field(default_factory=list)
+    reviews: list[SupportTicketQualityReview] = Field(default_factory=list)
+    improvement_actions: list[SupportTicketQualityAction] = Field(default_factory=list)
+    indicators: list[str] = Field(default_factory=list)
+
+
 class SupportTicketDetailPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1162,6 +1226,7 @@ class SupportTicketDetailPayload(BaseModel):
     timeline: list[SupportTicketMessage]
     snapshot: SupportTicketSnapshot
     actions: SupportTicketActions
+    quality: SupportTicketQualityPayload | None = None
 
 
 class SupportTicketTimelinePayload(BaseModel):

@@ -15,6 +15,7 @@ import {
   AdminObserverPage,
   AdminPlaybooksPage,
   AdminPolicyHealthPage,
+  AdminQualityPage,
   AdminRegistryPage,
   AdminServiceCatalogPage,
   HelpPage,
@@ -339,6 +340,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminKnowledgePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/quality",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminQualityPage />
               </WorkspaceAccessGate>
             )
           },

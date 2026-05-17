@@ -5,7 +5,9 @@ import {
   createPublicTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
+  reopenPublicTicket,
   sendPublicTicketMessage,
+  submitPublicTicketFeedback,
 } from "./api";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -135,6 +137,42 @@ describe("requester public api", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ text: "Спасибо", visibility: "public" }),
+      }),
+    );
+  });
+
+  it("submits structured CSAT and reopens through public ticket endpoints", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/public_api/tickets/T-1/feedback") {
+        return jsonResponse({ status: "ok", ok: true, feedback_id: "fb-1", reopen_available: true });
+      }
+      if (url === "/public_api/tickets/T-1/reopen") {
+        return jsonResponse({ status: "ok", ticket_id: "T-1", ticket_status: "in_progress", reopen_id: "ro-1" });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const feedback = await submitPublicTicketFeedback("T-1", "public-token", {
+      rating: 2,
+      problem_resolved: false,
+      reason_codes: ["not_resolved"],
+      comment: "Still broken",
+    });
+    const reopen = await reopenPublicTicket("T-1", "public-token", {
+      reason_code: "problem_returned",
+      reason_comment: "Problem returned",
+      linked_feedback_id: feedback.feedback_id,
+    });
+
+    expect(feedback.reopen_available).toBe(true);
+    expect(reopen.ticket_status).toBe("in_progress");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/public_api/tickets/T-1/feedback",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer public-token" }),
       }),
     );
   });

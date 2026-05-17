@@ -3,6 +3,10 @@ import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
   PublicTicketDetail,
+  PublicTicketFeedbackPayload,
+  PublicTicketFeedbackResult,
+  PublicTicketReopenPayload,
+  PublicTicketReopenResult,
   KnowledgeSuggestResult,
   ServiceCatalogPreviewPayload,
   ServiceCatalogSafePreview,
@@ -197,6 +201,32 @@ export async function sendPublicTicketConfirmation(
     }),
   });
   await readOk<unknown>(response, "Не удалось отправить подтверждение");
+}
+
+export async function submitPublicTicketFeedback(
+  ticketId: string,
+  token: string,
+  payload: PublicTicketFeedbackPayload,
+): Promise<PublicTicketFeedbackResult> {
+  const response = await fetch(`/public_api/tickets/${encodeURIComponent(ticketId)}/feedback`, {
+    method: "POST",
+    headers: publicHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  return readOk<PublicTicketFeedbackResult>(response, "Failed to save feedback");
+}
+
+export async function reopenPublicTicket(
+  ticketId: string,
+  token: string,
+  payload: PublicTicketReopenPayload,
+): Promise<PublicTicketReopenResult> {
+  const response = await fetch(`/public_api/tickets/${encodeURIComponent(ticketId)}/reopen`, {
+    method: "POST",
+    headers: publicHeaders(token, true),
+    body: JSON.stringify(payload),
+  });
+  return readOk<PublicTicketReopenResult>(response, "Failed to reopen ticket");
 }
 
 export async function closePublicTicket(ticketId: string, token: string): Promise<void> {

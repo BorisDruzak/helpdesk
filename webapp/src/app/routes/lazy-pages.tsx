@@ -82,6 +82,10 @@ export const AdminKnowledgePage = lazy(() =>
   import("../../pages/admin/knowledge-page").then((module) => ({ default: module.AdminKnowledgePage })),
 );
 
+export const AdminQualityPage = lazy(() =>
+  import("../../pages/admin/quality-page").then((module) => ({ default: module.AdminQualityPage })),
+);
+
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );

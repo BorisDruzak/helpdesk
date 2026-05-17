@@ -442,6 +442,9 @@ function SupportDetailPanel({
           <a className="support-ticket-layout__tab" href="#support-context">
             Информация
           </a>
+          <a className="support-ticket-layout__tab" href="#support-quality">
+            Quality
+          </a>
           <a className="support-ticket-layout__tab" href="#support-tools">
             Инструменты
           </a>
@@ -697,6 +700,70 @@ function SupportDetailPanel({
                 <strong>Описание</strong>
                 <p>{ticketDetail.ticket.description ?? "Описание пока не заполнено."}</p>
               </div>
+            </section>
+
+            <section className="support-ticket-detail__block" id="support-quality">
+              <div className="support-ticket-detail__section-head">
+                <h4>Quality</h4>
+                <span>CSAT, reopen history, QA reviews and improvement actions</span>
+              </div>
+              <div className="support-ticket-detail__facts support-ticket-detail__facts--stacked">
+                <div>
+                  <dt>Latest CSAT</dt>
+                  <dd>
+                    {ticketDetail.quality?.latest_feedback
+                      ? `${ticketDetail.quality.latest_feedback.rating}/5 (${ticketDetail.quality.latest_feedback.sentiment ?? "unknown"})`
+                      : "No feedback"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Problem resolved</dt>
+                  <dd>{ticketDetail.quality?.latest_feedback?.problem_resolved === false ? "No" : ticketDetail.quality?.latest_feedback ? "Yes" : "n/a"}</dd>
+                </div>
+                <div>
+                  <dt>Reopens</dt>
+                  <dd>{ticketDetail.quality?.reopen_events.length ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>QA reviews</dt>
+                  <dd>{ticketDetail.quality?.reviews.length ?? 0}</dd>
+                </div>
+                <div>
+                  <dt>Improvement actions</dt>
+                  <dd>{ticketDetail.quality?.improvement_actions.length ?? 0}</dd>
+                </div>
+              </div>
+              {(ticketDetail.quality?.indicators.length ?? 0) > 0 ? (
+                <div className="support-tool-inspector__badges">
+                  {ticketDetail.quality?.indicators.map((indicator) => <span key={indicator}>{indicator}</span>)}
+                </div>
+              ) : null}
+              {(ticketDetail.quality?.reviews.length ?? 0) > 0 ? (
+                <div className="support-operations__list">
+                  {ticketDetail.quality?.reviews.slice(0, 3).map((review) => (
+                    <article className="support-operation-card" key={review.review_id}>
+                      <strong>{review.review_type}</strong>
+                      <span>{review.status}</span>
+                      <p>
+                        {review.severity} / score {review.score ?? "n/a"} / assigned {review.assigned_to_actor_id ?? "unassigned"}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+              {(ticketDetail.quality?.improvement_actions.length ?? 0) > 0 ? (
+                <div className="support-operations__list">
+                  {ticketDetail.quality?.improvement_actions.slice(0, 3).map((action) => (
+                    <article className="support-operation-card" key={action.action_id}>
+                      <strong>{action.title}</strong>
+                      <span>{action.status}</span>
+                      <p>
+                        {action.priority} / {action.action_type} / owner {action.owner_actor_id ?? "unassigned"}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </section>
 
             {ticketDetail.request_form ? (

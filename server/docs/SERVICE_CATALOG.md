@@ -42,6 +42,8 @@ Policy Health includes a knowledge gap warning when a published public service/o
 
 P2.2 Knowledge Operations uses the same published public catalog as the gap source of truth. `GET /api/web/knowledge/gap-findings` and `POST /api/web/knowledge/gaps/recompute` combine missing requester-safe bindings, missing support runbooks, ticket counts and knowledge feedback (`ticket_created_after_view`, `not_helpful`) so admins can prioritize which service/offering needs content next. This does not change catalog runtime resolution or the `other.unknown` fallback.
 
+P3 Quality Loop stores `service_code`, `offering_code`, `request_type` and `reporting_category` snapshots on feedback, reopen events, QA reviews, improvement actions and service-quality snapshots. `/app/admin/quality` uses those catalog dimensions for CSAT, reopen rate, SLA/quality review and improvement-action analytics without exposing queue ids, requester identifiers or raw catalog policy JSON to requester surfaces. Legacy tickets without catalog fields are bucketed as uncategorized/legacy rather than mutating the ticket contract.
+
 Baseline Knowledge content packs must match `server/tickets/service_catalog_defaults.py` exactly. The current canonical matrix is:
 
 | Scenario | service_code | offering_code | request_template_key |
@@ -112,6 +114,8 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 
 `GET /api/web/reports/summary` includes `tickets_by_service` and `tickets_by_offering`. Queries use explicit indexed ticket columns and bucket legacy/null rows as `Без каталога / Legacy`.
 
+P3 adds `GET /api/web/quality/service-quality` for quality analytics by service/offering. It is aggregate-only and complements the operational report summary: requester comments, requester ids and internal QA findings stay on ticket-level support/admin views, not in catalog analytics.
+
 ## Rollback
 
-Migration `082` is additive. P1.1 has no schema migration. Rollback is operational: retire seeded catalog entries instead of deleting rows referenced by tickets, disable catalog-first UI by falling back to legacy forms, and keep legacy `form_key` / `request_template_key` create payloads intact.
+Migration `082` is additive. P1.1 has no schema migration. P3 migration `088` is additive and can be operationally rolled back by disabling quality prompts/triggers while leaving catalog dimensions read-only in existing quality rows. Rollback is operational: retire seeded catalog entries instead of deleting rows referenced by tickets, disable catalog-first UI by falling back to legacy forms, and keep legacy `form_key` / `request_template_key` create payloads intact.

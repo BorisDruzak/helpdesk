@@ -151,8 +151,16 @@ export const appNavigation: AppNavItem[] = [
     permission: "admin.forms.view",
   },
   {
-    label: "Плейбуки",
-    description: "Диагностика и действия",
+    label: "Quality",
+    description: "CSAT, reopens, QA reviews and improvement actions",
+    icon: BarChart3,
+    section: "admin",
+    to: "/app/admin/quality",
+    permission: "admin.forms.view",
+  },
+  {
+    label: "Playbooks",
+    description: "Diagnostics and guided support actions",
     icon: Route,
     section: "admin",
     to: "/app/admin/playbooks",

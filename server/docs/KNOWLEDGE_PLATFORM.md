@@ -173,10 +173,16 @@ Ticket compatibility:
 
 Flat aliases remain for compatibility: `deflection_events`, `helpful_events`, `not_helpful_events`, `ticket_created_after_view_events`. Metrics must not include requester PII.
 
+## P3 Quality Loop Integration
+
+P3 consumes Knowledge Platform signals as quality inputs without changing article lifecycle or requester-safe filtering. `ticket_created_after_view`, `not_helpful` feedback and ticket `knowledge_attempts` can contribute to service-quality analytics, QA review triggers and continuous-improvement actions such as `update_kb_article`, `create_kb_article` or `create_known_error`.
+
+Requester CSAT reason `knowledge_article_failed` is stored in `ticket_feedback.reason_codes` and may link to a knowledge item when the ticket context provides one. Aggregate quality APIs report failed knowledge attempt counts only by service/offering/period and must not include requester identifiers, raw comments or internal article metadata.
+
 ## Service Catalog Integration
 
 Knowledge binds to service/offering/request-template. Policy Health and gap detection use canonical Service Catalog defaults, not stale content-pack aliases. Policy Health includes a warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog and requester preview may use knowledge counts/hints without exposing internal article names.
 
 ## Rollback
 
-Migration `083` is additive. P2.1 migration `084` adds DB CHECK constraints for graph node/edge enums, entity mention states, feedback event/surface roles, ingestion source/status values and ticket-knowledge link enums. P2.2 migration `085` is additive for content-pack audit and rollout policy tables. P2.2 migration `086` adds review tasks/comments, quality snapshots, gap findings and search analytics. P2.2.1 migration `087` hardens rollout policies and content-pack binding repair audit status. Operational rollback can disable requester/agent suggestions with a rollout policy while leaving Service Catalog, support workspace and ticket creation intact; downgrade of `087` removes rollout hardening columns, downgrade of `086` removes only operations state and downgrade of `085` removes only pack/rollout audit state. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.
+Migration `083` is additive. P2.1 migration `084` adds DB CHECK constraints for graph node/edge enums, entity mention states, feedback event/surface roles, ingestion source/status values and ticket-knowledge link enums. P2.2 migration `085` is additive for content-pack audit and rollout policy tables. P2.2 migration `086` adds review tasks/comments, quality snapshots, gap findings and search analytics. P2.2.1 migration `087` hardens rollout policies and content-pack binding repair audit status. P3 migration `088` adds ticket-quality tables that can reference knowledge failure signals operationally but do not own knowledge content. Operational rollback can disable requester/agent suggestions with a rollout policy and disable P3 quality triggers while leaving Service Catalog, support workspace and ticket creation intact; downgrade of `087` removes rollout hardening columns, downgrade of `086` removes only operations state and downgrade of `085` removes only pack/rollout audit state. Existing `ticket_kb_links` remains the compatibility fallback. Linked knowledge should be archived, not hard-deleted.

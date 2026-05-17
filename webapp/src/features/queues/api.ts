@@ -524,6 +524,51 @@ export type SupportTicketDetailPayload = {
       pending_count?: number;
     } | null;
   };
+  quality?: {
+    latest_feedback?: {
+      feedback_id: string;
+      rating: number;
+      sentiment?: string | null;
+      problem_resolved?: boolean | null;
+      resolution_confirmed?: boolean | null;
+      reason_codes?: string[];
+      comment?: string | null;
+      source_surface?: string | null;
+      submitted_at?: string | null;
+    } | null;
+    reopen_events: Array<{
+      reopen_id: string;
+      reason_code: string;
+      reason_comment?: string | null;
+      previous_status?: string | null;
+      new_status?: string | null;
+      created_at?: string | null;
+    }>;
+    reviews: Array<{
+      review_id: string;
+      review_type: string;
+      severity: string;
+      status: string;
+      assigned_to_actor_id?: string | null;
+      score?: number | null;
+      due_at?: string | null;
+      created_at?: string | null;
+      closed_at?: string | null;
+    }>;
+    improvement_actions: Array<{
+      action_id: string;
+      source_kind: string;
+      action_type: string;
+      title: string;
+      status: string;
+      priority: string;
+      owner_actor_id?: string | null;
+      due_at?: string | null;
+      created_at?: string | null;
+      closed_at?: string | null;
+    }>;
+    indicators: string[];
+  } | null;
 };
 
 export type SupportTicketTimelineFilter = "all" | "messages" | "internal" | "diagnostics" | "history";

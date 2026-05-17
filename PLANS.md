@@ -121,6 +121,73 @@ Rollback notes:
 - Revert `cd21c1a` and this status docs commit to return to the earlier P2.3 baseline.
 - No DB schema rollback is needed; no Alembic migration was added.
 
+## P3 Experience & Quality Loop
+
+P3 Experience & Quality Loop Status: active / implementation.
+
+Goal: add a structured quality loop after ticket resolution/closure without changing canonical ticket statuses, Protocol V3, Service Catalog fields, Knowledge Platform compatibility or requester privacy boundaries.
+
+Classification: cross-cutting / release-control. Scope touches DB schema, ticket workflow integration, requester/public ticket APIs, support/admin web APIs, React webapp, docs, migrations and full P2.3 layered CI.
+
+Discovery:
+- Current branch baseline is `f632d52` (`docs: record P2.3 release status`), clean and synced with `origin/codex/helpdesk-process-model`.
+- `tickets` already stores `service_code`, `offering_code`, `request_type`, `reporting_category`, `resolved_at`, `closed_at`, `closure_feedback` JSONB and `reopen_count`.
+- `closure_feedback` is legacy/compatibility state, not a first-class structured CSAT model; P3 will keep it compatible and add `ticket_feedback`.
+- Requester confirmation exists through public chat metadata (`confirmation_request` / `confirmation_response`). Rejection can reopen via existing workflow policy, but it is not yet backed by a mandatory structured reopen reason taxonomy.
+- Public access exists through hashed codes in `tickets.custom_fields.public_access` and public session tokens from `POST /public_api/tickets/{ticket_id}/authorize`.
+- Requester-safe ticket serialization already uses `ticket_to_dict(..., visibility="requester")` plus visibility policy; P3 requester APIs must reuse this boundary and must not expose QA/review/action internals.
+- Knowledge self-service signals already exist in `knowledge_feedback_events`, `knowledge_attempts` stored under ticket `custom_fields`, `ticket_knowledge_links`, knowledge gap findings and deflection metrics.
+- Service Catalog fields are present on tickets and knowledge bindings; quality analytics should snapshot current ticket `service_code`/`offering_code` and bucket legacy nulls as `legacy` / `uncategorized`.
+- Existing support workspace API is under `/api/web/support/*`; admin/knowledge/report routes are under `/api/web/*`. P3 will add `/api/web/quality/*` rather than overloading reports.
+- `scripts/agent_find.py` accepts only `--dir server|pc_agent`; required discovery commands using `webapp/src`, multiple dirs or nested dirs failed by argument validation and were reproduced with `rg`.
+- `build_context_pack.py` reported the context index stale for `PLANS.md`; P3 verification will rebuild with `python scripts/build_context_index.py --force`.
+
+Design decisions:
+- CSAT is first-class `ticket_feedback`, not a chat comment. Latest feedback is an application invariant per ticket/requester/source actor; historical rows remain auditable.
+- Feedback is accepted only for `resolved` or `closed` tickets within a default 14-day window. Requester/public payloads cannot set internal visibility, actor fields or policy metadata.
+- Low CSAT is deterministic: `rating <= effective_policy.low_csat_threshold` or `problem_resolved=false`. It creates an open QA review and may create an improvement action through policy.
+- Reopen uses existing `TicketWorkflowService.apply_status_transition()` with target `in_progress` by default from `resolved`/`closed`; P3 adds a structured `ticket_reopen_events` row and `ticket_reopened` event before committing. Existing SLA/OLA behavior is not silently changed.
+- `reason_code=other` requires a comment for both feedback and reopen reason paths where applicable.
+- QA review queue is internal. Requesters/public users cannot read review rows, internal notes, findings, queue IDs, actor IDs or improvement actions.
+- Improvement actions are process work items, not tickets. They require source, action type, status, priority and audit fields; `assigned`/`in_progress` require an owner and `done` requires outcome notes.
+- Analytics endpoints return aggregates only and never include requester IDs, raw comments or public access tokens. Ticket-level comments are visible only in support/admin quality detail where existing roles allow it.
+- Agent GUI CSAT/reopen is deferred unless needed by tests; P3 will document web/public requester surfaces as the canonical CSAT path and will not change Protocol V3.
+
+Data model plan:
+- Add Alembic revision `088` after `087`.
+- Add tables: `ticket_feedback`, `ticket_reopen_events`, `ticket_quality_reviews`, `ticket_quality_review_comments`, `continuous_improvement_actions`, `service_quality_snapshots`, `quality_policies`.
+- Add named CHECK constraints for enum-like columns, rating/subrating ranges, score range, comment length and `other` reason comment requirement where feasible.
+- Add indexes for ticket, service/offering/period, review status/severity/type, action status/priority/owner and policy scope.
+- No destructive change to existing `tickets`; no change to canonical statuses.
+
+API contract plan:
+- Requester/public: `POST /api/tickets/{ticket_id}/feedback`, `POST /api/tickets/{ticket_id}/reopen`, `POST /public_api/tickets/{ticket_id}/feedback`, `POST /public_api/tickets/{ticket_id}/reopen`.
+- Support/admin quality: `/api/web/quality/reviews`, `/api/web/quality/improvement-actions`, `/api/web/quality/summary`, `/api/web/quality/service-quality`, `/api/web/quality/policies`.
+- RBAC: requester/public can mutate only own/public-access ticket feedback/reopen; support/admin/auditor can read quality aggregates and reviews according to role; auditor is read-only.
+
+UI plan:
+- Requester `/app/help` and public/requester ticket detail show a feedback card for resolved/closed tickets, low-CSAT reopen offer and structured reopen form.
+- Support workspace ticket detail gets a Quality section with latest feedback, reopen history, QA review status and linked improvement actions.
+- Admin adds `/app/admin/quality` dashboard with overview, service/offering quality table, review queue, improvement actions and policy settings backed by real APIs.
+- No mock data for P3 surfaces.
+
+Tests:
+- TDD-first server tests: `test_quality_contract_no_db.py`, `test_ticket_feedback_service.py`, `test_ticket_reopen_reasons.py`, `test_quality_review_service.py`, `test_quality_improvement_actions.py`, `test_quality_analytics.py`, `test_quality_policy_service.py`, `test_quality_api.py`, `test_quality_privacy.py`, `test_quality_workflow_integration.py`, `test_quality_service_catalog_integration.py`, `test_quality_knowledge_integration.py`.
+- Webapp tests cover requester feedback/reopen components, support quality panel and admin quality dashboard API wiring.
+- Agent tests only if agent CSAT/reopen is implemented; otherwise docs explicitly state no Protocol V3/agent GUI change in P3.
+
+Verification plan:
+- Red/green targeted P3 tests first.
+- Static and workspace: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`.
+- Webapp: `pnpm --dir webapp build`; run `typecheck`/`lint` if scripts exist.
+- Layered CI: targeted P3 tests, then `run_ci_suite.py` ticket/knowledge/web_api/no_db/pc_agent layers, then full canonical `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0`.
+- Remote/browser release signoff after commit/push: project release script with Alembic head, `/api/health` smoke, requester feedback/reopen, support quality section, admin quality dashboard, improvement action creation and service/offering analytics browser checks.
+
+Rollback notes:
+- Operational rollback can disable feedback prompts and QA triggers through `quality_policies` while keeping data read-only.
+- Code rollback plus Alembic downgrade of revision `088` removes new quality tables; no ticket workflow/status rollback is expected.
+- If UI rollout needs pausing, leave APIs/data model in place and hide requester/admin navigation entries.
+
 ## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
 
 ### Scope

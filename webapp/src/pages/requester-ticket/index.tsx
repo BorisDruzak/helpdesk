@@ -11,8 +11,10 @@ import {
   authorizePublicTicket,
   closePublicTicket,
   fetchPublicTicket,
+  reopenPublicTicket,
   sendPublicTicketConfirmation,
   sendPublicTicketMessage,
+  submitPublicTicketFeedback,
 } from "../../features/requester/api";
 import type { PublicTicketConfirmationRequest, PublicTicketEvent, PublicTicketMessage } from "../../features/requester/types";
 
@@ -96,6 +98,14 @@ export function RequesterTicketPage() {
   const [code, setCode] = useState(codeFromUrl);
   const [message, setMessage] = useState("");
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [qualityRating, setQualityRating] = useState(5);
+  const [qualityProblemResolved, setQualityProblemResolved] = useState(true);
+  const [qualityReason, setQualityReason] = useState("not_resolved");
+  const [qualityComment, setQualityComment] = useState("");
+  const [qualityFeedbackId, setQualityFeedbackId] = useState<string | null>(null);
+  const [showReopenForm, setShowReopenForm] = useState(false);
+  const [reopenReason, setReopenReason] = useState("problem_returned");
+  const [reopenComment, setReopenComment] = useState("");
 
   useEffect(() => {
     if (ticketId) {
@@ -157,6 +167,44 @@ export function RequesterTicketPage() {
         tone: "error",
         text: error instanceof Error ? error.message : "Не удалось подтвердить решение.",
       });
+    },
+  });
+
+  const qualityFeedbackMutation = useMutation({
+    mutationFn: () =>
+      submitPublicTicketFeedback(ticketId, token, {
+        rating: qualityRating,
+        problem_resolved: qualityProblemResolved,
+        resolution_confirmed: qualityProblemResolved,
+        reason_codes: qualityRating <= 3 || !qualityProblemResolved ? [qualityReason] : [],
+        comment: qualityComment.trim() || null,
+        source_surface: "public_ticket_page",
+      }),
+    onSuccess: async (result) => {
+      setQualityFeedbackId(result.feedback_id);
+      setShowReopenForm(result.reopen_available);
+      setFeedback({ tone: "success", text: result.message ?? "Feedback saved." });
+      await ticketQuery.refetch();
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Failed to save feedback." });
+    },
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: () =>
+      reopenPublicTicket(ticketId, token, {
+        reason_code: reopenReason,
+        reason_comment: reopenComment.trim() || null,
+        linked_feedback_id: qualityFeedbackId,
+      }),
+    onSuccess: async () => {
+      setShowReopenForm(false);
+      setFeedback({ tone: "success", text: "Ticket returned to support." });
+      await ticketQuery.refetch();
+    },
+    onError: (error) => {
+      setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Failed to reopen ticket." });
     },
   });
 
@@ -226,6 +274,7 @@ export function RequesterTicketPage() {
   );
   const showResolutionConfirmation =
     ticket?.status === "resolved" && Boolean(ticket?.resolution_confirmation_pending) && Boolean(activeConfirmationRequest?.request_id);
+  const canSubmitQualityFeedback = ticket?.status === "resolved" || ticket?.status === "closed";
   const requesterStatusLabel =
     ticket?.public_status_label?.trim() ||
     ticket?.requester_status_label?.trim() ||
@@ -433,6 +482,90 @@ export function RequesterTicketPage() {
               </Link>
             </CardContent>
           </Card>
+          {canSubmitQualityFeedback ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Quality feedback</CardTitle>
+                <CardDescription>Rate the resolution and return the ticket to support if the problem remains.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm text-slate-700">
+                <label className="grid gap-2 font-medium">
+                  <span>Resolution quality</span>
+                  <select
+                    className="field-base px-3 py-2"
+                    onChange={(event) => setQualityRating(Number(event.currentTarget.value))}
+                    value={qualityRating}
+                  >
+                    {[5, 4, 3, 2, 1].map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 font-medium">
+                  <input
+                    checked={qualityProblemResolved}
+                    onChange={(event) => {
+                      setQualityProblemResolved(event.currentTarget.checked);
+                      if (!event.currentTarget.checked) {
+                        setShowReopenForm(true);
+                      }
+                    }}
+                    type="checkbox"
+                  />
+                  <span>Problem resolved</span>
+                </label>
+                {qualityRating <= 3 || !qualityProblemResolved ? (
+                  <label className="grid gap-2 font-medium">
+                    <span>Reason</span>
+                    <select className="field-base px-3 py-2" onChange={(event) => setQualityReason(event.currentTarget.value)} value={qualityReason}>
+                      <option value="not_resolved">Not resolved</option>
+                      <option value="problem_returned">Problem returned</option>
+                      <option value="slow_resolution">Slow resolution</option>
+                      <option value="poor_communication">Poor communication</option>
+                      <option value="knowledge_article_failed">Knowledge article failed</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                ) : null}
+                <label className="grid gap-2 font-medium">
+                  <span>Comment</span>
+                  <textarea className="field-base min-h-20 px-3 py-2" onChange={(event) => setQualityComment(event.currentTarget.value)} value={qualityComment} />
+                </label>
+                <Button disabled={qualityFeedbackMutation.isPending} onClick={() => qualityFeedbackMutation.mutate()} type="button">
+                  Save feedback
+                </Button>
+                {showReopenForm ? (
+                  <div className="grid gap-3 rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3">
+                    <label className="grid gap-2 font-medium">
+                      <span>Reopen reason</span>
+                      <select className="field-base px-3 py-2" onChange={(event) => setReopenReason(event.currentTarget.value)} value={reopenReason}>
+                        <option value="problem_returned">Problem returned</option>
+                        <option value="not_resolved">Not resolved</option>
+                        <option value="incomplete_work">Incomplete work</option>
+                        <option value="wrong_resolution">Wrong resolution</option>
+                        <option value="knowledge_article_failed">Knowledge article failed</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 font-medium">
+                      <span>Reopen comment</span>
+                      <textarea className="field-base min-h-20 px-3 py-2" onChange={(event) => setReopenComment(event.currentTarget.value)} value={reopenComment} />
+                    </label>
+                    <Button
+                      disabled={reopenMutation.isPending || (reopenReason === "other" && !reopenComment.trim())}
+                      onClick={() => reopenMutation.mutate()}
+                      type="button"
+                      variant="outline"
+                    >
+                      Return ticket to support
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
         </aside>
       </section>
     </main>

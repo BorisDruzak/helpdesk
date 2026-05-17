@@ -192,6 +192,12 @@ Migration `086` adds `knowledge_search_events`.
 
 Zero-result and high-frequency query signals are intended to feed gap detection without exposing requester identifiers, device identifiers or raw custom fields.
 
+## P3 Quality Loop
+
+P3 treats knowledge operations as one source of experience-quality evidence. Negative feedback, failed deflection (`ticket_created_after_view`) and CSAT reason `knowledge_article_failed` can trigger ticket QA reviews and continuous-improvement actions, while `/api/web/quality/service-quality` aggregates failed knowledge attempt counts by service/offering/period.
+
+The boundary remains explicit: Knowledge Operations owns article review, gap findings, content packs, rollout and quality scores; Quality Loop owns ticket CSAT, reopen events, QA review queue, improvement actions and aggregate service/offering quality snapshots. Requester/public quality responses must not expose internal article metadata, source refs, knowledge review notes or raw feedback comments in aggregate analytics.
+
 ## Security
 
 Safety invariants:
@@ -215,6 +221,7 @@ Safety invariants:
 - Retire a content pack or rerun without `--force` to preserve admin edits.
 - Archive generated or pack-managed items instead of hard-deleting linked content.
 - Dismiss gap/review tasks with an auditable reason.
+- Disable P3 quality triggers/prompts if quality-loop rollout needs to pause; keep existing knowledge feedback and gaps read-only.
 - Keep `ticket_kb_links` compatibility as fallback for existing ticket knowledge links.
 - Alembic downgrade for migration `086` removes only P2.2 operations tables: review tasks/comments, quality snapshots, gap findings and search events.
 - Alembic downgrade for migration `087` removes rollout hardening columns and restores the previous rollout/content-pack audit status constraints.

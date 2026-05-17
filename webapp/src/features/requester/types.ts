@@ -228,3 +228,35 @@ export type PublicTicketDetail = {
   messages: PublicTicketMessage[];
   events?: PublicTicketEvent[];
 };
+
+export type PublicTicketFeedbackPayload = {
+  rating: number;
+  problem_resolved?: boolean | null;
+  resolution_confirmed?: boolean | null;
+  response_time_satisfaction?: number | null;
+  communication_satisfaction?: number | null;
+  quality_satisfaction?: number | null;
+  reason_codes?: string[];
+  comment?: string | null;
+  source_surface?: "public_ticket_page" | "requester_portal";
+};
+
+export type PublicTicketFeedbackResult = {
+  ok: boolean;
+  feedback_id: string;
+  message?: string;
+  reopen_available: boolean;
+};
+
+export type PublicTicketReopenPayload = {
+  reason_code: string;
+  reason_comment?: string | null;
+  linked_feedback_id?: string | null;
+};
+
+export type PublicTicketReopenResult = {
+  ok?: boolean;
+  ticket_id: string;
+  ticket_status: string;
+  reopen_id: string;
+};

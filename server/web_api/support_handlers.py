@@ -25,9 +25,13 @@ from app.db.models import (
     Ticket,
     TicketApproval,
     TicketEvent,
+    TicketFeedback,
+    TicketQualityReview,
     TicketQueue,
     TicketQueueMember,
+    TicketReopenEvent,
     TicketResolutionPassport,
+    ContinuousImprovementAction,
 )
 from app.repos import DevicesRepo, NotificationRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
@@ -113,6 +117,11 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketKnowledgeSuggestionsPayload,
+    SupportTicketQualityAction,
+    SupportTicketQualityFeedback,
+    SupportTicketQualityPayload,
+    SupportTicketQualityReopenEvent,
+    SupportTicketQualityReview,
     SupportKnowledgeAiSummary,
     SupportKnowledgeArticle,
     SupportKnowledgeDiagnostics,
@@ -2984,6 +2993,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
     approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
+    quality = await _build_support_quality_payload(session, ticket.ticket_id)
 
     return SupportTicketDetailPayload(
         ticket=SupportTicketDetail(
@@ -3080,6 +3090,110 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         timeline=timeline,
         snapshot=snapshot,
         actions=actions,
+        quality=quality,
+    )
+
+
+async def _build_support_quality_payload(session, ticket_id: str) -> SupportTicketQualityPayload:
+    feedback_rows = (
+        await session.execute(
+            select(TicketFeedback)
+            .where(TicketFeedback.ticket_id == ticket_id)
+            .order_by(TicketFeedback.is_latest.desc(), TicketFeedback.submitted_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+    reopen_rows = (
+        await session.execute(
+            select(TicketReopenEvent)
+            .where(TicketReopenEvent.ticket_id == ticket_id)
+            .order_by(TicketReopenEvent.created_at.desc())
+            .limit(20)
+        )
+    ).scalars().all()
+    review_rows = (
+        await session.execute(
+            select(TicketQualityReview)
+            .where(TicketQualityReview.ticket_id == ticket_id)
+            .order_by(TicketQualityReview.created_at.desc())
+            .limit(20)
+        )
+    ).scalars().all()
+    action_rows = (
+        await session.execute(
+            select(ContinuousImprovementAction)
+            .where(ContinuousImprovementAction.ticket_id == ticket_id)
+            .order_by(ContinuousImprovementAction.created_at.desc())
+            .limit(20)
+        )
+    ).scalars().all()
+
+    latest_feedback = feedback_rows[0] if feedback_rows else None
+    indicators: list[str] = []
+    if latest_feedback and (latest_feedback.rating <= 3 or latest_feedback.problem_resolved is False):
+        indicators.append("low_csat")
+    if reopen_rows:
+        indicators.append("reopened")
+    if any(review.status in {"open", "assigned", "in_review", "action_required", "failed"} for review in review_rows):
+        indicators.append("qa_attention")
+    if any(action.status in {"open", "assigned", "in_progress", "blocked"} for action in action_rows):
+        indicators.append("improvement_open")
+
+    return SupportTicketQualityPayload(
+        latest_feedback=SupportTicketQualityFeedback(
+            feedback_id=latest_feedback.feedback_id,
+            rating=int(latest_feedback.rating),
+            sentiment=latest_feedback.sentiment,
+            problem_resolved=latest_feedback.problem_resolved,
+            resolution_confirmed=latest_feedback.resolution_confirmed,
+            reason_codes=list(latest_feedback.reason_codes or []),
+            comment=latest_feedback.comment,
+            source_surface=latest_feedback.source_surface,
+            submitted_at=_iso(latest_feedback.submitted_at),
+        )
+        if latest_feedback
+        else None,
+        reopen_events=[
+            SupportTicketQualityReopenEvent(
+                reopen_id=row.reopen_id,
+                reason_code=row.reason_code,
+                reason_comment=row.reason_comment,
+                previous_status=row.previous_status,
+                new_status=row.new_status,
+                created_at=_iso(row.created_at),
+            )
+            for row in reopen_rows
+        ],
+        reviews=[
+            SupportTicketQualityReview(
+                review_id=row.review_id,
+                review_type=row.review_type,
+                severity=row.severity,
+                status=row.status,
+                assigned_to_actor_id=row.assigned_to_actor_id,
+                score=row.score,
+                due_at=_iso(row.due_at),
+                created_at=_iso(row.created_at),
+                closed_at=_iso(row.closed_at),
+            )
+            for row in review_rows
+        ],
+        improvement_actions=[
+            SupportTicketQualityAction(
+                action_id=row.action_id,
+                source_kind=row.source_kind,
+                action_type=row.action_type,
+                title=row.title,
+                status=row.status,
+                priority=row.priority,
+                owner_actor_id=row.owner_actor_id,
+                due_at=_iso(row.due_at),
+                created_at=_iso(row.created_at),
+                closed_at=_iso(row.closed_at),
+            )
+            for row in action_rows
+        ],
+        indicators=indicators,
     )
 
 

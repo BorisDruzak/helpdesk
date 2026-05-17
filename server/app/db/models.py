@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Index,
     Integer,
+    Numeric,
     SmallInteger,
     String,
     Text,
@@ -163,6 +164,242 @@ class Ticket(Base):
             f"<Ticket(ticket_id={self.ticket_id!r}, device_id={self.device_id!r}, "
             f"status={self.status!r})>"
         )
+
+
+class TicketFeedback(Base):
+    """Structured requester satisfaction feedback for resolved/closed tickets."""
+
+    __tablename__ = "ticket_feedback"
+
+    feedback_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    requester_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    public_access_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    sentiment: Mapped[str] = mapped_column(String(20), nullable=False)
+    resolution_confirmed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    problem_resolved: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    response_time_satisfaction: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    communication_satisfaction: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quality_satisfaction: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(30), nullable=False, server_default="requester_visible")
+    source_surface: Mapped[str] = mapped_column(String(40), nullable=False)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    submitted_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    is_latest: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+
+    __table_args__ = (
+        sa.CheckConstraint("rating BETWEEN 1 AND 5", name="ck_ticket_feedback_rating"),
+        sa.CheckConstraint("response_time_satisfaction IS NULL OR response_time_satisfaction BETWEEN 1 AND 5", name="ck_ticket_feedback_response_time_rating"),
+        sa.CheckConstraint("communication_satisfaction IS NULL OR communication_satisfaction BETWEEN 1 AND 5", name="ck_ticket_feedback_communication_rating"),
+        sa.CheckConstraint("quality_satisfaction IS NULL OR quality_satisfaction BETWEEN 1 AND 5", name="ck_ticket_feedback_quality_rating"),
+        sa.CheckConstraint("sentiment IN ('positive', 'neutral', 'negative')", name="ck_ticket_feedback_sentiment"),
+        sa.CheckConstraint("visibility IN ('support_internal', 'manager_aggregate', 'requester_visible')", name="ck_ticket_feedback_visibility"),
+        sa.CheckConstraint("source_surface IN ('requester_portal', 'public_ticket_page', 'agent_gui', 'email_link', 'support_entered', 'api')", name="ck_ticket_feedback_source_surface"),
+        sa.CheckConstraint("comment IS NULL OR char_length(comment) <= 2000", name="ck_ticket_feedback_comment_length"),
+        Index("ix_ticket_feedback_ticket_latest", "ticket_id", "is_latest"),
+        Index("ix_ticket_feedback_service_offering_submitted", "service_code", "offering_code", "submitted_at"),
+    )
+
+
+class TicketReopenEvent(Base):
+    """Structured reopen reason event for quality analytics."""
+
+    __tablename__ = "ticket_reopen_events"
+
+    reopen_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    reopened_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reopened_by_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    previous_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(60), nullable=False)
+    reason_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    linked_feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
+    linked_knowledge_item_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("reason_code IN ('not_resolved', 'problem_returned', 'incomplete_work', 'wrong_resolution', 'unclear_instruction', 'requester_disagreed', 'closed_too_early', 'new_information', 'wrong_category_or_queue', 'dependency_failed', 'knowledge_article_failed', 'other')", name="ck_ticket_reopen_reason_code"),
+        sa.CheckConstraint("reason_code <> 'other' OR btrim(coalesce(reason_comment, '')) <> ''", name="ck_ticket_reopen_other_comment"),
+        sa.CheckConstraint("previous_status IN ('resolved', 'closed')", name="ck_ticket_reopen_previous_status"),
+        Index("ix_ticket_reopen_service_offering_created", "service_code", "offering_code", "created_at"),
+    )
+
+
+class TicketQualityReview(Base):
+    """Internal QA review queue item."""
+
+    __tablename__ = "ticket_quality_reviews"
+
+    review_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False, index=True)
+    review_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    assigned_to_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    trigger_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    findings_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reviewer_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    review_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("review_type IN ('low_csat', 'reopened', 'sla_breached', 'high_priority', 'missing_evidence', 'closure_policy_exception', 'negative_kb_feedback', 'random_sample', 'manager_request', 'quality_audit')", name="ck_ticket_quality_reviews_type"),
+        sa.CheckConstraint("severity IN ('critical', 'high', 'medium', 'low', 'info')", name="ck_ticket_quality_reviews_severity"),
+        sa.CheckConstraint("status IN ('open', 'assigned', 'in_review', 'passed', 'failed', 'action_required', 'dismissed')", name="ck_ticket_quality_reviews_status"),
+        sa.CheckConstraint("score IS NULL OR score BETWEEN 0 AND 100", name="ck_ticket_quality_reviews_score"),
+        Index("ix_ticket_quality_reviews_status_due", "status", "due_at"),
+        Index("ix_ticket_quality_reviews_type_status", "review_type", "status"),
+        Index("ix_ticket_quality_reviews_service_offering", "service_code", "offering_code"),
+    )
+
+
+class TicketQualityReviewComment(Base):
+    """Internal comments on quality reviews."""
+
+    __tablename__ = "ticket_quality_review_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, server_default="internal")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint("visibility IN ('internal', 'manager', 'audit')", name="ck_ticket_quality_review_comments_visibility"),
+        sa.CheckConstraint("btrim(body) <> '' AND char_length(body) <= 4000", name="ck_ticket_quality_review_comments_body"),
+    )
+
+
+class ContinuousImprovementAction(Base):
+    """Process improvement action created from quality signals."""
+
+    __tablename__ = "continuous_improvement_actions"
+
+    action_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True, index=True)
+    review_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_quality_reviews.review_id", ondelete="SET NULL"), nullable=True)
+    feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("source_kind IN ('csat', 'reopen', 'qa_review', 'knowledge_gap', 'service_quality', 'sla_breach', 'problem_candidate', 'manual')", name="ck_continuous_improvement_source_kind"),
+        sa.CheckConstraint("action_type IN ('update_kb_article', 'create_kb_article', 'create_known_error', 'improve_request_form', 'update_routing_policy', 'adjust_sla_policy', 'add_diagnostic_playbook', 'train_support', 'open_problem_candidate', 'create_change_candidate', 'contact_requester', 'process_review', 'other')", name="ck_continuous_improvement_action_type"),
+        sa.CheckConstraint("status IN ('open', 'assigned', 'in_progress', 'blocked', 'done', 'dismissed')", name="ck_continuous_improvement_status"),
+        sa.CheckConstraint("priority IN ('low', 'medium', 'high', 'critical')", name="ck_continuous_improvement_priority"),
+        sa.CheckConstraint("btrim(title) <> ''", name="ck_continuous_improvement_title"),
+        Index("ix_continuous_improvement_status_priority", "status", "priority"),
+        Index("ix_continuous_improvement_service_offering", "service_code", "offering_code"),
+    )
+
+
+class ServiceQualitySnapshot(Base):
+    """Aggregate service/offering quality metrics for dashboards."""
+
+    __tablename__ = "service_quality_snapshots"
+
+    snapshot_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    period_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    bucket: Mapped[str] = mapped_column(String(20), nullable=False)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ticket_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    resolved_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    closed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    feedback_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    avg_csat: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    negative_csat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    reopen_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    reopen_rate: Mapped[Optional[float]] = mapped_column(Numeric(8, 4), nullable=True)
+    sla_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    sla_breach_rate: Mapped[Optional[float]] = mapped_column(Numeric(8, 4), nullable=True)
+    first_response_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    resolution_breach_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    knowledge_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    ticket_after_failed_knowledge_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    deflection_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    qa_review_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    qa_failed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    improvement_action_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    computed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("bucket IN ('day', 'week', 'month')", name="ck_service_quality_snapshots_bucket"),
+        Index("ix_service_quality_snapshots_service_period", "service_code", "offering_code", "period_start", "period_end"),
+        Index("ix_service_quality_snapshots_queue_period", "queue_id", "period_start", "period_end"),
+    )
+
+
+class QualityPolicy(Base):
+    """Configurable quality trigger policy."""
+
+    __tablename__ = "quality_policies"
+
+    policy_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="global")
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    low_csat_threshold: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    reopen_review_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    sla_breach_review_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    high_priority_review_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    missing_evidence_review_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    random_sample_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, server_default="0")
+    qa_due_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="72")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("scope_type IN ('global', 'service', 'offering', 'queue')", name="ck_quality_policies_scope_type"),
+        sa.CheckConstraint("low_csat_threshold BETWEEN 1 AND 5", name="ck_quality_policies_low_csat_threshold"),
+        sa.CheckConstraint("random_sample_percent >= 0 AND random_sample_percent <= 100", name="ck_quality_policies_random_sample_percent"),
+        sa.CheckConstraint("qa_due_hours > 0", name="ck_quality_policies_due_hours"),
+        Index("ix_quality_policies_scope", "scope_type", "service_code", "offering_code", "queue_id"),
+    )
 
 
 def _ensure_ticket_requester_id(_mapper, _connection, target: Ticket) -> None:
