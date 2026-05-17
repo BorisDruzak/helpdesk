@@ -1432,6 +1432,80 @@ describe("TicketListPage", () => {
     );
   });
 
+  it("shows support ticket quality signals in the active workspace", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    const baseWorkspace = workspacePayload();
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(
+      workspacePayload({
+        detail: {
+          ...baseWorkspace.detail,
+          quality: {
+            latest_feedback: {
+              feedback_id: "feedback-1",
+              rating: 2,
+              sentiment: "negative",
+              problem_resolved: false,
+              resolution_confirmed: false,
+              reason_codes: ["not_resolved"],
+              comment: "Problem returned after closure.",
+              source_surface: "requester_portal",
+              submitted_at: "2026-05-17T09:00:00+05:00",
+            },
+            reopen_events: [
+              {
+                reopen_id: "reopen-1",
+                reason_code: "problem_returned",
+                reason_comment: "Returned after reboot.",
+                previous_status: "closed",
+                new_status: "in_progress",
+                created_at: "2026-05-17T09:10:00+05:00",
+              },
+            ],
+            reviews: [
+              {
+                review_id: "review-1",
+                review_type: "low_csat",
+                severity: "high",
+                status: "open",
+                assigned_to_actor_id: "qa-1",
+                score: null,
+                due_at: null,
+                created_at: "2026-05-17T09:12:00+05:00",
+                closed_at: null,
+              },
+            ],
+            improvement_actions: [
+              {
+                action_id: "action-1",
+                source_kind: "csat",
+                action_type: "process_review",
+                title: "Review reopened ticket",
+                status: "open",
+                priority: "high",
+                owner_actor_id: "owner-1",
+                due_at: null,
+                created_at: "2026-05-17T09:15:00+05:00",
+                closed_at: null,
+              },
+            ],
+            indicators: ["low_csat", "reopened"],
+          },
+        },
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Quality" }));
+
+    const qualityPanel = await screen.findByTestId("support-quality-panel");
+    expect(within(qualityPanel).getByText("Latest CSAT")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("2/5 (negative)")).toBeInTheDocument();
+    expect(within(qualityPanel).getByText("Problem returned after closure.")).toBeInTheDocument();
+    expect(within(qualityPanel).getAllByText("low_csat").length).toBeGreaterThan(0);
+    expect(within(qualityPanel).getByText("Review reopened ticket")).toBeInTheDocument();
+  });
+
   it("opens passport focus guidance from a closure blocker action", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketPassportEvidenceCandidatesMock.mockResolvedValue({ ticket_id: "ticket-1", candidates: [] });

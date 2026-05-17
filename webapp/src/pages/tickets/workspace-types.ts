@@ -1,5 +1,5 @@
 export type WorkspaceMode = "ticket" | "queue" | "tools" | "sla" | "passport";
-export type WorkspaceRightTab = "context" | "sla" | "tools" | "knowledge" | "passport";
+export type WorkspaceRightTab = "context" | "quality" | "sla" | "tools" | "knowledge" | "passport";
 
 export type SupportWorkspaceLayoutState = {
   mode: WorkspaceMode;
@@ -18,7 +18,7 @@ export const SUPPORT_WORKSPACE_SELECTED_VIEW_STORAGE_KEY = "support-workspace-se
 export const SUPPORT_WORKSPACE_SELECTED_QUEUE_STORAGE_KEY = "support-workspace-selected-queue";
 
 export const workspaceModes: WorkspaceMode[] = ["ticket", "queue", "tools", "sla", "passport"];
-export const workspaceRightTabs: WorkspaceRightTab[] = ["context", "sla", "tools", "knowledge", "passport"];
+export const workspaceRightTabs: WorkspaceRightTab[] = ["context", "quality", "sla", "tools", "knowledge", "passport"];
 
 export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
   return typeof value === "string" && workspaceModes.includes(value as WorkspaceMode);
