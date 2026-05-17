@@ -28,6 +28,10 @@ export type ServiceQualityRow = {
   improvement_action_count: number;
 };
 
+export type ServiceQualityRows = ServiceQualityRow[] & {
+  lastComputedAt?: string | null;
+};
+
 export type QualityReview = {
   review_id: string;
   ticket_id: string;
@@ -64,6 +68,12 @@ export type ImprovementAction = {
 };
 
 export type QualityPolicy = {
+  policy_id?: string | null;
+  scope_type?: "global" | "service" | "offering" | "queue";
+  service_code?: string | null;
+  offering_code?: string | null;
+  queue_id?: number | null;
+  enabled?: boolean;
   low_csat_threshold: number;
   reopen_review_enabled: boolean;
   sla_breach_review_enabled: boolean;
@@ -116,10 +126,10 @@ export async function fetchQualitySummary(): Promise<QualitySummary> {
   return payload.summary;
 }
 
-export async function fetchServiceQuality(): Promise<ServiceQualityRow[]> {
+export async function fetchServiceQuality(): Promise<ServiceQualityRows> {
   const response = await fetch("/api/web/quality/service-quality", { credentials: "same-origin" });
-  const payload = await readOk<{ rows: ServiceQualityRow[] }>(response, "Failed to load service quality");
-  return payload.rows;
+  const payload = await readOk<{ rows: ServiceQualityRow[]; last_computed_at?: string | null }>(response, "Failed to load service quality");
+  return Object.assign(payload.rows, { lastComputedAt: payload.last_computed_at ?? null });
 }
 
 export async function fetchQualityReviews(ticketId?: string | null): Promise<QualityReview[]> {
@@ -177,9 +187,30 @@ export async function closeImprovementAction(actionId: string, outcomeNotes: str
   return result.action;
 }
 
-export async function fetchQualityPolicy(): Promise<QualityPolicy> {
-  const response = await fetch("/api/web/quality/policies", { credentials: "same-origin" });
+export async function fetchQualityPolicy(filters?: { serviceCode?: string | null; offeringCode?: string | null; queueId?: number | null }): Promise<QualityPolicy> {
+  const params = new URLSearchParams();
+  if (filters?.serviceCode) {
+    params.set("service_code", filters.serviceCode);
+  }
+  if (filters?.offeringCode) {
+    params.set("offering_code", filters.offeringCode);
+  }
+  if (filters?.queueId !== null && filters?.queueId !== undefined) {
+    params.set("queue_id", String(filters.queueId));
+  }
+  const query = params.toString();
+  const response = await fetch(`/api/web/quality/policies${query ? `?${query}` : ""}`, { credentials: "same-origin" });
   const payload = await readOk<{ policy: QualityPolicy }>(response, "Failed to load quality policy");
   return payload.policy;
 }
 
+export async function saveQualityPolicy(payload: QualityPolicy): Promise<QualityPolicy> {
+  const response = await fetch("/api/web/quality/policies/save", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readOk<{ policy: QualityPolicy }>(response, "Failed to save quality policy");
+  return result.policy;
+}

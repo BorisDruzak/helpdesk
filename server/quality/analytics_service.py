@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.models import (
     ContinuousImprovementAction,
@@ -134,7 +134,14 @@ class ServiceQualityAnalyticsService:
                 self.session.add(self._snapshot(row, period_start, period_end, bucket))
         if recompute_snapshot:
             await self.session.flush()
-        return {"period_start": period_start.isoformat(), "period_end": period_end.isoformat(), "bucket": bucket, "rows": primitive(result_rows)}
+        latest_computed_at = await self._latest_snapshot_computed_at(bucket=bucket)
+        return {
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "bucket": bucket,
+            "rows": primitive(result_rows),
+            "last_computed_at": latest_computed_at.isoformat() if latest_computed_at else None,
+        }
 
     def _empty_group(self) -> dict[str, Any]:
         return {
@@ -199,3 +206,10 @@ class ServiceQualityAnalyticsService:
             computed_at=now,
             metadata_json={},
         )
+
+    async def _latest_snapshot_computed_at(self, *, bucket: str) -> datetime | None:
+        return (
+            await self.session.execute(
+                select(func.max(ServiceQualitySnapshot.computed_at)).where(ServiceQualitySnapshot.bucket == bucket)
+            )
+        ).scalar_one_or_none()

@@ -23,7 +23,13 @@ class TicketFeedbackService:
 
     async def submit_feedback(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str | None) -> dict[str, Any]:
         data = validate_feedback_payload(payload)
-        ticket = await self.session.get(Ticket, data["ticket_id"])
+        ticket = (
+            await self.session.execute(
+                select(Ticket)
+                .where(Ticket.ticket_id == data["ticket_id"])
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
         if ticket is None:
             raise ValueError("ticket not found")
         if ticket.status not in {"resolved", "closed"}:
@@ -35,7 +41,6 @@ class TicketFeedbackService:
         await self.session.execute(
             update(TicketFeedback)
             .where(TicketFeedback.ticket_id == ticket.ticket_id)
-            .where(TicketFeedback.requester_id == ticket.requester_id)
             .where(TicketFeedback.is_latest.is_(True))
             .values(is_latest=False, updated_at=datetime.now(timezone.utc))
         )

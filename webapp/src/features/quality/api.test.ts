@@ -5,9 +5,11 @@ import {
   completeQualityReview,
   createImprovementAction,
   fetchImprovementActions,
+  fetchQualityPolicy,
   fetchQualityReviews,
   fetchQualitySummary,
   fetchServiceQuality,
+  saveQualityPolicy,
 } from "./api";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -63,6 +65,7 @@ describe("quality api", () => {
               improvement_action_count: 1,
             },
           ],
+          last_computed_at: "2026-05-17T04:00:00+00:00",
         });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -74,6 +77,7 @@ describe("quality api", () => {
 
     expect(summary.avg_csat).toBe(2.5);
     expect(rows[0]?.service_code).toBe("network");
+    expect(rows.lastComputedAt).toBe("2026-05-17T04:00:00+00:00");
     expect(JSON.stringify(rows)).not.toContain("requester_id");
   });
 
@@ -119,5 +123,71 @@ describe("quality api", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
-});
 
+  it("previews and saves service/offering quality policy overrides", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/quality/policies?service_code=network&offering_code=network.vpn_issue") {
+        return jsonResponse({
+          status: "ok",
+          policy: {
+            policy_id: "qp-1",
+            scope_type: "offering",
+            service_code: "network",
+            offering_code: "network.vpn_issue",
+            low_csat_threshold: 2,
+            reopen_review_enabled: true,
+            sla_breach_review_enabled: true,
+            high_priority_review_enabled: true,
+            missing_evidence_review_enabled: true,
+            random_sample_percent: 0,
+            qa_due_hours: 12,
+          },
+        });
+      }
+      if (url === "/api/web/quality/policies/save" && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          scope_type: "offering",
+          service_code: "network",
+          offering_code: "network.vpn_issue",
+          low_csat_threshold: 2,
+        });
+        return jsonResponse({
+          status: "ok",
+          policy: {
+            policy_id: "qp-1",
+            scope_type: "offering",
+            service_code: "network",
+            offering_code: "network.vpn_issue",
+            low_csat_threshold: 2,
+            reopen_review_enabled: true,
+            sla_breach_review_enabled: true,
+            high_priority_review_enabled: true,
+            missing_evidence_review_enabled: true,
+            random_sample_percent: 0,
+            qa_due_hours: 12,
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const preview = await fetchQualityPolicy({ serviceCode: "network", offeringCode: "network.vpn_issue" });
+    const saved = await saveQualityPolicy({
+      scope_type: "offering",
+      service_code: "network",
+      offering_code: "network.vpn_issue",
+      low_csat_threshold: 2,
+      reopen_review_enabled: true,
+      sla_breach_review_enabled: true,
+      high_priority_review_enabled: true,
+      missing_evidence_review_enabled: true,
+      random_sample_percent: 0,
+      qa_due_hours: 12,
+    });
+
+    expect(preview.scope_type).toBe("offering");
+    expect(saved.policy_id).toBe("qp-1");
+  });
+});

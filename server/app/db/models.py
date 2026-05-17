@@ -205,6 +205,7 @@ class TicketFeedback(Base):
         sa.CheckConstraint("source_surface IN ('requester_portal', 'public_ticket_page', 'agent_gui', 'email_link', 'support_entered', 'api')", name="ck_ticket_feedback_source_surface"),
         sa.CheckConstraint("comment IS NULL OR char_length(comment) <= 2000", name="ck_ticket_feedback_comment_length"),
         Index("ix_ticket_feedback_ticket_latest", "ticket_id", "is_latest"),
+        Index("uq_ticket_feedback_latest_per_ticket", "ticket_id", unique=True, postgresql_where=sa.text("is_latest IS TRUE")),
         Index("ix_ticket_feedback_service_offering_submitted", "service_code", "offering_code", "submitted_at"),
     )
 

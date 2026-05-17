@@ -883,7 +883,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="quality_loop",
         title="P3 Experience & Quality Loop",
-        summary="P3 quality loop: structured CSAT after resolved/closed, mandatory reopen reason taxonomy, internal QA review queue, continuous improvement actions, service/offering quality analytics, privacy-preserving aggregate dashboards and quality policies. Requester/public endpoints are scoped to own/public-token ticket feedback and reopen; support/admin/auditor endpoints live under `/api/web/quality/*`; support ticket detail includes internal quality state and `/app/admin/quality` renders real API data.",
+        summary="P3/P3.1 quality loop: structured CSAT after resolved/closed, mandatory reopen reason taxonomy, internal QA review queue, continuous improvement actions, service/offering quality analytics, privacy-preserving aggregate dashboards and quality policies. Requester/public endpoints are scoped to own/public-token ticket feedback and reopen; support/admin/auditor endpoints live under `/api/web/quality/*`; latest feedback is DB-enforced by a partial unique index, quality snapshots are scheduled daily/weekly, support ticket detail includes internal quality state and `/app/admin/quality` renders real API data with effective policy preview.",
         aliases=(
             "quality loop",
             "P3",
@@ -909,13 +909,15 @@ TOPICS: tuple[Topic, ...] = (
             "server/quality/improvement_service.py",
             "server/quality/analytics_service.py",
             "server/quality/policy_service.py",
+            "server/app/services/quality_snapshot_scheduler.py",
             "server/web_api/quality_handlers.py",
             "server/app/db/migrations/versions/20260517_0900_088_quality_loop.py",
+            "server/app/db/migrations/versions/20260517_1500_089_quality_loop_production_hardening.py",
             "webapp/src/features/quality/api.ts",
             "webapp/src/features/quality/quality-dashboard.tsx",
             "webapp/src/pages/admin/quality-page.tsx",
             "webapp/src/pages/requester-ticket/index.tsx",
-            "webapp/src/features/queues/support-workspace.tsx",
+            "webapp/src/pages/tickets/list-page.tsx",
         ),
         related_docs=(
             "server/docs/QUALITY_LOOP.md",
@@ -933,7 +935,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "ticket_feedback" --dir server',
             'python scripts/agent_find.py "quality" --dir server',
-            "python -m pytest server/tests/test_quality_contract_no_db.py server/tests/test_ticket_feedback_service.py server/tests/test_ticket_reopen_reasons.py server/tests/test_quality_review_service.py server/tests/test_quality_improvement_actions.py server/tests/test_quality_analytics.py server/tests/test_quality_policy_service.py server/tests/test_quality_api.py server/tests/test_quality_privacy.py server/tests/test_quality_workflow_integration.py server/tests/test_quality_service_catalog_integration.py server/tests/test_quality_knowledge_integration.py -q --tb=short",
+            "python -m pytest server/tests/test_quality_contract_no_db.py server/tests/test_ticket_feedback_service.py server/tests/test_ticket_reopen_reasons.py server/tests/test_quality_review_service.py server/tests/test_quality_improvement_actions.py server/tests/test_quality_analytics.py server/tests/test_quality_policy_service.py server/tests/test_quality_api.py server/tests/test_quality_privacy.py server/tests/test_quality_workflow_integration.py server/tests/test_quality_service_catalog_integration.py server/tests/test_quality_knowledge_integration.py server/tests/test_quality_snapshot_scheduler.py server/tests/test_quality_smoke_regression.py -q --tb=short",
             "pnpm --dir webapp test -- src/features/requester/api.test.ts src/features/quality/api.test.ts",
             "pnpm --dir webapp build",
         ),
@@ -973,6 +975,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/quality_handlers.py",
             "server/web_api/dto/support.py",
             "server/web_api/support_handlers.py",
+            "server/app/services/quality_snapshot_scheduler.py",
             "webapp/src/app/router.tsx",
             "webapp/src/app/navigation.tsx",
             "webapp/src/app/routes/lazy-pages.tsx",
@@ -980,7 +983,7 @@ TOPICS: tuple[Topic, ...] = (
             "webapp/src/features/requester/types.ts",
             "webapp/src/pages/requester-ticket/index.tsx",
             "webapp/src/features/queues/api.ts",
-            "webapp/src/features/queues/support-workspace.tsx",
+            "webapp/src/pages/tickets/list-page.tsx",
         ),
     ),
     Topic(

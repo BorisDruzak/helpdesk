@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -13,6 +13,7 @@ import {
   fetchQualityReviews,
   fetchQualitySummary,
   fetchServiceQuality,
+  saveQualityPolicy,
 } from "./api";
 
 function metric(value: number | null | undefined, suffix = "") {
@@ -26,11 +27,21 @@ export function QualityDashboard() {
   const queryClient = useQueryClient();
   const [actionTitle, setActionTitle] = useState("");
   const [actionOwner, setActionOwner] = useState("");
+  const [policyServiceCode, setPolicyServiceCode] = useState("");
+  const [policyOfferingCode, setPolicyOfferingCode] = useState("");
+  const [policyThreshold, setPolicyThreshold] = useState(3);
   const summaryQuery = useQuery({ queryKey: ["quality", "summary"], queryFn: fetchQualitySummary });
   const serviceQualityQuery = useQuery({ queryKey: ["quality", "service-quality"], queryFn: fetchServiceQuality });
   const reviewsQuery = useQuery({ queryKey: ["quality", "reviews"], queryFn: () => fetchQualityReviews() });
   const actionsQuery = useQuery({ queryKey: ["quality", "actions"], queryFn: () => fetchImprovementActions() });
-  const policyQuery = useQuery({ queryKey: ["quality", "policy"], queryFn: fetchQualityPolicy });
+  const policyQuery = useQuery({
+    queryKey: ["quality", "policy", policyServiceCode, policyOfferingCode],
+    queryFn: () =>
+      fetchQualityPolicy({
+        serviceCode: policyServiceCode.trim() || null,
+        offeringCode: policyOfferingCode.trim() || null,
+      }),
+  });
 
   const invalidate = async () => {
     await Promise.all([
@@ -38,6 +49,7 @@ export function QualityDashboard() {
       queryClient.invalidateQueries({ queryKey: ["quality", "service-quality"] }),
       queryClient.invalidateQueries({ queryKey: ["quality", "reviews"] }),
       queryClient.invalidateQueries({ queryKey: ["quality", "actions"] }),
+      queryClient.invalidateQueries({ queryKey: ["quality", "policy"] }),
     ]);
   };
 
@@ -68,8 +80,32 @@ export function QualityDashboard() {
     onSuccess: invalidate,
   });
 
+  const savePolicyMutation = useMutation({
+    mutationFn: () =>
+      saveQualityPolicy({
+        scope_type: policyOfferingCode.trim() ? "offering" : policyServiceCode.trim() ? "service" : "global",
+        service_code: policyServiceCode.trim() || null,
+        offering_code: policyOfferingCode.trim() || null,
+        enabled: true,
+        low_csat_threshold: policyThreshold,
+        reopen_review_enabled: policy?.reopen_review_enabled ?? true,
+        sla_breach_review_enabled: policy?.sla_breach_review_enabled ?? true,
+        high_priority_review_enabled: policy?.high_priority_review_enabled ?? true,
+        missing_evidence_review_enabled: policy?.missing_evidence_review_enabled ?? true,
+        random_sample_percent: policy?.random_sample_percent ?? 0,
+        qa_due_hours: policy?.qa_due_hours ?? 72,
+      }),
+    onSuccess: invalidate,
+  });
+
   const summary = summaryQuery.data;
   const policy = policyQuery.data;
+
+  useEffect(() => {
+    if (policy?.low_csat_threshold) {
+      setPolicyThreshold(policy.low_csat_threshold);
+    }
+  }, [policy?.low_csat_threshold]);
 
   return (
     <section className="workspace-page grid gap-5">
@@ -114,7 +150,10 @@ export function QualityDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Service and offering quality</CardTitle>
-          <CardDescription>Aggregated metrics only; requester identifiers and feedback comments are not shown here.</CardDescription>
+          <CardDescription>
+            Aggregated metrics only; requester identifiers and feedback comments are not shown here.
+            Last computed: {serviceQualityQuery.data?.lastComputedAt ?? "not yet scheduled"}.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -214,16 +253,46 @@ export function QualityDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Quality policy</CardTitle>
-          <CardDescription>Effective policy preview for global scope.</CardDescription>
+          <CardDescription>Effective policy preview and override editor by service or offering.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-2 text-sm text-slate-700 md:grid-cols-4">
-          <span>Low CSAT threshold: {policy?.low_csat_threshold ?? "n/a"}</span>
-          <span>Reopen review: {policy?.reopen_review_enabled ? "on" : "off"}</span>
-          <span>SLA review: {policy?.sla_breach_review_enabled ? "on" : "off"}</span>
-          <span>QA due hours: {policy?.qa_due_hours ?? "n/a"}</span>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px_auto]">
+            <input
+              aria-label="Policy service code"
+              className="field-base px-3 py-2"
+              onChange={(event) => setPolicyServiceCode(event.currentTarget.value)}
+              placeholder="service_code"
+              value={policyServiceCode}
+            />
+            <input
+              aria-label="Policy offering code"
+              className="field-base px-3 py-2"
+              onChange={(event) => setPolicyOfferingCode(event.currentTarget.value)}
+              placeholder="offering_code"
+              value={policyOfferingCode}
+            />
+            <input
+              aria-label="Low CSAT threshold"
+              className="field-base px-3 py-2"
+              max={5}
+              min={1}
+              onChange={(event) => setPolicyThreshold(Number(event.currentTarget.value))}
+              type="number"
+              value={policyThreshold}
+            />
+            <Button disabled={savePolicyMutation.isPending} onClick={() => savePolicyMutation.mutate()} type="button">
+              Save override
+            </Button>
+          </div>
+          <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-5">
+            <span>Scope: {policy?.scope_type ?? "global"}</span>
+            <span>Low CSAT threshold: {policy?.low_csat_threshold ?? "n/a"}</span>
+            <span>Reopen review: {policy?.reopen_review_enabled ? "on" : "off"}</span>
+            <span>SLA review: {policy?.sla_breach_review_enabled ? "on" : "off"}</span>
+            <span>QA due hours: {policy?.qa_due_hours ?? "n/a"}</span>
+          </div>
         </CardContent>
       </Card>
     </section>
   );
 }
-

@@ -4,11 +4,11 @@ P3 adds a structured experience and quality loop around ticket resolution withou
 
 ## Model
 
-- `ticket_feedback`: requester/public/support-entered CSAT rows for resolved or closed tickets. Rating is 1..5, subratings are optional, reason codes are structured, and one latest row per ticket/requester is maintained by the service layer.
+- `ticket_feedback`: requester/public/support-entered CSAT rows for resolved or closed tickets. Rating is 1..5, subratings are optional, reason codes are structured, and one latest row per ticket is enforced by the service layer plus the `089` partial unique index `uq_ticket_feedback_latest_per_ticket`.
 - `ticket_reopen_events`: mandatory structured reopen reason taxonomy for reopening resolved/closed tickets.
 - `ticket_quality_reviews` and `ticket_quality_review_comments`: internal QA review queue for low CSAT, reopen, SLA breach, missing evidence, high-priority and manager/audit triggers.
 - `continuous_improvement_actions`: process improvement work items linked to CSAT, reopen, QA review, knowledge gap, SLA breach or manual source.
-- `service_quality_snapshots`: aggregate service/offering/period metrics without requester PII.
+- `service_quality_snapshots`: aggregate service/offering/period metrics without requester PII. The quality snapshot scheduler recomputes day/week snapshots daily, and dashboard/API responses expose the latest `last_computed_at` timestamp.
 - `quality_policies`: effective thresholds and trigger flags for global/service/offering/queue scopes.
 
 ## APIs
@@ -40,12 +40,14 @@ Support/admin/auditor:
 - Low CSAT creates a QA review. Knowledge failure reasons can create an improvement action for KB updates.
 - Reopen requires a reason code; `other` requires a comment. Reopen uses the existing workflow service and records a first-class reopen event.
 - Improvement actions are not tickets. They require source, action type, status, priority and audit fields; moving into assigned/in-progress requires an owner and closing requires outcome notes.
+- `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
+- `QualitySnapshotScheduler` runs from server startup when DB persistence is enabled. It recomputes daily and weekly snapshots through `ServiceQualityAnalyticsService`; the manual recompute endpoint remains available for operator/debug use.
 
 ## Surfaces
 
 - Requester ticket page shows CSAT and reopen controls for resolved/closed tickets.
 - Support ticket detail includes a Quality section with latest CSAT, reopen count, QA reviews and improvement actions.
-- Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics and internal review/action work queues.
+- Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics, the last snapshot timestamp, internal review/action work queues and a service/offering quality-policy override editor with effective-policy preview.
 - Agent GUI is unchanged in P3; web/public requester surfaces are the canonical CSAT/reopen path and Protocol V3 is not changed.
 
 ## Privacy
@@ -57,5 +59,4 @@ Support/admin/auditor:
 ## Rollback
 
 - Operational rollback: disable feedback prompts and QA triggers through quality policy/UI while keeping data read-only.
-- Code rollback: revert P3 code and downgrade Alembic revision `088`; existing ticket status/workflow state does not require rollback.
-
+- Code rollback: revert P3/P3.1 code and downgrade Alembic revisions `089` then `088`; existing ticket status/workflow state does not require rollback.

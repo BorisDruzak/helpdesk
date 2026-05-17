@@ -10,6 +10,11 @@ from app.db.models import QualityPolicy
 
 
 DEFAULT_POLICY = {
+    "policy_id": None,
+    "scope_type": "global",
+    "service_code": None,
+    "offering_code": None,
+    "queue_id": None,
     "enabled": True,
     "low_csat_threshold": 3,
     "reopen_review_enabled": True,
@@ -106,4 +111,3 @@ class QualityPolicyService:
             "random_sample_percent": float(row.random_sample_percent or 0),
             "qa_due_hours": int(row.qa_due_hours),
         }
-

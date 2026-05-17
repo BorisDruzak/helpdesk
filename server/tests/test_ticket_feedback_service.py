@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketFeedback, TicketQualityReview
@@ -115,3 +117,81 @@ async def test_second_feedback_marks_previous_not_latest(test_engine) -> None:
 
     assert first_row.is_latest is False
     assert second_row.is_latest is True
+
+
+@pytest.mark.asyncio
+async def test_latest_feedback_db_invariant_rejects_two_latest_rows(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    requester_id = "requester-1"
+    now = datetime.now(timezone.utc)
+    async with session_maker() as session:
+        session.add(_ticket(ticket_id, requester_id=requester_id))
+        await session.flush()
+        session.add(
+            TicketFeedback(
+                feedback_id=str(uuid.uuid4()),
+                ticket_id=ticket_id,
+                requester_id=requester_id,
+                actor_role="requester",
+                rating=4,
+                sentiment="positive",
+                reason_codes=[],
+                visibility="requester_visible",
+                source_surface="requester_portal",
+                submitted_at=now,
+                is_latest=True,
+            )
+        )
+        await session.flush()
+        session.add(
+            TicketFeedback(
+                feedback_id=str(uuid.uuid4()),
+                ticket_id=ticket_id,
+                requester_id=requester_id,
+                actor_role="requester",
+                rating=2,
+                sentiment="negative",
+                reason_codes=["not_resolved"],
+                visibility="requester_visible",
+                source_surface="requester_portal",
+                submitted_at=now,
+                is_latest=True,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_feedback_submissions_leave_exactly_one_latest(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_ticket(ticket_id))
+        await session.commit()
+
+    async def submit(rating: int) -> str:
+        async with session_maker() as session:
+            result = await TicketFeedbackService(session).submit_feedback(
+                {"ticket_id": ticket_id, "rating": rating, "source_surface": "requester_portal"},
+                actor_id="requester-1",
+                actor_role="requester",
+            )
+            await session.commit()
+            return result["feedback_id"]
+
+    feedback_ids = await asyncio.gather(submit(5), submit(2))
+
+    async with session_maker() as session:
+        rows = (
+            await session.execute(
+                select(TicketFeedback).where(
+                    TicketFeedback.ticket_id == ticket_id,
+                    TicketFeedback.feedback_id.in_(feedback_ids),
+                )
+            )
+        ).scalars().all()
+
+    assert len(rows) == 2
+    assert sum(1 for row in rows if row.is_latest) == 1

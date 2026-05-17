@@ -197,159 +197,33 @@ Final release status:
 - Remote release: `python scripts/release_server_to_remote.py --gate full --leave-running --smoke-attempts 8 --smoke-delay 5` used the green CI artifact, fast-forwarded the Linux stand to `f826e33`, applied Alembic head, uploaded the React bundle and passed `/api/health` smoke after startup retry.
 - Browser signoff on `https://192.168.100.17:9443`: `/app/admin/quality` loaded real overview metrics, service/offering quality, QA review queue, improvement actions and policy controls; requester ticket `T-000566` accepted low CSAT and structured reopen, returning the ticket to support; `/app/tickets` Quality tab showed the same real feedback, reopen event and QA review signals for that ticket.
 - Agent GUI CSAT/reopen remains intentionally deferred for P3. Canonical CSAT/reopen surfaces are web/public ticket routes; no Protocol V3 change was made.
-- Remaining risks: DB/API layers remain slow because every isolated domain layer creates a separate test DB and applies migrations; quality snapshots are recomputed through API/manual workflow rather than a scheduler in this slice; initial browser setup attempts produced expected 400 validation errors while finding the valid public-ticket payload, and the final user-visible flows completed successfully.
+- Remaining P3 risks before P3.1: DB/API layers remain slow because every isolated domain layer creates a separate test DB and applies migrations; quality snapshots were API/manual recompute only in the original P3 slice; initial browser setup attempts produced expected 400 validation errors while finding the valid public-ticket payload, and the final user-visible flows completed successfully.
 
-## Next Stage: Baseline Packs, First-Class Ops Models and Analytics
+## P3.1 Quality Loop Production Hardening
 
-### Scope
+P3.1 Quality Loop Production Hardening Status: accepted / compact release-candidate.
 
-- Expand baseline packs into four idempotent packs: `it-self-service-baseline`, `support-runbooks-baseline`, `known-errors-baseline` and `glossary-baseline`.
-- Move content templates and linting into dedicated services: `content_templates.py` and `content_lint.py`.
-- Add first-class review task, quality snapshot, gap finding and search analytics tables/services while preserving the existing P2/P2.1 contracts.
-- Keep requester-safe publication blocked by lint and keep runbooks/known errors internal by default unless explicitly safe.
-- Extend admin/support APIs and UI over real backend data, not mocks.
+Scope:
+- Add DB-level latest-feedback invariant with Alembic `089` partial unique index `uq_ticket_feedback_latest_per_ticket`.
+- Serialize concurrent feedback submissions by locking the ticket row before replacing latest feedback.
+- Add daily/weekly `QualitySnapshotScheduler` integration and expose `last_computed_at` on quality service-quality responses.
+- Polish `/app/admin/quality` policy controls for service/offering override editing and effective-policy preview.
+- Keep P3 smoke regression focused: low CSAT -> QA review; reopen -> reopen event + QA review; improvement action lifecycle; analytics no PII.
 
-### Non-Goals
-
-- No Protocol V3 changes.
-- No AI-generated-content primary workflow.
-- No weakening of ACL/search/graph filtering.
-- No public/requester content with internal commands, queue ids, device/requester ids, raw custom fields or infrastructure names.
-
-### Data Model Decisions
-
-- Add migration `086` for `knowledge_review_tasks`, optional `knowledge_review_comments`, `knowledge_quality_snapshots`, `knowledge_gap_findings` and `knowledge_search_events`.
-- Keep old `KnowledgeOperationsService` endpoints compatible by delegating to focused services.
-- Store raw search query text only after redaction and keep a hash for analytics correlation.
-
-### Content Pack Strategy
-
-- Pack install remains idempotent and preserves admin edits unless `--force`.
-- `--all` installs all packs explicitly; `--pack <code>` installs one pack; `--retire-missing` is supported but defaults off.
-- Default publish behavior publishes only requester-safe, approved baseline content; uncertain internal runbooks and known errors stay draft or in review.
-
-### Tests
-
-- [x] RED: content pack baseline/script/all/retire-missing and unsafe requester pack tests.
-- [x] RED: content templates and lint validators.
-- [x] RED: first-class review task generation/action/RBAC tests.
-- [x] RED: explainable quality service tests.
-- [x] RED: persistent gap detection and create-draft tests.
-- [x] RED: search analytics/redaction tests.
-- [x] GREEN: server implementation and API compatibility.
-- [x] GREEN: webapp API/admin panel refinements for first-class review tasks and gap findings.
-- [x] Local verification and full CI runner.
-- [x] Remote deploy/browser signoff.
-
-## Discovery
-
-- Current spaces/items are created ad hoc through `KnowledgeRepo.upsert_space()`, `create_item_draft()`, `create_version()` and explicit `publish_item(version_id=...)`; there is no idempotent content pack install/update/audit state.
-- Existing initial content is only test/browser smoke data or manual admin UI creation. There is no production baseline pack for requester self-service, support runbooks or known-error starter content.
-- `review_due_at` exists on `knowledge_items` but is not operationally surfaced beyond item serialization; no review queue/action endpoint exists.
-- Metrics currently aggregate feedback events globally (`deflected`, `ticket_created_after_view`, helpful/not helpful) and intentionally avoid PII. There is no quality score per item, stale-content queue or service/offering gap detector.
-- Service Catalog already exposes published service/offering dimensions, and Policy Health already warns when published public services/offerings lack requester-safe knowledge. P2.2 can reuse those dimensions instead of changing the Service Catalog contract.
-- Requester `/app/help` and agent GUI already use `/api/knowledge/suggest|feedback` and safe `knowledge_attempts`. Rollout controls should therefore gate suggestion exposure server-side without changing Protocol V3 or ticket create payloads.
-- Support ticket workspace already has a Knowledge tab backed by real suggestions plus legacy `kb_links` compatibility. P2.2 should add operations/admin visibility, not replace support suggestion payloads.
-- Existing ACL/privacy rules are strict: requester/agent/public surfaces only receive published requester-safe projection; support/auditor/admin direct reads are role-filtered; graph neighborhood returns only fully visible subgraphs.
-
-## Scope
-
-- Add idempotent content packs with dry-run/install/update/skip/conflict/retire audit.
-- Add reusable content templates for article, FAQ, runbook, known error, workaround and service-description style content.
-- Add review/curation operations: submit for review, approve/request changes, mark needs review, archive/retire.
-- Add deterministic quality scoring based on status, reviewer/version/body, age/review due, bindings, feedback/helpfulness and safe-publication lint.
-- Add knowledge gap detection over published Service Catalog services/offerings, ticket counts and feedback/deflection metrics.
-- Add self-service rollout controls that gate requester/agent deflection by service/offering/surface while keeping support/admin access intact.
-- Extend the real admin/support Knowledge UI to show packs, review queue, quality/gaps and rollout state.
-- Update docs, CODEMAP/navigation, migration docs, tests and release verification notes.
-
-## Non-Goals
-
-- No replacement of P2 schema/services/search/graph foundation.
-- No Protocol V3 changes.
-- No AI-generated-content primary workflow.
-- No public/requester publication bypass: requester-safe items still require reviewer, explicit version, body and lint gates.
-- No one-off SQL seed dump. Packs must be idempotent and auditable.
-- No frontend mock data.
-
-## Data Model Decisions
-
-- Add first-class tables `knowledge_content_packs`, `knowledge_content_pack_items` and `knowledge_rollout_policies` in Alembic revision `085`.
-- Keep review events/quality snapshots in `knowledge_items.metadata_json` for this slice to avoid over-modeling curation history before operators use it daily.
-- Store pack item install state by `(pack_code, pack_version, item_slug)` and preserve admin edits unless explicit `force=True`.
-- Store content pack hashes using canonical JSON serialization so dry-run and install agree.
-
-## Content Pack Strategy
-
-- Pack files live in `content_packs/knowledge/*.yaml`.
-- `scripts/seed_knowledge_content.py --dry-run|--force --pack <code>` loads packs through `KnowledgeContentPackService`.
-- The baseline pack creates requester-safe self-service content and support-internal runbooks with safe bodies, bindings, tags, source refs and quality metadata.
-- Unchanged entries are skipped; changed entries become `conflict` unless force is explicit.
-
-## Review Workflow
-
-- New `KnowledgeOperationsService` owns review actions and safe-publication lint.
-- Requester-safe publishing blocks internal command/queue/device/requester/raw-custom-field/security markers in title/summary/body/metadata.
-- Review queue includes draft/in-review/needs-review, overdue published items and passport/ingestion drafts.
-
-## Quality/Gap Model
-
-- Quality score is deterministic 0..100. Positive inputs: published current version, reviewed version, body length, bindings, recent review, helpful feedback. Negative inputs: stale review, no reviewer/version/body/bindings, not-helpful feedback, unsafe-publication lint.
-- Gap detection groups by Service Catalog service/offering and ticket metrics; published public catalog entries without requester-safe published bindings or with high ticket-created-after-view/not-helpful counts are surfaced as gaps.
-
-## API/UI/Agent Changes
-
-- Add `/api/web/knowledge/content-packs`, `/api/web/knowledge/templates`, `/api/web/knowledge/review-queue`, `/api/web/knowledge/items/{id}/review-action`, `/api/web/knowledge/quality`, `/api/web/knowledge/gaps`, `/api/web/knowledge/rollout-policies`.
-- Extend `/api/knowledge/search|suggest` to respect rollout policies for requester/agent/public surfaces only.
-- Extend `webapp/src/features/knowledge/*` with real API calls and operational dashboard sections.
-- Agent GUI remains contract-compatible; it benefits from rollout-gated suggestions through the existing HTTP API.
-
-## Tests
-
-- [x] Content pack dry-run/install/update/conflict/force/retire tests.
-- [x] Safe publication lint and review action tests.
-- [x] Quality score and review queue tests.
-- [x] Gap detection and rollout policy tests.
-- [x] API tests for new admin operations.
-- [x] Webapp API tests/build.
-- [ ] Browser signoff after deploy.
-
-## Release Verification
-
-- Focused knowledge tests first, then P0/P1 regressions, agent knowledge tests, webapp build/tests, `python scripts/verify_workspace.py`, remote quick release smoke, browser signoff at `https://192.168.100.17:9443/admin`.
-- Full CI/full gate remain final release checkpoints and require explicit user confirmation before running.
-
-Current local verification:
-
-- `python -m pytest server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_content_templates.py server\tests\test_knowledge_content_lint.py server\tests\test_knowledge_review_tasks.py server\tests\test_knowledge_quality.py server\tests\test_knowledge_gaps.py server\tests\test_knowledge_search_analytics.py -q --tb=short` -> 18 passed.
-- Full knowledge regression: `python -m pytest server\tests\test_knowledge_contract_no_db.py server\tests\test_knowledge_migration.py server\tests\test_knowledge_repo.py server\tests\test_knowledge_visibility.py server\tests\test_knowledge_acl_hardening.py server\tests\test_knowledge_search.py server\tests\test_knowledge_suggestions.py server\tests\test_knowledge_feedback.py server\tests\test_knowledge_graph.py server\tests\test_knowledge_ingestion.py server\tests\test_knowledge_passport_draft.py server\tests\test_knowledge_api.py server\tests\test_ticket_knowledge_links_compat.py server\tests\test_knowledge_metrics.py server\tests\test_knowledge_publish_flow.py server\tests\test_knowledge_db_constraints.py server\tests\test_knowledge_content_packs.py server\tests\test_knowledge_operations.py server\tests\test_knowledge_content_templates.py server\tests\test_knowledge_content_lint.py server\tests\test_knowledge_review_tasks.py server\tests\test_knowledge_quality.py server\tests\test_knowledge_gaps.py server\tests\test_knowledge_search_analytics.py -q --tb=short` -> 61 passed.
-- P0 regression: `python -m pytest server\tests\test_ticket_status_usage_no_db.py server\tests\test_public_queue_privacy.py server\tests\test_workflow_side_effect_observability.py server\tests\test_policy_health_service.py server\tests\test_policy_health_api.py server\tests\test_ticket_create_contracts.py -q --tb=short` -> 32 passed.
-- P1 regression: `python -m pytest server\tests\test_service_catalog_fallback.py server\tests\test_service_catalog_preview.py server\tests\test_service_catalog_api.py server\tests\test_ticket_create_service_catalog.py server\tests\test_reports_service_catalog.py server\tests\test_service_catalog_repo.py server\tests\test_policy_health_service_catalog.py -q --tb=short` -> 14 passed. The requested `test_service_catalog_publication.py` file is not present in this branch.
-- Agent focused regression: `python -m pytest pc_agent\tests\test_knowledge_suggestions.py pc_agent\tests\test_knowledge_rollout_agent.py pc_agent\tests\test_agent_knowledge_attempts.py -q` -> 5 passed.
-- Agent full non-manual: `python -m pytest pc_agent\tests -m "not manual" -q --tb=short` -> 311 passed, 4 deselected.
-- `pnpm --dir webapp exec vitest run src/features/knowledge/api.test.ts` -> 2 passed.
+Verification:
+- RED observed: missing scheduler module, missing `lastComputedAt`, missing scoped policy fetch/save API, and no DB unique invariant before `089`.
+- `python -m pytest server/tests/test_ticket_feedback_service.py server/tests/test_quality_analytics.py server/tests/test_quality_policy_service.py server/tests/test_quality_snapshot_scheduler.py server/tests/test_quality_smoke_regression.py -q --tb=short` -> 11 passed.
+- `python -m pytest server/tests/test_quality_api.py server/tests/test_quality_privacy.py server/tests/test_quality_workflow_integration.py -q --tb=short` -> 4 passed.
+- `pnpm --dir webapp test -- src/features/quality/api.test.ts` -> 4 passed.
 - `pnpm --dir webapp build` -> passed.
 - `python -m compileall -q server pc_agent scripts` -> passed.
-- `git diff --check` -> passed with CRLF warnings only.
-- `python scripts\verify_workspace.py` -> passed.
-- `python scripts\build_context_index.py --force` -> built 14,012 items.
-- `python scripts\run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0` -> passed. CI layers: verify_workspace passed; webapp bundle passed; server no-db 311 passed / 640 deselected; server db-api 610 passed / 341 deselected; server agent-ws 30 passed / 921 deselected; pc_agent 311 passed / 4 deselected.
-- Direct `python -m pytest server\tests -m "not manual" -q --tb=short` timed out at 30 minutes without a final pytest report; replaced by the canonical layered CI runner above, which completed successfully.
-- Remote release: `python scripts\release_server_to_remote.py --gate full --allow-local-dirty --leave-running --smoke-attempts 8 --smoke-delay 5` deployed commit `7987114212ac533c279767026652439b9150791e`, applied Alembic `085 -> 086`, uploaded webapp assets and passed remote smoke on attempt 2.
-- Remote baseline seed: `scripts/seed_knowledge_content.py --dry-run --all --actor codex-release` previewed 21 creates; install created 4 packs / 21 pack items; repeated dry-run skipped all entries with no conflicts or failures.
-- Browser signoff at `https://192.168.100.17:9443/admin`: `/app/admin/knowledge` showed 4 installed packs, 24 items and 16 published items; review/quality/gaps/rollout sections loaded from real API endpoints; `/app/knowledge` loaded support knowledge view without admin-only pack controls; `/app/help` showed requester-safe seeded suggestions and deflection actions; `/app/tickets/8aa0050b-f553-4f5a-8fb0-59f39fe67541` Knowledge tab showed linked seeded knowledge. Browser console warnings/errors: 0. Relevant API/network calls returned 200.
-- Remote cleanup: `python scripts\manage_remote_stack.py stop server` stopped the server after browser signoff.
-- `pnpm --dir webapp run build` -> passed.
-- `git diff --check` -> passed; line-ending warnings only.
-- `python scripts\docs_inventory.py --check-links` -> passed.
-- `python scripts\verify_workspace.py` -> passed after updating `scripts/navigation_catalog.py`.
-- `content_packs/knowledge/it-self-service-baseline.yaml` loader check -> 2 items, 2 graph nodes, 3 graph edges.
+- `git diff --check` -> passed; Git reported only expected LF-to-CRLF working-copy warnings.
+- `python scripts/verify_workspace.py` -> passed.
+- `python scripts/build_context_index.py --force` -> rebuilt `artifacts/context_index/pc_client.sqlite` with 14,356 items, 569 routes, 11,018 symbols and 1,379 tests.
 
-## Rollback Notes
-
-- Rollback can disable requester/agent rollout policies or retire seeded pack entries while preserving existing P2 knowledge data.
-- Alembic downgrade of `085` removes only pack/rollout state tables; core P2 tables remain.
-- Pack-installed items should be archived/retired, not hard-deleted, if already linked from tickets.
+Rollback notes:
+- Disable the scheduler by removing the startup hook if snapshots misbehave; manual recompute API remains.
+- Downgrade Alembic `089` to remove only the latest-feedback partial unique index; P3 tables from `088` remain intact.
 
 # P2.1 Knowledge Platform Acceptance Hardening
 

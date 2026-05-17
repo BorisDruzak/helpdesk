@@ -239,6 +239,12 @@ async def on_startup(app: web.Application):
             app['playbook_scheduler'] = pb_scheduler
             logger.success("✅ Playbook scheduler started")
 
+            from app.services.quality_snapshot_scheduler import get_quality_snapshot_scheduler
+            quality_snapshot_scheduler = get_quality_snapshot_scheduler()
+            await quality_snapshot_scheduler.start()
+            app['quality_snapshot_scheduler'] = quality_snapshot_scheduler
+            logger.success("✅ Quality snapshot scheduler started")
+
             # Reconcile scheduler: периодически сверяет desired vs actual state модулей
             from app.services.module_reconcile_scheduler import start_reconcile_scheduler
             app['reconcile_task'] = asyncio.create_task(
@@ -326,6 +332,11 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping playbook scheduler...")
         await app['playbook_scheduler'].stop()
         logger.success("✅ Playbook scheduler stopped")
+
+    if 'quality_snapshot_scheduler' in app:
+        logger.info("⏹️ Stopping quality snapshot scheduler...")
+        await app['quality_snapshot_scheduler'].stop()
+        logger.success("✅ Quality snapshot scheduler stopped")
 
     # Stop reconcile scheduler
     if 'reconcile_task' in app:
