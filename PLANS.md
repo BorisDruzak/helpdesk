@@ -17,12 +17,12 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 | P4 Problem Management / RCA | accepted / release-candidate | First-class problems, candidates, ticket links, RCA, known-error/workaround Knowledge links, affected objects, analytics and `/app/admin/problems`. | Commit `2618616`; CI artifact `artifacts/ci/2618616bc2e0045ed4cdcdf39aeed7c195b8149e/summary.json`; remote/browser signoff completed. |
 | P4.1 Problem Production Hardening | accepted / release-candidate | Scheduled scanner, run records, broader detection signals, dedup/merge/cooldown, problem SLO/aging and operational dashboard. | Commits `f2ad8db`, `f83f95d`, `d7f3836`; final CI artifact `artifacts/ci/f83f95d794fcd17028bb87d659902af4d26efe0f/summary.json`; remote/browser signoff completed and server stopped. |
 | P5 Change Enablement | accepted / release-candidate | First-class changes, standard/normal/emergency lifecycle, risk/impact, approvals, windows/calendar, implementation/rollback plans, tasks, PIR, problem/action linkage and `/app/admin/changes`. | Commits `1abd32c`, `82a33a1`; CI artifact `artifacts/ci/82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7/summary.json`; remote/browser signoff completed. |
-| P5 Change Enablement Hardening | in progress | Operator docs, standard preapproval catalog, recurring blackout/maintenance windows, overlap detection, emergency retrospective rules, hardened metrics and remote demo cleanup. | Focused P5 backend/webapp tests passed locally; final verify/deploy pending. |
+| P5 Change Enablement Hardening | accepted / compact release-candidate | Operator docs, standard preapproval catalog, recurring blackout/maintenance windows, overlap detection, emergency retrospective rules, hardened metrics and remote demo cleanup. | Commit `b904791`; focused P5 backend/webapp tests, webapp build, `verify_workspace`, quick deploy, remote smoke and browser signoff passed; remote demo records archived/canceled and server stopped. |
 
 ## Current Invariants
 
 - Work only in `C:\Users\admin-2\CodexProjects\pc_client`; the SMB share and Linux checkout are mirrors.
-- Do not weaken P0-P4 contracts, canonical ticket statuses, Service Catalog fields, Knowledge visibility, Quality privacy or Problem lifecycle.
+- Do not weaken P0-P5 contracts, canonical ticket statuses, Service Catalog fields, Knowledge visibility, Quality privacy, Problem lifecycle or Change governance.
 - Protocol V3 is unchanged unless explicitly required; current P5 scope does not require it.
 - Requester/public surfaces must not expose internal QA, RCA, change risk notes, infrastructure details, rollback steps, queue ids, raw policy JSON or requester PII in analytics.
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
@@ -125,11 +125,11 @@ Webapp tests:
 ### Remaining Risks
 
 - P5 does not implement external calendar integrations, automatic execution, or full P5+ release orchestration; those are intentionally outside Change Enablement.
-- The release smoke created demo records `CHG-000002` and `CHG-000003` on the remote stand.
+- P5 hardening archived/canceled demo records on the remote stand; no live demo change remains open.
 
-## Active Work: P5 Change Enablement Hardening
+## Latest Accepted Work: P5 Change Enablement Hardening
 
-Status: in progress.
+Status: accepted / compact release-candidate.
 
 Scope:
 
@@ -146,3 +146,13 @@ Verification so far:
 - GREEN: `python -m pytest server/tests/test_change_calendar.py server/tests/test_change_policies.py server/tests/test_change_analytics.py -q --tb=short` -> 7 passed.
 - P5 focused backend: `python -m pytest server/tests/test_change_contract_no_db.py server/tests/test_change_repo.py server/tests/test_change_service.py server/tests/test_change_lifecycle.py server/tests/test_change_risk_assessment.py server/tests/test_change_approval_service.py server/tests/test_change_calendar.py server/tests/test_change_tasks.py server/tests/test_change_pir.py server/tests/test_change_problem_integration.py server/tests/test_change_service_catalog_integration.py server/tests/test_change_knowledge_quality_integration.py server/tests/test_change_api.py server/tests/test_change_privacy.py server/tests/test_change_analytics.py server/tests/test_change_policies.py -q --tb=short` -> 26 passed.
 - Webapp focused: `pnpm --dir webapp test -- src/features/changes/api.test.ts src/features/changes/change-workspace.test.tsx src/features/problems/problem-workspace.test.tsx` -> 3 files / 4 tests passed.
+- Static/docs/build: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/build_context_index.py --force`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, and `pnpm --dir webapp build` passed.
+- Deploy/browser: quick release to remote stand passed on commit `b9047915494a6ddb58a05a34f443e66e86be7a6a`; `/api/health` smoke passed; `/app/admin/changes` showed failure/rollback/lead-time/emergency-retro metrics and archived demo rows with no console errors and all change API calls returning 200.
+- Remote demo cleanup: `CHG-000001` and `CHG-000003` moved from `draft` to `canceled`; `CHG-000002` stayed `closed`; all three were renamed with `[demo archived]` and metadata `remote_demo_record=true`.
+- Full canonical CI was not rerun for this compact hardening follow-up; the latest full P5 artifact remains `artifacts/ci/82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7/summary.json`.
+- Remote server was stopped after smoke (`active=inactive`, `sub=dead`).
+
+Remaining risks:
+
+- External calendar integrations and rich RRULE support remain outside P5; current recurrence support intentionally covers simple daily/weekly maintenance and blackout windows.
+- P5 still does not execute changes automatically; it governs approvals, timing, tasks, rollback and PIR only.
