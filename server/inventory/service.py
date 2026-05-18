@@ -56,6 +56,38 @@ def extract_tool_result_payload(payload: Any) -> dict[str, Any] | None:
     return None
 
 
+def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
+    if tool_id != INVENTORY_TOOL_ID:
+        return None
+    try:
+        from pc_agent.modules.impl.inventory import (
+            INVENTORY_COLLECT_OUTPUT_CONTRACT,
+            INVENTORY_COLLECT_OUTPUT_SCHEMA,
+            INVENTORY_COLLECT_PRESENTATION_SCHEMA,
+        )
+    except Exception:
+        return None
+    return CapabilityDescriptor(
+        id=INVENTORY_TOOL_ID,
+        title="Inventory collect",
+        description="Privacy-safe endpoint inventory snapshot",
+        provider_id="inventory",
+        provider_type="agent_builtin",
+        execution_target="agent_builtin",
+        tool_kind="inventory",
+        risk_level="low",
+        side_effects=False,
+        requires_device=True,
+        requires_agent_online=True,
+        platforms=["win32", "linux"],
+        params_schema={"type": "object", "additionalProperties": False, "properties": {}},
+        output_schema=dict(INVENTORY_COLLECT_OUTPUT_SCHEMA),
+        output_contract=dict(INVENTORY_COLLECT_OUTPUT_CONTRACT),
+        presentation_schema=dict(INVENTORY_COLLECT_PRESENTATION_SCHEMA),
+        source="agent_builtin",
+    )
+
+
 class DeviceInventoryService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -140,6 +172,8 @@ class DeviceInventoryService:
     async def resolve_inventory_presentation(self, *, tool_id: str = INVENTORY_TOOL_ID) -> dict[str, Any]:
         presentation_service = ToolPresentationOverrideService(self.session)
         descriptor = await presentation_service.descriptor_from_persisted_capability(tool_id)
+        if descriptor is None:
+            descriptor = _inventory_builtin_descriptor(tool_id)
         if descriptor is None:
             descriptor = CapabilityDescriptor(id=tool_id, title=tool_id, execution_target="agent_builtin")
         detail = await presentation_service.get_presentation_detail(descriptor)
