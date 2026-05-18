@@ -580,6 +580,12 @@ def _normalize_tool_entry(
     elif not isinstance(output_schema, dict):
         errors.append(f"Tool '{tool_name}' has invalid output_schema type")
         output_schema = {}
+    presentation_schema = raw_tool.get("presentation_schema")
+    if presentation_schema is None:
+        presentation_schema = {}
+    elif not isinstance(presentation_schema, dict):
+        errors.append(f"Tool '{tool_name}' has invalid presentation_schema type")
+        presentation_schema = {}
     output_contract = _normalize_output_contract(
         raw_tool.get("output_contract"),
         field_name=f"Tool '{tool_name}' output_contract",
@@ -778,6 +784,7 @@ def _normalize_tool_entry(
         "params_schema": params_schema,
         "output_schema": output_schema,
         "output_contract": output_contract,
+        "presentation_schema": presentation_schema,
         "presets": presets,
         "capabilities": capabilities,
         "metadata": {
@@ -823,6 +830,7 @@ def manifest_summary_from_manifest(manifest_json: Dict[str, Any]) -> Dict[str, A
                 "params_schema": tool.get("params_schema") or {},
                 "output_schema": tool.get("output_schema") or {},
                 "output_contract": tool.get("output_contract") or {},
+                "presentation_schema": tool.get("presentation_schema") or {},
                 "presets": tool.get("presets") or [],
                 "capabilities": tool.get("capabilities") or [],
                 "aliases": tool.get("aliases") or [],

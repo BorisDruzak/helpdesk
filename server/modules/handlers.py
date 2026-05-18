@@ -953,6 +953,7 @@ async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dic
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     output_schema = payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else None
     output_contract = payload.get("output_contract") if isinstance(payload.get("output_contract"), dict) else None
+    presentation_schema = payload.get("presentation_schema") if isinstance(payload.get("presentation_schema"), dict) else None
     aliases = payload.get("aliases") if isinstance(payload.get("aliases"), list) else None
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else None
     requirements = payload.get("requirements") if isinstance(payload.get("requirements"), list) else None
@@ -988,6 +989,7 @@ async def _prepare_module_package_payload(payload: dict) -> tuple[int, dict, dic
             metadata=metadata,
             output_schema=output_schema,
             output_contract=output_contract,
+            presentation_schema=presentation_schema,
             aliases=aliases,
             tools=tools,
             requirements=requirements,
@@ -2013,6 +2015,7 @@ async def handle_create_module(request):
         metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
         output_schema = data.get("output_schema") if isinstance(data.get("output_schema"), dict) else None
         output_contract = data.get("output_contract") if isinstance(data.get("output_contract"), dict) else None
+        presentation_schema = data.get("presentation_schema") if isinstance(data.get("presentation_schema"), dict) else None
         aliases = data.get("aliases") if isinstance(data.get("aliases"), list) else None
         tools = data.get("tools") if isinstance(data.get("tools"), list) else None
         requirements = data.get("requirements") if isinstance(data.get("requirements"), list) else None
@@ -2056,6 +2059,7 @@ async def handle_create_module(request):
                 metadata=metadata,
                 output_schema=output_schema,
                 output_contract=output_contract,
+                presentation_schema=presentation_schema,
                 aliases=aliases,
                 tools=tools,
                 requirements=requirements,

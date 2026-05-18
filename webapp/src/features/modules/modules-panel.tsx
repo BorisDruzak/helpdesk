@@ -356,6 +356,7 @@ function createEmptyTool(index: number): ModuleWorkbenchToolDraft {
       properties: {},
     },
     output_contract: normalizeOutputContract(null),
+    presentation_schema: {},
     presets: [],
     capabilities: [],
     metadata: {
@@ -442,6 +443,7 @@ function buildDraftPayload(draft: ModuleWorkbenchDraft) {
       params_schema: tool.params_schema,
       output_schema: tool.output_schema,
       output_contract: normalizeOutputContract(tool.output_contract),
+      presentation_schema: tool.presentation_schema ?? {},
       presets: tool.presets,
       capabilities: tool.capabilities,
       metadata: tool.metadata,

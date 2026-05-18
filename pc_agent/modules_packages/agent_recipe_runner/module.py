@@ -23,6 +23,112 @@ MAX_OUTPUT_BYTES = 64 * 1024
 MAX_ITEMS = 200
 
 
+COMPOSITE_RECIPE_PRESENTATION_SCHEMA: dict[str, Any] = {
+    "version": "1.0",
+    "kind": "composite_recipe",
+    "title": "Рецепт диагностики",
+    "summary": {
+        "title_path": "summary.title",
+        "message_path": "summary.message",
+        "status_path": "status",
+    },
+    "steps": {
+        "path": "steps",
+        "title_path": "title",
+        "status_path": "status",
+        "tool_id_path": "tool_id",
+        "primitive_id_path": "primitive_id",
+        "result_path": "result",
+        "default_layout": "timeline",
+    },
+    "fallback": {"show_step_raw_json": True},
+}
+
+
+def _field_grid_schema(title: str, fields: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "version": "1.0",
+        "kind": "tool_result",
+        "title": title,
+        "blocks": [
+            {"type": "field_grid", "id": title.lower().replace(" ", "_"), "title": title, "fields": fields},
+            {"type": "raw_json", "collapsed": True},
+        ],
+        "fallback": {"show_raw_json": True},
+    }
+
+
+def _primitive_presentation_schema(primitive_id: str) -> dict[str, Any]:
+    schemas: dict[str, dict[str, Any]] = {
+        "dns.resolve": _field_grid_schema(
+            "DNS-разрешение",
+            [
+                {"path": "hostname", "label": "Имя"},
+                {"path": "resolved", "label": "Разрешено"},
+                {"path": "addresses", "label": "IP-адреса"},
+            ],
+        ),
+        "tcp.connect": _field_grid_schema(
+            "TCP-подключение",
+            [
+                {"path": "host", "label": "Хост"},
+                {"path": "port", "label": "Порт"},
+                {"path": "connected", "label": "Подключение"},
+                {"path": "duration_ms", "label": "Время", "unit": "мс"},
+                {"path": "error", "label": "Ошибка", "empty_text": "—"},
+            ],
+        ),
+        "http.request": _field_grid_schema(
+            "HTTP-запрос",
+            [
+                {"path": "url", "label": "URL"},
+                {"path": "method", "label": "Метод"},
+                {"path": "status_code", "label": "Код"},
+                {"path": "reason", "label": "Причина"},
+                {"path": "ok", "label": "Успешно"},
+            ],
+        ),
+        "file.exists": _field_grid_schema(
+            "Файл",
+            [
+                {"path": "path", "label": "Путь"},
+                {"path": "exists", "label": "Существует"},
+                {"path": "is_file", "label": "Файл"},
+                {"path": "is_dir", "label": "Папка"},
+            ],
+        ),
+        "process.exists": _field_grid_schema(
+            "Процесс",
+            [
+                {"path": "process_name", "label": "Имя процесса"},
+                {"path": "exists", "label": "Найден"},
+                {"path": "matches", "label": "Совпадения"},
+            ],
+        ),
+        "service.status": _field_grid_schema(
+            "Служба Windows",
+            [
+                {"path": "service_name", "label": "Служба"},
+                {"path": "exists", "label": "Существует"},
+                {"path": "state", "label": "Состояние"},
+                {"path": "matches_expected", "label": "Ожидаемое состояние"},
+                {"path": "details.error", "label": "Ошибка", "empty_text": "—"},
+            ],
+        ),
+        "systemd.service.status": _field_grid_schema(
+            "Служба systemd",
+            [
+                {"path": "service_name", "label": "Служба"},
+                {"path": "exists", "label": "Существует"},
+                {"path": "state", "label": "Состояние"},
+                {"path": "matches_expected", "label": "Ожидаемое состояние"},
+                {"path": "details.SubState", "label": "SubState", "empty_text": "—"},
+            ],
+        ),
+    }
+    return schemas.get(primitive_id, {"version": "1.0", "kind": "tool_result", "blocks": [{"type": "raw_json", "collapsed": True}], "fallback": {"show_raw_json": True}})
+
+
 def _current_platform() -> str:
     system = platform.system().lower()
     if system.startswith("win"):
@@ -49,6 +155,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32", "linux"],
             "params_schema": {"required": ["path"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("file.exists"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -58,6 +165,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32", "linux"],
             "params_schema": {"required": ["process_name"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("process.exists"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -67,6 +175,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32", "linux"],
             "params_schema": {"required": ["hostname"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("dns.resolve"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -76,6 +185,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32", "linux"],
             "params_schema": {"required": ["host", "port"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("tcp.connect"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -85,6 +195,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32", "linux"],
             "params_schema": {"required": ["url"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("http.request"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -94,6 +205,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["win32"],
             "params_schema": {"required": ["service_name"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("service.status"),
             "safety": {"read_only": True, "side_effects": False},
         },
         {
@@ -103,6 +215,7 @@ def _primitive_catalog() -> list[dict[str, Any]]:
             "platforms": ["linux"],
             "params_schema": {"required": ["service_name"]},
             "output_schema": {"type": "object"},
+            "presentation_schema": _primitive_presentation_schema("systemd.service.status"),
             "safety": {"read_only": True, "side_effects": False},
         },
     ]

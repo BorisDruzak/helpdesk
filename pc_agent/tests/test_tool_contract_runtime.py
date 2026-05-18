@@ -79,6 +79,8 @@ async def test_builtin_specs_expose_contract_fields(tmp_path):
     assert screen_tool["spec"]["resources"]["max_artifact_count"] == 1
     assert system_tool["spec"]["contract_version"] == "1.0.0"
     assert system_tool["spec"]["lifecycle"] == "stable"
+    assert system_tool["spec"]["presentation_schema"]["kind"] == "tool_result"
+    assert system_tool["spec"]["output_contract"]["device_card"]["eligible"] is True
 
 
 @pytest.mark.asyncio

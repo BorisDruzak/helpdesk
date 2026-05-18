@@ -169,6 +169,7 @@ class ToolManifest(BaseModel):
     contract_version: str = "1.0.0"
     params_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    presentation_schema: dict[str, Any] = Field(default_factory=dict)
     metadata: ToolMetadata = Field(default_factory=ToolMetadata)
     dependencies: DependencyDeclaration = Field(default_factory=DependencyDeclaration)
     lifecycle: LifecycleStatus = Field(default="stable")
@@ -176,4 +177,3 @@ class ToolManifest(BaseModel):
     artifact_types: list[ArtifactTypeDescriptor] = Field(default_factory=list)
     redaction: RedactionPolicy = Field(default_factory=RedactionPolicy)
     resources: ResourcePolicy = Field(default_factory=ResourcePolicy)
-

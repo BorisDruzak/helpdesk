@@ -81,6 +81,70 @@ class SystemCollectParams(BaseModel):
     include_boot_time: Optional[bool] = None
 
 
+SYSTEM_COLLECT_OUTPUT_CONTRACT: Dict[str, Any] = {
+    "kind": "endpoint.system_snapshot",
+    "version": "1.0.0",
+    "status_path": "status",
+    "summary_path": "sections.network.hostname",
+    "device_card": {
+        "eligible": True,
+        "slots": ["identity", "health", "network", "platform"],
+        "priority": 100,
+    },
+}
+
+
+SYSTEM_COLLECT_PRESENTATION_SCHEMA: Dict[str, Any] = {
+    "version": "1.0",
+    "kind": "tool_result",
+    "title": "Системная информация",
+    "summary": {
+        "title_path": "sections.network.hostname",
+        "subtitle_template": "{{sections.platform.system}} {{sections.platform.release}} · {{sections.network.primary_ip}}",
+        "status_path": "status",
+    },
+    "blocks": [
+        {
+            "type": "field_grid",
+            "id": "identity",
+            "title": "Идентификация",
+            "fields": [
+                {"path": "sections.network.hostname", "label": "Имя ПК", "copyable": True},
+                {"path": "sections.network.primary_ip", "label": "IP-адрес", "copyable": True},
+                {"path": "sections.platform.system", "label": "Система"},
+                {"path": "sections.platform.release", "label": "Релиз"},
+                {"path": "sections.platform.machine", "label": "Архитектура"},
+            ],
+        },
+        {
+            "type": "metric_cards",
+            "id": "resources",
+            "title": "Ресурсы",
+            "metrics": [
+                {"path": "sections.cpu.percent", "label": "CPU", "unit": "%", "format": "percent"},
+                {"path": "sections.memory.percent", "label": "RAM", "unit": "%", "format": "percent"},
+                {"path": "sections.disk.percent", "label": "Disk", "unit": "%", "format": "percent"},
+                {"path": "sections.boot_time.epoch", "label": "Boot time", "format": "datetime"},
+            ],
+        },
+        {
+            "type": "table",
+            "id": "network_interfaces",
+            "title": "Сетевые интерфейсы",
+            "rows_path": "sections.network.interfaces",
+            "columns": [
+                {"path": "name", "label": "Интерфейс"},
+                {"path": "ipv4", "label": "IPv4"},
+                {"path": "mac", "label": "MAC", "empty_text": "—"},
+                {"path": "status", "label": "Статус", "empty_text": "—"},
+            ],
+        },
+        {"type": "raw_json", "collapsed": True},
+    ],
+    "fallback": {"show_raw_json": True},
+}
+
+
 class SystemCollector(BaseCollector):
     @property
     def name(self) -> str:
@@ -161,6 +225,8 @@ class SystemCollector(BaseCollector):
             },
             "required": ["preset", "selected_sections", "sections"],
         },
+        output_contract=SYSTEM_COLLECT_OUTPUT_CONTRACT,
+        presentation_schema=SYSTEM_COLLECT_PRESENTATION_SCHEMA,
         metadata_risk_level="safe_read",
         metadata_scopes=[],
         metadata_requires_consent=False,

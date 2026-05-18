@@ -244,7 +244,7 @@ Protected `agent_recipe_runner` versions are the exception to the normal Windows
 
 ## Tool output contracts for playbooks
 
-`output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and compact support-facing display.
+`output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and backend/evidence decisions. `presentation_schema` is a separate top-level rendering contract for UI display hints; it must not be nested inside `output_contract`.
 
 For predictable automation, each playbook-ready tool should declare:
 
@@ -268,6 +268,10 @@ For predictable automation, each playbook-ready tool should declare:
 Server manifest normalization keeps `output_schema` and `output_contract` separate. When `output_contract` is present, `status_values` must be explicit and unique; `success_values` and `error_values` must be subsets of `status_values`. The admin playbook catalog derives `condition_hints` from the contract and known `error_codes`, so `/app/admin/playbooks` can offer stable condition templates such as `steps.ping.output.result.status == 'ok'` instead of forcing operators to parse raw command text.
 
 Generated modules preserve `output_contract` in `manifest.json`, `manifest_summary` and the editable workbench preview. Older modules that do not declare an output contract remain valid; the field is not written as an empty object unless the author explicitly provides it.
+
+Tool Output Presentation Schema v1 is preserved as `presentation_schema` in manifest normalization, generated module packages, editable workbench drafts, diagnostic capability descriptors and recipe descriptors. It is declarative only and supports safe dotted path lookups plus block hints such as `field_grid`, `metric_cards`, `table`, `checklist`, `timeline`, `artifact_list` and `raw_json`. The web renderer ignores unknown/invalid blocks, does not evaluate expressions or HTML, and keeps raw JSON fallback available.
+
+Agent recipe capabilities use `kind=composite_recipe`: the recipe summary is rendered separately, `steps[]` are rendered as a timeline/checklist, and each step result is rendered through the matching primitive/tool `presentation_schema` when available. This is a projection/rendering contract only; it does not change Protocol V3 envelopes, `ToolResponse`, command names, ACK/NACK semantics or recipe execution.
 
 Preferred-version rollout now has an explicit server-side setting:
 

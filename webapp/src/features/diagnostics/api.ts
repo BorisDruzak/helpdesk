@@ -172,6 +172,7 @@ export type DiagnosticCapability = {
   params_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   output_contract?: Record<string, unknown>;
+  presentation_schema?: Record<string, unknown>;
   evidence?: {
     produces_evidence?: boolean;
     kind?: string;

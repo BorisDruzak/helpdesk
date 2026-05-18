@@ -46,6 +46,7 @@ class ResolvedAgentRecipe:
                 "params_schema": dict(self.capability_version.params_schema_json or descriptor.get("params_schema") or {}),
                 "output_schema": dict(self.capability_version.output_schema_json or descriptor.get("output_schema") or {}),
                 "output_contract": dict(self.capability_version.output_contract_json or descriptor.get("output_contract") or {}),
+                "presentation_schema": dict(descriptor.get("presentation_schema") or {}),
                 "evidence": evidence,
                 "source": "agent_recipe",
                 "runner_provider_id": self.recipe_version.runner_provider_id,

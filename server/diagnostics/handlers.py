@@ -25,7 +25,13 @@ from app.repos.diagnostics_repo import DiagnosticRepo
 from auth.middleware import require_auth
 import config
 from diagnostics.capability_registry import CapabilityRegistry
-from diagnostics.agent_recipes import DEFAULT_AGENT_RECIPE_PRIMITIVES, AgentRecipeValidationError, normalize_recipe_platforms
+from diagnostics.agent_recipes import (
+    COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
+    DEFAULT_AGENT_RECIPE_PRIMITIVES,
+    PRIMITIVE_PRESENTATION_SCHEMAS,
+    AgentRecipeValidationError,
+    normalize_recipe_platforms,
+)
 from diagnostics.agent_recipes_repo import AgentRecipeRepo
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
@@ -296,7 +302,11 @@ async def handle_diagnostics_provider_config_put(request: web.Request) -> web.Re
 
 def _primitive_payload(row) -> dict:
     if isinstance(row, dict):
-        return dict(row)
+        payload = dict(row)
+        primitive_id = str(payload.get("primitive_id") or "")
+        payload.setdefault("presentation_schema", PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}))
+        return payload
+    primitive_id = str(row.primitive_id or "")
     return {
         "id": row.id,
         "runner_provider_id": row.runner_provider_id,
@@ -309,6 +319,7 @@ def _primitive_payload(row) -> dict:
         "params_schema": row.params_schema,
         "output_schema": row.output_schema,
         "output_contract": row.output_contract,
+        "presentation_schema": PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}),
         "safety": row.safety_json,
         "evidence_defaults": row.evidence_defaults_json,
         "resource_limits": row.resource_limits_json,
@@ -386,6 +397,9 @@ async def handle_agent_recipe_create(request: web.Request) -> web.Response:
         "tool_kind": "diagnostic",
         "risk_level": "low",
         "evidence": evidence_mapping,
+        "presentation_schema": payload.get("presentation_schema")
+        if isinstance(payload.get("presentation_schema"), dict)
+        else COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
     }
     auth_context = request.get("auth_context")
     async with get_session() as session:

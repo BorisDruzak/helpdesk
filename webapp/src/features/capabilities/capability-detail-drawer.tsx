@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ModuleResultRenderer } from "../../components/module-result/module-result-renderer";
 import type { CapabilityDescriptor } from "./types";
 import { label, readinessTone, riskTone, targetTone } from "./labels";
 
@@ -128,6 +129,27 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Output contract</p>
                 <JsonBlock value={capability.output_contract} />
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Presentation">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Presentation schema</p>
+                <JsonBlock value={capability.presentation_schema} />
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Fallback preview</p>
+                <ModuleResultRenderer
+                  result={{
+                    status: capability.readiness ?? "unknown",
+                    title: capability.title,
+                    provider_id: capability.provider_id,
+                    execution_target: capability.execution_target,
+                  }}
+                  presentationSchema={capability.presentation_schema}
+                />
               </div>
             </div>
           </Section>

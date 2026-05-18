@@ -79,6 +79,7 @@ Builtin evidence markings:
 - `params_schema`
 - `output_schema`
 - `output_contract` when the tool is intended for predictable playbook branching
+- `presentation_schema` when the UI should render structured results as readable blocks
 - `metadata`
 - `dependencies`
 - `lifecycle`
@@ -88,6 +89,45 @@ Builtin evidence markings:
 - `resources`
 
 Wire-format ответа сохраняет `ToolResponse`, но канонический structured result находится в `data.result`.
+
+## Tool Output Presentation Schema v1
+
+`presentation_schema` is a top-level tool/capability field next to `params_schema`, `output_schema` and `output_contract`.
+
+- `output_schema` describes the complete structured result shape.
+- `output_contract` describes deterministic semantics for playbooks, evidence and backend decisions.
+- `presentation_schema` describes declarative UI rendering hints for that result.
+
+The v1 schema is declarative only. It supports `version`, `kind`, `title`, optional `summary`, `blocks` and `fallback`. Supported block types are:
+
+- `field_grid`
+- `metric_cards`
+- `table`
+- `checklist`
+- `timeline`
+- `artifact_list`
+- `raw_json`
+
+Fields and columns may use safe dotted `path` lookups, `label`, `unit`, `format`, `empty_text`, `copyable` and bounded `tone_rules`. String templates support only path substitution with `{{path.to.value}}`; no JavaScript expressions, eval, HTML, CSS injection or remote URLs are allowed. UI renderers must rely on React text escaping and must not use `dangerouslySetInnerHTML`.
+
+If a schema is missing, invalid or references missing paths, the UI falls back to a defensive generic rendering: top-level scalar values as a `field_grid`, arrays of objects as tables where practical, and a collapsed raw JSON view. Unsupported blocks are ignored and raw JSON remains available for debugging.
+
+Recipe results use `kind=composite_recipe`. The recipe summary is rendered separately, `steps[]` are rendered as timeline/checklist items, and each step result is rendered with the `presentation_schema` for `step.tool_id` or `step.primitive_id`. If no matching schema exists, the step falls back to the same generic renderer/raw JSON path.
+
+Tools may additionally declare future inventory hints in `output_contract.device_card` or `evidence.device_card`, for example:
+
+```json
+{
+  "device_card": {
+    "eligible": true,
+    "slots": ["identity", "health", "network", "platform"],
+    "priority": 100
+  }
+}
+```
+
+`system.collect` declares a v1 presentation schema for identity, resource metrics and network interfaces, plus `output_contract.device_card` hints. Agent recipe primitives declare simple v1 schemas for their read-only result payloads.
+
 # Agent Recipe Runner
 
 `agent_recipe_runner` is a protected managed module. It can be updated independently from Maria Agent through the normal managed-module lifecycle, but it is not a support-visible tool module.

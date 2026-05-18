@@ -95,6 +95,7 @@ export interface CapabilityDescriptor {
   params_schema?: unknown;
   output_schema?: unknown;
   output_contract?: unknown;
+  presentation_schema?: unknown;
   evidence?: CapabilityEvidenceMetadata;
   artifacts?: CapabilityArtifactsMetadata;
   aliases?: string[];
@@ -150,6 +151,7 @@ export interface AgentRecipePrimitive {
   params_schema?: unknown;
   output_schema?: unknown;
   output_contract?: unknown;
+  presentation_schema?: unknown;
   safety?: Record<string, unknown>;
   risk_level?: string;
 }

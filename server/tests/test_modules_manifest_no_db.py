@@ -521,6 +521,53 @@ def test_build_module_package_includes_output_contract_for_playbook_builder():
 
 
 @pytest.mark.no_db
+def test_build_module_package_preserves_presentation_schema_for_result_renderer():
+    presentation_schema = {
+        "version": "1.0",
+        "kind": "tool_result",
+        "title": "Echo result",
+        "blocks": [
+            {
+                "type": "field_grid",
+                "id": "echo",
+                "fields": [{"path": "value", "label": "Value"}],
+            }
+        ],
+        "fallback": {"show_raw_json": True},
+    }
+    zip_bytes, summary = build_module_package(
+        module_name="vendor_presenter",
+        version="1.0.0",
+        tool_name="",
+        description="Presentation schema check",
+        user_function_body="",
+        platforms=["any"],
+        owner_scope="vendor",
+        tools=[
+            {
+                "tool_name": "vendor.presenter.echo",
+                "method_name": "echo_tool",
+                "description": "Echo value",
+                "params_schema": {"type": "object", "properties": {"value": {"type": "string"}}},
+                "output_schema": {"type": "object", "properties": {"value": {"type": "string"}}},
+                "presentation_schema": presentation_schema,
+                "metadata": {"domain": "vendor_presenter", "platforms": ["any"], "risk_level": "safe_read"},
+                "user_function_body": 'return {"value": params.get("value")}',
+            }
+        ],
+    )
+
+    ok, validation_json, manifest_json, manifest_summary = preflight_module_zip(zip_bytes)
+
+    assert ok is True
+    assert manifest_json is not None
+    assert manifest_json["tools"][0]["presentation_schema"] == presentation_schema
+    assert summary["tools"][0]["presentation_schema"] == presentation_schema
+    assert manifest_summary["tools"][0]["presentation_schema"] == presentation_schema
+    assert validation_json["validation_status"] == "passed"
+
+
+@pytest.mark.no_db
 def test_build_module_package_keeps_capability_metadata_out_of_runtime_decorator():
     zip_bytes, _summary = build_module_package(
         module_name="vendor_capability",

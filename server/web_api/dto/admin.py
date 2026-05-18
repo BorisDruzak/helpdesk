@@ -1164,6 +1164,7 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     risk_level: str | None = None
     params_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    presentation_schema: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
     presets: list[dict[str, Any]] = Field(default_factory=list)
     error_codes: list[str] = Field(default_factory=list)

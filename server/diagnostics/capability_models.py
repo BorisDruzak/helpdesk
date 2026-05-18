@@ -68,6 +68,7 @@ class CapabilityDescriptor:
     params_schema: Dict[str, Any] = field(default_factory=dict)
     output_schema: Dict[str, Any] = field(default_factory=dict)
     output_contract: Dict[str, Any] = field(default_factory=dict)
+    presentation_schema: Dict[str, Any] = field(default_factory=dict)
     evidence: Dict[str, Any] = field(default_factory=dict)
     artifacts: Dict[str, Any] = field(default_factory=dict)
     aliases: List[str] = field(default_factory=list)

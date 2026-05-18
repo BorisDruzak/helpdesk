@@ -156,3 +156,34 @@ Remaining risks:
 
 - External calendar integrations and rich RRULE support remain outside P5; current recurrence support intentionally covers simple daily/weekly maintenance and blackout windows.
 - P5 still does not execute changes automatically; it governs approvals, timing, tasks, rollback and PIR only.
+
+## Active Work: Tool Output Presentation Schema v1
+
+Status: in progress.
+
+Goal:
+
+- Add a top-level `presentation_schema` contract next to `params_schema`, `output_schema` and `output_contract` so agent tool/module results can render as readable declarative UI blocks instead of raw JSON.
+
+Scope:
+
+- Agent registry: accept, preserve and expose `presentation_schema` without changing ToolResponse or Protocol V3.
+- Built-in agent tools: add a real `system.collect` presentation schema and preserve `device_card` metadata for future inventory cards.
+- Agent Recipe Runner: add primitive presentation schemas and a composite recipe schema without changing read-only execution semantics.
+- Server diagnostics/capabilities: pass `presentation_schema` through descriptors, persisted recipe descriptors and primitive catalog responses without DB migrations.
+- Webapp: add safe typed presentation schema helpers and `ModuleResultRenderer` / `CompositeRecipeRenderer`; integrate minimally into Capability detail and Diagnostic Center result preview while keeping raw JSON fallback.
+- Docs/navigation: update module docs, CODEMAP and quick lookup/navigation catalog as required.
+
+TDD checkpoints:
+
+- RED agent registry tests for decorator extraction, flat tool spec projection and default `{}`.
+- RED recipe primitive tests for `describe_primitives` presentation schemas.
+- RED server capability tests for toolset and recipe descriptor pass-through.
+- RED webapp renderer tests for field grid, table/checklist/timeline/artifact/raw fallback, invalid schema, missing paths and React escaping.
+
+Verification target:
+
+- Focused pytest for registry, recipe runner, server capability projection.
+- Focused Vitest for renderer and diagnostics integration.
+- `python -m compileall -q pc_agent scripts/navigation_catalog.py`, `python scripts/verify_workspace.py`, `python scripts/docs_inventory.py --check-links`, `git diff --check`, `git diff --cached --check`.
+- Full `python -m pytest pc_agent/tests/ -v --tb=short`.

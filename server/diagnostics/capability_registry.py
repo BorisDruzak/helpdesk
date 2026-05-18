@@ -69,6 +69,7 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
         params_schema=dict(raw_tool.get("params_schema") or spec.get("params_schema") or {}),
         output_schema=dict(raw_tool.get("output_schema") or spec.get("output_schema") or {}),
         output_contract=dict(raw_tool.get("output_contract") or spec.get("output_contract") or {}),
+        presentation_schema=dict(raw_tool.get("presentation_schema") or spec.get("presentation_schema") or {}),
         evidence=dict(blocks["evidence"] or {"produces_evidence": False}),
         artifacts=dict(blocks["artifacts"] or {}),
         aliases=list(raw_tool.get("aliases") or []),

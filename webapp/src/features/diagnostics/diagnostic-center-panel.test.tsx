@@ -102,6 +102,13 @@ describe("DiagnosticCenterPanel", () => {
                 passport_eligible: true,
               },
               artifacts: { may_produce_artifacts: true, artifact_kinds: ["logs_zip"] },
+              presentation_schema: {
+                version: "1.0",
+                kind: "tool_result",
+                title: "Log collection",
+                blocks: [{ type: "field_grid", fields: [{ path: "summary", label: "Summary" }] }],
+                fallback: { show_raw_json: true },
+              },
             },
             {
               id: "zabbix.problems.lookup",
@@ -172,6 +179,7 @@ describe("DiagnosticCenterPanel", () => {
           operation_id: "op-2",
           diagnostic_evidence_id: "ev-2",
           evidence_persisted: true,
+          output: { summary: "Collected 4 files" },
         });
       }
       return jsonResponse({ status: "error", error: `unexpected ${url}` }, 500);
@@ -189,6 +197,7 @@ describe("DiagnosticCenterPanel", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+    expect(await screen.findByText("Collected 4 files")).toBeInTheDocument();
     expect(await screen.findByText("Evidence создано: ev-2")).toBeInTheDocument();
   });
 
