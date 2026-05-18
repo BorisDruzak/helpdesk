@@ -157,6 +157,7 @@ function filterCapabilities(
 export function CapabilityStudioPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const deviceId = searchParams.get("device_id") ?? searchParams.get("device") ?? null;
   const [activeTab, setActiveTab] = useState<CapabilityStudioTab>(() => normalizeTab(searchParams.get("tab")));
   const [selectedCapability, setSelectedCapability] = useState<CapabilityDescriptor | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -170,8 +171,8 @@ export function CapabilityStudioPage() {
   const [evidenceFilter, setEvidenceFilter] = useState("");
 
   const capabilitiesQuery = useQuery({
-    queryKey: ["admin-capabilities"],
-    queryFn: listAdminCapabilities,
+    queryKey: ["admin-capabilities", deviceId],
+    queryFn: () => listAdminCapabilities(deviceId),
     retry: false,
   });
   const providerConfigsQuery = useQuery({
@@ -224,11 +225,17 @@ export function CapabilityStudioPage() {
   function setTab(value: string) {
     const nextTab = normalizeTab(value);
     setActiveTab(nextTab);
-    setSearchParams(nextTab === "catalog" ? {} : { tab: nextTab });
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === "catalog") {
+      next.delete("tab");
+    } else {
+      next.set("tab", nextTab);
+    }
+    setSearchParams(next);
   }
 
   function refresh() {
-    void queryClient.invalidateQueries({ queryKey: ["admin-capabilities"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-capabilities", deviceId] });
     void queryClient.invalidateQueries({ queryKey: ["admin-capability-provider-configs"] });
   }
 
@@ -348,7 +355,7 @@ export function CapabilityStudioPage() {
         Low-code creation, persisted evidence mapping и declarative recipes помечены как Phase 2, чтобы MVP не подменял runtime contracts.
       </div>
 
-      <CapabilityDetailDrawer capability={selectedCapability} onClose={() => setSelectedCapability(null)} />
+      <CapabilityDetailDrawer capability={selectedCapability} deviceId={deviceId} onClose={() => setSelectedCapability(null)} />
       <CapabilityCreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

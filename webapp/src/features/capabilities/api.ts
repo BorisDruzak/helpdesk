@@ -37,8 +37,12 @@ function assertOk<T>(payload: ApiOkResponse<T> | ApiErrorResponse | null, respon
   return payload as ApiOkResponse<T>;
 }
 
-export async function listAdminCapabilities(): Promise<CapabilityDescriptor[]> {
-  const response = await fetch(`/api/web/admin/capabilities?_=${Date.now()}`, {
+export async function listAdminCapabilities(deviceId?: string | null): Promise<CapabilityDescriptor[]> {
+  const params = new URLSearchParams({ _: String(Date.now()) });
+  if (deviceId) {
+    params.set("device_id", deviceId);
+  }
+  const response = await fetch(`/api/web/admin/capabilities?${params.toString()}`, {
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -65,16 +69,23 @@ export async function listTicketCapabilityReadiness(ticketId: string): Promise<C
   return assertOk(payload, response, "Unable to load ticket capability readiness").capabilities;
 }
 
-function toolPresentationUrl(toolId: string, toolVersion?: string | null): string {
+function toolPresentationUrl(toolId: string, toolVersion?: string | null, deviceId?: string | null): string {
   const params = new URLSearchParams({ tool_id: toolId });
   if (toolVersion) {
     params.set("tool_version", toolVersion);
   }
+  if (deviceId) {
+    params.set("device_id", deviceId);
+  }
   return `/api/web/tool-presentations?${params.toString()}`;
 }
 
-export async function getToolPresentation(toolId: string, toolVersion?: string | null): Promise<ToolPresentationDetail> {
-  const response = await fetch(`${toolPresentationUrl(toolId, toolVersion)}&_=${Date.now()}`, {
+export async function getToolPresentation(
+  toolId: string,
+  toolVersion?: string | null,
+  deviceId?: string | null,
+): Promise<ToolPresentationDetail> {
+  const response = await fetch(`${toolPresentationUrl(toolId, toolVersion, deviceId)}&_=${Date.now()}`, {
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -86,8 +97,9 @@ export async function saveToolPresentation(
   toolId: string,
   presentationSchema: unknown,
   toolVersion?: string | null,
+  deviceId?: string | null,
 ): Promise<ToolPresentationDetail> {
-  const response = await fetch(toolPresentationUrl(toolId, toolVersion), {
+  const response = await fetch(toolPresentationUrl(toolId, toolVersion, deviceId), {
     method: "PUT",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -97,8 +109,12 @@ export async function saveToolPresentation(
   return assertOk(payload, response, "Unable to save presentation schema");
 }
 
-export async function resetToolPresentation(toolId: string, toolVersion?: string | null): Promise<ToolPresentationDetail> {
-  const response = await fetch(toolPresentationUrl(toolId, toolVersion), {
+export async function resetToolPresentation(
+  toolId: string,
+  toolVersion?: string | null,
+  deviceId?: string | null,
+): Promise<ToolPresentationDetail> {
+  const response = await fetch(toolPresentationUrl(toolId, toolVersion, deviceId), {
     method: "DELETE",
     credentials: "same-origin",
   });

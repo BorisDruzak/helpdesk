@@ -10,6 +10,7 @@ import { label, readinessTone, riskTone, targetTone } from "./labels";
 
 type CapabilityDetailDrawerProps = {
   capability: CapabilityDescriptor | null;
+  deviceId?: string | null;
   onClose: () => void;
 };
 
@@ -44,7 +45,7 @@ function Section({ children, title }: { children: ReactNode; title: string }) {
   );
 }
 
-export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetailDrawerProps) {
+export function CapabilityDetailDrawer({ capability, deviceId, onClose }: CapabilityDetailDrawerProps) {
   const [presentationDetail, setPresentationDetail] = useState<ToolPresentationDetail | null>(null);
   const [presentationError, setPresentationError] = useState<string | null>(null);
 
@@ -57,7 +58,7 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
         cancelled = true;
       };
     }
-    getToolPresentation(capability.id)
+    getToolPresentation(capability.id, null, deviceId)
       .then((detail) => {
         if (!cancelled) {
           setPresentationDetail(detail);
@@ -71,7 +72,7 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
     return () => {
       cancelled = true;
     };
-  }, [capability?.id]);
+  }, [capability?.id, deviceId]);
 
   if (!capability) {
     return null;
@@ -172,12 +173,12 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
               capability={capability}
               detail={presentationDetail}
               onReset={async () => {
-                const detail = await resetToolPresentation(capability.id);
+                const detail = await resetToolPresentation(capability.id, null, deviceId);
                 setPresentationDetail(detail);
                 return detail;
               }}
               onSave={async (schema) => {
-                const detail = await saveToolPresentation(capability.id, schema);
+                const detail = await saveToolPresentation(capability.id, schema, null, deviceId);
                 setPresentationDetail(detail);
                 return detail;
               }}
