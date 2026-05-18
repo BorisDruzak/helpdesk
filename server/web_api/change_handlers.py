@@ -175,7 +175,7 @@ async def handle_web_change_approval_decide(request: web.Request) -> web.Respons
                 request.match_info.get("approval_id"),
                 decision=decision,
                 actor_id=auth.actor_id,
-                actor_role=auth.role,
+                actor_role=auth.actor_role,
                 comment=data.get("comment"),
             )
             await session.commit()

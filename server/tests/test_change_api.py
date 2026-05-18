@@ -41,6 +41,13 @@ async def test_change_web_api_create_risk_plan_approval_schedule_tasks_pir_and_m
         },
     )
     approvals = await test_client.post(f"/api/web/changes/{change['change_id']}/approvals/request", headers=_support_headers(), json={})
+    approvals_payload = await approvals.json()
+    approval_id = approvals_payload["approvals"][0]["approval_id"]
+    approve = await test_client.post(
+        f"/api/web/changes/{change['change_id']}/approvals/{approval_id}/approve",
+        headers=_admin_headers(),
+        json={"comment": "Browser smoke approver"},
+    )
     task = await test_client.post(
         f"/api/web/changes/{change['change_id']}/tasks",
         headers=_support_headers(),
@@ -51,6 +58,8 @@ async def test_change_web_api_create_risk_plan_approval_schedule_tasks_pir_and_m
     assert risk.status == 200, await risk.text()
     assert plan.status == 200, await plan.text()
     assert approvals.status == 200, await approvals.text()
+    assert approve.status == 200, await approve.text()
+    assert (await approve.json())["approval"]["status"] == "approved"
     assert task.status == 200, await task.text()
     assert summary.status == 200, await summary.text()
     assert (await summary.json())["summary"]["change_count"] >= 1
