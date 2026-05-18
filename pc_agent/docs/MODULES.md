@@ -128,6 +128,8 @@ Tools may additionally declare future inventory hints in `output_contract.device
 
 `system.collect` declares a v1 presentation schema for identity, resource metrics and network interfaces, plus `output_contract.device_card` hints. Agent recipe primitives declare simple v1 schemas for their read-only result payloads.
 
+Server-side admin tooling may store a separate presentation override for a capability/tool. The module-declared `presentation_schema` remains the immutable module default and fallback; UI/API projections can additionally expose `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override`. Overrides do not change tool execution, `ToolResponse`, Protocol V3 envelopes or the structured result shape.
+
 # Agent Recipe Runner
 
 `agent_recipe_runner` is a protected managed module. It can be updated independently from Maria Agent through the normal managed-module lifecycle, but it is not a support-visible tool module.

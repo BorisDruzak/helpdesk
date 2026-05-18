@@ -125,6 +125,9 @@ async def test_capability_registry_projects_agent_and_skeleton_provider_capabili
     assert by_id["diag.logs.collect"].execution_target == "agent_builtin"
     assert by_id["diag.logs.collect"].evidence["kind"] == "logs.bundle"
     assert by_id["diag.logs.collect"].presentation_schema["title"] == "Logs"
+    assert by_id["diag.logs.collect"].effective_presentation_schema["title"] == "Logs"
+    assert by_id["diag.logs.collect"].presentation_schema_source == "module_default"
+    assert by_id["diag.logs.collect"].has_presentation_override is False
     assert by_id["endpoint.http.request"].execution_target == "agent_managed_module"
     assert by_id["server.dns.resolve"].execution_target == "server_builtin"
     assert by_id["zabbix.problems.lookup"].execution_target == "server_connector"

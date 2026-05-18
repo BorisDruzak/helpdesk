@@ -5004,6 +5004,29 @@ class DiagnosticCapability(Base):
     )
 
 
+class ToolPresentationOverride(Base):
+    """Server-side override for declarative tool result rendering."""
+
+    __tablename__ = "tool_presentation_overrides"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tool_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="global", server_default="global")
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    presentation_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_tool_presentation_overrides_tool", "tool_id"),
+        Index("ix_tool_presentation_overrides_enabled", "enabled"),
+    )
+
+
 class DiagnosticCapabilityVersion(Base):
     """Versioned persisted snapshot for a diagnostic capability descriptor."""
 

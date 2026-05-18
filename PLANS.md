@@ -159,7 +159,7 @@ Remaining risks:
 
 ## Active Work: Tool Output Presentation Schema v1
 
-Status: in progress.
+Status: accepted / release-candidate.
 
 Goal:
 
@@ -187,3 +187,43 @@ Verification target:
 - Focused Vitest for renderer and diagnostics integration.
 - `python -m compileall -q pc_agent scripts/navigation_catalog.py`, `python scripts/verify_workspace.py`, `python scripts/docs_inventory.py --check-links`, `git diff --check`, `git diff --cached --check`.
 - Full `python -m pytest pc_agent/tests/ -v --tb=short`.
+
+## Active Work: Tool Output Presentation Builder v1
+
+Status: implemented / local verification passed.
+
+Goal:
+
+- Add managed server-side presentation schema overrides and a minimal admin UI builder so capability/tool output presentation can be edited, previewed and reset without changing module defaults or tool result wire formats.
+
+Scope:
+
+- Server storage/API: add `tool_presentation_overrides`, validation, effective schema resolution and `/api/web/tool-presentations` endpoints.
+- Capability projection: keep module `presentation_schema` unchanged while exposing `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override`.
+- Webapp: add a JSON editor builder in capability detail, output schema path picker, generated/sample result editor and live preview through the existing `ModuleResultRenderer`.
+- Docs/navigation: document override semantics, API, security limits and builder entrypoints.
+
+TDD checkpoints:
+
+- RED server tests for default effective schema, override upsert, reset, validation failures and capability list effective projection.
+- RED webapp tests for output schema path extraction, builder rendering, invalid JSON, live preview, save/reset calls and missing-schema fallback.
+
+Verification target:
+
+- Focused server pytest for presentation overrides and no-db diagnostic capabilities.
+- Focused Vitest for builder/path picker and existing module result renderer.
+- `pnpm --dir webapp build`, migration-focused server tests, docs checks, workspace verification and diff whitespace checks.
+
+Implementation snapshot:
+
+- Added migration `093_tool_presentation_overrides`, SQLAlchemy model `ToolPresentationOverride`, and `diagnostics.presentation_overrides` for validation, upsert/reset and effective schema projection.
+- Added `/api/web/tool-presentations?tool_id=...` GET/PUT/DELETE and projected `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override` in capability APIs.
+- Added `PresentationSchemaBuilder`, `schema-path-picker` helpers, generated sample result preview and Capability detail integration using the existing `ModuleResultRenderer`.
+
+Verification:
+
+- RED server/webapp tests failed on missing override service and builder modules before implementation.
+- `python -m pytest server/tests/test_tool_presentation_overrides.py server/tests/test_diagnostic_capabilities_no_db.py server/tests/test_modules_manifest_no_db.py -v --tb=short` -> 41 passed.
+- `python -m pytest pc_agent/tests/test_tool_presentation_schema_registry.py pc_agent/tests/test_tool_contract_runtime.py::test_builtin_specs_expose_contract_fields -v --tb=short` -> 4 passed.
+- `pnpm --dir webapp test -- src/components/module-result/module-result-renderer.test.tsx src/components/module-result/schema-path-picker.test.ts src/components/module-result/presentation-builder.test.tsx src/features/diagnostics/diagnostic-center-panel.test.tsx` -> 4 files / 19 tests passed.
+- `pnpm --dir webapp build`, `python -m compileall -q server pc_agent scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check` passed.

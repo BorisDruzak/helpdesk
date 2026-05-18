@@ -653,7 +653,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                       </div>
                       <ModuleResultRenderer
                         result={lastRunResult.output ?? lastRunResult}
-                        presentationSchema={selectedCapability.presentation_schema}
+                        presentationSchema={selectedCapability.effective_presentation_schema ?? selectedCapability.presentation_schema}
                       />
                       <details className="mt-3 rounded-[0.8rem] border border-border bg-surface-subtle px-3 py-2">
                         <summary className="cursor-pointer text-sm font-semibold text-slate-800">Raw result</summary>

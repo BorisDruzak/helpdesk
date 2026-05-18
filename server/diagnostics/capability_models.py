@@ -69,6 +69,9 @@ class CapabilityDescriptor:
     output_schema: Dict[str, Any] = field(default_factory=dict)
     output_contract: Dict[str, Any] = field(default_factory=dict)
     presentation_schema: Dict[str, Any] = field(default_factory=dict)
+    effective_presentation_schema: Dict[str, Any] = field(default_factory=dict)
+    presentation_schema_source: str = "none"
+    has_presentation_override: bool = False
     evidence: Dict[str, Any] = field(default_factory=dict)
     artifacts: Dict[str, Any] = field(default_factory=dict)
     aliases: List[str] = field(default_factory=list)
@@ -80,6 +83,18 @@ class CapabilityDescriptor:
     recipe_version_id: Optional[str] = None
     capability_version_id: Optional[str] = None
     supports_auto_install_runner: bool = False
+
+    def __post_init__(self) -> None:
+        module_default = self.presentation_schema if isinstance(self.presentation_schema, dict) else {}
+        effective = self.effective_presentation_schema if isinstance(self.effective_presentation_schema, dict) else {}
+        source = self.presentation_schema_source
+        if not effective and source != "server_override" and module_default:
+            object.__setattr__(self, "effective_presentation_schema", dict(module_default))
+            if source == "none":
+                object.__setattr__(self, "presentation_schema_source", "module_default")
+        elif not effective and source not in {"module_default", "server_override"}:
+            object.__setattr__(self, "effective_presentation_schema", {})
+            object.__setattr__(self, "presentation_schema_source", "none")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

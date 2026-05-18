@@ -684,6 +684,7 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 diagnostic_provider_audit,
                 diagnostic_provider_credential_refs,
                 diagnostic_provider_configs,
+                tool_presentation_overrides,
                 agent_recipe_test_runs,
                 agent_recipe_primitives,
                 agent_recipe_versions,

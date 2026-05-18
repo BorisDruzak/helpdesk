@@ -42,6 +42,7 @@ Legacy aliases exist only as compatibility bridges.
 - ticket-scoped readiness through `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
 - ticket-scoped capability execution through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`
 - admin-safe provider config through `GET /api/diagnostics/providers/configs`, `GET /api/diagnostics/providers/configs/{provider_id}` and `PUT /api/diagnostics/providers/configs/{provider_id}`; the same redacted contract is available to web-session admin clients through `/api/web/admin/diagnostics/providers/configs*`
+- admin-safe presentation override management through `GET|PUT|DELETE /api/web/tool-presentations?tool_id=<capability_id>`
 - routing agent capabilities to existing `ToolExecutionService.run_tool` while routing server connectors, observer queries, remote assist and manual checks through server-side providers
 
 ## Diagnostic capability projection
@@ -58,6 +59,14 @@ Sources:
 - manual diagnostic evidence capabilities: `manual.visual_check`, `manual.vendor_response`, `manual.operator_note`, `manual.customer_confirmation`
 
 Capability descriptors include provider id/type, execution target, schemas/contracts, safety flags, deployment metadata, readiness requirements, evidence metadata, artifact metadata and legacy aliases.
+
+Presentation schema projection keeps two layers separate:
+
+- `presentation_schema` is the module/default descriptor field as published by the agent module, server provider or recipe descriptor.
+- `effective_presentation_schema` is what the UI should render. It resolves to an enabled server override when present, otherwise to the module default, otherwise `{}`.
+- `presentation_schema_source` is `server_override`, `module_default` or `none`; `has_presentation_override` marks the enabled override case.
+
+Presentation overrides are stored in `tool_presentation_overrides` by `tool_id`, optional `tool_version` and `scope=global`. The server validates that override schemas are JSON objects, that `blocks[]` use supported declarative block types, and rejects obvious script/HTML/JavaScript strings. Overrides never mutate module defaults and never change tool results, Protocol V3 envelopes, command names or `ToolResponse`.
 
 Readiness statuses are: `available`, `install_required`, `installing`, `unsupported_platform`, `agent_offline`, `missing_dependency`, `consent_required`, `integration_not_configured`, `credentials_missing`, `mapping_missing`, `permission_denied`, `disabled_by_policy`, `unavailable`, `unknown`.
 

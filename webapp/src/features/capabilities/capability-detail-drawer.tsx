@@ -1,10 +1,11 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { ModuleResultRenderer } from "../../components/module-result/module-result-renderer";
-import type { CapabilityDescriptor } from "./types";
+import { PresentationSchemaBuilder } from "../../components/module-result/presentation-builder";
+import { getToolPresentation, resetToolPresentation, saveToolPresentation } from "./api";
+import type { CapabilityDescriptor, ToolPresentationDetail } from "./types";
 import { label, readinessTone, riskTone, targetTone } from "./labels";
 
 type CapabilityDetailDrawerProps = {
@@ -44,6 +45,34 @@ function Section({ children, title }: { children: ReactNode; title: string }) {
 }
 
 export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetailDrawerProps) {
+  const [presentationDetail, setPresentationDetail] = useState<ToolPresentationDetail | null>(null);
+  const [presentationError, setPresentationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPresentationDetail(null);
+    setPresentationError(null);
+    if (!capability?.id) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    getToolPresentation(capability.id)
+      .then((detail) => {
+        if (!cancelled) {
+          setPresentationDetail(detail);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setPresentationError(error instanceof Error ? error.message : "Unable to load presentation schema");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [capability?.id]);
+
   if (!capability) {
     return null;
   }
@@ -134,24 +163,25 @@ export function CapabilityDetailDrawer({ capability, onClose }: CapabilityDetail
           </Section>
 
           <Section title="Presentation">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Presentation schema</p>
-                <JsonBlock value={capability.presentation_schema} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Fallback preview</p>
-                <ModuleResultRenderer
-                  result={{
-                    status: capability.readiness ?? "unknown",
-                    title: capability.title,
-                    provider_id: capability.provider_id,
-                    execution_target: capability.execution_target,
-                  }}
-                  presentationSchema={capability.presentation_schema}
-                />
-              </div>
-            </div>
+            {presentationError ? (
+              <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {presentationError}
+              </p>
+            ) : null}
+            <PresentationSchemaBuilder
+              capability={capability}
+              detail={presentationDetail}
+              onReset={async () => {
+                const detail = await resetToolPresentation(capability.id);
+                setPresentationDetail(detail);
+                return detail;
+              }}
+              onSave={async (schema) => {
+                const detail = await saveToolPresentation(capability.id, schema);
+                setPresentationDetail(detail);
+                return detail;
+              }}
+            />
           </Section>
 
           <Section title="Evidence">

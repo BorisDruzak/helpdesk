@@ -96,6 +96,9 @@ export interface CapabilityDescriptor {
   output_schema?: unknown;
   output_contract?: unknown;
   presentation_schema?: unknown;
+  effective_presentation_schema?: unknown;
+  presentation_schema_source?: "module_default" | "server_override" | "none" | string;
+  has_presentation_override?: boolean;
   evidence?: CapabilityEvidenceMetadata;
   artifacts?: CapabilityArtifactsMetadata;
   aliases?: string[];
@@ -154,6 +157,18 @@ export interface AgentRecipePrimitive {
   presentation_schema?: unknown;
   safety?: Record<string, unknown>;
   risk_level?: string;
+}
+
+export interface ToolPresentationDetail {
+  tool_id: string;
+  tool_version?: string | null;
+  module_default_schema: unknown;
+  override_schema: unknown | null;
+  effective_schema: unknown;
+  source: "module_default" | "server_override" | "none";
+  enabled?: boolean;
+  updated_at?: string | null;
+  updated_by?: string | null;
 }
 
 export interface AgentRecipeCreatePayload {

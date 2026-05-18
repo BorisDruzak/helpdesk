@@ -8,6 +8,7 @@ import type {
   RunnerRolloutCreatePayload,
   RunnerRolloutPayload,
   RunnerRolloutPlan,
+  ToolPresentationDetail,
 } from "./types";
 
 type ApiErrorResponse = {
@@ -62,6 +63,47 @@ export async function listTicketCapabilityReadiness(ticketId: string): Promise<C
   });
   const payload = await readJson<ApiOkResponse<{ capabilities: CapabilityDescriptor[] }> | ApiErrorResponse>(response);
   return assertOk(payload, response, "Unable to load ticket capability readiness").capabilities;
+}
+
+function toolPresentationUrl(toolId: string, toolVersion?: string | null): string {
+  const params = new URLSearchParams({ tool_id: toolId });
+  if (toolVersion) {
+    params.set("tool_version", toolVersion);
+  }
+  return `/api/web/tool-presentations?${params.toString()}`;
+}
+
+export async function getToolPresentation(toolId: string, toolVersion?: string | null): Promise<ToolPresentationDetail> {
+  const response = await fetch(`${toolPresentationUrl(toolId, toolVersion)}&_=${Date.now()}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const payload = await readJson<ApiOkResponse<ToolPresentationDetail> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to load presentation schema");
+}
+
+export async function saveToolPresentation(
+  toolId: string,
+  presentationSchema: unknown,
+  toolVersion?: string | null,
+): Promise<ToolPresentationDetail> {
+  const response = await fetch(toolPresentationUrl(toolId, toolVersion), {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ presentation_schema: presentationSchema, tool_version: toolVersion ?? null, enabled: true }),
+  });
+  const payload = await readJson<ApiOkResponse<ToolPresentationDetail> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to save presentation schema");
+}
+
+export async function resetToolPresentation(toolId: string, toolVersion?: string | null): Promise<ToolPresentationDetail> {
+  const response = await fetch(toolPresentationUrl(toolId, toolVersion), {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  const payload = await readJson<ApiOkResponse<ToolPresentationDetail> | ApiErrorResponse>(response);
+  return assertOk(payload, response, "Unable to reset presentation schema");
 }
 
 export async function listAgentRecipePrimitives(): Promise<AgentRecipePrimitive[]> {
