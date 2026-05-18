@@ -244,7 +244,10 @@ async def test_support_timeline_tool_result_exposes_render_payload_and_effective
                     "operation_id": operation_id,
                     "status": "success",
                     "summary": "Sample collect completed",
-                    "result": {"status": "ok", "hostname": "pc-01"},
+                    "result": {
+                        "error": None,
+                        "output": {"status": "ok", "hostname": "pc-01"},
+                    },
                     "ts": datetime.now(timezone.utc).isoformat(),
                 },
             )

@@ -1688,6 +1688,8 @@ def _timeline_renderable_result_payload(payload: dict[str, Any]) -> Any | None:
         result = payload.get("output")
     else:
         return None
+    if isinstance(result, dict) and isinstance(result.get("output"), (dict, list)):
+        result = result["output"]
     try:
         encoded = json.dumps(result, ensure_ascii=False, default=str)
     except Exception:
