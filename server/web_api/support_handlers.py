@@ -192,6 +192,7 @@ QUICK_STATUS_ACTIONS = [
 ]
 
 HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
+SUPPORT_TIMELINE_RENDER_RESULT_MAX_BYTES = 128 * 1024
 WORKSPACE_SUMMARY_VIEW_ALIASES = {
     "needs_action": "my_action",
     "sla_risk": "sla_risk",
@@ -1675,6 +1676,77 @@ def _timeline_operation_steps(payload: dict) -> list[dict[str, Any]]:
     return steps[:20]
 
 
+def _timeline_tool_name(payload: dict[str, Any]) -> str | None:
+    tool_name = str(payload.get("tool_name") or payload.get("tool") or "").strip()
+    return tool_name or None
+
+
+def _timeline_renderable_result_payload(payload: dict[str, Any]) -> Any | None:
+    if "result" in payload:
+        result = payload.get("result")
+    elif "output" in payload:
+        result = payload.get("output")
+    else:
+        return None
+    try:
+        encoded = json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        return None
+    if len(encoded.encode("utf-8")) > SUPPORT_TIMELINE_RENDER_RESULT_MAX_BYTES:
+        return None
+    return result
+
+
+async def _timeline_presentation_by_tool(
+    *,
+    session: Any,
+    state: Any,
+    ticket: Ticket,
+    events: list[Any],
+) -> dict[str, dict[str, Any]]:
+    tool_ids: set[str] = set()
+    for event in events:
+        if str(getattr(event, "event_type", "") or "") != "tool_call_result":
+            continue
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict) or _timeline_renderable_result_payload(payload) is None:
+            continue
+        tool_name = _timeline_tool_name(payload)
+        if tool_name:
+            tool_ids.add(tool_name)
+    if not tool_ids:
+        return {}
+
+    from diagnostics.capability_registry import CapabilityRegistry
+    from diagnostics.presentation_overrides import ToolPresentationOverrideService
+
+    service = ToolPresentationOverrideService(session)
+    descriptors_by_id: dict[str, Any] = {}
+    try:
+        registry = CapabilityRegistry(tool_service=ToolExecutionService(state), state=state)
+        for descriptor in await registry.list_capabilities(device_id=str(getattr(ticket, "device_id", "") or "") or None):
+            if descriptor.id in tool_ids:
+                descriptors_by_id[descriptor.id] = descriptor
+    except Exception as exc:
+        logger.debug(f"[support_timeline] capability registry presentation lookup failed: {exc}")
+
+    for tool_id in tool_ids - set(descriptors_by_id):
+        descriptor = await service.descriptor_from_persisted_capability(tool_id)
+        if descriptor is not None:
+            descriptors_by_id[tool_id] = descriptor
+
+    if not descriptors_by_id:
+        return {}
+    effective_descriptors = await service.apply_to_capabilities(list(descriptors_by_id.values()))
+    return {
+        descriptor.id: {
+            "schema": descriptor.effective_presentation_schema if isinstance(descriptor.effective_presentation_schema, dict) else {},
+            "source": descriptor.presentation_schema_source,
+        }
+        for descriptor in effective_descriptors
+    }
+
+
 def _event_timestamp_iso(event: object, payload: dict) -> str | None:
     created_at = getattr(event, "created_at", None)
     if created_at is not None:
@@ -1759,7 +1831,12 @@ def _build_timeline_message(event: object, ticket: object | None = None) -> Supp
     )
 
 
-def _build_timeline_entry(event: object, ticket: object | None = None) -> SupportTicketMessage:
+def _build_timeline_entry(
+    event: object,
+    ticket: object | None = None,
+    *,
+    presentation_by_tool: dict[str, dict[str, Any]] | None = None,
+) -> SupportTicketMessage:
     event_type = str(getattr(event, "event_type", None) or "")
     payload = getattr(event, "payload", None) or {}
 
@@ -1848,6 +1925,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "Инструмент")
         operation_id = payload.get("operation_id")
         status = str(payload.get("status") or "unknown")
+        result_payload = _timeline_renderable_result_payload(payload)
+        presentation = (presentation_by_tool or {}).get(tool_name) or {}
+        presentation_schema = presentation.get("schema") if isinstance(presentation.get("schema"), dict) else None
         retry_count = _coerce_int(payload.get("retry_count"))
         max_retries = _coerce_int(payload.get("max_retries"))
         retryable = _coerce_bool(payload.get("retryable"))
@@ -1873,6 +1953,9 @@ def _build_timeline_entry(event: object, ticket: object | None = None) -> Suppor
             tool_status=status,
             result_summary=str(payload.get("summary") or payload.get("error") or "Без краткого результата"),
             result_preview=_tool_result_preview(payload),
+            result_payload=result_payload,
+            result_presentation_schema=presentation_schema,
+            result_presentation_schema_source=str(presentation.get("source") or "none"),
             operation_steps=_timeline_operation_steps(payload),
             operation_id=str(operation_id) if operation_id else None,
             trace_id=str(payload.get("trace_id")) if payload.get("trace_id") else None,
@@ -1940,14 +2023,21 @@ async def _build_support_timeline_payload(
     repo: TicketEventsRepo,
     ticket: Ticket,
     *,
+    session: Any | None = None,
+    state: Any = None,
     timeline_filter: str = "all",
     limit: int = 80,
 ) -> SupportTicketTimelinePayload:
     normalized_filter = _normalize_support_timeline_filter(timeline_filter)
     event_limit = min(max(limit * 3, limit), 1000)
     events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=event_limit)
+    presentation_by_tool = (
+        await _timeline_presentation_by_tool(session=session, state=state, ticket=ticket, events=events)
+        if session is not None
+        else {}
+    )
     items = [
-        _build_timeline_entry(event, ticket=ticket)
+        _build_timeline_entry(event, ticket=ticket, presentation_by_tool=presentation_by_tool)
         for event in events
         if _is_support_timeline_event(str(getattr(event, "event_type", None) or ""))
     ]
@@ -2973,7 +3063,14 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         include_assignment_context=True,
     )
     observer_data = await _safe_support_observer_summary(session, ticket.ticket_id)
-    timeline_payload = await _build_support_timeline_payload(repo, ticket, timeline_filter="all", limit=80)
+    timeline_payload = await _build_support_timeline_payload(
+        repo,
+        ticket,
+        session=session,
+        state=request.app.get("state"),
+        timeline_filter="all",
+        limit=80,
+    )
     timeline = timeline_payload.items
 
     queue_name = None
@@ -3321,6 +3418,8 @@ async def handle_web_support_ticket_timeline(request: web.Request):
             payload = await _build_support_timeline_payload(
                 repo,
                 ticket,
+                session=session,
+                state=request.app.get("state"),
                 timeline_filter=timeline_filter,
                 limit=limit,
             )

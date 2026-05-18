@@ -219,6 +219,7 @@ Implementation snapshot:
 - Added migration `093_tool_presentation_overrides`, SQLAlchemy model `ToolPresentationOverride`, and `diagnostics.presentation_overrides` for validation, upsert/reset and effective schema projection.
 - Added `/api/web/tool-presentations?tool_id=...` GET/PUT/DELETE and projected `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override` in capability APIs.
 - Added `PresentationSchemaBuilder`, `schema-path-picker` helpers, generated sample result preview and Capability detail integration using the existing `ModuleResultRenderer`.
+- Follow-up blocker fix: support timeline `tool_call_result` DTOs now expose bounded real `result_payload` plus effective presentation schema/source, and `/app/tickets` renders that payload through `ModuleResultRenderer` so completed `system.collect` results can show field grids, metrics and tables instead of only a compact JSON preview.
 
 Verification:
 

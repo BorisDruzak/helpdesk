@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import uuid
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import DiagnosticCapability, DiagnosticProvider
+from app.db.models import DiagnosticCapability, DiagnosticProvider, Ticket, TicketEvent
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.presentation_overrides import (
     PresentationSchemaValidationError,
@@ -29,6 +32,10 @@ OVERRIDE_SCHEMA = {
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
+
+
+def _support_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer test-ui-support-token"}
 
 
 async def _seed_persisted_capability(test_engine, *, capability_id: str = "sample.collect") -> None:
@@ -194,3 +201,65 @@ async def test_capability_list_exposes_effective_presentation_schema(test_client
     assert dns["effective_presentation_schema"] == OVERRIDE_SCHEMA
     assert dns["presentation_schema_source"] == "server_override"
     assert dns["has_presentation_override"] is True
+
+
+@pytest.mark.asyncio
+async def test_support_timeline_tool_result_exposes_render_payload_and_effective_schema(test_client, test_engine) -> None:
+    capability_id = "sample.collect"
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    operation_id = str(uuid.uuid4())
+    await _seed_persisted_capability(test_engine, capability_id=capability_id)
+
+    put_override = await test_client.put(
+        f"/api/web/tool-presentations?tool_id={capability_id}",
+        headers=_admin_headers(),
+        json={"presentation_schema": OVERRIDE_SCHEMA, "enabled": True},
+    )
+    assert put_override.status == 200, await put_override.text()
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Presentation timeline",
+                description="Render real tool result",
+                status="in_progress",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            TicketEvent(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                agent_seq=None,
+                event_type="tool_call_result",
+                operation_id=operation_id,
+                payload={
+                    "type": "tool_call_result",
+                    "tool_name": capability_id,
+                    "operation_id": operation_id,
+                    "status": "success",
+                    "summary": "Sample collect completed",
+                    "result": {"status": "ok", "hostname": "pc-01"},
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/timeline?filter=diagnostics",
+        headers=_support_headers(),
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    item = payload["data"]["items"][0]
+
+    assert item["tool_name"] == capability_id
+    assert item["result_payload"] == {"status": "ok", "hostname": "pc-01"}
+    assert item["result_presentation_schema"] == OVERRIDE_SCHEMA
+    assert item["result_presentation_schema_source"] == "server_override"

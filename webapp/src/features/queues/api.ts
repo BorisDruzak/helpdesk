@@ -395,6 +395,9 @@ export type SupportTicketDetailPayload = {
     tool_status?: string | null;
     result_summary?: string | null;
     result_preview?: string | null;
+    result_payload?: unknown;
+    result_presentation_schema?: Record<string, unknown> | null;
+    result_presentation_schema_source?: string | null;
     operation_id?: string | null;
     trace_id?: string | null;
     duration_ms?: number | null;
