@@ -16,6 +16,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 | P3.1 Quality Production Hardening | accepted / compact release-candidate | Latest-feedback DB invariant, concurrency coverage, daily/weekly quality snapshot scheduler, effective policy preview and P3 smoke regression. | Focused P3.1 tests, webapp build, `verify_workspace`, context index rebuild and smoke regression passed. |
 | P4 Problem Management / RCA | accepted / release-candidate | First-class problems, candidates, ticket links, RCA, known-error/workaround Knowledge links, affected objects, analytics and `/app/admin/problems`. | Commit `2618616`; CI artifact `artifacts/ci/2618616bc2e0045ed4cdcdf39aeed7c195b8149e/summary.json`; remote/browser signoff completed. |
 | P4.1 Problem Production Hardening | accepted / release-candidate | Scheduled scanner, run records, broader detection signals, dedup/merge/cooldown, problem SLO/aging and operational dashboard. | Commits `f2ad8db`, `f83f95d`, `d7f3836`; final CI artifact `artifacts/ci/f83f95d794fcd17028bb87d659902af4d26efe0f/summary.json`; remote/browser signoff completed and server stopped. |
+| P5 Change Enablement | accepted / release-candidate | First-class changes, standard/normal/emergency lifecycle, risk/impact, approvals, windows/calendar, implementation/rollback plans, tasks, PIR, problem/action linkage and `/app/admin/changes`. | Commits `1abd32c`, `82a33a1`; CI artifact `artifacts/ci/82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7/summary.json`; remote/browser signoff completed. |
 
 ## Current Invariants
 
@@ -26,9 +27,9 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
-## Active Work: P5 Change Enablement
+## Latest Accepted Work: P5 Change Enablement
 
-Status: local release-candidate; remote/browser signoff pending.
+Status: accepted / release-candidate.
 
 Goal: add first-class Change Enablement so P4 permanent-fix outputs can move through controlled change request, risk/impact, approval/CAB-lite, maintenance window, implementation plan, rollback plan, tasks, PIR and closure. P5 is not automatic execution and does not replace tickets, problems or continuous improvement actions.
 
@@ -107,10 +108,12 @@ Webapp tests:
 - `pnpm --dir webapp test -- src/features/changes/api.test.ts src/features/changes/change-workspace.test.tsx src/features/problems/problem-workspace.test.tsx` -> 4 passed.
 - Problem/Quality focused regression passed: `test_problem_api.py`, `test_problem_service.py`, `test_problem_candidate_service.py`, `test_problem_slo_policy.py`, `test_problem_scheduler.py`, `test_quality_api.py`, `test_quality_workflow_integration.py`, `test_quality_smoke_regression.py`.
 - Static/local checks passed: `python -m compileall -q server pc_agent scripts`, `git diff --check`, `python scripts/verify_workspace.py`, `python scripts/build_context_index.py --force`, `pnpm --dir webapp build`.
-- Full canonical CI passed: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0`.
-- Full CI artifact: `artifacts/ci/d7f383693633ccb22cc79114a737ee9697af9004/summary.json`.
+- Full canonical CI passed on commit `82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7`: `python scripts/run_ci_suite.py --server-pytest-timeout 7200 --pc-agent-pytest-timeout 3600 --idle-timeout 0`.
+- Full CI artifact: `artifacts/ci/82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7/summary.json`.
 - Full CI layer counts: `server_pytest_no_db` 323 passed; `server_pytest_db_knowledge` 90 passed; `server_pytest_db_tickets` 275 passed; `server_pytest_db_observer_diagnostics` 74 passed; `server_pytest_db_agent_runtime` 84 passed; `server_pytest_db_web_api` 195 passed; `server_pytest_agent_ws` 30 passed; `pc_agent_pytest` 315 passed.
-- Remote/browser signoff remains pending for `/app/admin/changes`, create normal change, risk/plan/rollback, approval, scheduling, tasks, PIR, close, create from problem and linked problem detail.
+- Remote release signoff passed on `82a33a1`: full-gated deploy, Alembic head, webapp bundle upload and `/api/health` smoke succeeded.
+- Browser signoff passed at `https://192.168.100.17:9443/app/admin/changes`: created `CHG-000002`, approved risk/plan/request, scheduled, added/completed task, started implementation, implemented, completed PIR and closed with no console errors and all P5 network calls returning 200.
+- Problem-to-change browser signoff passed: `/app/admin/problems` `Create change` created `CHG-000003 Permanent fix: P4 smoke RCA problem`, visible in `/app/admin/changes`.
 
 ### Rollback Notes
 
@@ -120,5 +123,5 @@ Webapp tests:
 
 ### Remaining Risks
 
-- Final acceptance still requires commit/push plus remote release/browser signoff.
 - P5 does not implement external calendar integrations, automatic execution, or full P5+ release orchestration; those are intentionally outside Change Enablement.
+- The release smoke created demo records `CHG-000002` and `CHG-000003` on the remote stand.
