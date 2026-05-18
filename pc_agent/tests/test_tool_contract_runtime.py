@@ -85,6 +85,28 @@ async def test_builtin_specs_expose_contract_fields(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_list_tools_preserves_contract_fields_for_capability_projection(tmp_path):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+
+    orchestrator = AgentOrchestrator(
+        enabled_modules=["system"],
+        data_root=tmp_path,
+    )
+    await orchestrator.initialize()
+
+    result = await orchestrator._handle_list_tools(meta=_meta("list_tools"))
+
+    assert result.status == "success"
+    tools = result.data.observations["tools"]
+    system_tool = next(item for item in tools if item["tool"] == "system.collect")
+    assert system_tool["spec"]["presentation_schema"]["kind"] == "tool_result"
+    assert system_tool["spec"]["output_contract"]["device_card"]["eligible"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_run_tool_redacts_sensitive_output_fields(tmp_path):
     ConfigLoader._instance = None
     ConfigLoader._config = None
