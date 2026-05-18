@@ -36,6 +36,20 @@ function valueLabel(value: number | string | null | undefined) {
   return String(value);
 }
 
+function percentLabel(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${Math.round(value * 100)}%`;
+}
+
+function hoursLabel(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${Math.round(value * 10) / 10}h`;
+}
+
 function tone(status: string) {
   if (["closed", "implemented"].includes(status)) {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -214,7 +228,34 @@ export function ChangeWorkspace() {
         <Card>
           <CardHeader>
             <CardDescription>PIR completion</CardDescription>
-            <CardTitle>{summary ? `${Math.round(summary.pir_completion_rate * 100)}%` : "n/a"}</CardTitle>
+            <CardTitle>{percentLabel(summary?.pir_completion_rate)}</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardDescription>Failure rate</CardDescription>
+            <CardTitle>{percentLabel(summary?.failure_rate)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Rollback rate</CardDescription>
+            <CardTitle>{percentLabel(summary?.rollback_rate)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Lead time</CardDescription>
+            <CardTitle>{hoursLabel(summary?.average_lead_time_hours)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Emergency retro overdue</CardDescription>
+            <CardTitle>{valueLabel(summary?.emergency_retrospective_overdue_count)}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -384,6 +425,7 @@ export function ChangeWorkspace() {
                 <p className="text-xs text-slate-500">
                   {window.window_type} / {new Date(window.starts_at).toLocaleString()} - {new Date(window.ends_at).toLocaleString()}
                 </p>
+                {window.recurrence_rule ? <p className="text-xs text-slate-500">{window.recurrence_rule}</p> : null}
               </div>
             ))}
           </div>

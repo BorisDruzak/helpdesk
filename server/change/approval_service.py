@@ -68,6 +68,12 @@ class ChangeApprovalService:
         required = [row for row in rows if row.required]
         if not rows:
             return {"satisfied": False, "rejected": False, "pending": True}
+        if not required:
+            return {
+                "satisfied": all(row.status in {"approved", "skipped"} for row in rows),
+                "rejected": any(row.status == "rejected" for row in rows),
+                "pending": any(row.status == "pending" for row in rows),
+            }
         return {
             "satisfied": bool(required) and all(row.status == "approved" for row in required),
             "rejected": any(row.status == "rejected" for row in rows),

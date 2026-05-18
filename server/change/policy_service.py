@@ -20,6 +20,9 @@ DEFAULT_POLICY = {
     "approver_roles": [],
     "approver_actor_ids": ["change-manager"],
     "blackout_enforced": True,
+    "min_lead_time_hours": None,
+    "max_emergency_retro_hours": 72,
+    "metadata": {},
 }
 
 
@@ -50,7 +53,10 @@ class ChangePolicyService:
         row.approver_roles_json = payload.get("approver_roles") if isinstance(payload.get("approver_roles"), list) else []
         row.approver_actor_ids_json = payload.get("approver_actor_ids") if isinstance(payload.get("approver_actor_ids"), list) else []
         row.cab_group = clean_text(payload.get("cab_group"))
+        row.min_lead_time_hours = _optional_int(payload.get("min_lead_time_hours"))
+        row.max_emergency_retro_hours = _optional_int(payload.get("max_emergency_retro_hours"))
         row.blackout_enforced = bool(payload.get("blackout_enforced", True))
+        row.metadata_json = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
         row.updated_at = datetime.now(timezone.utc)
         if existing is None:
             self.session.add(row)
@@ -110,6 +116,15 @@ class ChangePolicyService:
             "approver_roles": row.approver_roles_json or [],
             "approver_actor_ids": row.approver_actor_ids_json or [],
             "cab_group": row.cab_group,
+            "min_lead_time_hours": row.min_lead_time_hours,
+            "max_emergency_retro_hours": row.max_emergency_retro_hours,
             "blackout_enforced": row.blackout_enforced,
+            "metadata": row.metadata_json or {},
         }
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
 

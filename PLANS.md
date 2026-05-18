@@ -17,6 +17,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 | P4 Problem Management / RCA | accepted / release-candidate | First-class problems, candidates, ticket links, RCA, known-error/workaround Knowledge links, affected objects, analytics and `/app/admin/problems`. | Commit `2618616`; CI artifact `artifacts/ci/2618616bc2e0045ed4cdcdf39aeed7c195b8149e/summary.json`; remote/browser signoff completed. |
 | P4.1 Problem Production Hardening | accepted / release-candidate | Scheduled scanner, run records, broader detection signals, dedup/merge/cooldown, problem SLO/aging and operational dashboard. | Commits `f2ad8db`, `f83f95d`, `d7f3836`; final CI artifact `artifacts/ci/f83f95d794fcd17028bb87d659902af4d26efe0f/summary.json`; remote/browser signoff completed and server stopped. |
 | P5 Change Enablement | accepted / release-candidate | First-class changes, standard/normal/emergency lifecycle, risk/impact, approvals, windows/calendar, implementation/rollback plans, tasks, PIR, problem/action linkage and `/app/admin/changes`. | Commits `1abd32c`, `82a33a1`; CI artifact `artifacts/ci/82a33a1ecfcaf308ffe2cd3c53cdb0beb33ab1e7/summary.json`; remote/browser signoff completed. |
+| P5 Change Enablement Hardening | in progress | Operator docs, standard preapproval catalog, recurring blackout/maintenance windows, overlap detection, emergency retrospective rules, hardened metrics and remote demo cleanup. | Focused P5 backend/webapp tests passed locally; final verify/deploy pending. |
 
 ## Current Invariants
 
@@ -125,3 +126,23 @@ Webapp tests:
 
 - P5 does not implement external calendar integrations, automatic execution, or full P5+ release orchestration; those are intentionally outside Change Enablement.
 - The release smoke created demo records `CHG-000002` and `CHG-000003` on the remote stand.
+
+## Active Work: P5 Change Enablement Hardening
+
+Status: in progress.
+
+Scope:
+
+- Expand `CHANGE_ENABLEMENT.md` with lifecycle matrix, examples and operator guide.
+- Clarify standard change catalog by storing catalog examples under `change_policies.metadata.standard_catalog`; explicit `standard_preapproved=true` makes approvals skipped/non-required, not globally automatic.
+- Harden calendar behavior with simple recurring RRULE support for blackout/maintenance windows and same-service/offering overlap detection for active planned changes.
+- Track emergency retrospective overdue count through effective `max_emergency_retro_hours`.
+- Harden change metrics: failure rate, rollback rate, lead time, implementation duration, PIR completion and emergency retrospective overdue.
+- Mark or clean remote demo records from the previous P5 browser smoke.
+
+Verification so far:
+
+- RED: new focused tests failed for recurring blackout, same-service overlap, standard preapproval satisfaction and missing metrics keys.
+- GREEN: `python -m pytest server/tests/test_change_calendar.py server/tests/test_change_policies.py server/tests/test_change_analytics.py -q --tb=short` -> 7 passed.
+- P5 focused backend: `python -m pytest server/tests/test_change_contract_no_db.py server/tests/test_change_repo.py server/tests/test_change_service.py server/tests/test_change_lifecycle.py server/tests/test_change_risk_assessment.py server/tests/test_change_approval_service.py server/tests/test_change_calendar.py server/tests/test_change_tasks.py server/tests/test_change_pir.py server/tests/test_change_problem_integration.py server/tests/test_change_service_catalog_integration.py server/tests/test_change_knowledge_quality_integration.py server/tests/test_change_api.py server/tests/test_change_privacy.py server/tests/test_change_analytics.py server/tests/test_change_policies.py -q --tb=short` -> 26 passed.
+- Webapp focused: `pnpm --dir webapp test -- src/features/changes/api.test.ts src/features/changes/change-workspace.test.tsx src/features/problems/problem-workspace.test.tsx` -> 3 files / 4 tests passed.

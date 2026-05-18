@@ -92,6 +92,8 @@ export type ChangeWindow = {
   ends_at: string;
   service_code?: string | null;
   offering_code?: string | null;
+  timezone?: string | null;
+  recurrence_rule?: string | null;
 };
 
 export type ChangeSummary = {
@@ -100,6 +102,11 @@ export type ChangeSummary = {
   emergency_change_count: number;
   failed_change_count: number;
   rollback_count: number;
+  failure_rate: number;
+  rollback_rate: number;
+  average_lead_time_hours: number;
+  average_implementation_duration_hours: number;
+  emergency_retrospective_overdue_count: number;
   pir_completion_rate: number;
   changes_by_type: Record<string, number>;
   changes_by_status: Record<string, number>;

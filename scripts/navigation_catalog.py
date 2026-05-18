@@ -1092,7 +1092,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="change_enablement",
         title="P5 Change Enablement",
-        summary="P5 change enablement: first-class change requests, standard/normal/emergency types, risk and impact assessment, CAB-lite approvals, maintenance/blackout windows, implementation and rollback plans, implementation tasks, PIR, problem permanent-fix linkage, improvement-action linkage, affected service/offering/assets and aggregate no-PII change metrics.",
+        summary="P5 change enablement: first-class change requests, standard/normal/emergency types, standard preapproval catalog policy, risk and impact assessment, CAB-lite approvals, one-off/recurring maintenance and blackout windows, overlap detection, implementation and rollback plans, implementation tasks, emergency retrospective, PIR, problem permanent-fix linkage, improvement-action linkage, affected service/offering/assets and aggregate no-PII change metrics.",
         aliases=(
             "change enablement",
             "P5",
@@ -1100,6 +1100,10 @@ TOPICS: tuple[Topic, ...] = (
             "changes",
             "change_approvals",
             "change_windows",
+            "standard_preapproved",
+            "recurrence_rule",
+            "emergency retrospective",
+            "failure_rate",
             "change_pir_records",
             "CAB",
             "rollback plan",

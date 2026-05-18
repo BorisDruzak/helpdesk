@@ -76,7 +76,12 @@ describe("ChangeWorkspace", () => {
       emergency_change_count: 0,
       failed_change_count: 0,
       rollback_count: 0,
-      pir_completion_rate: 0,
+      failure_rate: 0.1,
+      rollback_rate: 0.05,
+      average_lead_time_hours: 12.5,
+      average_implementation_duration_hours: 2,
+      emergency_retrospective_overdue_count: 1,
+      pir_completion_rate: 0.8,
       changes_by_type: { normal: 1 },
       changes_by_status: { draft: 1 },
       changes_by_risk: { medium: 1 },
@@ -99,7 +104,14 @@ describe("ChangeWorkspace", () => {
       },
     ]);
     fetchChangeWindowsMock.mockResolvedValue([
-      { window_id: "w1", title: "Night", window_type: "maintenance", starts_at: "2026-05-18T10:00:00Z", ends_at: "2026-05-18T11:00:00Z" },
+      {
+        window_id: "w1",
+        title: "Night",
+        window_type: "maintenance",
+        starts_at: "2026-05-18T10:00:00Z",
+        ends_at: "2026-05-18T11:00:00Z",
+        recurrence_rule: "FREQ=WEEKLY;BYDAY=MO",
+      },
     ]);
     fetchChangeTasksMock.mockResolvedValue([]);
     createChangeMock.mockResolvedValue({
@@ -137,6 +149,10 @@ describe("ChangeWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Change workspace" })).toBeInTheDocument();
     expect((await screen.findAllByText("CHG-000001")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Night")).toBeInTheDocument();
+    expect(await screen.findByText("Failure rate")).toBeInTheDocument();
+    expect(await screen.findByText("10%")).toBeInTheDocument();
+    expect(await screen.findByText("12.5h")).toBeInTheDocument();
+    expect(await screen.findByText("FREQ=WEEKLY;BYDAY=MO")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Change title"), { target: { value: "Firewall update" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));

@@ -140,6 +140,8 @@ def window_to_dict(row: Any) -> dict[str, Any]:
             "object_ref": row.object_ref,
             "starts_at": row.starts_at,
             "ends_at": row.ends_at,
+            "timezone": row.timezone_name,
+            "recurrence_rule": row.recurrence_rule,
         }
     )
 
