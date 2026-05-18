@@ -81,6 +81,10 @@ async def test_builtin_specs_expose_contract_fields(tmp_path):
     assert system_tool["spec"]["lifecycle"] == "stable"
     assert system_tool["spec"]["presentation_schema"]["kind"] == "tool_result"
     assert system_tool["spec"]["output_contract"]["device_card"]["eligible"] is True
+    sections_schema = system_tool["spec"]["output_schema"]["properties"]["sections"]["properties"]
+    assert sections_schema["network"]["properties"]["hostname"]["type"] == "string"
+    assert sections_schema["network"]["properties"]["interfaces"]["items"]["properties"]["ipv4"]["type"] == "string"
+    assert sections_schema["cpu"]["properties"]["percent"]["type"] == "number"
 
 
 @pytest.mark.asyncio
@@ -103,6 +107,9 @@ async def test_list_tools_preserves_contract_fields_for_capability_projection(tm
     system_tool = next(item for item in tools if item["tool"] == "system.collect")
     assert system_tool["spec"]["presentation_schema"]["kind"] == "tool_result"
     assert system_tool["spec"]["output_contract"]["device_card"]["eligible"] is True
+    sections_schema = system_tool["spec"]["output_schema"]["properties"]["sections"]["properties"]
+    assert sections_schema["network"]["properties"]["primary_ip"]["type"] == "string"
+    assert sections_schema["memory"]["properties"]["percent"]["type"] == "number"
 
 
 @pytest.mark.asyncio

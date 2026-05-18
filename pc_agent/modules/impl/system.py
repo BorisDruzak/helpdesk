@@ -221,7 +221,71 @@ class SystemCollector(BaseCollector):
             "properties": {
                 "preset": {"type": "string"},
                 "selected_sections": {"type": "array", "items": {"type": "string"}},
-                "sections": {"type": "object"},
+                "sections": {
+                    "type": "object",
+                    "properties": {
+                        "cpu": {
+                            "type": "object",
+                            "properties": {
+                                "percent": {"type": "number"},
+                                "count": {"type": "integer"},
+                            },
+                        },
+                        "memory": {
+                            "type": "object",
+                            "properties": {
+                                "total": {"type": "integer"},
+                                "available": {"type": "integer"},
+                                "percent": {"type": "number"},
+                            },
+                        },
+                        "disk": {
+                            "type": "object",
+                            "properties": {
+                                "total": {"type": "integer"},
+                                "used": {"type": "integer"},
+                                "free": {"type": "integer"},
+                                "percent": {"type": "number"},
+                            },
+                        },
+                        "network": {
+                            "type": "object",
+                            "properties": {
+                                "hostname": {"type": "string"},
+                                "primary_ip": {"type": "string"},
+                                "interfaces": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "ipv4": {"type": "string"},
+                                            "mac": {"type": "string"},
+                                            "status": {"type": "string"},
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        "platform": {
+                            "type": "object",
+                            "properties": {
+                                "system": {"type": "string"},
+                                "release": {"type": "string"},
+                                "version": {"type": "string"},
+                                "machine": {"type": "string"},
+                                "processor": {"type": "string"},
+                            },
+                        },
+                        "boot_time": {
+                            "type": "object",
+                            "properties": {
+                                "epoch": {"type": "number"},
+                                "iso": {"type": "string"},
+                            },
+                        },
+                    },
+                },
             },
             "required": ["preset", "selected_sections", "sections"],
         },
