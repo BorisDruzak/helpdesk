@@ -118,6 +118,8 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 
 P3 adds `GET /api/web/quality/service-quality` for quality analytics by service/offering. It is aggregate-only and complements the operational report summary: requester comments, requester ids and internal QA findings stay on ticket-level support/admin views, not in catalog analytics.
 
+P5 Change Enablement stores `service_code` and `offering_code` on `changes` and `change_affected_objects`. Change metrics can therefore show upcoming, active, failed and rolled-back changes by service/offering without exposing requester data or internal rollback steps.
+
 ## Rollback
 
 Migration `082` is additive. P1.1 has no schema migration. P3 migration `088` is additive and can be operationally rolled back by disabling quality prompts/triggers while leaving catalog dimensions read-only in existing quality rows. Rollback is operational: retire seeded catalog entries instead of deleting rows referenced by tickets, disable catalog-first UI by falling back to legacy forms, and keep legacy `form_key` / `request_template_key` create payloads intact.

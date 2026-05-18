@@ -90,6 +90,10 @@ export const AdminProblemsPage = lazy(() =>
   import("../../pages/admin/problems-page").then((module) => ({ default: module.AdminProblemsPage })),
 );
 
+export const AdminChangesPage = lazy(() =>
+  import("../../pages/admin/changes-page").then((module) => ({ default: module.AdminChangesPage })),
+);
+
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );

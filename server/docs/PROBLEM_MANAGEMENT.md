@@ -105,6 +105,11 @@ Requester/public users have no direct problem/RCA APIs in P4.
 - `/app/admin/problems`: problem metrics, scanner status/run/dry-run, candidate scan/convert/merge, dedup metadata, problem list, SLO aging, RCA actions and known-error/workaround draft creation over real APIs.
 - `/app/tickets`: support Quality tab shows linked problems for the selected ticket.
 - `/app/admin/quality`: quality analytics can use problem metrics as the P4 signal surface expands.
+- `/app/admin/problems` also exposes the P5 "Create change" action for a selected problem permanent fix. The change record inherits problem service/offering and affected objects, but problem closure remains human/policy controlled.
+
+## Change Enablement Link
+
+P5 owns first-class change requests in `server/change/*`. Problem Management only emits the permanent-fix context and records `change_created` activity; it does not auto-close or auto-resolve a problem when a change is created. Successful, failed or rolled-back change outcomes can be reviewed through Change Enablement and Continuous Improvement actions.
 
 ## Security And Privacy
 

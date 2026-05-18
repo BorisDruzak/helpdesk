@@ -43,6 +43,7 @@ Support/admin/auditor:
 - `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
 - `QualitySnapshotScheduler` runs from server startup when DB persistence is enabled. It recomputes daily and weekly snapshots through `ServiceQualityAnalyticsService`; the manual recompute endpoint remains available for operator/debug use.
 - P4/P4.1 consumes quality signals as upstream evidence: low CSAT clusters, reopen reasons, SLA breach patterns, failed QA reviews, knowledge failures and improvement actions can feed scheduled/manual problem candidate scans and confirmed problem records. Quality Loop remains the source for CSAT/reopen/QA/action data; Problem Management owns scanner dedup/cooldown, candidate merge, RCA/known-error/permanent-fix lifecycle and problem SLO aging.
+- P5 can create a change from `continuous_improvement_actions.action_type=create_change_candidate` or from a problem permanent fix. Failed or rolled-back changes create a new `continuous_improvement_actions` row with `source_kind=change` so quality teams can review the outcome without replacing the P3 action lifecycle.
 
 ## Surfaces
 
@@ -50,6 +51,7 @@ Support/admin/auditor:
 - Support ticket detail includes a Quality section with latest CSAT, reopen count, QA reviews and improvement actions.
 - Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics, the last snapshot timestamp, internal review/action work queues and a service/offering quality-policy override editor with effective-policy preview.
 - Admin `/app/admin/problems` and the support ticket Quality tab expose P4 problem candidates/links without exposing requester-internal problem/RCA data to requester pages.
+- Admin `/app/admin/changes` consumes P5 change metrics by service/offering; requester pages do not expose risk, implementation or rollback details.
 - Agent GUI is unchanged in P3; web/public requester surfaces are the canonical CSAT/reopen path and Protocol V3 is not changed.
 
 ## Privacy

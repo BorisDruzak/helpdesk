@@ -307,6 +307,7 @@ class ContinuousImprovementAction(Base):
     feedback_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ticket_feedback.feedback_id", ondelete="SET NULL"), nullable=True)
     problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True)
     problem_candidate_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problem_candidates.candidate_id", ondelete="SET NULL"), nullable=True)
+    change_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="SET NULL"), nullable=True)
     service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
     action_type: Mapped[str] = mapped_column(String(60), nullable=False)
@@ -324,7 +325,7 @@ class ContinuousImprovementAction(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
-        sa.CheckConstraint("source_kind IN ('csat', 'reopen', 'qa_review', 'knowledge_gap', 'service_quality', 'sla_breach', 'problem_candidate', 'problem', 'manual')", name="ck_continuous_improvement_source_kind"),
+        sa.CheckConstraint("source_kind IN ('csat', 'reopen', 'qa_review', 'knowledge_gap', 'service_quality', 'sla_breach', 'problem_candidate', 'problem', 'change', 'manual')", name="ck_continuous_improvement_source_kind"),
         sa.CheckConstraint("action_type IN ('update_kb_article', 'create_kb_article', 'create_known_error', 'improve_request_form', 'update_routing_policy', 'adjust_sla_policy', 'add_diagnostic_playbook', 'train_support', 'open_problem_candidate', 'create_change_candidate', 'contact_requester', 'process_review', 'perform_rca', 'implement_permanent_fix', 'validate_workaround', 'update_known_error', 'other')", name="ck_continuous_improvement_action_type"),
         sa.CheckConstraint("status IN ('open', 'assigned', 'in_progress', 'blocked', 'done', 'dismissed')", name="ck_continuous_improvement_status"),
         sa.CheckConstraint("priority IN ('low', 'medium', 'high', 'critical')", name="ck_continuous_improvement_priority"),
@@ -1824,6 +1825,308 @@ class ProblemActivityEvent(Base):
     actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class Change(Base):
+    """First-class Change Enablement record."""
+
+    __tablename__ = "changes"
+
+    change_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_key: Mapped[str] = mapped_column(String(24), nullable=False, unique=True, default=lambda: f"CHG-{uuid.uuid4().hex[:8].upper()}")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    change_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="normal")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="draft")
+    category: Mapped[str] = mapped_column(String(40), nullable=False, server_default="other")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    impact_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    urgency: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    problem_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("problems.problem_id", ondelete="SET NULL"), nullable=True, index=True)
+    improvement_action_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("continuous_improvement_actions.action_id", ondelete="SET NULL"), nullable=True, index=True)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True, index=True)
+    request_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    reporting_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assignee_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    requested_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    assessed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    scheduled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    implementation_started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    implemented_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    canceled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    failed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    planned_start_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    planned_end_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    actual_start_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    actual_end_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    blackout_override: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    emergency_justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risk_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    impact_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    implementation_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rollback_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    communication_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    validation_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closure_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint("change_type IN ('standard', 'normal', 'emergency')", name="ck_changes_type"),
+        sa.CheckConstraint("status IN ('draft', 'submitted', 'assessing', 'awaiting_approval', 'approved', 'scheduled', 'implementation_in_progress', 'implemented', 'pir_required', 'closed', 'rejected', 'canceled', 'failed', 'rolled_back')", name="ck_changes_status"),
+        sa.CheckConstraint("category IN ('infrastructure', 'application', 'network', 'security', 'access', 'service_catalog', 'knowledge', 'process', 'other')", name="ck_changes_category"),
+        sa.CheckConstraint("priority IN ('low', 'medium', 'high', 'critical')", name="ck_changes_priority"),
+        sa.CheckConstraint("risk_level IN ('low', 'medium', 'high', 'critical')", name="ck_changes_risk_level"),
+        sa.CheckConstraint("impact_level IN ('low', 'medium', 'high', 'critical')", name="ck_changes_impact_level"),
+        sa.CheckConstraint("urgency IN ('low', 'medium', 'high', 'critical')", name="ck_changes_urgency"),
+        sa.CheckConstraint("planned_end_at IS NULL OR planned_start_at IS NULL OR planned_end_at > planned_start_at", name="ck_changes_planned_window"),
+        sa.CheckConstraint("actual_end_at IS NULL OR actual_start_at IS NULL OR actual_end_at >= actual_start_at", name="ck_changes_actual_window"),
+        Index("ix_changes_status_type", "status", "change_type"),
+        Index("ix_changes_service_offering", "service_code", "offering_code"),
+        Index("ix_changes_planned_window", "planned_start_at", "planned_end_at"),
+    )
+
+
+class ChangeRiskAssessment(Base):
+    __tablename__ = "change_risk_assessments"
+
+    assessment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    impact_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    suggested_risk_level: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    risk_factors_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    mitigation_plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    test_plan_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assessed_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("change_id", "version_number", name="uq_change_risk_change_version"),
+        sa.CheckConstraint("status IN ('draft', 'submitted', 'approved', 'rejected', 'archived')", name="ck_change_risk_status"),
+        sa.CheckConstraint("risk_level IN ('low', 'medium', 'high', 'critical')", name="ck_change_risk_level"),
+        sa.CheckConstraint("impact_level IN ('low', 'medium', 'high', 'critical')", name="ck_change_risk_impact"),
+    )
+
+
+class ChangePlan(Base):
+    __tablename__ = "change_plans"
+
+    plan_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    implementation_steps_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    rollback_steps_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    validation_steps_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    communication_steps_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    pre_checks_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    post_checks_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    downtime_expected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    downtime_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("change_id", "version_number", name="uq_change_plans_change_version"),
+        sa.CheckConstraint("status IN ('draft', 'in_review', 'approved', 'archived')", name="ck_change_plans_status"),
+    )
+
+
+class ChangeApproval(Base):
+    __tablename__ = "change_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    approval_stage: Mapped[str] = mapped_column(String(40), nullable=False, server_default="cab")
+    approver_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approver_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    approver_group: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="pending")
+    decision_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decided_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("status IN ('pending', 'approved', 'rejected', 'skipped', 'expired')", name="ck_change_approvals_status"),
+        sa.CheckConstraint("approval_stage IN ('risk_assessment', 'technical_review', 'business_approval', 'cab', 'emergency_approval', 'implementation_authorization')", name="ck_change_approvals_stage"),
+        Index("ix_change_approvals_status", "change_id", "status"),
+    )
+
+
+class ChangeWindow(Base):
+    __tablename__ = "change_windows"
+
+    window_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    window_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="maintenance")
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    object_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    object_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    starts_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    timezone_name: Mapped[Optional[str]] = mapped_column("timezone", Text, nullable=True)
+    recurrence_rule: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("window_type IN ('standard', 'maintenance', 'blackout', 'emergency_allowed')", name="ck_change_windows_type"),
+        sa.CheckConstraint("ends_at > starts_at", name="ck_change_windows_range"),
+        Index("ix_change_windows_range", "starts_at", "ends_at"),
+    )
+
+
+class ChangeAffectedObject(Base):
+    __tablename__ = "change_affected_objects"
+
+    affected_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    object_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    impact: Mapped[str] = mapped_column(String(20), nullable=False, server_default="medium")
+    planned_downtime: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("impact IN ('low', 'medium', 'high', 'critical')", name="ck_change_affected_impact"),
+        Index("ix_change_affected_type", "change_id", "object_type"),
+    )
+
+
+class ChangeTask(Base):
+    __tablename__ = "change_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    task_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="implementation")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="pending")
+    owner_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    result_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_refs_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("task_type IN ('pre_check', 'implementation', 'validation', 'rollback', 'communication', 'documentation', 'post_check')", name="ck_change_tasks_type"),
+        sa.CheckConstraint("status IN ('pending', 'in_progress', 'done', 'skipped', 'failed', 'blocked')", name="ck_change_tasks_status"),
+        Index("ix_change_tasks_status", "change_id", "status"),
+    )
+
+
+class ChangePIRRecord(Base):
+    __tablename__ = "change_pir_records"
+
+    pir_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="draft")
+    implementation_successful: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    rollback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    caused_incident: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    met_objectives: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    downtime_actual_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    issues_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    lessons_learned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    follow_up_actions_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    reviewed_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (sa.CheckConstraint("status IN ('draft', 'submitted', 'approved', 'archived')", name="ck_change_pir_status"),)
+
+
+class ChangeActivityEvent(Base):
+    __tablename__ = "change_activity_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    change_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("changes.change_id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (Index("ix_change_activity_change_created", "change_id", "created_at"),)
+
+
+class ChangePolicy(Base):
+    __tablename__ = "change_policies"
+
+    policy_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    scope_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="global")
+    service_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    offering_code: Mapped[Optional[str]] = mapped_column(String(220), nullable=True)
+    change_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    require_risk_assessment: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    require_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    require_rollback_plan: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    require_pir: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    standard_preapproved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default="single")
+    approver_roles_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    approver_actor_ids_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    cab_group: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    min_lead_time_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_emergency_retro_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    blackout_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint("scope_type IN ('global', 'service', 'offering', 'category', 'change_type', 'risk_level')", name="ck_change_policies_scope"),
+        sa.CheckConstraint("approval_mode IN ('none', 'single', 'all', 'cab')", name="ck_change_policies_approval_mode"),
+        Index("ix_change_policies_scope", "scope_type", "service_code", "offering_code", "change_type", "risk_level"),
+    )
 
 
 class TicketAdminAudit(Base):

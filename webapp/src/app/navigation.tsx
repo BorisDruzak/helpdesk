@@ -168,6 +168,14 @@ export const appNavigation: AppNavItem[] = [
     permission: "admin.forms.view",
   },
   {
+    label: "Changes",
+    description: "Risk, approvals, windows, tasks and PIR",
+    icon: Workflow,
+    section: "admin",
+    to: "/app/admin/changes",
+    permission: "admin.forms.view",
+  },
+  {
     label: "Playbooks",
     description: "Diagnostics and guided support actions",
     icon: Route,

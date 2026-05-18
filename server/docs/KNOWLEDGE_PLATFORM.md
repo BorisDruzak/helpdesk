@@ -181,6 +181,10 @@ P3 consumes Knowledge Platform signals as quality inputs without changing articl
 
 Requester CSAT reason `knowledge_article_failed` is stored in `ticket_feedback.reason_codes` and may link to a knowledge item when the ticket context provides one. Aggregate quality APIs report failed knowledge attempt counts only by service/offering/period and must not include requester identifiers, raw comments or internal article metadata.
 
+## P5 Change Enablement Integration
+
+Changes may reference known-error, workaround, runbook or documentation follow-up context through metadata and improvement actions. P5 does not publish requester-facing knowledge directly: successful changes and PIR lessons can create improvement actions for `update_kb_article` or `create_kb_article`, and requester-safe publication still goes through Knowledge Platform review/lint/publish.
+
 ## Service Catalog Integration
 
 Knowledge binds to service/offering/request-template. Policy Health and gap detection use canonical Service Catalog defaults, not stale content-pack aliases. Policy Health includes a warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog and requester preview may use knowledge counts/hints without exposing internal article names.

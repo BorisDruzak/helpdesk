@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { createChangeFromProblem } from "../changes/api";
 import {
   approveProblemRca,
   convertProblemCandidate,
@@ -137,6 +138,7 @@ export function ProblemWorkspace() {
   });
   const knownErrorMutation = useMutation({ mutationFn: createKnownErrorDraft, onSuccess: invalidate });
   const workaroundMutation = useMutation({ mutationFn: createWorkaroundDraft, onSuccess: invalidate });
+  const changeFromProblemMutation = useMutation({ mutationFn: createChangeFromProblem, onSuccess: invalidate });
   const linkTicketMutation = useMutation({
     mutationFn: (problem: ProblemRecord) => linkProblemTicket(problem.problem_id, linkTicketId.trim(), linkEvidence.trim()),
     onSuccess: async () => {
@@ -394,6 +396,15 @@ export function ProblemWorkspace() {
                     variant="outline"
                   >
                     Workaround draft
+                  </Button>
+                  <Button
+                    disabled={changeFromProblemMutation.isPending}
+                    leadingIcon={<GitPullRequestDraft className="h-4 w-4" />}
+                    onClick={() => changeFromProblemMutation.mutate(selectedProblem.problem_id)}
+                    type="button"
+                    variant="outline"
+                  >
+                    Create change
                   </Button>
                 </div>
               </>
