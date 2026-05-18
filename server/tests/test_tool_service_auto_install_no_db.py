@@ -21,6 +21,20 @@ async def _fake_session_ctx():
 
 
 @pytest.mark.no_db
+def test_inventory_collect_is_treated_as_agent_builtin():
+    service = ToolService(SimpleNamespace())
+
+    async def unexpected_resolve(*_args, **_kwargs):  # pragma: no cover - should stay unreachable
+        raise AssertionError("inventory.collect must not use server module registry preflight")
+
+    with patch("tools.service.DB_AVAILABLE", True), \
+         patch.object(service, "_resolve_preferred_server_module_for_tool", new=unexpected_resolve):
+        result = asyncio.run(service._ensure_module_installed("device-1", "inventory.collect"))
+
+    assert result is None
+
+
+@pytest.mark.no_db
 def test_ensure_module_installed_reinstalls_when_snapshot_has_tool_but_active_version_is_old():
     service = ToolService(SimpleNamespace())
     desired_calls = []
