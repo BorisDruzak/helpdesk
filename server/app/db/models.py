@@ -2675,6 +2675,43 @@ class DeviceToolsetSnapshot(Base):
         )
 
 
+class DeviceInventorySnapshot(Base):
+    """Raw endpoint inventory snapshots collected by inventory.collect."""
+    __tablename__ = "device_inventory_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_tool: Mapped[str] = mapped_column(Text, nullable=False, default="inventory.collect")
+    source_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    normalized: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ok")
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_snapshots_device_collected", "device_id", "collected_at"),
+        Index("ix_device_inventory_snapshots_source_tool", "source_tool"),
+        Index("ix_device_inventory_snapshots_status", "status"),
+        Index("ix_device_inventory_snapshots_hash", "snapshot_hash"),
+    )
+
+
 class DeviceOutbox(Base):
     """
     Device outbox model for Protocol V3.

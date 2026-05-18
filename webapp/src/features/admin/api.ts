@@ -98,6 +98,37 @@ export type AdminDeviceTokensPayload = {
   }>;
 };
 
+export type AdminDeviceInventoryPayload = {
+  device_id: string;
+  latest_snapshot: {
+    id: string;
+    source_tool: string;
+    collected_at: string;
+    status: string;
+    summary: string | null;
+    result: Record<string, unknown>;
+    presentation_schema?: Record<string, unknown>;
+    effective_presentation_schema?: Record<string, unknown>;
+    presentation_schema_source?: "module_default" | "server_override" | "none";
+    device_card_slots?: string[];
+  } | null;
+  history: Array<{
+    id: string;
+    collected_at: string;
+    status: string;
+    summary: string | null;
+  }>;
+};
+
+export type AdminDeviceInventoryCollectPayload = {
+  device_id: string;
+  tool_name: string;
+  operation_id: string | null;
+  status: string;
+  message: string;
+  poll_url: string | null;
+};
+
 export type AdminConnectionPolicy = "reject_all" | "accept_all" | "manual";
 
 export type AdminConnectionRequestItem = {
@@ -339,6 +370,21 @@ export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDev
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить токены устройства");
+}
+
+export async function fetchAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить инвентарь устройства");
+}
+
+export async function collectAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryCollectPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory/collect`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось отправить inventory.collect");
 }
 
 export async function revokeAdminDeviceToken(deviceId: string, tokenHash: string): Promise<void> {

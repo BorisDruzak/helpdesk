@@ -10,6 +10,7 @@ import { PageHeading } from "../../components/ui/page-heading";
 import { Select } from "../../components/ui/select";
 import { DeviceUpdatePanel } from "../../features/agent-updates/device-update-panel";
 import { fetchAdminDevices } from "../../features/admin/api";
+import { DeviceInventoryPanel } from "../../features/admin/device-inventory-panel";
 import { ObserverQuickPanel } from "../../features/tech/observer-quick-panel";
 
 
@@ -209,6 +210,11 @@ export function AdminDevicePage() {
           <ObserverQuickPanel
             deviceId={selectedDevice?.device_id ?? null}
             deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "выбранного устройства"}
+          />
+
+          <DeviceInventoryPanel
+            deviceId={selectedDevice?.device_id ?? null}
+            deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? null}
           />
         </div>
 

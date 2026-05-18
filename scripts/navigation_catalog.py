@@ -1449,7 +1449,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="modules",
         title="Modules / reconcile",
-        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, diag_logs app preset runtime-log source resolution from the current data root, Tool Output Presentation Schema/Builder v1 (`presentation_schema`, server override storage, `effective_presentation_schema`, `/api/web/tool-presentations`, path picker and live preview) pass-through/rendering, typed support timeline `tool_call_result` rows with bounded real `result_payload` unwrapped from ToolResponse `result.output` plus effective presentation schema/source for `/app/tickets` ModuleResultRenderer output, agent `list_tools` preservation of registry `output_contract`/`presentation_schema` fields for capability projection, `system.collect.output_schema` nested sections for path picker/sample generation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin provider config aliases, Capability Studio aliases under `/api/web/admin/capabilities*`, web-support diagnostics aliases under `/api/web/support/tickets/{ticket_id}/diagnostics/*`, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes, agent_recipe `run_recipe` commands that normalize RecipeRunnerBridge payloads to ToolResponse-compatible command results, ticket-bound Agent Recipe Runner runtime dependencies via `operation_dependencies` + `operations.phase`, compatible preferred runner version selection, protected runner preferred assignment through preflight/server-harness gate instead of normal Windows `run_tool` live-test gate, desired-modules/reconcile install or upgrade, idempotent resume from module lifecycle events, runner fleet rollout/canary/waves/rollback via `runner_rollout_*` tables and `/api/web/admin/capabilities/runner-rollout*` while still using desired modules + reconcile, phase-9 persistent result-to-evidence mapping through `diagnostic_session_capabilities` plus `diagnostic_artifact_links`, phase-10 capability-backed playbook steps that keep agent tools on `run_tool` while routing server/observer/remote/manual targets through the diagnostic capability router, and phase-12 capability observability with redacted runtime-audit lifecycle rows and observer root kinds for capability/server-connector/observer/manual/remote-assist runs).",
+        summary="Module install, desired state, reconcile, manifest, module registry, module_reconcile observer audit rows, mandatory observer SDK instrumentation, diag_logs app preset runtime-log source resolution from the current data root, Tool Output Presentation Schema/Builder v1 (`presentation_schema`, server override storage, `effective_presentation_schema`, `/api/web/tool-presentations`, path picker and live preview) pass-through/rendering, typed support timeline `tool_call_result` rows with bounded real `result_payload` unwrapped from ToolResponse `result.output` plus effective presentation schema/source for `/app/tickets` shared renderer output, Inventory Collect v1 (`inventory.collect`, `device.inventory.snapshot`, `device_inventory_snapshots`, `/api/web/admin/devices/{device_id}/inventory`, device-card slots and `/app/admin/device` readable inventory panel), agent `list_tools` preservation of registry `output_contract`/`presentation_schema` fields for capability projection, `system.collect.output_schema` nested sections for path picker/sample generation, and the diagnostic capability foundation (`execution`/`deployment`/`safety`/`readiness`/`evidence`/`artifacts`, ticket-scoped readiness with stable reason codes/actions, provider projection, execution router envelopes, server_builtin operation records, persisted provider config, web-admin provider config aliases, Capability Studio aliases under `/api/web/admin/capabilities*`, web-support diagnostics aliases under `/api/web/support/tickets/{ticket_id}/diagnostics/*`, bounded Zabbix server-connector JSON-RPC provider, real observer query capabilities, Remote Assist session capabilities, manual diagnostic evidence capabilities with audit events and non-agent provider routes, agent_recipe `run_recipe` commands that normalize RecipeRunnerBridge payloads to ToolResponse-compatible command results, ticket-bound Agent Recipe Runner runtime dependencies via `operation_dependencies` + `operations.phase`, compatible preferred runner version selection, protected runner preferred assignment through preflight/server-harness gate instead of normal Windows `run_tool` live-test gate, desired-modules/reconcile install or upgrade, idempotent resume from module lifecycle events, runner fleet rollout/canary/waves/rollback via `runner_rollout_*` tables and `/api/web/admin/capabilities/runner-rollout*` while still using desired modules + reconcile, phase-9 persistent result-to-evidence mapping through `diagnostic_session_capabilities` plus `diagnostic_artifact_links`, phase-10 capability-backed playbook steps that keep agent tools on `run_tool` while routing server/observer/remote/manual targets through the diagnostic capability router, and phase-12 capability observability with redacted runtime-audit lifecycle rows and observer root kinds for capability/server-connector/observer/manual/remote-assist runs).",
         aliases=(
             "module",
             "modules",
@@ -1475,6 +1475,10 @@ TOPICS: tuple[Topic, ...] = (
             "effective_presentation_schema",
             "tool_presentation_overrides",
             "module result renderer",
+            "inventory.collect",
+            "device.inventory.snapshot",
+            "device_inventory_snapshots",
+            "device card slots",
             "agent_recipe",
             "run_recipe",
             "agent_recipe_runner",
@@ -1516,6 +1520,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/diagnostics/readiness.py",
             "server/diagnostics/observability.py",
             "server/diagnostics/agent_recipes.py",
+            "server/inventory/service.py",
             "server/diagnostics/agent_recipes_repo.py",
             "server/diagnostics/recipe_execution_service.py",
             "server/diagnostics/runtime_dependencies.py",
@@ -1528,7 +1533,10 @@ TOPICS: tuple[Topic, ...] = (
             "pc_agent/modules_packages/agent_recipe_runner/module.py",
             "pc_agent/core/module_manager.py",
             "pc_agent/core/registry.py",
+            "pc_agent/modules/impl/inventory.py",
             "webapp/src/components/module-result/module-result-renderer.tsx",
+            "webapp/src/components/module-result/tool-result-event-card.tsx",
+            "webapp/src/features/admin/device-inventory-panel.tsx",
         ),
         related_docs=(
             "docs/QUICK_LOOKUP.md",

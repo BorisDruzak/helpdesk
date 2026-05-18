@@ -68,6 +68,7 @@ Managed ZIP packages may pass explicit `agent_managed_module` metadata through `
 Builtin evidence markings:
 
 - `system.collect` produces endpoint system snapshot evidence.
+- `inventory.collect` produces a privacy-safe endpoint inventory snapshot for device cards/passports.
 - `screen.collect` produces endpoint screenshot evidence and screenshot artifacts.
 - `screen.record` produces endpoint screen recording evidence and recording artifacts.
 - `diag.logs.collect` produces `logs.bundle` evidence from endpoint perspective, is passport-eligible and may produce `logs_zip` artifacts.
@@ -129,6 +130,24 @@ Tools may additionally declare future inventory hints in `output_contract.device
 `system.collect` declares a v1 presentation schema for identity, resource metrics and network interfaces, plus `output_contract.device_card` hints. Agent recipe primitives declare simple v1 schemas for their read-only result payloads.
 
 Server-side admin tooling may store a separate presentation override for a capability/tool. The module-declared `presentation_schema` remains the immutable module default and fallback; UI/API projections can additionally expose `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override`. Overrides do not change tool execution, `ToolResponse`, Protocol V3 envelopes or the structured result shape.
+
+## inventory.collect v1
+
+`inventory.collect` is a core built-in read-only module intended for endpoint device cards, passports and support diagnostics. It returns a normalized `device.inventory.snapshot` result with identity, platform, hardware/resource, network, optional printer/software summary, agent health and warnings.
+
+Privacy boundary:
+
+- allowed: hostname/FQDN, current endpoint user name, OS/platform, CPU/memory/disk utilization, network interface/IP/MAC data, optional printer names/status, coarse key-app summary and agent metadata;
+- forbidden: keystrokes, screenshots, window titles, browser history, URLs, document contents, clipboard contents, personal messages or file listings.
+
+The tool declares:
+
+- detailed `output_schema` paths such as `identity.hostname`, `resources.disks[].mount`, `network.interfaces[].ipv4`, `printers.items[].name` and `software.key_apps[].version`;
+- `output_contract.kind=device.inventory.snapshot`;
+- `output_contract.device_card.slots=["identity","health","platform","hardware","network","printers","software","agent"]`;
+- a default `presentation_schema` with identity field grid, resource metric cards, OS/agent and hardware grids, disks/network/printers/software tables and collapsed raw JSON fallback.
+
+Optional collectors must fail soft: unavailable DNS/printer/software details are reported in `warnings` and do not fail the whole tool.
 
 # Agent Recipe Runner
 

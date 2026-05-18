@@ -1334,6 +1334,49 @@ class AdminDeviceUpdateRunPayload(BaseModel):
     build: AdminBuildIdentity
 
 
+class AdminDeviceInventoryHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    collected_at: str
+    status: str
+    summary: str | None = None
+
+
+class AdminDeviceInventoryLatestSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    source_tool: str
+    collected_at: str
+    status: str
+    summary: str | None = None
+    result: dict[str, Any]
+    presentation_schema: dict[str, Any] = Field(default_factory=dict)
+    effective_presentation_schema: dict[str, Any] = Field(default_factory=dict)
+    presentation_schema_source: str = "none"
+    device_card_slots: list[str] = Field(default_factory=list)
+
+
+class AdminDeviceInventoryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    latest_snapshot: AdminDeviceInventoryLatestSnapshot | None = None
+    history: list[AdminDeviceInventoryHistoryItem] = Field(default_factory=list)
+
+
+class AdminDeviceInventoryCollectPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    tool_name: str
+    operation_id: str | None = None
+    status: str
+    message: str
+    poll_url: str | None = None
+
+
 class AdminDeviceIdentitySummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

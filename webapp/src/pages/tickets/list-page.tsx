@@ -55,7 +55,7 @@ import {
   type DiagnosticStatus,
 } from "../../features/diagnostics/api";
 import { DiagnosticCenterPanel } from "../../features/diagnostics/diagnostic-center-panel";
-import { ModuleResultRenderer } from "../../components/module-result/module-result-renderer";
+import { ToolResultEventCard } from "../../components/module-result/tool-result-event-card";
 import {
   createSupportTicketPassportEvidence,
   createSupportQueueSavedView,
@@ -3041,12 +3041,10 @@ export function TicketListPage() {
                                 </p>
                               ) : null}
                               {item.operation.resultPayload !== undefined && item.operation.resultPayload !== null ? (
-                                <div className="mt-3 rounded-lg border border-white/10 bg-slate-100 p-3 text-slate-950">
-                                  <ModuleResultRenderer
-                                    result={item.operation.resultPayload}
-                                    presentationSchema={item.operation.presentationSchema}
-                                  />
-                                </div>
+                                <ToolResultEventCard
+                                  result={item.operation.resultPayload}
+                                  presentationSchema={item.operation.presentationSchema}
+                                />
                               ) : null}
                               {item.operation.metaLabels.length ? (
                                 <div className="mt-3 flex flex-wrap gap-1.5">

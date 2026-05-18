@@ -24,6 +24,6 @@ def test_load_always_keeps_core_modules_enabled(tmp_path):
     _reset_config_loader_singleton()
     settings = ConfigLoader().load(config_path, create_dirs=False)
 
-    assert settings.enabled_modules == ["system", "screen", "diag_logs"]
+    assert settings.enabled_modules == ["system", "screen", "diag_logs", "inventory"]
 
     _reset_config_loader_singleton()

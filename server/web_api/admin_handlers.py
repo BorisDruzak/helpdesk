@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
+import uuid
 
 from aiohttp import web
 from loguru import logger
@@ -42,6 +43,7 @@ from modules.handlers import _get_module_preferred_assignments, _get_module_roll
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from diagnostics.capability_registry import CapabilityRegistry
+from inventory.service import DeviceInventoryService
 from playbooks.tool_catalog import normalize_capability_catalog_entry, normalize_tool_catalog_entry
 from tools.service import ToolExecutionService
 from auth.context import AuthContext
@@ -103,6 +105,10 @@ from web_api.dto.admin import (
     AdminDeviceTokensPayload,
     AdminDeviceTokensSummary,
     AdminDeviceUpdateAction,
+    AdminDeviceInventoryCollectPayload,
+    AdminDeviceInventoryHistoryItem,
+    AdminDeviceInventoryLatestSnapshot,
+    AdminDeviceInventoryPayload,
     AdminDeviceUpdateRecommendation,
     AdminDeviceUpdateRunPayload,
     AdminDeviceUpdateRunRequest,
@@ -3748,6 +3754,116 @@ async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
         kept_device_ids=kept_device_ids,
     )
     return json_model_response(SuccessResponse[AdminDeviceCleanupPayload](data=payload))
+
+
+def _inventory_history_item(row) -> AdminDeviceInventoryHistoryItem:
+    return AdminDeviceInventoryHistoryItem(
+        id=str(getattr(row, "id", "") or ""),
+        collected_at=_iso(getattr(row, "collected_at", None)) or "",
+        status=str(getattr(row, "status", "") or "ok"),
+        summary=getattr(row, "summary", None),
+    )
+
+
+async def _inventory_latest_item(service: DeviceInventoryService, row) -> AdminDeviceInventoryLatestSnapshot:
+    presentation = await service.resolve_inventory_presentation(tool_id=str(getattr(row, "source_tool", None) or "inventory.collect"))
+    return AdminDeviceInventoryLatestSnapshot(
+        id=str(getattr(row, "id", "") or ""),
+        source_tool=str(getattr(row, "source_tool", "") or "inventory.collect"),
+        collected_at=_iso(getattr(row, "collected_at", None)) or "",
+        status=str(getattr(row, "status", "") or "ok"),
+        summary=getattr(row, "summary", None),
+        result=dict(getattr(row, "snapshot", None) or {}),
+        presentation_schema=presentation["presentation_schema"],
+        effective_presentation_schema=presentation["effective_presentation_schema"],
+        presentation_schema_source=presentation["presentation_schema_source"],
+        device_card_slots=presentation["device_card_slots"],
+    )
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            latest = await service.get_latest(device_id)
+            history_rows = await service.list_history(device_id)
+            latest_payload = await _inventory_latest_item(service, latest) if latest is not None else None
+            payload = AdminDeviceInventoryPayload(
+                device_id=device_id,
+                latest_snapshot=latest_payload,
+                history=[_inventory_history_item(row) for row in history_rows],
+            )
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось загрузить инвентарь устройства",
+                "error_code": "ADMIN_DEVICE_INVENTORY_FAILED",
+            },
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory_collect(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    auth_context = request.get("auth_context")
+    operation_id = str(uuid.uuid4())
+    try:
+        tool_service = ToolExecutionService(request.app["state"])
+        result = await tool_service.run_tool(
+            device_id=device_id,
+            ticket_id="",
+            tool_name="inventory.collect",
+            params={"_operation_id": operation_id},
+            call_id=str(uuid.uuid4()),
+            auth_context=auth_context,
+            wait_for_result=False,
+        )
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory_collect] dispatch failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось отправить команду inventory.collect",
+                "error_code": "ADMIN_DEVICE_INVENTORY_COLLECT_FAILED",
+            },
+            status=503,
+        )
+
+    status = str(result.get("status") or "accepted")
+    if status not in {"accepted", "queued", "sent", "waiting_consent"}:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(result.get("error") or "Не удалось поставить inventory.collect в очередь"),
+                "error_code": str(result.get("error_code") or "ADMIN_DEVICE_INVENTORY_COLLECT_FAILED"),
+            },
+            status=503,
+        )
+    payload = AdminDeviceInventoryCollectPayload(
+        device_id=device_id,
+        tool_name="inventory.collect",
+        operation_id=str(result.get("operation_id") or operation_id),
+        status=status,
+        message="Команда inventory.collect отправлена",
+        poll_url=f"/api/operations/{result.get('operation_id') or operation_id}",
+    )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryCollectPayload](data=payload))
 
 
 def _device_token_item(row) -> AdminDeviceTokenItem:

@@ -190,7 +190,7 @@ Verification target:
 
 ## Active Work: Tool Output Presentation Builder v1
 
-Status: implemented / local verification passed.
+Status: accepted / local verification passed.
 
 Goal:
 
@@ -228,3 +228,25 @@ Verification:
 - `python -m pytest pc_agent/tests/test_tool_presentation_schema_registry.py pc_agent/tests/test_tool_contract_runtime.py::test_builtin_specs_expose_contract_fields -v --tb=short` -> 4 passed.
 - `pnpm --dir webapp test -- src/components/module-result/module-result-renderer.test.tsx src/components/module-result/schema-path-picker.test.ts src/components/module-result/presentation-builder.test.tsx src/features/diagnostics/diagnostic-center-panel.test.tsx` -> 4 files / 19 tests passed.
 - `pnpm --dir webapp build`, `python -m compileall -q server pc_agent scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check` passed.
+
+## Active Work: Inventory Collect v1 + Device Card Slots
+
+Status: in progress / local implementation.
+
+Goal:
+
+- Add practical readable tool output value by collecting a privacy-safe endpoint inventory snapshot, persisting latest/history on the server, and rendering inventory/tool results through the shared presentation renderers in the device card and ticket timeline.
+
+Scope:
+
+- Agent: new built-in `inventory.collect` core module with detailed `output_schema`, `output_contract.kind=device.inventory.snapshot`, `device_card.slots` and default `presentation_schema`.
+- Server: new `device_inventory_snapshots` persistence, command-result side effect for `inventory.collect`, latest/history projection and admin device inventory API with `effective_presentation_schema`.
+- Webapp: `DeviceInventoryPanel` in `/app/admin/device`, collect button, compact inventory header/KPIs, `ModuleResultRenderer` preview, raw JSON fallback and shared `ToolResultEventCard` for ticket timeline results including composite recipes.
+- Privacy: no screenshots, keystrokes, browser history, clipboard, document/message contents or file listings.
+
+Verification so far:
+
+- `python -m pytest pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_tool_presentation_schema_registry.py pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_config_loader_core_modules.py -v --tb=short` -> 17 passed.
+- `pnpm --dir webapp test -- src/components/module-result/module-result-renderer.test.tsx src/components/module-result/presentation-builder.test.tsx src/features/admin/device-inventory-panel.test.tsx src/components/module-result/tool-result-event-card.test.tsx` -> 4 files / 15 tests passed.
+- `pnpm --dir webapp build` passed.
+- Server `test_client` API tests currently hang in the local Windows fixture even for pre-existing `test_tool_presentation_overrides` endpoint tests; service/import/compile verification remains required before merge plus real PostgreSQL migration check.
