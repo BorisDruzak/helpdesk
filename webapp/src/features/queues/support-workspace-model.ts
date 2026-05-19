@@ -2,6 +2,7 @@ import type {
   SupportQueuePayload,
   SupportTicketClosurePlanPayload,
   SupportTicketDetailPayload,
+  SupportTicketInventoryContext,
   SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
@@ -344,6 +345,7 @@ export type SupportWorkspaceViewModel = {
   selectedTicket: SupportWorkspaceSelectedTicket | null;
   right: {
     context: SupportWorkspaceContext | null;
+    inventoryContext: SupportTicketInventoryContext | null;
     tools: SupportWorkspaceToolItem[];
     playbooks: SupportWorkspaceToolItem[];
     operations: SupportWorkspaceOperationSummary[];
@@ -361,5 +363,6 @@ export type SupportWorkspaceViewModel = {
     slaOla?: SupportTicketSlaOlaPayload;
     passportReadiness?: SupportTicketPassportReadinessPayload;
     closurePlan?: SupportTicketClosurePlanPayload;
+    inventoryContext?: SupportTicketInventoryContext | null;
   };
 };

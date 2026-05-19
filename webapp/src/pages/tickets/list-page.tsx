@@ -113,6 +113,7 @@ import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header"
 import { OperationsTable } from "./components/operations-table";
 import { QueueExplorer } from "./components/queue-explorer";
 import { TicketPreviewPanel } from "./components/ticket-preview-panel";
+import { TicketDeviceAgentPanel } from "./components/ticket-device-agent-panel";
 import { summarizeToolAvailability } from "./tool-availability";
 import {
   getInitialWorkspaceMode,
@@ -1617,6 +1618,7 @@ export function TicketListPage() {
         activeQueueId,
         activeSmartView: smartView,
         detail: workspaceQuery.data?.detail,
+        inventoryContext: workspaceQuery.data?.inventory_context,
         knowledge: workspaceQuery.data?.knowledge,
         passport: workspaceQuery.data?.passport,
         passportReadiness: workspaceQuery.data?.passport_readiness,
@@ -3231,6 +3233,11 @@ export function TicketListPage() {
             {selectedTicket && sidebarTab === "context" && viewModel.right.context ? (
               <div className="space-y-3">
                 <ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />
+
+                <TicketDeviceAgentPanel
+                  deviceContext={viewModel.right.context.device}
+                  inventoryContext={viewModel.right.inventoryContext}
+                />
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>

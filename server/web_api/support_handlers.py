@@ -83,6 +83,7 @@ from tickets.evidence_service import TicketEvidenceService
 from tickets.knowledge_provider import build_knowledge_suggestions
 from knowledge.suggestion_service import KnowledgeSuggestionService
 from knowledge.passport_draft_service import KnowledgePassportDraftService
+from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
@@ -117,6 +118,12 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketKnowledgeSuggestionsPayload,
+    SupportTicketInventoryAgentContext,
+    SupportTicketInventoryBindingContext,
+    SupportTicketInventoryContext,
+    SupportTicketInventoryRefreshContext,
+    SupportTicketInventorySignals,
+    SupportTicketInventorySnapshotContext,
     SupportTicketQualityAction,
     SupportTicketQualityFeedback,
     SupportTicketQualityPayload,
@@ -4270,6 +4277,154 @@ async def handle_web_support_workspace_summary(request: web.Request):
     return json_model_response(SuccessResponse[SupportWorkspaceSummaryPayload](data=payload))
 
 
+def _support_inventory_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def _support_inventory_age_seconds(value: datetime | None, now: datetime) -> int | None:
+    if value is None:
+        return None
+    collected_at = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return max(0, int((now - collected_at.astimezone(timezone.utc)).total_seconds()))
+
+
+def _support_inventory_freshness(latest: Any, age_seconds: int | None, stale_seconds: int = 7 * 24 * 60 * 60) -> str:
+    if latest is None:
+        return "missing"
+    if age_seconds is None:
+        return "unknown"
+    return "stale" if age_seconds > stale_seconds else "fresh"
+
+
+def _support_inventory_summary(latest: Any) -> dict[str, Any] | None:
+    if latest is None:
+        return None
+    normalized = getattr(latest, "normalized", None)
+    if isinstance(normalized, dict) and normalized:
+        return normalized
+    snapshot = getattr(latest, "snapshot", None)
+    if not isinstance(snapshot, dict):
+        return None
+    identity = snapshot.get("identity") if isinstance(snapshot.get("identity"), dict) else {}
+    platform = snapshot.get("platform") if isinstance(snapshot.get("platform"), dict) else {}
+    network = snapshot.get("network") if isinstance(snapshot.get("network"), dict) else {}
+    resources = snapshot.get("resources") if isinstance(snapshot.get("resources"), dict) else {}
+    return {
+        "hostname": identity.get("hostname"),
+        "current_user": identity.get("current_user"),
+        "os_name": platform.get("os_name"),
+        "os_version": platform.get("os_version"),
+        "primary_ip": network.get("primary_ip"),
+        "cpu_percent": resources.get("cpu_percent"),
+        "memory_percent": resources.get("memory_percent"),
+    }
+
+
+def _compose_support_inventory_context(
+    *,
+    device_id: str,
+    detail: SupportTicketDetailPayload,
+    latest: Any,
+    binding: dict[str, Any],
+    policy: Any,
+    last_refresh_run: Any,
+) -> SupportTicketInventoryContext | None:
+    if not device_id:
+        return None
+
+    now = datetime.now(timezone.utc)
+    age_seconds = _support_inventory_age_seconds(getattr(latest, "collected_at", None), now)
+    freshness = _support_inventory_freshness(latest, age_seconds)
+    failed_recent_operation = any(
+        (operation.status or "").lower() in {"failed", "error"}
+        or (operation.display_status or "").lower() in {"failed", "error"}
+        for operation in detail.snapshot.latest_operations
+    )
+    agent_offline = not bool(detail.snapshot.device.online)
+    failed_recent_refresh = str(getattr(last_refresh_run, "status", "") or "").lower() == "failed"
+
+    return SupportTicketInventoryContext(
+        device_id=device_id,
+        hostname=detail.snapshot.device.hostname,
+        display_name=detail.snapshot.device.hostname or device_id,
+        agent=SupportTicketInventoryAgentContext(
+            connection_state="offline" if agent_offline else "online",
+            last_seen_at=detail.snapshot.device.last_seen_at,
+            version=detail.snapshot.device.agent_version,
+            update_status=None,
+            update_available=None,
+        ),
+        inventory=SupportTicketInventorySnapshotContext(
+            latest_snapshot_id=str(getattr(latest, "id", "") or "") or None,
+            collected_at=_support_inventory_iso(getattr(latest, "collected_at", None)),
+            age_seconds=age_seconds,
+            freshness=freshness,
+            source=getattr(latest, "source_tool", None),
+            summary=_support_inventory_summary(latest),
+        ),
+        binding=SupportTicketInventoryBindingContext(
+            responsible_person=binding.get("responsible_user"),
+            department=binding.get("department"),
+            building=binding.get("building"),
+            room=binding.get("room"),
+            status=binding.get("status"),
+            tags=list(binding.get("tags") or []),
+        ),
+        refresh=SupportTicketInventoryRefreshContext(
+            policy_enabled=bool(getattr(policy, "enabled", False)) if policy is not None else None,
+            last_run_id=str(getattr(last_refresh_run, "id", "") or "") or None,
+            last_run_status=getattr(last_refresh_run, "status", None),
+            last_run_at=_support_inventory_iso(getattr(last_refresh_run, "requested_at", None)),
+            next_due_at=_support_inventory_iso(getattr(policy, "next_due_at", None)),
+            can_request_refresh=False,
+        ),
+        signals=SupportTicketInventorySignals(
+            stale_inventory=freshness == "stale",
+            missing_inventory=freshness == "missing",
+            agent_offline=agent_offline,
+            failed_recent_refresh=failed_recent_refresh,
+            failed_recent_operation=failed_recent_operation,
+        ),
+    )
+
+
+async def _build_support_inventory_context(
+    session: Any,
+    ticket: Ticket,
+    detail: SupportTicketDetailPayload,
+) -> SupportTicketInventoryContext | None:
+    device_id = str(getattr(ticket, "device_id", "") or detail.snapshot.device.device_id or "").strip()
+    if not device_id:
+        return None
+
+    inventory_service = DeviceInventoryService(session)
+    try:
+        latest = await inventory_service.get_latest(device_id)
+        binding_row = await inventory_service.get_binding(device_id)
+        policy = await inventory_service.get_effective_refresh_policy(device_id)
+        refresh_runs = await inventory_service.list_refresh_runs(device_id=device_id, limit=1)
+    except Exception as exc:
+        logger.warning(f"[support_inventory_context] inventory lookup failed: device_id={device_id}, error={exc}")
+        latest = None
+        binding_row = None
+        policy = None
+        refresh_runs = []
+    last_refresh_run = refresh_runs[0] if refresh_runs else None
+    return _compose_support_inventory_context(
+        device_id=device_id,
+        detail=detail,
+        latest=latest,
+        binding=binding_to_dict(binding_row) if binding_row is not None else {},
+        policy=policy,
+        last_refresh_run=last_refresh_run,
+    )
+
+
 @require_auth("admin", "support")
 async def handle_web_support_ticket_detail(request: web.Request):
     try:
@@ -4313,6 +4468,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
             sla_ola = _build_support_sla_ola_payload(ticket)
             passport_readiness = _build_support_passport_readiness_payload(ticket.ticket_id, passport)
             closure_plan = _build_support_closure_plan_payload(ticket.ticket_id, detail)
+            inventory_context = await _build_support_inventory_context(session, ticket, detail)
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_workspace] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
@@ -4335,6 +4491,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
         sla_ola=sla_ola,
         passport_readiness=passport_readiness,
         closure_plan=closure_plan,
+        inventory_context=inventory_context,
     )
     return json_model_response(SuccessResponse[SupportTicketWorkspacePayload](data=payload))
 

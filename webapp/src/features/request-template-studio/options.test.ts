@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildCatalogSimulationContext,
   buildGuidedSimulationPayload,
+  buildStudioSimulationPayload,
   defaultGuidedSimulationDraft,
   offeringOptions,
   policyOptions,
@@ -92,5 +94,107 @@ describe("request template studio options", () => {
     expect(payload.device_metadata).toMatchObject({ device_id: "device-1" });
     expect(payload.custom_fields).toMatchObject({ service_code: "mail", offering_code: "mail.new_box" });
     expect(payload.request_form_data).toMatchObject({ summary: "Нужен почтовый ящик", expected_priority: "P2" });
+  });
+  it("builds the exact Studio simulation body with top-level catalog context", () => {
+    const service = {
+      code: "it-support",
+      public_title: "ИТ поддержка",
+      lifecycle_status: "published" as const,
+      visibility: "public" as const,
+    };
+    const offering = {
+      code: "password-reset",
+      full_code: "it-support.password-reset",
+      public_title: "Сброс пароля",
+      service_code: "it-support",
+      lifecycle_status: "published" as const,
+      visibility: "public" as const,
+      request_template_key: "password_reset_request",
+    };
+
+    const payload = buildStudioSimulationPayload({
+      selectedTemplateCode: "password_reset_request",
+      selectedService: service,
+      selectedOffering: offering,
+      simulationDraft: {
+        ...defaultGuidedSimulationDraft,
+        requester: "ivanov",
+        device: "device-1",
+        answerSummary: "Не могу войти",
+        expectedPriority: "P2",
+      },
+    });
+
+    expect(payload).toMatchObject({
+      template_code: "password_reset_request",
+      service_code: "it-support",
+      offering_code: "password-reset",
+      offering_full_code: "it-support.password-reset",
+      request_form_data: {
+        summary: "Не могу войти",
+        expected_priority: "P2",
+      },
+      requester_context: {
+        requester_id: "ivanov",
+      },
+      device_metadata: {
+        device_id: "device-1",
+      },
+    });
+    expect(payload.custom_fields).toMatchObject({
+      service_code: "it-support",
+      offering_code: "password-reset",
+    });
+  });
+
+  it("does not leak an offering from another service into Studio simulation body", () => {
+    const payload = buildStudioSimulationPayload({
+      selectedTemplateCode: "mailbox_request",
+      selectedService: {
+        code: "mail",
+        public_title: "Почта",
+        lifecycle_status: "published" as const,
+        visibility: "public" as const,
+      },
+      selectedOffering: {
+        code: "password-reset",
+        full_code: "it-support.password-reset",
+        public_title: "Сброс пароля",
+        service_code: "it-support",
+        lifecycle_status: "published" as const,
+        visibility: "public" as const,
+        request_template_key: "password_reset_request",
+      },
+      simulationDraft: {
+        ...defaultGuidedSimulationDraft,
+        serviceCode: "mail",
+        offeringCode: "it-support.password-reset",
+      },
+    });
+
+    expect(payload.service_code).toBe("mail");
+    expect(payload.offering_code).toBeNull();
+    expect(payload.offering_full_code).toBeNull();
+    expect(payload.custom_fields?.offering_code).toBeUndefined();
+  });
+
+  it("builds catalog simulation context with full offering code priority", () => {
+    expect(
+      buildCatalogSimulationContext(
+        { code: "it-support", public_title: "ИТ", lifecycle_status: "published" as const, visibility: "public" as const },
+        {
+          code: "password-reset",
+          full_code: "it-support.password-reset",
+          public_title: "Сброс пароля",
+          service_code: "it-support",
+          lifecycle_status: "published" as const,
+          visibility: "public" as const,
+        },
+      ),
+    ).toEqual({
+      service_code: "it-support",
+      offering_code: "password-reset",
+      offering_full_code: "it-support.password-reset",
+    });
   });
 });

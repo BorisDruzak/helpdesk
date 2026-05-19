@@ -7,6 +7,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { fetchHelpdeskModelRegistry } from "../forms-builder/api";
 import {
+  buildCatalogSimulationContext,
   buildGuidedSimulationPayload,
   defaultGuidedSimulationDraft,
   policyOptions,
@@ -134,9 +135,7 @@ function ServiceDetails({
         offeringCode: selectedOffering?.code ?? simulationDraft.offeringCode,
       });
       return simulateServiceCatalog({
-        service_code: service?.code,
-        offering_code: selectedOffering?.code,
-        offering_full_code: selectedOffering?.full_code,
+        ...buildCatalogSimulationContext(service, selectedOffering),
         ...guidedPayload,
       });
     },

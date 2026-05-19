@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { fetchHelpdeskModelRegistry } from "../../features/forms-builder/api";
 import { fetchPolicyHealthDashboard, simulatePolicyHealth } from "../../features/policy-health/api";
 import {
-  buildGuidedSimulationPayload,
+  buildStudioSimulationPayload,
   defaultGuidedSimulationDraft,
   offeringOptions,
   policyOptions,
@@ -55,14 +55,19 @@ export function AdminRequestTemplateStudioPage() {
   const selectedOfferingCode = searchParams.get("offering") ?? "";
   const selectedTemplateCode = searchParams.get("template") ?? templates[0]?.value ?? "";
   const selectedService = services.find((service) => service.code === selectedServiceCode) ?? services[0] ?? null;
-  const selectedOffering =
-    offerings.find((offering) => (offering.full_code || offering.code) === selectedOfferingCode) ??
-    offerings.find((offering) => offering.service_code === selectedService?.code) ??
-    null;
+  const selectedOfferingCandidate =
+    offerings.find((offering) => offering.full_code === selectedOfferingCode || offering.code === selectedOfferingCode) ?? null;
+  const selectedOffering = selectedOfferingCandidate?.service_code === selectedService?.code ? selectedOfferingCandidate : null;
   const selectedTemplate = registryQuery.data?.request_templates.find((template) => template.template_code === selectedTemplateCode) ?? null;
   const selectedHealth = healthQuery.data?.templates.find((template) => template.template_code === selectedTemplateCode) ?? null;
   const servicePickerOptions = serviceOptions(services);
   const offeringPickerOptions = offeringOptions(offerings, selectedService?.code);
+  const studioSimulationPayload = buildStudioSimulationPayload({
+    selectedTemplateCode,
+    selectedService,
+    selectedOffering,
+    simulationDraft,
+  });
 
   const selectedPolicies = useMemo(
     () => [
@@ -85,14 +90,7 @@ export function AdminRequestTemplateStudioPage() {
       if (!selectedTemplateCode) {
         throw new Error("Шаблон обращения не выбран");
       }
-      return simulatePolicyHealth({
-        template_code: selectedTemplateCode,
-        ...buildGuidedSimulationPayload({
-          ...simulationDraft,
-          serviceCode: selectedService?.code ?? "",
-          offeringCode: selectedOffering?.code ?? "",
-        }),
-      });
+      return simulatePolicyHealth(studioSimulationPayload);
     },
   });
 
@@ -150,7 +148,7 @@ export function AdminRequestTemplateStudioPage() {
               </label>
               <label className="text-sm font-medium text-slate-700">
                 Вариант услуги
-                <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={selectedOffering?.full_code ?? ""} onChange={(event) => setParam("offering", event.currentTarget.value)}>
+                <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={selectedOffering?.full_code ?? selectedOffering?.code ?? ""} onChange={(event) => setParam("offering", event.currentTarget.value)}>
                   <option value="">Не выбран</option>
                   {offeringPickerOptions.map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
@@ -216,7 +214,7 @@ export function AdminRequestTemplateStudioPage() {
             <details className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
               <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON</summary>
               <pre className="mt-3 max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
-                {JSON.stringify(buildGuidedSimulationPayload(simulationDraft), null, 2)}
+                {JSON.stringify(studioSimulationPayload, null, 2)}
               </pre>
             </details>
             {simulationMutation.data || simulationMutation.isError ? (

@@ -1349,7 +1349,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, typed support queue rows expose priority/assignee display data plus authoritative queue counts for the SaaS workspace, typed support workspace snapshots expose requester phone/email/source and location floor from registry records, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, typed support queue rows expose priority/assignee display data plus authoritative queue counts for the SaaS workspace, typed support workspace snapshots expose requester phone/email/source and location floor from registry records plus selected-ticket compact `inventory_context` for device/agent/inventory/binding/refresh signals, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps and safe env_uuid duplicate cleanup archives old test devices with their tokens.",
         aliases=(
             "registry",
             "registries",
@@ -1391,10 +1391,12 @@ TOPICS: tuple[Topic, ...] = (
             "server/websocket/agent_handshake.py",
             "server/tickets/create_flow.py",
             "server/web_api/support_handlers.py",
+            "server/web_api/dto/support.py",
             "pc_agent/ui_gui/chat_panel.py",
             "pc_agent/ui_gui/server_api.py",
             "webapp/src/pages/admin/registry-page.tsx",
             "webapp/src/pages/admin/inventory-page.tsx",
+            "webapp/src/pages/tickets/components/ticket-device-agent-panel.tsx",
             "webapp/src/features/admin/api.ts",
         ),
         related_docs=(

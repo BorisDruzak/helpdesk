@@ -1,4 +1,5 @@
 import type { AdminHelpdeskModelPayload } from "../forms-builder/api";
+import type { PolicySimulationPayload } from "../policy-health/api";
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
 
 export type PickerOption = {
@@ -140,5 +141,45 @@ export function buildGuidedSimulationPayload(draft: GuidedSimulationDraft): {
       requester_id: draft.requester || undefined,
       location: draft.location || undefined,
     },
+  };
+}
+
+export function buildCatalogSimulationContext(
+  service: AdminServiceCatalogService | null | undefined,
+  offering: AdminServiceCatalogOffering | null | undefined,
+): Pick<PolicySimulationPayload, "service_code" | "offering_code" | "offering_full_code"> {
+  const serviceCode = service?.code?.trim() || null;
+  const offeringBelongsToService = Boolean(serviceCode && offering?.service_code === serviceCode);
+  const effectiveOffering = offeringBelongsToService ? offering : null;
+  const offeringCode = effectiveOffering?.code?.trim() || null;
+  return {
+    service_code: serviceCode,
+    offering_code: offeringCode,
+    offering_full_code: effectiveOffering?.full_code?.trim() || offeringCode,
+  };
+}
+
+export function buildStudioSimulationPayload({
+  selectedTemplateCode,
+  selectedService,
+  selectedOffering,
+  simulationDraft,
+}: {
+  selectedTemplateCode: string;
+  selectedService: AdminServiceCatalogService | null | undefined;
+  selectedOffering: AdminServiceCatalogOffering | null | undefined;
+  simulationDraft: GuidedSimulationDraft;
+}): PolicySimulationPayload {
+  const catalogContext = buildCatalogSimulationContext(selectedService, selectedOffering);
+  // Keep catalog codes in custom_fields only for legacy previews; Policy Health uses the top-level fields as canonical context.
+  const guidedPayload = buildGuidedSimulationPayload({
+    ...simulationDraft,
+    serviceCode: catalogContext.service_code ?? "",
+    offeringCode: catalogContext.offering_code ?? "",
+  });
+  return {
+    ...guidedPayload,
+    template_code: selectedTemplateCode,
+    ...catalogContext,
   };
 }

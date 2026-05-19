@@ -30,7 +30,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
-Status: in progress.
+Status: accepted / production-oriented cut in progress.
 
 Goal:
 
@@ -62,6 +62,8 @@ Verification target:
 Handoff notes:
 
 - If the whole P0 scope cannot land in one pass, do not leave `/app/tickets` with clipping or duplicated offline reasons. P0.0 and P0.3 take priority over broad visual polish.
+- Current production cut fixes Request Template Studio simulation to send catalog context as top-level `service_code` / `offering_code` / `offering_full_code` and adds selected-ticket compact device/agent/inventory context in `/app/tickets` without adding inventory fanout to queue rows.
+- Verification for this cut: focused webapp tests for Studio payload/API and `TicketDeviceAgentPanel`, `pnpm --dir webapp build`, `server/tests/test_support_inventory_context.py`, and Python compile checks. A DB-backed support workspace route test hung on local Windows and is left for Linux/CI or remote DB verification.
 
 ## Latest Accepted Work: P5 Change Enablement
 
