@@ -12,7 +12,11 @@ from datetime import datetime, timezone
 import getpass
 import os
 import platform
+from pathlib import Path
+import re
+import shutil
 import socket
+import subprocess
 from typing import Any
 
 import psutil
@@ -20,7 +24,13 @@ import psutil
 from pc_agent.core.database import PROTOCOL_VERSION
 from pc_agent.core.registry import exposed_tool
 from pc_agent.modules.base_module import BaseCollector
+from pc_agent.modules.impl.inventory_profiles import detect_key_apps
 from pc_agent.version import AGENT_VERSION
+from shared.builtin_tool_descriptors import (
+    INVENTORY_COLLECT_OUTPUT_CONTRACT as SHARED_INVENTORY_COLLECT_OUTPUT_CONTRACT,
+    INVENTORY_COLLECT_OUTPUT_SCHEMA as SHARED_INVENTORY_COLLECT_OUTPUT_SCHEMA,
+    INVENTORY_COLLECT_PRESENTATION_SCHEMA as SHARED_INVENTORY_COLLECT_PRESENTATION_SCHEMA,
+)
 
 
 INVENTORY_COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -284,6 +294,11 @@ INVENTORY_COLLECT_PRESENTATION_SCHEMA: dict[str, Any] = {
 }
 
 
+INVENTORY_COLLECT_OUTPUT_SCHEMA = SHARED_INVENTORY_COLLECT_OUTPUT_SCHEMA
+INVENTORY_COLLECT_OUTPUT_CONTRACT = SHARED_INVENTORY_COLLECT_OUTPUT_CONTRACT
+INVENTORY_COLLECT_PRESENTATION_SCHEMA = SHARED_INVENTORY_COLLECT_PRESENTATION_SCHEMA
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -441,15 +456,166 @@ class InventoryCollector(BaseCollector):
             )
         return interfaces, primary_mac
 
-    def _collect_printers(self, warnings: list[str]) -> dict[str, Any]:
-        if platform.system().lower() != "windows":
-            self._warn(warnings, "printer collection is not implemented for this OS")
-            return {"default_printer": "", "items": []}
+    def _clean_hardware_value(self, value: str | None) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            return ""
+        lowered = cleaned.lower()
+        if lowered in {"none", "unknown", "not specified", "to be filled by o.e.m.", "default string"}:
+            return ""
+        return cleaned
+
+    def _read_text_file(self, path: str) -> str:
+        try:
+            return Path(path).read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            return ""
+
+    def _run_fixed_command(self, args: list[str], *, timeout: float = 2.0) -> str:
+        if not args:
+            return ""
+        executable = args[0]
+        if not any(sep in executable for sep in ("/", "\\")):
+            resolved = shutil.which(executable)
+            if not resolved:
+                return ""
+            args = [resolved, *args[1:]]
+        try:
+            completed = subprocess.run(
+                args,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except Exception:
+            return ""
+        return (completed.stdout or completed.stderr or "").strip()
+
+    def _collect_hardware_identifiers(self, warnings: list[str]) -> dict[str, Any]:
+        result = {
+            "serial_number": "",
+            "manufacturer": "",
+            "model": "",
+            "bios_version": "",
+            "asset_tag": "",
+        }
+        os_name = platform.system().lower()
+        if os_name == "linux":
+            dmi_paths = {
+                "serial_number": "/sys/class/dmi/id/product_serial",
+                "manufacturer": "/sys/class/dmi/id/sys_vendor",
+                "model": "/sys/class/dmi/id/product_name",
+                "bios_version": "/sys/class/dmi/id/bios_version",
+                "asset_tag": "/sys/class/dmi/id/chassis_asset_tag",
+            }
+            for key, path in dmi_paths.items():
+                result[key] = self._clean_hardware_value(self._read_text_file(path))
+            if not any(result.values()):
+                self._warn(warnings, "hardware identifiers are unavailable on this Linux host")
+            return result
+
+        if os_name == "windows":
+            commands = {
+                "serial_number": ["wmic", "bios", "get", "serialnumber", "/value"],
+                "manufacturer": ["wmic", "computersystem", "get", "manufacturer", "/value"],
+                "model": ["wmic", "computersystem", "get", "model", "/value"],
+                "bios_version": ["wmic", "bios", "get", "smbiosbiosversion", "/value"],
+                "asset_tag": ["wmic", "systemenclosure", "get", "smbiosassettag", "/value"],
+            }
+            for key, args in commands.items():
+                output = self._run_fixed_command(args)
+                match = re.search(r"=(.+)", output)
+                value = match.group(1) if match else output.splitlines()[-1] if output.splitlines() else ""
+                result[key] = self._clean_hardware_value(value)
+            if not any(result.values()):
+                self._warn(warnings, "hardware identifiers are unavailable on this Windows host")
+            return result
+
+        self._warn(warnings, "hardware identifier collection is not implemented for this OS")
+        return result
+
+    def _empty_printers(self, warning: str | None = None) -> dict[str, Any]:
+        warnings = [warning] if warning else []
+        return {"default_printer": "", "items": [], "warnings": warnings}
+
+    def _collect_linux_printers(self, warnings: list[str]) -> dict[str, Any]:
+        if not shutil.which("lpstat"):
+            message = "CUPS lpstat is unavailable; printer inventory is partial"
+            self._warn(warnings, message)
+            return self._empty_printers(message)
+
+        default_printer = ""
+        default_output = self._run_fixed_command(["lpstat", "-d"])
+        if ":" in default_output and "no system default" not in default_output.lower():
+            default_printer = default_output.split(":", 1)[1].strip()
+
+        uris: dict[str, str] = {}
+        for line in self._run_fixed_command(["lpstat", "-v"]).splitlines():
+            if line.startswith("device for ") and ":" in line:
+                left, uri = line.split(":", 1)
+                name = left.replace("device for ", "", 1).strip()
+                uris[name] = uri.strip()
+
+        status_by_name: dict[str, str] = {}
+        for line in self._run_fixed_command(["lpstat", "-p"]).splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[0] == "printer":
+                name = parts[1]
+                lowered = line.lower()
+                if "disabled" in lowered or "stopped" in lowered:
+                    status = "stopped"
+                elif "printing" in lowered:
+                    status = "printing"
+                elif "idle" in lowered or "enabled" in lowered:
+                    status = "idle"
+                else:
+                    status = "unknown"
+                status_by_name[name] = status
+
+        names = sorted(set(uris) | set(status_by_name) | ({default_printer} if default_printer else set()))
+        items = []
+        for name in names:
+            uri = uris.get(name, "")
+            is_network = uri.startswith(("ipp://", "ipps://", "http://", "https://", "socket://", "lpd://", "smb://"))
+            items.append(
+                {
+                    "name": name,
+                    "is_default": name == default_printer,
+                    "status": status_by_name.get(name, "unknown"),
+                    "driver": "",
+                    "uri": uri,
+                    "location": "",
+                    "is_network": is_network,
+                    "is_shared": False,
+                    "queue_length": 0,
+                    "last_error": None,
+                }
+            )
+        return {"default_printer": default_printer, "items": items, "warnings": []}
+
+    def _windows_printer_status(self, status_code: Any) -> str:
+        try:
+            code = int(status_code or 0)
+        except Exception:
+            return "unknown"
+        if code == 0:
+            return "idle"
+        if code & 0x00000400:
+            return "printing"
+        if code & 0x00000080 or code & 0x00000200:
+            return "stopped"
+        return "unknown"
+
+    def _collect_windows_printers(self, warnings: list[str]) -> dict[str, Any]:
         try:
             import win32print  # type: ignore[import-not-found]
         except Exception as exc:
-            self._warn(warnings, "printer collection requires Windows print APIs", exc)
-            return {"default_printer": "", "items": []}
+            message = f"printer collection requires Windows print APIs: {exc}"
+            self._warn(warnings, message)
+            return self._empty_printers(message)
 
         try:
             default_printer = win32print.GetDefaultPrinter() or ""
@@ -457,16 +623,42 @@ class InventoryCollector(BaseCollector):
             default_printer = ""
         items: list[dict[str, Any]] = []
         try:
-            for printer in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS):
-                name = str(printer[2] or "")
-                items.append({"name": name, "is_default": name == default_printer, "status": ""})
+            flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            for printer in win32print.EnumPrinters(flags, None, 2):
+                data = printer if isinstance(printer, dict) else {}
+                name = str(data.get("pPrinterName") or (printer[2] if len(printer) > 2 else "") or "")
+                attrs = int(data.get("Attributes") or 0)
+                status = data.get("Status")
+                items.append(
+                    {
+                        "name": name,
+                        "is_default": name == default_printer,
+                        "status": self._windows_printer_status(status),
+                        "driver": str(data.get("pDriverName") or ""),
+                        "uri": str(data.get("pPortName") or ""),
+                        "location": str(data.get("pLocation") or ""),
+                        "is_network": bool(attrs & getattr(win32print, "PRINTER_ATTRIBUTE_NETWORK", 0x10)),
+                        "is_shared": bool(attrs & getattr(win32print, "PRINTER_ATTRIBUTE_SHARED", 0x8)),
+                        "queue_length": int(data.get("cJobs") or 0),
+                        "last_error": None,
+                    }
+                )
         except Exception as exc:
             self._warn(warnings, "printer list is unavailable", exc)
-        return {"default_printer": default_printer, "items": items}
+        return {"default_printer": default_printer, "items": items, "warnings": []}
+
+    def _collect_printers(self, warnings: list[str]) -> dict[str, Any]:
+        os_name = platform.system().lower()
+        if os_name == "linux":
+            return self._collect_linux_printers(warnings)
+        if os_name == "windows":
+            return self._collect_windows_printers(warnings)
+        message = "printer collection is not implemented for this OS"
+        self._warn(warnings, message)
+        return self._empty_printers(message)
 
     def _collect_software(self, warnings: list[str]) -> dict[str, Any]:
-        self._warn(warnings, "key application detection is not implemented in inventory.collect v1")
-        return {"key_apps": []}
+        return detect_key_apps(warnings, os_name=platform.system())
 
     @exposed_tool(
         name="collect",
@@ -511,6 +703,7 @@ class InventoryCollector(BaseCollector):
                     "memory_total_bytes": int(memory.total) if memory is not None else 0,
                     "memory_available_bytes": int(memory.available) if memory is not None else 0,
                     "memory_percent": float(memory.percent) if memory is not None else 0.0,
+                    **self._collect_hardware_identifiers(warnings),
                 },
                 "resources": {
                     "cpu_percent": cpu_percent,

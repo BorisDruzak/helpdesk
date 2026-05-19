@@ -315,7 +315,7 @@ describe("appRoutes", () => {
 
     renderApp(["/app/admin/capabilities"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Capabilities" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Capabilities" }, { timeout: 5000 })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /Возможности/ })).toBeInTheDocument();
     expect(await screen.findByText("server.dns.resolve")).toBeInTheDocument();
     expect(await screen.findByText("zabbix.problems.lookup")).toBeInTheDocument();

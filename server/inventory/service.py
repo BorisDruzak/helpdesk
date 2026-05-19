@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from typing import Any
@@ -9,12 +9,23 @@ import uuid
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceInventorySnapshot
+from app.db.models import DeviceInventoryBinding, DeviceInventoryRefreshPolicy, DeviceInventorySnapshot
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.presentation_overrides import ToolPresentationOverrideService
+from shared.builtin_tool_descriptors import INVENTORY_COLLECT_TOOL_ID, get_builtin_tool_descriptor
 
 
-INVENTORY_TOOL_ID = "inventory.collect"
+INVENTORY_TOOL_ID = INVENTORY_COLLECT_TOOL_ID
+_BINDING_LIMITS = {
+    "building": 120,
+    "floor": 64,
+    "room": 120,
+    "department": 160,
+    "responsible_user": 160,
+    "responsible_user_login": 160,
+    "inventory_number": 120,
+    "notes": 2000,
+}
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -41,6 +52,27 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _clean_binding_text(value: Any, *, max_length: int) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > max_length:
+        raise ValueError(f"value exceeds {max_length} characters")
+    lowered = cleaned.lower()
+    if any(marker in lowered for marker in ("<script", "javascript:", "dangerouslysetinnerhtml", "__html")):
+        raise ValueError("HTML/script content is not allowed")
+    return cleaned
+
+
+def normalize_binding_payload(payload: dict[str, Any]) -> dict[str, str | None]:
+    result: dict[str, str | None] = {}
+    for key, limit in _BINDING_LIMITS.items():
+        result[key] = _clean_binding_text(payload.get(key), max_length=limit)
+    return result
+
+
 def extract_tool_result_payload(payload: Any) -> dict[str, Any] | None:
     """Return the structured inventory result from a command_result payload."""
     if not isinstance(payload, dict):
@@ -57,18 +89,11 @@ def extract_tool_result_payload(payload: Any) -> dict[str, Any] | None:
 
 
 def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
-    if tool_id != INVENTORY_TOOL_ID:
-        return None
-    try:
-        from pc_agent.modules.impl.inventory import (
-            INVENTORY_COLLECT_OUTPUT_CONTRACT,
-            INVENTORY_COLLECT_OUTPUT_SCHEMA,
-            INVENTORY_COLLECT_PRESENTATION_SCHEMA,
-        )
-    except Exception:
+    descriptor = get_builtin_tool_descriptor(tool_id)
+    if descriptor is None:
         return None
     return CapabilityDescriptor(
-        id=INVENTORY_TOOL_ID,
+        id=str(descriptor.get("id") or tool_id),
         title="Inventory collect",
         description="Privacy-safe endpoint inventory snapshot",
         provider_id="inventory",
@@ -81,9 +106,9 @@ def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
         requires_agent_online=True,
         platforms=["win32", "linux"],
         params_schema={"type": "object", "additionalProperties": False, "properties": {}},
-        output_schema=dict(INVENTORY_COLLECT_OUTPUT_SCHEMA),
-        output_contract=dict(INVENTORY_COLLECT_OUTPUT_CONTRACT),
-        presentation_schema=dict(INVENTORY_COLLECT_PRESENTATION_SCHEMA),
+        output_schema=_safe_dict(descriptor.get("output_schema")),
+        output_contract=_safe_dict(descriptor.get("output_contract")),
+        presentation_schema=_safe_dict(descriptor.get("presentation_schema")),
         source="agent_builtin",
     )
 
@@ -168,6 +193,116 @@ class DeviceInventoryService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_binding(self, device_id: str) -> DeviceInventoryBinding | None:
+        result = await self.session.execute(
+            select(DeviceInventoryBinding).where(DeviceInventoryBinding.device_id == str(device_id)).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert_binding(
+        self,
+        device_id: str,
+        payload: dict[str, Any],
+        *,
+        updated_by: str | None = None,
+    ) -> DeviceInventoryBinding:
+        normalized = normalize_binding_payload(payload)
+        row = await self.get_binding(device_id)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = DeviceInventoryBinding(device_id=str(device_id), updated_at=now)
+            self.session.add(row)
+        for key, value in normalized.items():
+            setattr(row, key, value)
+        row.updated_by = updated_by
+        row.updated_at = now
+        await self.session.flush()
+        return row
+
+    async def get_refresh_policy(
+        self,
+        *,
+        scope: str = "global",
+        device_id: str | None = None,
+    ) -> DeviceInventoryRefreshPolicy | None:
+        scope = str(scope or "global").strip().lower() or "global"
+        stmt = select(DeviceInventoryRefreshPolicy).where(DeviceInventoryRefreshPolicy.scope == scope)
+        if scope == "device":
+            stmt = stmt.where(DeviceInventoryRefreshPolicy.device_id == str(device_id or ""))
+        else:
+            stmt = stmt.where(DeviceInventoryRefreshPolicy.device_id.is_(None))
+        result = await self.session.execute(stmt.limit(1))
+        return result.scalar_one_or_none()
+
+    async def get_effective_refresh_policy(self, device_id: str) -> DeviceInventoryRefreshPolicy | None:
+        device_policy = await self.get_refresh_policy(scope="device", device_id=device_id)
+        if device_policy is not None:
+            return device_policy
+        return await self.get_refresh_policy(scope="global")
+
+    async def upsert_refresh_policy(
+        self,
+        *,
+        scope: str = "global",
+        device_id: str | None = None,
+        enabled: bool = False,
+        interval_minutes: int = 1440,
+        jitter_minutes: int = 30,
+        updated_by: str | None = None,
+    ) -> DeviceInventoryRefreshPolicy:
+        scope = str(scope or "global").strip().lower() or "global"
+        if scope not in {"global", "device"}:
+            raise ValueError("scope must be global or device")
+        if scope == "device" and not str(device_id or "").strip():
+            raise ValueError("device_id is required for device scope")
+        interval_minutes = max(15, min(int(interval_minutes or 1440), 60 * 24 * 30))
+        jitter_minutes = max(0, min(int(jitter_minutes or 0), interval_minutes))
+        row = await self.get_refresh_policy(scope=scope, device_id=device_id)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = DeviceInventoryRefreshPolicy(
+                id=str(uuid.uuid4()),
+                scope=scope,
+                device_id=str(device_id) if scope == "device" else None,
+            )
+            self.session.add(row)
+        row.enabled = bool(enabled)
+        row.interval_minutes = interval_minutes
+        row.jitter_minutes = jitter_minutes
+        row.updated_by = updated_by
+        row.updated_at = now
+        if row.next_due_at is None:
+            row.next_due_at = now + timedelta(minutes=interval_minutes)
+        await self.session.flush()
+        return row
+
+    async def list_due_refresh_policies(self, *, now: datetime | None = None, limit: int = 100) -> list[DeviceInventoryRefreshPolicy]:
+        now = now or datetime.now(timezone.utc)
+        result = await self.session.execute(
+            select(DeviceInventoryRefreshPolicy)
+            .where(DeviceInventoryRefreshPolicy.enabled.is_(True))
+            .where(
+                (DeviceInventoryRefreshPolicy.next_due_at.is_(None))
+                | (DeviceInventoryRefreshPolicy.next_due_at <= now)
+            )
+            .order_by(DeviceInventoryRefreshPolicy.next_due_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def mark_refresh_requested(
+        self,
+        policy: DeviceInventoryRefreshPolicy,
+        *,
+        requested_at: datetime | None = None,
+    ) -> DeviceInventoryRefreshPolicy:
+        requested_at = requested_at or datetime.now(timezone.utc)
+        policy.last_requested_at = requested_at
+        policy.next_due_at = requested_at + timedelta(minutes=max(15, int(policy.interval_minutes or 1440)))
+        policy.updated_at = requested_at
+        await self.session.flush()
+        return policy
 
     async def resolve_inventory_presentation(self, *, tool_id: str = INVENTORY_TOOL_ID) -> dict[str, Any]:
         presentation_service = ToolPresentationOverrideService(self.session)

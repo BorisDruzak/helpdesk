@@ -2712,6 +2712,55 @@ class DeviceInventorySnapshot(Base):
     )
 
 
+class DeviceInventoryBinding(Base):
+    """Lightweight workplace binding metadata for an endpoint inventory card."""
+    __tablename__ = "device_inventory_bindings"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    building: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    floor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    room: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    responsible_user: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    responsible_user_login: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    inventory_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class DeviceInventoryRefreshPolicy(Base):
+    """Periodic inventory.collect refresh policy."""
+    __tablename__ = "device_inventory_refresh_policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="global")
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=1440)
+    jitter_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    last_requested_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    next_due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_refresh_policies_scope", "scope"),
+        Index("ix_device_inventory_refresh_policies_device", "device_id"),
+        Index("ix_device_inventory_refresh_policies_enabled_due", "enabled", "next_due_at"),
+    )
+
+
 class DeviceOutbox(Base):
     """
     Device outbox model for Protocol V3.

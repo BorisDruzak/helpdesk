@@ -229,9 +229,9 @@ Verification:
 - `pnpm --dir webapp test -- src/components/module-result/module-result-renderer.test.tsx src/components/module-result/schema-path-picker.test.ts src/components/module-result/presentation-builder.test.tsx src/features/diagnostics/diagnostic-center-panel.test.tsx` -> 4 files / 19 tests passed.
 - `pnpm --dir webapp build`, `python -m compileall -q server pc_agent scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check` passed.
 
-## Active Work: Inventory Collect v1 + Device Card Slots
+## Completed Work: Inventory Collect v1 + Device Card Slots
 
-Status: in progress / local implementation.
+Status: accepted on branch `codex/inventory-collect-v1`, latest commit `d0a5dec`.
 
 Goal:
 
@@ -249,4 +249,31 @@ Verification so far:
 - `python -m pytest pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_tool_presentation_schema_registry.py pc_agent/tests/test_registry_and_module_loading.py pc_agent/tests/test_config_loader_core_modules.py -v --tb=short` -> 17 passed.
 - `pnpm --dir webapp test -- src/components/module-result/module-result-renderer.test.tsx src/components/module-result/presentation-builder.test.tsx src/features/admin/device-inventory-panel.test.tsx src/components/module-result/tool-result-event-card.test.tsx` -> 4 files / 15 tests passed.
 - `pnpm --dir webapp build` passed.
-- Server `test_client` API tests currently hang in the local Windows fixture even for pre-existing `test_tool_presentation_overrides` endpoint tests; service/import/compile verification remains required before merge plus real PostgreSQL migration check.
+- `python -m pytest pc_agent/tests/ -v --tb=short` -> 329 passed, 7 subtests passed.
+- `pnpm --dir webapp test` -> 232 passed.
+- Real PostgreSQL migration reached `094 (head)` on the remote host.
+- Browser smoke on updated remote agent collected a real `inventory.collect` snapshot and rendered it through `ModuleResultRenderer` in the device card.
+- Server `test_client` API tests hang in the local Windows fixture even for pre-existing `test_tool_presentation_overrides` endpoint tests; direct service tests, compile checks, remote migration and browser checks covered the v1 blocker path.
+
+## Active Work: Inventory Collect v2
+
+Status: in progress / branch `codex/inventory-collect-v2`.
+
+Goal:
+
+- Harden endpoint inventory for operational use without turning it into full CMDB: richer printer details, static key-app detection profiles, optional hardware identifiers, lightweight binding fields, scheduled refresh policy and a server-readable builtin descriptor catalog.
+
+Scope:
+
+- Agent: v2 printer details, key-app profile detector, optional hardware identifiers, updated output/presentation schemas while preserving v1 result shape.
+- Shared/server descriptor: move declarative `inventory.collect` schemas into a pure shared catalog so server fallback no longer imports agent collector implementation.
+- Server: binding metadata, refresh policy storage/API, due-selection helper using existing `ToolExecutionService.run_tool`, latest inventory payload extension.
+- Webapp: DeviceInventoryPanel v2 with binding editor, schedule status, printers/software tabs and unchanged `ModuleResultRenderer`/raw JSON fallback.
+- Privacy: endpoint technical inventory only; no screenshots, keystrokes, clipboard, browser history, document contents, messages or personal file listings.
+
+Planned verification:
+
+- Agent focused and full tests: `python -m pytest pc_agent/tests/test_inventory_collect.py -v --tb=short`, `python -m pytest pc_agent/tests/ -v --tb=short`.
+- Server focused tests for descriptor catalog, binding, refresh policy and existing presentation override behavior.
+- Webapp tests/build: `pnpm --dir webapp test`, `pnpm --dir webapp build`.
+- General: `python -m compileall -q pc_agent server scripts/navigation_catalog.py`, `python scripts/verify_workspace.py`, `python scripts/docs_inventory.py --check-links`, `git diff --check`, `git diff --cached --check`.

@@ -131,7 +131,7 @@ Tools may additionally declare future inventory hints in `output_contract.device
 
 Server-side admin tooling may store a separate presentation override for a capability/tool. The module-declared `presentation_schema` remains the immutable module default and fallback; UI/API projections can additionally expose `effective_presentation_schema`, `presentation_schema_source` and `has_presentation_override`. Overrides do not change tool execution, `ToolResponse`, Protocol V3 envelopes or the structured result shape.
 
-## inventory.collect v1
+## inventory.collect v2
 
 `inventory.collect` is a core built-in read-only module intended for endpoint device cards, passports and support diagnostics. It returns a normalized `device.inventory.snapshot` result with identity, platform, hardware/resource, network, optional printer/software summary, agent health and warnings.
 
@@ -142,12 +142,18 @@ Privacy boundary:
 
 The tool declares:
 
-- detailed `output_schema` paths such as `identity.hostname`, `resources.disks[].mount`, `network.interfaces[].ipv4`, `printers.items[].name` and `software.key_apps[].version`;
+- detailed `output_schema` paths such as `identity.hostname`, `resources.disks[].mount`, `network.interfaces[].ipv4`, `printers.items[].driver`, `printers.items[].uri`, `software.key_apps[].id`, `software.key_apps[].source`, `hardware.serial_number` and `hardware.asset_tag`;
 - `output_contract.kind=device.inventory.snapshot`;
 - `output_contract.device_card.slots=["identity","health","platform","hardware","network","printers","software","agent"]`;
-- a default `presentation_schema` with identity field grid, resource metric cards, OS/agent and hardware grids, disks/network/printers/software tables and collapsed raw JSON fallback.
+- a default `presentation_schema` with identity field grid, resource metric cards, OS/agent and hardware grids, disks/network/printers/software/warnings blocks and collapsed raw JSON fallback.
 
-Optional collectors must fail soft: unavailable DNS/printer/software details are reported in `warnings` and do not fail the whole tool.
+v2 additions are still best-effort and read-only:
+
+- printer details include default printer, queue items, status, driver, URI/port, location, network/shared flags, queue length and `last_error` where the OS exposes them safely;
+- key-app detection uses static trusted profiles (`libreoffice`, `r7_office`, `yandex_browser`, `chromium_or_chrome`, `kaspersky`, `vipnet`, `openvpn`, remote-support clients and selected office/workspace clients) instead of enumerating all installed software;
+- optional hardware identifiers include manufacturer, model, serial number, BIOS version and asset tag when readable without elevated access.
+
+Optional collectors must fail soft: unavailable DNS/printer/software/hardware details are reported in `warnings` or section-local `warnings` and do not fail the whole tool. Server-side device binding fields (building, floor, room, department, responsible user, inventory number and notes) are manually entered inventory metadata, not agent-collected surveillance data.
 
 # Agent Recipe Runner
 

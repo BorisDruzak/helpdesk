@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DiagnosticCapability, DiagnosticProvider
+from inventory.scheduler import InventoryRefreshRuntime
 from inventory.service import DeviceInventoryService, extract_tool_result_payload
 
 
@@ -179,3 +182,97 @@ async def test_device_inventory_api_handles_empty_state(test_client, test_engine
     assert payload["data"]["device_id"] == device_id
     assert payload["data"]["latest_snapshot"] is None
     assert payload["data"]["history"] == []
+    assert payload["data"]["binding"]["device_id"] == device_id
+    assert payload["data"]["refresh_policy"]["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_device_inventory_binding_api_saves_and_returns_fields(test_client, test_engine) -> None:
+    device_id = str(uuid.uuid4())
+    await _seed_device_and_capability(test_engine, device_id=device_id)
+
+    response = await test_client.put(
+        f"/api/web/admin/devices/{device_id}/binding",
+        headers=_admin_headers(),
+        json={
+            "building": "HQ",
+            "floor": "4",
+            "room": "401",
+            "department": "Support",
+            "responsible_user": "Ivan Petrov",
+            "inventory_number": "INV-42",
+            "notes": "Shared office device",
+        },
+    )
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["building"] == "HQ"
+    assert payload["data"]["inventory_number"] == "INV-42"
+
+    response = await test_client.get(f"/api/web/admin/devices/{device_id}/inventory", headers=_admin_headers())
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["binding"]["room"] == "401"
+
+
+@pytest.mark.asyncio
+async def test_device_inventory_binding_rejects_html_marker(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        service = DeviceInventoryService(session)
+        with pytest.raises(ValueError):
+            await service.upsert_binding(str(uuid.uuid4()), {"building": "<script>alert(1)</script>"})
+
+
+@pytest.mark.asyncio
+async def test_inventory_refresh_policy_service_and_scheduler_dispatch(monkeypatch, test_engine) -> None:
+    device_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        service = DeviceInventoryService(session)
+        policy = await service.upsert_refresh_policy(
+            scope="device",
+            device_id=device_id,
+            enabled=True,
+            interval_minutes=60,
+            jitter_minutes=0,
+        )
+        policy.next_due_at = now - timedelta(minutes=1)
+        await session.commit()
+
+    @asynccontextmanager
+    async def _test_session():
+        async with session_maker() as session:
+            yield session
+
+    monkeypatch.setattr("inventory.scheduler.get_session", _test_session)
+
+    calls: list[dict] = []
+
+    class FakeToolService:
+        def __init__(self, state):
+            self.state = state
+
+        async def run_tool(self, **kwargs):
+            calls.append(kwargs)
+            return {"status": "accepted", "operation_id": kwargs["params"]["_operation_id"]}
+
+    state = SimpleNamespace(
+        connected_agents={device_id: object()},
+        is_agent_online=lambda checked_device_id: checked_device_id == device_id,
+    )
+    runtime = InventoryRefreshRuntime(state=state, tool_service_factory=FakeToolService)
+
+    result = await runtime.run_once(now=now)
+
+    assert result["dispatched"] == 1
+    assert calls[0]["tool_name"] == "inventory.collect"
+    assert calls[0]["device_id"] == device_id
+
+    async with session_maker() as session:
+        policy = await DeviceInventoryService(session).get_refresh_policy(scope="device", device_id=device_id)
+        assert policy is not None
+        assert policy.last_requested_at == now
+        assert policy.next_due_at > now

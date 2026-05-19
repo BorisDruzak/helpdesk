@@ -106,9 +106,13 @@ from web_api.dto.admin import (
     AdminDeviceTokensSummary,
     AdminDeviceUpdateAction,
     AdminDeviceInventoryCollectPayload,
+    AdminDeviceInventoryBinding,
+    AdminDeviceInventoryBindingUpdateRequest,
     AdminDeviceInventoryHistoryItem,
     AdminDeviceInventoryLatestSnapshot,
     AdminDeviceInventoryPayload,
+    AdminDeviceInventoryRefreshPolicy,
+    AdminDeviceInventoryRefreshPolicyUpdateRequest,
     AdminDeviceUpdateRecommendation,
     AdminDeviceUpdateRunPayload,
     AdminDeviceUpdateRunRequest,
@@ -3765,6 +3769,46 @@ def _inventory_history_item(row) -> AdminDeviceInventoryHistoryItem:
     )
 
 
+def _inventory_binding_item(device_id: str, row) -> AdminDeviceInventoryBinding:
+    return AdminDeviceInventoryBinding(
+        device_id=device_id,
+        building=getattr(row, "building", None) if row is not None else None,
+        floor=getattr(row, "floor", None) if row is not None else None,
+        room=getattr(row, "room", None) if row is not None else None,
+        department=getattr(row, "department", None) if row is not None else None,
+        responsible_user=getattr(row, "responsible_user", None) if row is not None else None,
+        responsible_user_login=getattr(row, "responsible_user_login", None) if row is not None else None,
+        inventory_number=getattr(row, "inventory_number", None) if row is not None else None,
+        notes=getattr(row, "notes", None) if row is not None else None,
+        updated_at=_iso(getattr(row, "updated_at", None)) if row is not None else None,
+        updated_by=getattr(row, "updated_by", None) if row is not None else None,
+    )
+
+
+def _inventory_refresh_policy_item(row, *, scope: str = "global", device_id: str | None = None) -> AdminDeviceInventoryRefreshPolicy:
+    if row is None:
+        return AdminDeviceInventoryRefreshPolicy(
+            id=None,
+            scope=scope,
+            device_id=device_id if scope == "device" else None,
+            enabled=False,
+            interval_minutes=1440,
+            jitter_minutes=30,
+        )
+    return AdminDeviceInventoryRefreshPolicy(
+        id=str(getattr(row, "id", "") or "") or None,
+        scope=str(getattr(row, "scope", "") or scope),
+        device_id=getattr(row, "device_id", None),
+        enabled=bool(getattr(row, "enabled", False)),
+        interval_minutes=int(getattr(row, "interval_minutes", 1440) or 1440),
+        jitter_minutes=int(getattr(row, "jitter_minutes", 30) or 0),
+        last_requested_at=_iso(getattr(row, "last_requested_at", None)),
+        next_due_at=_iso(getattr(row, "next_due_at", None)),
+        updated_at=_iso(getattr(row, "updated_at", None)),
+        updated_by=getattr(row, "updated_by", None),
+    )
+
+
 async def _inventory_latest_item(service: DeviceInventoryService, row) -> AdminDeviceInventoryLatestSnapshot:
     presentation = await service.resolve_inventory_presentation(tool_id=str(getattr(row, "source_tool", None) or "inventory.collect"))
     return AdminDeviceInventoryLatestSnapshot(
@@ -3794,11 +3838,15 @@ async def handle_web_admin_device_inventory(request: web.Request):
             service = DeviceInventoryService(session)
             latest = await service.get_latest(device_id)
             history_rows = await service.list_history(device_id)
+            binding_row = await service.get_binding(device_id)
+            refresh_policy = await service.get_effective_refresh_policy(device_id)
             latest_payload = await _inventory_latest_item(service, latest) if latest is not None else None
             payload = AdminDeviceInventoryPayload(
                 device_id=device_id,
                 latest_snapshot=latest_payload,
                 history=[_inventory_history_item(row) for row in history_rows],
+                binding=_inventory_binding_item(device_id, binding_row),
+                refresh_policy=_inventory_refresh_policy_item(refresh_policy, scope=getattr(refresh_policy, "scope", "global") if refresh_policy else "global", device_id=device_id if getattr(refresh_policy, "scope", None) == "device" else None),
             )
     except Exception as exc:
         logger.warning(f"[web_admin_device_inventory] failed: device_id={device_id} error={exc}")
@@ -3811,6 +3859,188 @@ async def handle_web_admin_device_inventory(request: web.Request):
             status=500,
         )
     return json_model_response(SuccessResponse[AdminDeviceInventoryPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory_binding(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.get_binding(device_id)
+            payload = _inventory_binding_item(device_id, row)
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory_binding] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось загрузить привязку устройства", "error_code": "ADMIN_DEVICE_BINDING_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryBinding](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory_binding_update(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        raw_payload = await request.json()
+        payload = AdminDeviceInventoryBindingUpdateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {"status": "error", "error": "Некорректные поля привязки устройства", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+
+    auth_context = request.get("auth_context")
+    updated_by = getattr(auth_context, "actor_id", None) if auth_context else None
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.upsert_binding(device_id, payload.model_dump(), updated_by=updated_by)
+            await session.commit()
+            result = _inventory_binding_item(device_id, row)
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory_binding_update] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось сохранить привязку устройства", "error_code": "ADMIN_DEVICE_BINDING_SAVE_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryBinding](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_inventory_refresh_policy(request: web.Request):
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.get_refresh_policy(scope="global")
+            payload = _inventory_refresh_policy_item(row, scope="global")
+    except Exception as exc:
+        logger.warning(f"[web_admin_inventory_refresh_policy] failed: error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось загрузить политику обновления инвентаря", "error_code": "ADMIN_INVENTORY_REFRESH_POLICY_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryRefreshPolicy](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_inventory_refresh_policy_update(request: web.Request):
+    try:
+        raw_payload = await request.json()
+        payload = AdminDeviceInventoryRefreshPolicyUpdateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {"status": "error", "error": "Некорректная политика обновления инвентаря", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    auth_context = request.get("auth_context")
+    updated_by = getattr(auth_context, "actor_id", None) if auth_context else None
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.upsert_refresh_policy(
+                scope="global",
+                enabled=payload.enabled,
+                interval_minutes=payload.interval_minutes,
+                jitter_minutes=payload.jitter_minutes,
+                updated_by=updated_by,
+            )
+            await session.commit()
+            result = _inventory_refresh_policy_item(row, scope="global")
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    except Exception as exc:
+        logger.warning(f"[web_admin_inventory_refresh_policy_update] failed: error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось сохранить политику обновления инвентаря", "error_code": "ADMIN_INVENTORY_REFRESH_POLICY_SAVE_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryRefreshPolicy](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory_refresh_policy(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.get_effective_refresh_policy(device_id)
+            payload = _inventory_refresh_policy_item(row, scope=getattr(row, "scope", "global") if row else "global", device_id=device_id if getattr(row, "scope", None) == "device" else None)
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory_refresh_policy] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось загрузить расписание инвентаря", "error_code": "ADMIN_DEVICE_INVENTORY_REFRESH_POLICY_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryRefreshPolicy](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_inventory_refresh_policy_update(request: web.Request):
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        raw_payload = await request.json()
+        payload = AdminDeviceInventoryRefreshPolicyUpdateRequest.model_validate(raw_payload)
+    except (ValidationError, Exception):
+        return web.json_response(
+            {"status": "error", "error": "Некорректная политика обновления инвентаря", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    auth_context = request.get("auth_context")
+    updated_by = getattr(auth_context, "actor_id", None) if auth_context else None
+    try:
+        async with get_session() as session:
+            service = DeviceInventoryService(session)
+            row = await service.upsert_refresh_policy(
+                scope="device",
+                device_id=device_id,
+                enabled=payload.enabled,
+                interval_minutes=payload.interval_minutes,
+                jitter_minutes=payload.jitter_minutes,
+                updated_by=updated_by,
+            )
+            await session.commit()
+            result = _inventory_refresh_policy_item(row, scope="device", device_id=device_id)
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_inventory_refresh_policy_update] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {"status": "error", "error": "Не удалось сохранить расписание инвентаря", "error_code": "ADMIN_DEVICE_INVENTORY_REFRESH_POLICY_SAVE_FAILED"},
+            status=500,
+        )
+    return json_model_response(SuccessResponse[AdminDeviceInventoryRefreshPolicy](data=result))
 
 
 @require_auth("admin")

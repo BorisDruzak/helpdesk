@@ -118,6 +118,37 @@ export type AdminDeviceInventoryPayload = {
     status: string;
     summary: string | null;
   }>;
+  binding?: AdminDeviceInventoryBinding | null;
+  refresh_policy?: AdminDeviceInventoryRefreshPolicy | null;
+};
+
+export type AdminDeviceInventoryBinding = {
+  device_id: string;
+  building: string | null;
+  floor: string | null;
+  room: string | null;
+  department: string | null;
+  responsible_user: string | null;
+  responsible_user_login: string | null;
+  inventory_number: string | null;
+  notes: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminDeviceInventoryBindingUpdate = Omit<AdminDeviceInventoryBinding, "device_id" | "updated_at" | "updated_by">;
+
+export type AdminDeviceInventoryRefreshPolicy = {
+  id: string | null;
+  scope: string;
+  device_id: string | null;
+  enabled: boolean;
+  interval_minutes: number;
+  jitter_minutes: number;
+  last_requested_at: string | null;
+  next_due_at: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
 };
 
 export type AdminDeviceInventoryCollectPayload = {
@@ -377,6 +408,32 @@ export async function fetchAdminDeviceInventory(deviceId: string): Promise<Admin
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить инвентарь устройства");
+}
+
+export async function saveAdminDeviceInventoryBinding(
+  deviceId: string,
+  payload: AdminDeviceInventoryBindingUpdate
+): Promise<AdminDeviceInventoryBinding> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/binding`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось сохранить привязку устройства");
+}
+
+export async function saveAdminDeviceInventoryRefreshPolicy(
+  deviceId: string,
+  payload: Pick<AdminDeviceInventoryRefreshPolicy, "enabled" | "interval_minutes" | "jitter_minutes">
+): Promise<AdminDeviceInventoryRefreshPolicy> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory/refresh-policy`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось сохранить расписание инвентаря");
 }
 
 export async function collectAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryCollectPayload> {

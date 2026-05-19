@@ -1358,12 +1358,66 @@ class AdminDeviceInventoryLatestSnapshot(BaseModel):
     device_card_slots: list[str] = Field(default_factory=list)
 
 
+class AdminDeviceInventoryBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    building: str | None = None
+    floor: str | None = None
+    room: str | None = None
+    department: str | None = None
+    responsible_user: str | None = None
+    responsible_user_login: str | None = None
+    inventory_number: str | None = None
+    notes: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminDeviceInventoryBindingUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    building: str | None = None
+    floor: str | None = None
+    room: str | None = None
+    department: str | None = None
+    responsible_user: str | None = None
+    responsible_user_login: str | None = None
+    inventory_number: str | None = None
+    notes: str | None = None
+
+
+class AdminDeviceInventoryRefreshPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    scope: str
+    device_id: str | None = None
+    enabled: bool
+    interval_minutes: int
+    jitter_minutes: int
+    last_requested_at: str | None = None
+    next_due_at: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminDeviceInventoryRefreshPolicyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    interval_minutes: int = 1440
+    jitter_minutes: int = 30
+
+
 class AdminDeviceInventoryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str
     latest_snapshot: AdminDeviceInventoryLatestSnapshot | None = None
     history: list[AdminDeviceInventoryHistoryItem] = Field(default_factory=list)
+    binding: AdminDeviceInventoryBinding | None = None
+    refresh_policy: AdminDeviceInventoryRefreshPolicy | None = None
 
 
 class AdminDeviceInventoryCollectPayload(BaseModel):
