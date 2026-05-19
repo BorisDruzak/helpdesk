@@ -46,6 +46,27 @@ class SectionSpec:
     action_href: str = "/app/tickets"
 
 
+@dataclass(frozen=True)
+class ApprovalBatchSource:
+    pending_count: int = 0
+    requested_count: int = 0
+    timed_out_count: int = 0
+    current_approver: str | None = None
+    latest_requested_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class DiagnosticBatchSource:
+    evidence_count: int = 0
+    error_evidence_count: int = 0
+    warning_evidence_count: int = 0
+    latest_evidence_at: datetime | None = None
+    open_session_count: int = 0
+    failed_session_count: int = 0
+    latest_profile_code: str | None = None
+    latest_session_status: str | None = None
+
+
 SECTION_SPECS: dict[str, SectionSpec] = {
     "new_unassigned": SectionSpec(
         "Новые без владельца",
@@ -144,6 +165,30 @@ def _priority_is_high(value: Any) -> bool:
     return str(value or "").strip().lower() in HIGH_PRIORITIES
 
 
+def _matches_query(ticket_data: dict[str, Any], item: SupportQueueTicketItem, query: str | None) -> bool:
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return True
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            item.ticket_code,
+            item.ticket_id,
+            item.title,
+            item.status,
+            item.queue_code,
+            item.assignee_id,
+            item.assignee_display_name,
+            item.requester_display_name,
+            ticket_data.get("device_id"),
+            ticket_data.get("service_code"),
+            ticket_data.get("offering_code"),
+            ticket_data.get("reporting_category"),
+        )
+    ).lower()
+    return needle in haystack
+
+
 def _timer_state(
     ticket_data: dict[str, Any],
     *,
@@ -208,11 +253,45 @@ def _agent_state(ticket_data: dict[str, Any], device: Any | None, now: datetime)
     )
 
 
-def _diagnostics_state(ticket_data: dict[str, Any]) -> CommandCenterDiagnosticsState | None:
+def _approval_reason(approval: ApprovalBatchSource | None) -> str | None:
+    if approval is None or (approval.pending_count + approval.requested_count + approval.timed_out_count) <= 0:
+        return None
+    if approval.timed_out_count:
+        return f"Согласование просрочено: {approval.timed_out_count}"
+    if approval.current_approver:
+        return f"Ожидается согласование от {approval.current_approver}"
+    return f"Ожидает согласования: {approval.pending_count + approval.requested_count}"
+
+
+def _diagnostics_state(
+    ticket_data: dict[str, Any],
+    diagnostics_source: DiagnosticBatchSource | None = None,
+) -> CommandCenterDiagnosticsState | None:
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
     diagnostics = custom_fields.get("diagnostics") if isinstance(custom_fields, dict) else None
     policy = custom_fields.get("diagnostic_policy") if isinstance(custom_fields, dict) else None
+    has_diagnostic_evidence = bool(diagnostics_source and diagnostics_source.evidence_count > 0)
+    if diagnostics_source and diagnostics_source.failed_session_count:
+        return CommandCenterDiagnosticsState(
+            recommended=True,
+            profile_code=diagnostics_source.latest_profile_code,
+            reason="Диагностическая сессия завершилась ошибкой",
+        )
+    if diagnostics_source and diagnostics_source.error_evidence_count:
+        return CommandCenterDiagnosticsState(
+            recommended=True,
+            profile_code=diagnostics_source.latest_profile_code,
+            reason="Диагностические данные содержат ошибки",
+        )
+    if diagnostics_source and diagnostics_source.open_session_count and not has_diagnostic_evidence:
+        return CommandCenterDiagnosticsState(
+            recommended=True,
+            profile_code=diagnostics_source.latest_profile_code,
+            reason="Есть открытая диагностическая сессия без подтверждающих данных",
+        )
     if isinstance(policy, dict) and (policy.get("recommended") or policy.get("profile_code")):
+        if has_diagnostic_evidence:
+            return None
         return CommandCenterDiagnosticsState(
             recommended=True,
             profile_code=str(policy.get("profile_code") or "").strip() or None,
@@ -224,10 +303,10 @@ def _diagnostics_state(ticket_data: dict[str, Any]) -> CommandCenterDiagnosticsS
             profile_code=str(diagnostics.get("profile_code") or "").strip() or None,
             reason=str(diagnostics.get("reason") or "Диагностический статус требует внимания"),
         )
-    if bool(ticket_data.get("evidence_required")) and not str(ticket_data.get("evidence_ref") or "").strip():
+    if bool(ticket_data.get("evidence_required")) and not str(ticket_data.get("evidence_ref") or "").strip() and not has_diagnostic_evidence:
         return CommandCenterDiagnosticsState(
             recommended=True,
-            profile_code=None,
+            profile_code=diagnostics_source.latest_profile_code if diagnostics_source else None,
             reason="Для закрытия требуется диагностическое подтверждение",
         )
     return None
@@ -339,9 +418,12 @@ def build_operator_command_center_payload(
     operations_by_ticket: dict[str, Any] | None = None,
     devices_by_id: dict[str, Any] | None = None,
     passports_by_ticket: dict[str, Any] | None = None,
+    approvals_by_ticket: dict[str, ApprovalBatchSource] | None = None,
+    diagnostics_by_ticket: dict[str, DiagnosticBatchSource] | None = None,
     scope: str,
     queue: str | None,
     assignee: str | None,
+    query: str | None = None,
     limit_per_section: int,
     window_hours: int,
     sla_risk_minutes: int,
@@ -353,6 +435,8 @@ def build_operator_command_center_payload(
     operations_by_ticket = operations_by_ticket or {}
     devices_by_id = devices_by_id or {}
     passports_by_ticket = passports_by_ticket or {}
+    approvals_by_ticket = approvals_by_ticket or {}
+    diagnostics_by_ticket = diagnostics_by_ticket or {}
     limit = max(1, int(limit_per_section))
     filtered_entries = [
         (ticket_data, item)
@@ -360,6 +444,7 @@ def build_operator_command_center_payload(
         if _is_active(ticket_data, item)
         and (not queue or str(item.queue_code or "").strip() == queue)
         and (not assignee or str(item.assignee_id or "").strip() == assignee)
+        and _matches_query(ticket_data, item, query)
     ]
 
     section_items: dict[str, list[CommandCenterItem]] = {key: [] for key in SECTION_SPECS}
@@ -370,7 +455,8 @@ def build_operator_command_center_payload(
     for ticket_data, item in filtered_entries:
         operation = _operation_state(operations_by_ticket.get(item.ticket_id))
         agent = _agent_state(ticket_data, devices_by_id.get(str(ticket_data.get("device_id") or "")), now)
-        diagnostics = _diagnostics_state(ticket_data)
+        approval = approvals_by_ticket.get(item.ticket_id)
+        diagnostics = _diagnostics_state(ticket_data, diagnostics_by_ticket.get(item.ticket_id))
         closure = _closure_state(ticket_data, passports_by_ticket.get(item.ticket_id))
         sla = _timer_state(
             ticket_data,
@@ -449,12 +535,13 @@ def build_operator_command_center_payload(
                 "ola_risk",
                 critical=ola is not None and ola.state == "breached",
             )
-        if item.status == "waiting_on_approval":
+        approval_reason = _approval_reason(approval)
+        if item.status == "waiting_on_approval" or approval_reason:
             add(
                 "pending_approval",
-                "Тикет ожидает согласования",
+                approval_reason or "Тикет ожидает согласования",
                 "pending_approval",
-                critical=sla_bad or ola_bad,
+                critical=bool(approval and approval.timed_out_count) or sla_bad or ola_bad,
             )
         if operation is not None and operation.status == "waiting_consent":
             add(
@@ -564,6 +651,7 @@ def build_operator_command_center_payload(
         filters=OperatorCommandCenterFilters(
             queue=queue,
             assignee=assignee,
+            query=query,
             window_hours=window_hours,
             limit_per_section=limit,
         ),

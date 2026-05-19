@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from support.operator_command_center import build_operator_command_center_payload
+from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.support import SupportQueueTicketItem
 
 
@@ -70,9 +70,16 @@ def test_command_center_aggregates_compact_ticket_signals_without_db():
         devices_by_id={
             queue_item.device_id: SimpleNamespace(last_seen_at=now - timedelta(minutes=30)),
         },
+        approvals_by_ticket={
+            "ticket-1": ApprovalBatchSource(requested_count=1, current_approver="service-owner"),
+        },
+        diagnostics_by_ticket={
+            "ticket-1": DiagnosticBatchSource(failed_session_count=1, latest_profile_code="vpn"),
+        },
         scope="team",
         queue=None,
         assignee=None,
+        query=None,
         limit_per_section=8,
         window_hours=24,
         sla_risk_minutes=120,
@@ -85,12 +92,17 @@ def test_command_center_aggregates_compact_ticket_signals_without_db():
     assert payload.summary.unread_user_messages_count == 1
     assert payload.summary.sla_risk_count == 1
     assert payload.summary.failed_operation_count == 1
+    assert payload.summary.pending_approval_count == 1
     assert payload.summary.agent_offline_active_count == 1
     assert payload.summary.diagnostics_recommended_count == 1
     assert payload.summary.closure_blocked_count == 1
     failed = next(section for section in payload.sections if section.key == "failed_operation")
     assert failed.items[0].operation.error_summary == "Profile missing"
     assert failed.items[0].href == "/app/tickets/ticket-1"
+    approval = next(section for section in payload.sections if section.key == "pending_approval")
+    assert "service-owner" in approval.items[0].reason
+    diagnostics = next(section for section in payload.sections if section.key == "diagnostics_recommended")
+    assert diagnostics.items[0].diagnostics.profile_code == "vpn"
 
 
 @pytest.mark.no_db
@@ -111,6 +123,7 @@ def test_command_center_builds_deterministic_similar_spike_group():
         scope="team",
         queue=None,
         assignee=None,
+        query=None,
         limit_per_section=8,
         window_hours=24,
         sla_risk_minutes=120,
@@ -122,3 +135,31 @@ def test_command_center_builds_deterministic_similar_spike_group():
     assert section.count == 1
     assert section.items[0].similar_group.count == 3
     assert section.items[0].href == "/app/tickets"
+
+
+@pytest.mark.no_db
+def test_command_center_filters_by_query_before_counting_sections():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    vpn_item = item("ticket-vpn", "VPN client error 720", requires_operator_action=False)
+    printer_item = item("ticket-prn", "Printer spooler failed", requires_operator_action=False)
+
+    payload = build_operator_command_center_payload(
+        [
+            ({"ticket_id": vpn_item.ticket_id, "status": "queued", "service_code": "network"}, vpn_item),
+            ({"ticket_id": printer_item.ticket_id, "status": "queued", "service_code": "workplace"}, printer_item),
+        ],
+        scope="team",
+        queue=None,
+        assignee=None,
+        query="VPN",
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    assert payload.filters.query == "VPN"
+    assert payload.summary.new_unassigned_count == 1
+    new_section = next(section for section in payload.sections if section.key == "new_unassigned")
+    assert new_section.items[0].ticket_id == "ticket-vpn"

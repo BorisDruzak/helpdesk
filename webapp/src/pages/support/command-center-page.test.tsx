@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +32,7 @@ function payload(overrides: Partial<OperatorCommandCenterPayload> = {}): Operato
       limit_per_section: 8,
       queue: null,
       assignee: null,
+      query: null,
     },
     summary: {
       total_attention_items: 1,
@@ -204,5 +205,32 @@ describe("SupportCommandCenterPage", () => {
     await screen.findByRole("heading", { name: "Рабочий центр" });
 
     await waitFor(() => expect(fetchOperatorCommandCenter).toHaveBeenCalledWith(expect.objectContaining({ scope: "team" })));
+  });
+
+  it("passes search query and section limit to the typed API", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue({
+      views: { needs_action: 0, sla_risk: 0, unassigned: 0, requester_replied: 0 },
+      queues: [],
+      smart_view_counts: [],
+      smart_view_options: [],
+    });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Рабочий центр" });
+
+    fireEvent.change(screen.getByPlaceholderText("Тикет, инициатор, услуга, устройство"), {
+      target: { value: "T-000569" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "Найти" }).closest("form") as HTMLFormElement);
+    fireEvent.change(screen.getByRole("combobox", { name: "Показывать" }), {
+      target: { value: "20" },
+    });
+
+    await waitFor(() =>
+      expect(fetchOperatorCommandCenter).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "T-000569", limit_per_section: 20 }),
+      ),
+    );
   });
 });

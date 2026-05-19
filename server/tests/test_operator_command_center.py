@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Operation, Ticket, UiUser
+from app.db.models import Device, DiagnosticSession, Operation, Ticket, TicketApproval, UiUser
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
@@ -61,6 +61,17 @@ async def test_operator_command_center_returns_typed_sections(test_client, test_
             assignee_id="support-test",
         )
         session.add_all([unassigned, action, approval])
+        session.add(
+            TicketApproval(
+                ticket_id=approval.ticket_id,
+                approval_type="service_owner",
+                approver_id="owner-1",
+                status="requested",
+                reason="approval_policy_request",
+                requested_by="support-test",
+                requested_at=now - timedelta(minutes=10),
+            )
+        )
         await session.flush()
         await session.commit()
 
@@ -95,6 +106,8 @@ async def test_operator_command_center_returns_typed_sections(test_client, test_
     assert new_section["title"] == "Новые без владельца"
     assert new_section["items"][0]["href"] == f"/app/tickets/{unassigned.ticket_id}"
     assert new_section["items"][0]["service_code"] == "workplace"
+    approval_section = next(section for section in data["sections"] if section["key"] == "pending_approval")
+    assert approval_section["items"][0]["reason"] == "Ожидается согласование от owner-1"
 
 
 @pytest.mark.asyncio
@@ -177,6 +190,19 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
                 queued_at=now - timedelta(minutes=2),
             ),
         ])
+        session.add(
+            DiagnosticSession(
+                id=str(uuid.uuid4()),
+                ticket_id=failed_ticket.ticket_id,
+                profile_id="printer",
+                status="failed",
+                trigger_source="policy",
+                started_by_user_id="support-test",
+                started_at=now - timedelta(minutes=6),
+                finished_at=now - timedelta(minutes=5),
+                summary="Printer diagnostics failed",
+            )
+        )
         await session.commit()
 
     response = await test_client.get(
@@ -195,6 +221,8 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
     assert summary["similar_spikes_count"] == 1
     failed_section = next(section for section in data["sections"] if section["key"] == "failed_operation")
     assert failed_section["items"][0]["operation"]["error_summary"] == "Spooler service unavailable"
+    diagnostics_section = next(section for section in data["sections"] if section["key"] == "diagnostics_recommended")
+    assert diagnostics_section["items"][0]["diagnostics"]["profile_code"] == "printer"
     spike_section = next(section for section in data["sections"] if section["key"] == "similar_tickets_spike")
     assert spike_section["items"][0]["similar_group"]["count"] == 3
     assert spike_section["items"][0]["href"] == "/app/tickets"

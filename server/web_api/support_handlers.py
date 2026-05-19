@@ -16,6 +16,8 @@ from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import (
     Device,
+    DiagnosticEvidence,
+    DiagnosticSession,
     Operation,
     Playbook,
     PlaybookRun,
@@ -90,7 +92,7 @@ from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
-from support.operator_command_center import build_operator_command_center_payload
+from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
     OperatorCommandCenterPayload,
@@ -4303,6 +4305,126 @@ async def _latest_passports_by_ticket(session, ticket_ids: list[str]) -> dict[st
     return latest
 
 
+async def _approvals_by_ticket(session, ticket_ids: list[str]) -> dict[str, ApprovalBatchSource]:
+    ids = sorted({str(ticket_id or "").strip() for ticket_id in ticket_ids if str(ticket_id or "").strip()})
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(TicketApproval)
+            .where(
+                TicketApproval.ticket_id.in_(ids),
+                TicketApproval.status.in_(("requested", "pending", "timed_out")),
+            )
+            .order_by(TicketApproval.ticket_id.asc(), TicketApproval.requested_at.desc())
+        )
+    ).scalars().all()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "pending_count": 0,
+                "requested_count": 0,
+                "timed_out_count": 0,
+                "current_approver": None,
+                "latest_requested_at": None,
+            },
+        )
+        if status == "timed_out":
+            state["timed_out_count"] += 1
+        elif status == "pending":
+            state["pending_count"] += 1
+        else:
+            state["requested_count"] += 1
+        requested_at = getattr(row, "requested_at", None)
+        if requested_at is not None and (
+            state["latest_requested_at"] is None or requested_at > state["latest_requested_at"]
+        ):
+            state["latest_requested_at"] = requested_at
+            state["current_approver"] = str(getattr(row, "approver_id", "") or "").strip() or None
+    return {ticket_id: ApprovalBatchSource(**values) for ticket_id, values in grouped.items()}
+
+
+async def _diagnostics_by_ticket(session, ticket_ids: list[str]) -> dict[str, DiagnosticBatchSource]:
+    ids = sorted({str(ticket_id or "").strip() for ticket_id in ticket_ids if str(ticket_id or "").strip()})
+    if not ids:
+        return {}
+    evidence_rows = (
+        await session.execute(
+            select(DiagnosticEvidence)
+            .where(DiagnosticEvidence.ticket_id.in_(ids))
+            .order_by(DiagnosticEvidence.ticket_id.asc(), DiagnosticEvidence.observed_at.desc())
+        )
+    ).scalars().all()
+    session_rows = (
+        await session.execute(
+            select(DiagnosticSession)
+            .where(DiagnosticSession.ticket_id.in_(ids))
+            .order_by(DiagnosticSession.ticket_id.asc(), DiagnosticSession.started_at.desc())
+        )
+    ).scalars().all()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in evidence_rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "evidence_count": 0,
+                "error_evidence_count": 0,
+                "warning_evidence_count": 0,
+                "latest_evidence_at": None,
+                "open_session_count": 0,
+                "failed_session_count": 0,
+                "latest_profile_code": None,
+                "latest_session_status": None,
+            },
+        )
+        state["evidence_count"] += 1
+        if status == "error":
+            state["error_evidence_count"] += 1
+        if status == "warning":
+            state["warning_evidence_count"] += 1
+        observed_at = getattr(row, "observed_at", None)
+        if observed_at is not None and (
+            state["latest_evidence_at"] is None or observed_at > state["latest_evidence_at"]
+        ):
+            state["latest_evidence_at"] = observed_at
+    for row in session_rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "evidence_count": 0,
+                "error_evidence_count": 0,
+                "warning_evidence_count": 0,
+                "latest_evidence_at": None,
+                "open_session_count": 0,
+                "failed_session_count": 0,
+                "latest_profile_code": None,
+                "latest_session_status": None,
+            },
+        )
+        if status in {"failed", "error", "timed_out"}:
+            state["failed_session_count"] += 1
+        elif status not in {"completed", "succeeded", "finished", "canceled", "cancelled"}:
+            state["open_session_count"] += 1
+        if state["latest_session_status"] is None:
+            state["latest_session_status"] = status or None
+            state["latest_profile_code"] = str(getattr(row, "profile_id", "") or "").strip() or None
+    return {ticket_id: DiagnosticBatchSource(**values) for ticket_id, values in grouped.items()}
+
+
 @require_auth("admin", "support")
 async def handle_web_support_command_center(request: web.Request):
     auth_context = request["auth_context"]
@@ -4316,6 +4438,7 @@ async def handle_web_support_command_center(request: web.Request):
 
     queue = str(request.query.get("queue") or "").strip() or None
     assignee = str(request.query.get("assignee") or "").strip() or None
+    query = str(request.query.get("query") or request.query.get("q") or "").strip() or None
     limit_per_section = _bounded_int_query(
         request.query.get("limit_per_section"),
         default=8,
@@ -4353,19 +4476,26 @@ async def handle_web_support_command_center(request: web.Request):
             operations_by_ticket = await _latest_operations_by_ticket(session, ticket_ids)
             devices_by_id = await _devices_by_id(session, device_ids)
             passports_by_ticket = await _latest_passports_by_ticket(session, ticket_ids)
+            approvals_by_ticket = await _approvals_by_ticket(session, ticket_ids)
+            diagnostics_by_ticket = await _diagnostics_by_ticket(session, ticket_ids)
             if include_debug:
                 metadata["candidate_ticket_count"] = len(entries)
                 metadata["operation_ticket_count"] = len(operations_by_ticket)
                 metadata["device_count"] = len(devices_by_id)
                 metadata["passport_ticket_count"] = len(passports_by_ticket)
+                metadata["approval_ticket_count"] = len(approvals_by_ticket)
+                metadata["diagnostics_ticket_count"] = len(diagnostics_by_ticket)
             payload = build_operator_command_center_payload(
                 entries,
                 operations_by_ticket=operations_by_ticket,
                 devices_by_id=devices_by_id,
                 passports_by_ticket=passports_by_ticket,
+                approvals_by_ticket=approvals_by_ticket,
+                diagnostics_by_ticket=diagnostics_by_ticket,
                 scope=effective_scope,
                 queue=queue,
                 assignee=assignee,
+                query=query,
                 limit_per_section=limit_per_section,
                 window_hours=window_hours,
                 sla_risk_minutes=sla_risk_minutes,
@@ -4382,6 +4512,7 @@ async def handle_web_support_command_center(request: web.Request):
             scope=effective_scope,
             queue=queue,
             assignee=assignee,
+            query=query,
             limit_per_section=limit_per_section,
             window_hours=window_hours,
             sla_risk_minutes=sla_risk_minutes,

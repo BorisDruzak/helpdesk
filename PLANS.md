@@ -39,14 +39,16 @@ Goal:
 Scope:
 
 - Backend typed endpoint `GET /api/web/support/command-center` derived from existing support queue/workspace signals without fake counters or per-ticket full workspace fanout.
+- P1/P2 hardening adds explicit batched `ticket_approvals`, `diagnostic_sessions` and `diagnostic_evidence` sources, plus server-side command-center search.
 - Frontend API layer, prioritization helper, lazy support page and navigation update.
+- UI controls include scope, queue, search and per-section item limit; search is sent to the typed endpoint and counts are based on the filtered candidate set.
 - Docs/navigation updates for the new route, API and section keys.
 - Live browser verification on the remote stand with a newly created ticket visible in the Command Center.
 
 Decisions:
 
 - Keep `/app/tickets` and `/app/tickets/:ticketId` as the guided ticket workspace.
-- Use compact support queue rows, chat counters, SLA/OLA fields, operation/device/passport fields when available, and deterministic recent-ticket grouping for similar spikes.
+- Use compact support queue rows, chat counters, SLA/OLA fields, batched approval/operation/device/diagnostics/passport fields when available, and deterministic recent-ticket grouping for similar spikes.
 - Return all command-center sections with real count `0` when a source signal is unavailable; do not synthesize fake activity.
 - Prefer links into `/app/tickets/:ticketId`; section actions may fall back to `/app/tickets` when smart-view query support is not guaranteed.
 
@@ -56,10 +58,11 @@ Verification target:
 - Frontend command-center page/prioritization/navigation tests, then webapp build.
 - `python -m compileall -q server`, `git diff --check`, `python scripts/verify_workspace.py`.
 - Quick remote deploy/release and Browser MCP smoke at `https://192.168.100.17:9443/admin` for `/app/support`, `/app/tickets` and live ticket creation/display.
+- User explicitly requested final full CI/full gate for this hardening pass.
 
 Known constraints:
 
-- Full CI/full release gate is not run unless explicitly requested by the user; remind before final publication.
+- Local Windows DB-backed `server/tests/test_operator_command_center.py` may hang before producing output; full CI/full gate should be the authoritative DB/API verification for that layer.
 
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Inbox,
   MessageSquare,
   RefreshCcw,
+  Search,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
@@ -29,6 +30,8 @@ const scopeOptions: Array<{ value: CommandCenterScope; label: string }> = [
   { value: "team", label: "Команда" },
   { value: "all", label: "Все доступные" },
 ];
+
+const limitOptions = [6, 8, 12, 20, 25];
 
 const severityClasses: Record<CommandCenterSeverity, string> = {
   critical: "border-red-300 bg-red-50 text-red-900",
@@ -216,16 +219,28 @@ function HeaderControls({
   data,
   scope,
   queue,
+  queryDraft,
+  limitPerSection,
   onScopeChange,
   onQueueChange,
+  onQueryDraftChange,
+  onSearchSubmit,
+  onClearSearch,
+  onLimitPerSectionChange,
   onRefresh,
   refreshing,
 }: {
   data?: OperatorCommandCenterPayload;
   scope: CommandCenterScope;
   queue: string;
+  queryDraft: string;
+  limitPerSection: number;
   onScopeChange: (scope: CommandCenterScope) => void;
   onQueueChange: (queue: string) => void;
+  onQueryDraftChange: (query: string) => void;
+  onSearchSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClearSearch: () => void;
+  onLimitPerSectionChange: (limit: number) => void;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
@@ -267,6 +282,51 @@ function HeaderControls({
           ))}
         </select>
       </label>
+      <form
+        className="flex min-w-[260px] flex-1 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
+        onSubmit={onSearchSubmit}
+      >
+        Поиск
+        <div className="flex min-w-0 gap-2">
+          <input
+            aria-label="Поиск"
+            className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            value={queryDraft}
+            placeholder="Тикет, инициатор, услуга, устройство"
+            onChange={(event) => onQueryDraftChange(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <Search className="h-4 w-4" />
+            Найти
+          </button>
+          {queryDraft ? (
+            <button
+              type="button"
+              className="inline-flex h-10 shrink-0 items-center rounded-md px-2 text-sm font-semibold normal-case tracking-normal text-slate-500 transition hover:text-slate-900"
+              onClick={onClearSearch}
+            >
+              Сбросить
+            </button>
+          ) : null}
+        </div>
+      </form>
+      <label className="flex min-w-[150px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+        Показывать
+        <select
+          className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          value={limitPerSection}
+          onChange={(event) => onLimitPerSectionChange(Number(event.target.value))}
+        >
+          {limitOptions.map((value) => (
+            <option key={value} value={value}>
+              {value} в секции
+            </option>
+          ))}
+        </select>
+      </label>
       <button
         type="button"
         className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
@@ -286,13 +346,17 @@ function HeaderControls({
 export function SupportCommandCenterPage() {
   const [scope, setScope] = useState<CommandCenterScope>("team");
   const [queue, setQueue] = useState("");
+  const [queryDraft, setQueryDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [limitPerSection, setLimitPerSection] = useState(8);
   const commandCenterQuery = useQuery({
-    queryKey: ["operator-command-center", scope, queue],
+    queryKey: ["operator-command-center", scope, queue, query, limitPerSection],
     queryFn: () =>
       fetchOperatorCommandCenter({
         scope,
         queue: queue || undefined,
-        limit_per_section: 8,
+        query: query || undefined,
+        limit_per_section: limitPerSection,
         window_hours: 24,
         sla_risk_minutes: 120,
         ola_risk_minutes: 60,
@@ -304,6 +368,14 @@ export function SupportCommandCenterPage() {
     () => buildPrioritizedAttentionList(data?.sections ?? [], 10),
     [data?.sections],
   );
+  const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setQuery(queryDraft.trim());
+  };
+  const handleClearSearch = () => {
+    setQueryDraft("");
+    setQuery("");
+  };
 
   return (
     <main className="min-h-screen bg-app px-4 py-5 text-slate-900 md:px-6 lg:px-8">
@@ -321,8 +393,14 @@ export function SupportCommandCenterPage() {
               data={data}
               scope={scope}
               queue={queue}
+              queryDraft={queryDraft}
+              limitPerSection={limitPerSection}
               onScopeChange={setScope}
               onQueueChange={setQueue}
+              onQueryDraftChange={setQueryDraft}
+              onSearchSubmit={handleSearchSubmit}
+              onClearSearch={handleClearSearch}
+              onLimitPerSectionChange={setLimitPerSection}
               onRefresh={() => void commandCenterQuery.refetch()}
               refreshing={commandCenterQuery.isFetching}
             />

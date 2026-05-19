@@ -96,6 +96,7 @@ function createCommandCenterPayload() {
     filters: {
       queue: null,
       assignee: null,
+      query: null,
       window_hours: 24,
       limit_per_section: 8
     },

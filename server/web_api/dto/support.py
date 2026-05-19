@@ -281,6 +281,7 @@ class OperatorCommandCenterFilters(BaseModel):
 
     queue: str | None = None
     assignee: str | None = None
+    query: str | None = None
     window_hours: int
     limit_per_section: int
 

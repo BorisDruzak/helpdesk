@@ -93,6 +93,7 @@ export type OperatorCommandCenterPayload = {
   filters: {
     queue?: string | null;
     assignee?: string | null;
+    query?: string | null;
     window_hours: number;
     limit_per_section: number;
   };
@@ -122,6 +123,7 @@ export type FetchOperatorCommandCenterParams = {
   scope?: CommandCenterScope;
   queue?: string;
   assignee?: string;
+  query?: string;
   limit_per_section?: number;
   window_hours?: number;
   sla_risk_minutes?: number;
@@ -170,6 +172,9 @@ function buildCommandCenterUrl(params: FetchOperatorCommandCenterParams = {}) {
   }
   if (params.assignee) {
     searchParams.set("assignee", params.assignee);
+  }
+  if (params.query) {
+    searchParams.set("query", params.query);
   }
   for (const [key, value] of Object.entries({
     limit_per_section: params.limit_per_section,
