@@ -345,6 +345,7 @@ def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
         "test_ticket_closure_policy.py",
         "test_observer_v2_api.py",
         "test_device_dispatch_runtime.py",
+        "test_inventory_v3_service.py",
         "test_web_support_api.py",
     ):
         (tests_dir / filename).write_text("def test_placeholder(): pass\n", encoding="utf-8")
@@ -362,6 +363,8 @@ def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
     ]
     assert sorted(path.name for path in flattened) == sorted(path.name for path in tests_dir.glob("test_*.py"))
     assert len(flattened) == len(set(flattened))
+    web_api_paths = dict(layers)["server_pytest_db_web_api"]
+    assert Path("server/tests/test_inventory_v3_service.py") in web_api_paths
 
 
 def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):

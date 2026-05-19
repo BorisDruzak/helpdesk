@@ -296,7 +296,7 @@ Known verification limitation:
 
 ## Active Work: Inventory v3 / Lightweight CMDB
 
-Status: implementation complete locally / branch `codex/inventory-v3-lightweight-cmdb`; pending final DB/browser verification and commit/push.
+Status: accepted / verified on branch `codex/inventory-v3-lightweight-cmdb`, commit `3b9b50c`.
 
 Goal:
 
@@ -322,3 +322,4 @@ Implementation notes:
 - DB: migration `096_inventory_v3_lightweight_cmdb` adds `status`/`tags` to `device_inventory_bindings`, plus `device_inventory_binding_history` and `device_inventory_refresh_runs`.
 - Server/API: `/api/web/admin/devices/{device_id}/inventory` is extended backward-compatibly with `binding_history`, `refresh_runs` and `last_refresh_run`; new endpoints cover binding history, binding CSV import/export, fleet inventory CSV export, dashboard aggregation and refresh run listing.
 - Webapp: `/app/admin/inventory?panel=fleet` renders fleet summary, CSV export buttons and dry-run/apply binding import; `DeviceInventoryPanel` shows stale status, tags/status binding fields, binding change history and refresh run history.
+- Verification: remote PostgreSQL migration `095 -> 096` completed, browser smoke on `https://192.168.100.17:9443/admin` verified the fleet dashboard after fixing the dashboard `last_requested_at` null case, local focused/full agent and webapp tests passed, and the branch was pushed to GitHub.
