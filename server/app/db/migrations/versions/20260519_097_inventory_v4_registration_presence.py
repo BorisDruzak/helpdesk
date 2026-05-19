@@ -35,10 +35,21 @@ def _has_index(table: str, name: str) -> bool:
 
 
 def upgrade() -> None:
-    if _has_table("device_inventory_refresh_runs") and not _has_column("device_inventory_refresh_runs", "bulk_operation_id"):
-        op.add_column("device_inventory_refresh_runs", sa.Column("bulk_operation_id", sa.String(36), nullable=True))
-    if _has_table("device_inventory_refresh_runs") and not _has_index("device_inventory_refresh_runs", "ix_device_inventory_refresh_runs_bulk_operation"):
-        op.create_index("ix_device_inventory_refresh_runs_bulk_operation", "device_inventory_refresh_runs", ["bulk_operation_id"])
+    if _has_table("device_inventory_refresh_runs") and not _has_column(
+        "device_inventory_refresh_runs", "bulk_operation_id"
+    ):
+        op.add_column(
+            "device_inventory_refresh_runs",
+            sa.Column("bulk_operation_id", sa.String(36), nullable=True),
+        )
+    if _has_table("device_inventory_refresh_runs") and not _has_index(
+        "device_inventory_refresh_runs", "ix_device_inventory_refresh_runs_bulk_operation"
+    ):
+        op.create_index(
+            "ix_device_inventory_refresh_runs_bulk_operation",
+            "device_inventory_refresh_runs",
+            ["bulk_operation_id"],
+        )
 
     if not _has_table("device_inventory_bulk_operations"):
         op.create_table(
@@ -58,7 +69,11 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
     if not _has_index("device_inventory_bulk_operations", "ix_device_inventory_bulk_operations_requested"):
-        op.create_index("ix_device_inventory_bulk_operations_requested", "device_inventory_bulk_operations", ["requested_at"])
+        op.create_index(
+            "ix_device_inventory_bulk_operations_requested",
+            "device_inventory_bulk_operations",
+            ["requested_at"],
+        )
     if not _has_index("device_inventory_bulk_operations", "ix_device_inventory_bulk_operations_status"):
         op.create_index("ix_device_inventory_bulk_operations_status", "device_inventory_bulk_operations", ["status"])
 
@@ -77,7 +92,11 @@ def upgrade() -> None:
             sa.UniqueConstraint("operation_id", "device_id", name="uq_device_inventory_bulk_item_operation_device"),
         )
     if not _has_index("device_inventory_bulk_operation_items", "ix_device_inventory_bulk_items_operation"):
-        op.create_index("ix_device_inventory_bulk_items_operation", "device_inventory_bulk_operation_items", ["operation_id"])
+        op.create_index(
+            "ix_device_inventory_bulk_items_operation",
+            "device_inventory_bulk_operation_items",
+            ["operation_id"],
+        )
     if not _has_index("device_inventory_bulk_operation_items", "ix_device_inventory_bulk_items_device"):
         op.create_index("ix_device_inventory_bulk_items_device", "device_inventory_bulk_operation_items", ["device_id"])
 
@@ -100,9 +119,17 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
     if not _has_index("device_binding_suggestions", "ix_device_binding_suggestions_device_status"):
-        op.create_index("ix_device_binding_suggestions_device_status", "device_binding_suggestions", ["device_id", "status"])
+        op.create_index(
+            "ix_device_binding_suggestions_device_status",
+            "device_binding_suggestions",
+            ["device_id", "status"],
+        )
     if not _has_index("device_binding_suggestions", "ix_device_binding_suggestions_source_ref"):
-        op.create_index("ix_device_binding_suggestions_source_ref", "device_binding_suggestions", ["source", "source_ref"])
+        op.create_index(
+            "ix_device_binding_suggestions_source_ref",
+            "device_binding_suggestions",
+            ["source", "source_ref"],
+        )
 
     if not _has_table("device_presence_snapshots"):
         op.create_table(
@@ -119,7 +146,11 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
     if not _has_index("device_presence_snapshots", "ix_device_presence_snapshots_device_collected"):
-        op.create_index("ix_device_presence_snapshots_device_collected", "device_presence_snapshots", ["device_id", "collected_at"])
+        op.create_index(
+            "ix_device_presence_snapshots_device_collected",
+            "device_presence_snapshots",
+            ["device_id", "collected_at"],
+        )
     if not _has_index("device_presence_snapshots", "ix_device_presence_snapshots_state"):
         op.create_index("ix_device_presence_snapshots_state", "device_presence_snapshots", ["session_state"])
 
@@ -139,16 +170,32 @@ def upgrade() -> None:
             sa.UniqueConstraint("device_id", "summary_date", name="uq_device_presence_daily_device_date"),
         )
     if not _has_index("device_presence_daily_summaries", "ix_device_presence_daily_device_date"):
-        op.create_index("ix_device_presence_daily_device_date", "device_presence_daily_summaries", ["device_id", "summary_date"])
+        op.create_index(
+            "ix_device_presence_daily_device_date",
+            "device_presence_daily_summaries",
+            ["device_id", "summary_date"],
+        )
 
 
 def downgrade() -> None:
     for table, indexes in (
         ("device_presence_daily_summaries", ("ix_device_presence_daily_device_date",)),
-        ("device_presence_snapshots", ("ix_device_presence_snapshots_state", "ix_device_presence_snapshots_device_collected")),
-        ("device_binding_suggestions", ("ix_device_binding_suggestions_source_ref", "ix_device_binding_suggestions_device_status")),
-        ("device_inventory_bulk_operation_items", ("ix_device_inventory_bulk_items_device", "ix_device_inventory_bulk_items_operation")),
-        ("device_inventory_bulk_operations", ("ix_device_inventory_bulk_operations_status", "ix_device_inventory_bulk_operations_requested")),
+        (
+            "device_presence_snapshots",
+            ("ix_device_presence_snapshots_state", "ix_device_presence_snapshots_device_collected"),
+        ),
+        (
+            "device_binding_suggestions",
+            ("ix_device_binding_suggestions_source_ref", "ix_device_binding_suggestions_device_status"),
+        ),
+        (
+            "device_inventory_bulk_operation_items",
+            ("ix_device_inventory_bulk_items_device", "ix_device_inventory_bulk_items_operation"),
+        ),
+        (
+            "device_inventory_bulk_operations",
+            ("ix_device_inventory_bulk_operations_status", "ix_device_inventory_bulk_operations_requested"),
+        ),
     ):
         if _has_table(table):
             for index_name in indexes:
@@ -158,6 +205,9 @@ def downgrade() -> None:
 
     if _has_table("device_inventory_refresh_runs"):
         if _has_index("device_inventory_refresh_runs", "ix_device_inventory_refresh_runs_bulk_operation"):
-            op.drop_index("ix_device_inventory_refresh_runs_bulk_operation", table_name="device_inventory_refresh_runs")
+            op.drop_index(
+                "ix_device_inventory_refresh_runs_bulk_operation",
+                table_name="device_inventory_refresh_runs",
+            )
         if _has_column("device_inventory_refresh_runs", "bulk_operation_id"):
             op.drop_column("device_inventory_refresh_runs", "bulk_operation_id")

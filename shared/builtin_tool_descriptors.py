@@ -403,7 +403,12 @@ PRESENCE_COLLECT_PRESENTATION_SCHEMA: dict[str, Any] = {
                 {"path": "session.session_state", "label": "Состояние"},
                 {"path": "session.locked", "label": "Экран заблокирован"},
                 {"path": "session.idle_seconds", "label": "Простой", "format": "duration_seconds"},
-                {"path": "session.last_input_at", "label": "Последняя активность ввода", "format": "datetime", "empty_text": "-"},
+                {
+                    "path": "session.last_input_at",
+                    "label": "Последняя активность ввода",
+                    "format": "datetime",
+                    "empty_text": "-",
+                },
                 {"path": "collected_at", "label": "Собрано", "format": "datetime"},
             ],
         },

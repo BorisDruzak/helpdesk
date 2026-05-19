@@ -66,7 +66,12 @@ async def test_bulk_refresh_preview_operation_and_xlsx_export(test_engine) -> No
         await service.persist_snapshot(offline_id, _snapshot("offline-pc", collected_at=now - timedelta(days=30)))
         await session.commit()
 
-        preview = await service.bulk_refresh_preview(mode="stale", filters={"stale_days": 7}, wave={"batch_size": 1}, now=now)
+        preview = await service.bulk_refresh_preview(
+            mode="stale",
+            filters={"stale_days": 7},
+            wave={"batch_size": 1},
+            now=now,
+        )
         operation = await service.create_bulk_refresh_operation(
             preview=preview,
             mode="stale",
@@ -124,14 +129,26 @@ async def test_agent_profile_suggestion_apply_ignore_and_presence_summary(test_e
             profile={"full_name": "Петров П.П.", "department": "ИТ", "building": "HQ", "room": "101"},
         )
         assert ignored is not None
-        await inventory.ignore_binding_suggestion(device_id=device_id, suggestion_id=ignored.id, reviewed_by="it", reason="shared device")
+        await inventory.ignore_binding_suggestion(
+            device_id=device_id,
+            suggestion_id=ignored.id,
+            reviewed_by="it",
+            reason="shared device",
+        )
 
         presence = await DevicePresenceService(session).persist_snapshot(
             device_id=device_id,
             snapshot={
                 "collected_at": datetime.now(timezone.utc).isoformat(),
                 "session": {"current_user": "ivanova", "session_state": "idle", "idle_seconds": 600, "locked": False},
-                "today": {"date": "2026-05-19", "active_seconds": 3600, "idle_seconds": 600, "locked_seconds": 0, "offline_seconds": 0, "unknown_seconds": 0},
+                "today": {
+                    "date": "2026-05-19",
+                    "active_seconds": 3600,
+                    "idle_seconds": 600,
+                    "locked_seconds": 0,
+                    "offline_seconds": 0,
+                    "unknown_seconds": 0,
+                },
             },
         )
         await session.commit()
