@@ -15,6 +15,7 @@ from access_control.service import can
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import (
+    Device,
     Operation,
     Playbook,
     PlaybookRun,
