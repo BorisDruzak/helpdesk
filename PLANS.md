@@ -293,3 +293,32 @@ Verification:
 Known verification limitation:
 
 - Local Windows DB-backed server `pytest` fixtures still hang on existing `test_client` DB tests, including pre-existing presentation override tests. The v2 DB migration and API/browser path were verified on the real PostgreSQL stand instead.
+
+## Active Work: Inventory v3 / Lightweight CMDB
+
+Status: implementation complete locally / branch `codex/inventory-v3-lightweight-cmdb`; pending final DB/browser verification and commit/push.
+
+Goal:
+
+- Add a lightweight operational inventory layer on top of v2 without building a procurement/accounting CMDB: binding history, CSV import/export, fleet dashboard, refresh run visibility and stale/missing reports.
+
+Scope:
+
+- Cleanup: keep `shared.builtin_tool_descriptors` as the only descriptor source of truth and move inventory admin endpoints out of the large `admin_handlers.py` while preserving URLs.
+- Server: add binding status/tags, binding history, CSV dry-run/apply import, binding and inventory CSV export, fleet dashboard aggregation and refresh run records.
+- Webapp: enhance `/app/admin/inventory` with fleet summary/import/export/report sections and enhance `DeviceInventoryPanel` with stale status, binding history and refresh run visibility.
+- Privacy: aggregate endpoint inventory and admin-entered binding metadata only; no employee activity monitoring or user-content collection.
+
+Verification plan:
+
+- Phase 0 cleanup: `python -m pytest pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_inventory_profiles.py -v --tb=short`, `python -m pytest server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -v --tb=short`, `python -m compileall -q pc_agent server shared scripts/navigation_catalog.py`, `git diff --check`.
+- Server focused: binding history, CSV import/export, dashboard aggregation, refresh run service/scheduler, no-db inventory presentation tests.
+- Webapp focused: inventory dashboard totals/import/export, device panel binding history/refresh history/stale badge, plus full `pnpm --dir webapp test` and build.
+- General: docs link check, workspace verify, diff whitespace checks, migration upgrade on the remote PostgreSQL stand if DB schema changes are committed.
+
+Implementation notes:
+
+- Cleanup: `inventory.collect` descriptors remain single-source in `shared.builtin_tool_descriptors`; inventory admin HTTP handlers moved to `server/web_api/admin_inventory_handlers.py` without changing existing URLs.
+- DB: migration `096_inventory_v3_lightweight_cmdb` adds `status`/`tags` to `device_inventory_bindings`, plus `device_inventory_binding_history` and `device_inventory_refresh_runs`.
+- Server/API: `/api/web/admin/devices/{device_id}/inventory` is extended backward-compatibly with `binding_history`, `refresh_runs` and `last_refresh_run`; new endpoints cover binding history, binding CSV import/export, fleet inventory CSV export, dashboard aggregation and refresh run listing.
+- Webapp: `/app/admin/inventory?panel=fleet` renders fleet summary, CSV export buttons and dry-run/apply binding import; `DeviceInventoryPanel` shows stale status, tags/status binding fields, binding change history and refresh run history.

@@ -92,27 +92,65 @@ class InventoryRefreshRuntime:
                     device_ids = _online_device_ids(self.state)
                 if not device_ids:
                     skipped_offline += 1
+                    await service.record_refresh_run(
+                        policy_id=str(policy.id),
+                        requested_at=now,
+                        status="skipped_offline",
+                        error="no online devices",
+                    )
                     continue
                 policy_dispatched = 0
                 for device_id in device_ids:
                     checker = getattr(self.state, "is_agent_online", None)
                     if callable(checker) and not checker(device_id):
                         skipped_offline += 1
+                        await service.record_refresh_run(
+                            device_id=device_id,
+                            policy_id=str(policy.id),
+                            requested_at=now,
+                            status="skipped_offline",
+                            error="device is offline",
+                        )
                         continue
                     operation_id = str(uuid.uuid4())
-                    result = await tool_service.run_tool(
-                        device_id=device_id,
-                        ticket_id="",
-                        tool_name=INVENTORY_TOOL_ID,
-                        params={"_operation_id": operation_id, "source": "inventory_refresh_policy"},
-                        call_id=str(uuid.uuid4()),
-                        auth_context=None,
-                        wait_for_result=False,
-                    )
+                    try:
+                        result = await tool_service.run_tool(
+                            device_id=device_id,
+                            ticket_id="",
+                            tool_name=INVENTORY_TOOL_ID,
+                            params={"_operation_id": operation_id, "source": "inventory_refresh_policy"},
+                            call_id=str(uuid.uuid4()),
+                            auth_context=None,
+                            wait_for_result=False,
+                        )
+                    except Exception as exc:
+                        await service.record_refresh_run(
+                            device_id=device_id,
+                            policy_id=str(policy.id),
+                            requested_at=now,
+                            status="failed",
+                            error=str(exc),
+                        )
+                        continue
                     status = str(result.get("status") or "")
                     if status in {"accepted", "queued", "sent", "waiting_consent"}:
                         dispatched += 1
                         policy_dispatched += 1
+                        await service.record_refresh_run(
+                            device_id=device_id,
+                            policy_id=str(policy.id),
+                            requested_at=now,
+                            status="dispatched",
+                            job_id=str(result.get("operation_id") or operation_id),
+                        )
+                    else:
+                        await service.record_refresh_run(
+                            device_id=device_id,
+                            policy_id=str(policy.id),
+                            requested_at=now,
+                            status="failed",
+                            error=str(result.get("error") or status or "dispatch rejected"),
+                        )
                 if policy_dispatched:
                     await service.mark_refresh_requested(policy, requested_at=now)
             await session.commit()

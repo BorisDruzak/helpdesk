@@ -151,6 +151,58 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
       });
     }
 
+    if (url.startsWith("/api/web/admin/inventory/dashboard")) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          totals: {
+            devices: 2,
+            with_inventory: 1,
+            stale_inventory: 1,
+            missing_inventory: 1,
+            missing_binding: 1,
+          },
+          freshness: { fresh_days: 7, stale_count: 1, missing_count: 1 },
+          by_os: [{ label: "Windows 11", count: 1 }],
+          by_building: [{ label: "HQ", count: 1 }],
+          by_department: [{ label: "Support", count: 1 }],
+          binding_gaps: {
+            missing_room: 1,
+            missing_department: 1,
+            missing_responsible_user: 1,
+            missing_inventory_number: 1,
+          },
+          health: {
+            high_disk_usage: 1,
+            missing_key_apps: [{ device_id: "22222222-2222-4222-8222-222222222222", hostname: "win-workstation-12", name: "LibreOffice" }],
+          },
+          refresh: { enabled: true, due_devices: 1 },
+        },
+      });
+    }
+
+    if (url === "/api/web/admin/inventory/bindings/import" && method === "POST") {
+      return jsonResponse({
+        status: "success",
+        data: {
+          dry_run: true,
+          total_rows: 1,
+          valid_rows: 1,
+          error_rows: 0,
+          changes: [
+            {
+              row: 2,
+              device_id: "11111111-1111-4111-8111-111111111111",
+              hostname: "web-server-01",
+              action: "update",
+              changed_fields: ["room"],
+              errors: [],
+            },
+          ],
+        },
+      });
+    }
+
     if (url.includes("/api/web/admin/connection_requests/") && url.endsWith("/approve")) {
       return jsonResponse({ status: "ok", device_id: "33333333-3333-4333-8333-333333333333" });
     }
@@ -237,5 +289,30 @@ describe("AdminInventoryPage", () => {
 
     expect((await screen.findAllByText("web-server-01")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1").length).toBeGreaterThan(0);
+  });
+
+  it("renders fleet inventory dashboard and dry-run import preview", async () => {
+    const fetchMock = installFetchMock();
+
+    renderInventory("/app/admin/inventory?panel=fleet");
+
+    expect(await screen.findByText("Сводка парка")).toBeInTheDocument();
+    expect(screen.getByText("CSV инвентарь")).toBeInTheDocument();
+    expect(screen.getByText("CSV привязки")).toBeInTheDocument();
+    expect(await screen.findByText(/LibreOffice/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/device_id,hostname/i), {
+      target: { value: "device_id,hostname,room\n11111111-1111-4111-8111-111111111111,web-server-01,401" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Dry run/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/inventory/bindings/import",
+        expect.objectContaining({ method: "POST", body: expect.stringContaining("dry_run") })
+      );
+    });
+    expect(await screen.findByText("update")).toBeInTheDocument();
+    expect(screen.getByText("room")).toBeInTheDocument();
   });
 });

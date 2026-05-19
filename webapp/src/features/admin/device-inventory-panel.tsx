@@ -30,6 +30,8 @@ const emptyBinding: AdminDeviceInventoryBindingUpdate = {
   responsible_user: null,
   responsible_user_login: null,
   inventory_number: null,
+  status: null,
+  tags: [],
   notes: null,
 };
 
@@ -93,9 +95,30 @@ function cleanFormValue(value: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+function staleTone(collectedAt: string | null | undefined): "danger" | "success" | "warning" {
+  if (!collectedAt) {
+    return "danger";
+  }
+  const date = new Date(collectedAt);
+  if (Number.isNaN(date.getTime())) {
+    return "warning";
+  }
+  const ageMs = Date.now() - date.getTime();
+  return ageMs > 7 * 24 * 60 * 60 * 1000 ? "warning" : "success";
+}
+
+function staleLabel(collectedAt: string | null | undefined): string {
+  if (!collectedAt) {
+    return "missing inventory";
+  }
+  return staleTone(collectedAt) === "warning" ? "stale inventory" : "fresh inventory";
+}
+
 export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryPanelProps) {
   const [tab, setTab] = useState("overview");
   const [bindingForm, setBindingForm] = useState<AdminDeviceInventoryBindingUpdate>(emptyBinding);
+  const [bindingReason, setBindingReason] = useState("");
+  const [tagsText, setTagsText] = useState("");
   const [refreshInterval, setRefreshInterval] = useState("1440");
   const [refreshEnabled, setRefreshEnabled] = useState(false);
   const queryClient = useQueryClient();
@@ -116,8 +139,9 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
   });
 
   const bindingMutation = useMutation({
-    mutationFn: () => saveAdminDeviceInventoryBinding(deviceId!, bindingForm),
+    mutationFn: () => saveAdminDeviceInventoryBinding(deviceId!, bindingForm, cleanFormValue(bindingReason)),
     onSuccess: () => {
+      setBindingReason("");
       void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
     },
   });
@@ -150,8 +174,11 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
       responsible_user: binding?.responsible_user ?? null,
       responsible_user_login: binding?.responsible_user_login ?? null,
       inventory_number: binding?.inventory_number ?? null,
+      status: binding?.status ?? null,
+      tags: binding?.tags ?? [],
       notes: binding?.notes ?? null,
     });
+    setTagsText((binding?.tags ?? []).join(", "));
   }, [binding]);
 
   useEffect(() => {
@@ -161,6 +188,17 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
 
   const updateBinding = (key: keyof AdminDeviceInventoryBindingUpdate, value: string) => {
     setBindingForm((current) => ({ ...current, [key]: cleanFormValue(value) }));
+  };
+
+  const updateTags = (value: string) => {
+    setTagsText(value);
+    setBindingForm((current) => ({
+      ...current,
+      tags: value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    }));
   };
 
   return (
@@ -175,6 +213,7 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {latest ? <Badge tone="info">{schemaSourceLabel(latest.presentation_schema_source)}</Badge> : null}
+            {latest ? <Badge tone={staleTone(latest.collected_at)}>{staleLabel(latest.collected_at)}</Badge> : null}
             {refreshPolicy ? (
               <Badge tone={refreshPolicy.enabled ? "success" : "neutral"}>
                 {refreshPolicy.enabled ? "refresh enabled" : "refresh disabled"}
@@ -307,6 +346,7 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                     ["responsible_user", "Ответственный"],
                     ["responsible_user_login", "Логин"],
                     ["inventory_number", "Инвентарный номер"],
+                    ["status", "Status"],
                   ].map(([key, label]) => (
                     <label key={key} className="space-y-1 text-sm">
                       <span className="font-medium text-slate-700">{label}</span>
@@ -315,10 +355,25 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                         onChange={(event) => updateBinding(key as keyof AdminDeviceInventoryBindingUpdate, event.target.value)}
                       />
                     </label>
-                  ))}
-                </div>
+                  ))}                </div>
                 <label className="space-y-1 text-sm">
-                  <span className="font-medium text-slate-700">Заметки</span>
+                  <span className="font-medium text-slate-700">Tags</span>
+                  <Input
+                    value={tagsText}
+                    onChange={(event) => updateTags(event.target.value)}
+                    placeholder="laptop, shared, spare"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium text-slate-700">Reason / comment</span>
+                  <Input
+                    value={bindingReason}
+                    onChange={(event) => setBindingReason(event.target.value)}
+                    placeholder="move, import, correction"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium text-slate-700">Notes</span>
                   <textarea
                     className="field-base min-h-24 w-full px-4 py-3 text-sm text-slate-900"
                     value={valueText(bindingForm.notes, "")}
@@ -367,28 +422,64 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
             ) : null}
 
             {tab === "history" ? (
-              <div className="overflow-hidden rounded-lg border border-border">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-surface-subtle text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2">Время</th>
-                      <th className="px-3 py-2">Статус</th>
-                      <th className="px-3 py-2">Сводка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.history ?? []).map((item) => (
-                      <tr key={item.id} className="border-t border-border">
-                        <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
-                        <td className="px-3 py-2">{item.status}</td>
-                        <td className="px-3 py-2">{item.summary ?? "—"}</td>
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-lg border border-border">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-surface-subtle text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2">Time</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Summary</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {(data?.history ?? []).map((item) => (
+                        <tr key={item.id} className="border-t border-border">
+                          <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
+                          <td className="px-3 py-2">{item.status}</td>
+                          <td className="px-3 py-2">{item.summary ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-950">Binding changes</h4>
+                  <div className="mt-3 space-y-3">
+                    {(data?.binding_history ?? []).length === 0 ? (
+                      <p className="text-sm text-slate-500">No binding changes yet.</p>
+                    ) : (
+                      (data?.binding_history ?? []).map((item, index) => (
+                        <div className="rounded-lg bg-surface-subtle px-3 py-2 text-sm" key={`${item.changed_at}-${index}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium text-slate-800">{formatDateTime(item.changed_at)}</span>
+                            <span className="text-slate-500">{item.changed_by ?? "system"}</span>
+                          </div>
+                          <p className="mt-1 text-slate-600">{item.changed_fields.join(", ") || "fields changed"}</p>
+                          {item.reason ? <p className="mt-1 text-slate-500">{item.reason}</p> : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-950">Refresh runs</h4>
+                  <div className="mt-3 space-y-2">
+                    {(data?.refresh_runs ?? []).length === 0 ? (
+                      <p className="text-sm text-slate-500">No refresh runs recorded.</p>
+                    ) : (
+                      (data?.refresh_runs ?? []).map((item) => (
+                        <div className="grid gap-2 rounded-lg bg-surface-subtle px-3 py-2 text-sm md:grid-cols-[150px_120px_minmax(0,1fr)]" key={item.id}>
+                          <span>{formatDateTime(item.requested_at)}</span>
+                          <Badge tone={item.status === "dispatched" ? "success" : item.status === "failed" ? "danger" : "neutral"}>{item.status}</Badge>
+                          <span className="text-slate-500">{item.error ?? item.job_id ?? "-"}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             ) : null}
-
             {!["raw", "binding", "history"].includes(tab) ? (
               <ModuleResultRenderer result={result} presentationSchema={effectiveSchema} />
             ) : null}

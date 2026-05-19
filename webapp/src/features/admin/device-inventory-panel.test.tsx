@@ -84,10 +84,22 @@ function inventoryPayload() {
         responsible_user: "Ivan Petrov",
         responsible_user_login: "ipetrov",
         inventory_number: "INV-42",
+        status: "active",
+        tags: ["laptop", "shared"],
         notes: null,
         updated_at: "2026-05-18T09:00:00Z",
         updated_by: "admin",
       },
+      binding_history: [
+        {
+          changed_at: "2026-05-18T09:00:00Z",
+          changed_by: "admin",
+          changed_fields: ["room"],
+          old_binding: { room: "400" },
+          new_binding: { room: "401" },
+          reason: "move",
+        },
+      ],
       refresh_policy: {
         id: "policy-1",
         scope: "device",
@@ -100,6 +112,20 @@ function inventoryPayload() {
         updated_at: "2026-05-18T08:00:00Z",
         updated_by: "admin",
       },
+      refresh_runs: [
+        {
+          id: "run-1",
+          device_id: "device-1",
+          policy_id: "policy-1",
+          requested_at: "2026-05-18T08:00:00Z",
+          requested_by: "admin",
+          status: "dispatched",
+          job_id: "op-1",
+          error: null,
+          completed_at: null,
+        },
+      ],
+      last_refresh_run: null,
     },
   };
 }
@@ -144,6 +170,12 @@ describe("DeviceInventoryPanel", () => {
     expect(screen.getByText("DeskPro")).toBeInTheDocument();
     expect(screen.getByText("HP Universal")).toBeInTheDocument();
     expect(screen.getByText("LibreOffice")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /История/i }));
+    expect(screen.getByText("Binding changes")).toBeInTheDocument();
+    expect(screen.getByText("move")).toBeInTheDocument();
+    expect(screen.getByText("Refresh runs")).toBeInTheDocument();
+    expect(screen.getByText("dispatched")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Обновить инвентарь/i }));
 

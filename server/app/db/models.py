@@ -2724,6 +2724,8 @@ class DeviceInventoryBinding(Base):
     responsible_user: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     responsible_user_login: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     inventory_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -2732,6 +2734,28 @@ class DeviceInventoryBinding(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class DeviceInventoryBindingHistory(Base):
+    """Audit trail for lightweight inventory binding changes."""
+    __tablename__ = "device_inventory_binding_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    changed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    old_binding: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    new_binding: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    changed_fields: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_binding_history_device_changed", "device_id", "changed_at"),
+    )
 
 
 class DeviceInventoryRefreshPolicy(Base):
@@ -2758,6 +2782,31 @@ class DeviceInventoryRefreshPolicy(Base):
         Index("ix_device_inventory_refresh_policies_scope", "scope"),
         Index("ix_device_inventory_refresh_policies_device", "device_id"),
         Index("ix_device_inventory_refresh_policies_enabled_due", "enabled", "next_due_at"),
+    )
+
+
+class DeviceInventoryRefreshRun(Base):
+    """Visibility record for manual/scheduled inventory refresh attempts."""
+    __tablename__ = "device_inventory_refresh_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    policy_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    requested_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="requested")
+    job_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_refresh_runs_device_requested", "device_id", "requested_at"),
+        Index("ix_device_inventory_refresh_runs_policy_requested", "policy_id", "requested_at"),
+        Index("ix_device_inventory_refresh_runs_status", "status"),
     )
 
 

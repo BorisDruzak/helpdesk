@@ -24,6 +24,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
@@ -41,18 +42,25 @@ import {
   type AdminConnectionPolicy,
   type AdminConnectionRequestItem,
   type AdminDevicesPayload,
+  type AdminInventoryBindingImportResult,
+  type AdminInventoryDashboardPayload,
   type AdminStatusFilter,
+  adminInventoryBindingsExportUrl,
+  adminInventoryExportUrl,
+  fetchAdminInventoryDashboard,
+  importAdminInventoryBindings,
 } from "../../features/admin/api";
 import { cn } from "../../shared/ui/cn";
 
 type DeviceItem = AdminDevicesPayload["devices"][number];
-type InventoryPanel = "agents" | "requests" | "tokens" | "rollout";
+type InventoryPanel = "agents" | "requests" | "tokens" | "rollout" | "fleet";
 
 const PANEL_OPTIONS: Array<{ id: InventoryPanel; label: string; icon: typeof Monitor }> = [
   { id: "agents", label: "Агенты", icon: Monitor },
   { id: "requests", label: "Подключения", icon: BellRing },
   { id: "tokens", label: "Токены", icon: KeyRound },
   { id: "rollout", label: "Rollout", icon: Rocket },
+  { id: "fleet", label: "Fleet", icon: ClipboardList },
 ];
 
 const POLICY_LABELS: Record<AdminConnectionPolicy, string> = {
@@ -131,6 +139,9 @@ export function AdminInventoryPage() {
   );
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [cleanupFeedback, setCleanupFeedback] = useState<string | null>(null);
+  const [fleetStaleDays, setFleetStaleDays] = useState("7");
+  const [bindingCsvText, setBindingCsvText] = useState("");
+  const [bindingImportResult, setBindingImportResult] = useState<AdminInventoryBindingImportResult | null>(null);
   const deferredQuery = useDeferredValue(query);
 
   const devicesQuery = useQuery({
@@ -150,6 +161,13 @@ export function AdminInventoryPage() {
   const policyQuery = useQuery({
     queryKey: ["admin-connection-policy"],
     queryFn: fetchAdminConnectionPolicy,
+    retry: false,
+  });
+
+  const fleetDashboardQuery = useQuery({
+    queryKey: ["admin-inventory-dashboard", fleetStaleDays],
+    queryFn: () => fetchAdminInventoryDashboard(Number.parseInt(fleetStaleDays, 10) || 7),
+    enabled: activePanel === "fleet",
     retry: false,
   });
 
@@ -223,6 +241,22 @@ export function AdminInventoryPage() {
     mutationFn: updateAdminConnectionPolicy,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-connection-policy"] });
+    },
+  });
+
+  const importBindingsMutation = useMutation({
+    mutationFn: (dryRun: boolean) =>
+      importAdminInventoryBindings({
+        csv_text: bindingCsvText,
+        dry_run: dryRun,
+        reason: dryRun ? "dry run" : "bulk import",
+      }),
+    onSuccess: async (result) => {
+      setBindingImportResult(result);
+      if (!result.dry_run) {
+        await queryClient.invalidateQueries({ queryKey: ["admin-inventory-dashboard"] });
+        await queryClient.invalidateQueries({ queryKey: ["admin-device-inventory"] });
+      }
     },
   });
 
@@ -463,6 +497,22 @@ export function AdminInventoryPage() {
                 }}
                 onOpenModules={() => navigate("/app/admin/modules")}
                 selectedDevice={selectedDevice}
+              />
+            ) : null}
+
+            {activePanel === "fleet" ? (
+              <FleetInventoryPanel
+                dashboard={fleetDashboardQuery.data ?? null}
+                importBusy={importBindingsMutation.isPending}
+                importResult={bindingImportResult}
+                isLoading={fleetDashboardQuery.isLoading}
+                onApplyImport={() => importBindingsMutation.mutate(false)}
+                onDryRunImport={() => importBindingsMutation.mutate(true)}
+                onRefresh={() => void fleetDashboardQuery.refetch()}
+                setCsvText={setBindingCsvText}
+                setStaleDays={setFleetStaleDays}
+                staleDays={fleetStaleDays}
+                csvText={bindingCsvText}
               />
             ) : null}
           </CardContent>
@@ -741,6 +791,169 @@ function TokensPanel({
           </Button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function FleetInventoryPanel({
+  csvText,
+  dashboard,
+  importBusy,
+  importResult,
+  isLoading,
+  onApplyImport,
+  onDryRunImport,
+  onRefresh,
+  setCsvText,
+  setStaleDays,
+  staleDays,
+}: {
+  csvText: string;
+  dashboard: AdminInventoryDashboardPayload | null;
+  importBusy: boolean;
+  importResult: AdminInventoryBindingImportResult | null;
+  isLoading: boolean;
+  onApplyImport: () => void;
+  onDryRunImport: () => void;
+  onRefresh: () => void;
+  setCsvText: (value: string) => void;
+  setStaleDays: (value: string) => void;
+  staleDays: string;
+}) {
+  const totals = dashboard?.totals ?? {};
+  const bindingGaps = dashboard?.binding_gaps ?? {};
+  const missingApps = dashboard?.health?.missing_key_apps ?? [];
+  return (
+    <div className="space-y-5 p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Сводка парка</p>
+          <p className="mt-1 text-sm text-slate-500">Лёгкий эксплуатационный контур инвентаря без бухгалтерского CMDB.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="w-28"
+            min={1}
+            onChange={(event) => setStaleDays(event.target.value)}
+            type="number"
+            value={staleDays}
+          />
+          <Button onClick={onRefresh} size="sm" variant="outline">
+            Обновить
+          </Button>
+          <Button
+            onClick={() => {
+              window.location.href = adminInventoryExportUrl(Number.parseInt(staleDays, 10) || 7);
+            }}
+            size="sm"
+            variant="outline"
+          >
+            CSV инвентарь
+          </Button>
+          <Button
+            onClick={() => {
+              window.location.href = adminInventoryBindingsExportUrl();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            CSV привязки
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? <p className="text-sm text-slate-500">Загружаем сводку...</p> : null}
+
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <MiniMetric label="Устройств" value={String(totals.devices ?? 0)} />
+        <MiniMetric label="Есть инвентарь" value={String(totals.with_inventory ?? 0)} />
+        <MiniMetric label="Устарел" value={String(totals.stale_inventory ?? 0)} />
+        <MiniMetric label="Нет инвентаря" value={String(totals.missing_inventory ?? 0)} />
+        <MiniMetric label="Нет привязки" value={String(totals.missing_binding ?? 0)} />
+        <MiniMetric label="Нет инв. номера" value={String(bindingGaps.missing_inventory_number ?? 0)} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Пробелы привязки</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <MiniMetric label="Нет кабинета" value={String(bindingGaps.missing_room ?? 0)} />
+            <MiniMetric label="Нет отдела" value={String(bindingGaps.missing_department ?? 0)} />
+            <MiniMetric label="Нет ответственного" value={String(bindingGaps.missing_responsible_user ?? 0)} />
+            <MiniMetric label="Нет инв. номера" value={String(bindingGaps.missing_inventory_number ?? 0)} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Технические риски</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <MiniMetric label="Диск >= 90%" value={String(dashboard?.health?.high_disk_usage ?? 0)} />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Отсутствуют key apps</p>
+              <div className="mt-2 max-h-32 overflow-auto rounded-lg bg-surface-subtle p-2 text-sm text-slate-600">
+                {missingApps.length === 0
+                  ? "Нет данных"
+                  : missingApps.slice(0, 8).map((item, index) => (
+                      <div key={`${String(item.device_id)}-${index}`}>
+                        {String(item.hostname ?? item.device_id ?? "device")} · {String(item.name ?? item.id ?? "app")}
+                      </div>
+                    ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bulk import привязок</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <textarea
+            className="field-base min-h-32 w-full px-4 py-3 font-mono text-sm text-slate-900"
+            onChange={(event) => setCsvText(event.target.value)}
+            placeholder="device_id,hostname,building,floor,room,department,responsible_user,inventory_number,status,tags,notes"
+            value={csvText}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={importBusy || !csvText.trim()} onClick={onDryRunImport} size="sm" variant="outline">
+              Dry run
+            </Button>
+            <Button disabled={importBusy || !csvText.trim() || !importResult || importResult.error_rows > 0} onClick={onApplyImport} size="sm">
+              Apply import
+            </Button>
+          </div>
+          {importResult ? (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-surface-subtle text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Row</th>
+                    <th className="px-3 py-2">Action</th>
+                    <th className="px-3 py-2">Device</th>
+                    <th className="px-3 py-2">Fields</th>
+                    <th className="px-3 py-2">Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importResult.changes.slice(0, 25).map((item) => (
+                    <tr className="border-t border-border" key={item.row}>
+                      <td className="px-3 py-2">{item.row}</td>
+                      <td className="px-3 py-2">{item.action}</td>
+                      <td className="px-3 py-2">{item.hostname ?? item.device_id ?? "-"}</td>
+                      <td className="px-3 py-2">{item.changed_fields.join(", ") || "-"}</td>
+                      <td className="px-3 py-2">{item.errors.join(", ") || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
