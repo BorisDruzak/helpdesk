@@ -1248,7 +1248,7 @@ class TicketEventsRepo:
         Example:
             # Get all open tickets, newest first
             tickets = await repo.list_tickets(
-                filters={"status": "In Progress"},
+                filters={"status": "in_progress"},
                 order_by="created_at",
                 order_direction="desc",
                 limit=50

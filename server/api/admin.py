@@ -110,7 +110,7 @@ async def handle_admin_run_tool(request):
                     device_id=device_id,
                     title=title,
                     description=description,
-                    status="In Progress",
+                    status="in_progress",
                 )
                 state.create_session(Session(
                     session_id=session_id,
@@ -286,4 +286,3 @@ async def handle_admin_run_tool(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-
