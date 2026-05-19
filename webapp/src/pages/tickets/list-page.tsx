@@ -2517,7 +2517,7 @@ export function TicketListPage() {
                   </div>
                 </div>
 
-                <section className={`mt-3 grid gap-3 rounded-xl border p-3 md:grid-cols-[auto_minmax(0,1fr)_minmax(170px,240px)] md:items-center ${toneClasses(selectedTicket.nextAction.tone)}`}>
+                <section className={`mt-3 grid gap-3 rounded-xl border p-3 2xl:grid-cols-[auto_minmax(0,1fr)_minmax(170px,240px)] 2xl:items-center ${toneClasses(selectedTicket.nextAction.tone)}`}>
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10">
                     <Play className="h-5 w-5" />
                   </div>
@@ -2527,7 +2527,7 @@ export function TicketListPage() {
                     <p className="mt-1 text-sm leading-5 text-slate-300">{selectedTicket.nextAction.hint}</p>
                     <p className="mt-1 text-xs text-slate-400">Владелец: {selectedTicket.nextAction.ownerLabel}</p>
                   </div>
-                  <div className="min-w-0 border-white/10 md:border-l md:pl-4">
+                  <div className="min-w-0 border-white/10 2xl:border-l 2xl:pl-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Осталось времени</p>
                     <p className="mt-1 text-xl font-semibold leading-7 text-white">{selectedTicket.nextAction.remainingLabel}</p>
                     <p className="mt-1 text-xs text-slate-400">до контрольного срока</p>
