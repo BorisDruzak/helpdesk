@@ -98,6 +98,14 @@ class RegistryIngestionService:
                 location_id=location.location_id if location else None,
                 department_id=department.department_id if department else None,
             )
+            from inventory.service import DeviceInventoryService
+
+            await DeviceInventoryService(self.session).create_or_update_binding_suggestion_from_profile(
+                device_id=device_id,
+                requester_id=requester_id,
+                display_name=person_display_name,
+                profile={**profile, "full_name": full_name},
+            )
 
         return RegistryProfileIngestResult(
             person_id=person.person_id,

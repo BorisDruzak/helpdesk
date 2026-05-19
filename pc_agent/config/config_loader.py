@@ -17,7 +17,7 @@ from loguru import logger
 _CONFIG_DIR = Path(__file__).resolve().parent
 DEFAULT_SETTINGS_TEMPLATE = _CONFIG_DIR / "settings.default.yaml"
 _config_base: Optional[Path] = None  # data_root при вызове init_config(); для разрешения относительных путей
-CORE_ENABLED_MODULES = ("system", "screen", "diag_logs", "inventory")
+CORE_ENABLED_MODULES = ("system", "screen", "diag_logs", "inventory", "presence")
 
 
 def _normalize_enabled_modules(module_names: List[str] | None) -> List[str]:
@@ -113,7 +113,7 @@ class Settings(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    enabled_modules: List[str] = Field(default_factory=lambda: list(CORE_ENABLED_MODULES), description="Список включенных модулей (базовая комплектация: system, screen, diag_logs, inventory)")
+    enabled_modules: List[str] = Field(default_factory=lambda: list(CORE_ENABLED_MODULES), description="Список включенных модулей (базовая комплектация: system, screen, diag_logs, inventory, presence)")
     ui: UiConfig = Field(default_factory=UiConfig, description="Конфигурация UI")
     modules: ModulesConfig = Field(default_factory=ModulesConfig, description="Конфигурация модулей")
 

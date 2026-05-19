@@ -136,7 +136,7 @@ SERVER_PUBLIC_BASE_URL = os.getenv(
 
 AGENT_BUILTIN_MODULES = {
     module.strip().lower()
-    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen,diag,inventory").split(",")
+    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen,diag,inventory,presence").split(",")
     if module.strip()
 }
 

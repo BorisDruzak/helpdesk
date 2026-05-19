@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+﻿import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -237,5 +237,117 @@ describe("DeviceInventoryPanel", () => {
     renderPanel();
 
     expect(await screen.findByText(/Snapshot ещё не собран/i)).toBeInTheDocument();
+  });
+  it("renders profile suggestions and presence and sends review actions", async () => {
+    const payload: any = inventoryPayload();
+    payload.data.profiles = [
+      {
+        requester_id: "ivanova",
+        display_name: "Иванова И.И.",
+        full_name: "Иванова И.И.",
+        department: "Бухгалтерия",
+        building: "Администрация",
+        floor: "2",
+        room: "214",
+        phone: "5-12",
+        email: null,
+        login: "ivanova",
+        last_seen_at: "2026-05-18T11:00:00Z",
+        source: "agent_profile",
+        status: "pending",
+        active: true,
+      },
+    ];
+    payload.data.binding_suggestions = [
+      {
+        id: "suggestion-1",
+        device_id: "device-1",
+        source: "agent_profile",
+        source_ref: "ivanova",
+        suggested_binding: { building: "Администрация", room: "214", department: "Бухгалтерия" },
+        profile_snapshot: { full_name: "Иванова И.И.", display_name: "Иванова И.И." },
+        status: "pending",
+        confidence: "medium",
+        created_at: "2026-05-18T11:00:00Z",
+        updated_at: "2026-05-18T11:00:00Z",
+        reviewed_by: null,
+        reviewed_at: null,
+        review_note: null,
+      },
+    ];
+    payload.data.presence = {
+      device_id: "device-1",
+      latest: {
+        id: "presence-1",
+        collected_at: "2026-05-18T11:05:00Z",
+        received_at: "2026-05-18T11:05:02Z",
+        session_state: "idle",
+        current_user: "ivanova",
+        idle_seconds: 600,
+        locked: false,
+        result: {},
+      },
+      today: {
+        date: "2026-05-18",
+        active_seconds: 3600,
+        idle_seconds: 600,
+        locked_seconds: 0,
+        offline_seconds: 0,
+        unknown_seconds: 0,
+        updated_at: "2026-05-18T11:05:02Z",
+      },
+      history: [],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/web/admin/devices/device-1/inventory" && !init?.method) {
+        return jsonResponse(payload);
+      }
+      if (url === "/api/web/admin/devices/device-1/binding-suggestions/suggestion-1/apply" && init?.method === "POST") {
+        return jsonResponse({ status: "success", data: payload.data.binding });
+      }
+      if (url === "/api/web/admin/devices/device-1/presence/collect" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            device_id: "device-1",
+            tool_name: "presence.collect",
+            operation_id: "op-presence",
+            status: "accepted",
+            message: "Команда presence.collect отправлена",
+            poll_url: "/api/operations/op-presence",
+          },
+        });
+      }
+      return jsonResponse({ status: "error", error: `Unhandled ${url}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Регистрация" }));
+    expect(screen.getByText("Профили агента")).toBeInTheDocument();
+    expect(screen.getAllByText("Иванова И.И.")[0]).toBeInTheDocument();
+    expect(screen.getByText("Бухгалтерия")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Применить поля" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/devices/device-1/binding-suggestions/suggestion-1/apply",
+        expect.objectContaining({ method: "POST", body: expect.stringContaining("department") })
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Присутствие" }));
+    expect(screen.getByText("Присутствие рабочего места")).toBeInTheDocument();
+    expect(screen.getByText("idle")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Обновить состояние/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/devices/device-1/presence/collect",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
   });
 });

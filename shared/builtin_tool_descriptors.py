@@ -11,6 +11,7 @@ from typing import Any
 
 
 INVENTORY_COLLECT_TOOL_ID = "inventory.collect"
+PRESENCE_COLLECT_TOOL_ID = "presence.collect"
 
 
 INVENTORY_COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -311,6 +312,125 @@ INVENTORY_COLLECT_PRESENTATION_SCHEMA: dict[str, Any] = {
 }
 
 
+PRESENCE_COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "schema_version": {"type": "string"},
+        "collected_at": {"type": "string", "format": "date-time"},
+        "agent": {
+            "type": "object",
+            "properties": {
+                "online": {"type": "boolean"},
+                "last_heartbeat_at": {"type": "string", "format": "date-time"},
+                "connection_state": {"type": "string"},
+                "agent_uptime_seconds": {"type": "integer"},
+            },
+        },
+        "session": {
+            "type": "object",
+            "properties": {
+                "current_user": {"type": "string"},
+                "session_state": {"type": "string"},
+                "locked": {"type": "boolean"},
+                "idle_seconds": {"type": "integer"},
+                "last_input_at": {"type": "string", "format": "date-time"},
+                "session_started_at": {"type": "string", "format": "date-time"},
+            },
+        },
+        "today": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "format": "date"},
+                "active_seconds": {"type": "integer"},
+                "idle_seconds": {"type": "integer"},
+                "locked_seconds": {"type": "integer"},
+                "offline_seconds": {"type": "integer"},
+                "unknown_seconds": {"type": "integer"},
+            },
+        },
+        "warnings": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+PRESENCE_COLLECT_OUTPUT_CONTRACT: dict[str, Any] = {
+    "kind": "device.presence.snapshot",
+    "version": "1.0",
+    "device_card": {
+        "eligible": True,
+        "slots": ["presence", "agent", "activity"],
+        "priority": 80,
+    },
+    "privacy": {
+        "purpose": "technical endpoint availability and workplace presence state",
+        "collects_content": False,
+        "forbidden": [
+            "screenshots",
+            "keystrokes",
+            "mouse_coordinates",
+            "browser_history",
+            "full_urls",
+            "document_contents",
+            "clipboard_contents",
+            "messages",
+        ],
+    },
+    "evidence": {
+        "domain": "endpoint",
+        "perspective": "presence",
+    },
+}
+
+
+PRESENCE_COLLECT_PRESENTATION_SCHEMA: dict[str, Any] = {
+    "version": "1.0",
+    "kind": "tool_result",
+    "title": "Присутствие рабочего места",
+    "summary": {
+        "title_path": "session.current_user",
+        "subtitle_template": "{{session.session_state}} · idle {{session.idle_seconds}} с",
+        "status_path": "session.session_state",
+    },
+    "blocks": [
+        {
+            "type": "field_grid",
+            "id": "presence_current",
+            "title": "Текущее состояние",
+            "fields": [
+                {"path": "agent.online", "label": "Агент онлайн"},
+                {"path": "agent.connection_state", "label": "Соединение"},
+                {"path": "session.current_user", "label": "Сеанс"},
+                {"path": "session.session_state", "label": "Состояние"},
+                {"path": "session.locked", "label": "Экран заблокирован"},
+                {"path": "session.idle_seconds", "label": "Простой", "format": "duration_seconds"},
+                {"path": "session.last_input_at", "label": "Последняя активность ввода", "format": "datetime", "empty_text": "-"},
+                {"path": "collected_at", "label": "Собрано", "format": "datetime"},
+            ],
+        },
+        {
+            "type": "metric_cards",
+            "id": "presence_today",
+            "title": "Сводка за сегодня",
+            "metrics": [
+                {"path": "today.active_seconds", "label": "Активно", "format": "duration_seconds"},
+                {"path": "today.idle_seconds", "label": "Простой", "format": "duration_seconds"},
+                {"path": "today.locked_seconds", "label": "Заблокировано", "format": "duration_seconds"},
+                {"path": "today.offline_seconds", "label": "Офлайн", "format": "duration_seconds"},
+                {"path": "today.unknown_seconds", "label": "Неизвестно", "format": "duration_seconds"},
+            ],
+        },
+        {
+            "type": "checklist",
+            "id": "presence_warnings",
+            "title": "Предупреждения",
+            "items_path": "warnings",
+        },
+        {"type": "raw_json", "collapsed": True},
+    ],
+    "fallback": {"show_raw_json": True},
+}
+
+
 BUILTIN_TOOL_DESCRIPTORS: dict[str, dict[str, Any]] = {
     INVENTORY_COLLECT_TOOL_ID: {
         "id": INVENTORY_COLLECT_TOOL_ID,
@@ -329,6 +449,25 @@ BUILTIN_TOOL_DESCRIPTORS: dict[str, dict[str, Any]] = {
         "output_schema": INVENTORY_COLLECT_OUTPUT_SCHEMA,
         "output_contract": INVENTORY_COLLECT_OUTPUT_CONTRACT,
         "presentation_schema": INVENTORY_COLLECT_PRESENTATION_SCHEMA,
+        "source": "agent_builtin",
+    },
+    PRESENCE_COLLECT_TOOL_ID: {
+        "id": PRESENCE_COLLECT_TOOL_ID,
+        "title": "Presence collect",
+        "description": "Privacy-safe workplace presence and session state snapshot",
+        "provider_id": "presence",
+        "provider_type": "agent_builtin",
+        "execution_target": "agent_builtin",
+        "tool_kind": "presence",
+        "risk_level": "low",
+        "side_effects": False,
+        "requires_device": True,
+        "requires_agent_online": True,
+        "platforms": ["win32", "linux"],
+        "params_schema": {"type": "object", "additionalProperties": False, "properties": {}},
+        "output_schema": PRESENCE_COLLECT_OUTPUT_SCHEMA,
+        "output_contract": PRESENCE_COLLECT_OUTPUT_CONTRACT,
+        "presentation_schema": PRESENCE_COLLECT_PRESENTATION_SCHEMA,
         "source": "agent_builtin",
     }
 }

@@ -69,6 +69,7 @@ Builtin evidence markings:
 
 - `system.collect` produces endpoint system snapshot evidence.
 - `inventory.collect` produces a privacy-safe endpoint inventory snapshot for device cards/passports.
+- `presence.collect` produces a privacy-safe workplace presence snapshot: agent connection state, coarse user-session state and daily aggregate counters without user-content capture.
 - `screen.collect` produces endpoint screenshot evidence and screenshot artifacts.
 - `screen.record` produces endpoint screen recording evidence and recording artifacts.
 - `diag.logs.collect` produces `logs.bundle` evidence from endpoint perspective, is passport-eligible and may produce `logs_zip` artifacts.
@@ -154,6 +155,23 @@ v2 additions are still best-effort and read-only:
 - optional hardware identifiers include manufacturer, model, serial number, BIOS version and asset tag when readable without elevated access.
 
 Optional collectors must fail soft: unavailable DNS/printer/software/hardware details are reported in `warnings` or section-local `warnings` and do not fail the whole tool. Server-side device binding fields (building, floor, room, department, responsible user, inventory number and notes) are manually entered inventory metadata, not agent-collected surveillance data.
+
+## presence.collect v1
+
+`presence.collect` is a core built-in read-only module for workplace presence and endpoint availability. It returns `output_contract.kind=device.presence.snapshot` with `device_card.slots=["presence","agent","activity"]` and a default presentation schema for current state plus the daily summary.
+
+Collected fields are intentionally coarse:
+
+- agent connection state: online flag, connection state, last heartbeat timestamp and agent uptime;
+- session state: current endpoint session user, `active|idle|locked|logged_out|unknown`, lock flag, idle seconds and last-input timestamp where the OS exposes it safely;
+- today summary: active, idle, locked, offline and unknown seconds.
+
+Privacy boundary:
+
+- allowed: endpoint availability and technical session state needed for support;
+- forbidden: screenshots, keystrokes, key names, mouse coordinates, window titles, application names, browser history, full URLs, clipboard contents, document contents, messages or personal file listings.
+
+Platform support is best-effort. Windows uses the OS last-input timestamp API and does not capture input contents. Linux returns `unknown` with a warning when desktop-session idle/lock state is unavailable without an approved helper. Periodic presence collection is a server policy concern and must remain disabled unless explicitly enabled; manual `presence.collect` may be dispatched through the existing tool execution path.
 
 # Agent Recipe Runner
 

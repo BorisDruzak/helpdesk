@@ -123,6 +123,9 @@ export type AdminDeviceInventoryPayload = {
   refresh_policy?: AdminDeviceInventoryRefreshPolicy | null;
   refresh_runs?: AdminDeviceInventoryRefreshRun[];
   last_refresh_run?: AdminDeviceInventoryRefreshRun | null;
+  profiles?: AdminDeviceProfileItem[];
+  binding_suggestions?: AdminBindingSuggestionItem[];
+  presence?: AdminDevicePresencePayload | null;
 };
 
 export type AdminDeviceInventoryBinding = {
@@ -169,12 +172,76 @@ export type AdminDeviceInventoryRefreshRun = {
   id: string;
   device_id: string | null;
   policy_id: string | null;
+  bulk_operation_id?: string | null;
   requested_at: string;
   requested_by: string | null;
   status: string;
   job_id: string | null;
   error: string | null;
   completed_at: string | null;
+};
+
+export type AdminDeviceProfileItem = {
+  requester_id: string | null;
+  display_name: string | null;
+  full_name: string | null;
+  department: string | null;
+  building: string | null;
+  room: string | null;
+  phone: string | null;
+  email: string | null;
+  login: string | null;
+  last_seen_at: string | null;
+  source: string;
+  status: string;
+  active: boolean;
+};
+
+export type AdminBindingSuggestionItem = {
+  id: string;
+  device_id: string;
+  source: string;
+  source_ref: string | null;
+  suggested_binding: Record<string, unknown>;
+  profile_snapshot: Record<string, unknown>;
+  status: "pending" | "applied" | "ignored" | "rejected" | string;
+  confidence: string | null;
+  created_at: string;
+  updated_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
+export type AdminDevicePresencePayload = {
+  device_id: string;
+  latest: {
+    id: string;
+    collected_at: string;
+    received_at: string | null;
+    session_state: string | null;
+    current_user: string | null;
+    idle_seconds: number | null;
+    locked: boolean | null;
+    result: Record<string, unknown>;
+  } | null;
+  today: {
+    date: string;
+    active_seconds: number;
+    idle_seconds: number;
+    locked_seconds: number;
+    offline_seconds: number;
+    unknown_seconds: number;
+    updated_at: string | null;
+  } | null;
+  history: Array<{
+    id: string;
+    collected_at: string;
+    session_state: string | null;
+    current_user: string | null;
+    idle_seconds: number | null;
+    locked: boolean | null;
+  }>;
 };
 
 export type AdminInventoryBindingImportResult = {
@@ -204,6 +271,24 @@ export type AdminInventoryDashboardPayload = {
     missing_key_apps?: Array<Record<string, unknown>>;
   };
   refresh: Record<string, unknown>;
+  attention?: Record<string, Array<Record<string, unknown>>>;
+};
+
+export type AdminBulkRefreshResult = {
+  dry_run: boolean;
+  selected_count: number;
+  online_count: number;
+  offline_count: number;
+  estimated_waves: number;
+  operation_id?: string | null;
+  status?: string | null;
+  items: Array<{
+    device_id: string;
+    hostname: string | null;
+    status: string;
+    reason: string | null;
+    wave_index?: number;
+  }>;
 };
 
 export type AdminDeviceInventoryCollectPayload = {
@@ -510,6 +595,71 @@ export function adminInventoryExportUrl(staleDays = 7): string {
   const searchParams = new URLSearchParams();
   searchParams.set("stale_days", String(staleDays));
   return `/api/web/admin/inventory/export.csv?${searchParams.toString()}`;
+}
+
+export function adminInventoryExportXlsxUrl(staleDays = 7): string {
+  const searchParams = new URLSearchParams();
+  searchParams.set("stale_days", String(staleDays));
+  return `/api/web/admin/inventory/export.xlsx?${searchParams.toString()}`;
+}
+
+export async function bulkRefreshAdminInventory(payload: {
+  device_ids?: string[];
+  mode: "selected" | "stale" | "missing" | "department" | "building";
+  filters?: Record<string, unknown>;
+  wave?: { batch_size?: number; delay_seconds?: number; skip_offline?: boolean };
+  dry_run: boolean;
+}): Promise<AdminBulkRefreshResult> {
+  const response = await fetch("/api/web/admin/inventory/bulk-refresh", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось запустить массовое обновление инвентаря");
+}
+
+export async function applyAdminDeviceBindingSuggestion(
+  deviceId: string,
+  suggestionId: string,
+  fields: string[],
+  reason?: string | null
+): Promise<AdminDeviceInventoryBinding> {
+  const response = await fetch(
+    `/api/web/admin/devices/${encodeURIComponent(deviceId)}/binding-suggestions/${encodeURIComponent(suggestionId)}/apply`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields, reason })
+    }
+  );
+  return readSuccessResponse(response, "Не удалось применить предложение привязки");
+}
+
+export async function ignoreAdminDeviceBindingSuggestion(
+  deviceId: string,
+  suggestionId: string,
+  reason?: string | null
+): Promise<AdminBindingSuggestionItem> {
+  const response = await fetch(
+    `/api/web/admin/devices/${encodeURIComponent(deviceId)}/binding-suggestions/${encodeURIComponent(suggestionId)}/ignore`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason })
+    }
+  );
+  return readSuccessResponse(response, "Не удалось игнорировать предложение привязки");
+}
+
+export async function collectAdminDevicePresence(deviceId: string): Promise<AdminDeviceInventoryCollectPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/presence/collect`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось отправить presence.collect");
 }
 
 export async function saveAdminDeviceInventoryRefreshPolicy(

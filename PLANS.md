@@ -358,3 +358,30 @@ Implementation notes:
 - Server/API: `/api/web/admin/devices/{device_id}/inventory` is extended backward-compatibly with `binding_history`, `refresh_runs` and `last_refresh_run`; new endpoints cover binding history, binding CSV import/export, fleet inventory CSV export, dashboard aggregation and refresh run listing.
 - Webapp: `/app/admin/inventory?panel=fleet` renders fleet summary, CSV export buttons and dry-run/apply binding import; `DeviceInventoryPanel` shows stale status, tags/status binding fields, binding change history and refresh run history.
 - Verification: remote PostgreSQL migration `095 -> 096` completed, browser smoke on `https://192.168.100.17:9443/admin` verified the fleet dashboard after fixing the dashboard `last_requested_at` null case, local focused/full agent and webapp tests passed, and the branch was pushed to GitHub.
+
+## Active Work: Inventory v4 / Fleet Operations, Workplace Registration v1 and Presence v1
+
+Status: local verification passed on branch `codex/inventory-v4-registration-presence`; remote PostgreSQL migration/browser release smoke pending explicit release request.
+
+Goal:
+
+- Extend lightweight inventory into fleet operations without building a procurement/accounting CMDB: selected/stale/missing/department/building bulk refresh, operation tracking, reports, XLSX export, profile-based workplace binding suggestions and safe workplace presence snapshots.
+
+Scope:
+
+- Agent: add `presence.collect` as a core built-in read-only module with `output_schema`, `output_contract.kind=device.presence.snapshot` and `presentation_schema`; keep `inventory.collect` shape and descriptors stable.
+- Server: add migration `097_inventory_v4_registration_presence` for bulk operations/items, binding suggestions and presence snapshots/daily summaries; extend inventory dashboard/report/export APIs; persist `presence.collect` command results; create non-destructive binding suggestions from agent profiles.
+- Webapp: enhance `/app/admin/inventory?panel=fleet` with bulk refresh, attention groups and XLSX export; enhance `DeviceInventoryPanel` with agent profiles, binding suggestions and workplace presence.
+- Privacy: presence is endpoint availability/session state only. It must not collect screenshots, keystrokes, mouse coordinates, window titles, browser history, full URLs, document contents, clipboard contents, messages or personal file listings. Agent profiles may suggest binding fields but must not overwrite confirmed binding automatically.
+
+Verification target:
+
+- Agent focused: `python -m pytest pc_agent/tests/test_presence_collect.py pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_inventory_profiles.py pc_agent/tests/test_registry_and_module_loading.py -v --tb=short`.
+- Server focused: `python -m pytest server/tests/test_inventory_v4_service.py server/tests/test_inventory_v3_service.py server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -v --tb=short`; DB-backed v3/v4 tests are expected to run on Linux/CI and skip on Windows.
+- Webapp: `pnpm --dir webapp test`, `pnpm --dir webapp build`, `pnpm --dir webapp exec tsc --noEmit`.
+- General: `python -m compileall -q pc_agent server shared scripts/navigation_catalog.py`, docs link check, workspace verify, `git diff --check`, and remote PostgreSQL migration/browser smoke before release acceptance.
+
+Local verification:
+
+- Passed: focused `presence.collect`/inventory/registry/config-loader agent tests, full `pc_agent/tests/`, focused server no-db/inventory presentation tests, webapp full Vitest suite, webapp typecheck/build, `compileall`, docs link check, workspace verification and diff whitespace checks.
+- Windows-local DB-backed inventory v3/v4 service tests skip by design; run them on Linux/CI before release acceptance.
