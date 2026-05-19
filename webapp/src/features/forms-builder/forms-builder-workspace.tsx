@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -1013,6 +1013,12 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           </Badge>
           <Badge tone={health.errors ? "danger" : "success"}>Ошибки: {health.errors}</Badge>
           <Badge tone={health.warnings ? "warning" : "neutral"}>Предупреждения: {health.warnings}</Badge>
+          <Link
+            className="inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+            to={`/app/admin/request-template-studio${selectedForm ? `?template=${encodeURIComponent(selectedForm.key)}` : ""}`}
+          >
+            Открыть в студии
+          </Link>
           <div className="flex rounded-pill border border-border bg-white p-1">
             {(["basic", "expert"] as const).map((mode) => (
               <button

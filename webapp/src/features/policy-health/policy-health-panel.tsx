@@ -1,9 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { fetchPolicyHealthDashboard, simulatePolicyHealth, type PolicyHealthTemplate } from "./api";
+import {
+  buildGuidedSimulationPayload,
+  defaultGuidedSimulationDraft,
+  POLICY_KIND_LABELS,
+  type GuidedSimulationDraft,
+} from "../request-template-studio/options";
 
 const POLICY_COLUMNS = ["routing", "sla", "ola", "approval", "closure", "visibility", "notification", "diagnostic", "reporting"];
 
@@ -53,13 +60,19 @@ function TemplateDetails({ template }: { template: PolicyHealthTemplate | null }
         </div>
         <Badge tone={statusTone(template.health_status)}>{template.health_status}</Badge>
       </div>
+      <Link
+        className="mt-4 inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+        to={`/app/admin/request-template-studio?template=${encodeURIComponent(template.template_code)}`}
+      >
+        Открыть в студии
+      </Link>
       <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-slate-500">Score</dt>
+          <dt className="text-slate-500">Оценка</dt>
           <dd className="font-semibold text-slate-950">{template.health_score}</dd>
         </div>
         <div>
-          <dt className="text-slate-500">Conflicts</dt>
+          <dt className="text-slate-500">Конфликты</dt>
           <dd className="font-semibold text-slate-950">{template.conflict_count}</dd>
         </div>
       </dl>
@@ -86,7 +99,7 @@ function TemplateDetails({ template }: { template: PolicyHealthTemplate | null }
             </section>
           ))
         ) : (
-          <p className="text-sm text-slate-500">Issues не найдены.</p>
+          <p className="text-sm text-slate-500">Проблемы не найдены.</p>
         )}
       </div>
     </aside>
@@ -94,12 +107,13 @@ function TemplateDetails({ template }: { template: PolicyHealthTemplate | null }
 }
 
 export function PolicyHealthPanel() {
+  const [searchParams] = useSearchParams();
   const [healthFilter, setHealthFilter] = useState("all");
   const [kindFilter, setKindFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
-  const [simulationInput, setSimulationInput] = useState('{"request_form_data":{},"custom_fields":{},"device_metadata":{},"requester_context":{}}');
+  const [simulationDraft, setSimulationDraft] = useState<GuidedSimulationDraft>(defaultGuidedSimulationDraft);
 
   const dashboardQuery = useQuery({
     queryKey: ["policy-health-dashboard"],
@@ -108,6 +122,12 @@ export function PolicyHealthPanel() {
 
   const templates = dashboardQuery.data?.templates ?? [];
   const selectedTemplate = templates.find((template) => template.template_code === selectedCode) ?? templates[0] ?? null;
+  useEffect(() => {
+    const template = searchParams.get("template");
+    if (template && templates.some((item) => item.template_code === template)) {
+      setSelectedCode(template);
+    }
+  }, [searchParams, templates]);
   const visibleTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return templates.filter((template) => {
@@ -132,43 +152,40 @@ export function PolicyHealthPanel() {
       if (!selectedTemplate) {
         throw new Error("Шаблон не выбран");
       }
-      const parsed = JSON.parse(simulationInput) as Record<string, unknown>;
+      const guidedPayload = buildGuidedSimulationPayload(simulationDraft);
       return simulatePolicyHealth({
         template_code: selectedTemplate.template_code,
-        request_form_data: (parsed.request_form_data as Record<string, unknown>) ?? {},
-        custom_fields: (parsed.custom_fields as Record<string, unknown>) ?? {},
-        device_metadata: (parsed.device_metadata as Record<string, unknown>) ?? {},
-        requester_context: (parsed.requester_context as Record<string, unknown>) ?? {},
+        ...guidedPayload,
       });
     },
   });
 
   if (dashboardQuery.isLoading) {
-    return <section className="workspace-page p-6 text-sm text-slate-500">Загрузка Policy Health...</section>;
+    return <section className="workspace-page p-6 text-sm text-slate-500">Загрузка проверки политик...</section>;
   }
 
   if (dashboardQuery.isError || !dashboardQuery.data) {
-    return <section className="workspace-page p-6 text-sm text-rose-700">Не удалось загрузить Policy Health.</section>;
+    return <section className="workspace-page p-6 text-sm text-rose-700">Не удалось загрузить проверку политик.</section>;
   }
 
   return (
     <section className="workspace-page space-y-5 p-6">
       <header className="workspace-page__header">
         <div className="workspace-page__copy">
-          <p className="workspace-boot__eyebrow">Helpdesk governance</p>
-          <h1>Policy Health</h1>
+          <p className="workspace-boot__eyebrow">Управление обращениями</p>
+          <h1>Проверка политик</h1>
         </div>
         <dl className="workspace-page__stats">
           <div>
-            <dt>Total</dt>
+            <dt>Всего</dt>
             <dd>{dashboardQuery.data.summary.total}</dd>
           </div>
           <div>
-            <dt>Warnings</dt>
+            <dt>Предупреждения</dt>
             <dd>{dashboardQuery.data.summary.warning}</dd>
           </div>
           <div>
-            <dt>Errors</dt>
+            <dt>Ошибки</dt>
             <dd>{dashboardQuery.data.summary.error}</dd>
           </div>
         </dl>
@@ -177,32 +194,32 @@ export function PolicyHealthPanel() {
       <section className="surface-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <label className="text-sm font-medium text-slate-700">
-            Search
+            Поиск
             <input className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Health
+            Состояние
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={healthFilter} onChange={(event) => setHealthFilter(event.currentTarget.value)}>
-              <option value="all">all</option>
-              <option value="ok">ok</option>
-              <option value="warning">warning</option>
-              <option value="error">error</option>
+              <option value="all">Все</option>
+              <option value="ok">В норме</option>
+              <option value="warning">Предупреждение</option>
+              <option value="error">Ошибка</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Policy kind
+            Тип политики
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={kindFilter} onChange={(event) => setKindFilter(event.currentTarget.value)}>
-              <option value="all">all</option>
-              {POLICY_COLUMNS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+              <option value="all">Все</option>
+              {POLICY_COLUMNS.map((kind) => <option key={kind} value={kind}>{POLICY_KIND_LABELS[kind] ?? kind}</option>)}
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Template status
+            Статус шаблона
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
-              <option value="all">all</option>
-              <option value="published">published</option>
-              <option value="draft">draft</option>
-              <option value="archived">archived</option>
+              <option value="all">Все</option>
+              <option value="published">Опубликован</option>
+              <option value="draft">Черновик</option>
+              <option value="archived">Архив</option>
             </select>
           </label>
         </div>
@@ -214,11 +231,11 @@ export function PolicyHealthPanel() {
             <table className="w-full min-w-[1120px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Template</th>
-                  <th className="px-4 py-3">Health</th>
-                  <th className="px-4 py-3">Issues</th>
-                  {POLICY_COLUMNS.map((kind) => <th key={kind} className="px-3 py-3">{kind}</th>)}
-                  <th className="px-4 py-3">Checked</th>
+                  <th className="px-4 py-3">Шаблон</th>
+                  <th className="px-4 py-3">Состояние</th>
+                  <th className="px-4 py-3">Проблемы</th>
+                  {POLICY_COLUMNS.map((kind) => <th key={kind} className="px-3 py-3">{POLICY_KIND_LABELS[kind] ?? kind}</th>)}
+                  <th className="px-4 py-3">Проверен</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -253,19 +270,52 @@ export function PolicyHealthPanel() {
       <section className="surface-panel p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-950">Dry-run simulation</h2>
-            <p className="mt-1 text-sm text-slate-500">{selectedTemplate?.template_code ?? "template not selected"}</p>
+            <h2 className="text-base font-semibold text-slate-950">Симуляция выполнения</h2>
+            <p className="mt-1 text-sm text-slate-500">{selectedTemplate?.template_code ?? "шаблон не выбран"}</p>
           </div>
           <Button disabled={!selectedTemplate || simulationMutation.isPending} onClick={() => simulationMutation.mutate()}>
-            Run preview
+            Запустить тестовый прогон
           </Button>
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <textarea
-            className="min-h-56 rounded-md border border-slate-200 p-3 font-mono text-xs"
-            value={simulationInput}
-            onChange={(event) => setSimulationInput(event.currentTarget.value)}
-          />
+          <div className="grid gap-3">
+            <label className="text-sm font-medium text-slate-700">
+              Инициатор
+              <input className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={simulationDraft.requester} onChange={(event) => setSimulationDraft((current) => ({ ...current, requester: event.currentTarget.value }))} />
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              Устройство
+              <input className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={simulationDraft.device} onChange={(event) => setSimulationDraft((current) => ({ ...current, device: event.currentTarget.value }))} />
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              Локация
+              <input className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={simulationDraft.location} onChange={(event) => setSimulationDraft((current) => ({ ...current, location: event.currentTarget.value }))} />
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              Ожидаемый приоритет
+              <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={simulationDraft.expectedPriority} onChange={(event) => setSimulationDraft((current) => ({ ...current, expectedPriority: event.currentTarget.value }))}>
+                <option value="">Не проверять</option>
+                <option value="P0">P0</option>
+                <option value="P1">P1</option>
+                <option value="P2">P2</option>
+                <option value="P3">P3</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              Ответы формы и ожидания
+              <textarea
+                className="mt-1 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2"
+                value={simulationDraft.answerSummary}
+                onChange={(event) => setSimulationDraft((current) => ({ ...current, answerSummary: event.currentTarget.value }))}
+              />
+            </label>
+            <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON</summary>
+              <pre className="mt-3 max-h-48 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
+                {JSON.stringify(buildGuidedSimulationPayload(simulationDraft), null, 2)}
+              </pre>
+            </details>
+          </div>
           <pre className="min-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
             {simulationMutation.isError
               ? String(simulationMutation.error instanceof Error ? simulationMutation.error.message : simulationMutation.error)

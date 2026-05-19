@@ -28,6 +28,41 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: P0 Web UI Workbench and Studio Hardening
+
+Status: in progress.
+
+Goal:
+
+- Remove visible clipping/overflow from `/app/tickets`, make the ticket workspace task-guided, replace primary raw code/JSON inputs with pickers/guided forms, add a minimal Request Template Studio workflow, and localize the target admin/support screens in Russian while preserving existing endpoints and DTOs.
+
+Scope:
+
+- React webapp only by default: `/app/tickets`, `/app/admin/changes`, `/app/admin/forms`, `/app/admin/service-catalog`, `/app/admin/policy-health`, `/app/admin/device`, navigation and shared admin helpers.
+- Backend changes only if existing web API data is insufficient for typed pickers. Prefer existing Service Catalog dashboard, Helpdesk Model registry and Policy Health endpoints.
+- Preserve raw/expert JSON modes as collapsed or explicitly expert-only surfaces.
+- Do not add fake catalog, policy, device, ticket or problem data.
+
+Decisions:
+
+- Treat the user's P0.0-P0.3 acceptance criteria as the approved design specification for this pass.
+- First stabilize visible ticket workspace defects and tool availability grouping.
+- Use shared TS helpers for catalog/policy/template option mapping and guided simulation payload construction.
+- Implement Request Template Studio as a new admin route composed from existing Service Catalog, Forms Builder registry and Policy Health data; deep links should carry service/offering/template query params where possible.
+- Russian UI labels are required for target screens, while technical ids remain visible only as metadata or expert fields.
+
+Verification target:
+
+- `pnpm --dir webapp test` focused component/API tests for picker mapping, guided simulation payloads and tool availability grouping.
+- `pnpm --dir webapp build` because `package.json` has no separate `typecheck` or `lint` scripts.
+- `python scripts/verify_workspace.py`.
+- Focused server tests only if server DTO/routes change.
+- Browser MCP smoke at `https://192.168.100.17:9443/admin` for `/app/tickets`, `/app/admin/changes`, `/app/admin/forms`, `/app/admin/service-catalog`, `/app/admin/policy-health` and `/app/admin/device`.
+
+Handoff notes:
+
+- If the whole P0 scope cannot land in one pass, do not leave `/app/tickets` with clipping or duplicated offline reasons. P0.0 and P0.3 take priority over broad visual polish.
+
 ## Latest Accepted Work: P5 Change Enablement
 
 Status: accepted / release-candidate.

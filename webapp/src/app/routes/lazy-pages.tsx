@@ -97,3 +97,7 @@ export const AdminChangesPage = lazy(() =>
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
 );
+
+export const AdminRequestTemplateStudioPage = lazy(() =>
+  import("../../pages/admin/request-template-studio-page").then((module) => ({ default: module.AdminRequestTemplateStudioPage })),
+);

@@ -146,33 +146,33 @@ describe("ChangeWorkspace", () => {
 
     renderWorkspace();
 
-    expect(await screen.findByRole("heading", { name: "Change workspace" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Рабочее место изменений" })).toBeInTheDocument();
     expect((await screen.findAllByText("CHG-000001")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Night")).toBeInTheDocument();
-    expect(await screen.findByText("Failure rate")).toBeInTheDocument();
+    expect(await screen.findByText("Доля ошибок")).toBeInTheDocument();
     expect(await screen.findByText("10%")).toBeInTheDocument();
     expect(await screen.findByText("12.5h")).toBeInTheDocument();
     expect(await screen.findByText("FREQ=WEEKLY;BYDAY=MO")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Change title"), { target: { value: "Firewall update" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.change(screen.getByPlaceholderText("Название изменения"), { target: { value: "Firewall update" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
     await waitFor(() => expect(createChangeMock).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve risk" }));
+    fireEvent.click(screen.getByRole("button", { name: "Согласовать риск" }));
     await waitFor(() => expect(createRiskAssessmentMock).toHaveBeenCalledWith("chg-1"));
     await waitFor(() => expect(submitRiskAssessmentMock).toHaveBeenCalledWith("chg-1", "r1"));
     await waitFor(() => expect(approveRiskAssessmentMock).toHaveBeenCalledWith("chg-1", "r1"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Согласовать план" }));
     await waitFor(() => expect(createPlanMock).toHaveBeenCalledWith("chg-1"));
     await waitFor(() => expect(approvePlanMock).toHaveBeenCalledWith("chg-1", "p1"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Request approval" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запросить согласование" }));
     await waitFor(() => expect(requestApprovalsMock).toHaveBeenCalledWith("chg-1"));
-    fireEvent.click(screen.getByRole("button", { name: "Approve request" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить запрос" }));
     await waitFor(() => expect(approveApprovalMock).toHaveBeenCalledWith("chg-1", "a1"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запланировать" }));
     await waitFor(() => expect(scheduleChangeMock).toHaveBeenCalled());
   });
 });
