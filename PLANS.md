@@ -363,7 +363,7 @@ Implementation notes:
 
 ## Active Work: Inventory v4 / Fleet Operations, Workplace Registration v1 and Presence v1
 
-Status: local verification passed on branch `codex/inventory-v4-registration-presence`; remote PostgreSQL migration/browser release smoke pending explicit release request.
+Status: accepted / verified on branch `codex/inventory-v4-registration-presence`; remote quick release, PostgreSQL migration and browser smoke passed on 2026-05-19. Full release gate remains an explicit final-release checkpoint.
 
 Goal:
 
@@ -383,7 +383,8 @@ Verification target:
 - Webapp: `pnpm --dir webapp test`, `pnpm --dir webapp build`, `pnpm --dir webapp exec tsc --noEmit`.
 - General: `python -m compileall -q pc_agent server shared scripts/navigation_catalog.py`, docs link check, workspace verify, `git diff --check`, and remote PostgreSQL migration/browser smoke before release acceptance.
 
-Local verification:
+Verification:
 
 - Passed: focused `presence.collect`/inventory/registry/config-loader agent tests, full `pc_agent/tests/`, focused server no-db/inventory presentation tests, webapp full Vitest suite, webapp typecheck/build, `compileall`, docs link check, workspace verification and diff whitespace checks.
-- Windows-local DB-backed inventory v3/v4 service tests skip by design; run them on Linux/CI before release acceptance.
+- Passed remote/browser smoke: `/app/admin/inventory` fleet dashboard opens, bulk-refresh dry-run works, `/app/admin/device` shows the inventory card, and `DeviceInventoryPanel` now exposes Registration/Presence tabs even before the first inventory snapshot.
+- Windows-local DB-backed inventory v3/v4 service tests skip by design. The remote runtime venv does not include pytest, so DB-backed Linux pytest must run in CI or a test venv, not on the production runtime venv.

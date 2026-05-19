@@ -372,7 +372,11 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 <p className="mt-1 text-sm text-slate-500">{formatDateTime(refreshPolicy?.next_due_at)}</p>
               </div>
             </div>
+          </>
+        ) : null}
 
+        {deviceId ? (
+          <>
             <Tabs
               items={[
                 { value: "overview", label: "Обзор" },
@@ -390,7 +394,7 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
               value={tab}
             />
 
-            {tab === "raw" ? (
+            {tab === "raw" && result ? (
               <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">
                 {JSON.stringify(result, null, 2)}
               </pre>
@@ -628,26 +632,28 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
 
             {tab === "history" ? (
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-lg border border-border">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-surface-subtle text-slate-600">
-                      <tr>
-                        <th className="px-3 py-2">Time</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Summary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.history ?? []).map((item) => (
-                        <tr key={item.id} className="border-t border-border">
-                          <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
-                          <td className="px-3 py-2">{item.status}</td>
-                          <td className="px-3 py-2">{item.summary ?? "-"}</td>
+                {latest ? (
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-surface-subtle text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2">Time</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Summary</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {(data?.history ?? []).map((item) => (
+                          <tr key={item.id} className="border-t border-border">
+                            <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
+                            <td className="px-3 py-2">{item.status}</td>
+                            <td className="px-3 py-2">{item.summary ?? "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
                 <div className="rounded-lg border border-border bg-white p-4">
                   <h4 className="text-sm font-semibold text-slate-950">Binding changes</h4>
                   <div className="mt-3 space-y-3">
@@ -685,11 +691,11 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 </div>
               </div>
             ) : null}
-            {!["raw", "binding", "registration", "presence", "history"].includes(tab) ? (
+            {result && !["raw", "binding", "registration", "presence", "history"].includes(tab) ? (
               <ModuleResultRenderer result={result} presentationSchema={effectiveSchema} />
             ) : null}
 
-            {latest.device_card_slots && latest.device_card_slots.length > 0 ? (
+            {latest?.device_card_slots && latest.device_card_slots.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {latest.device_card_slots.map((slot) => (
                   <Badge key={slot} tone="neutral">
