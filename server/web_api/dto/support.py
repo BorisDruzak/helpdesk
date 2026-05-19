@@ -173,6 +173,150 @@ class SupportWorkspaceSummaryPayload(BaseModel):
     smart_view_options: list[SupportFilterOption] = Field(default_factory=list)
 
 
+class CommandCenterTimerState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: str = "unknown"
+    due_at: str | None = None
+    remaining_seconds: int | None = None
+
+
+class CommandCenterOperationState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    status: str | None = None
+    tool_name: str | None = None
+    failed_at: str | None = None
+    error_summary: str | None = None
+
+
+class CommandCenterAgentState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str | None = None
+    connection_state: str = "unknown"
+    last_seen_at: str | None = None
+
+
+class CommandCenterDiagnosticsState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommended: bool = False
+    profile_code: str | None = None
+    reason: str | None = None
+
+
+class CommandCenterClosureState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    blocked: bool = False
+    missing_count: int | None = None
+    primary_blocker: str | None = None
+
+
+class CommandCenterSimilarGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_key: str
+    count: int
+    window_hours: int
+    sample_ticket_ids: list[str] = Field(default_factory=list)
+    reason: str
+
+
+class CommandCenterItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    ticket_id: str
+    ticket_number: str | None = None
+    title: str
+    status: str
+    priority: str | None = None
+    queue: str | None = None
+    assignee: str | None = None
+    requester_name: str | None = None
+    service_code: str | None = None
+    offering_code: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    next_action_owner: str | None = None
+    next_action_due_at: str | None = None
+    requires_operator_action: bool = False
+    unread_user_messages: int = 0
+    sla: CommandCenterTimerState | None = None
+    ola: CommandCenterTimerState | None = None
+    operation: CommandCenterOperationState | None = None
+    agent: CommandCenterAgentState | None = None
+    diagnostics: CommandCenterDiagnosticsState | None = None
+    closure: CommandCenterClosureState | None = None
+    similar_group: CommandCenterSimilarGroup | None = None
+    reason: str
+    href: str
+
+
+class CommandCenterSectionAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    href: str
+
+
+class CommandCenterSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    title: str
+    description: str
+    severity: str
+    count: int
+    updated_at: str | None = None
+    items: list[CommandCenterItem] = Field(default_factory=list)
+    action: CommandCenterSectionAction | None = None
+
+
+class OperatorCommandCenterFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    queue: str | None = None
+    assignee: str | None = None
+    window_hours: int
+    limit_per_section: int
+
+
+class OperatorCommandCenterSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_attention_items: int = 0
+    critical_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    new_unassigned_count: int = 0
+    operator_action_count: int = 0
+    unread_user_messages_count: int = 0
+    sla_risk_count: int = 0
+    ola_risk_count: int = 0
+    pending_approval_count: int = 0
+    pending_consent_count: int = 0
+    failed_operation_count: int = 0
+    agent_offline_active_count: int = 0
+    diagnostics_recommended_count: int = 0
+    closure_blocked_count: int = 0
+    similar_spikes_count: int = 0
+
+
+class OperatorCommandCenterPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generated_at: str
+    scope: str
+    filters: OperatorCommandCenterFilters
+    summary: OperatorCommandCenterSummary
+    sections: list[CommandCenterSection] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SupportTicketQueueInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

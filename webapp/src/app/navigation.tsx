@@ -18,7 +18,7 @@ import {
   Workflow,
 } from "lucide-react";
 
-export const SUPPORT_HOME_PATH = "/app/tickets";
+export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin/inventory";
 
 export type AppNavItem = {
@@ -32,11 +32,19 @@ export type AppNavItem = {
 
 export const appNavigation: AppNavItem[] = [
   {
+    label: "Рабочий центр",
+    description: "Что требует внимания сейчас",
+    icon: ClipboardCheck,
+    section: "support",
+    to: SUPPORT_HOME_PATH,
+    permission: "ticket.queue.view",
+  },
+  {
     label: "Тикеты",
     description: "Очередь и карточка тикета",
     icon: Ticket,
     section: "support",
-    to: SUPPORT_HOME_PATH,
+    to: "/app/tickets",
     permission: "ticket.queue.view",
   },
   {

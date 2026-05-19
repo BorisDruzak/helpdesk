@@ -14,6 +14,10 @@ export const TicketPassportPrintPage = lazy(() =>
   })),
 );
 
+export const SupportCommandCenterPage = lazy(() =>
+  import("../../pages/support/command-center-page").then((module) => ({ default: module.SupportCommandCenterPage })),
+);
+
 export const ReportsPage = lazy(() =>
   import("../../pages/reports").then((module) => ({ default: module.ReportsPage })),
 );

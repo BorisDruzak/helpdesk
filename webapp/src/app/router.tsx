@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
-import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "./navigation";
+import { ADMIN_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
 import {
   AdminAgentUpdatesPage,
@@ -26,6 +26,7 @@ import {
   ReportsPage,
   RequesterTicketPage,
   SettingsPage,
+  SupportCommandCenterPage,
   TicketDetailPage,
   TicketListPage,
   TicketPassportPrintPage,
@@ -198,7 +199,7 @@ export const appRoutes: RouteObject[] = [
             path: "support",
             element: (
               <WorkspaceAccessGate workspace="support">
-                <Navigate replace to={SUPPORT_HOME_PATH} />
+                <SupportCommandCenterPage />
               </WorkspaceAccessGate>
             )
           },

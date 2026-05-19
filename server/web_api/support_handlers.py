@@ -89,8 +89,10 @@ from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
+from support.operator_command_center import build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
+    OperatorCommandCenterPayload,
     SupportBootstrapPayload,
     SupportCountItem,
     SupportDiagnosticPolicyPayload,
@@ -1188,6 +1190,9 @@ async def _load_support_queue_state(
                 "ola_ack_breached_at": _iso_attr(ticket, "ola_ack_breached_at"),
                 "ola_processing_due_at": _iso_attr(ticket, "ola_processing_due_at"),
                 "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
+                "service_code": getattr(ticket, "service_code", None),
+                "offering_code": getattr(ticket, "offering_code", None),
+                "reporting_category": getattr(ticket, "reporting_category", None),
             }
         )
         accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
@@ -4234,6 +4239,155 @@ async def handle_web_support_queue(request: web.Request):
             smart_view=smart_view,
         )
     return json_model_response(SuccessResponse[SupportQueuePayload](data=payload))
+
+
+def _normalize_command_center_scope(value: str | None) -> str:
+    scope = str(value or "team").strip().lower()
+    if scope == "mine":
+        scope = "my"
+    if scope not in {"my", "team", "all"}:
+        return "team"
+    return scope
+
+
+def _bounded_int_query(value: str | None, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(str(value or "").strip())
+    except ValueError:
+        parsed = default
+    return min(max(parsed, minimum), maximum)
+
+
+async def _latest_operations_by_ticket(session, ticket_ids: list[str]) -> dict[str, Operation]:
+    if not ticket_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Operation)
+            .where(Operation.ticket_id.in_(ticket_ids))
+            .order_by(Operation.ticket_id.asc(), Operation.queued_at.desc())
+        )
+    ).scalars().all()
+    latest: dict[str, Operation] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if ticket_id and ticket_id not in latest:
+            latest[ticket_id] = row
+    return latest
+
+
+async def _devices_by_id(session, device_ids: list[str]) -> dict[str, Device]:
+    ids = sorted({str(device_id or "").strip() for device_id in device_ids if str(device_id or "").strip()})
+    if not ids:
+        return {}
+    rows = (await session.execute(select(Device).where(Device.device_id.in_(ids)))).scalars().all()
+    return {str(row.device_id): row for row in rows}
+
+
+async def _latest_passports_by_ticket(session, ticket_ids: list[str]) -> dict[str, TicketResolutionPassport]:
+    if not ticket_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(TicketResolutionPassport)
+            .where(TicketResolutionPassport.ticket_id.in_(ticket_ids))
+            .order_by(TicketResolutionPassport.ticket_id.asc(), TicketResolutionPassport.generated_at.desc())
+        )
+    ).scalars().all()
+    latest: dict[str, TicketResolutionPassport] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if ticket_id and ticket_id not in latest:
+            latest[ticket_id] = row
+    return latest
+
+
+@require_auth("admin", "support")
+async def handle_web_support_command_center(request: web.Request):
+    auth_context = request["auth_context"]
+    requested_scope = _normalize_command_center_scope(request.query.get("scope"))
+    effective_scope = requested_scope
+    metadata: dict[str, Any] = {}
+    if requested_scope == "all" and auth_context.actor_role != "admin":
+        effective_scope = "team"
+        metadata["requested_scope"] = requested_scope
+        metadata["scope_fallback_reason"] = "scope_all_requires_admin"
+
+    queue = str(request.query.get("queue") or "").strip() or None
+    assignee = str(request.query.get("assignee") or "").strip() or None
+    limit_per_section = _bounded_int_query(
+        request.query.get("limit_per_section"),
+        default=8,
+        minimum=1,
+        maximum=25,
+    )
+    window_hours = _bounded_int_query(request.query.get("window_hours"), default=24, minimum=1, maximum=168)
+    sla_risk_minutes = _bounded_int_query(
+        request.query.get("sla_risk_minutes"),
+        default=120,
+        minimum=1,
+        maximum=1440,
+    )
+    ola_risk_minutes = _bounded_int_query(
+        request.query.get("ola_risk_minutes"),
+        default=60,
+        minimum=1,
+        maximum=1440,
+    )
+    include_debug = _parse_bool_query(request.query.get("include_debug"))
+
+    try:
+        async with get_session() as session:
+            state = await _load_support_queue_state(session, auth_context, limit=2000)
+            entries = state.accessible_entries
+            if effective_scope == "my":
+                entries = [
+                    (ticket_data, item)
+                    for ticket_data, item in entries
+                    if str(item.assignee_id or "").strip() == auth_context.actor_id
+                    or str(item.next_action_owner or "").strip() == auth_context.actor_id
+                ]
+            ticket_ids = [item.ticket_id for _ticket_data, item in entries if item.ticket_id]
+            device_ids = [str(ticket_data.get("device_id") or "") for ticket_data, _item in entries]
+            operations_by_ticket = await _latest_operations_by_ticket(session, ticket_ids)
+            devices_by_id = await _devices_by_id(session, device_ids)
+            passports_by_ticket = await _latest_passports_by_ticket(session, ticket_ids)
+            if include_debug:
+                metadata["candidate_ticket_count"] = len(entries)
+                metadata["operation_ticket_count"] = len(operations_by_ticket)
+                metadata["device_count"] = len(devices_by_id)
+                metadata["passport_ticket_count"] = len(passports_by_ticket)
+            payload = build_operator_command_center_payload(
+                entries,
+                operations_by_ticket=operations_by_ticket,
+                devices_by_id=devices_by_id,
+                passports_by_ticket=passports_by_ticket,
+                scope=effective_scope,
+                queue=queue,
+                assignee=assignee,
+                limit_per_section=limit_per_section,
+                window_hours=window_hours,
+                sla_risk_minutes=sla_risk_minutes,
+                ola_risk_minutes=ola_risk_minutes,
+                metadata=metadata,
+            )
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_command_center] DB unavailable, returning empty command center: "
+            f"actor_id={auth_context.actor_id}, error={exc}"
+        )
+        payload = build_operator_command_center_payload(
+            [],
+            scope=effective_scope,
+            queue=queue,
+            assignee=assignee,
+            limit_per_section=limit_per_section,
+            window_hours=window_hours,
+            sla_risk_minutes=sla_risk_minutes,
+            ola_risk_minutes=ola_risk_minutes,
+            metadata={**metadata, "degraded": True},
+        )
+    return json_model_response(SuccessResponse[OperatorCommandCenterPayload](data=payload))
 
 
 @require_auth("admin", "support")

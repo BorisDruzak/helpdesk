@@ -1,0 +1,124 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from support.operator_command_center import build_operator_command_center_payload
+from web_api.dto.support import SupportQueueTicketItem
+
+
+def item(ticket_id: str, title: str, **overrides) -> SupportQueueTicketItem:
+    data = {
+        "ticket_id": ticket_id,
+        "ticket_code": f"T-{ticket_id[-3:]}",
+        "title": title,
+        "status": "queued",
+        "status_label": "В очереди",
+        "requester_status": "accepted",
+        "requester_status_label": "Принят",
+        "public_status": "accepted",
+        "public_status_label": "Принят",
+        "next_action_owner": "support",
+        "next_action_due_at": None,
+        "status_reason": None,
+        "queue_code": "support",
+        "assignee_id": None,
+        "requester_display_name": "Инициатор",
+        "device_id": f"device-{ticket_id}",
+        "created_at": "2026-05-19T09:00:00+00:00",
+        "updated_at": "2026-05-19T09:30:00+00:00",
+        "requires_operator_action": True,
+        "unread_user_messages": 0,
+    }
+    data.update(overrides)
+    return SupportQueueTicketItem(**data)
+
+
+@pytest.mark.no_db
+def test_command_center_aggregates_compact_ticket_signals_without_db():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    queue_item = item(
+        "ticket-1",
+        "VPN client error 720",
+        priority="P2",
+        next_action_owner="support",
+        next_action_due_at="2026-05-19T09:55:00+00:00",
+        unread_user_messages=2,
+    )
+    ticket_data = {
+        "ticket_id": queue_item.ticket_id,
+        "device_id": queue_item.device_id,
+        "status": "in_progress",
+        "service_code": "network",
+        "first_response_due_at": "2026-05-19T10:30:00+00:00",
+        "custom_fields": {"diagnostic_policy": {"recommended": True, "profile_code": "vpn", "reason": "VPN diagnostics"}},
+        "evidence_required": True,
+    }
+
+    payload = build_operator_command_center_payload(
+        [(ticket_data, queue_item)],
+        operations_by_ticket={
+            "ticket-1": SimpleNamespace(
+                operation_id="op-1",
+                status="failed",
+                tool_name="vpn.diagnostics",
+                error_message="Profile missing",
+                queued_at=now - timedelta(minutes=3),
+                finished_at=now - timedelta(minutes=2),
+            )
+        },
+        devices_by_id={
+            queue_item.device_id: SimpleNamespace(last_seen_at=now - timedelta(minutes=30)),
+        },
+        scope="team",
+        queue=None,
+        assignee=None,
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    assert payload.summary.new_unassigned_count == 1
+    assert payload.summary.operator_action_count == 1
+    assert payload.summary.unread_user_messages_count == 1
+    assert payload.summary.sla_risk_count == 1
+    assert payload.summary.failed_operation_count == 1
+    assert payload.summary.agent_offline_active_count == 1
+    assert payload.summary.diagnostics_recommended_count == 1
+    assert payload.summary.closure_blocked_count == 1
+    failed = next(section for section in payload.sections if section.key == "failed_operation")
+    assert failed.items[0].operation.error_summary == "Profile missing"
+    assert failed.items[0].href == "/app/tickets/ticket-1"
+
+
+@pytest.mark.no_db
+def test_command_center_builds_deterministic_similar_spike_group():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    entries = []
+    for index in range(3):
+        queue_item = item(
+            f"ticket-{index}",
+            "VPN client error 720",
+            updated_at=(now - timedelta(minutes=index)).isoformat(),
+            requires_operator_action=False,
+        )
+        entries.append(({"ticket_id": queue_item.ticket_id, "status": "queued", "service_code": "network"}, queue_item))
+
+    payload = build_operator_command_center_payload(
+        entries,
+        scope="team",
+        queue=None,
+        assignee=None,
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    section = next(section for section in payload.sections if section.key == "similar_tickets_spike")
+    assert section.count == 1
+    assert section.items[0].similar_group.count == 3
+    assert section.items[0].href == "/app/tickets"
