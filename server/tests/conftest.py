@@ -269,7 +269,12 @@ def _keep_test_database() -> bool:
 def _resolve_test_database_urls() -> tuple[str, str, bool]:
     explicit_test_url = os.getenv("TEST_DATABASE_URL")
     if _shared_test_db_allowed():
-        shared_url = explicit_test_url or _default_test_database_url(SHARED_TEST_DATABASE_NAME)
+        if explicit_test_url:
+            shared_url = explicit_test_url
+        elif os.name == "nt" and os.getenv("TEST_DATABASE_ADMIN_URL") is None:
+            shared_url = _default_windows_shared_test_database_url()
+        else:
+            shared_url = _default_test_database_url(SHARED_TEST_DATABASE_NAME)
         verify_test_database(shared_url, allow_shared=True)
         return shared_url, _resolve_admin_url(shared_url), True
 

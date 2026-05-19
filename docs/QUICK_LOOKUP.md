@@ -299,7 +299,8 @@ Windows note:
 
 - On Windows, if `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, server DB-backed pytest opens the local SSH tunnel and defaults to an isolated `pc_support_test_<domain>_<pid_or_worker>_<short_hash>` database through the admin DB.
 - In that default mode the harness opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
-- Shared `pc_support_test` is now an explicit fallback/debug mode: set `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`, or let the Windows default fallback use it only if the admin DB is unavailable. In shared-DB fallback mode the harness terminates stale `pc_support_test` backends before `TRUNCATE` and uses a short lock timeout, so leaked sessions fail fast instead of hanging the suite.
+- The first isolated Windows DB-backed run can take several minutes because it creates a fresh database and applies the full Alembic chain through the SSH tunnel.
+- Shared `pc_support_test` is now an explicit fallback/debug mode: set `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`, or let the Windows default fallback use it only if the admin DB is unavailable. On Windows, explicit shared debug mode uses the same local SSH tunnel. In shared-DB fallback mode the harness terminates stale `pc_support_test` backends before `TRUNCATE` and uses a short lock timeout, so leaked sessions fail fast instead of hanging the suite.
 - For websocket-heavy pytest on Windows, `server/tests/conftest.py` now forces `WindowsSelectorEventLoopPolicy`, so the old trailing `unexpected connection_lost() call` noise is no longer a completion criterion.
 - For custom isolated ephemeral test DBs from Windows, set `TEST_DATABASE_ADMIN_URL` explicitly.
 
