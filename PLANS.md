@@ -257,7 +257,7 @@ Verification so far:
 
 ## Active Work: Inventory Collect v2
 
-Status: in progress / branch `codex/inventory-collect-v2`.
+Status: accepted / branch `codex/inventory-collect-v2`.
 
 Goal:
 
@@ -271,9 +271,25 @@ Scope:
 - Webapp: DeviceInventoryPanel v2 with binding editor, schedule status, printers/software tabs and unchanged `ModuleResultRenderer`/raw JSON fallback.
 - Privacy: endpoint technical inventory only; no screenshots, keystrokes, clipboard, browser history, document contents, messages or personal file listings.
 
-Planned verification:
+Implementation snapshot:
 
-- Agent focused and full tests: `python -m pytest pc_agent/tests/test_inventory_collect.py -v --tb=short`, `python -m pytest pc_agent/tests/ -v --tb=short`.
-- Server focused tests for descriptor catalog, binding, refresh policy and existing presentation override behavior.
-- Webapp tests/build: `pnpm --dir webapp test`, `pnpm --dir webapp build`.
-- General: `python -m compileall -q pc_agent server scripts/navigation_catalog.py`, `python scripts/verify_workspace.py`, `python scripts/docs_inventory.py --check-links`, `git diff --check`, `git diff --cached --check`.
+- Agent `inventory.collect` v2 now returns best-effort printer details, static key-app profile summaries and optional hardware identifiers while preserving the v1 top-level shape.
+- Declarative inventory descriptors live in `shared.builtin_tool_descriptors`; server fallback uses this pure catalog instead of importing `pc_agent.modules.impl.inventory`.
+- Server added `device_inventory_bindings` and `device_inventory_refresh_policies`, binding/refresh APIs, latest inventory payload extensions and an `InventoryRefreshRuntime` that dispatches `inventory.collect` through the existing `ToolExecutionService`.
+- Webapp `DeviceInventoryPanel` shows inventory source/slots, binding editor, refresh schedule controls/status, v2 printer/software/hardware blocks and raw JSON fallback through `ModuleResultRenderer`.
+
+Verification:
+
+- `python -m pytest pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_inventory_profiles.py pc_agent/tests/test_registry_and_module_loading.py -v --tb=short` -> 17 passed.
+- `python -m pytest pc_agent/tests/ -v --tb=short` -> 333 passed, 7 subtests passed.
+- `python -m pytest server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -v --tb=short` -> 6 passed.
+- `pnpm --dir webapp test -- src/components/module-result/tool-result-event-card.test.tsx src/features/admin/device-inventory-panel.test.tsx` -> 2 files / 6 tests passed.
+- `pnpm --dir webapp test -- src/app/router.test.tsx` -> 7 passed after widening the lazy route assertion timeout for full-suite contention.
+- `pnpm --dir webapp test` -> 47 files / 234 tests passed.
+- `pnpm --dir webapp build`, `python -m compileall -q pc_agent server shared scripts/navigation_catalog.py`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, `git diff --check` and `git diff --cached --check` passed.
+- Remote quick release ran Alembic `094 -> 095` on PostgreSQL, started server/control and passed `/api/health` smoke.
+- Browser smoke at `https://192.168.100.17:9443/admin` opened the real device card, saved/restored binding fields, saved disabled refresh schedule status, restarted the updated remote agent and ran `inventory.collect`; latest API returned a fresh `2026-05-19T05:08:08Z` snapshot with `printers.items`, 11 key-app profiles, hardware identifier fields, binding and refresh policy, and the UI rendered the v2 blocks with no browser console warnings/errors.
+
+Known verification limitation:
+
+- Local Windows DB-backed server `pytest` fixtures still hang on existing `test_client` DB tests, including pre-existing presentation override tests. The v2 DB migration and API/browser path were verified on the real PostgreSQL stand instead.
