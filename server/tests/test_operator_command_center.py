@@ -60,6 +60,7 @@ async def test_operator_command_center_returns_typed_sections(test_client, test_
             queue_id=queue.id,
             assignee_id="support-test",
         )
+        unassigned_ticket_id = unassigned.ticket_id
         session.add_all([unassigned, action, approval])
         session.add(
             TicketApproval(
@@ -104,7 +105,7 @@ async def test_operator_command_center_returns_typed_sections(test_client, test_
     assert summary["sla_risk_count"] == 1
     new_section = next(section for section in data["sections"] if section["key"] == "new_unassigned")
     assert new_section["title"] == "Новые без владельца"
-    assert new_section["items"][0]["href"] == f"/app/tickets/{unassigned.ticket_id}"
+    assert new_section["items"][0]["href"] == f"/app/tickets/{unassigned_ticket_id}"
     assert new_section["items"][0]["service_code"] == "workplace"
     approval_section = next(section for section in data["sections"] if section["key"] == "pending_approval")
     assert approval_section["items"][0]["reason"] == "Ожидается согласование от owner-1"
@@ -135,7 +136,7 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
             device_id="cmd-device-consent",
             title="Remote assist consent",
             description="Waiting consent",
-            status="in_progress",
+            status="queued",
             requester_id="requester-consent",
             queue_id=queue.id,
             assignee_id="support-test",
@@ -155,15 +156,23 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
             for index in range(3)
         ]
         session.add_all([failed_ticket, consent_ticket, *similar_tickets])
-        session.add(
+        await session.flush()
+        session.add_all([
             Device(
                 device_id="cmd-device-failed",
                 protocol_version="ws_ticket_v3",
                 agent_version="1.0.0",
                 last_seen_at=now - timedelta(hours=1),
                 last_handshake_at=now - timedelta(hours=1),
-            )
-        )
+            ),
+            Device(
+                device_id="cmd-device-consent",
+                protocol_version="ws_ticket_v3",
+                agent_version="1.0.0",
+                last_seen_at=now,
+                last_handshake_at=now,
+            ),
+        ])
         session.add_all([
             Operation(
                 operation_id=str(uuid.uuid4()),
