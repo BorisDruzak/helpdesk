@@ -272,7 +272,7 @@ export function ChangeWorkspace() {
             <CardDescription>Отдельные изменения, не тикеты, с типом и состоянием управления.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-2 md:grid-cols-[1fr_150px_minmax(180px,1fr)_minmax(200px,1fr)_auto]">
+            <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_150px_minmax(180px,1fr)_minmax(200px,1fr)_auto]">
               <input className="field-base px-3 py-2" onChange={(event) => setTitle(event.currentTarget.value)} placeholder="Название изменения" value={title} />
               <select className="field-base px-3 py-2" onChange={(event) => setChangeType(event.currentTarget.value)} value={changeType}>
                 <option value="standard">Стандартное</option>
