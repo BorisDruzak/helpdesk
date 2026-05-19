@@ -142,6 +142,7 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
 
     params_schema = _as_dict(spec.get("params_schema") or raw_tool.get("params_schema"))
     output_schema = _as_dict(spec.get("output_schema") or raw_tool.get("output_schema"))
+    presentation_schema = _as_dict(spec.get("presentation_schema") or raw_tool.get("presentation_schema"))
     raw_presets = _as_list(spec.get("presets") or raw_tool.get("presets"))
     presets: list[dict[str, Any]] = []
     for raw_preset in raw_presets:
@@ -204,6 +205,7 @@ def normalize_tool_catalog_entry(raw_tool: dict[str, Any], *, source: str) -> di
         "risk_level": str(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
         "params_schema": params_schema,
         "output_schema": output_schema,
+        "presentation_schema": presentation_schema,
         "presets": presets,
         "error_codes": error_codes,
     }
@@ -223,6 +225,7 @@ def normalize_capability_catalog_entry(raw_capability: Any, *, source: str) -> d
     provider_id = str(raw.get("provider_id") or _as_dict(raw.get("deployment")).get("provider_id") or "").strip()
     params_schema = _as_dict(raw.get("params_schema"))
     output_schema = _as_dict(raw.get("output_schema"))
+    presentation_schema = _as_dict(raw.get("presentation_schema"))
     output_contract = _as_dict(raw.get("output_contract"))
     if not output_contract:
         output_contract = normalize_output_contract({}, output_schema=output_schema, error_codes=[])
@@ -258,6 +261,7 @@ def normalize_capability_catalog_entry(raw_capability: Any, *, source: str) -> d
         "risk_level": str(raw.get("risk_level") or "low"),
         "params_schema": params_schema,
         "output_schema": output_schema,
+        "presentation_schema": presentation_schema,
         "evidence": _as_dict(raw.get("evidence")),
         "presets": _as_list(raw.get("presets")),
         "error_codes": _as_list(raw.get("error_codes")),

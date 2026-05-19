@@ -79,6 +79,7 @@ export type ModuleWorkbenchToolDraft = {
   params_schema: Record<string, unknown> | unknown[];
   output_schema: Record<string, unknown> | unknown[];
   output_contract: Record<string, unknown>;
+  presentation_schema?: Record<string, unknown>;
   presets: Array<Record<string, unknown>>;
   capabilities: string[];
   metadata: Record<string, unknown>;

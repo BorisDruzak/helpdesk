@@ -25,13 +25,20 @@ from app.repos.diagnostics_repo import DiagnosticRepo
 from auth.middleware import require_auth
 import config
 from diagnostics.capability_registry import CapabilityRegistry
-from diagnostics.agent_recipes import DEFAULT_AGENT_RECIPE_PRIMITIVES, AgentRecipeValidationError, normalize_recipe_platforms
+from diagnostics.agent_recipes import (
+    COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
+    DEFAULT_AGENT_RECIPE_PRIMITIVES,
+    PRIMITIVE_PRESENTATION_SCHEMAS,
+    AgentRecipeValidationError,
+    normalize_recipe_platforms,
+)
 from diagnostics.agent_recipes_repo import AgentRecipeRepo
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
 from diagnostics.observability import RuntimeAuditCapabilityExecutionObserver
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.passport_bridge import DiagnosticPassportBridgeService
+from diagnostics.presentation_overrides import PresentationSchemaValidationError, ToolPresentationOverrideService
 from diagnostics.provider_config import DiagnosticProviderConfigService
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
 from diagnostics.profiles import list_profiles, resolve_ticket_profile
@@ -219,6 +226,7 @@ async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
             if descriptor.id not in existing_ids:
                 capabilities.append(descriptor)
                 existing_ids.add(descriptor.id)
+        capabilities = await ToolPresentationOverrideService(session).apply_to_capabilities(capabilities)
     return web.json_response(
         {
             "status": "ok",
@@ -296,7 +304,11 @@ async def handle_diagnostics_provider_config_put(request: web.Request) -> web.Re
 
 def _primitive_payload(row) -> dict:
     if isinstance(row, dict):
-        return dict(row)
+        payload = dict(row)
+        primitive_id = str(payload.get("primitive_id") or "")
+        payload.setdefault("presentation_schema", PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}))
+        return payload
+    primitive_id = str(row.primitive_id or "")
     return {
         "id": row.id,
         "runner_provider_id": row.runner_provider_id,
@@ -309,6 +321,7 @@ def _primitive_payload(row) -> dict:
         "params_schema": row.params_schema,
         "output_schema": row.output_schema,
         "output_contract": row.output_contract,
+        "presentation_schema": PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}),
         "safety": row.safety_json,
         "evidence_defaults": row.evidence_defaults_json,
         "resource_limits": row.resource_limits_json,
@@ -386,6 +399,9 @@ async def handle_agent_recipe_create(request: web.Request) -> web.Response:
         "tool_kind": "diagnostic",
         "risk_level": "low",
         "evidence": evidence_mapping,
+        "presentation_schema": payload.get("presentation_schema")
+        if isinstance(payload.get("presentation_schema"), dict)
+        else COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
     }
     auth_context = request.get("auth_context")
     async with get_session() as session:
@@ -508,6 +524,91 @@ async def handle_agent_recipe_publish(request: web.Request) -> web.Response:
 def _auth_actor_label(request: web.Request) -> str:
     auth_context = request.get("auth_context")
     return str(getattr(auth_context, "actor_id", None) or getattr(auth_context, "actor_role", None) or "admin")
+
+
+async def _resolve_tool_presentation_descriptor(request: web.Request, session, tool_id: str):
+    state = request.app.get("state")
+    registry = CapabilityRegistry(tool_service=ToolExecutionService(state), state=state)
+    descriptor = await registry.resolve_capability(tool_id, device_id=request.query.get("device_id"))
+    service = ToolPresentationOverrideService(session)
+    if descriptor is None:
+        descriptor = await service.descriptor_from_persisted_capability(tool_id)
+    return descriptor
+
+
+def _tool_presentation_error(error: PresentationSchemaValidationError) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error_code": error.code,
+            "error": error.message,
+            "path": error.path,
+        },
+        status=400,
+    )
+
+
+@require_auth("admin")
+async def handle_tool_presentation_get(request: web.Request) -> web.Response:
+    tool_id = str(request.query.get("tool_id") or "").strip()
+    tool_version = str(request.query.get("tool_version") or "").strip() or None
+    if not tool_id:
+        return web.json_response({"status": "error", "error_code": "TOOL_ID_REQUIRED", "error": "tool_id is required"}, status=400)
+    async with get_session() as session:
+        descriptor = await _resolve_tool_presentation_descriptor(request, session, tool_id)
+        if descriptor is None:
+            return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND", "error": "Capability not found"}, status=404)
+        detail = await ToolPresentationOverrideService(session).get_presentation_detail(descriptor, tool_version=tool_version)
+    return web.json_response({"status": "ok", **detail}, headers={"Cache-Control": "no-store"})
+
+
+@require_auth("admin")
+async def handle_tool_presentation_put(request: web.Request) -> web.Response:
+    tool_id = str(request.query.get("tool_id") or "").strip()
+    tool_version = str(request.query.get("tool_version") or "").strip() or None
+    if not tool_id:
+        return web.json_response({"status": "error", "error_code": "TOOL_ID_REQUIRED", "error": "tool_id is required"}, status=400)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    async with get_session() as session:
+        descriptor = await _resolve_tool_presentation_descriptor(request, session, tool_id)
+        if descriptor is None:
+            return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND", "error": "Capability not found"}, status=404)
+        service = ToolPresentationOverrideService(session)
+        try:
+            await service.upsert_override(
+                tool_id,
+                payload.get("presentation_schema"),
+                tool_version=tool_version,
+                enabled=bool(payload.get("enabled", True)),
+                actor_id=_auth_actor_label(request),
+            )
+        except PresentationSchemaValidationError as exc:
+            return _tool_presentation_error(exc)
+        detail = await service.get_presentation_detail(descriptor, tool_version=tool_version)
+        await session.commit()
+    return web.json_response({"status": "ok", **detail}, headers={"Cache-Control": "no-store"})
+
+
+@require_auth("admin")
+async def handle_tool_presentation_delete(request: web.Request) -> web.Response:
+    tool_id = str(request.query.get("tool_id") or "").strip()
+    tool_version = str(request.query.get("tool_version") or "").strip() or None
+    if not tool_id:
+        return web.json_response({"status": "error", "error_code": "TOOL_ID_REQUIRED", "error": "tool_id is required"}, status=400)
+    async with get_session() as session:
+        descriptor = await _resolve_tool_presentation_descriptor(request, session, tool_id)
+        if descriptor is None:
+            return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND", "error": "Capability not found"}, status=404)
+        service = ToolPresentationOverrideService(session)
+        await service.delete_or_disable_override(tool_id, tool_version=tool_version, actor_id=_auth_actor_label(request))
+        detail = await service.get_presentation_detail(descriptor, tool_version=tool_version)
+        await session.commit()
+    return web.json_response({"status": "ok", **detail}, headers={"Cache-Control": "no-store"})
 
 
 async def _runner_rollout_action(request: web.Request, action: str) -> web.Response:
@@ -679,6 +780,7 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
     )
     async with get_session() as session:
         persisted_maps = await DiagnosticProviderConfigService(session).build_readiness_maps()
+        capabilities = await ToolPresentationOverrideService(session).apply_to_capabilities(capabilities)
     context = ReadinessContext(
         ticket_id=ticket_id,
         device_id=device_id,

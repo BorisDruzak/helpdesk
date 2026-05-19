@@ -411,6 +411,9 @@ class SupportTicketMessage(BaseModel):
     tool_status: str | None = None
     result_summary: str | None = None
     result_preview: str | None = None
+    result_payload: Any | None = None
+    result_presentation_schema: dict[str, Any] | None = None
+    result_presentation_schema_source: str | None = None
     operation_steps: list[dict[str, Any]] = Field(default_factory=list)
     operation_id: str | None = None
     trace_id: str | None = None

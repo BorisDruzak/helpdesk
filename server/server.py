@@ -148,6 +148,13 @@ async def housekeeping_cleanup_task(app: web.Application):
             except Exception as outbox_err:
                 logger.warning(f"[HOUSEKEEPING] device_outbox repair skipped: {outbox_err}")
         
+            from inventory.scheduler import InventoryRefreshRuntime
+
+            inventory_refresh_runtime = InventoryRefreshRuntime(state=app["state"])
+            await inventory_refresh_runtime.start()
+            app["inventory_refresh_runtime"] = inventory_refresh_runtime
+            logger.success("Inventory refresh runtime initialized")
+
         except Exception as e:
             logger.error(f"[HOUSEKEEPING] Cleanup error: {e}", exc_info=True)
 
@@ -362,6 +369,11 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping observer refresh runtime...")
         await observer_refresh_runtime.stop()
         logger.success("✅ Observer refresh runtime stopped")
+
+    if 'inventory_refresh_runtime' in app:
+        logger.info("Stopping inventory refresh runtime...")
+        await app['inventory_refresh_runtime'].stop()
+        logger.success("Inventory refresh runtime stopped")
 
     # Phase C: Stop device outbox sender
     if 'outbox_sender' in app:

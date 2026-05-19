@@ -614,6 +614,9 @@ export function mapSupportTimelineEntries(
             statusTone: operationStatusTone(entry.tool_status),
             summary: entry.result_summary ?? null,
             preview: entry.result_preview ?? null,
+            resultPayload: entry.result_payload,
+            presentationSchema: entry.result_presentation_schema ?? undefined,
+            presentationSchemaSource: entry.result_presentation_schema_source ?? null,
             metaLabels: operationMetaLabels(entry),
             steps: entry.operation_steps ?? [],
           }

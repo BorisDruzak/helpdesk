@@ -14,6 +14,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { SchemaParamEditor } from "../../components/forms/schema-param-editor";
+import { ModuleResultRenderer } from "../../components/module-result/module-result-renderer";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -36,6 +37,7 @@ import {
   updateDiagnosticEvidence,
   type DiagnosticCapability,
   type DiagnosticEvidence,
+  type DiagnosticCapabilityRunResult,
 } from "./api";
 import { normalizeCapabilityParamSchema } from "./params-schema";
 
@@ -238,6 +240,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
   });
   const [manualOpen, setManualOpen] = useState(false);
   const [lastActionMessage, setLastActionMessage] = useState<string | null>(null);
+  const [lastRunResult, setLastRunResult] = useState<DiagnosticCapabilityRunResult | null>(null);
 
   const overviewQuery = useQuery({
     queryKey: ["ticket-diagnostics-overview", ticketId],
@@ -321,6 +324,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
     mutationFn: ({ capability, params }: { capability: DiagnosticCapability; params: Record<string, unknown> }) =>
       runTicketDiagnosticCapability(ticketId, capability.id, { params }),
     onSuccess: async (result) => {
+      setLastRunResult(result);
       setLastActionMessage(summarizeRunResult(result));
       await invalidateDiagnostics();
     },
@@ -638,6 +642,25 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                     <div className="rounded-[1rem] border border-border bg-white px-4 py-4 text-sm">
                       <p className="font-semibold text-slate-900">Artifacts</p>
                       <p className="mt-2 text-slate-600">{selectedCapability.artifacts.artifact_kinds.join(", ")}</p>
+                    </div>
+                  ) : null}
+
+                  {lastRunResult ? (
+                    <div className="rounded-[1rem] border border-border bg-white px-4 py-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-slate-900">Result preview</p>
+                        <Badge tone={statusTone(lastRunResult.status)}>{label(lastRunResult.status)}</Badge>
+                      </div>
+                      <ModuleResultRenderer
+                        result={lastRunResult.output ?? lastRunResult}
+                        presentationSchema={selectedCapability.effective_presentation_schema ?? selectedCapability.presentation_schema}
+                      />
+                      <details className="mt-3 rounded-[0.8rem] border border-border bg-surface-subtle px-3 py-2">
+                        <summary className="cursor-pointer text-sm font-semibold text-slate-800">Raw result</summary>
+                        <pre className="mt-3 max-h-72 overflow-auto rounded-[0.75rem] bg-slate-950 p-4 text-xs leading-5 text-slate-100">
+                          {JSON.stringify(lastRunResult, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   ) : null}
 

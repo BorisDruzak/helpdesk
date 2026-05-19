@@ -42,6 +42,7 @@ Legacy aliases exist only as compatibility bridges.
 - ticket-scoped readiness through `GET /api/tickets/{ticket_id}/diagnostics/capabilities`
 - ticket-scoped capability execution through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`
 - admin-safe provider config through `GET /api/diagnostics/providers/configs`, `GET /api/diagnostics/providers/configs/{provider_id}` and `PUT /api/diagnostics/providers/configs/{provider_id}`; the same redacted contract is available to web-session admin clients through `/api/web/admin/diagnostics/providers/configs*`
+- admin-safe presentation override management through `GET|PUT|DELETE /api/web/tool-presentations?tool_id=<capability_id>`
 - routing agent capabilities to existing `ToolExecutionService.run_tool` while routing server connectors, observer queries, remote assist and manual checks through server-side providers
 
 ## Diagnostic capability projection
@@ -58,6 +59,14 @@ Sources:
 - manual diagnostic evidence capabilities: `manual.visual_check`, `manual.vendor_response`, `manual.operator_note`, `manual.customer_confirmation`
 
 Capability descriptors include provider id/type, execution target, schemas/contracts, safety flags, deployment metadata, readiness requirements, evidence metadata, artifact metadata and legacy aliases.
+
+Presentation schema projection keeps two layers separate:
+
+- `presentation_schema` is the module/default descriptor field as published by the agent module, server provider or recipe descriptor.
+- `effective_presentation_schema` is what the UI should render. It resolves to an enabled server override when present, otherwise to the module default, otherwise `{}`.
+- `presentation_schema_source` is `server_override`, `module_default` or `none`; `has_presentation_override` marks the enabled override case.
+
+Presentation overrides are stored in `tool_presentation_overrides` by `tool_id`, optional `tool_version` and `scope=global`. The server validates that override schemas are JSON objects, that `blocks[]` use supported declarative block types, and rejects obvious script/HTML/JavaScript strings. Overrides never mutate module defaults and never change tool results, Protocol V3 envelopes, command names or `ToolResponse`.
 
 Readiness statuses are: `available`, `install_required`, `installing`, `unsupported_platform`, `agent_offline`, `missing_dependency`, `consent_required`, `integration_not_configured`, `credentials_missing`, `mapping_missing`, `permission_denied`, `disabled_by_policy`, `unavailable`, `unknown`.
 
@@ -244,7 +253,7 @@ Protected `agent_recipe_runner` versions are the exception to the normal Windows
 
 ## Tool output contracts for playbooks
 
-`output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and compact support-facing display.
+`output_schema` describes the full JSON payload a tool may return. `output_contract` is the smaller deterministic contract used by the low-code playbook builder for branching and backend/evidence decisions. `presentation_schema` is a separate top-level rendering contract for UI display hints; it must not be nested inside `output_contract`.
 
 For predictable automation, each playbook-ready tool should declare:
 
@@ -268,6 +277,10 @@ For predictable automation, each playbook-ready tool should declare:
 Server manifest normalization keeps `output_schema` and `output_contract` separate. When `output_contract` is present, `status_values` must be explicit and unique; `success_values` and `error_values` must be subsets of `status_values`. The admin playbook catalog derives `condition_hints` from the contract and known `error_codes`, so `/app/admin/playbooks` can offer stable condition templates such as `steps.ping.output.result.status == 'ok'` instead of forcing operators to parse raw command text.
 
 Generated modules preserve `output_contract` in `manifest.json`, `manifest_summary` and the editable workbench preview. Older modules that do not declare an output contract remain valid; the field is not written as an empty object unless the author explicitly provides it.
+
+Tool Output Presentation Schema v1 is preserved as `presentation_schema` in manifest normalization, generated module packages, editable workbench drafts, diagnostic capability descriptors and recipe descriptors. It is declarative only and supports safe dotted path lookups plus block hints such as `field_grid`, `metric_cards`, `table`, `checklist`, `timeline`, `artifact_list` and `raw_json`. The web renderer ignores unknown/invalid blocks, does not evaluate expressions or HTML, and keeps raw JSON fallback available.
+
+Agent recipe capabilities use `kind=composite_recipe`: the recipe summary is rendered separately, `steps[]` are rendered as a timeline/checklist, and each step result is rendered through the matching primitive/tool `presentation_schema` when available. This is a projection/rendering contract only; it does not change Protocol V3 envelopes, `ToolResponse`, command names, ACK/NACK semantics or recipe execution.
 
 Preferred-version rollout now has an explicit server-side setting:
 

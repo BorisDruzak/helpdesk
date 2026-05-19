@@ -28,6 +28,7 @@ enabled_modules:
   - "system"
   - "screen"
   - "diag_logs"
+  - "inventory"
 
 ui:
   enabled: True

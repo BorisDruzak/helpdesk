@@ -2477,6 +2477,8 @@ class AgentOrchestrator:
                     'capabilities': spec.get('capabilities'),
                     'params_schema': params_schema,
                     'output_schema': spec.get('output_schema', {}),
+                    'output_contract': spec.get('output_contract', {}),
+                    'presentation_schema': spec.get('presentation_schema', {}),
                     'presets': presets,
                     'contract_version': spec.get('contract_version', '1.0.0'),
                     'dependencies': spec.get('dependencies', {}),

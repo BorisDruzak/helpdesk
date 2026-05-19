@@ -258,6 +258,7 @@ def build_editable_spec_from_archive_bytes(
                 "params_schema": tool.get("params_schema") or {},
                 "output_schema": tool.get("output_schema") or {},
                 "output_contract": tool.get("output_contract") or {},
+                "presentation_schema": tool.get("presentation_schema") or {},
                 "presets": tool.get("presets") or [],
                 "capabilities": tool.get("capabilities") or [],
                 "metadata": tool.get("metadata") or {},

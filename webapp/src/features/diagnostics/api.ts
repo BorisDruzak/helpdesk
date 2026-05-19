@@ -172,6 +172,10 @@ export type DiagnosticCapability = {
   params_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   output_contract?: Record<string, unknown>;
+  presentation_schema?: Record<string, unknown>;
+  effective_presentation_schema?: Record<string, unknown>;
+  presentation_schema_source?: "module_default" | "server_override" | "none" | string;
+  has_presentation_override?: boolean;
   evidence?: {
     produces_evidence?: boolean;
     kind?: string;

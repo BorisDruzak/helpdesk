@@ -136,7 +136,7 @@ SERVER_PUBLIC_BASE_URL = os.getenv(
 
 AGENT_BUILTIN_MODULES = {
     module.strip().lower()
-    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen,diag").split(",")
+    for module in os.getenv("AGENT_BUILTIN_MODULES", "system,screen,diag,inventory").split(",")
     if module.strip()
 }
 
@@ -338,6 +338,11 @@ PLAYBOOK_MAX_PARALLEL_STEPS_PER_RUN = int(os.getenv("PLAYBOOK_MAX_PARALLEL_STEPS
 PLAYBOOK_SCHEDULER_ENABLED = os.getenv("PLAYBOOK_SCHEDULER_ENABLED", "true").lower() == "true"
 PLAYBOOK_PARALLEL_ENABLED = os.getenv("PLAYBOOK_PARALLEL_ENABLED", "true").lower() == "true"
 CAPABILITY_GATE_STRICT = os.getenv("CAPABILITY_GATE_STRICT", "true").lower() == "true"
+
+# Inventory refresh scheduler: disabled by default until an admin enables policy
+# rows. The runtime only dispatches the existing inventory.collect tool.
+INVENTORY_REFRESH_SCHEDULER_ENABLED = os.getenv("INVENTORY_REFRESH_SCHEDULER_ENABLED", "true").lower() == "true"
+INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC = int(os.getenv("INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC", "60"))
 
 # Agent Recipe Runner runtime dependency policy.
 AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED = os.getenv("AGENT_RECIPE_RUNNER_AUTO_INSTALL_ENABLED", "true").lower() == "true"

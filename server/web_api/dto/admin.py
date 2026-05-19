@@ -1164,6 +1164,7 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     risk_level: str | None = None
     params_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    presentation_schema: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
     presets: list[dict[str, Any]] = Field(default_factory=list)
     error_codes: list[str] = Field(default_factory=list)
@@ -1331,6 +1332,177 @@ class AdminDeviceUpdateRunPayload(BaseModel):
     build_source: str
     poll_url: str
     build: AdminBuildIdentity
+
+
+class AdminDeviceInventoryHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    collected_at: str
+    status: str
+    summary: str | None = None
+
+
+class AdminDeviceInventoryLatestSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    source_tool: str
+    collected_at: str
+    status: str
+    summary: str | None = None
+    result: dict[str, Any]
+    presentation_schema: dict[str, Any] = Field(default_factory=dict)
+    effective_presentation_schema: dict[str, Any] = Field(default_factory=dict)
+    presentation_schema_source: str = "none"
+    device_card_slots: list[str] = Field(default_factory=list)
+
+
+class AdminDeviceInventoryBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    building: str | None = None
+    floor: str | None = None
+    room: str | None = None
+    department: str | None = None
+    responsible_user: str | None = None
+    responsible_user_login: str | None = None
+    inventory_number: str | None = None
+    status: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminDeviceInventoryBindingUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    building: str | None = None
+    floor: str | None = None
+    room: str | None = None
+    department: str | None = None
+    responsible_user: str | None = None
+    responsible_user_login: str | None = None
+    inventory_number: str | None = None
+    status: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class AdminDeviceInventoryBindingHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    changed_at: str
+    changed_by: str | None = None
+    changed_fields: list[str] = Field(default_factory=list)
+    old_binding: dict[str, Any] | None = None
+    new_binding: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class AdminDeviceInventoryRefreshPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = None
+    scope: str
+    device_id: str | None = None
+    enabled: bool
+    interval_minutes: int
+    jitter_minutes: int
+    last_requested_at: str | None = None
+    next_due_at: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class AdminDeviceInventoryRefreshPolicyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    interval_minutes: int = 1440
+    jitter_minutes: int = 30
+
+
+class AdminDeviceInventoryRefreshRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    device_id: str | None = None
+    policy_id: str | None = None
+    requested_at: str
+    requested_by: str | None = None
+    status: str
+    job_id: str | None = None
+    error: str | None = None
+    completed_at: str | None = None
+
+
+class AdminDeviceInventoryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    latest_snapshot: AdminDeviceInventoryLatestSnapshot | None = None
+    history: list[AdminDeviceInventoryHistoryItem] = Field(default_factory=list)
+    binding: AdminDeviceInventoryBinding | None = None
+    binding_history: list[AdminDeviceInventoryBindingHistoryItem] = Field(default_factory=list)
+    refresh_policy: AdminDeviceInventoryRefreshPolicy | None = None
+    refresh_runs: list[AdminDeviceInventoryRefreshRun] = Field(default_factory=list)
+    last_refresh_run: AdminDeviceInventoryRefreshRun | None = None
+
+
+class AdminInventoryBindingImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    csv_text: str
+    dry_run: bool = True
+    reason: str | None = None
+
+
+class AdminInventoryBindingImportChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row: int
+    device_id: str | None = None
+    hostname: str | None = None
+    action: str
+    changed_fields: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class AdminInventoryBindingImportResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dry_run: bool
+    total_rows: int
+    valid_rows: int
+    error_rows: int
+    changes: list[AdminInventoryBindingImportChange] = Field(default_factory=list)
+
+
+class AdminInventoryDashboardPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    totals: dict[str, Any] = Field(default_factory=dict)
+    freshness: dict[str, Any] = Field(default_factory=dict)
+    by_os: list[dict[str, Any]] = Field(default_factory=list)
+    by_building: list[dict[str, Any]] = Field(default_factory=list)
+    by_department: list[dict[str, Any]] = Field(default_factory=list)
+    binding_gaps: dict[str, Any] = Field(default_factory=dict)
+    health: dict[str, Any] = Field(default_factory=dict)
+    refresh: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminDeviceInventoryCollectPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    tool_name: str
+    operation_id: str | None = None
+    status: str
+    message: str
+    poll_url: str | None = None
 
 
 class AdminDeviceIdentitySummary(BaseModel):

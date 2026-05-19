@@ -98,6 +98,123 @@ export type AdminDeviceTokensPayload = {
   }>;
 };
 
+export type AdminDeviceInventoryPayload = {
+  device_id: string;
+  latest_snapshot: {
+    id: string;
+    source_tool: string;
+    collected_at: string;
+    status: string;
+    summary: string | null;
+    result: Record<string, unknown>;
+    presentation_schema?: Record<string, unknown>;
+    effective_presentation_schema?: Record<string, unknown>;
+    presentation_schema_source?: "module_default" | "server_override" | "none";
+    device_card_slots?: string[];
+  } | null;
+  history: Array<{
+    id: string;
+    collected_at: string;
+    status: string;
+    summary: string | null;
+  }>;
+  binding?: AdminDeviceInventoryBinding | null;
+  binding_history?: AdminDeviceInventoryBindingHistoryItem[];
+  refresh_policy?: AdminDeviceInventoryRefreshPolicy | null;
+  refresh_runs?: AdminDeviceInventoryRefreshRun[];
+  last_refresh_run?: AdminDeviceInventoryRefreshRun | null;
+};
+
+export type AdminDeviceInventoryBinding = {
+  device_id: string;
+  building: string | null;
+  floor: string | null;
+  room: string | null;
+  department: string | null;
+  responsible_user: string | null;
+  responsible_user_login: string | null;
+  inventory_number: string | null;
+  status: string | null;
+  tags: string[];
+  notes: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminDeviceInventoryBindingUpdate = Omit<AdminDeviceInventoryBinding, "device_id" | "updated_at" | "updated_by">;
+
+export type AdminDeviceInventoryBindingHistoryItem = {
+  changed_at: string;
+  changed_by: string | null;
+  changed_fields: string[];
+  old_binding: Record<string, unknown> | null;
+  new_binding: Record<string, unknown>;
+  reason: string | null;
+};
+
+export type AdminDeviceInventoryRefreshPolicy = {
+  id: string | null;
+  scope: string;
+  device_id: string | null;
+  enabled: boolean;
+  interval_minutes: number;
+  jitter_minutes: number;
+  last_requested_at: string | null;
+  next_due_at: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type AdminDeviceInventoryRefreshRun = {
+  id: string;
+  device_id: string | null;
+  policy_id: string | null;
+  requested_at: string;
+  requested_by: string | null;
+  status: string;
+  job_id: string | null;
+  error: string | null;
+  completed_at: string | null;
+};
+
+export type AdminInventoryBindingImportResult = {
+  dry_run: boolean;
+  total_rows: number;
+  valid_rows: number;
+  error_rows: number;
+  changes: Array<{
+    row: number;
+    device_id: string | null;
+    hostname: string | null;
+    action: "update" | "skip" | "error" | string;
+    changed_fields: string[];
+    errors: string[];
+  }>;
+};
+
+export type AdminInventoryDashboardPayload = {
+  totals: Record<string, number>;
+  freshness: Record<string, number>;
+  by_os: Array<{ label: string; count: number }>;
+  by_building: Array<{ label: string; count: number }>;
+  by_department: Array<{ label: string; count: number }>;
+  binding_gaps: Record<string, number>;
+  health: {
+    high_disk_usage?: number;
+    missing_key_apps?: Array<Record<string, unknown>>;
+  };
+  refresh: Record<string, unknown>;
+};
+
+export type AdminDeviceInventoryCollectPayload = {
+  device_id: string;
+  tool_name: string;
+  operation_id: string | null;
+  status: string;
+  message: string;
+  poll_url: string | null;
+};
+
 export type AdminConnectionPolicy = "reject_all" | "accept_all" | "manual";
 
 export type AdminConnectionRequestItem = {
@@ -339,6 +456,81 @@ export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDev
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить токены устройства");
+}
+
+export async function fetchAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить инвентарь устройства");
+}
+
+export async function saveAdminDeviceInventoryBinding(
+  deviceId: string,
+  payload: AdminDeviceInventoryBindingUpdate,
+  reason?: string | null
+): Promise<AdminDeviceInventoryBinding> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/binding`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reason ? { binding: payload, reason } : payload)
+  });
+  return readSuccessResponse(response, "Не удалось сохранить привязку устройства");
+}
+
+export async function importAdminInventoryBindings(payload: {
+  csv_text: string;
+  dry_run: boolean;
+  reason?: string | null;
+}): Promise<AdminInventoryBindingImportResult> {
+  const response = await fetch("/api/web/admin/inventory/bindings/import", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось импортировать привязки");
+}
+
+export async function fetchAdminInventoryDashboard(staleDays = 7): Promise<AdminInventoryDashboardPayload> {
+  const searchParams = new URLSearchParams();
+  searchParams.set("stale_days", String(staleDays));
+  const response = await fetch(`/api/web/admin/inventory/dashboard?${searchParams.toString()}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить сводку парка");
+}
+
+export function adminInventoryBindingsExportUrl(): string {
+  return "/api/web/admin/inventory/bindings/export.csv";
+}
+
+export function adminInventoryExportUrl(staleDays = 7): string {
+  const searchParams = new URLSearchParams();
+  searchParams.set("stale_days", String(staleDays));
+  return `/api/web/admin/inventory/export.csv?${searchParams.toString()}`;
+}
+
+export async function saveAdminDeviceInventoryRefreshPolicy(
+  deviceId: string,
+  payload: Pick<AdminDeviceInventoryRefreshPolicy, "enabled" | "interval_minutes" | "jitter_minutes">
+): Promise<AdminDeviceInventoryRefreshPolicy> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory/refresh-policy`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return readSuccessResponse(response, "Не удалось сохранить расписание инвентаря");
+}
+
+export async function collectAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryCollectPayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/inventory/collect`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось отправить inventory.collect");
 }
 
 export async function revokeAdminDeviceToken(deviceId: string, tokenHash: string): Promise<void> {

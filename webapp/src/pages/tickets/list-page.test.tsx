@@ -602,6 +602,44 @@ describe("TicketListPage", () => {
     });
   });
 
+  it("renders diagnostic timeline result through presentation schema", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    fetchSupportTicketTimelineMock.mockResolvedValue(
+      timelinePayload({
+        filter: "all",
+        items: [
+          {
+            ...timelinePayload().items[0],
+            tool_name: "system.collect",
+            result_summary: "Collected system information",
+            result_payload: { hostname: "pc-01", cpu_percent: 12 },
+            result_presentation_schema: {
+              version: "1.0",
+              kind: "tool_result",
+              title: "System",
+              blocks: [
+                {
+                  type: "field_grid",
+                  title: "Identity",
+                  fields: [{ path: "hostname", label: "Host" }],
+                },
+              ],
+            },
+            result_presentation_schema_source: "server_override",
+          },
+        ],
+      }),
+    );
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByText("Collected system information")).toBeInTheDocument();
+    expect(await screen.findByText("Identity")).toBeInTheDocument();
+    expect(await screen.findByText("Host")).toBeInTheDocument();
+    expect(await screen.findByText("pc-01")).toBeInTheDocument();
+  });
+
   it("unsubscribes from the previous ticket when the selected ticket changes", async () => {
     const baseQueuePayload = queuePayload();
     fetchSupportQueueMock.mockResolvedValue(

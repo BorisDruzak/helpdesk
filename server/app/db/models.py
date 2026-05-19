@@ -2675,6 +2675,141 @@ class DeviceToolsetSnapshot(Base):
         )
 
 
+class DeviceInventorySnapshot(Base):
+    """Raw endpoint inventory snapshots collected by inventory.collect."""
+    __tablename__ = "device_inventory_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_tool: Mapped[str] = mapped_column(Text, nullable=False, default="inventory.collect")
+    source_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    normalized: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ok")
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_snapshots_device_collected", "device_id", "collected_at"),
+        Index("ix_device_inventory_snapshots_source_tool", "source_tool"),
+        Index("ix_device_inventory_snapshots_status", "status"),
+        Index("ix_device_inventory_snapshots_hash", "snapshot_hash"),
+    )
+
+
+class DeviceInventoryBinding(Base):
+    """Lightweight workplace binding metadata for an endpoint inventory card."""
+    __tablename__ = "device_inventory_bindings"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    building: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    floor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    room: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    responsible_user: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    responsible_user_login: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    inventory_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class DeviceInventoryBindingHistory(Base):
+    """Audit trail for lightweight inventory binding changes."""
+    __tablename__ = "device_inventory_binding_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    changed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    old_binding: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    new_binding: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    changed_fields: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_binding_history_device_changed", "device_id", "changed_at"),
+    )
+
+
+class DeviceInventoryRefreshPolicy(Base):
+    """Periodic inventory.collect refresh policy."""
+    __tablename__ = "device_inventory_refresh_policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="global")
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=1440)
+    jitter_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    last_requested_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    next_due_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_refresh_policies_scope", "scope"),
+        Index("ix_device_inventory_refresh_policies_device", "device_id"),
+        Index("ix_device_inventory_refresh_policies_enabled_due", "enabled", "next_due_at"),
+    )
+
+
+class DeviceInventoryRefreshRun(Base):
+    """Visibility record for manual/scheduled inventory refresh attempts."""
+    __tablename__ = "device_inventory_refresh_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    policy_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    requested_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="requested")
+    job_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_refresh_runs_device_requested", "device_id", "requested_at"),
+        Index("ix_device_inventory_refresh_runs_policy_requested", "policy_id", "requested_at"),
+        Index("ix_device_inventory_refresh_runs_status", "status"),
+    )
+
+
 class DeviceOutbox(Base):
     """
     Device outbox model for Protocol V3.
@@ -5001,6 +5136,29 @@ class DiagnosticCapability(Base):
     __table_args__ = (
         Index("ix_diag_capabilities_provider", "provider_id"),
         Index("ix_diag_capabilities_target_status", "execution_target", "status"),
+    )
+
+
+class ToolPresentationOverride(Base):
+    """Server-side override for declarative tool result rendering."""
+
+    __tablename__ = "tool_presentation_overrides"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tool_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="global", server_default="global")
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    presentation_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"))
+
+    __table_args__ = (
+        Index("ix_tool_presentation_overrides_tool", "tool_id"),
+        Index("ix_tool_presentation_overrides_enabled", "enabled"),
     )
 
 

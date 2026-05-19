@@ -24,6 +24,7 @@ from pc_agent.core.module_manager import ModuleManager
 from pc_agent.core.orchestrator import AgentOrchestrator
 from pc_agent.core.recipe_runner_bridge import RecipeRunnerBridge
 from pc_agent.config.config_loader import ConfigLoader, init_config
+from pc_agent.modules_packages.agent_recipe_runner.module import AgentRecipeRunnerModule
 
 
 RUNNER_MODULE = """
@@ -76,6 +77,26 @@ def _write_runner(root: Path, version: str = "1.0.0") -> None:
 
 
 class RecipeRunnerBridgeTests(unittest.TestCase):
+    def test_builtin_runner_primitives_expose_presentation_schema(self):
+        runner = AgentRecipeRunnerModule()
+        primitives = {item["primitive_id"]: item for item in runner.describe_primitives()}
+
+        for primitive_id in (
+            "dns.resolve",
+            "tcp.connect",
+            "http.request",
+            "file.exists",
+            "process.exists",
+            "service.status",
+            "systemd.service.status",
+        ):
+            with self.subTest(primitive_id=primitive_id):
+                schema = primitives[primitive_id].get("presentation_schema")
+                self.assertIsInstance(schema, dict)
+                self.assertEqual(schema.get("version"), "1.0")
+                self.assertEqual(schema.get("kind"), "tool_result")
+                self.assertTrue(schema.get("blocks"))
+
     def test_missing_runner_returns_structured_error(self):
         with tempfile.TemporaryDirectory() as td:
             bridge = RecipeRunnerBridge(ModuleManager(str(Path(td)), str(Path(td) / "tmp")), DynamicModuleLoader(Path(td)))

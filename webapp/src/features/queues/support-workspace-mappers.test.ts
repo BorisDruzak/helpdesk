@@ -473,6 +473,67 @@ describe("support workspace mappers", () => {
     });
   });
 
+  it("maps renderable tool result payload and presentation schema for diagnostics timeline", () => {
+    const detail = detailPayload();
+    const presentationSchema = {
+      version: "1.0",
+      kind: "tool_result",
+      blocks: [{ type: "field_grid", fields: [{ path: "hostname", label: "Host" }] }],
+    };
+    detail.timeline = [
+      {
+        message_id: null,
+        event_id: 18,
+        event_type: "tool_call_result",
+        event_category: "diagnostics",
+        event_label: "Tool result",
+        event_details: {},
+        requester_timeline_text: null,
+        requester_timeline_kind: null,
+        requester_timeline_payload: null,
+        requester_timeline_icon: null,
+        requester_timeline_style: null,
+        from_role: "system",
+        sender_display_name: "System",
+        text: "Tool finished",
+        ts: "2026-05-18T10:00:00Z",
+        visibility: "system",
+        direction: "system",
+        attachments: [],
+        reply_to: null,
+        tool_name: "system.collect",
+        tool_status: "success",
+        result_summary: "Collected",
+        result_preview: null,
+        result_payload: { hostname: "pc-01" },
+        result_presentation_schema: presentationSchema,
+        result_presentation_schema_source: "server_override",
+        operation_id: "op-18",
+        trace_id: null,
+        duration_ms: 100,
+        retry_count: null,
+        max_retries: null,
+        retryable: false,
+        can_retry: false,
+        can_cancel: false,
+        retry_url: null,
+        cancel_url: null,
+        retry_disabled_reason: null,
+        cancel_disabled_reason: null,
+        error_code: null,
+        error_category: null,
+        details_url: "/api/operations/op-18",
+        operation_steps: [],
+      },
+    ];
+
+    const timeline = mapWorkspaceTimeline(detail);
+
+    expect(timeline[0].operation?.resultPayload).toEqual({ hostname: "pc-01" });
+    expect(timeline[0].operation?.presentationSchema).toEqual(presentationSchema);
+    expect(timeline[0].operation?.presentationSchemaSource).toBe("server_override");
+  });
+
   it("prefers requester timeline projection over raw backend event text", () => {
     const detail = detailPayload();
     detail.timeline = [

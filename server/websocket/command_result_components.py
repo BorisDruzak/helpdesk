@@ -117,19 +117,38 @@ class CommandResultArtifactHandler:
         device_id = getattr(ctx, "agent_id", None)
         if not device_id:
             return
-        observations = normalized.data_payload.get("observations")
-        if not isinstance(observations, dict):
-            return
 
         from app.db import get_session
         from app.repos import DeviceModulesRepo, DevicesRepo, OperationsRepo, ToolsetSnapshotsRepo
+        from inventory.service import INVENTORY_TOOL_ID, DeviceInventoryService, extract_tool_result_payload
         from utils.toolset_hash import compute_toolset_hash, sort_tools
         from websocket.modules_sync import flatten_modules_list, sync_modules_inventory
 
         async with get_session() as session:
             op_repo = OperationsRepo(session)
             operation = await op_repo.get_by_operation_id(lifecycle_outcome.operation_id)
-            if not operation or operation.kind != "command" or not operation.command_name:
+            if not operation:
+                return
+
+            if operation.kind == "tool_call" and getattr(operation, "tool_name", None) == INVENTORY_TOOL_ID:
+                snapshot = extract_tool_result_payload(normalized.data_payload)
+                if snapshot is None:
+                    return
+                await DeviceInventoryService(session).persist_snapshot(
+                    device_id=device_id,
+                    snapshot=snapshot,
+                    source_tool=INVENTORY_TOOL_ID,
+                    source_version=str(snapshot.get("schema_version") or "") or None,
+                )
+                await session.commit()
+                logger.info("[command_result] persisted inventory snapshot: device_id={}", device_id)
+                return
+
+            if operation.kind != "command" or not operation.command_name:
+                return
+
+            observations = normalized.data_payload.get("observations")
+            if not isinstance(observations, dict):
                 return
 
             command_name = operation.command_name

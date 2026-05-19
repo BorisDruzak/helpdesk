@@ -76,6 +76,12 @@ async def _seed_recipe(
                 "perspective": "endpoint",
                 "passport_eligible": True,
             },
+            "presentation_schema": {
+                "version": "1.0",
+                "kind": "composite_recipe",
+                "title": "Recipe preview",
+                "steps": {"path": "steps", "default_layout": "timeline"},
+            },
         },
     )
     capability_version_id = str(uuid.uuid4())
@@ -280,6 +286,23 @@ async def test_recipe_execution_uses_default_runner_primitives_without_db_seed(t
 
     assert result["status"] == "queued", result
     assert result["command"] == "run_recipe"
+
+
+@pytest.mark.asyncio
+async def test_agent_recipe_descriptor_preserves_presentation_schema(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        await _seed_recipe(session, device_id=device_id)
+        await session.commit()
+
+    async with session_maker() as session:
+        recipes = await AgentRecipeRepo(session).list_published_capabilities()
+
+    schema = recipes[0].descriptor().presentation_schema
+    assert schema["kind"] == "composite_recipe"
+    assert schema["steps"]["default_layout"] == "timeline"
 
 
 @pytest.mark.asyncio

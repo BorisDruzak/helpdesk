@@ -100,6 +100,9 @@ export type SupportWorkspaceTimelineItem = {
     statusTone: TicketBadgeTone;
     summary: string | null;
     preview: string | null;
+    resultPayload?: unknown;
+    presentationSchema?: unknown;
+    presentationSchemaSource?: string | null;
     metaLabels: string[];
     steps?: Array<{
       name: string;
