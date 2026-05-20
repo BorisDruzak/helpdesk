@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -113,7 +114,7 @@ def test_command_center_builds_deterministic_similar_spike_group():
     for index in range(3):
         queue_item = item(
             f"ticket-{index}",
-            "VPN client error 720",
+            "Codex CC similar spike Directum 3577fba",
             updated_at=(now - timedelta(minutes=index)).isoformat(),
             requires_operator_action=False,
         )
@@ -136,6 +137,9 @@ def test_command_center_builds_deterministic_similar_spike_group():
     assert section.count == 1
     assert section.items[0].similar_group.count == 3
     assert section.items[0].href.startswith("/app/tickets?search=")
+    assert parse_qs(urlparse(section.items[0].href).query)["search"] == [
+        "Codex CC similar spike Directum 3577fba"
+    ]
 
 
 @pytest.mark.no_db

@@ -615,7 +615,7 @@ def build_operator_command_center_payload(
         section_total_counts["similar_tickets_spike"] += 1
         attention_ids.add(group_key)
         if len(section_items["similar_tickets_spike"]) < limit:
-            search_text = _normalize_title(representative_item.title) or representative_item.title or group_key
+            search_text = representative_item.title or _normalize_title(representative_item.title) or group_key
             similar_group = CommandCenterSimilarGroup(
                 group_key=group_key,
                 count=len(group_entries),
