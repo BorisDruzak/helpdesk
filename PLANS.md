@@ -64,6 +64,15 @@ Known constraints:
 
 - Local Windows DB-backed `server/tests/test_operator_command_center.py` may hang before producing output; full CI/full gate should be the authoritative DB/API verification for that layer.
 
+Current P1/P2 hardening checklist:
+
+- Add requester-role regression coverage for `/api/web/support/command-center`; intended model is support-only, so requester tokens must receive 403.
+- Mark requester messages as read when a support operator opens the real ticket workspace, using the existing ticket read endpoint rather than hover/preview behavior.
+- Make `/app/tickets?smart_view=...` and `/app/tickets?search=...` open the queue view with visible filters; Command Center aliases are mapped to supported queue smart views.
+- Change similar-spike links from generic `/app/tickets` to a filtered search context so operators see the group samples first.
+- Add command-center performance logging and data-quality fallbacks for historical mojibake/junk titles without modifying stored data blindly.
+- Live acceptance still requires requester-role API/UI check, unread mark-read refresh, smart-view links, controlled pending-consent and OLA-risk seed verification, remote branch correction, full CI/full gate and server stop.
+
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
 Status: accepted / production-oriented cut in progress.

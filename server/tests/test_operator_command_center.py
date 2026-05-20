@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DiagnosticSession, Operation, Ticket, TicketApproval, UiUser
-from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
+from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
@@ -15,6 +15,17 @@ def _support_headers() -> dict[str, str]:
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
+
+
+def _requester_headers(actor_id: str = "requester-command-center") -> dict[str, str]:
+    return {"Authorization": f"Bearer {TEST_UI_USER_PREFIX}{actor_id}"}
+
+
+@pytest.mark.asyncio
+async def test_operator_command_center_rejects_requester_role(test_client):
+    response = await test_client.get("/api/web/support/command-center", headers=_requester_headers())
+
+    assert response.status == 403
 
 
 @pytest.mark.asyncio
@@ -234,7 +245,7 @@ async def test_operator_command_center_aggregates_operations_agent_diagnostics_c
     assert diagnostics_section["items"][0]["diagnostics"]["profile_code"] == "printer"
     spike_section = next(section for section in data["sections"] if section["key"] == "similar_tickets_spike")
     assert spike_section["items"][0]["similar_group"]["count"] == 3
-    assert spike_section["items"][0]["href"] == "/app/tickets"
+    assert spike_section["items"][0]["href"].startswith("/app/tickets?search=")
 
 
 @pytest.mark.asyncio

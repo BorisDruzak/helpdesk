@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 from web_api.dto.support import (
     CommandCenterAgentState,
@@ -36,6 +37,7 @@ ACTIVE_STATUSES = {
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
 HIGH_PRIORITIES = {"p1", "p2", "critical", "high"}
 SPIKE_THRESHOLD = 3
+_JUNK_DISPLAY_MARKERS = ("???", "\ufffd", "Ð", "Ñ")
 
 
 @dataclass(frozen=True)
@@ -78,12 +80,13 @@ SECTION_SPECS: dict[str, SectionSpec] = {
         "Требует действия оператора",
         "Следующее действие находится на стороне поддержки или уже просрочено.",
         "warning",
+        "/app/tickets?smart_view=requires_operator_action",
     ),
     "unread_user_messages": SectionSpec(
         "Новые сообщения пользователя",
         "Пользователь ответил, и сообщение еще требует реакции оператора.",
         "warning",
-        "/app/tickets?smart_view=requester_reply",
+        "/app/tickets?smart_view=unread_user_messages",
     ),
     "sla_risk": SectionSpec(
         "SLA риск",
@@ -101,7 +104,7 @@ SECTION_SPECS: dict[str, SectionSpec] = {
         "Ожидает согласования",
         "Тикеты, заблокированные согласованием.",
         "warning",
-        "/app/tickets?smart_view=waiting_approval",
+        "/app/tickets?smart_view=pending_approval",
     ),
     "pending_consent": SectionSpec(
         "Ожидает согласия",
@@ -187,6 +190,18 @@ def _matches_query(ticket_data: dict[str, Any], item: SupportQueueTicketItem, qu
         )
     ).lower()
     return needle in haystack
+
+
+def _clean_display_text(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text or any(marker in text for marker in _JUNK_DISPLAY_MARKERS):
+        return fallback
+    return text
+
+
+def _search_href(search_text: str) -> str:
+    value = str(search_text or "").strip()
+    return "/app/tickets" if not value else f"/app/tickets?search={quote(value)}"
 
 
 def _timer_state(
@@ -347,12 +362,12 @@ def _base_item(
         id=f"{item.ticket_id}:{suffix}",
         ticket_id=item.ticket_id,
         ticket_number=item.ticket_code,
-        title=item.title,
+        title=_clean_display_text(item.title, "Без названия"),
         status=item.status,
         priority=item.priority,
         queue=item.queue_code,
         assignee=item.assignee_display_name or item.assignee_id,
-        requester_name=item.requester_display_name,
+        requester_name=_clean_display_text(item.requester_display_name, "Пользователь не указан"),
         service_code=str(ticket_data.get("service_code") or "").strip() or None,
         offering_code=str(ticket_data.get("offering_code") or "").strip() or None,
         created_at=item.created_at,
@@ -600,6 +615,7 @@ def build_operator_command_center_payload(
         section_total_counts["similar_tickets_spike"] += 1
         attention_ids.add(group_key)
         if len(section_items["similar_tickets_spike"]) < limit:
+            search_text = _normalize_title(representative_item.title) or representative_item.title or group_key
             similar_group = CommandCenterSimilarGroup(
                 group_key=group_key,
                 count=len(group_entries),
@@ -619,7 +635,7 @@ def build_operator_command_center_payload(
                     agent=None,
                     diagnostics=None,
                     closure=None,
-                ).model_copy(update={"similar_group": similar_group, "href": "/app/tickets"})
+                ).model_copy(update={"similar_group": similar_group, "href": _search_href(search_text)})
             )
 
     sections: list[CommandCenterSection] = []

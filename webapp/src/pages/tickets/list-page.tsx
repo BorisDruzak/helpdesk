@@ -43,7 +43,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   attachSelectedDiagnosticEvidenceToPassport,
@@ -75,6 +75,7 @@ import {
   postSupportTicketPlaybookRun,
   postSupportTicketPriority,
   postSupportTicketQueue,
+  postSupportTicketRead,
   postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportTicketToolRun,
@@ -127,6 +128,7 @@ import {
   type WorkspaceMode,
   type WorkspaceRightTab,
 } from "./workspace-types";
+import { getTicketsWorkspaceUrlState } from "./url-state";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -1331,18 +1333,21 @@ function SupportWorkspaceTopbar({
 export function TicketListPage() {
   const navigate = useNavigate();
   const params = useParams<{ ticketId?: string }>();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { logout, session } = useSession();
+  const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
+  const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
   const [scope, setScope] = useState<SupportQueueScope>("all");
-  const [smartView, setSmartView] = useState(() => getInitialWorkspaceSelectedView("my_action"));
+  const [smartView, setSmartView] = useState(() => initialUrlStateRef.current.smartView ?? getInitialWorkspaceSelectedView("my_action"));
   const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(params.ticketId ?? null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => initialUrlStateRef.current.search ?? initialUrlStateRef.current.similarGroup ?? "");
   const [composerMode, setComposerMode] = useState<ComposerMode>("public");
   const [composerText, setComposerText] = useState("");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialWorkspaceMode());
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
   const [moreOpen, setMoreOpen] = useState(false);
   const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
   const [slaWorkspaceTab, setSlaWorkspaceTab] = useState<SlaWorkspaceTab>("overview");
@@ -1366,6 +1371,7 @@ export function TicketListPage() {
   const [showUnavailableAutomation, setShowUnavailableAutomation] = useState(false);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
+  const markedReadRef = useRef<string | null>(null);
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
@@ -1377,6 +1383,24 @@ export function TicketListPage() {
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
   }, [params.ticketId]);
+
+  useEffect(() => {
+    const urlState = getTicketsWorkspaceUrlState(searchParams);
+    if (!urlState.shouldOpenQueue) {
+      return;
+    }
+    shouldKeepQueueRouteRef.current = true;
+    if (urlState.smartView && urlState.smartView !== smartView) {
+      setSmartView(urlState.smartView);
+    }
+    const nextSearch = urlState.search ?? urlState.similarGroup ?? "";
+    if (nextSearch !== search) {
+      setSearch(nextSearch);
+    }
+    if (workspaceMode !== "queue") {
+      setWorkspaceMode("queue");
+    }
+  }, [search, searchParams, smartView, workspaceMode]);
 
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
@@ -1524,6 +1548,9 @@ export function TicketListPage() {
     if (!queue || selectedTicketId) {
       return;
     }
+    if (shouldKeepQueueRouteRef.current) {
+      return;
+    }
     if (queue.summary.selected_ticket_id) {
       startTransition(() => {
         navigate(`/app/tickets/${queue.summary.selected_ticket_id}`, { replace: true });
@@ -1554,6 +1581,52 @@ export function TicketListPage() {
       ? SUPPORT_OPERATION_REFRESH_MS
       : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
   });
+
+  const markReadMutation = useMutation({
+    mutationFn: ({ ticketId, lastReadEventId }: { ticketId: string; lastReadEventId: number }) =>
+      postSupportTicketRead(ticketId, lastReadEventId),
+    onSuccess: (_result, variables) => {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", variables.ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", variables.ticketId] }),
+      ]);
+    },
+  });
+
+  const latestRequesterMessageEventId = useMemo(() => {
+    const timelineItems = timelineQuery.data?.items ?? workspaceQuery.data?.detail.timeline ?? [];
+    let latest: number | null = null;
+    for (const item of timelineItems) {
+      if (typeof item.event_id !== "number") {
+        continue;
+      }
+      const fromRole = String(item.from_role || "").trim().toLowerCase();
+      const requesterKind = String(item.requester_timeline_kind || "").trim().toLowerCase();
+      const isRequesterMessage =
+        item.event_type === "chat_message" &&
+        (fromRole === "user" || fromRole === "requester" || requesterKind === "user_message");
+      if (isRequesterMessage && (latest === null || item.event_id > latest)) {
+        latest = item.event_id;
+      }
+    }
+    return latest;
+  }, [timelineQuery.data?.items, workspaceQuery.data?.detail.timeline]);
+
+  useEffect(() => {
+    if (!selectedTicketId || latestRequesterMessageEventId === null || markReadMutation.isPending) {
+      return;
+    }
+    const markKey = `${selectedTicketId}:${latestRequesterMessageEventId}`;
+    if (markedReadRef.current === markKey) {
+      return;
+    }
+    markedReadRef.current = markKey;
+    markReadMutation.mutate({
+      ticketId: selectedTicketId,
+      lastReadEventId: latestRequesterMessageEventId,
+    });
+  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId]);
 
   const evidenceCandidatesQuery = useQuery({
     queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId],

@@ -2,6 +2,7 @@ import ast
 from dataclasses import dataclass
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
@@ -4427,6 +4428,7 @@ async def _diagnostics_by_ticket(session, ticket_ids: list[str]) -> dict[str, Di
 
 @require_auth("admin", "support")
 async def handle_web_support_command_center(request: web.Request):
+    started_at = time.perf_counter()
     auth_context = request["auth_context"]
     requested_scope = _normalize_command_center_scope(request.query.get("scope"))
     effective_scope = requested_scope
@@ -4502,6 +4504,23 @@ async def handle_web_support_command_center(request: web.Request):
                 ola_risk_minutes=ola_risk_minutes,
                 metadata=metadata,
             )
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if include_debug:
+                payload.metadata["duration_ms"] = duration_ms
+                payload.metadata["section_counts"] = {
+                    section.key: section.count
+                    for section in payload.sections
+                }
+            log_message = (
+                "[web_support_command_center] "
+                f"duration_ms={duration_ms} actor_id={auth_context.actor_id} "
+                f"scope={effective_scope} candidates={len(entries)} "
+                f"attention_items={payload.summary.total_attention_items}"
+            )
+            if duration_ms >= 1000:
+                logger.warning(log_message)
+            else:
+                logger.debug(log_message)
     except Exception as exc:
         logger.warning(
             f"[web_support_command_center] DB unavailable, returning empty command center: "

@@ -134,7 +134,7 @@ def test_command_center_builds_deterministic_similar_spike_group():
     section = next(section for section in payload.sections if section.key == "similar_tickets_spike")
     assert section.count == 1
     assert section.items[0].similar_group.count == 3
-    assert section.items[0].href == "/app/tickets"
+    assert section.items[0].href.startswith("/app/tickets?search=")
 
 
 @pytest.mark.no_db
@@ -163,3 +163,31 @@ def test_command_center_filters_by_query_before_counting_sections():
     assert payload.summary.new_unassigned_count == 1
     new_section = next(section for section in payload.sections if section.key == "new_unassigned")
     assert new_section.items[0].ticket_id == "ticket-vpn"
+
+
+@pytest.mark.no_db
+def test_command_center_uses_safe_display_fallbacks_for_junk_text():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    junk_item = item(
+        "ticket-junk",
+        "???",
+        requester_display_name="ÐÐ½Ð¸ÑÐ¸Ð°ÑÐ¾Ñ",
+        requires_operator_action=False,
+    )
+
+    payload = build_operator_command_center_payload(
+        [({"ticket_id": junk_item.ticket_id, "status": "queued"}, junk_item)],
+        scope="team",
+        queue=None,
+        assignee=None,
+        query=None,
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    new_section = next(section for section in payload.sections if section.key == "new_unassigned")
+    assert new_section.items[0].title == "Без названия"
+    assert new_section.items[0].requester_name == "Пользователь не указан"

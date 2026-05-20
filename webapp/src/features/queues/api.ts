@@ -589,6 +589,13 @@ export type SupportMessageActionResult = {
   message: SupportTicketDetailPayload["timeline"][number];
 };
 
+export type SupportTicketReadPayload = {
+  ticket_id?: string;
+  read_scope?: string;
+  last_read_event_id: number | null;
+  no_op?: boolean;
+};
+
 export type SupportStatusActionResult = {
   ticket_id: string;
   status: string;
@@ -1411,6 +1418,31 @@ export async function postSupportTicketMessage(
   }
 
   return payload.data;
+}
+
+export async function postSupportTicketRead(ticketId: string, lastReadEventId: number): Promise<SupportTicketReadPayload> {
+  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/read`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      last_read_event_id: lastReadEventId
+    })
+  });
+  const payload = await readJson<SupportTicketReadPayload | ErrorResponse>(response);
+
+  if (!response.ok || !payload || ("status" in payload && payload.status === "error")) {
+    const errorPayload = payload && "status" in payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось отметить сообщения как прочитанные",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload as SupportTicketReadPayload;
 }
 
 export async function postSupportTicketWorklog(
