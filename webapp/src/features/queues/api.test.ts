@@ -149,7 +149,7 @@ describe("support queue API", () => {
 
     const result = await postSupportTicketRead("ticket-1", 42);
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/tickets/ticket-1/read", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/read", {
       method: "POST",
       credentials: "same-origin",
       headers: {

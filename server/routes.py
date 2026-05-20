@@ -720,6 +720,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/support/tickets/{ticket_id}/remote-assist/sessions', handle_remote_assist_ticket_sessions),
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
+        web.post('/api/web/support/tickets/{ticket_id}/read', handle_ticket_mark_read),
         web.post('/api/web/support/tickets/{ticket_id}/status', handle_web_support_change_status),
         web.post('/api/web/support/tickets/{ticket_id}/assign', handle_web_support_assign_ticket),
         web.post('/api/web/support/tickets/{ticket_id}/queue', handle_web_support_change_queue),

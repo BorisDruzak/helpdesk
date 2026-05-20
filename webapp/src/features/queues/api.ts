@@ -1421,7 +1421,7 @@ export async function postSupportTicketMessage(
 }
 
 export async function postSupportTicketRead(ticketId: string, lastReadEventId: number): Promise<SupportTicketReadPayload> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/read`, {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/read`, {
     method: "POST",
     credentials: "same-origin",
     headers: {
