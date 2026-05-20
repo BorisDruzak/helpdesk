@@ -2,6 +2,12 @@
 
 This file is intentionally compact. Detailed phase logs live in git history and the referenced CI/release artifacts; this document keeps the current product state, accepted checkpoints, active work, verification evidence and rollback notes.
 
+## Release Workflow Guardrail
+
+- Full CI is reserved for a frozen release candidate SHA. During implementation and live staging, use targeted tests, `verify_workspace`, relevant build/typecheck and explicit `--gate quick`.
+- After green full CI, do not commit before full-gate release. Any new commit is a new candidate and requires a new full CI artifact.
+- Before full-gate release, run `python scripts/release_candidate_preflight.py`; it verifies `summary.commit == HEAD`, green status, webapp bundle artifact and dirty workspace state.
+
 ## Status History
 
 | Phase | Status | Essence | Key Evidence |

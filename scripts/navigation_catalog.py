@@ -2730,6 +2730,7 @@ TOPICS: tuple[Topic, ...] = (
             "scripts/docs_inventory.py",
             "scripts/build_context_pack.py",
             "scripts/run_ci_suite.py",
+            "scripts/release_candidate_preflight.py",
             "scripts/run_observer_canary_suite.py",
             "scripts/deploy_workspace_to_remote.py",
             "scripts/release_server_to_remote.py",
@@ -2752,6 +2753,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
+            "python scripts/release_candidate_preflight.py  # verify frozen SHA before full gate",
             "python scripts/release_server_to_remote.py --gate full  # explicit final full-check request only",
         ),
         mode="Release / deploy",
@@ -2764,6 +2766,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
+            "python scripts/release_candidate_preflight.py  # verify frozen SHA before full gate",
         ),
         plan_required=True,
         docs_to_update=(

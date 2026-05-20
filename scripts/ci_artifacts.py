@@ -50,13 +50,24 @@ def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
     if not summary_path.exists():
         raise SystemExit(
             "Green CI artifact is required before deploy/release. "
-            f"Missing: {summary_path}"
+            f"Missing: {summary_path}\n"
+            "Release workflow: use targeted tests and --gate quick while iterating; "
+            "run `python scripts/run_ci_suite.py` only after the release candidate commit is frozen."
         )
     summary = load_summary(summary_path)
+    artifact_commit = str(summary.get("commit", "")).strip()
+    if artifact_commit != commit:
+        raise SystemExit(
+            "Deploy/release requires a green CI artifact for the exact target commit. "
+            f"{summary_path} reports commit={artifact_commit!r}, expected {commit!r}.\n"
+            "Do not commit after full CI and before full-gate release. "
+            "If another commit is required, treat it as a new release candidate and run full CI again."
+        )
     if str(summary.get("status", "")).lower() != "green":
         raise SystemExit(
             "Deploy/release requires a green CI artifact. "
-            f"{summary_path} reports status={summary.get('status')!r}"
+            f"{summary_path} reports status={summary.get('status')!r}.\n"
+            "Use --gate quick only for staging/live iteration; do not make a final release claim from quick gate."
         )
     return summary_path
 

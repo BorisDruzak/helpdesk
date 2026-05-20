@@ -14,6 +14,14 @@
 - Для обычного push dev-ветки в GitHub не нужен отдельный строгий secret-scan или full CI artifact; достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов.
 - Канонический финальный release-checkpoint: локальные правки -> локальные проверки -> локальный commit -> push в GitHub `origin` -> green CI artifact для коммита -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> release-отчёт. Codex запускает full CI/full gate только по явному запросу пользователя; если блок изменений ещё идёт частями, Codex должен напомнить об этом checkpoint-е и уточнить, запускать ли его сейчас.
 - Для быстрой итерации на Linux-стенде использовать явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
+- Full CI запускается только для frozen release candidate SHA. До freeze использовать targeted tests, `verify_workspace`, релевантный build/typecheck и quick gate/live smoke. После green full CI нельзя делать новый commit до full-gate release: любой новый commit становится новым candidate и требует новый full CI artifact.
+- Перед full CI/full gate выполнять preflight:
+
+```powershell
+python scripts/release_candidate_preflight.py
+```
+
+Preflight показывает текущий `HEAD`, проверяет `artifacts/ci/<HEAD>/summary.json`, совпадение `summary.commit == HEAD`, `status == green`, наличие webapp bundle и release-relevant dirty workspace. Сгенерированные `artifacts/*` не блокируют preflight. Если artifact отсутствует, это сигнал не запускать full gate: сначала freeze commit и `python scripts/run_ci_suite.py`, либо продолжить итерации через `--gate quick`.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
 - Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный Windows-remote: `linux`; Linux working copy `/var/chat_bot/pc_client` использует `origin`.
@@ -78,6 +86,15 @@ python scripts/run_ci_suite.py
 ```powershell
 python scripts/run_ci_in_temp_workspace.py
 ```
+
+Перед запуском full CI убедиться, что это frozen candidate: больше не планируются code/docs commits до release. После успешного full CI сразу выполнить preflight и full gate для того же SHA:
+
+```powershell
+python scripts/release_candidate_preflight.py
+python scripts/release_server_to_remote.py --gate full
+```
+
+Если после green full CI появилась даже маленькая правка, не использовать старый artifact. Сделать новый commit, повторить targeted/quick проверки по изменённой зоне, затем запускать full CI уже для нового `HEAD`.
 
 8. При необходимости отправить commit на Linux через Git:
 
