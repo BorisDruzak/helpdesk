@@ -37,7 +37,25 @@ ACTIVE_STATUSES = {
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
 HIGH_PRIORITIES = {"p1", "p2", "critical", "high"}
 SPIKE_THRESHOLD = 3
-_JUNK_DISPLAY_MARKERS = ("???", "\ufffd", "Ð", "Ñ")
+_JUNK_DISPLAY_MARKERS = (
+    "???",
+    "\ufffd",
+    "\u00d0",
+    "\u00d1",
+    "\u0420\u045c",
+    "\u0420\u045a",
+    "\u0420\u0452",
+    "\u0420\u0098",
+    "\u0420\u040e",
+    "\u0420\u045f",
+    "\u0420\u045b",
+    "\u0420\u2018",
+    "\u0420\u201d",
+    "\u0421\u0403",
+    "\u0421\u201a",
+    "\u0421\u040a",
+    "\u0421\u040f",
+)
 
 
 @dataclass(frozen=True)

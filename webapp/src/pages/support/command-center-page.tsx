@@ -45,6 +45,34 @@ const severityDotClasses: Record<CommandCenterSeverity, string> = {
   info: "bg-sky-500",
 };
 
+const mojibakeMarkers = [
+  "???",
+  "\uFFFD",
+  "\u00D0",
+  "\u00D1",
+  "\u0420\u045C",
+  "\u0420\u045A",
+  "\u0420\u0452",
+  "\u0420\u0098",
+  "\u0420\u040E",
+  "\u0420\u045F",
+  "\u0420\u045B",
+  "\u0420\u2018",
+  "\u0420\u201D",
+  "\u0421\u0403",
+  "\u0421\u201A",
+  "\u0421\u040A",
+  "\u0421\u040F",
+];
+
+function displayText(value: string | null | undefined, fallback: string) {
+  const text = value?.trim() ?? "";
+  if (!text || mojibakeMarkers.some((marker) => text.includes(marker))) {
+    return fallback;
+  }
+  return text;
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return "нет срока";
@@ -105,6 +133,8 @@ function KpiCard({
 
 function ItemCard({ item, compact = false }: { item: CommandCenterItem; compact?: boolean }) {
   const timer = formatTimer(item);
+  const title = displayText(item.title, "Без названия");
+  const requester = displayText(item.requester_name, "Пользователь не указан");
   return (
     <article className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -116,7 +146,7 @@ function ItemCard({ item, compact = false }: { item: CommandCenterItem; compact?
             <StatusBadge>{item.status}</StatusBadge>
             {item.priority ? <StatusBadge>{item.priority}</StatusBadge> : null}
           </div>
-          <h3 className="mt-1 break-words text-base font-semibold text-slate-950">{item.title}</h3>
+          <h3 className="mt-1 break-words text-base font-semibold text-slate-950">{title}</h3>
         </div>
         <Link
           to={item.href}
@@ -131,7 +161,7 @@ function ItemCard({ item, compact = false }: { item: CommandCenterItem; compact?
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
         {item.queue ? <StatusBadge>Очередь: {item.queue}</StatusBadge> : null}
         {item.assignee ? <StatusBadge>Исполнитель: {item.assignee}</StatusBadge> : <StatusBadge>Без исполнителя</StatusBadge>}
-        {item.requester_name ? <StatusBadge>Инициатор: {item.requester_name}</StatusBadge> : null}
+        {requester ? <StatusBadge>Инициатор: {requester}</StatusBadge> : null}
         {timer ? <StatusBadge>{timer}</StatusBadge> : null}
         {item.unread_user_messages ? <StatusBadge>Сообщений: {item.unread_user_messages}</StatusBadge> : null}
         {item.service_code ? <StatusBadge>Услуга: {item.service_code}</StatusBadge> : null}

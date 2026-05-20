@@ -176,7 +176,7 @@ def test_command_center_uses_safe_display_fallbacks_for_junk_text():
     junk_item = item(
         "ticket-junk",
         "???",
-        requester_display_name="ÐÐ½Ð¸ÑÐ¸Ð°ÑÐ¾Ñ",
+        requester_display_name="\u00d0bad requester",
         requires_operator_action=False,
     )
 

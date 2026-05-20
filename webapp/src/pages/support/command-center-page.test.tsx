@@ -192,6 +192,28 @@ describe("SupportCommandCenterPage", () => {
     expect(screen.getByText(/Новые сообщения, SLA-риск, ошибки операций/)).toBeInTheDocument();
   });
 
+  it("masks historical mojibake in primary ticket fields", async () => {
+    const data = payload();
+    data.sections[0].items[0] = {
+      ...data.sections[0].items[0],
+      title: "\u0420\u045c broken title",
+      requester_name: "\u0420\u045c requester",
+    };
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(data);
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue({
+      views: { needs_action: 0, sla_risk: 0, unassigned: 0, requester_replied: 0 },
+      queues: [],
+      smart_view_counts: [],
+      smart_view_options: [],
+    });
+
+    renderPage();
+
+    expect((await screen.findAllByText("Без названия")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Инициатор: Пользователь не указан").length).toBeGreaterThan(0);
+    expect(screen.queryByText("\u0420\u045c broken title")).not.toBeInTheDocument();
+  });
+
   it("passes selected queue to the typed API", async () => {
     vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
     vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue({

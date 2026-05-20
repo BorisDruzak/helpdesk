@@ -4507,16 +4507,25 @@ async def handle_web_support_command_center(request: web.Request):
                     section.key: section.count
                     for section in payload.sections
                 }
+            section_counts = ",".join(f"{section.key}:{section.count}" for section in payload.sections if section.count)
+            source_counts = (
+                f"operations:{len(operations_by_ticket)},devices:{len(devices_by_id)},"
+                f"passports:{len(passports_by_ticket)},approvals:{len(approvals_by_ticket)},"
+                f"diagnostics:{len(diagnostics_by_ticket)}"
+            )
             log_message = (
-                "[web_support_command_center] "
+                "[web_support_command_center.metrics] "
                 f"duration_ms={duration_ms} actor_id={auth_context.actor_id} "
-                f"scope={effective_scope} candidates={len(entries)} "
-                f"attention_items={payload.summary.total_attention_items}"
+                f"scope={effective_scope} queue={queue or '-'} assignee={assignee or '-'} "
+                f"query={'yes' if query else 'no'} limit_per_section={limit_per_section} "
+                f"window_hours={window_hours} candidates={len(entries)} "
+                f"attention_items={payload.summary.total_attention_items} "
+                f"sections={section_counts or '-'} sources={source_counts}"
             )
             if duration_ms >= 1000:
                 logger.warning(log_message)
             else:
-                logger.debug(log_message)
+                logger.info(log_message)
     except Exception as exc:
         logger.warning(
             f"[web_support_command_center] DB unavailable, returning empty command center: "

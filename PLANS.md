@@ -36,7 +36,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: Operator Command Center
 
-Status: implemented / final verification in progress.
+Status: accepted / release-candidate.
 
 Goal:
 
@@ -64,11 +64,11 @@ Verification target:
 - Frontend command-center page/prioritization/navigation tests, then webapp build.
 - `python -m compileall -q server`, `git diff --check`, `python scripts/verify_workspace.py`.
 - Quick remote deploy/release and Browser MCP smoke at `https://192.168.100.17:9443/admin` for `/app/support`, `/app/tickets` and live ticket creation/display.
-- User explicitly requested final full CI/full gate for this hardening pass.
+- Full CI/full gate remains the final publication checkpoint for a release cut; do not reuse a green artifact from a different commit.
 
 Known constraints:
 
-- Local Windows DB-backed `server/tests/test_operator_command_center.py` may hang before producing output; full CI/full gate should be the authoritative DB/API verification for that layer.
+- Local Windows DB-backed `server/tests/test_operator_command_center.py` is slow but now completes on the local harness; keep full CI/full gate as the authoritative release publication checkpoint.
 
 Current P1/P2 hardening checklist:
 
@@ -77,7 +77,7 @@ Current P1/P2 hardening checklist:
 - Make `/app/tickets?smart_view=...` and `/app/tickets?search=...` open the queue view with visible filters; Command Center aliases are mapped to supported queue smart views.
 - Change similar-spike links from generic `/app/tickets` to a filtered search context so operators see the group samples first.
 - Add command-center performance logging and data-quality fallbacks for historical mojibake/junk titles without modifying stored data blindly.
-- Live acceptance evidence so far: requester-role API returns 403, remote branch is `codex/inventory-v4-registration-presence`, OLA-risk and pending-consent controlled seeds appear in the expected sections, similar-spike links open filtered ticket search, and `/app/tickets?smart_view=unassigned|sla_risk` applies visible queue filters. Mark-read now uses `/api/web/support/tickets/{ticket_id}/read` and `unread_user_messages` is based on the read cursor rather than pending-reply state; final full CI/full gate and browser recheck must use the latest commit after this semantic fix.
+- Live acceptance evidence: requester-role API returns 403, remote branch is `codex/inventory-v4-registration-presence`, product HEAD `ca8818eb` opened `/app/support` and `/app/tickets`, `/app/tickets?smart_view=unassigned|sla_risk` applied visible queue filters, similar-spike search opened filtered ticket context, live ticket `T-000578` entered `unread_user_messages`, opening `/app/tickets/930461f7-9f88-43c6-9ac5-e5676643a9cd` triggered `POST /api/web/support/tickets/{ticket_id}/read`, and after refresh it disappeared from unread while staying in `operator_action`, `new_unassigned` and `sla_risk`.
 
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
