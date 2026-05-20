@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { fetchPolicyHealthDashboard, simulatePolicyHealth, type PolicyHealthTemplate } from "./api";
+import { fetchPolicyHealthDashboard, simulatePolicyHealth, type PolicyHealthTemplate, type PolicySimulationPayload } from "./api";
 import {
   buildGuidedSimulationPayload,
   defaultGuidedSimulationDraft,
@@ -36,6 +36,42 @@ function formatDateTime(value: string | null | undefined): string {
     return value;
   }
   return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function offeringCodeFromContext(offeringContext: string | null, serviceCode: string | null): string | null {
+  const normalized = offeringContext?.trim();
+  if (!normalized) {
+    return null;
+  }
+  if (serviceCode && normalized.startsWith(`${serviceCode}.`)) {
+    return normalized.slice(serviceCode.length + 1) || normalized;
+  }
+  if (normalized.includes(".")) {
+    return normalized.split(".").filter(Boolean).at(-1) ?? normalized;
+  }
+  return normalized;
+}
+
+function buildPolicyHealthSimulationRequest(
+  templateCode: string,
+  draft: GuidedSimulationDraft,
+  searchParams: URLSearchParams,
+): PolicySimulationPayload {
+  const serviceCode = searchParams.get("service")?.trim() || draft.serviceCode.trim() || null;
+  const offeringFullCode = searchParams.get("offering")?.trim() || null;
+  const offeringCode = (offeringCodeFromContext(offeringFullCode, serviceCode) ?? draft.offeringCode.trim()) || null;
+  const guidedPayload = buildGuidedSimulationPayload({
+    ...draft,
+    serviceCode: serviceCode ?? draft.serviceCode,
+    offeringCode: offeringCode ?? draft.offeringCode,
+  });
+  return {
+    template_code: templateCode,
+    ...guidedPayload,
+    service_code: serviceCode,
+    offering_code: offeringCode,
+    offering_full_code: offeringFullCode,
+  };
 }
 
 function TemplateDetails({ template }: { template: PolicyHealthTemplate | null }) {
@@ -152,11 +188,7 @@ export function PolicyHealthPanel() {
       if (!selectedTemplate) {
         throw new Error("Шаблон не выбран");
       }
-      const guidedPayload = buildGuidedSimulationPayload(simulationDraft);
-      return simulatePolicyHealth({
-        template_code: selectedTemplate.template_code,
-        ...guidedPayload,
-      });
+      return simulatePolicyHealth(buildPolicyHealthSimulationRequest(selectedTemplate.template_code, simulationDraft, searchParams));
     },
   });
 
@@ -323,7 +355,7 @@ export function PolicyHealthPanel() {
             <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
               <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON</summary>
               <pre className="mt-3 max-h-48 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
-                {JSON.stringify(buildGuidedSimulationPayload(simulationDraft), null, 2)}
+                {JSON.stringify(buildPolicyHealthSimulationRequest(selectedTemplate?.template_code ?? "", simulationDraft, searchParams), null, 2)}
               </pre>
             </details>
           </div>

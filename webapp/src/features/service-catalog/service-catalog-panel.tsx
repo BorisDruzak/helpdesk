@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, ShieldCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -73,11 +73,15 @@ const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2";
 
 function ServiceDetails({
   offerings,
+  onOfferingSelect,
+  requestedOfferingCode,
   registry,
   service,
   services,
 }: {
   offerings: AdminServiceCatalogOffering[];
+  onOfferingSelect: (offeringCode: string) => void;
+  requestedOfferingCode: string | null;
   registry: Awaited<ReturnType<typeof fetchHelpdeskModelRegistry>> | undefined;
   service: AdminServiceCatalogService | null;
   services: AdminServiceCatalogService[];
@@ -101,6 +105,15 @@ function ServiceDetails({
   useEffect(() => {
     setSelectedOfferingCode("");
   }, [service?.code]);
+
+  useEffect(() => {
+    if (!requestedOfferingCode) {
+      return;
+    }
+    if (offerings.some((offering) => offering.full_code === requestedOfferingCode)) {
+      setSelectedOfferingCode(requestedOfferingCode);
+    }
+  }, [offerings, requestedOfferingCode]);
 
   useEffect(() => {
     setOfferingDraft(
@@ -270,9 +283,17 @@ function ServiceDetails({
           {offerings.length ? (
             offerings.map((offering) => (
               <button
-                className="w-full rounded-md border border-slate-200 bg-white p-3 text-left text-sm transition hover:border-brand-200 hover:bg-brand-50"
+                aria-pressed={selectedOffering?.full_code === offering.full_code}
+                className={`w-full rounded-md border p-3 text-left text-sm transition hover:border-brand-200 hover:bg-brand-50 ${
+                  selectedOffering?.full_code === offering.full_code
+                    ? "border-brand-300 bg-brand-50"
+                    : "border-slate-200 bg-white"
+                }`}
                 key={offering.full_code}
-                onClick={() => setSelectedOfferingCode(offering.full_code)}
+                onClick={() => {
+                  setSelectedOfferingCode(offering.full_code);
+                  onOfferingSelect(offering.full_code);
+                }}
                 type="button"
               >
                 <div className="flex items-center justify-between gap-2">
@@ -673,10 +694,13 @@ function ServiceDetails({
 }
 
 export function ServiceCatalogPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibilityFilter, setVisibilityFilter] = useState("all");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const requestedService = searchParams.get("service");
+  const requestedOffering = searchParams.get("offering");
   const dashboardQuery = useQuery({
     queryKey: ["service-catalog-dashboard"],
     queryFn: fetchServiceCatalogDashboard,
@@ -690,6 +714,39 @@ export function ServiceCatalogPanel() {
   const offerings = dashboardQuery.data?.offerings ?? [];
   const selectedService = services.find((service) => service.code === selectedCode) ?? services[0] ?? null;
   const selectedOfferings = offerings.filter((offering) => offering.service_code === selectedService?.code);
+  const requestedOfferingMismatch = Boolean(
+    requestedOffering && selectedService && !selectedOfferings.some((offering) => offering.full_code === requestedOffering),
+  );
+
+  useEffect(() => {
+    if (requestedService && services.some((service) => service.code === requestedService)) {
+      setSelectedCode(requestedService);
+    }
+  }, [requestedService, services]);
+
+  function updateCatalogSearchParams(update: { service?: string | null; offering?: string | null }) {
+    const next = new URLSearchParams(searchParams);
+    if (update.service === null) {
+      next.delete("service");
+    } else if (update.service) {
+      next.set("service", update.service);
+    }
+    if (update.offering === null) {
+      next.delete("offering");
+    } else if (update.offering) {
+      next.set("offering", update.offering);
+    }
+    setSearchParams(next);
+  }
+
+  function handleServiceSelect(serviceCode: string) {
+    setSelectedCode(serviceCode);
+    const currentOffering = searchParams.get("offering");
+    const offeringBelongsToService = currentOffering
+      ? offerings.some((offering) => offering.full_code === currentOffering && offering.service_code === serviceCode)
+      : false;
+    updateCatalogSearchParams({ service: serviceCode, offering: offeringBelongsToService ? currentOffering : null });
+  }
   const visibleServices = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return services.filter((service) => {
@@ -742,6 +799,12 @@ export function ServiceCatalogPanel() {
         . Каталог услуг остаётся экспертным разделом для lifecycle, overrides и публикации catalog-объектов.
       </div>
 
+      {requestedOfferingMismatch ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Вариант услуги из ссылки не относится к выбранной услуге. Каталог показал доступные варианты выбранной услуги.
+        </div>
+      ) : null}
+
       <section className="surface-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
           <label className="text-sm font-medium text-slate-700">
@@ -785,7 +848,7 @@ export function ServiceCatalogPanel() {
               {visibleServices.map((service) => {
                 const count = offerings.filter((offering) => offering.service_code === service.code).length;
                 return (
-                  <tr className="cursor-pointer hover:bg-brand-50/40" key={service.code} onClick={() => setSelectedCode(service.code)}>
+                  <tr className="cursor-pointer hover:bg-brand-50/40" key={service.code} onClick={() => handleServiceSelect(service.code)}>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-950">{service.public_title || service.code}</div>
                       <div className="text-xs text-slate-500">{service.code}</div>
@@ -806,7 +869,14 @@ export function ServiceCatalogPanel() {
             </div>
           ) : null}
         </div>
-        <ServiceDetails offerings={selectedOfferings} registry={registryQuery.data} service={selectedService} services={services} />
+        <ServiceDetails
+          offerings={selectedOfferings}
+          onOfferingSelect={(offeringCode) => updateCatalogSearchParams({ service: selectedService?.code ?? null, offering: offeringCode })}
+          registry={registryQuery.data}
+          requestedOfferingCode={requestedOffering}
+          service={selectedService}
+          services={services}
+        />
       </section>
     </section>
   );
