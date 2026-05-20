@@ -30,7 +30,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: Operator Command Center
 
-Status: in progress / cross-cutting web boundary.
+Status: implemented / final verification in progress.
 
 Goal:
 
@@ -71,7 +71,7 @@ Current P1/P2 hardening checklist:
 - Make `/app/tickets?smart_view=...` and `/app/tickets?search=...` open the queue view with visible filters; Command Center aliases are mapped to supported queue smart views.
 - Change similar-spike links from generic `/app/tickets` to a filtered search context so operators see the group samples first.
 - Add command-center performance logging and data-quality fallbacks for historical mojibake/junk titles without modifying stored data blindly.
-- Live acceptance still requires requester-role API/UI check, unread mark-read refresh, smart-view links, controlled pending-consent and OLA-risk seed verification, remote branch correction, full CI/full gate and server stop.
+- Live acceptance evidence so far: requester-role API returns 403, remote branch is `codex/inventory-v4-registration-presence`, OLA-risk and pending-consent controlled seeds appear in the expected sections, similar-spike links open filtered ticket search, and `/app/tickets?smart_view=unassigned|sla_risk` applies visible queue filters. Mark-read now uses `/api/web/support/tickets/{ticket_id}/read` and `unread_user_messages` is based on the read cursor rather than pending-reply state; final full CI/full gate and browser recheck must use the latest commit after this semantic fix.
 
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 

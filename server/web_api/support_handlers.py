@@ -757,11 +757,7 @@ async def _resolve_tool_policy_decision(
 
 
 def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
-    unread_messages = int(
-        ticket_data.get("support_pending_user_messages")
-        or ticket_data.get("support_unread_user_messages")
-        or 0
-    )
+    unread_messages = int(ticket_data.get("support_unread_user_messages") or 0)
     return SupportQueueTicketItem(
         ticket_id=str(ticket_data.get("ticket_id") or ""),
         ticket_code=ticket_data.get("ticket_code"),

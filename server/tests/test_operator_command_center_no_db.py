@@ -5,6 +5,7 @@ import pytest
 
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.support import SupportQueueTicketItem
+from web_api.support_handlers import _build_ticket_item
 
 
 def item(ticket_id: str, title: str, **overrides) -> SupportQueueTicketItem:
@@ -191,3 +192,40 @@ def test_command_center_uses_safe_display_fallbacks_for_junk_text():
     new_section = next(section for section in payload.sections if section.key == "new_unassigned")
     assert new_section.items[0].title == "Без названия"
     assert new_section.items[0].requester_name == "Пользователь не указан"
+
+
+@pytest.mark.no_db
+def test_command_center_unread_uses_read_cursor_not_pending_reply_state():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    ticket_data = {
+        "ticket_id": "ticket-read",
+        "ticket_code": "T-READ",
+        "title": "Requester reply was opened",
+        "status": "queued",
+        "next_action_owner": "support",
+        "queue_code": "support",
+        "requester_display_name": "Requester",
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "requires_operator_action": True,
+        "support_pending_user_messages": 1,
+        "support_unread_user_messages": 0,
+    }
+    queue_item = _build_ticket_item(ticket_data)
+
+    payload = build_operator_command_center_payload(
+        [(ticket_data, queue_item)],
+        scope="team",
+        queue=None,
+        assignee=None,
+        query=None,
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    assert queue_item.unread_user_messages == 0
+    assert payload.summary.unread_user_messages_count == 0
+    assert payload.summary.operator_action_count == 1
