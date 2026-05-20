@@ -85,6 +85,13 @@ def _error_summary(*values: Any) -> str | None:
     return None
 
 
+def _operation_error_summary(row: Operation) -> str | None:
+    status = str(getattr(row, "status", "") or "").lower()
+    if status in {"failed", "error", "timed_out", "canceled"}:
+        return _error_summary(row.error_message, row.error_code, row.result_summary)
+    return _error_summary(row.error_message, row.error_code)
+
+
 def _connection_state(device: Device, *, state: Any, now: datetime) -> str:
     device_id = str(getattr(device, "device_id", "") or "")
     if state is not None and hasattr(state, "is_agent_online"):
@@ -463,7 +470,7 @@ class DeviceOperationsService:
                     started_at=_iso(_operation_started_at(row)),
                     finished_at=_iso(row.finished_at),
                     duration_ms=_operation_duration_ms(row),
-                    error_summary=_error_summary(row.error_message, row.error_code, row.result_summary),
+                    error_summary=_operation_error_summary(row),
                     trace_id=_string(row.trace_id),
                 )
                 for row in rows

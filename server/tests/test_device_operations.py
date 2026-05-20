@@ -166,6 +166,22 @@ async def test_device_operations_returns_compact_context(test_client, test_engin
             )
         )
         session.add(
+            Operation(
+                operation_id=str(uuid.uuid4()),
+                device_id=device_id,
+                ticket_id=str(uuid.uuid4()),
+                kind="tool",
+                tool_name="system.collect",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="succeeded",
+                queued_at=now - timedelta(minutes=1),
+                started_at=now - timedelta(minutes=1),
+                finished_at=now,
+                result_summary="{'raw': 'result payload must not become primary operation summary'}",
+            )
+        )
+        session.add(
             ObserverTrace(
                 trace_id=trace_id,
                 root_span_id=str(uuid.uuid4()),
@@ -246,6 +262,8 @@ async def test_device_operations_returns_compact_context(test_client, test_engin
     assert data["modules"]["failed_count"] == 1
     assert data["outbox"]["pending_count"] == 1
     assert data["operations"]["recent_failed_count"] == 1
+    success_operation = next(item for item in data["operations"]["items"] if item["tool_name"] == "system.collect")
+    assert success_operation["error_summary"] is None
     assert data["observer"]["trace_count"] == 1
     assert data["remote_assist"]["availability"] == "requires_consent"
     assert data["provisioning"]["state"] == "pending"
