@@ -119,25 +119,29 @@ function renderPanel(initialEntry: string) {
   );
 }
 
+function mockServiceCatalogFetch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url === "/api/web/admin/service-catalog") {
+      return jsonResponse(catalogPayload());
+    }
+    if (url === "/api/web/admin/helpdesk-model/policies") {
+      return jsonResponse(registryPayload());
+    }
+    if (url.includes("/validate")) {
+      return jsonResponse({ validation: { status: "ok", issues: [], blocking: false } });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+}
+
 describe("ServiceCatalogPanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("opens the service and offering requested by query params", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url === "/api/web/admin/service-catalog") {
-        return jsonResponse(catalogPayload());
-      }
-      if (url === "/api/web/admin/helpdesk-model/policies") {
-        return jsonResponse(registryPayload());
-      }
-      if (url.includes("/validate")) {
-        return jsonResponse({ validation: { status: "ok", issues: [], blocking: false } });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
+    mockServiceCatalogFetch();
 
     renderPanel("/app/admin/service-catalog?service=mail&offering=mail.new_box");
 
@@ -146,42 +150,46 @@ describe("ServiceCatalogPanel", () => {
     expect(screen.queryByRole("button", { name: /VPN setup/i })).not.toBeInTheDocument();
   });
 
+  it("opens the service requested by query params", async () => {
+    mockServiceCatalogFetch();
+
+    renderPanel("/app/admin/service-catalog?service=vpn");
+
+    expect(await screen.findByRole("button", { name: /VPN setup/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /Mail box/i })).not.toBeInTheDocument();
+  });
+
   it("does not break when offering query does not belong to the selected service", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url === "/api/web/admin/service-catalog") {
-        return jsonResponse(catalogPayload());
-      }
-      if (url === "/api/web/admin/helpdesk-model/policies") {
-        return jsonResponse(registryPayload());
-      }
-      if (url.includes("/validate")) {
-        return jsonResponse({ validation: { status: "ok", issues: [], blocking: false } });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
+    mockServiceCatalogFetch();
 
     renderPanel("/app/admin/service-catalog?service=mail&offering=vpn.setup");
 
     const fallbackOffering = await screen.findByRole("button", { name: /Mail box/i });
     expect(fallbackOffering).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: /VPN setup/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Вариант услуги из ссылки не найден или не относится к выбранной услуге.")).toBeInTheDocument();
+  });
+
+  it("shows a warning for an unknown service query without breaking the catalog", async () => {
+    mockServiceCatalogFetch();
+
+    renderPanel("/app/admin/service-catalog?service=unknown");
+
+    expect(await screen.findByText("Услуга из ссылки не найдена.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Mail box/i })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows template context from query params", async () => {
+    mockServiceCatalogFetch();
+
+    renderPanel("/app/admin/service-catalog?service=mail&template=mailbox");
+
+    expect(await screen.findByText("Контекст шаблона:")).toBeInTheDocument();
+    expect(screen.getByText("mailbox")).toBeInTheDocument();
   });
 
   it("updates the URL when service changes", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      if (url === "/api/web/admin/service-catalog") {
-        return jsonResponse(catalogPayload());
-      }
-      if (url === "/api/web/admin/helpdesk-model/policies") {
-        return jsonResponse(registryPayload());
-      }
-      if (url.includes("/validate")) {
-        return jsonResponse({ validation: { status: "ok", issues: [], blocking: false } });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
+    mockServiceCatalogFetch();
 
     renderPanel("/app/admin/service-catalog?service=mail&offering=mail.new_box");
 

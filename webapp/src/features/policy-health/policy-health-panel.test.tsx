@@ -77,34 +77,50 @@ function renderPanel(initialEntry: string) {
   );
 }
 
+function mockPolicyHealthFetch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url === "/api/web/admin/helpdesk/policy-health" && !init?.method) {
+      return jsonResponse(policyHealthPayload());
+    }
+    if (url === "/api/web/admin/helpdesk/policy-health/simulate" && init?.method === "POST") {
+      return jsonResponse({
+        template_code: "mailbox",
+        routing: {},
+        priority: {},
+        sla: {},
+        ola: {},
+        approval: {},
+        closure: {},
+        visibility: {},
+        diagnostic: {},
+        warnings: [],
+        would_create_ticket: false,
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+}
+
 describe("PolicyHealthPanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
+  it("shows query context badges", async () => {
+    mockPolicyHealthFetch();
+
+    renderPanel("/app/admin/policy-health?service=mail&offering=mail.new_box&template=mailbox");
+
+    expect(await screen.findByText("Услуга:")).toBeInTheDocument();
+    expect(screen.getByText("Вариант услуги:")).toBeInTheDocument();
+    expect(screen.getByText("Шаблон:")).toBeInTheDocument();
+    expect(screen.getByText("mail")).toBeInTheDocument();
+    expect(screen.getByText("mail.new_box")).toBeInTheDocument();
+  });
+
   it("sends service and offering query context as top-level simulation fields", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url === "/api/web/admin/helpdesk/policy-health" && !init?.method) {
-        return jsonResponse(policyHealthPayload());
-      }
-      if (url === "/api/web/admin/helpdesk/policy-health/simulate" && init?.method === "POST") {
-        return jsonResponse({
-          template_code: "mailbox",
-          routing: {},
-          priority: {},
-          sla: {},
-          ola: {},
-          approval: {},
-          closure: {},
-          visibility: {},
-          diagnostic: {},
-          warnings: [],
-          would_create_ticket: false,
-        });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
+    const fetchMock = mockPolicyHealthFetch();
 
     renderPanel("/app/admin/policy-health?service=mail&offering=mail.new_box&template=mailbox");
 
@@ -125,5 +141,38 @@ describe("PolicyHealthPanel", () => {
       offering_code: "new_box",
       offering_full_code: "mail.new_box",
     });
+  });
+
+  it("keeps the simulation request compatible when query params are absent", async () => {
+    const fetchMock = mockPolicyHealthFetch();
+
+    renderPanel("/app/admin/policy-health");
+
+    await screen.findAllByText("mailbox");
+    fireEvent.click(screen.getByRole("button"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/helpdesk/policy-health/simulate",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    const simulateCall = fetchMock.mock.calls.find(([url]) => String(url) === "/api/web/admin/helpdesk/policy-health/simulate");
+    const body = JSON.parse(String(simulateCall?.[1]?.body));
+    expect(body).toMatchObject({ template_code: "mailbox" });
+    expect(body).not.toHaveProperty("service_code");
+    expect(body).not.toHaveProperty("offering_code");
+    expect(body).not.toHaveProperty("offering_full_code");
+  });
+
+  it("shows the final request body in expert JSON preview", async () => {
+    mockPolicyHealthFetch();
+
+    const { container } = renderPanel("/app/admin/policy-health?service=mail&offering=mail.new_box&template=mailbox");
+
+    await screen.findAllByText("mailbox");
+    expect(container).toHaveTextContent('"service_code": "mail"');
+    expect(container).toHaveTextContent('"offering_code": "new_box"');
+    expect(container).toHaveTextContent('"offering_full_code": "mail.new_box"');
   });
 });

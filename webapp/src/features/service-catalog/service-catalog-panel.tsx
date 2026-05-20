@@ -701,6 +701,7 @@ export function ServiceCatalogPanel() {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const requestedService = searchParams.get("service");
   const requestedOffering = searchParams.get("offering");
+  const requestedTemplate = searchParams.get("template");
   const dashboardQuery = useQuery({
     queryKey: ["service-catalog-dashboard"],
     queryFn: fetchServiceCatalogDashboard,
@@ -714,8 +715,14 @@ export function ServiceCatalogPanel() {
   const offerings = dashboardQuery.data?.offerings ?? [];
   const selectedService = services.find((service) => service.code === selectedCode) ?? services[0] ?? null;
   const selectedOfferings = offerings.filter((offering) => offering.service_code === selectedService?.code);
+  const requestedServiceMissing = Boolean(
+    requestedService && services.length && !services.some((service) => service.code === requestedService),
+  );
   const requestedOfferingMismatch = Boolean(
-    requestedOffering && selectedService && !selectedOfferings.some((offering) => offering.full_code === requestedOffering),
+    requestedOffering &&
+      !requestedServiceMissing &&
+      selectedService &&
+      !selectedOfferings.some((offering) => offering.full_code === requestedOffering),
   );
 
   useEffect(() => {
@@ -799,9 +806,22 @@ export function ServiceCatalogPanel() {
         . Каталог услуг остаётся экспертным разделом для lifecycle, overrides и публикации catalog-объектов.
       </div>
 
+      {requestedTemplate ? (
+        <div className="inline-flex max-w-full items-center gap-2 rounded-pill border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+          <span className="text-slate-500">Контекст шаблона:</span>
+          <span className="min-w-0 truncate">{requestedTemplate}</span>
+        </div>
+      ) : null}
+
+      {requestedServiceMissing ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Услуга из ссылки не найдена.
+        </div>
+      ) : null}
+
       {requestedOfferingMismatch ? (
         <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Вариант услуги из ссылки не относится к выбранной услуге. Каталог показал доступные варианты выбранной услуги.
+          Вариант услуги из ссылки не найден или не относится к выбранной услуге.
         </div>
       ) : null}
 
@@ -848,7 +868,12 @@ export function ServiceCatalogPanel() {
               {visibleServices.map((service) => {
                 const count = offerings.filter((offering) => offering.service_code === service.code).length;
                 return (
-                  <tr className="cursor-pointer hover:bg-brand-50/40" key={service.code} onClick={() => handleServiceSelect(service.code)}>
+                  <tr
+                    aria-current={selectedService?.code === service.code ? "true" : undefined}
+                    className={`cursor-pointer hover:bg-brand-50/40 ${selectedService?.code === service.code ? "bg-brand-50/70" : ""}`}
+                    key={service.code}
+                    onClick={() => handleServiceSelect(service.code)}
+                  >
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-950">{service.public_title || service.code}</div>
                       <div className="text-xs text-slate-500">{service.code}</div>

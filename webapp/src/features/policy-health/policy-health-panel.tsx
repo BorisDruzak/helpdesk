@@ -68,9 +68,9 @@ function buildPolicyHealthSimulationRequest(
   return {
     template_code: templateCode,
     ...guidedPayload,
-    service_code: serviceCode,
-    offering_code: offeringCode,
-    offering_full_code: offeringFullCode,
+    ...(serviceCode ? { service_code: serviceCode } : {}),
+    ...(offeringCode ? { offering_code: offeringCode } : {}),
+    ...(offeringFullCode ? { offering_full_code: offeringFullCode } : {}),
   };
 }
 
@@ -150,6 +150,9 @@ export function PolicyHealthPanel() {
   const [query, setQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [simulationDraft, setSimulationDraft] = useState<GuidedSimulationDraft>(defaultGuidedSimulationDraft);
+  const requestedService = searchParams.get("service")?.trim() || null;
+  const requestedOffering = searchParams.get("offering")?.trim() || null;
+  const requestedTemplate = searchParams.get("template")?.trim() || null;
 
   const dashboardQuery = useQuery({
     queryKey: ["policy-health-dashboard"],
@@ -233,6 +236,29 @@ export function PolicyHealthPanel() {
         </Link>
         . Проверка политик остаётся экспертным разделом для диагностики проблем и dry-run деталей.
       </div>
+
+      {requestedService || requestedOffering || requestedTemplate ? (
+        <div className="flex flex-wrap gap-2">
+          {requestedService ? (
+            <span className="inline-flex max-w-full items-center gap-2 rounded-pill border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="text-slate-500">Услуга:</span>
+              <span className="min-w-0 truncate">{requestedService}</span>
+            </span>
+          ) : null}
+          {requestedOffering ? (
+            <span className="inline-flex max-w-full items-center gap-2 rounded-pill border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="text-slate-500">Вариант услуги:</span>
+              <span className="min-w-0 truncate">{requestedOffering}</span>
+            </span>
+          ) : null}
+          {requestedTemplate ? (
+            <span className="inline-flex max-w-full items-center gap-2 rounded-pill border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="text-slate-500">Шаблон:</span>
+              <span className="min-w-0 truncate">{requestedTemplate}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="surface-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
