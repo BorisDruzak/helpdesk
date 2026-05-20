@@ -80,6 +80,14 @@ export const appNavigation: AppNavItem[] = [
     permission: "admin.inventory.view",
   },
   {
+    label: "Операции устройства",
+    description: "Инвентаризация, агент, обновления, модули, outbox и трассы",
+    icon: MonitorCog,
+    section: "admin",
+    to: "/app/admin/device-operations",
+    permission: "admin.inventory.view",
+  },
+  {
     label: "Реестры",
     description: "Люди, здания, кабинеты и сервисы",
     icon: Building2,

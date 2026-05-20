@@ -6,6 +6,7 @@ import { AppShell } from "./layouts/app-shell";
 import {
   AdminAgentUpdatesPage,
   AdminChangesPage,
+  AdminDeviceOperationsPage,
   AdminCapabilitiesPage,
   AdminDevicePage,
   AdminAccessPage,
@@ -272,6 +273,22 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminDevicePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/device-operations",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminDeviceOperationsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/device-operations/:deviceId",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminDeviceOperationsPage />
               </WorkspaceAccessGate>
             )
           },

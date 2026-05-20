@@ -9,6 +9,7 @@
   KeyRound,
   Layers3,
   Monitor,
+  MonitorCog,
   MoreHorizontal,
   RefreshCcw,
   Rocket,
@@ -352,6 +353,15 @@ export function AdminInventoryPage() {
     });
   }
 
+  function openDeviceOperations() {
+    if (!selectedDevice) {
+      return;
+    }
+    startTransition(() => {
+      navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
+    });
+  }
+
   return (
     <section className="space-y-5">
       <PageHeading
@@ -375,6 +385,15 @@ export function AdminInventoryPage() {
               size="sm"
             >
               Карточка
+            </Button>
+            <Button
+              disabled={!selectedDevice}
+              leadingIcon={<MonitorCog className="h-4 w-4" />}
+              onClick={openDeviceOperations}
+              size="sm"
+              variant="outline"
+            >
+              Операции устройства
             </Button>
           </>
         }
@@ -570,6 +589,7 @@ export function AdminInventoryPage() {
             navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
           }}
           onOpenDeviceCard={openDeviceCard}
+          onOpenDeviceOperations={openDeviceOperations}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
           rolloutAssignments={rolloutAssignments}
@@ -1162,6 +1182,7 @@ function AgentDetailsPanel({
   onCleanupPreview,
   onOpenAgentUpdates,
   onOpenDeviceCard,
+  onOpenDeviceOperations,
   onOpenPlaybooks,
   request,
   rolloutAssignments,
@@ -1174,6 +1195,7 @@ function AgentDetailsPanel({
   onCleanupPreview: () => void;
   onOpenAgentUpdates: () => void;
   onOpenDeviceCard: () => void;
+  onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
   request: AdminConnectionRequestItem | null;
   rolloutAssignments: AdminDevicesPayload["rollout"];
@@ -1298,6 +1320,15 @@ function AgentDetailsPanel({
                 variant="outline"
               >
                 Открыть карточку
+              </Button>
+              <Button
+                className="w-full justify-start"
+                leadingIcon={<MonitorCog className="h-4 w-4" />}
+                onClick={onOpenDeviceOperations}
+                size="sm"
+                variant="outline"
+              >
+                Операции устройства
               </Button>
               <Button
                 className="w-full justify-start"

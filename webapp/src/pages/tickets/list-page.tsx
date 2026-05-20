@@ -3917,12 +3917,20 @@ export function TicketListPage() {
                           Агент устройства offline — недоступно {automationAvailability.offlineUnavailableCount} инструментов
                         </span>
                         {viewModel.right.context?.device.id ? (
-                          <Link
-                            className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
-                            to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context?.device.id ?? "")}`}
-                          >
-                            Открыть карточку устройства
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
+                              to={`/app/admin/device-operations/${encodeURIComponent(viewModel.right.context.device.id)}`}
+                            >
+                              Операции устройства
+                            </Link>
+                            <Link
+                              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
+                              to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context.device.id)}`}
+                            >
+                              Карточка устройства
+                            </Link>
+                          </div>
                         ) : null}
                       </div>
                       {automationAvailability.allUnavailable ? (

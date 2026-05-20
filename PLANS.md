@@ -79,6 +79,31 @@ Current P1/P2 hardening checklist:
 - Add command-center performance logging and data-quality fallbacks for historical mojibake/junk titles without modifying stored data blindly.
 - Live acceptance evidence: requester-role API returns 403, remote branch is `codex/inventory-v4-registration-presence`, product HEAD `ca8818eb` opened `/app/support` and `/app/tickets`, `/app/tickets?smart_view=unassigned|sla_risk` applied visible queue filters, similar-spike search opened filtered ticket context, live ticket `T-000578` entered `unread_user_messages`, opening `/app/tickets/930461f7-9f88-43c6-9ac5-e5676643a9cd` triggered `POST /api/web/support/tickets/{ticket_id}/read`, and after refresh it disappeared from unread while staying in `operator_action`, `new_unassigned` and `sla_risk`.
 
+## Active Work: P1 Device Operations
+
+Status: implemented / production-oriented cut pending release signoff.
+
+Goal:
+
+- Add a single Russian localized device/agent operations workspace where an admin or support engineer can inspect inventory, binding, agent version/update, modules, outbox, recent operations, Observer traces, provisioning/auth and Remote Assist availability for one device without replacing the existing expert screens.
+
+Implemented:
+
+- Backend typed read endpoint `GET /api/web/admin/device-operations/{device_id}` with query fallback, DTOs and `DeviceOperationsService` aggregation over existing devices, inventory, modules, outbox, operations, Observer, connection request/token audit and Remote Assist data.
+- React route `/app/admin/device-operations/:deviceId` plus query fallback `/app/admin/device-operations?device_id=...`, typed frontend client and page with overview, inventory, agent/update, modules, outbox/operations, Observer, Remote Assist and provisioning/auth tabs.
+- Deep links from Inventory, Device Card and the ticket device/offline banner to Device Operations while keeping the old Inventory, Device Card, Agent Updates, Modules, Observer and ticket routes intact.
+
+Read-only / known gaps:
+
+- Direct module rollout, operation retry/cancel, provisioning approve/reject and Remote Assist request buttons are intentionally not implemented in Device Operations until safe action-specific permission/consent flows are exposed for this workspace.
+- Agent Updates and Observer row-level links into Device Operations are left as follow-up where device_id is available in those tables without a risky refactor.
+
+Verification target:
+
+- `server/tests/test_device_operations.py`, relevant support/inventory regressions, `python -m compileall -q server`.
+- `pnpm --dir webapp test -- device-operations`, focused inventory/tickets tests and `pnpm --dir webapp build`.
+- `python scripts/verify_workspace.py`, `git diff --check`, quick remote/browser smoke at `https://192.168.100.17:9443/admin` before release acceptance.
+
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
 Status: accepted / production-oriented cut in progress.
