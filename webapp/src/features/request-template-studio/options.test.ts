@@ -95,6 +95,7 @@ describe("request template studio options", () => {
     expect(payload.custom_fields).toMatchObject({ service_code: "mail", offering_code: "mail.new_box" });
     expect(payload.request_form_data).toMatchObject({ summary: "Нужен почтовый ящик", expected_priority: "P2" });
   });
+
   it("builds the exact Studio simulation body with top-level catalog context", () => {
     const service = {
       code: "it-support",

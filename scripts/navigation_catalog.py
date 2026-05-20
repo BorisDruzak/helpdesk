@@ -775,7 +775,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="service_catalog",
         title="Service Catalog / Offerings",
-        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, fallback other.unknown, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions.",
+        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, fallback other.unknown, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions. `/app/admin/request-template-studio` is the primary admin workflow that orchestrates Service Catalog, Forms Builder and Policy Health; legacy screens remain expert/deep-link surfaces.",
         aliases=(
             "service catalog",
             "service-catalog",

@@ -114,6 +114,8 @@ Handoff notes:
 
 - If the whole P0 scope cannot land in one pass, do not leave `/app/tickets` with clipping or duplicated offline reasons. P0.0 and P0.3 take priority over broad visual polish.
 - Current production cut fixes Request Template Studio simulation to send catalog context as top-level `service_code` / `offering_code` / `offering_full_code` and adds selected-ticket compact device/agent/inventory context in `/app/tickets` without adding inventory fanout to queue rows.
+- 2026-05-20 Studio unification cut promotes `/app/admin/request-template-studio` to the primary request-template setup workflow: service/offering/template selectors, binding summary, embedded form preview, policy binding cards with Policy Health issues, guided simulation with human-readable result cards, publication gates and context-preserving links to Forms Builder, Service Catalog and Policy Health. Forms Builder, Service Catalog and Policy Health remain expert/deep surfaces and now show a Studio banner.
+- Read-only gaps: policy/template binding edits and publish-from-Studio are not implemented because no safe typed update/publish contract is exposed for Studio. Use Forms Builder / Service Catalog / expert policy editor for those writes until backend/domain service support is added.
 - Verification for this cut: focused webapp tests for Studio payload/API and `TicketDeviceAgentPanel`, `pnpm --dir webapp build`, `server/tests/test_support_inventory_context.py`, and Python compile checks. A DB-backed support workspace route test hung on local Windows and is left for Linux/CI or remote DB verification.
 
 ## Latest Accepted Work: P5 Change Enablement

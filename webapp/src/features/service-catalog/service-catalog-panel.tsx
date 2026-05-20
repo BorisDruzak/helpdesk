@@ -731,6 +731,17 @@ export function ServiceCatalogPanel() {
         </dl>
       </header>
 
+      <div className="rounded-[1rem] border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+        Основная настройка шаблонов доступна в{" "}
+        <Link
+          className="font-semibold underline-offset-4 hover:underline"
+          to={`/app/admin/request-template-studio${selectedService ? `?service=${encodeURIComponent(selectedService.code)}` : ""}`}
+        >
+          Студии шаблонов
+        </Link>
+        . Каталог услуг остаётся экспертным разделом для lifecycle, overrides и публикации catalog-объектов.
+      </div>
+
       <section className="surface-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
           <label className="text-sm font-medium text-slate-700">

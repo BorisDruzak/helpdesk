@@ -1037,6 +1037,14 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
         </div>
       </div>
 
+      <div className="rounded-[1rem] border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+        Основная настройка шаблонов доступна в{" "}
+        <Link className="font-semibold underline-offset-4 hover:underline" to={`/app/admin/request-template-studio${selectedForm ? `?template=${encodeURIComponent(selectedForm.key)}` : ""}`}>
+          Студии шаблонов
+        </Link>
+        . Этот раздел оставлен для детального редактирования формы и экспертных политик.
+      </div>
+
       <nav aria-label="Разделы конструктора форм" className="flex flex-wrap gap-2">
         {BUILDER_MODES.map((item) => {
           const Icon = item.icon;

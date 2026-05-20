@@ -128,19 +128,19 @@ export const appNavigation: AppNavItem[] = [
     permission: "admin.modules.view",
   },
   {
-    label: "Конструктор форм",
-    description: "Каталог intake-форм",
-    icon: Workflow,
-    section: "admin",
-    to: "/app/admin/forms",
-    permission: "admin.forms.view",
-  },
-  {
     label: "Студия шаблонов",
-    description: "Услуга, вариант, форма, политики и публикация",
+    description: "Основной workflow: услуга, вариант, форма, политики и публикация",
     icon: ClipboardCheck,
     section: "admin",
     to: "/app/admin/request-template-studio",
+    permission: "admin.forms.view",
+  },
+  {
+    label: "Конструктор форм",
+    description: "Экспертное редактирование форм и политик",
+    icon: Workflow,
+    section: "admin",
+    to: "/app/admin/forms",
     permission: "admin.forms.view",
   },
   {
@@ -153,7 +153,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Каталог услуг",
-    description: "Услуги, варианты услуги и проверки публикации",
+    description: "Экспертная настройка услуг, вариантов и overrides",
     icon: FolderKanban,
     section: "admin",
     to: "/app/admin/service-catalog",
@@ -161,7 +161,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Проверка политик",
-    description: "Шаблоны обращений, SLA, OLA и видимость",
+    description: "Экспертная диагностика Policy Health и dry-run",
     icon: ClipboardCheck,
     section: "admin",
     to: "/app/admin/policy-health",
