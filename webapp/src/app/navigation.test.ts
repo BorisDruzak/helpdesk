@@ -66,7 +66,16 @@ describe("navigation helpers", () => {
       (domain) => domain.id === "devices-agents",
     );
 
+    expect(devicesDomain?.items.map((item) => item.to)).toContain("/app/admin/tech");
     expect(devicesDomain?.items.at(-1)?.label).toBe("Операции устройства");
+  });
+
+  it("recognizes the migrated tech panel as an admin navigation item", () => {
+    const activeItem = getActiveNavItem("/app/admin/tech?panel=logs", fullAdminPermissions);
+
+    expect(activeItem?.to).toBe("/app/admin/tech");
+    expect(activeItem?.label).toBe("Техпанель");
+    expect(activeItem?.domainId).toBe("devices-agents");
   });
 
   it("recognizes workspace-owned paths without including public requester routes", () => {

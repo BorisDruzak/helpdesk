@@ -132,6 +132,48 @@ function createWorkspaceSummaryPayload() {
   };
 }
 
+function createTechOverviewPayload() {
+  return {
+    status: "ok",
+    overview: {
+      postgres_health: { status: "ok", label: "PostgreSQL" },
+      agent_health: { total: 3, online: 2, stale: 1, offline: 0 },
+      operations_health: { stuck_count: 1, failed_recent_count: 2 },
+      update_health: { pending_updates: 1, failed_updates: 0 },
+      service_health: { http: "running", control_plane: "running" },
+      generated_at: "2026-05-21T10:00:00+00:00",
+    },
+  };
+}
+
+function createTechAlertsPayload() {
+  return {
+    status: "ok",
+    alerts: [
+      {
+        severity: "warning",
+        title: "Операции требуют внимания",
+        description: "Есть зависшая операция.",
+        created_at: "2026-05-21T10:01:00+00:00",
+      },
+    ],
+  };
+}
+
+function createTechLogsPayload() {
+  return {
+    status: "ok",
+    logs: [
+      {
+        ts: "2026-05-21T10:02:00+00:00",
+        level: "ERROR",
+        logger: "server.housekeeping",
+        message: "Inventory refresh runtime already running",
+      },
+    ],
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -386,6 +428,53 @@ describe("appRoutes", () => {
     expect((await screen.findAllByRole("link", { name: /Возможности/ })).length).toBeGreaterThan(0);
     expect(await screen.findByText("server.dns.resolve")).toBeInTheDocument();
     expect(await screen.findByText("zabbix.problems.lookup")).toBeInTheDocument();
+  });
+
+  it("opens the migrated tech panel for admin users", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createAdminSession()
+        });
+      }
+
+      if (url.endsWith("/api/web/admin/tech/overview")) {
+        return jsonResponse(createTechOverviewPayload());
+      }
+
+      if (url.endsWith("/api/web/admin/tech/alerts")) {
+        return jsonResponse(createTechAlertsPayload());
+      }
+
+      if (url.startsWith("/api/web/admin/tech/logs?")) {
+        return jsonResponse(createTechLogsPayload());
+      }
+
+      if (url.endsWith("/api/web/admin/tech/operations/stuck")) {
+        return jsonResponse({ status: "ok", operations: [] });
+      }
+
+      if (url.startsWith("/api/web/admin/tech/agents/audit?")) {
+        return jsonResponse({ status: "ok", events: [] });
+      }
+
+      if (url.startsWith("/api/web/admin/tech/users/audit?")) {
+        return jsonResponse({ status: "ok", events: [] });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderApp(["/app/admin/tech"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Техпанель сервера" })).toBeInTheDocument();
+    expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
+    expect(await screen.findByText("Операции требуют внимания")).toBeInTheDocument();
+    expect(await screen.findByText("Inventory refresh runtime already running")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/tech/overview", { credentials: "same-origin" });
   });
 
   it("opens requester help without a web session", async () => {

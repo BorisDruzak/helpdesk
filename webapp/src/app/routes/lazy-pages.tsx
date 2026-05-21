@@ -84,6 +84,10 @@ export const AdminObserverPage = lazy(() =>
   import("../../pages/admin/observer-page").then((module) => ({ default: module.AdminObserverPage })),
 );
 
+export const AdminTechPage = lazy(() =>
+  import("../../pages/admin/tech-page").then((module) => ({ default: module.AdminTechPage })),
+);
+
 export const AdminPlaybooksPage = lazy(() =>
   import("../../pages/admin/playbooks-page").then((module) => ({ default: module.AdminPlaybooksPage })),
 );

@@ -23,6 +23,7 @@ import {
   AdminRequestTemplateStudioPage,
   ApprovalConsentCenterPage,
   AdminServiceCatalogPage,
+  AdminTechPage,
   HelpPage,
   KnowledgeBasePage,
   ReportsPage,
@@ -418,6 +419,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminObserverPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/tech",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminTechPage />
               </WorkspaceAccessGate>
             )
           },
