@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 
 import { chromium } from "playwright";
@@ -13,24 +15,24 @@ const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_checks", "live-
 const DEFAULT_EXPECT_ROUTE_MODE = "auto";
 
 const LOGIN_HEADING = "Вход в рабочие места";
-const ADMIN_HEADING = "Агенты";
-const SUPPORT_HEADING = "Тикеты";
+const ADMIN_HEADING = "Центр администрирования";
+const SUPPORT_HEADING = "Рабочий центр";
 const RUSSIAN_TITLE = "pc_client — рабочие места";
 
 const ADMIN_REQUIRED_TEXT = [
-  "Инвентарь устройств",
-  "Подключения",
-  "Токены",
-  "Rollout",
-  "Плейбуки",
-  "Observer"
+  "Устройства и агенты",
+  "Каталог и заявки",
+  "База знаний",
+  "Автоматизация",
+  "Управление сервисом",
+  "Система",
 ];
 
 const SUPPORT_REQUIRED_TEXT = [
-  "Рабочая панель",
-  "Список тикетов",
-  "Видимых тикетов",
-  "Все статусы"
+  "Тикеты",
+  "База знаний",
+  "Отчёты",
+  "Настройки",
 ];
 
 const CUTOVER_REDIRECTS = [
@@ -188,14 +190,26 @@ async function captureScreenshot(page, targetPath) {
 
 
 async function inspectRedirect(baseUrl, pathName) {
-  const response = await fetch(`${baseUrl}${pathName}`, {
-    redirect: "manual",
+  const targetUrl = new URL(pathName, baseUrl);
+  const transport = targetUrl.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(targetUrl, {
+      method: "GET",
+      rejectUnauthorized: false,
+    }, (response) => {
+      response.resume();
+      response.on("end", () => {
+        resolve({
+          path: pathName,
+          status: response.statusCode,
+          location: response.headers.location ?? null,
+        });
+      });
+    });
+    request.on("error", reject);
+    request.end();
   });
-  return {
-    path: pathName,
-    status: response.status,
-    location: response.headers.get("location"),
-  };
 }
 
 
@@ -227,6 +241,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({
     baseURL: options.baseUrl,
+    ignoreHTTPSErrors: true,
     locale: "ru-RU",
     viewport: {
       width: 1600,
@@ -306,7 +321,7 @@ async function main() {
     sessionData?.default_workspace !== "admin" ||
     !Array.isArray(sessionData?.available_workspaces) ||
     sessionData.available_workspaces.includes("admin") !== true ||
-    !defaultRouteUrl.startsWith(`${options.baseUrl}/app/admin/inventory`) ||
+    new URL(defaultRouteUrl).pathname !== "/app/admin" ||
     adminState.lang !== "ru" ||
     adminState.title !== RUSSIAN_TITLE ||
     adminState.headingVisible !== true ||

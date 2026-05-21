@@ -1431,12 +1431,96 @@ class AdminDeviceInventoryRefreshRun(BaseModel):
     id: str
     device_id: str | None = None
     policy_id: str | None = None
+    bulk_operation_id: str | None = None
     requested_at: str
     requested_by: str | None = None
     status: str
     job_id: str | None = None
     error: str | None = None
     completed_at: str | None = None
+
+
+class AdminDeviceProfileItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requester_id: str | None = None
+    display_name: str | None = None
+    full_name: str | None = None
+    department: str | None = None
+    building: str | None = None
+    floor: str | None = None
+    room: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    active: bool = False
+    last_seen_at: str | None = None
+    source: str = "agent_profile"
+    status: str = "observed"
+
+
+class AdminBindingSuggestionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    device_id: str
+    source: str
+    source_ref: str | None = None
+    suggested_binding: dict[str, Any] = Field(default_factory=dict)
+    profile_snapshot: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    confidence: str | None = None
+    created_at: str
+    updated_at: str
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    review_note: str | None = None
+
+
+class AdminBindingSuggestionApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fields: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class AdminBindingSuggestionReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = None
+
+
+class AdminPresenceSnapshotItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    collected_at: str
+    received_at: str | None = None
+    session_state: str | None = None
+    current_user: str | None = None
+    idle_seconds: int | None = None
+    locked: bool | None = None
+    result: dict[str, Any] | None = None
+
+
+class AdminPresenceDailySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    active_seconds: int = 0
+    idle_seconds: int = 0
+    locked_seconds: int = 0
+    offline_seconds: int = 0
+    unknown_seconds: int = 0
+    updated_at: str | None = None
+
+
+class AdminDevicePresencePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    latest: AdminPresenceSnapshotItem | None = None
+    today: AdminPresenceDailySummary | None = None
+    history: list[AdminPresenceSnapshotItem] = Field(default_factory=list)
 
 
 class AdminDeviceInventoryPayload(BaseModel):
@@ -1450,6 +1534,9 @@ class AdminDeviceInventoryPayload(BaseModel):
     refresh_policy: AdminDeviceInventoryRefreshPolicy | None = None
     refresh_runs: list[AdminDeviceInventoryRefreshRun] = Field(default_factory=list)
     last_refresh_run: AdminDeviceInventoryRefreshRun | None = None
+    profiles: list[AdminDeviceProfileItem] = Field(default_factory=list)
+    binding_suggestions: list[AdminBindingSuggestionItem] = Field(default_factory=list)
+    presence: AdminDevicePresencePayload | None = None
 
 
 class AdminInventoryBindingImportRequest(BaseModel):
@@ -1492,6 +1579,7 @@ class AdminInventoryDashboardPayload(BaseModel):
     binding_gaps: dict[str, Any] = Field(default_factory=dict)
     health: dict[str, Any] = Field(default_factory=dict)
     refresh: dict[str, Any] = Field(default_factory=dict)
+    attention: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdminDeviceInventoryCollectPayload(BaseModel):
@@ -1503,6 +1591,75 @@ class AdminDeviceInventoryCollectPayload(BaseModel):
     status: str
     message: str
     poll_url: str | None = None
+
+
+class AdminBulkRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_ids: list[str] = Field(default_factory=list)
+    mode: str = "selected"
+    filters: dict[str, Any] = Field(default_factory=dict)
+    wave: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = True
+
+
+class AdminBulkRefreshItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    device_id: str
+    hostname: str | None = None
+    online: bool | None = None
+    status: str
+    reason: str | None = None
+
+
+class AdminBulkRefreshResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dry_run: bool
+    selected_count: int
+    online_count: int
+    offline_count: int
+    estimated_waves: int
+    operation_id: str | None = None
+    status: str | None = None
+    items: list[AdminBulkRefreshItem] = Field(default_factory=list)
+
+
+class AdminBulkOperationItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    operation_id: str
+    device_id: str
+    wave_index: int
+    status: str
+    job_id: str | None = None
+    error: str | None = None
+    requested_at: str | None = None
+
+
+class AdminBulkOperationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    operation_type: str
+    status: str
+    requested_by: str | None = None
+    requested_at: str
+    filters: dict[str, Any] = Field(default_factory=dict)
+    wave: dict[str, Any] = Field(default_factory=dict)
+    total_count: int = 0
+    dispatched_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    completed_at: str | None = None
+
+
+class AdminBulkOperationsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminBulkOperationSummary] = Field(default_factory=list)
 
 
 class AdminDeviceIdentitySummary(BaseModel):

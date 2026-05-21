@@ -25,13 +25,15 @@ def test_inventory_collect_is_treated_as_agent_builtin():
     service = ToolService(SimpleNamespace())
 
     async def unexpected_resolve(*_args, **_kwargs):  # pragma: no cover - should stay unreachable
-        raise AssertionError("inventory.collect must not use server module registry preflight")
+        raise AssertionError("built-in tools must not use server module registry preflight")
 
     with patch("tools.service.DB_AVAILABLE", True), \
          patch.object(service, "_resolve_preferred_server_module_for_tool", new=unexpected_resolve):
         result = asyncio.run(service._ensure_module_installed("device-1", "inventory.collect"))
+        presence_result = asyncio.run(service._ensure_module_installed("device-1", "presence.collect"))
 
     assert result is None
+    assert presence_result is None
 
 
 @pytest.mark.no_db

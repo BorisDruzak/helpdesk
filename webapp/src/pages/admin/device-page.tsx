@@ -100,6 +100,20 @@ export function AdminDevicePage() {
             >
               К инвентарю
             </Button>
+            {selectedDevice ? (
+              <Button
+                leadingIcon={<ArrowUpRight className="h-4 w-4" />}
+                onClick={() => {
+                  startTransition(() => {
+                    navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
+                  });
+                }}
+                size="sm"
+                variant="outline"
+              >
+                Операции устройства
+              </Button>
+            ) : null}
             <Select
               className="min-w-[280px]"
               onChange={(event) => {

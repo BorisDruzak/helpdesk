@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, ShieldCheck } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { fetchHelpdeskModelRegistry } from "../forms-builder/api";
+import {
+  buildCatalogSimulationContext,
+  buildGuidedSimulationPayload,
+  defaultGuidedSimulationDraft,
+  policyOptions,
+  requestTemplateOptions,
+  serviceOptions,
+  type GuidedSimulationDraft,
+} from "../request-template-studio/options";
 import {
   fetchServiceCatalogDashboard,
   publishServiceCatalogObject,
@@ -62,17 +73,27 @@ const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2";
 
 function ServiceDetails({
   offerings,
+  onOfferingSelect,
+  requestedOfferingCode,
+  registry,
   service,
+  services,
 }: {
   offerings: AdminServiceCatalogOffering[];
+  onOfferingSelect: (offeringCode: string) => void;
+  requestedOfferingCode: string | null;
+  registry: Awaited<ReturnType<typeof fetchHelpdeskModelRegistry>> | undefined;
   service: AdminServiceCatalogService | null;
+  services: AdminServiceCatalogService[];
 }) {
   const [selectedOfferingCode, setSelectedOfferingCode] = useState("");
-  const [simulationInput, setSimulationInput] = useState('{"request_form_data":{},"custom_fields":{},"device_metadata":{},"requester_context":{}}');
+  const [simulationDraft, setSimulationDraft] = useState<GuidedSimulationDraft>(defaultGuidedSimulationDraft);
   const [draftJson, setDraftJson] = useState("");
   const queryClient = useQueryClient();
   const selectedOffering =
     offerings.find((offering) => offering.full_code === selectedOfferingCode) ?? offerings[0] ?? null;
+  const templatePickerOptions = requestTemplateOptions(registry);
+  const parentServiceOptions = serviceOptions(services);
   const [serviceDraft, setServiceDraft] = useState<Partial<AdminServiceCatalogService>>({});
   const [offeringDraft, setOfferingDraft] = useState<Partial<AdminServiceCatalogOffering>>({});
 
@@ -84,6 +105,15 @@ function ServiceDetails({
   useEffect(() => {
     setSelectedOfferingCode("");
   }, [service?.code]);
+
+  useEffect(() => {
+    if (!requestedOfferingCode) {
+      return;
+    }
+    if (offerings.some((offering) => offering.full_code === requestedOfferingCode)) {
+      setSelectedOfferingCode(requestedOfferingCode);
+    }
+  }, [offerings, requestedOfferingCode]);
 
   useEffect(() => {
     setOfferingDraft(
@@ -112,15 +142,14 @@ function ServiceDetails({
 
   const simulationMutation = useMutation({
     mutationFn: () => {
-      const parsed = JSON.parse(simulationInput) as Record<string, unknown>;
+      const guidedPayload = buildGuidedSimulationPayload({
+        ...simulationDraft,
+        serviceCode: service?.code ?? simulationDraft.serviceCode,
+        offeringCode: selectedOffering?.code ?? simulationDraft.offeringCode,
+      });
       return simulateServiceCatalog({
-        service_code: service?.code,
-        offering_code: selectedOffering?.code,
-        offering_full_code: selectedOffering?.full_code,
-        request_form_data: (parsed.request_form_data as Record<string, unknown>) ?? {},
-        custom_fields: (parsed.custom_fields as Record<string, unknown>) ?? {},
-        device_metadata: (parsed.device_metadata as Record<string, unknown>) ?? {},
-        requester_context: (parsed.requester_context as Record<string, unknown>) ?? {},
+        ...buildCatalogSimulationContext(service, selectedOffering),
+        ...guidedPayload,
       });
     },
   });
@@ -181,7 +210,7 @@ function ServiceDetails({
   if (!service) {
     return (
       <aside className="surface-panel p-5 text-sm text-slate-500">
-        Выберите услугу, чтобы увидеть offerings, publication gates и runtime simulation.
+        Выберите услугу, чтобы увидеть варианты услуги, проверки публикации и симуляцию выполнения.
       </aside>
     );
   }
@@ -195,9 +224,15 @@ function ServiceDetails({
         </div>
         <Badge tone={tone(service.lifecycle_status)}>{service.lifecycle_status}</Badge>
       </div>
+      <Link
+        className="inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+        to={`/app/admin/request-template-studio?service=${encodeURIComponent(service.code)}${selectedOffering?.full_code ? `&offering=${encodeURIComponent(selectedOffering.full_code)}` : ""}${selectedOffering?.request_template_key ? `&template=${encodeURIComponent(selectedOffering.request_template_key)}` : ""}`}
+      >
+        Открыть в студии
+      </Link>
 
       <section>
-        <h3 className="text-sm font-semibold text-slate-800">Publication gates</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Проверки публикации</h3>
         {validationQuery.data ? (
           <div className="mt-2 space-y-2">
             <Badge tone={tone(validationQuery.data.status)}>{validationQuery.data.status}</Badge>
@@ -212,16 +247,16 @@ function ServiceDetails({
                 </div>
               ))
             ) : (
-              <p className="mt-2 text-sm text-slate-500">Blocking issues не найдены.</p>
+              <p className="mt-2 text-sm text-slate-500">Блокирующие проблемы не найдены.</p>
             )}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-slate-500">Проверка publication gates...</p>
+          <p className="mt-2 text-sm text-slate-500">Проверяем готовность публикации...</p>
         )}
         {selectedOffering && offeringValidationQuery.data ? (
           <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase text-slate-500">Selected offering</span>
+              <span className="text-xs font-semibold uppercase text-slate-500">Выбранный вариант услуги</span>
               <Badge tone={tone(offeringValidationQuery.data.status)}>{offeringValidationQuery.data.status}</Badge>
             </div>
             {offeringValidationQuery.data.issues.length ? (
@@ -236,46 +271,54 @@ function ServiceDetails({
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-500">Blocking issues не найдены.</p>
+              <p className="text-sm text-slate-500">Блокирующие проблемы не найдены.</p>
             )}
           </div>
         ) : null}
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-slate-800">Offerings</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Варианты услуги</h3>
         <div className="mt-2 space-y-2">
           {offerings.length ? (
             offerings.map((offering) => (
               <button
-                className="w-full rounded-md border border-slate-200 bg-white p-3 text-left text-sm transition hover:border-brand-200 hover:bg-brand-50"
+                aria-pressed={selectedOffering?.full_code === offering.full_code}
+                className={`w-full rounded-md border p-3 text-left text-sm transition hover:border-brand-200 hover:bg-brand-50 ${
+                  selectedOffering?.full_code === offering.full_code
+                    ? "border-brand-300 bg-brand-50"
+                    : "border-slate-200 bg-white"
+                }`}
                 key={offering.full_code}
-                onClick={() => setSelectedOfferingCode(offering.full_code)}
+                onClick={() => {
+                  setSelectedOfferingCode(offering.full_code);
+                  onOfferingSelect(offering.full_code);
+                }}
                 type="button"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold text-slate-900">{offering.public_title || offering.full_code}</span>
                   <Badge tone={tone(offering.lifecycle_status)}>{offering.lifecycle_status}</Badge>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{offering.request_template_key || "request template не указан"}</p>
+                <p className="mt-1 text-xs text-slate-500">{offering.request_template_key ? `Шаблон: ${offering.request_template_key}` : "Шаблон обращения не указан"}</p>
               </button>
             ))
           ) : (
-            <p className="text-sm text-slate-500">Offerings пока не заведены.</p>
+            <p className="text-sm text-slate-500">Варианты услуги пока не заведены.</p>
           )}
         </div>
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-slate-800">Policy inheritance</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Наследование политик</h3>
         <p className="mt-2 text-sm text-slate-600">{policySummary(service, selectedOffering)}</p>
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-800">Structured service editor</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Редактор услуги</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
-            Code
+            Код услуги
             <input
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, code: event.currentTarget.value }))}
@@ -283,7 +326,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Public title
+            Название для пользователей
             <input
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, public_title: event.currentTarget.value }))}
@@ -291,7 +334,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700 md:col-span-2">
-            Short description
+            Краткое описание
             <input
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, short_description: event.currentTarget.value }))}
@@ -299,7 +342,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Lifecycle
+            Жизненный цикл
             <select
               className={fieldClass}
               onChange={(event) =>
@@ -310,13 +353,13 @@ function ServiceDetails({
               }
               value={serviceDraft.lifecycle_status ?? "draft"}
             >
-              <option value="draft">draft</option>
-              <option value="published">published</option>
-              <option value="retired">retired</option>
+              <option value="draft">Черновик</option>
+              <option value="published">Опубликована</option>
+              <option value="retired">Выведена</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Visibility
+            Видимость
             <select
               className={fieldClass}
               onChange={(event) =>
@@ -327,13 +370,13 @@ function ServiceDetails({
               }
               value={serviceDraft.visibility ?? "public"}
             >
-              <option value="public">public</option>
-              <option value="internal">internal</option>
-              <option value="restricted">restricted</option>
+              <option value="public">Публичная</option>
+              <option value="internal">Внутренняя</option>
+              <option value="restricted">Ограниченная</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Owner queue
+            Очередь-владелец
             <input
               className={fieldClass}
               inputMode="numeric"
@@ -342,7 +385,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Default queue
+            Очередь по умолчанию
             <input
               className={fieldClass}
               inputMode="numeric"
@@ -351,31 +394,40 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Default routing policy
-            <input
+            Политика маршрутизации по умолчанию
+            <select
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, default_routing_policy_code: event.currentTarget.value }))}
               value={serviceDraft.default_routing_policy_code ?? ""}
-            />
+            >
+              <option value="">Наследовать</option>
+              {policyOptions(registry, "routing").map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Default SLA policy
-            <input
+            SLA по умолчанию
+            <select
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, default_sla_policy_code: event.currentTarget.value }))}
               value={serviceDraft.default_sla_policy_code ?? ""}
-            />
+            >
+              <option value="">Наследовать</option>
+              {policyOptions(registry, "sla").map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Default diagnostics
-            <input
+            Диагностика по умолчанию
+            <select
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, default_diagnostic_policy_code: event.currentTarget.value }))}
               value={serviceDraft.default_diagnostic_policy_code ?? ""}
-            />
+            >
+              <option value="">Наследовать</option>
+              {policyOptions(registry, "diagnostic").map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Reporting category
+            Категория отчётности
             <input
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, reporting_category: event.currentTarget.value }))}
@@ -383,53 +435,56 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Business criticality
+            Критичность для бизнеса
             <select
               className={fieldClass}
               onChange={(event) => setServiceDraft((current) => ({ ...current, business_criticality: event.currentTarget.value }))}
               value={serviceDraft.business_criticality ?? "medium"}
             >
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-              <option value="critical">critical</option>
+              <option value="low">Низкая</option>
+              <option value="medium">Средняя</option>
+              <option value="high">Высокая</option>
+              <option value="critical">Критичная</option>
             </select>
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button disabled={saveServiceMutation.isPending} onClick={() => saveServiceMutation.mutate()} type="button" variant="secondary">
-            Save service draft
+            Сохранить черновик услуги
           </Button>
           <Button disabled={publishServiceMutation.isPending || validationQuery.data?.blocking} onClick={() => publishServiceMutation.mutate()} type="button" variant="secondary">
-            Publish service
+            Опубликовать услугу
           </Button>
           <Button disabled={retireServiceMutation.isPending} onClick={() => retireServiceMutation.mutate()} type="button" variant="secondary">
-            Retire service
+            Вывести услугу
           </Button>
         </div>
       </section>
 
       <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-800">Structured offering editor</h3>
+        <h3 className="text-sm font-semibold text-slate-800">Редактор варианта услуги</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
-            Parent service
-            <input
+            Родительская услуга
+            <select
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, service_code: event.currentTarget.value }))}
               value={offeringDraft.service_code ?? service.code}
-            />
+            >
+              {parentServiceOptions.map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Offering code
+            Технический код варианта
             <input
               className={fieldClass}
+              placeholder="Будет использован как technical id"
               onChange={(event) => setOfferingDraft((current) => ({ ...current, code: event.currentTarget.value }))}
               value={offeringDraft.code ?? ""}
             />
           </label>
           <label className="text-sm font-medium text-slate-700 md:col-span-2">
-            Public title
+            Название для пользователей
             <input
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, public_title: event.currentTarget.value }))}
@@ -437,7 +492,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700 md:col-span-2">
-            Short description
+            Краткое описание
             <input
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, short_description: event.currentTarget.value }))}
@@ -445,7 +500,7 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Lifecycle
+            Жизненный цикл
             <select
               className={fieldClass}
               onChange={(event) =>
@@ -456,13 +511,13 @@ function ServiceDetails({
               }
               value={offeringDraft.lifecycle_status ?? "draft"}
             >
-              <option value="draft">draft</option>
-              <option value="published">published</option>
-              <option value="retired">retired</option>
+              <option value="draft">Черновик</option>
+              <option value="published">Опубликован</option>
+              <option value="retired">Выведен</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Visibility
+            Видимость
             <select
               className={fieldClass}
               onChange={(event) =>
@@ -473,13 +528,13 @@ function ServiceDetails({
               }
               value={offeringDraft.visibility ?? "public"}
             >
-              <option value="public">public</option>
-              <option value="internal">internal</option>
-              <option value="restricted">restricted</option>
+              <option value="public">Публичный</option>
+              <option value="internal">Внутренний</option>
+              <option value="restricted">Ограниченный</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Request type
+            Тип обращения
             <input
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, request_type: event.currentTarget.value }))}
@@ -487,35 +542,41 @@ function ServiceDetails({
             />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Request template key
-            <input
+            Шаблон обращения
+            <select
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, request_template_key: event.currentTarget.value }))}
               value={offeringDraft.request_template_key ?? ""}
-            />
+            >
+              <option value="">Не выбран</option>
+              {templatePickerOptions.map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           {[
-            ["routing_policy_code", "Routing"],
-            ["sla_policy_code", "SLA"],
-            ["ola_policy_code", "OLA"],
-            ["approval_policy_code", "Approval"],
-            ["closure_policy_code", "Closure"],
-            ["visibility_policy_code", "Visibility"],
-            ["diagnostic_policy_code", "Diagnostic"],
-            ["notification_policy_code", "Notification"],
-            ["reporting_policy_code", "Reporting"],
-          ].map(([key, label]) => (
+            ["routing_policy_code", "Маршрутизация", "routing"],
+            ["sla_policy_code", "SLA", "sla"],
+            ["ola_policy_code", "OLA", "ola"],
+            ["approval_policy_code", "Согласование", "approval"],
+            ["closure_policy_code", "Закрытие", "closure"],
+            ["visibility_policy_code", "Видимость", "visibility"],
+            ["diagnostic_policy_code", "Диагностика", "diagnostic"],
+            ["notification_policy_code", "Уведомления", "notification"],
+            ["reporting_policy_code", "Отчётность", "reporting"],
+          ].map(([key, label, kind]) => (
             <label className="text-sm font-medium text-slate-700" key={key}>
-              {label} policy override
-              <input
+              {label}
+              <select
                 className={fieldClass}
                 onChange={(event) => setOfferingDraft((current) => ({ ...current, [key]: event.currentTarget.value }))}
                 value={String(offeringDraft[key as keyof AdminServiceCatalogOffering] ?? "")}
-              />
+              >
+                <option value="">Наследовать</option>
+                {policyOptions(registry, kind).map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
             </label>
           ))}
           <label className="text-sm font-medium text-slate-700 md:col-span-2">
-            Reporting category
+            Категория отчётности
             <input
               className={fieldClass}
               onChange={(event) => setOfferingDraft((current) => ({ ...current, reporting_category: event.currentTarget.value }))}
@@ -525,7 +586,7 @@ function ServiceDetails({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button disabled={saveOfferingMutation.isPending} onClick={() => saveOfferingMutation.mutate()} type="button" variant="secondary">
-            Save offering draft
+            Сохранить черновик варианта
           </Button>
           <Button
             disabled={publishOfferingMutation.isPending || !selectedOffering || offeringValidationQuery.data?.blocking}
@@ -533,11 +594,11 @@ function ServiceDetails({
             type="button"
             variant="secondary"
           >
-            Publish offering
+            Опубликовать вариант
           </Button>
         </div>
         <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Advanced JSON</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON</summary>
           <textarea
             className="field-base mt-3 min-h-28 w-full px-3 py-2 font-mono text-xs"
             onChange={(event) => setDraftJson(event.currentTarget.value)}
@@ -553,7 +614,7 @@ function ServiceDetails({
               type="button"
               variant="outline"
             >
-              Load JSON into service form
+              Загрузить JSON в форму услуги
             </Button>
             <Button
               disabled={saveOfferingMutation.isPending || !draftJson.trim()}
@@ -563,7 +624,7 @@ function ServiceDetails({
               type="button"
               variant="outline"
             >
-              Load JSON into offering form
+              Загрузить JSON в форму варианта
             </Button>
           </div>
         </details>
@@ -571,7 +632,7 @@ function ServiceDetails({
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-800">Runtime simulation</h3>
+          <h3 className="text-sm font-semibold text-slate-800">Симуляция выполнения</h3>
           <Button
             disabled={simulationMutation.isPending || !selectedOffering}
             leadingIcon={<Play className="h-4 w-4" />}
@@ -579,39 +640,120 @@ function ServiceDetails({
             type="button"
             variant="secondary"
           >
-            Run
+            Запустить тестовый прогон
           </Button>
         </div>
-        <textarea
-          className="field-base min-h-28 w-full px-3 py-2 font-mono text-xs"
-          onChange={(event) => setSimulationInput(event.currentTarget.value)}
-          value={simulationInput}
-        />
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-sm font-medium text-slate-700">
+            Инициатор
+            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, requester: event.currentTarget.value }))} value={simulationDraft.requester} />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Устройство
+            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, device: event.currentTarget.value }))} value={simulationDraft.device} />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Локация
+            <input className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, location: event.currentTarget.value }))} value={simulationDraft.location} />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Ожидаемый приоритет
+            <select className={fieldClass} onChange={(event) => setSimulationDraft((current) => ({ ...current, expectedPriority: event.currentTarget.value }))} value={simulationDraft.expectedPriority}>
+              <option value="">Не проверять</option>
+              <option value="P0">P0</option>
+              <option value="P1">P1</option>
+              <option value="P2">P2</option>
+              <option value="P3">P3</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium text-slate-700 md:col-span-2">
+            Ответы формы / контекст проверки
+            <textarea
+              className="field-base mt-1 min-h-24 w-full px-3 py-2"
+              onChange={(event) => setSimulationDraft((current) => ({ ...current, answerSummary: event.currentTarget.value }))}
+              placeholder="Опишите данные формы, которые должны повлиять на маршрут, SLA, согласования и закрытие."
+              value={simulationDraft.answerSummary}
+            />
+          </label>
+        </div>
+        <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON payload</summary>
+          <pre className="mt-3 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
+            {JSON.stringify(buildGuidedSimulationPayload({ ...simulationDraft, serviceCode: service.code, offeringCode: selectedOffering?.code ?? "" }), null, 2)}
+          </pre>
+        </details>
         {simulationMutation.data ? (
           <pre className="max-h-80 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
             {JSON.stringify(simulationMutation.data, null, 2)}
           </pre>
         ) : null}
-        {simulationMutation.isError ? <p className="text-sm text-rose-700">Simulation failed.</p> : null}
+        {simulationMutation.isError ? <p className="text-sm text-rose-700">Симуляция не выполнена.</p> : null}
       </section>
     </aside>
   );
 }
 
 export function ServiceCatalogPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibilityFilter, setVisibilityFilter] = useState("all");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const requestedService = searchParams.get("service");
+  const requestedOffering = searchParams.get("offering");
+  const requestedTemplate = searchParams.get("template");
   const dashboardQuery = useQuery({
     queryKey: ["service-catalog-dashboard"],
     queryFn: fetchServiceCatalogDashboard,
+  });
+  const registryQuery = useQuery({
+    queryKey: ["service-catalog-helpdesk-model-registry"],
+    queryFn: fetchHelpdeskModelRegistry,
   });
 
   const services = dashboardQuery.data?.services ?? [];
   const offerings = dashboardQuery.data?.offerings ?? [];
   const selectedService = services.find((service) => service.code === selectedCode) ?? services[0] ?? null;
   const selectedOfferings = offerings.filter((offering) => offering.service_code === selectedService?.code);
+  const requestedServiceMissing = Boolean(
+    requestedService && services.length && !services.some((service) => service.code === requestedService),
+  );
+  const requestedOfferingMismatch = Boolean(
+    requestedOffering &&
+      !requestedServiceMissing &&
+      selectedService &&
+      !selectedOfferings.some((offering) => offering.full_code === requestedOffering),
+  );
+
+  useEffect(() => {
+    if (requestedService && services.some((service) => service.code === requestedService)) {
+      setSelectedCode(requestedService);
+    }
+  }, [requestedService, services]);
+
+  function updateCatalogSearchParams(update: { service?: string | null; offering?: string | null }) {
+    const next = new URLSearchParams(searchParams);
+    if (update.service === null) {
+      next.delete("service");
+    } else if (update.service) {
+      next.set("service", update.service);
+    }
+    if (update.offering === null) {
+      next.delete("offering");
+    } else if (update.offering) {
+      next.set("offering", update.offering);
+    }
+    setSearchParams(next);
+  }
+
+  function handleServiceSelect(serviceCode: string) {
+    setSelectedCode(serviceCode);
+    const currentOffering = searchParams.get("offering");
+    const offeringBelongsToService = currentOffering
+      ? offerings.some((offering) => offering.full_code === currentOffering && offering.service_code === serviceCode)
+      : false;
+    updateCatalogSearchParams({ service: serviceCode, offering: offeringBelongsToService ? currentOffering : null });
+  }
   const visibleServices = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return services.filter((service) => {
@@ -637,30 +779,60 @@ export function ServiceCatalogPanel() {
     <section className="workspace-page space-y-5 p-6">
       <header className="workspace-page__header">
         <div className="workspace-page__copy">
-          <p className="workspace-boot__eyebrow">Service desk governance</p>
-          <h1>Service Catalog</h1>
-          <p>Услуги, offerings, publication gates и runtime-equivalent simulation.</p>
+          <p className="workspace-boot__eyebrow">Управление обращениями</p>
+          <h1>Каталог услуг</h1>
+          <p>Услуги, варианты услуги, проверки публикации и симуляция выполнения.</p>
         </div>
         <dl className="workspace-page__stats">
           <div>
-            <dt>Services</dt>
+            <dt>Услуги</dt>
             <dd>{services.length}</dd>
           </div>
           <div>
-            <dt>Offerings</dt>
+            <dt>Варианты</dt>
             <dd>{offerings.length}</dd>
           </div>
         </dl>
       </header>
 
+      <div className="rounded-[1rem] border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+        Основная настройка шаблонов доступна в{" "}
+        <Link
+          className="font-semibold underline-offset-4 hover:underline"
+          to={`/app/admin/request-template-studio${selectedService ? `?service=${encodeURIComponent(selectedService.code)}` : ""}`}
+        >
+          Студии шаблонов
+        </Link>
+        . Каталог услуг остаётся экспертным разделом для lifecycle, overrides и публикации catalog-объектов.
+      </div>
+
+      {requestedTemplate ? (
+        <div className="inline-flex max-w-full items-center gap-2 rounded-pill border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+          <span className="text-slate-500">Контекст шаблона:</span>
+          <span className="min-w-0 truncate">{requestedTemplate}</span>
+        </div>
+      ) : null}
+
+      {requestedServiceMissing ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Услуга из ссылки не найдена.
+        </div>
+      ) : null}
+
+      {requestedOfferingMismatch ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Вариант услуги из ссылки не найден или не относится к выбранной услуге.
+        </div>
+      ) : null}
+
       <section className="surface-panel p-4">
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
           <label className="text-sm font-medium text-slate-700">
-            Search
+            Поиск
             <input className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Lifecycle
+            Жизненный цикл
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
               <option value="all">all</option>
               <option value="draft">draft</option>
@@ -669,7 +841,7 @@ export function ServiceCatalogPanel() {
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
-            Visibility
+            Видимость
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.currentTarget.value)}>
               <option value="all">all</option>
               <option value="public">public</option>
@@ -696,7 +868,12 @@ export function ServiceCatalogPanel() {
               {visibleServices.map((service) => {
                 const count = offerings.filter((offering) => offering.service_code === service.code).length;
                 return (
-                  <tr className="cursor-pointer hover:bg-brand-50/40" key={service.code} onClick={() => setSelectedCode(service.code)}>
+                  <tr
+                    aria-current={selectedService?.code === service.code ? "true" : undefined}
+                    className={`cursor-pointer hover:bg-brand-50/40 ${selectedService?.code === service.code ? "bg-brand-50/70" : ""}`}
+                    key={service.code}
+                    onClick={() => handleServiceSelect(service.code)}
+                  >
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-950">{service.public_title || service.code}</div>
                       <div className="text-xs text-slate-500">{service.code}</div>
@@ -717,7 +894,14 @@ export function ServiceCatalogPanel() {
             </div>
           ) : null}
         </div>
-        <ServiceDetails offerings={selectedOfferings} service={selectedService} />
+        <ServiceDetails
+          offerings={selectedOfferings}
+          onOfferingSelect={(offeringCode) => updateCatalogSearchParams({ service: selectedService?.code ?? null, offering: offeringCode })}
+          registry={registryQuery.data}
+          requestedOfferingCode={requestedOffering}
+          service={selectedService}
+          services={services}
+        />
       </section>
     </section>
   );

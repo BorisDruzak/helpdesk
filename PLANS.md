@@ -2,6 +2,12 @@
 
 This file is intentionally compact. Detailed phase logs live in git history and the referenced CI/release artifacts; this document keeps the current product state, accepted checkpoints, active work, verification evidence and rollback notes.
 
+## Release Workflow Guardrail
+
+- Full CI is reserved for a frozen release candidate SHA. During implementation and live staging, use targeted tests, `verify_workspace`, relevant build/typecheck and explicit `--gate quick`.
+- After green full CI, do not commit before full-gate release. Any new commit is a new candidate and requires a new full CI artifact.
+- Before full-gate release, run `python scripts/release_candidate_preflight.py`; it verifies `summary.commit == HEAD`, green status, webapp bundle artifact and dirty workspace state.
+
 ## Status History
 
 | Phase | Status | Essence | Key Evidence |
@@ -27,6 +33,152 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Requester/public surfaces must not expose internal QA, RCA, change risk notes, infrastructure details, rollback steps, queue ids, raw policy JSON or requester PII in analytics.
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
+
+## Active Work: Webapp Workspace Navigation IA
+
+Status: local verification passed / commit and remote browser signoff pending.
+
+Goal:
+
+- Restructure the new React webapp navigation from a flat mixed Support/Admin list into `workspace -> domain group -> local tabs`, while preserving routes, permissions, workspace access gates, ticket workspace shell behavior and public requester/help flows.
+
+Scope:
+
+- React webapp navigation source of truth, AppShell, AppSidebar, AppTopbar workspace switching, workspace access helpers, `/app/admin` landing page and route-level domain tabs.
+- Route semantics: `/app/support` remains the Support Work Center, `/app/admin` becomes the Admin Center instead of redirecting to inventory, and existing `/app/tickets`, `/app/admin/*`, `/app/help`, `/app/ticket*` routes remain intact.
+- Docs/navigation sync only where route semantics or source-of-truth navigation references change.
+
+Decisions:
+
+- Treat this as a React webapp UI boundary change, not a backend/API change. Do not add fake metrics or backend contracts.
+- Keep `/app/tickets` isolated from the global AppShell exactly as the current ticket workspace behavior requires.
+- Use permission-filtered navigation helpers as the single source for sidebar groups, workspace labels/search placeholder, active matching, domain tabs, admin/support landing cards and workspace switch fallbacks.
+- Store last support/admin workspace paths in localStorage only for safe workspace-owned `/app/*` paths, with SSR/test guards and fallback to workspace home when access or permission no longer allows a stored route.
+
+Verification target:
+
+- Focused Vitest: navigation helpers, sidebar workspace/domain behavior, router/admin center and workspace switch history.
+- Full webapp `pnpm test`, `pnpm build`, `python scripts/verify_workspace.py`, and if available `pnpm run check:remote:webapp`.
+- Browser MCP check at `https://192.168.100.17:9443/admin` for Support/Admin sidebar separation, Admin Center cards, domain tabs and workspace switch context restore.
+- Full CI/full gate remains an explicit final release checkpoint and must not be run without user request.
+
+Verification so far:
+
+- RED targeted tests failed before implementation for missing navigation helpers, admin center route and grouped sidebar behavior.
+- Focused `pnpm --dir webapp test -- src/app/navigation.test.ts src/components/shell/app-sidebar.test.tsx src/app/router.test.tsx` passed: 3 files / 17 tests.
+- Full `pnpm --dir webapp test` passed: 59 files / 283 tests.
+- `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q`, `python scripts/build_context_index.py --force`, `python scripts/verify_workspace.py` and `git diff --check` passed.
+- Remote quick release, `pnpm --dir webapp run check:remote:webapp` and MCP browser signoff remain pending until after local commit/push.
+
+## Active Work: Operator Command Center
+
+Status: accepted / release-candidate.
+
+Goal:
+
+- Make `/app/support` a Russian localized Operator Command Center action board that shows what requires operator attention now, while preserving the guided `/app/tickets` queue/workbench and existing ticket routes.
+
+Scope:
+
+- Backend typed endpoint `GET /api/web/support/command-center` derived from existing support queue/workspace signals without fake counters or per-ticket full workspace fanout.
+- P1/P2 hardening adds explicit batched `ticket_approvals`, `diagnostic_sessions` and `diagnostic_evidence` sources, plus server-side command-center search.
+- Frontend API layer, prioritization helper, lazy support page and navigation update.
+- UI controls include scope, queue, search and per-section item limit; search is sent to the typed endpoint and counts are based on the filtered candidate set.
+- Docs/navigation updates for the new route, API and section keys.
+- Live browser verification on the remote stand with a newly created ticket visible in the Command Center.
+
+Decisions:
+
+- Keep `/app/tickets` and `/app/tickets/:ticketId` as the guided ticket workspace.
+- Use compact support queue rows, chat counters, SLA/OLA fields, batched approval/operation/device/diagnostics/passport fields when available, and deterministic recent-ticket grouping for similar spikes.
+- Return all command-center sections with real count `0` when a source signal is unavailable; do not synthesize fake activity.
+- Prefer links into `/app/tickets/:ticketId`; section actions may fall back to `/app/tickets` when smart-view query support is not guaranteed.
+
+Verification target:
+
+- Backend command-center contract/aggregation tests plus relevant support queue tests.
+- Frontend command-center page/prioritization/navigation tests, then webapp build.
+- `python -m compileall -q server`, `git diff --check`, `python scripts/verify_workspace.py`.
+- Quick remote deploy/release and Browser MCP smoke at `https://192.168.100.17:9443/admin` for `/app/support`, `/app/tickets` and live ticket creation/display.
+- Full CI/full gate remains the final publication checkpoint for a release cut; do not reuse a green artifact from a different commit.
+
+Known constraints:
+
+- Local Windows DB-backed `server/tests/test_operator_command_center.py` is slow but now completes on the local harness; keep full CI/full gate as the authoritative release publication checkpoint.
+
+Current P1/P2 hardening checklist:
+
+- Add requester-role regression coverage for `/api/web/support/command-center`; intended model is support-only, so requester tokens must receive 403.
+- Mark requester messages as read when a support operator opens the real ticket workspace, using the existing ticket read endpoint rather than hover/preview behavior.
+- Make `/app/tickets?smart_view=...` and `/app/tickets?search=...` open the queue view with visible filters; Command Center aliases are mapped to supported queue smart views.
+- Change similar-spike links from generic `/app/tickets` to a filtered search context so operators see the group samples first.
+- Add command-center performance logging and data-quality fallbacks for historical mojibake/junk titles without modifying stored data blindly.
+- Live acceptance evidence: requester-role API returns 403, remote branch is `codex/inventory-v4-registration-presence`, product HEAD `ca8818eb` opened `/app/support` and `/app/tickets`, `/app/tickets?smart_view=unassigned|sla_risk` applied visible queue filters, similar-spike search opened filtered ticket context, live ticket `T-000578` entered `unread_user_messages`, opening `/app/tickets/930461f7-9f88-43c6-9ac5-e5676643a9cd` triggered `POST /api/web/support/tickets/{ticket_id}/read`, and after refresh it disappeared from unread while staying in `operator_action`, `new_unassigned` and `sla_risk`.
+
+## Active Work: P1 Device Operations
+
+Status: implemented / production-oriented cut pending release signoff.
+
+Goal:
+
+- Add a single Russian localized device/agent operations workspace where an admin or support engineer can inspect inventory, binding, agent version/update, modules, outbox, recent operations, Observer traces, provisioning/auth and Remote Assist availability for one device without replacing the existing expert screens.
+
+Implemented:
+
+- Backend typed read endpoint `GET /api/web/admin/device-operations/{device_id}` with query fallback, DTOs and `DeviceOperationsService` aggregation over existing devices, inventory, modules, outbox, operations, Observer, connection request/token audit and Remote Assist data.
+- React route `/app/admin/device-operations/:deviceId` plus query fallback `/app/admin/device-operations?device_id=...`, typed frontend client and page with overview, inventory, agent/update, modules, outbox/operations, Observer, Remote Assist and provisioning/auth tabs.
+- Deep links from Inventory, Device Card and the ticket device/offline banner to Device Operations while keeping the old Inventory, Device Card, Agent Updates, Modules, Observer and ticket routes intact.
+
+Read-only / known gaps:
+
+- Direct module rollout, operation retry/cancel, provisioning approve/reject and Remote Assist request buttons are intentionally not implemented in Device Operations until safe action-specific permission/consent flows are exposed for this workspace.
+- Agent Updates and Observer row-level links into Device Operations are left as follow-up where device_id is available in those tables without a risky refactor.
+
+Verification target:
+
+- `server/tests/test_device_operations.py`, relevant support/inventory regressions, `python -m compileall -q server`.
+- `pnpm --dir webapp test -- device-operations`, focused inventory/tickets tests and `pnpm --dir webapp build`.
+- `python scripts/verify_workspace.py`, `git diff --check`, quick remote/browser smoke at `https://192.168.100.17:9443/admin` before release acceptance.
+
+## Active Work: P0 Web UI Workbench and Studio Hardening
+
+Status: accepted / production-oriented cut in progress.
+
+Goal:
+
+- Remove visible clipping/overflow from `/app/tickets`, make the ticket workspace task-guided, replace primary raw code/JSON inputs with pickers/guided forms, add a minimal Request Template Studio workflow, and localize the target admin/support screens in Russian while preserving existing endpoints and DTOs.
+
+Scope:
+
+- React webapp only by default: `/app/tickets`, `/app/admin/changes`, `/app/admin/forms`, `/app/admin/service-catalog`, `/app/admin/policy-health`, `/app/admin/device`, navigation and shared admin helpers.
+- Backend changes only if existing web API data is insufficient for typed pickers. Prefer existing Service Catalog dashboard, Helpdesk Model registry and Policy Health endpoints.
+- Preserve raw/expert JSON modes as collapsed or explicitly expert-only surfaces.
+- Do not add fake catalog, policy, device, ticket or problem data.
+
+Decisions:
+
+- Treat the user's P0.0-P0.3 acceptance criteria as the approved design specification for this pass.
+- First stabilize visible ticket workspace defects and tool availability grouping.
+- Use shared TS helpers for catalog/policy/template option mapping and guided simulation payload construction.
+- Implement Request Template Studio as a new admin route composed from existing Service Catalog, Forms Builder registry and Policy Health data; deep links should carry service/offering/template query params where possible.
+- Russian UI labels are required for target screens, while technical ids remain visible only as metadata or expert fields.
+
+Verification target:
+
+- `pnpm --dir webapp test` focused component/API tests for picker mapping, guided simulation payloads and tool availability grouping.
+- `pnpm --dir webapp build` because `package.json` has no separate `typecheck` or `lint` scripts.
+- `python scripts/verify_workspace.py`.
+- Focused server tests only if server DTO/routes change.
+- Browser MCP smoke at `https://192.168.100.17:9443/admin` for `/app/tickets`, `/app/admin/changes`, `/app/admin/forms`, `/app/admin/service-catalog`, `/app/admin/policy-health` and `/app/admin/device`.
+
+Handoff notes:
+
+- If the whole P0 scope cannot land in one pass, do not leave `/app/tickets` with clipping or duplicated offline reasons. P0.0 and P0.3 take priority over broad visual polish.
+- Current production cut fixes Request Template Studio simulation to send catalog context as top-level `service_code` / `offering_code` / `offering_full_code` and adds selected-ticket compact device/agent/inventory context in `/app/tickets` without adding inventory fanout to queue rows.
+- 2026-05-20 Studio unification cut promotes `/app/admin/request-template-studio` to the primary request-template setup workflow: service/offering/template selectors, binding summary, embedded form preview, policy binding cards with Policy Health issues, guided simulation with human-readable result cards, publication gates and context-preserving links to Forms Builder, Service Catalog and Policy Health. Forms Builder, Service Catalog and Policy Health remain expert/deep surfaces and now show a Studio banner.
+- 2026-05-20 P1 Studio deep-link hardening closed: Service Catalog restores `service`/`offering` query context from Studio links, warns on unknown or mismatched context, shows `template` as a context hint, and Policy Health expert simulation now sends query-derived catalog context as top-level `service_code` / `offering_code` / `offering_full_code` with the same body shown in Expert JSON.
+- Read-only gaps: policy/template binding edits and publish-from-Studio are not implemented because no safe typed update/publish contract is exposed for Studio. Use Forms Builder / Service Catalog / expert policy editor for those writes until backend/domain service support is added.
+- Verification for this cut: focused webapp tests for Studio payload/API and `TicketDeviceAgentPanel`, `pnpm --dir webapp build`, `server/tests/test_support_inventory_context.py`, and Python compile checks. A DB-backed support workspace route test hung on local Windows and is left for Linux/CI or remote DB verification.
 
 ## Latest Accepted Work: P5 Change Enablement
 
@@ -323,3 +475,31 @@ Implementation notes:
 - Server/API: `/api/web/admin/devices/{device_id}/inventory` is extended backward-compatibly with `binding_history`, `refresh_runs` and `last_refresh_run`; new endpoints cover binding history, binding CSV import/export, fleet inventory CSV export, dashboard aggregation and refresh run listing.
 - Webapp: `/app/admin/inventory?panel=fleet` renders fleet summary, CSV export buttons and dry-run/apply binding import; `DeviceInventoryPanel` shows stale status, tags/status binding fields, binding change history and refresh run history.
 - Verification: remote PostgreSQL migration `095 -> 096` completed, browser smoke on `https://192.168.100.17:9443/admin` verified the fleet dashboard after fixing the dashboard `last_requested_at` null case, local focused/full agent and webapp tests passed, and the branch was pushed to GitHub.
+
+## Active Work: Inventory v4 / Fleet Operations, Workplace Registration v1 and Presence v1
+
+Status: accepted / verified on branch `codex/inventory-v4-registration-presence`; remote quick release, PostgreSQL migration and browser smoke passed on 2026-05-19. Full release gate remains an explicit final-release checkpoint.
+
+Goal:
+
+- Extend lightweight inventory into fleet operations without building a procurement/accounting CMDB: selected/stale/missing/department/building bulk refresh, operation tracking, reports, XLSX export, profile-based workplace binding suggestions and safe workplace presence snapshots.
+
+Scope:
+
+- Agent: add `presence.collect` as a core built-in read-only module with `output_schema`, `output_contract.kind=device.presence.snapshot` and `presentation_schema`; keep `inventory.collect` shape and descriptors stable.
+- Server: add migration `097_inventory_v4_registration_presence` for bulk operations/items, binding suggestions and presence snapshots/daily summaries; extend inventory dashboard/report/export APIs; persist `presence.collect` command results; create non-destructive binding suggestions from agent profiles.
+- Webapp: enhance `/app/admin/inventory?panel=fleet` with bulk refresh, attention groups and XLSX export; enhance `DeviceInventoryPanel` with agent profiles, binding suggestions and workplace presence.
+- Privacy: presence is endpoint availability/session state only. It must not collect screenshots, keystrokes, mouse coordinates, window titles, browser history, full URLs, document contents, clipboard contents, messages or personal file listings. Agent profiles may suggest binding fields but must not overwrite confirmed binding automatically.
+
+Verification target:
+
+- Agent focused: `python -m pytest pc_agent/tests/test_presence_collect.py pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_inventory_profiles.py pc_agent/tests/test_registry_and_module_loading.py -v --tb=short`.
+- Server focused: `python -m pytest server/tests/test_inventory_v4_service.py server/tests/test_inventory_v3_service.py server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -v --tb=short`; DB-backed v3/v4 tests are expected to run on Linux/CI and skip on Windows.
+- Webapp: `pnpm --dir webapp test`, `pnpm --dir webapp build`, `pnpm --dir webapp exec tsc --noEmit`.
+- General: `python -m compileall -q pc_agent server shared scripts/navigation_catalog.py`, docs link check, workspace verify, `git diff --check`, and remote PostgreSQL migration/browser smoke before release acceptance.
+
+Verification:
+
+- Passed: focused `presence.collect`/inventory/registry/config-loader agent tests, full `pc_agent/tests/`, focused server no-db/inventory presentation tests, webapp full Vitest suite, webapp typecheck/build, `compileall`, docs link check, workspace verification and diff whitespace checks.
+- Passed remote/browser smoke: `/app/admin/inventory` fleet dashboard opens, bulk-refresh dry-run works, `/app/admin/device` shows the inventory card, and `DeviceInventoryPanel` now exposes Registration/Presence tabs even before the first inventory snapshot.
+- Windows-local DB-backed inventory v3/v4 service tests skip by design. The remote runtime venv does not include pytest, so DB-backed Linux pytest must run in CI or a test venv, not on the production runtime venv.

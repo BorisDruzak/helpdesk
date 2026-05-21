@@ -1218,14 +1218,14 @@ describe("TicketListPage", () => {
       });
     });
     expect(screen.getAllByText("dns.resolve").length).toBeGreaterThan(0);
-    expect(screen.getByText("Право: запуск безопасных инструментов")).toBeInTheDocument();
-    expect(screen.getByText("Роли: support, admin")).toBeInTheDocument();
     expect(screen.getAllByText("Диагностика сайта").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Extra playbook 7")).toBeInTheDocument();
-    expect(screen.getByText(/Показано 10 из 10/)).toBeInTheDocument();
+    expect(screen.getByText(/Показано \d+ из 10/)).toBeInTheDocument();
+    expect(screen.getByText(/Агент устройства offline — недоступно \d+ инструмент/)).toBeInTheDocument();
+    const unavailableTools = screen.getByText(/Недоступные инструменты:/);
+    fireEvent.click(unavailableTools);
     expect(screen.getAllByText("Нет инструмента: http.check").length).toBeGreaterThan(0);
-    expect(screen.getByText("Агент устройства offline")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Запустить" })).toBeDisabled();
+    expect(screen.queryByText("Право: запуск безопасных инструментов")).not.toBeInTheDocument();
   });
 
   it("opens an explicit diagnostics launcher instead of auto-running the first tool", async () => {

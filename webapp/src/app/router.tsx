@@ -1,11 +1,12 @@
 import { Suspense, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
-import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
 import {
+  AdminCenterPage,
   AdminAgentUpdatesPage,
   AdminChangesPage,
+  AdminDeviceOperationsPage,
   AdminCapabilitiesPage,
   AdminDevicePage,
   AdminAccessPage,
@@ -19,12 +20,14 @@ import {
   AdminProblemsPage,
   AdminQualityPage,
   AdminRegistryPage,
+  AdminRequestTemplateStudioPage,
   AdminServiceCatalogPage,
   HelpPage,
   KnowledgeBasePage,
   ReportsPage,
   RequesterTicketPage,
   SettingsPage,
+  SupportCommandCenterPage,
   TicketDetailPage,
   TicketListPage,
   TicketPassportPrintPage,
@@ -197,7 +200,7 @@ export const appRoutes: RouteObject[] = [
             path: "support",
             element: (
               <WorkspaceAccessGate workspace="support">
-                <Navigate replace to={SUPPORT_HOME_PATH} />
+                <SupportCommandCenterPage />
               </WorkspaceAccessGate>
             )
           },
@@ -253,7 +256,7 @@ export const appRoutes: RouteObject[] = [
             path: "admin",
             element: (
               <WorkspaceAccessGate workspace="admin">
-                <Navigate replace to={ADMIN_HOME_PATH} />
+                <AdminCenterPage />
               </WorkspaceAccessGate>
             )
           },
@@ -270,6 +273,22 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminDevicePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/device-operations",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminDeviceOperationsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/device-operations/:deviceId",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminDeviceOperationsPage />
               </WorkspaceAccessGate>
             )
           },
@@ -318,6 +337,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminFormsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/request-template-studio",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminRequestTemplateStudioPage />
               </WorkspaceAccessGate>
             )
           },

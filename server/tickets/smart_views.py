@@ -43,6 +43,14 @@ DEFAULT_SMART_VIEWS: tuple[SmartView, ...] = (
 )
 
 _SMART_VIEW_IDS = {view.id for view in DEFAULT_SMART_VIEWS}
+_SMART_VIEW_ALIASES = {
+    "new_unassigned": "unassigned",
+    "operator_action": "my_action",
+    "requires_operator_action": "my_action",
+    "unread_user_messages": "requester_reply",
+    "pending_approval": "waiting_approval",
+    "similar_tickets_spike": "mass_incident_candidates",
+}
 
 _CUSTOM_FILTER_KEYS = {
     "status",
@@ -144,6 +152,7 @@ _SORT_DIRECTIONS = {"asc", "desc"}
 
 def normalize_smart_view_id(raw_value: Any, *, custom_view_ids: set[str] | None = None) -> str:
     value = str(raw_value or "all").strip()
+    value = _SMART_VIEW_ALIASES.get(value, value)
     if value in _SMART_VIEW_IDS:
         return value
     if custom_view_ids and value in custom_view_ids:

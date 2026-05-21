@@ -147,9 +147,9 @@ export async function validateServiceCatalogObject(
 }
 
 export async function simulateServiceCatalog(payload: {
-  service_code?: string;
-  offering_code?: string;
-  offering_full_code?: string;
+  service_code?: string | null;
+  offering_code?: string | null;
+  offering_full_code?: string | null;
   request_form_data: Record<string, unknown>;
   custom_fields?: Record<string, unknown>;
   device_metadata?: Record<string, unknown>;

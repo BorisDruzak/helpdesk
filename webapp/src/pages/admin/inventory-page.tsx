@@ -1,4 +1,4 @@
-import {
+﻿import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
@@ -9,6 +9,7 @@ import {
   KeyRound,
   Layers3,
   Monitor,
+  MonitorCog,
   MoreHorizontal,
   RefreshCcw,
   Rocket,
@@ -44,9 +45,12 @@ import {
   type AdminDevicesPayload,
   type AdminInventoryBindingImportResult,
   type AdminInventoryDashboardPayload,
+  type AdminBulkRefreshResult,
   type AdminStatusFilter,
   adminInventoryBindingsExportUrl,
+  adminInventoryExportXlsxUrl,
   adminInventoryExportUrl,
+  bulkRefreshAdminInventory,
   fetchAdminInventoryDashboard,
   importAdminInventoryBindings,
 } from "../../features/admin/api";
@@ -140,6 +144,9 @@ export function AdminInventoryPage() {
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [cleanupFeedback, setCleanupFeedback] = useState<string | null>(null);
   const [fleetStaleDays, setFleetStaleDays] = useState("7");
+  const [bulkMode, setBulkMode] = useState<"stale" | "missing" | "department" | "building">("stale");
+  const [bulkFilter, setBulkFilter] = useState("");
+  const [bulkResult, setBulkResult] = useState<AdminBulkRefreshResult | null>(null);
   const [bindingCsvText, setBindingCsvText] = useState("");
   const [bindingImportResult, setBindingImportResult] = useState<AdminInventoryBindingImportResult | null>(null);
   const deferredQuery = useDeferredValue(query);
@@ -260,6 +267,27 @@ export function AdminInventoryPage() {
     },
   });
 
+  const bulkRefreshMutation = useMutation({
+    mutationFn: (dryRun: boolean) =>
+      bulkRefreshAdminInventory({
+        mode: bulkMode,
+        dry_run: dryRun,
+        filters: {
+          stale_days: Number.parseInt(fleetStaleDays, 10) || 7,
+          online_only: true,
+          ...(bulkMode === "department" && bulkFilter.trim() ? { department: bulkFilter.trim() } : {}),
+          ...(bulkMode === "building" && bulkFilter.trim() ? { building: bulkFilter.trim() } : {}),
+        },
+        wave: { batch_size: 10, delay_seconds: 60, skip_offline: true },
+      }),
+    onSuccess: async (result) => {
+      setBulkResult(result);
+      if (!result.dry_run) {
+        await queryClient.invalidateQueries({ queryKey: ["admin-inventory-dashboard"] });
+      }
+    },
+  });
+
   const approveRequestMutation = useMutation({
     mutationFn: approveAdminConnectionRequest,
     onSuccess: async () => {
@@ -325,6 +353,15 @@ export function AdminInventoryPage() {
     });
   }
 
+  function openDeviceOperations() {
+    if (!selectedDevice) {
+      return;
+    }
+    startTransition(() => {
+      navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
+    });
+  }
+
   return (
     <section className="space-y-5">
       <PageHeading
@@ -348,6 +385,15 @@ export function AdminInventoryPage() {
               size="sm"
             >
               Карточка
+            </Button>
+            <Button
+              disabled={!selectedDevice}
+              leadingIcon={<MonitorCog className="h-4 w-4" />}
+              onClick={openDeviceOperations}
+              size="sm"
+              variant="outline"
+            >
+              Операции устройства
             </Button>
           </>
         }
@@ -503,12 +549,20 @@ export function AdminInventoryPage() {
             {activePanel === "fleet" ? (
               <FleetInventoryPanel
                 dashboard={fleetDashboardQuery.data ?? null}
+                bulkBusy={bulkRefreshMutation.isPending}
+                bulkFilter={bulkFilter}
+                bulkMode={bulkMode}
+                bulkResult={bulkResult}
                 importBusy={importBindingsMutation.isPending}
                 importResult={bindingImportResult}
                 isLoading={fleetDashboardQuery.isLoading}
+                onApplyBulk={() => bulkRefreshMutation.mutate(false)}
                 onApplyImport={() => importBindingsMutation.mutate(false)}
+                onDryRunBulk={() => bulkRefreshMutation.mutate(true)}
                 onDryRunImport={() => importBindingsMutation.mutate(true)}
                 onRefresh={() => void fleetDashboardQuery.refetch()}
+                setBulkFilter={setBulkFilter}
+                setBulkMode={setBulkMode}
                 setCsvText={setBindingCsvText}
                 setStaleDays={setFleetStaleDays}
                 staleDays={fleetStaleDays}
@@ -535,6 +589,7 @@ export function AdminInventoryPage() {
             navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
           }}
           onOpenDeviceCard={openDeviceCard}
+          onOpenDeviceOperations={openDeviceOperations}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
           rolloutAssignments={rolloutAssignments}
@@ -796,26 +851,42 @@ function TokensPanel({
 }
 
 function FleetInventoryPanel({
+  bulkBusy,
+  bulkFilter,
+  bulkMode,
+  bulkResult,
   csvText,
   dashboard,
   importBusy,
   importResult,
   isLoading,
+  onApplyBulk,
   onApplyImport,
+  onDryRunBulk,
   onDryRunImport,
   onRefresh,
+  setBulkFilter,
+  setBulkMode,
   setCsvText,
   setStaleDays,
   staleDays,
 }: {
+  bulkBusy: boolean;
+  bulkFilter: string;
+  bulkMode: "stale" | "missing" | "department" | "building";
+  bulkResult: AdminBulkRefreshResult | null;
   csvText: string;
   dashboard: AdminInventoryDashboardPayload | null;
   importBusy: boolean;
   importResult: AdminInventoryBindingImportResult | null;
   isLoading: boolean;
+  onApplyBulk: () => void;
   onApplyImport: () => void;
+  onDryRunBulk: () => void;
   onDryRunImport: () => void;
   onRefresh: () => void;
+  setBulkFilter: (value: string) => void;
+  setBulkMode: (value: "stale" | "missing" | "department" | "building") => void;
   setCsvText: (value: string) => void;
   setStaleDays: (value: string) => void;
   staleDays: string;
@@ -859,6 +930,15 @@ function FleetInventoryPanel({
           >
             CSV привязки
           </Button>
+          <Button
+            onClick={() => {
+              window.location.href = adminInventoryExportXlsxUrl(Number.parseInt(staleDays, 10) || 7);
+            }}
+            size="sm"
+            variant="outline"
+          >
+            Excel инвентарь
+          </Button>
         </div>
       </div>
 
@@ -872,6 +952,54 @@ function FleetInventoryPanel({
         <MiniMetric label="Нет привязки" value={String(totals.missing_binding ?? 0)} />
         <MiniMetric label="Нет инв. номера" value={String(bindingGaps.missing_inventory_number ?? 0)} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Массовое обновление инвентаря</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto_auto]">
+            <Select value={bulkMode} onChange={(event) => setBulkMode(event.target.value as typeof bulkMode)}>
+              <option value="stale">Устаревшие</option>
+              <option value="missing">Без инвентаря</option>
+              <option value="department">По отделу</option>
+              <option value="building">По зданию</option>
+            </Select>
+            <Input
+              disabled={!["department", "building"].includes(bulkMode)}
+              onChange={(event) => setBulkFilter(event.target.value)}
+              placeholder={bulkMode === "department" ? "Отдел" : bulkMode === "building" ? "Здание" : "Фильтр не требуется"}
+              value={bulkFilter}
+            />
+            <Button disabled={bulkBusy} onClick={onDryRunBulk} size="sm" variant="outline">
+              Проверить выборку
+            </Button>
+            <Button disabled={bulkBusy || !bulkResult} onClick={onApplyBulk} size="sm">
+              Запустить волнами
+            </Button>
+          </div>
+          {bulkResult ? (
+            <div className="rounded-lg bg-surface-subtle p-3 text-sm text-slate-700">
+              <div className="flex flex-wrap gap-3">
+                <span>Выбрано: {bulkResult.selected_count}</span>
+                <span>Онлайн: {bulkResult.online_count}</span>
+                <span>Офлайн: {bulkResult.offline_count}</span>
+                <span>Волн: {bulkResult.estimated_waves}</span>
+                {bulkResult.operation_id ? <span>Операция: {bulkResult.operation_id}</span> : null}
+              </div>
+              <div className="mt-2 max-h-40 overflow-auto">
+                {bulkResult.items.slice(0, 20).map((item) => (
+                  <div className="grid gap-2 border-t border-border py-1 md:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]" key={item.device_id}>
+                    <span>{item.hostname || item.device_id}</span>
+                    <span>{item.status}</span>
+                    <span className="text-slate-500">{item.reason ?? "-"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
@@ -903,6 +1031,30 @@ function FleetInventoryPanel({
                     ))}
               </div>
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Требует внимания</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {Object.entries(dashboard?.attention ?? {}).length === 0 ? (
+              <p className="text-slate-500">Нет данных для групп внимания.</p>
+            ) : (
+              Object.entries(dashboard?.attention ?? {}).map(([group, items]) => (
+                <div className="rounded-lg bg-surface-subtle px-3 py-2" key={group}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-slate-800">{group}</span>
+                    <Badge tone={items.length > 0 ? "warning" : "success"}>{items.length}</Badge>
+                  </div>
+                  {items.slice(0, 3).map((item, index) => (
+                    <p className="mt-1 text-slate-500" key={`${group}-${index}`}>
+                      {String(item.hostname ?? item.device_id ?? item.inventory_number ?? "device")}
+                    </p>
+                  ))}
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1030,6 +1182,7 @@ function AgentDetailsPanel({
   onCleanupPreview,
   onOpenAgentUpdates,
   onOpenDeviceCard,
+  onOpenDeviceOperations,
   onOpenPlaybooks,
   request,
   rolloutAssignments,
@@ -1042,6 +1195,7 @@ function AgentDetailsPanel({
   onCleanupPreview: () => void;
   onOpenAgentUpdates: () => void;
   onOpenDeviceCard: () => void;
+  onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
   request: AdminConnectionRequestItem | null;
   rolloutAssignments: AdminDevicesPayload["rollout"];
@@ -1166,6 +1320,15 @@ function AgentDetailsPanel({
                 variant="outline"
               >
                 Открыть карточку
+              </Button>
+              <Button
+                className="w-full justify-start"
+                leadingIcon={<MonitorCog className="h-4 w-4" />}
+                onClick={onOpenDeviceOperations}
+                size="sm"
+                variant="outline"
+              >
+                Операции устройства
               </Button>
               <Button
                 className="w-full justify-start"

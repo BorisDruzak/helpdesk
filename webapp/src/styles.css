@@ -105,6 +105,25 @@
     background: #334867;
   }
 
+  .support-workspace button,
+  .support-workspace [role="button"] {
+    min-width: 0;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .support-workspace p,
+  .support-workspace span,
+  .support-workspace dd,
+  .support-workspace td {
+    min-width: 0;
+    word-break: normal;
+  }
+
+  .support-workspace .technical-token {
+    overflow-wrap: anywhere;
+  }
+
   .support-workspace__column-resizer {
     border: 0;
     background: transparent;

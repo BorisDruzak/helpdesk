@@ -27,6 +27,7 @@ enabled_modules:
   - "screen"
   - "diag_logs"
   - "inventory"
+  - "presence"
 
 ui:
   enabled: true

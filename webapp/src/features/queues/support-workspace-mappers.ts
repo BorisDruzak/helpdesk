@@ -2,6 +2,7 @@ import type {
   SupportQueuePayload,
   SupportTicketClosurePlanPayload,
   SupportTicketDetailPayload,
+  SupportTicketInventoryContext,
   SupportTicketKnowledgeSuggestionsPayload,
   SupportTicketPassportReadinessPayload,
   SupportTicketPassportPayload,
@@ -1079,6 +1080,7 @@ export function mapSupportWorkspaceViewModel({
   closurePlan,
   detail,
   knowledge,
+  inventoryContext,
   passport,
   passportReadiness,
   playbooks,
@@ -1093,6 +1095,7 @@ export function mapSupportWorkspaceViewModel({
   closurePlan?: SupportTicketClosurePlanPayload;
   detail?: SupportTicketDetailPayload;
   knowledge?: SupportTicketKnowledgeSuggestionsPayload;
+  inventoryContext?: SupportTicketInventoryContext | null;
   passport?: SupportTicketPassportPayload;
   passportReadiness?: SupportTicketPassportReadinessPayload;
   playbooks?: SupportTicketPlaybooksPayload;
@@ -1166,6 +1169,7 @@ export function mapSupportWorkspaceViewModel({
     selectedTicket,
     right: {
       context,
+      inventoryContext: inventoryContext ?? null,
       tools: mapWorkspaceTools(tools, context?.device.online ?? true),
       playbooks: mapWorkspacePlaybooks(playbooks),
       operations: mapWorkspaceOperations(detail),
@@ -1177,6 +1181,7 @@ export function mapSupportWorkspaceViewModel({
       queue,
       detail,
       knowledge,
+      inventoryContext: inventoryContext ?? null,
       tools,
       playbooks,
       passport,

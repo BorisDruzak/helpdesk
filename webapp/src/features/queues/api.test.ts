@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchSupportTicketKnowledgeSuggestions, fetchSupportTicketTimeline, fetchSupportWorkspaceSummary } from "./api";
+import {
+  fetchSupportTicketKnowledgeSuggestions,
+  fetchSupportTicketTimeline,
+  fetchSupportWorkspaceSummary,
+  postSupportTicketRead,
+} from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -125,5 +130,33 @@ describe("support queue API", () => {
     const item = timeline.items.at(0);
     expect(item?.event_category).toBe("diagnostics");
     expect(item?.operation_steps?.at(0)?.name).toBe("DNS");
+  });
+
+  it("marks requester messages as read through the ticket read endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "success",
+          ticket_id: "ticket-1",
+          read_scope: "staff",
+          last_read_event_id: 42,
+          no_op: false,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await postSupportTicketRead("ticket-1", 42);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/read", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ last_read_event_id: 42 }),
+    });
+    expect(result.last_read_event_id).toBe(42);
   });
 });

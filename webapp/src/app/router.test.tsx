@@ -89,6 +89,49 @@ function createAdminSession() {
   };
 }
 
+function createCommandCenterPayload() {
+  return {
+    generated_at: "2026-05-19T10:00:00+00:00",
+    scope: "team",
+    filters: {
+      queue: null,
+      assignee: null,
+      query: null,
+      window_hours: 24,
+      limit_per_section: 8
+    },
+    summary: {
+      total_attention_items: 0,
+      critical_count: 0,
+      warning_count: 0,
+      info_count: 0,
+      new_unassigned_count: 0,
+      operator_action_count: 0,
+      unread_user_messages_count: 0,
+      sla_risk_count: 0,
+      ola_risk_count: 0,
+      pending_approval_count: 0,
+      pending_consent_count: 0,
+      failed_operation_count: 0,
+      agent_offline_active_count: 0,
+      diagnostics_recommended_count: 0,
+      closure_blocked_count: 0,
+      similar_spikes_count: 0
+    },
+    sections: [],
+    metadata: {}
+  };
+}
+
+function createWorkspaceSummaryPayload() {
+  return {
+    views: {},
+    queues: [],
+    smart_view_counts: [],
+    smart_view_options: []
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -114,7 +157,7 @@ describe("appRoutes", () => {
     expect(screen.getByText(/op1 \/ 1\.Abcdef/)).toBeInTheDocument();
   });
 
-  it("opens the new tickets page for support role and hides admin menu", async () => {
+  it("opens the operator command center for support role and keeps tickets in support menu", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -122,6 +165,20 @@ describe("appRoutes", () => {
         return jsonResponse({
           status: "success",
           data: createSupportSession()
+        });
+      }
+
+      if (url.startsWith("/api/web/support/command-center")) {
+        return jsonResponse({
+          status: "success",
+          data: createCommandCenterPayload()
+        });
+      }
+
+      if (url.startsWith("/api/web/support/workspace/summary")) {
+        return jsonResponse({
+          status: "success",
+          data: createWorkspaceSummaryPayload()
         });
       }
 
@@ -130,12 +187,13 @@ describe("appRoutes", () => {
 
     renderApp(["/app"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Тикеты" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
+    expect((await screen.findAllByRole("link", { name: /Рабочий центр/ })).length).toBeGreaterThan(0);
     expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 
-  it("redirects /app/support to the new support ticket workspace", async () => {
+  it("renders /app/support as the operator command center", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -146,30 +204,17 @@ describe("appRoutes", () => {
         });
       }
 
-      if (url.startsWith("/api/web/support/queue")) {
+      if (url.startsWith("/api/web/support/command-center")) {
         return jsonResponse({
           status: "success",
-          data: {
-            scope: "all",
-            query: "",
-            status_filter: "all",
-            smart_view: "all",
-            summary: {
-              visible_count: 0,
-              selected_ticket_id: null,
-              scope_counts: [],
-              status_counts: [],
-              queue_counts: [],
-              smart_view_counts: [],
-              smart_view_options: []
-            },
-            filters: {
-              scope_options: [],
-              status_options: [],
-              smart_view_options: []
-            },
-            tickets: []
-          }
+          data: createCommandCenterPayload()
+        });
+      }
+
+      if (url.startsWith("/api/web/support/workspace/summary")) {
+        return jsonResponse({
+          status: "success",
+          data: createWorkspaceSummaryPayload()
         });
       }
 
@@ -178,8 +223,8 @@ describe("appRoutes", () => {
 
     const { router } = renderApp(["/app/support"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Тикеты" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/app/tickets");
+    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/app/support");
   });
 
   it("returns support user from /app/admin to tickets after login", async () => {
@@ -200,6 +245,20 @@ describe("appRoutes", () => {
         });
       }
 
+      if (url.startsWith("/api/web/support/command-center")) {
+        return jsonResponse({
+          status: "success",
+          data: createCommandCenterPayload()
+        });
+      }
+
+      if (url.startsWith("/api/web/support/workspace/summary")) {
+        return jsonResponse({
+          status: "success",
+          data: createWorkspaceSummaryPayload()
+        });
+      }
+
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
@@ -213,11 +272,11 @@ describe("appRoutes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
-    expect(await screen.findByRole("heading", { name: "Тикеты" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 
-  it("redirects /app/admin to inventory for admin session", async () => {
+  it("renders /app/admin as the admin center for admin session", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -228,14 +287,22 @@ describe("appRoutes", () => {
         });
       }
 
+      if (url.endsWith("/api/web/notifications/unread_count")) {
+        return jsonResponse({ status: "ok", unread_count: 0 });
+      }
+
+      if (url.endsWith("/api/web/admin/connection-requests")) {
+        return jsonResponse({ status: "success", data: { connection_requests: [] } });
+      }
+
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
     renderApp(["/app/admin"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Агенты" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Инвентарь устройств/ })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Устройства и агенты/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
   });
 
   it("opens Capability Studio for admin users", async () => {
@@ -316,7 +383,7 @@ describe("appRoutes", () => {
     renderApp(["/app/admin/capabilities"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Capabilities" }, { timeout: 5000 })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Возможности/ })).toBeInTheDocument();
+    expect((await screen.findAllByRole("link", { name: /Возможности/ })).length).toBeGreaterThan(0);
     expect(await screen.findByText("server.dns.resolve")).toBeInTheDocument();
     expect(await screen.findByText("zabbix.problems.lookup")).toBeInTheDocument();
   });

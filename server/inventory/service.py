@@ -7,17 +7,26 @@ import io
 import json
 from typing import Any
 import uuid
+import zipfile
+from xml.sax.saxutils import escape as xml_escape
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
+    DeviceBindingSuggestion,
+    DeviceInventoryBulkOperation,
+    DeviceInventoryBulkOperationItem,
     DeviceInventoryBinding,
     DeviceInventoryBindingHistory,
     DeviceInventoryRefreshPolicy,
     DeviceInventoryRefreshRun,
     DeviceInventorySnapshot,
+    RegistryAsset,
+    RegistryDepartment,
+    RegistryLocation,
+    RegistryPerson,
 )
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.presentation_overrides import ToolPresentationOverrideService
@@ -50,6 +59,7 @@ _BINDING_TEXT_LIMITS = {
 }
 _BINDING_STATUS_VALUES = {"active", "spare", "repair", "retired"}
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+_BULK_MODES = {"selected", "stale", "missing", "department", "building"}
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -148,6 +158,90 @@ def _escape_csv_cell(value: Any) -> str:
     return text
 
 
+def _escape_xlsx_cell(value: Any) -> str:
+    return _escape_csv_cell(value)
+
+
+def _build_simple_xlsx(sheets: dict[str, list[list[Any]]]) -> bytes:
+    """Create a small XLSX workbook with inline strings only.
+
+    This intentionally avoids a new runtime dependency and is sufficient for
+    operational exports. Values are escaped as text to avoid formula execution.
+    """
+    def sheet_xml(rows: list[list[Any]]) -> str:
+        xml_rows: list[str] = []
+        for row_index, row in enumerate(rows, start=1):
+            cells: list[str] = []
+            for col_index, value in enumerate(row, start=1):
+                col = ""
+                n = col_index
+                while n:
+                    n, rem = divmod(n - 1, 26)
+                    col = chr(65 + rem) + col
+                text = xml_escape(_escape_xlsx_cell(value))
+                cells.append(f'<c r="{col}{row_index}" t="inlineStr"><is><t>{text}</t></is></c>')
+            xml_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f'<sheetData>{"".join(xml_rows)}</sheetData></worksheet>'
+        )
+
+    sheet_names = list(sheets.keys())
+    workbook_sheets = "".join(
+        f'<sheet name="{xml_escape(name[:31])}" sheetId="{idx}" r:id="rId{idx}"/>'
+        for idx, name in enumerate(sheet_names, start=1)
+    )
+    workbook_rels = "".join(
+        f'<Relationship Id="rId{idx}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{idx}.xml"/>'
+        for idx in range(1, len(sheet_names) + 1)
+    )
+    content_types = "".join(
+        f'<Override PartName="/xl/worksheets/sheet{idx}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        for idx in range(1, len(sheet_names) + 1)
+    )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            f"{content_types}</Types>",
+        )
+        zf.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>",
+        )
+        zf.writestr(
+            "xl/workbook.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            f"<sheets>{workbook_sheets}</sheets></workbook>",
+        )
+        zf.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            f"{workbook_rels}</Relationships>",
+        )
+        for idx, name in enumerate(sheet_names, start=1):
+            zf.writestr(f"xl/worksheets/sheet{idx}.xml", sheet_xml(sheets[name]))
+    return output.getvalue()
+
+
+def _bool_query(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _snapshot_collected_at(row: DeviceInventorySnapshot | None) -> datetime | None:
     if row is None:
         return None
@@ -231,22 +325,22 @@ def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
         return None
     return CapabilityDescriptor(
         id=str(descriptor.get("id") or tool_id),
-        title="Inventory collect",
-        description="Privacy-safe endpoint inventory snapshot",
-        provider_id="inventory",
-        provider_type="agent_builtin",
-        execution_target="agent_builtin",
-        tool_kind="inventory",
-        risk_level="low",
-        side_effects=False,
-        requires_device=True,
-        requires_agent_online=True,
-        platforms=["win32", "linux"],
-        params_schema={"type": "object", "additionalProperties": False, "properties": {}},
+        title=str(descriptor.get("title") or tool_id),
+        description=str(descriptor.get("description") or ""),
+        provider_id=str(descriptor.get("provider_id") or tool_id.split(".", 1)[0]),
+        provider_type=str(descriptor.get("provider_type") or "agent_builtin"),
+        execution_target=str(descriptor.get("execution_target") or "agent_builtin"),
+        tool_kind=str(descriptor.get("tool_kind") or tool_id.split(".", 1)[0]),
+        risk_level=str(descriptor.get("risk_level") or "low"),
+        side_effects=bool(descriptor.get("side_effects", False)),
+        requires_device=bool(descriptor.get("requires_device", True)),
+        requires_agent_online=bool(descriptor.get("requires_agent_online", True)),
+        platforms=[str(item) for item in descriptor.get("platforms", [])] or ["win32", "linux"],
+        params_schema=_safe_dict(descriptor.get("params_schema")) or {"type": "object", "additionalProperties": False, "properties": {}},
         output_schema=_safe_dict(descriptor.get("output_schema")),
         output_contract=_safe_dict(descriptor.get("output_contract")),
         presentation_schema=_safe_dict(descriptor.get("presentation_schema")),
-        source="agent_builtin",
+        source=str(descriptor.get("source") or "agent_builtin"),
     )
 
 
@@ -391,6 +485,7 @@ class DeviceInventoryService:
         *,
         device_id: str | None = None,
         policy_id: str | None = None,
+        bulk_operation_id: str | None = None,
         requested_at: datetime | None = None,
         requested_by: str | None = None,
         status: str = "requested",
@@ -404,6 +499,7 @@ class DeviceInventoryService:
             id=str(uuid.uuid4()),
             device_id=str(device_id) if device_id else None,
             policy_id=str(policy_id) if policy_id else None,
+            bulk_operation_id=str(bulk_operation_id) if bulk_operation_id else None,
             requested_at=requested_at or datetime.now(timezone.utc),
             requested_by=requested_by,
             status=status,
@@ -735,6 +831,462 @@ class DeviceInventoryService:
                 "last_run_at": runs[0].requested_at.isoformat() if runs else None,
             },
         }
+
+    async def list_attention_items(self, *, stale_days: int = 7, now: datetime | None = None) -> dict[str, list[dict[str, Any]]]:
+        now = now or datetime.now(timezone.utc)
+        stale_cutoff = now - timedelta(days=max(1, int(stale_days or 7)))
+        devices, latest, bindings = await self._fleet_rows()
+        groups = {
+            "missing_inventory": [],
+            "stale_inventory": [],
+            "missing_room": [],
+            "missing_department": [],
+            "missing_inventory_number": [],
+            "high_disk_usage": [],
+            "missing_key_apps": [],
+        }
+        for device in devices:
+            device_id = str(device.device_id)
+            binding = binding_to_dict(bindings.get(device_id))
+            base = {"device_id": device_id, "hostname": device.hostname}
+            snapshot_row = latest.get(device_id)
+            if snapshot_row is None:
+                groups["missing_inventory"].append(base)
+            else:
+                collected_at = _snapshot_collected_at(snapshot_row)
+                if not collected_at or collected_at < stale_cutoff:
+                    groups["stale_inventory"].append({**base, "collected_at": collected_at.isoformat() if collected_at else None})
+                snapshot = dict(snapshot_row.snapshot or {})
+                worst_disk = _worst_disk_percent(snapshot)
+                if worst_disk is not None and worst_disk >= 90:
+                    groups["high_disk_usage"].append({**base, "worst_disk_percent": worst_disk})
+                for app in _missing_key_apps(snapshot):
+                    groups["missing_key_apps"].append({**base, **app})
+            if not binding.get("room"):
+                groups["missing_room"].append(base)
+            if not binding.get("department"):
+                groups["missing_department"].append(base)
+            if not binding.get("inventory_number"):
+                groups["missing_inventory_number"].append(base)
+        return {key: value[:200] for key, value in groups.items()}
+
+    async def build_report(self, *, report_type: str, stale_days: int = 7) -> dict[str, Any]:
+        report_type = str(report_type or "attention").strip().lower()
+        dashboard = await self.build_dashboard(stale_days=stale_days)
+        if report_type == "department":
+            return {"type": "department", "items": dashboard.get("by_department", [])}
+        if report_type == "building":
+            return {"type": "building", "items": dashboard.get("by_building", [])}
+        attention = await self.list_attention_items(stale_days=stale_days)
+        return {
+            "type": "attention",
+            "items": [
+                {"group": key, "count": len(value), "items": value[:50]}
+                for key, value in attention.items()
+            ],
+        }
+
+    async def export_inventory_xlsx(self, *, stale_days: int = 7) -> bytes:
+        devices, latest, bindings = await self._fleet_rows()
+        now = datetime.now(timezone.utc)
+        stale_cutoff = now - timedelta(days=max(1, int(stale_days or 7)))
+        inventory_rows = [[
+            "device_id", "hostname", "current_user", "building", "floor", "room", "department",
+            "responsible_user", "inventory_number", "os_name", "os_version", "primary_ip",
+            "agent_version", "collected_at", "stale_status", "cpu_percent", "memory_percent",
+            "worst_disk_percent", "default_printer", "key_apps_summary",
+        ]]
+        binding_gap_rows = [["device_id", "hostname", "missing_room", "missing_department", "missing_responsible_user", "missing_inventory_number"]]
+        stale_rows = [["device_id", "hostname", "stale_status", "collected_at"]]
+        key_app_rows = [["device_id", "hostname", "app_id", "app_name", "present", "version", "status"]]
+        high_disk_rows = [["device_id", "hostname", "worst_disk_percent"]]
+        for device in devices:
+            device_id = str(device.device_id)
+            binding = binding_to_dict(bindings.get(device_id))
+            snapshot_row = latest.get(device_id)
+            snapshot = dict(getattr(snapshot_row, "snapshot", None) or {})
+            identity = _nested_dict(snapshot, "identity")
+            platform = _nested_dict(snapshot, "platform")
+            network = _nested_dict(snapshot, "network")
+            agent = _nested_dict(snapshot, "agent")
+            printers = _nested_dict(snapshot, "printers")
+            collected_at = _snapshot_collected_at(snapshot_row)
+            stale_status = "missing" if snapshot_row is None else ("stale" if collected_at and collected_at < stale_cutoff else "fresh")
+            hostname = identity.get("hostname") or device.hostname or ""
+            worst_disk = _worst_disk_percent(snapshot)
+            inventory_rows.append([
+                device_id, hostname, identity.get("current_user") or "", binding.get("building"),
+                binding.get("floor"), binding.get("room"), binding.get("department"),
+                binding.get("responsible_user"), binding.get("inventory_number"),
+                platform.get("os_name") or "", platform.get("os_version") or "",
+                network.get("primary_ip") or "", agent.get("version") or getattr(device, "agent_version", "") or "",
+                collected_at.isoformat() if collected_at else "", stale_status,
+                _nested_dict(snapshot, "resources").get("cpu_percent"),
+                _nested_dict(snapshot, "resources").get("memory_percent"),
+                worst_disk, printers.get("default_printer") or "", _key_apps_summary(snapshot),
+            ])
+            if stale_status != "fresh":
+                stale_rows.append([device_id, hostname, stale_status, collected_at.isoformat() if collected_at else ""])
+            gaps = [
+                not bool(binding.get("room")),
+                not bool(binding.get("department")),
+                not bool(binding.get("responsible_user")),
+                not bool(binding.get("inventory_number")),
+            ]
+            if any(gaps):
+                binding_gap_rows.append([device_id, hostname, *gaps])
+            if worst_disk is not None and worst_disk >= 90:
+                high_disk_rows.append([device_id, hostname, worst_disk])
+            software = _nested_dict(snapshot, "software")
+            apps = software.get("key_apps") if isinstance(software.get("key_apps"), list) else []
+            for app in apps:
+                if isinstance(app, dict):
+                    key_app_rows.append([
+                        device_id, hostname, app.get("id"), app.get("name"), app.get("present"),
+                        app.get("version"), app.get("status"),
+                    ])
+        return _build_simple_xlsx(
+            {
+                "Inventory": inventory_rows,
+                "Binding gaps": binding_gap_rows,
+                "Stale missing": stale_rows,
+                "Key apps": key_app_rows,
+                "High disk": high_disk_rows,
+            }
+        )
+
+    async def bulk_refresh_preview(
+        self,
+        *,
+        device_ids: list[str] | None = None,
+        mode: str = "selected",
+        filters: dict[str, Any] | None = None,
+        wave: dict[str, Any] | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        now = now or datetime.now(timezone.utc)
+        filters = filters or {}
+        wave = wave or {}
+        mode = str(mode or "selected").strip().lower()
+        if mode not in _BULK_MODES:
+            raise ValueError("invalid bulk refresh mode")
+        stale_days = int(filters.get("stale_days") or 7)
+        stale_cutoff = now - timedelta(days=max(1, stale_days))
+        online_only = bool(filters.get("online_only", False))
+        online_cutoff = now - timedelta(minutes=10)
+        batch_size = max(1, min(int(wave.get("batch_size") or 10), 100))
+        devices, latest, bindings = await self._fleet_rows()
+        explicit_ids = {str(item) for item in (device_ids or []) if str(item).strip()}
+        items: list[dict[str, Any]] = []
+        for device in devices:
+            device_id = str(device.device_id)
+            binding = binding_to_dict(bindings.get(device_id))
+            snapshot_row = latest.get(device_id)
+            collected_at = _snapshot_collected_at(snapshot_row)
+            include = False
+            if mode == "selected":
+                include = device_id in explicit_ids
+            elif mode == "stale":
+                include = snapshot_row is not None and (not collected_at or collected_at < stale_cutoff)
+            elif mode == "missing":
+                include = snapshot_row is None
+            elif mode == "department":
+                include = bool(filters.get("department")) and binding.get("department") == filters.get("department")
+            elif mode == "building":
+                include = bool(filters.get("building")) and binding.get("building") == filters.get("building")
+            if not include:
+                continue
+            online = bool(getattr(device, "last_seen_at", None) and device.last_seen_at >= online_cutoff)
+            status = "ready"
+            reason = None
+            if online_only and not online:
+                status = "skipped"
+                reason = "online_only"
+            elif not online and bool(wave.get("skip_offline", True)):
+                status = "offline"
+                reason = "device offline"
+            items.append(
+                {
+                    "device_id": device_id,
+                    "hostname": device.hostname,
+                    "online": online,
+                    "status": status,
+                    "reason": reason,
+                }
+            )
+        ready_count = sum(1 for item in items if item["status"] == "ready")
+        online_count = sum(1 for item in items if item.get("online"))
+        return {
+            "dry_run": True,
+            "selected_count": len(items),
+            "online_count": online_count,
+            "offline_count": max(0, len(items) - online_count),
+            "estimated_waves": (ready_count + batch_size - 1) // batch_size if ready_count else 0,
+            "items": items,
+        }
+
+    async def create_bulk_refresh_operation(
+        self,
+        *,
+        preview: dict[str, Any],
+        mode: str,
+        filters: dict[str, Any] | None,
+        wave: dict[str, Any] | None,
+        requested_by: str | None = None,
+    ) -> DeviceInventoryBulkOperation:
+        wave = wave or {}
+        batch_size = max(1, min(int(wave.get("batch_size") or 10), 100))
+        operation = DeviceInventoryBulkOperation(
+            id=str(uuid.uuid4()),
+            operation_type="inventory_refresh",
+            status="planned",
+            requested_by=requested_by,
+            requested_at=datetime.now(timezone.utc),
+            filters={"mode": mode, **(filters or {})},
+            wave=dict(wave),
+            total_count=int(preview.get("selected_count") or 0),
+        )
+        self.session.add(operation)
+        for index, item in enumerate(preview.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            status = "pending" if item.get("status") == "ready" else "skipped_offline"
+            if status == "skipped_offline":
+                operation.skipped_count += 1
+            self.session.add(
+                DeviceInventoryBulkOperationItem(
+                    id=str(uuid.uuid4()),
+                    operation_id=operation.id,
+                    device_id=str(item.get("device_id")),
+                    wave_index=index // batch_size,
+                    status=status,
+                    error=str(item.get("reason") or "") or None,
+                )
+            )
+        await self.session.flush()
+        return operation
+
+    async def list_bulk_operations(self, *, limit: int = 20) -> list[DeviceInventoryBulkOperation]:
+        result = await self.session.execute(
+            select(DeviceInventoryBulkOperation)
+            .order_by(desc(DeviceInventoryBulkOperation.requested_at))
+            .limit(max(1, min(int(limit or 20), 100)))
+        )
+        return list(result.scalars().all())
+
+    async def list_bulk_operation_items(self, operation_id: str) -> list[DeviceInventoryBulkOperationItem]:
+        result = await self.session.execute(
+            select(DeviceInventoryBulkOperationItem)
+            .where(DeviceInventoryBulkOperationItem.operation_id == str(operation_id))
+            .order_by(DeviceInventoryBulkOperationItem.wave_index, DeviceInventoryBulkOperationItem.device_id)
+        )
+        return list(result.scalars().all())
+
+    async def list_device_profiles(self, device_id: str) -> list[dict[str, Any]]:
+        suggestions = await self.list_binding_suggestions(device_id, include_reviewed=True)
+        profiles: dict[str, dict[str, Any]] = {}
+        for suggestion in suggestions:
+            profile = dict(suggestion.profile_snapshot or {})
+            key = str(profile.get("requester_id") or suggestion.source_ref or suggestion.id)
+            profiles[key] = {
+                "requester_id": profile.get("requester_id") or suggestion.source_ref,
+                "display_name": profile.get("display_name"),
+                "full_name": profile.get("full_name"),
+                "department": profile.get("department"),
+                "building": profile.get("building"),
+                "floor": profile.get("floor"),
+                "room": profile.get("room"),
+                "phone": profile.get("phone"),
+                "email": profile.get("email"),
+                "active": bool(profile.get("active", False)),
+                "last_seen_at": profile.get("last_seen_at") or profile.get("submitted_at"),
+                "source": "agent_profile",
+                "status": suggestion.status,
+            }
+        asset_result = await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == str(device_id)).limit(1))
+        asset = asset_result.scalar_one_or_none()
+        if asset and asset.assigned_person_id:
+            person_result = await self.session.execute(select(RegistryPerson).where(RegistryPerson.person_id == asset.assigned_person_id).limit(1))
+            person = person_result.scalar_one_or_none()
+            if person:
+                department = None
+                location = None
+                if person.department_id:
+                    department = (await self.session.execute(select(RegistryDepartment).where(RegistryDepartment.department_id == person.department_id))).scalar_one_or_none()
+                if person.location_id:
+                    location = (await self.session.execute(select(RegistryLocation).where(RegistryLocation.location_id == person.location_id))).scalar_one_or_none()
+                profiles.setdefault(
+                    str(person.profile_key or person.person_id),
+                    {
+                        "requester_id": person.profile_key,
+                        "display_name": person.display_name,
+                        "full_name": person.full_name,
+                        "department": getattr(department, "name", None),
+                        "building": getattr(location, "building", None),
+                        "floor": getattr(location, "floor", None),
+                        "room": getattr(location, "room", None),
+                        "phone": person.phone,
+                        "email": person.email,
+                        "active": False,
+                        "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
+                        "source": "agent_profile",
+                        "status": "observed",
+                    },
+                )
+        return sorted(profiles.values(), key=lambda item: (not bool(item.get("active")), str(item.get("last_seen_at") or "")), reverse=False)
+
+    def build_suggested_binding_from_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        return normalize_binding_payload(
+            {
+                "building": profile.get("building"),
+                "floor": profile.get("floor"),
+                "room": profile.get("room"),
+                "department": profile.get("department"),
+                "responsible_user": profile.get("full_name") or profile.get("display_name"),
+                "responsible_user_login": profile.get("login") or profile.get("email") or profile.get("requester_id"),
+                "notes": None,
+            }
+        )
+
+    async def create_or_update_binding_suggestion_from_profile(
+        self,
+        *,
+        device_id: str,
+        requester_id: str | None,
+        display_name: str | None,
+        profile: dict[str, Any],
+    ) -> DeviceBindingSuggestion | None:
+        if not device_id:
+            return None
+        profile_snapshot = {
+            "requester_id": requester_id,
+            "display_name": display_name,
+            "full_name": profile.get("full_name") or display_name,
+            "department": profile.get("department"),
+            "building": profile.get("building"),
+            "floor": profile.get("floor"),
+            "room": profile.get("room"),
+            "phone": profile.get("phone"),
+            "email": profile.get("email"),
+            "login": profile.get("login"),
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+            "source": "agent_profile",
+        }
+        suggested = self.build_suggested_binding_from_profile(profile_snapshot)
+        if not any(suggested.get(key) for key in ("building", "room", "department", "responsible_user")):
+            return None
+        current = binding_to_dict(await self.get_binding(device_id))
+        differs = [key for key, value in suggested.items() if value not in (None, [], "") and current.get(key) != value]
+        if not differs:
+            return None
+        source_ref = str(requester_id or display_name or "agent_profile")
+        result = await self.session.execute(
+            select(DeviceBindingSuggestion)
+            .where(
+                DeviceBindingSuggestion.device_id == str(device_id),
+                DeviceBindingSuggestion.source == "agent_profile",
+                DeviceBindingSuggestion.source_ref == source_ref,
+                DeviceBindingSuggestion.status == "pending",
+            )
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = DeviceBindingSuggestion(
+                id=str(uuid.uuid4()),
+                device_id=str(device_id),
+                source="agent_profile",
+                source_ref=source_ref,
+                created_at=now,
+            )
+            self.session.add(row)
+        row.suggested_binding = suggested
+        row.profile_snapshot = profile_snapshot
+        row.status = "pending"
+        row.confidence = "medium" if len(differs) <= 2 else "low"
+        row.updated_at = now
+        await self.session.flush()
+        return row
+
+    async def list_binding_suggestions(
+        self,
+        device_id: str,
+        *,
+        include_reviewed: bool = False,
+        limit: int = 50,
+    ) -> list[DeviceBindingSuggestion]:
+        stmt = select(DeviceBindingSuggestion).where(DeviceBindingSuggestion.device_id == str(device_id))
+        if not include_reviewed:
+            stmt = stmt.where(DeviceBindingSuggestion.status == "pending")
+        result = await self.session.execute(
+            stmt.order_by(desc(DeviceBindingSuggestion.updated_at)).limit(max(1, min(int(limit or 50), 200)))
+        )
+        return list(result.scalars().all())
+
+    async def apply_binding_suggestion(
+        self,
+        *,
+        device_id: str,
+        suggestion_id: str,
+        fields: list[str],
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> DeviceBindingSuggestion:
+        result = await self.session.execute(
+            select(DeviceBindingSuggestion)
+            .where(DeviceBindingSuggestion.device_id == str(device_id), DeviceBindingSuggestion.id == str(suggestion_id))
+            .limit(1)
+        )
+        suggestion = result.scalar_one_or_none()
+        if suggestion is None:
+            raise ValueError("suggestion not found")
+        allowed = set(_BINDING_FIELDS)
+        selected = [field for field in fields if field in allowed]
+        if not selected:
+            raise ValueError("no allowed fields selected")
+        current = binding_to_dict(await self.get_binding(device_id))
+        suggested = dict(suggestion.suggested_binding or {})
+        payload = {**current, **{field: suggested.get(field) for field in selected}}
+        await self.upsert_binding(
+            device_id,
+            payload,
+            updated_by=reviewed_by,
+            reason=reason or "Applied agent profile binding suggestion",
+        )
+        now = datetime.now(timezone.utc)
+        suggestion.status = "applied"
+        suggestion.reviewed_by = reviewed_by
+        suggestion.reviewed_at = now
+        suggestion.review_note = _clean_binding_text(reason, max_length=1000) if reason else None
+        suggestion.updated_at = now
+        await self.session.flush()
+        return suggestion
+
+    async def ignore_binding_suggestion(
+        self,
+        *,
+        device_id: str,
+        suggestion_id: str,
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> DeviceBindingSuggestion:
+        result = await self.session.execute(
+            select(DeviceBindingSuggestion)
+            .where(DeviceBindingSuggestion.device_id == str(device_id), DeviceBindingSuggestion.id == str(suggestion_id))
+            .limit(1)
+        )
+        suggestion = result.scalar_one_or_none()
+        if suggestion is None:
+            raise ValueError("suggestion not found")
+        now = datetime.now(timezone.utc)
+        suggestion.status = "ignored"
+        suggestion.reviewed_by = reviewed_by
+        suggestion.reviewed_at = now
+        suggestion.review_note = _clean_binding_text(reason, max_length=1000) if reason else None
+        suggestion.updated_at = now
+        await self.session.flush()
+        return suggestion
 
     async def get_refresh_policy(
         self,

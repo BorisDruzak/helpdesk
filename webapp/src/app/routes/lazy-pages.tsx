@@ -14,6 +14,10 @@ export const TicketPassportPrintPage = lazy(() =>
   })),
 );
 
+export const SupportCommandCenterPage = lazy(() =>
+  import("../../pages/support/command-center-page").then((module) => ({ default: module.SupportCommandCenterPage })),
+);
+
 export const ReportsPage = lazy(() =>
   import("../../pages/reports").then((module) => ({ default: module.ReportsPage })),
 );
@@ -34,8 +38,16 @@ export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );
 
+export const AdminCenterPage = lazy(() =>
+  import("../../pages/admin").then((module) => ({ default: module.AdminCenterPage })),
+);
+
 export const AdminDevicePage = lazy(() =>
   import("../../pages/admin/device-page").then((module) => ({ default: module.AdminDevicePage })),
+);
+
+export const AdminDeviceOperationsPage = lazy(() =>
+  import("../../pages/admin/device-operations-page").then((module) => ({ default: module.AdminDeviceOperationsPage })),
 );
 
 export const AdminAgentUpdatesPage = lazy(() =>
@@ -96,4 +108,8 @@ export const AdminChangesPage = lazy(() =>
 
 export const AdminRegistryPage = lazy(() =>
   import("../../pages/admin/registry-page").then((module) => ({ default: module.AdminRegistryPage })),
+);
+
+export const AdminRequestTemplateStudioPage = lazy(() =>
+  import("../../pages/admin/request-template-studio-page").then((module) => ({ default: module.AdminRequestTemplateStudioPage })),
 );

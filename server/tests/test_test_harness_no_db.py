@@ -106,6 +106,24 @@ def test_windows_default_resolve_uses_isolated_test_db(monkeypatch):
     assert "127.0.0.1:55432" in admin_db_url
 
 
+def test_windows_shared_debug_resolve_uses_tunnel(monkeypatch):
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.setenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", "1")
+    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    monkeypatch.setattr(test_harness, "_ensure_windows_test_db_tunnel", lambda: None)
+    monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_HOST", "127.0.0.1")
+    monkeypatch.setattr(test_harness, "WINDOWS_TEST_DB_TUNNEL_PORT", 55432)
+
+    test_db_url, admin_db_url, is_shared = test_harness._resolve_test_database_urls()
+
+    assert is_shared is True
+    assert test_db_url.endswith("/pc_support_test")
+    assert admin_db_url.endswith("/postgres")
+    assert "127.0.0.1:55432" in test_db_url
+    assert "127.0.0.1:55432" in admin_db_url
+
+
 def test_generated_test_database_name_includes_domain_worker_and_hash(monkeypatch):
     monkeypatch.setenv("PC_CLIENT_TEST_DB_DOMAIN", "knowledge")
     monkeypatch.setenv("PC_CLIENT_TEST_DB_RUN_ID", "abcdef123456")

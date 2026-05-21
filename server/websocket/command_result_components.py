@@ -121,6 +121,7 @@ class CommandResultArtifactHandler:
         from app.db import get_session
         from app.repos import DeviceModulesRepo, DevicesRepo, OperationsRepo, ToolsetSnapshotsRepo
         from inventory.service import INVENTORY_TOOL_ID, DeviceInventoryService, extract_tool_result_payload
+        from presence.service import PRESENCE_TOOL_ID, DevicePresenceService, extract_presence_result_payload
         from utils.toolset_hash import compute_toolset_hash, sort_tools
         from websocket.modules_sync import flatten_modules_list, sync_modules_inventory
 
@@ -142,6 +143,15 @@ class CommandResultArtifactHandler:
                 )
                 await session.commit()
                 logger.info("[command_result] persisted inventory snapshot: device_id={}", device_id)
+                return
+
+            if operation.kind == "tool_call" and getattr(operation, "tool_name", None) == PRESENCE_TOOL_ID:
+                snapshot = extract_presence_result_payload(normalized.data_payload)
+                if snapshot is None:
+                    return
+                await DevicePresenceService(session).persist_snapshot(device_id=device_id, snapshot=snapshot)
+                await session.commit()
+                logger.info("[command_result] persisted presence snapshot: device_id={}", device_id)
                 return
 
             if operation.kind != "command" or not operation.command_name:

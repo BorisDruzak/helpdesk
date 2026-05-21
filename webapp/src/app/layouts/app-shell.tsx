@@ -2,15 +2,19 @@ import { startTransition, useEffect, useState, type ChangeEvent, type ReactNode 
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
-  ADMIN_HOME_PATH,
-  SUPPORT_HOME_PATH,
   getSearchPlaceholder,
-  isAdminRoute
+  getActiveWorkspace,
 } from "../navigation";
 import { AppSidebar } from "../../components/shell/app-sidebar";
 import { AppTopbar } from "../../components/shell/app-topbar";
+import { DomainTabs } from "../../components/shell/domain-tabs";
 import { useSession } from "../../features/auth/session-provider";
-import { hasWorkspaceAccess } from "../../features/auth/workspace-access";
+import {
+  hasWorkspaceAccess,
+  rememberWorkspacePath,
+  resolveWorkspaceSwitchPath,
+  type AppWorkspace,
+} from "../../features/auth/workspace-access";
 
 type AppShellProps = {
   children: ReactNode;
@@ -46,6 +50,7 @@ export function AppShell({ children }: AppShellProps) {
   const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
   const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname);
   const [formsSidebarCollapsed, setFormsSidebarCollapsed] = useState(readFormsSidebarCollapsed);
+  const currentWorkspace = getActiveWorkspace(location.pathname) ?? "support";
 
   useEffect(() => {
     if (isFormsBuilderRoute) {
@@ -53,16 +58,21 @@ export function AppShell({ children }: AppShellProps) {
     }
   }, [isFormsBuilderRoute]);
 
+  useEffect(() => {
+    const currentPath = `${location.pathname}${location.search}${location.hash}`;
+    rememberWorkspacePath(currentPath, session);
+  }, [location.hash, location.pathname, location.search, session]);
+
   if (isTicketWorkspaceRoute) {
     return <div className="min-h-screen bg-[#07111f] text-slate-100">{children}</div>;
   }
 
   const workspaceOptions = [
-    hasSupport ? { label: "Поддержка", value: SUPPORT_HOME_PATH } : null,
-    hasAdmin ? { label: "Администрирование", value: ADMIN_HOME_PATH } : null
+    hasSupport ? { label: "Поддержка", value: "support" } : null,
+    hasAdmin ? { label: "Администрирование", value: "admin" } : null
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
-  const workspaceValue = isAdminRoute(location.pathname) ? ADMIN_HOME_PATH : SUPPORT_HOME_PATH;
+  const workspaceValue = currentWorkspace;
 
   async function handleLogout() {
     await logout();
@@ -72,8 +82,14 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   function handleWorkspaceChange(event: ChangeEvent<HTMLSelectElement>) {
+    const workspace = event.target.value as AppWorkspace;
+    const nextPath = resolveWorkspaceSwitchPath(workspace, session);
+    if (!nextPath || nextPath === `${location.pathname}${location.search}${location.hash}`) {
+      return;
+    }
+
     startTransition(() => {
-      navigate(event.target.value);
+      navigate(nextPath);
     });
   }
 
@@ -108,7 +124,10 @@ export function AppShell({ children }: AppShellProps) {
             workspaceValue={workspaceValue}
           />
 
-          <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">{children}</main>
+          <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">
+            <DomainTabs permissions={session?.permissions ?? []} />
+            {children}
+          </main>
         </div>
       </div>
     </div>

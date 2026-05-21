@@ -43,7 +43,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   attachSelectedDiagnosticEvidenceToPassport,
@@ -75,6 +75,7 @@ import {
   postSupportTicketPlaybookRun,
   postSupportTicketPriority,
   postSupportTicketQueue,
+  postSupportTicketRead,
   postSupportTicketReroute,
   postSupportTicketStatus,
   postSupportTicketToolRun,
@@ -113,6 +114,8 @@ import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header"
 import { OperationsTable } from "./components/operations-table";
 import { QueueExplorer } from "./components/queue-explorer";
 import { TicketPreviewPanel } from "./components/ticket-preview-panel";
+import { TicketDeviceAgentPanel } from "./components/ticket-device-agent-panel";
+import { summarizeToolAvailability } from "./tool-availability";
 import {
   getInitialWorkspaceMode,
   getInitialWorkspaceRightTab,
@@ -125,6 +128,7 @@ import {
   type WorkspaceMode,
   type WorkspaceRightTab,
 } from "./workspace-types";
+import { getTicketsWorkspaceUrlState } from "./url-state";
 
 const SUPPORT_QUEUE_REFRESH_MS = 15_000;
 const SUPPORT_OPERATION_REFRESH_MS = 2_500;
@@ -1329,18 +1333,21 @@ function SupportWorkspaceTopbar({
 export function TicketListPage() {
   const navigate = useNavigate();
   const params = useParams<{ ticketId?: string }>();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { logout, session } = useSession();
+  const initialUrlStateRef = useRef(getTicketsWorkspaceUrlState(searchParams));
+  const shouldKeepQueueRouteRef = useRef(initialUrlStateRef.current.shouldOpenQueue);
   const [scope, setScope] = useState<SupportQueueScope>("all");
-  const [smartView, setSmartView] = useState(() => getInitialWorkspaceSelectedView("my_action"));
+  const [smartView, setSmartView] = useState(() => initialUrlStateRef.current.smartView ?? getInitialWorkspaceSelectedView("my_action"));
   const [activeQueueId, setActiveQueueId] = useState<string | null>(() => getInitialWorkspaceSelectedQueue());
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(params.ticketId ?? null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => initialUrlStateRef.current.search ?? initialUrlStateRef.current.similarGroup ?? "");
   const [composerMode, setComposerMode] = useState<ComposerMode>("public");
   const [composerText, setComposerText] = useState("");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => getInitialWorkspaceMode());
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
   const [moreOpen, setMoreOpen] = useState(false);
   const [toolsWorkspaceTab, setToolsWorkspaceTab] = useState<ToolsWorkspaceTab>("quick");
   const [slaWorkspaceTab, setSlaWorkspaceTab] = useState<SlaWorkspaceTab>("overview");
@@ -1361,8 +1368,10 @@ export function TicketListPage() {
   const [resizingPane, setResizingPane] = useState<WorkspaceResizePane | null>(null);
   const [automationCatalogFilter, setAutomationCatalogFilter] = useState<AutomationCatalogFilter>("all");
   const [automationCatalogSearch, setAutomationCatalogSearch] = useState("");
+  const [showUnavailableAutomation, setShowUnavailableAutomation] = useState(false);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
+  const markedReadRef = useRef<string | null>(null);
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
   const deferredSearch = useDeferredValue(search);
   const deferredAutomationCatalogSearch = useDeferredValue(automationCatalogSearch);
@@ -1374,6 +1383,24 @@ export function TicketListPage() {
   useEffect(() => {
     setSelectedTicketId(params.ticketId ?? null);
   }, [params.ticketId]);
+
+  useEffect(() => {
+    const urlState = getTicketsWorkspaceUrlState(searchParams);
+    if (!urlState.shouldOpenQueue) {
+      return;
+    }
+    shouldKeepQueueRouteRef.current = true;
+    if (urlState.smartView && urlState.smartView !== smartView) {
+      setSmartView(urlState.smartView);
+    }
+    const nextSearch = urlState.search ?? urlState.similarGroup ?? "";
+    if (nextSearch !== search) {
+      setSearch(nextSearch);
+    }
+    if (workspaceMode !== "queue") {
+      setWorkspaceMode("queue");
+    }
+  }, [search, searchParams, smartView, workspaceMode]);
 
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
@@ -1521,6 +1548,9 @@ export function TicketListPage() {
     if (!queue || selectedTicketId) {
       return;
     }
+    if (shouldKeepQueueRouteRef.current) {
+      return;
+    }
     if (queue.summary.selected_ticket_id) {
       startTransition(() => {
         navigate(`/app/tickets/${queue.summary.selected_ticket_id}`, { replace: true });
@@ -1551,6 +1581,52 @@ export function TicketListPage() {
       ? SUPPORT_OPERATION_REFRESH_MS
       : SUPPORT_SELECTED_TICKET_FALLBACK_REFRESH_MS,
   });
+
+  const markReadMutation = useMutation({
+    mutationFn: ({ ticketId, lastReadEventId }: { ticketId: string; lastReadEventId: number }) =>
+      postSupportTicketRead(ticketId, lastReadEventId),
+    onSuccess: (_result, variables) => {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-queue"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace", variables.ticketId] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", variables.ticketId] }),
+      ]);
+    },
+  });
+
+  const latestRequesterMessageEventId = useMemo(() => {
+    const timelineItems = timelineQuery.data?.items ?? workspaceQuery.data?.detail.timeline ?? [];
+    let latest: number | null = null;
+    for (const item of timelineItems) {
+      if (typeof item.event_id !== "number") {
+        continue;
+      }
+      const fromRole = String(item.from_role || "").trim().toLowerCase();
+      const requesterKind = String(item.requester_timeline_kind || "").trim().toLowerCase();
+      const isRequesterMessage =
+        item.event_type === "chat_message" &&
+        (fromRole === "user" || fromRole === "requester" || requesterKind === "user_message");
+      if (isRequesterMessage && (latest === null || item.event_id > latest)) {
+        latest = item.event_id;
+      }
+    }
+    return latest;
+  }, [timelineQuery.data?.items, workspaceQuery.data?.detail.timeline]);
+
+  useEffect(() => {
+    if (!selectedTicketId || latestRequesterMessageEventId === null || markReadMutation.isPending) {
+      return;
+    }
+    const markKey = `${selectedTicketId}:${latestRequesterMessageEventId}`;
+    if (markedReadRef.current === markKey) {
+      return;
+    }
+    markedReadRef.current = markKey;
+    markReadMutation.mutate({
+      ticketId: selectedTicketId,
+      lastReadEventId: latestRequesterMessageEventId,
+    });
+  }, [latestRequesterMessageEventId, markReadMutation, selectedTicketId]);
 
   const evidenceCandidatesQuery = useQuery({
     queryKey: ["tickets-workspace-passport-evidence-candidates", selectedTicketId],
@@ -1615,6 +1691,7 @@ export function TicketListPage() {
         activeQueueId,
         activeSmartView: smartView,
         detail: workspaceQuery.data?.detail,
+        inventoryContext: workspaceQuery.data?.inventory_context,
         knowledge: workspaceQuery.data?.knowledge,
         passport: workspaceQuery.data?.passport,
         passportReadiness: workspaceQuery.data?.passport_readiness,
@@ -1647,6 +1724,10 @@ export function TicketListPage() {
     [viewModel.right.playbooks, viewModel.right.tools],
   );
   const automationSearchValue = deferredAutomationCatalogSearch.trim().toLowerCase();
+  const automationAvailability = useMemo(
+    () => summarizeToolAvailability(allAutomationItems),
+    [allAutomationItems],
+  );
   const automationCatalogCounts = useMemo(
     () => ({
       all: allAutomationItems.length,
@@ -1657,17 +1738,34 @@ export function TicketListPage() {
     }),
     [allAutomationItems, viewModel.right.playbooks.length, viewModel.right.tools.length],
   );
-  const visibleAutomationItems = useMemo(
+  const visibleAutomationAvailableItems = useMemo(
     () =>
-      allAutomationItems.filter((item) => {
+      automationAvailability.available.filter((item) => {
         const filterMatches =
           automationCatalogFilter === "all" ||
           (automationCatalogFilter === "runnable" && item.enabled) ||
-          (automationCatalogFilter === "disabled" && !item.enabled) ||
           item.kind === automationCatalogFilter;
         return filterMatches && matchesAutomationSearch(item, automationSearchValue);
       }),
-    [allAutomationItems, automationCatalogFilter, automationSearchValue],
+    [automationAvailability.available, automationCatalogFilter, automationSearchValue],
+  );
+  const visibleAutomationUnavailableItems = useMemo(
+    () =>
+      automationAvailability.unavailable.filter((item) => {
+        const filterMatches =
+          automationCatalogFilter === "all" ||
+          automationCatalogFilter === "disabled" ||
+          item.kind === automationCatalogFilter;
+        return filterMatches && matchesAutomationSearch(item, automationSearchValue);
+      }),
+    [automationAvailability.unavailable, automationCatalogFilter, automationSearchValue],
+  );
+  const visibleAutomationItems = useMemo(
+    () => [
+      ...visibleAutomationAvailableItems,
+      ...(showUnavailableAutomation || automationCatalogFilter === "disabled" ? visibleAutomationUnavailableItems : []),
+    ],
+    [automationCatalogFilter, showUnavailableAutomation, visibleAutomationAvailableItems, visibleAutomationUnavailableItems],
   );
   const activeOperations = viewModel.right.operations.filter((operation) => operation.active);
   const statusActionOptions = workspaceQuery.data?.detail.actions.status_options ?? [];
@@ -2153,6 +2251,7 @@ export function TicketListPage() {
     setWorklogNote("");
     setWorklogMinutes("15");
     setResolutionCloseDraft(null);
+    setShowUnavailableAutomation(false);
   }, [selectedTicket?.id]);
 
   const isLightTheme = workspaceTheme === "light";
@@ -2493,19 +2592,33 @@ export function TicketListPage() {
                   </div>
                 </div>
 
-                <section className={`mt-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(180px,240px)] items-center gap-4 rounded-xl border p-3 ${toneClasses(selectedTicket.nextAction.tone)}`}>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
+                <section className={`mt-3 grid gap-3 rounded-xl border p-3 2xl:grid-cols-[auto_minmax(0,1fr)_minmax(170px,240px)] 2xl:items-center ${toneClasses(selectedTicket.nextAction.tone)}`}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10">
                     <Play className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Следующее действие</p>
-                    <p className="mt-1 text-base font-semibold text-white">{selectedTicket.nextAction.label}</p>
-                    <p className="mt-1 truncate text-sm text-slate-300">{selectedTicket.nextAction.hint}</p>
+                    <p className="mt-1 break-words text-base font-semibold leading-6 text-white">{selectedTicket.nextAction.label}</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-300">{selectedTicket.nextAction.hint}</p>
+                    <p className="mt-1 text-xs text-slate-400">Владелец: {selectedTicket.nextAction.ownerLabel}</p>
                   </div>
-                  <div className="border-l border-white/10 pl-4">
+                  <div className="min-w-0 border-white/10 2xl:border-l 2xl:pl-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Осталось времени</p>
-                    <p className="mt-1 text-xl font-semibold text-white">{selectedTicket.nextAction.remainingLabel}</p>
+                    <p className="mt-1 text-xl font-semibold leading-7 text-white">{selectedTicket.nextAction.remainingLabel}</p>
                     <p className="mt-1 text-xs text-slate-400">до контрольного срока</p>
+                    <button
+                      className="mt-2 inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-white/10 bg-white/[0.06] px-3 text-xs font-semibold text-slate-100 hover:bg-white/[0.1]"
+                      onClick={() => {
+                        if (selectedTicket.nextAction.owner === "operator") {
+                          openOperatorAction(selectedTicketIsUnassigned ? "assign_self" : "status");
+                          return;
+                        }
+                        composerTextareaRef.current?.focus();
+                      }}
+                      type="button"
+                    >
+                      Выполнить действие
+                    </button>
                   </div>
                 </section>
 
@@ -3194,6 +3307,11 @@ export function TicketListPage() {
               <div className="space-y-3">
                 <ObserverDiagnosticCard isLightTheme={isLightTheme} observer={viewModel.right.observer} />
 
+                <TicketDeviceAgentPanel
+                  deviceContext={viewModel.right.context.device}
+                  inventoryContext={viewModel.right.inventoryContext}
+                />
+
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>
                   <div className="mt-3 flex items-center gap-3">
@@ -3588,7 +3706,9 @@ export function TicketListPage() {
                           >
                             <p className="text-sm font-semibold text-white">{tool.title}</p>
                             <p className="mt-1 line-clamp-2 text-xs text-slate-400">{tool.subtitle}</p>
-                            {tool.disabledReason ? <p className="mt-2 text-xs text-amber-200">Причина: {tool.disabledReason}</p> : null}
+                            {tool.disabledReason && tool.disabledReason !== automationAvailability.dominantOfflineReason ? (
+                              <p className="mt-2 text-xs text-amber-200">Причина: {tool.disabledReason}</p>
+                            ) : null}
                           </button>
                         ))}
                         {!viewModel.right.tools.length ? (
@@ -3616,7 +3736,9 @@ export function TicketListPage() {
                               </span>
                             </div>
                             <p className="mt-1 line-clamp-2 text-xs text-slate-400">{playbook.subtitle}</p>
-                            {playbook.disabledReason ? <p className="mt-2 text-xs text-amber-200">Причина: {playbook.disabledReason}</p> : null}
+                            {playbook.disabledReason && playbook.disabledReason !== automationAvailability.dominantOfflineReason ? (
+                              <p className="mt-2 text-xs text-amber-200">Причина: {playbook.disabledReason}</p>
+                            ) : null}
                           </button>
                         ))}
                         {!viewModel.right.playbooks.length ? (
@@ -3788,12 +3910,42 @@ export function TicketListPage() {
                       </div>
                     </div>
                   ) : null}
+                  {automationAvailability.offlineUnavailableCount > 0 ? (
+                    <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-50">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold">
+                          Агент устройства offline — недоступно {automationAvailability.offlineUnavailableCount} инструментов
+                        </span>
+                        {viewModel.right.context?.device.id ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Link
+                              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
+                              to={`/app/admin/device-operations/${encodeURIComponent(viewModel.right.context.device.id)}`}
+                            >
+                              Операции устройства
+                            </Link>
+                            <Link
+                              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-amber-200/30 px-2.5 text-xs font-semibold hover:bg-amber-400/10"
+                              to={`/app/admin/device?device=${encodeURIComponent(viewModel.right.context.device.id)}`}
+                            >
+                              Карточка устройства
+                            </Link>
+                          </div>
+                        ) : null}
+                      </div>
+                      {automationAvailability.allUnavailable ? (
+                        <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                          Доступных действий сейчас нет. Проверьте связь агента или используйте ручное доказательство/заметку в зоне закрытия.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-2">
-                    {visibleAutomationItems.map((item) => {
+                    {visibleAutomationAvailableItems.map((item) => {
                       const Icon = toolIcon(item);
                       return (
                         <div
-                          className={`rounded-xl border p-3 ${item.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-white/[0.02] opacity-55"}`}
+                          className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
                           key={`${item.id}:${item.title}`}
                           title={item.disabledReason ?? `${item.kind === "playbook" ? "Playbook" : "Инструмент"}: ${item.title}`}
                         >
@@ -3803,14 +3955,14 @@ export function TicketListPage() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center justify-between gap-2">
-                                <p className="truncate text-sm font-semibold text-white" title={item.title}>
+                                <p className="break-words text-sm font-semibold leading-5 text-white" title={item.title}>
                                   {item.title}
                                 </p>
                                 <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-400">
                                   {item.kind === "playbook" ? "Playbook" : "Инструмент"}
                                 </span>
                               </div>
-                              <p className="truncate text-xs text-slate-400" title={item.subtitle}>
+                              <p className="line-clamp-2 text-xs leading-5 text-slate-400" title={item.subtitle}>
                                 {item.subtitle}
                               </p>
                             </div>
@@ -3819,7 +3971,7 @@ export function TicketListPage() {
                             <div className="mt-3 flex flex-wrap gap-1.5">
                               {item.metaLabels.slice(0, 4).map((label) => (
                                 <span
-                                  className="max-w-full break-all rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400"
+                                  className="max-w-full break-words rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-slate-400"
                                   key={`${item.id}:${label}`}
                                   title={label}
                                 >
@@ -3828,17 +3980,9 @@ export function TicketListPage() {
                               ))}
                             </div>
                           ) : null}
-                          {!item.enabled && item.disabledReason ? (
-                            <p
-                              className="mt-2 break-all rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100"
-                              title={item.disabledReason}
-                            >
-                              {item.disabledReason}
-                            </p>
-                          ) : null}
                           <div className="mt-3 flex justify-end">
                             <button
-                              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex min-h-8 items-center whitespace-nowrap rounded-lg border border-white/10 px-3 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={!item.enabled || toolRunMutation.isPending || playbookRunMutation.isPending}
                               onClick={() => setAutomationLaunchDraft({ kind: item.kind, id: item.id })}
                               type="button"
@@ -3849,9 +3993,53 @@ export function TicketListPage() {
                         </div>
                       );
                     })}
+                    {visibleAutomationUnavailableItems.length ? (
+                      <details
+                        className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                        open={showUnavailableAutomation || automationCatalogFilter === "disabled"}
+                        onToggle={(event) => setShowUnavailableAutomation(event.currentTarget.open)}
+                      >
+                        <summary className="cursor-pointer text-sm font-semibold text-slate-300">
+                          Недоступные инструменты: {visibleAutomationUnavailableItems.length}
+                        </summary>
+                        <div className="mt-3 grid gap-2">
+                          {visibleAutomationUnavailableItems.map((item) => {
+                            const Icon = toolIcon(item);
+                            const showReason =
+                              item.disabledReason &&
+                              item.disabledReason !== automationAvailability.dominantOfflineReason;
+                            return (
+                              <div
+                                className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm"
+                                key={`disabled:${item.id}:${item.title}`}
+                                title={item.disabledReason ?? item.subtitle}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/[0.04] text-slate-400">
+                                    <Icon className="h-3.5 w-3.5" />
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="break-words font-semibold text-slate-300">{item.title}</p>
+                                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[11px] text-slate-500">
+                                        {item.kind === "playbook" ? "Сценарий" : "Инструмент"}
+                                      </span>
+                                    </div>
+                                    <p className="line-clamp-1 text-xs text-slate-500">{item.subtitle}</p>
+                                    {showReason ? (
+                                      <p className="mt-1 text-xs leading-5 text-amber-100/80">{item.disabledReason}</p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    ) : null}
                     {!allAutomationItems.length ? (
                       <p className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-sm text-slate-400">
-                        Доступные инструменты не найдены или устройство offline.
+                        Инструменты не найдены. Проверьте устройство или настройки диагностических возможностей.
                       </p>
                     ) : null}
                     {allAutomationItems.length && !visibleAutomationItems.length ? (

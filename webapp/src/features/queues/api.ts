@@ -589,6 +589,13 @@ export type SupportMessageActionResult = {
   message: SupportTicketDetailPayload["timeline"][number];
 };
 
+export type SupportTicketReadPayload = {
+  ticket_id?: string;
+  read_scope?: string;
+  last_read_event_id: number | null;
+  no_op?: boolean;
+};
+
 export type SupportStatusActionResult = {
   ticket_id: string;
   status: string;
@@ -1001,6 +1008,50 @@ export type SupportTicketClosurePlanPayload = {
   }>;
 };
 
+export type SupportTicketInventoryContext = {
+  device_id: string | null;
+  hostname?: string | null;
+  display_name?: string | null;
+  agent?: {
+    connection_state?: "online" | "offline" | "unknown" | string;
+    last_seen_at?: string | null;
+    version?: string | null;
+    update_status?: string | null;
+    update_available?: boolean | null;
+  } | null;
+  inventory?: {
+    latest_snapshot_id?: string | null;
+    collected_at?: string | null;
+    age_seconds?: number | null;
+    freshness?: "fresh" | "stale" | "missing" | "unknown" | string;
+    source?: string | null;
+    summary?: Record<string, unknown> | null;
+  } | null;
+  binding?: {
+    responsible_person?: string | null;
+    department?: string | null;
+    building?: string | null;
+    room?: string | null;
+    status?: string | null;
+    tags?: string[];
+  } | null;
+  refresh?: {
+    policy_enabled?: boolean | null;
+    last_run_id?: string | null;
+    last_run_status?: string | null;
+    last_run_at?: string | null;
+    next_due_at?: string | null;
+    can_request_refresh?: boolean;
+  } | null;
+  signals?: {
+    stale_inventory?: boolean;
+    missing_inventory?: boolean;
+    agent_offline?: boolean;
+    failed_recent_refresh?: boolean;
+    failed_recent_operation?: boolean;
+  } | null;
+};
+
 export type SupportTicketWorkspacePayload = {
   detail: SupportTicketDetailPayload;
   tools: SupportTicketToolsPayload;
@@ -1010,6 +1061,7 @@ export type SupportTicketWorkspacePayload = {
   sla_ola: SupportTicketSlaOlaPayload;
   passport_readiness: SupportTicketPassportReadinessPayload;
   closure_plan: SupportTicketClosurePlanPayload;
+  inventory_context?: SupportTicketInventoryContext | null;
 };
 
 export type SupportToolActionResult = {
@@ -1366,6 +1418,31 @@ export async function postSupportTicketMessage(
   }
 
   return payload.data;
+}
+
+export async function postSupportTicketRead(ticketId: string, lastReadEventId: number): Promise<SupportTicketReadPayload> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/read`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      last_read_event_id: lastReadEventId
+    })
+  });
+  const payload = await readJson<SupportTicketReadPayload | ErrorResponse>(response);
+
+  if (!response.ok || !payload || ("status" in payload && payload.status === "error")) {
+    const errorPayload = payload && "status" in payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось отметить сообщения как прочитанные",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload as SupportTicketReadPayload;
 }
 
 export async function postSupportTicketWorklog(

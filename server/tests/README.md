@@ -48,8 +48,9 @@ Windows default:
 
 - If `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` are not set, DB-backed server pytest opens a local SSH tunnel to PostgreSQL using `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519`.
 - The default DB is isolated and named `pc_support_test_<domain>_<pid_or_worker>_<short_hash>`.
+- The first isolated Windows DB-backed test run can take several minutes because it creates a fresh database and applies the full Alembic chain through the SSH tunnel.
 - In shared fallback mode the harness terminates stale `pc_support_test` backends before cleanup and sets a short `lock_timeout`, so leaked sessions surface as a fast failure instead of an endless hang.
-- Shared `pc_support_test` is not valid for a full DB/API gate; use it only through explicit debug fallback.
+- Shared `pc_support_test` is not valid for a full DB/API gate; use it only through explicit debug fallback. On Windows, explicit shared debug mode also uses the local SSH tunnel.
 
 По умолчанию server suite больше не должен использовать общий `pc_support_test`.
 

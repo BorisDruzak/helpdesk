@@ -9,10 +9,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { Tabs } from "../../components/ui/tabs";
 import {
+  applyAdminDeviceBindingSuggestion,
   collectAdminDeviceInventory,
+  collectAdminDevicePresence,
   fetchAdminDeviceInventory,
+  ignoreAdminDeviceBindingSuggestion,
   saveAdminDeviceInventoryBinding,
   saveAdminDeviceInventoryRefreshPolicy,
+  type AdminBindingSuggestionItem,
   type AdminDeviceInventoryBindingUpdate,
   type AdminDeviceInventoryPayload,
 } from "./api";
@@ -69,6 +73,21 @@ function uptimeText(seconds: unknown): string {
   return days > 0 ? `${days} д ${hours} ч` : `${hours} ч`;
 }
 
+function durationText(seconds: unknown): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
+    return "—";
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+}
+
+function suggestionFields(suggestion: Record<string, unknown>): string[] {
+  return Object.entries(suggestion)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key]) => key);
+}
+
 function worstDiskPercent(result: Record<string, unknown>): string {
   const disks = getPathValue(result, "resources.disks");
   if (!Array.isArray(disks)) {
@@ -112,6 +131,15 @@ function staleLabel(collectedAt: string | null | undefined): string {
     return "missing inventory";
   }
   return staleTone(collectedAt) === "warning" ? "stale inventory" : "fresh inventory";
+}
+
+function MiniPresence({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-white px-3 py-2">
+      <p className="text-xs uppercase text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-950">{value}</p>
+    </div>
+  );
 }
 
 export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryPanelProps) {
@@ -158,12 +186,43 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
     },
   });
 
+  const presenceMutation = useMutation({
+    mutationFn: () => collectAdminDevicePresence(deviceId!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
+    },
+  });
+
+  const applySuggestionMutation = useMutation({
+    mutationFn: (suggestion: AdminBindingSuggestionItem) =>
+      applyAdminDeviceBindingSuggestion(
+        deviceId!,
+        suggestion.id,
+        suggestionFields(suggestion.suggested_binding),
+        "Применено из профиля агента"
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
+    },
+  });
+
+  const ignoreSuggestionMutation = useMutation({
+    mutationFn: (suggestionId: string) => ignoreAdminDeviceBindingSuggestion(deviceId!, suggestionId, "Оставлено без изменений"),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
+    },
+  });
+
   const data: AdminDeviceInventoryPayload | undefined = query.data;
   const latest = data?.latest_snapshot ?? null;
   const result = latest?.result ?? null;
   const effectiveSchema = latest?.effective_presentation_schema ?? latest?.presentation_schema ?? undefined;
   const binding = data?.binding ?? null;
   const refreshPolicy = data?.refresh_policy ?? null;
+  const profiles = data?.profiles ?? [];
+  const suggestions = data?.binding_suggestions ?? [];
+  const pendingSuggestions = suggestions.filter((item) => item.status === "pending");
+  const presence = data?.presence ?? null;
 
   useEffect(() => {
     setBindingForm({
@@ -313,7 +372,11 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 <p className="mt-1 text-sm text-slate-500">{formatDateTime(refreshPolicy?.next_due_at)}</p>
               </div>
             </div>
+          </>
+        ) : null}
 
+        {deviceId ? (
+          <>
             <Tabs
               items={[
                 { value: "overview", label: "Обзор" },
@@ -323,13 +386,15 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 { value: "software", label: "ПО" },
                 { value: "binding", label: "Привязка" },
                 { value: "history", label: "История" },
+                { value: "registration", label: "Регистрация" },
+                { value: "presence", label: "Присутствие" },
                 { value: "raw", label: "Raw" },
               ]}
               onValueChange={setTab}
               value={tab}
             />
 
-            {tab === "raw" ? (
+            {tab === "raw" && result ? (
               <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">
                 {JSON.stringify(result, null, 2)}
               </pre>
@@ -421,28 +486,174 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
               </div>
             ) : null}
 
+            {tab === "registration" ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-950">Профили агента</h4>
+                      <p className="mt-1 text-sm text-slate-500">
+                        На одном устройстве может быть несколько профилей. Профиль не перезаписывает подтверждённую привязку без решения ИТ.
+                      </p>
+                    </div>
+                    <Badge tone={profiles.length > 1 ? "warning" : "neutral"}>{profiles.length}</Badge>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {profiles.length === 0 ? (
+                      <p className="text-sm text-slate-500">Профили агента пока не поступали.</p>
+                    ) : (
+                      profiles.map((profile, index) => (
+                        <div className="rounded-lg bg-surface-subtle px-3 py-3 text-sm" key={`${profile.requester_id ?? "profile"}-${index}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-900">{profile.full_name || profile.display_name || "Профиль без имени"}</span>
+                            <Badge tone={profile.active ? "success" : "neutral"}>{profile.active ? "текущий" : profile.status}</Badge>
+                          </div>
+                          <p className="mt-1 text-slate-600">
+                            {[profile.department, profile.building, profile.room].filter(Boolean).join(" · ") || "Место не указано"}
+                          </p>
+                          <p className="mt-1 text-slate-500">
+                            {[profile.phone, profile.login || profile.email, formatDateTime(profile.last_seen_at)].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-950">Предложения привязки</h4>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Сравнивайте профиль агента с текущей подтверждённой привязкой и применяйте только нужные поля.
+                  </p>
+                  <div className="mt-4 space-y-3">
+                    {pendingSuggestions.length === 0 ? (
+                      <p className="text-sm text-slate-500">Нет ожидающих предложений.</p>
+                    ) : (
+                      pendingSuggestions.map((suggestion) => {
+                        const suggested = suggestion.suggested_binding;
+                        const fields = suggestionFields(suggested);
+                        return (
+                          <div className="rounded-lg bg-surface-subtle px-3 py-3 text-sm" key={suggestion.id}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-semibold text-slate-900">
+                                {String(suggestion.profile_snapshot.full_name ?? suggestion.profile_snapshot.display_name ?? "Профиль агента")}
+                              </span>
+                              <Badge tone="warning">ожидает</Badge>
+                            </div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-2">
+                              {fields.map((field) => (
+                                <div className="rounded-md bg-white px-3 py-2" key={field}>
+                                  <p className="text-xs uppercase text-slate-500">{field}</p>
+                                  <p className="mt-1 text-slate-900">{valueText(suggested[field])}</p>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                disabled={applySuggestionMutation.isPending}
+                                onClick={() => applySuggestionMutation.mutate(suggestion)}
+                                size="sm"
+                              >
+                                Применить поля
+                              </Button>
+                              <Button
+                                disabled={ignoreSuggestionMutation.isPending}
+                                onClick={() => ignoreSuggestionMutation.mutate(suggestion.id)}
+                                size="sm"
+                                variant="outline"
+                              >
+                                Оставить без изменений
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {tab === "presence" ? (
+              <div className="space-y-4 rounded-lg border border-border bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-950">Присутствие рабочего места</h4>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Показывает состояние агента и сеанса без сбора содержимого действий пользователя.
+                    </p>
+                  </div>
+                  <Button
+                    disabled={!deviceId || presenceMutation.isPending}
+                    leadingIcon={<RefreshCcw className="h-4 w-4" />}
+                    onClick={() => presenceMutation.mutate()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {presenceMutation.isPending ? "Отправляем" : "Обновить состояние"}
+                  </Button>
+                </div>
+                {presence?.latest ? (
+                  <>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg bg-surface-subtle px-4 py-3">
+                        <p className="text-sm text-slate-500">Состояние</p>
+                        <p className="mt-1 text-2xl font-semibold text-slate-950">{presence.latest.session_state ?? "unknown"}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface-subtle px-4 py-3">
+                        <p className="text-sm text-slate-500">Сеанс</p>
+                        <p className="mt-1 text-2xl font-semibold text-slate-950">{presence.latest.current_user ?? "—"}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface-subtle px-4 py-3">
+                        <p className="text-sm text-slate-500">Простой</p>
+                        <p className="mt-1 text-2xl font-semibold text-slate-950">{durationText(presence.latest.idle_seconds ?? 0)}</p>
+                      </div>
+                      <div className="rounded-lg bg-surface-subtle px-4 py-3">
+                        <p className="text-sm text-slate-500">Собрано</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-950">{formatDateTime(presence.latest.collected_at)}</p>
+                      </div>
+                    </div>
+                    {presence.today ? (
+                      <div className="grid gap-3 md:grid-cols-5">
+                        <MiniPresence label="Активно" value={durationText(presence.today.active_seconds)} />
+                        <MiniPresence label="Простой" value={durationText(presence.today.idle_seconds)} />
+                        <MiniPresence label="Заблокировано" value={durationText(presence.today.locked_seconds)} />
+                        <MiniPresence label="Офлайн" value={durationText(presence.today.offline_seconds)} />
+                        <MiniPresence label="Неизвестно" value={durationText(presence.today.unknown_seconds)} />
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500">Presence snapshot ещё не поступал.</p>
+                )}
+                {presenceMutation.isSuccess ? <p className="text-sm text-emerald-700">{presenceMutation.data.message}</p> : null}
+                {presenceMutation.isError ? <p className="text-sm text-rose-600">Не удалось отправить presence.collect</p> : null}
+              </div>
+            ) : null}
+
             {tab === "history" ? (
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-lg border border-border">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-surface-subtle text-slate-600">
-                      <tr>
-                        <th className="px-3 py-2">Time</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Summary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(data?.history ?? []).map((item) => (
-                        <tr key={item.id} className="border-t border-border">
-                          <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
-                          <td className="px-3 py-2">{item.status}</td>
-                          <td className="px-3 py-2">{item.summary ?? "-"}</td>
+                {latest ? (
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-surface-subtle text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2">Time</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Summary</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {(data?.history ?? []).map((item) => (
+                          <tr key={item.id} className="border-t border-border">
+                            <td className="px-3 py-2">{formatDateTime(item.collected_at)}</td>
+                            <td className="px-3 py-2">{item.status}</td>
+                            <td className="px-3 py-2">{item.summary ?? "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
                 <div className="rounded-lg border border-border bg-white p-4">
                   <h4 className="text-sm font-semibold text-slate-950">Binding changes</h4>
                   <div className="mt-3 space-y-3">
@@ -480,11 +691,11 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 </div>
               </div>
             ) : null}
-            {!["raw", "binding", "history"].includes(tab) ? (
+            {result && !["raw", "binding", "registration", "presence", "history"].includes(tab) ? (
               <ModuleResultRenderer result={result} presentationSchema={effectiveSchema} />
             ) : null}
 
-            {latest.device_card_slots && latest.device_card_slots.length > 0 ? (
+            {latest?.device_card_slots && latest.device_card_slots.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {latest.device_card_slots.map((slot) => (
                   <Badge key={slot} tone="neutral">

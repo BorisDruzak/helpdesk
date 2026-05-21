@@ -2,6 +2,7 @@ import ast
 from dataclasses import dataclass
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
@@ -15,6 +16,9 @@ from access_control.service import can
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import (
+    Device,
+    DiagnosticEvidence,
+    DiagnosticSession,
     Operation,
     Playbook,
     PlaybookRun,
@@ -83,13 +87,16 @@ from tickets.evidence_service import TicketEvidenceService
 from tickets.knowledge_provider import build_knowledge_suggestions
 from knowledge.suggestion_service import KnowledgeSuggestionService
 from knowledge.passport_draft_service import KnowledgePassportDraftService
+from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
+from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
+    OperatorCommandCenterPayload,
     SupportBootstrapPayload,
     SupportCountItem,
     SupportDiagnosticPolicyPayload,
@@ -117,6 +124,12 @@ from web_api.dto.support import (
     SupportTicketDetailPayload,
     SupportTicketDeviceSnapshot,
     SupportTicketKnowledgeSuggestionsPayload,
+    SupportTicketInventoryAgentContext,
+    SupportTicketInventoryBindingContext,
+    SupportTicketInventoryContext,
+    SupportTicketInventoryRefreshContext,
+    SupportTicketInventorySignals,
+    SupportTicketInventorySnapshotContext,
     SupportTicketQualityAction,
     SupportTicketQualityFeedback,
     SupportTicketQualityPayload,
@@ -744,11 +757,7 @@ async def _resolve_tool_policy_decision(
 
 
 def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
-    unread_messages = int(
-        ticket_data.get("support_pending_user_messages")
-        or ticket_data.get("support_unread_user_messages")
-        or 0
-    )
+    unread_messages = int(ticket_data.get("support_unread_user_messages") or 0)
     return SupportQueueTicketItem(
         ticket_id=str(ticket_data.get("ticket_id") or ""),
         ticket_code=ticket_data.get("ticket_code"),
@@ -1181,6 +1190,9 @@ async def _load_support_queue_state(
                 "ola_ack_breached_at": _iso_attr(ticket, "ola_ack_breached_at"),
                 "ola_processing_due_at": _iso_attr(ticket, "ola_processing_due_at"),
                 "ola_processing_breached_at": _iso_attr(ticket, "ola_processing_breached_at"),
+                "service_code": getattr(ticket, "service_code", None),
+                "offering_code": getattr(ticket, "offering_code", None),
+                "reporting_category": getattr(ticket, "reporting_category", None),
             }
         )
         accessible_entries.append((ticket_data, _build_ticket_item(ticket_data)))
@@ -4229,6 +4241,311 @@ async def handle_web_support_queue(request: web.Request):
     return json_model_response(SuccessResponse[SupportQueuePayload](data=payload))
 
 
+def _normalize_command_center_scope(value: str | None) -> str:
+    scope = str(value or "team").strip().lower()
+    if scope == "mine":
+        scope = "my"
+    if scope not in {"my", "team", "all"}:
+        return "team"
+    return scope
+
+
+def _bounded_int_query(value: str | None, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(str(value or "").strip())
+    except ValueError:
+        parsed = default
+    return min(max(parsed, minimum), maximum)
+
+
+async def _latest_operations_by_ticket(session, ticket_ids: list[str]) -> dict[str, Operation]:
+    if not ticket_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Operation)
+            .where(Operation.ticket_id.in_(ticket_ids))
+            .order_by(Operation.ticket_id.asc(), Operation.queued_at.desc())
+        )
+    ).scalars().all()
+    latest: dict[str, Operation] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if ticket_id and ticket_id not in latest:
+            latest[ticket_id] = row
+    return latest
+
+
+async def _devices_by_id(session, device_ids: list[str]) -> dict[str, Device]:
+    ids = sorted({str(device_id or "").strip() for device_id in device_ids if str(device_id or "").strip()})
+    if not ids:
+        return {}
+    rows = (await session.execute(select(Device).where(Device.device_id.in_(ids)))).scalars().all()
+    return {str(row.device_id): row for row in rows}
+
+
+async def _latest_passports_by_ticket(session, ticket_ids: list[str]) -> dict[str, TicketResolutionPassport]:
+    if not ticket_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(TicketResolutionPassport)
+            .where(TicketResolutionPassport.ticket_id.in_(ticket_ids))
+            .order_by(TicketResolutionPassport.ticket_id.asc(), TicketResolutionPassport.generated_at.desc())
+        )
+    ).scalars().all()
+    latest: dict[str, TicketResolutionPassport] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if ticket_id and ticket_id not in latest:
+            latest[ticket_id] = row
+    return latest
+
+
+async def _approvals_by_ticket(session, ticket_ids: list[str]) -> dict[str, ApprovalBatchSource]:
+    ids = sorted({str(ticket_id or "").strip() for ticket_id in ticket_ids if str(ticket_id or "").strip()})
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(TicketApproval)
+            .where(
+                TicketApproval.ticket_id.in_(ids),
+                TicketApproval.status.in_(("requested", "pending", "timed_out")),
+            )
+            .order_by(TicketApproval.ticket_id.asc(), TicketApproval.requested_at.desc())
+        )
+    ).scalars().all()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "pending_count": 0,
+                "requested_count": 0,
+                "timed_out_count": 0,
+                "current_approver": None,
+                "latest_requested_at": None,
+            },
+        )
+        if status == "timed_out":
+            state["timed_out_count"] += 1
+        elif status == "pending":
+            state["pending_count"] += 1
+        else:
+            state["requested_count"] += 1
+        requested_at = getattr(row, "requested_at", None)
+        if requested_at is not None and (
+            state["latest_requested_at"] is None or requested_at > state["latest_requested_at"]
+        ):
+            state["latest_requested_at"] = requested_at
+            state["current_approver"] = str(getattr(row, "approver_id", "") or "").strip() or None
+    return {ticket_id: ApprovalBatchSource(**values) for ticket_id, values in grouped.items()}
+
+
+async def _diagnostics_by_ticket(session, ticket_ids: list[str]) -> dict[str, DiagnosticBatchSource]:
+    ids = sorted({str(ticket_id or "").strip() for ticket_id in ticket_ids if str(ticket_id or "").strip()})
+    if not ids:
+        return {}
+    evidence_rows = (
+        await session.execute(
+            select(DiagnosticEvidence)
+            .where(DiagnosticEvidence.ticket_id.in_(ids))
+            .order_by(DiagnosticEvidence.ticket_id.asc(), DiagnosticEvidence.observed_at.desc())
+        )
+    ).scalars().all()
+    session_rows = (
+        await session.execute(
+            select(DiagnosticSession)
+            .where(DiagnosticSession.ticket_id.in_(ids))
+            .order_by(DiagnosticSession.ticket_id.asc(), DiagnosticSession.started_at.desc())
+        )
+    ).scalars().all()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in evidence_rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "evidence_count": 0,
+                "error_evidence_count": 0,
+                "warning_evidence_count": 0,
+                "latest_evidence_at": None,
+                "open_session_count": 0,
+                "failed_session_count": 0,
+                "latest_profile_code": None,
+                "latest_session_status": None,
+            },
+        )
+        state["evidence_count"] += 1
+        if status == "error":
+            state["error_evidence_count"] += 1
+        if status == "warning":
+            state["warning_evidence_count"] += 1
+        observed_at = getattr(row, "observed_at", None)
+        if observed_at is not None and (
+            state["latest_evidence_at"] is None or observed_at > state["latest_evidence_at"]
+        ):
+            state["latest_evidence_at"] = observed_at
+    for row in session_rows:
+        ticket_id = str(getattr(row, "ticket_id", "") or "")
+        if not ticket_id:
+            continue
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        state = grouped.setdefault(
+            ticket_id,
+            {
+                "evidence_count": 0,
+                "error_evidence_count": 0,
+                "warning_evidence_count": 0,
+                "latest_evidence_at": None,
+                "open_session_count": 0,
+                "failed_session_count": 0,
+                "latest_profile_code": None,
+                "latest_session_status": None,
+            },
+        )
+        if status in {"failed", "error", "timed_out"}:
+            state["failed_session_count"] += 1
+        elif status not in {"completed", "succeeded", "finished", "canceled", "cancelled"}:
+            state["open_session_count"] += 1
+        if state["latest_session_status"] is None:
+            state["latest_session_status"] = status or None
+            state["latest_profile_code"] = str(getattr(row, "profile_id", "") or "").strip() or None
+    return {ticket_id: DiagnosticBatchSource(**values) for ticket_id, values in grouped.items()}
+
+
+@require_auth("admin", "support")
+async def handle_web_support_command_center(request: web.Request):
+    started_at = time.perf_counter()
+    auth_context = request["auth_context"]
+    requested_scope = _normalize_command_center_scope(request.query.get("scope"))
+    effective_scope = requested_scope
+    metadata: dict[str, Any] = {}
+    if requested_scope == "all" and auth_context.actor_role != "admin":
+        effective_scope = "team"
+        metadata["requested_scope"] = requested_scope
+        metadata["scope_fallback_reason"] = "scope_all_requires_admin"
+
+    queue = str(request.query.get("queue") or "").strip() or None
+    assignee = str(request.query.get("assignee") or "").strip() or None
+    query = str(request.query.get("query") or request.query.get("q") or "").strip() or None
+    limit_per_section = _bounded_int_query(
+        request.query.get("limit_per_section"),
+        default=8,
+        minimum=1,
+        maximum=25,
+    )
+    window_hours = _bounded_int_query(request.query.get("window_hours"), default=24, minimum=1, maximum=168)
+    sla_risk_minutes = _bounded_int_query(
+        request.query.get("sla_risk_minutes"),
+        default=120,
+        minimum=1,
+        maximum=1440,
+    )
+    ola_risk_minutes = _bounded_int_query(
+        request.query.get("ola_risk_minutes"),
+        default=60,
+        minimum=1,
+        maximum=1440,
+    )
+    include_debug = _parse_bool_query(request.query.get("include_debug"))
+
+    try:
+        async with get_session() as session:
+            state = await _load_support_queue_state(session, auth_context, limit=2000)
+            entries = state.accessible_entries
+            if effective_scope == "my":
+                entries = [
+                    (ticket_data, item)
+                    for ticket_data, item in entries
+                    if str(item.assignee_id or "").strip() == auth_context.actor_id
+                    or str(item.next_action_owner or "").strip() == auth_context.actor_id
+                ]
+            ticket_ids = [item.ticket_id for _ticket_data, item in entries if item.ticket_id]
+            device_ids = [str(ticket_data.get("device_id") or "") for ticket_data, _item in entries]
+            operations_by_ticket = await _latest_operations_by_ticket(session, ticket_ids)
+            devices_by_id = await _devices_by_id(session, device_ids)
+            passports_by_ticket = await _latest_passports_by_ticket(session, ticket_ids)
+            approvals_by_ticket = await _approvals_by_ticket(session, ticket_ids)
+            diagnostics_by_ticket = await _diagnostics_by_ticket(session, ticket_ids)
+            if include_debug:
+                metadata["candidate_ticket_count"] = len(entries)
+                metadata["operation_ticket_count"] = len(operations_by_ticket)
+                metadata["device_count"] = len(devices_by_id)
+                metadata["passport_ticket_count"] = len(passports_by_ticket)
+                metadata["approval_ticket_count"] = len(approvals_by_ticket)
+                metadata["diagnostics_ticket_count"] = len(diagnostics_by_ticket)
+            payload = build_operator_command_center_payload(
+                entries,
+                operations_by_ticket=operations_by_ticket,
+                devices_by_id=devices_by_id,
+                passports_by_ticket=passports_by_ticket,
+                approvals_by_ticket=approvals_by_ticket,
+                diagnostics_by_ticket=diagnostics_by_ticket,
+                scope=effective_scope,
+                queue=queue,
+                assignee=assignee,
+                query=query,
+                limit_per_section=limit_per_section,
+                window_hours=window_hours,
+                sla_risk_minutes=sla_risk_minutes,
+                ola_risk_minutes=ola_risk_minutes,
+                metadata=metadata,
+            )
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if include_debug:
+                payload.metadata["duration_ms"] = duration_ms
+                payload.metadata["section_counts"] = {
+                    section.key: section.count
+                    for section in payload.sections
+                }
+            section_counts = ",".join(f"{section.key}:{section.count}" for section in payload.sections if section.count)
+            source_counts = (
+                f"operations:{len(operations_by_ticket)},devices:{len(devices_by_id)},"
+                f"passports:{len(passports_by_ticket)},approvals:{len(approvals_by_ticket)},"
+                f"diagnostics:{len(diagnostics_by_ticket)}"
+            )
+            log_message = (
+                "[web_support_command_center.metrics] "
+                f"duration_ms={duration_ms} actor_id={auth_context.actor_id} "
+                f"scope={effective_scope} queue={queue or '-'} assignee={assignee or '-'} "
+                f"query={'yes' if query else 'no'} limit_per_section={limit_per_section} "
+                f"window_hours={window_hours} candidates={len(entries)} "
+                f"attention_items={payload.summary.total_attention_items} "
+                f"sections={section_counts or '-'} sources={source_counts}"
+            )
+            if duration_ms >= 1000:
+                logger.warning(log_message)
+            else:
+                logger.info(log_message)
+    except Exception as exc:
+        logger.warning(
+            f"[web_support_command_center] DB unavailable, returning empty command center: "
+            f"actor_id={auth_context.actor_id}, error={exc}"
+        )
+        payload = build_operator_command_center_payload(
+            [],
+            scope=effective_scope,
+            queue=queue,
+            assignee=assignee,
+            query=query,
+            limit_per_section=limit_per_section,
+            window_hours=window_hours,
+            sla_risk_minutes=sla_risk_minutes,
+            ola_risk_minutes=ola_risk_minutes,
+            metadata={**metadata, "degraded": True},
+        )
+    return json_model_response(SuccessResponse[OperatorCommandCenterPayload](data=payload))
+
+
 @require_auth("admin", "support")
 async def handle_web_support_workspace_summary(request: web.Request):
     auth_context = request["auth_context"]
@@ -4268,6 +4585,154 @@ async def handle_web_support_workspace_summary(request: web.Request):
             smart_view_options=[SupportFilterOption(**option) for option in empty_smart_options],
         )
     return json_model_response(SuccessResponse[SupportWorkspaceSummaryPayload](data=payload))
+
+
+def _support_inventory_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def _support_inventory_age_seconds(value: datetime | None, now: datetime) -> int | None:
+    if value is None:
+        return None
+    collected_at = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return max(0, int((now - collected_at.astimezone(timezone.utc)).total_seconds()))
+
+
+def _support_inventory_freshness(latest: Any, age_seconds: int | None, stale_seconds: int = 7 * 24 * 60 * 60) -> str:
+    if latest is None:
+        return "missing"
+    if age_seconds is None:
+        return "unknown"
+    return "stale" if age_seconds > stale_seconds else "fresh"
+
+
+def _support_inventory_summary(latest: Any) -> dict[str, Any] | None:
+    if latest is None:
+        return None
+    normalized = getattr(latest, "normalized", None)
+    if isinstance(normalized, dict) and normalized:
+        return normalized
+    snapshot = getattr(latest, "snapshot", None)
+    if not isinstance(snapshot, dict):
+        return None
+    identity = snapshot.get("identity") if isinstance(snapshot.get("identity"), dict) else {}
+    platform = snapshot.get("platform") if isinstance(snapshot.get("platform"), dict) else {}
+    network = snapshot.get("network") if isinstance(snapshot.get("network"), dict) else {}
+    resources = snapshot.get("resources") if isinstance(snapshot.get("resources"), dict) else {}
+    return {
+        "hostname": identity.get("hostname"),
+        "current_user": identity.get("current_user"),
+        "os_name": platform.get("os_name"),
+        "os_version": platform.get("os_version"),
+        "primary_ip": network.get("primary_ip"),
+        "cpu_percent": resources.get("cpu_percent"),
+        "memory_percent": resources.get("memory_percent"),
+    }
+
+
+def _compose_support_inventory_context(
+    *,
+    device_id: str,
+    detail: SupportTicketDetailPayload,
+    latest: Any,
+    binding: dict[str, Any],
+    policy: Any,
+    last_refresh_run: Any,
+) -> SupportTicketInventoryContext | None:
+    if not device_id:
+        return None
+
+    now = datetime.now(timezone.utc)
+    age_seconds = _support_inventory_age_seconds(getattr(latest, "collected_at", None), now)
+    freshness = _support_inventory_freshness(latest, age_seconds)
+    failed_recent_operation = any(
+        (operation.status or "").lower() in {"failed", "error"}
+        or (operation.display_status or "").lower() in {"failed", "error"}
+        for operation in detail.snapshot.latest_operations
+    )
+    agent_offline = not bool(detail.snapshot.device.online)
+    failed_recent_refresh = str(getattr(last_refresh_run, "status", "") or "").lower() == "failed"
+
+    return SupportTicketInventoryContext(
+        device_id=device_id,
+        hostname=detail.snapshot.device.hostname,
+        display_name=detail.snapshot.device.hostname or device_id,
+        agent=SupportTicketInventoryAgentContext(
+            connection_state="offline" if agent_offline else "online",
+            last_seen_at=detail.snapshot.device.last_seen_at,
+            version=detail.snapshot.device.agent_version,
+            update_status=None,
+            update_available=None,
+        ),
+        inventory=SupportTicketInventorySnapshotContext(
+            latest_snapshot_id=str(getattr(latest, "id", "") or "") or None,
+            collected_at=_support_inventory_iso(getattr(latest, "collected_at", None)),
+            age_seconds=age_seconds,
+            freshness=freshness,
+            source=getattr(latest, "source_tool", None),
+            summary=_support_inventory_summary(latest),
+        ),
+        binding=SupportTicketInventoryBindingContext(
+            responsible_person=binding.get("responsible_user"),
+            department=binding.get("department"),
+            building=binding.get("building"),
+            room=binding.get("room"),
+            status=binding.get("status"),
+            tags=list(binding.get("tags") or []),
+        ),
+        refresh=SupportTicketInventoryRefreshContext(
+            policy_enabled=bool(getattr(policy, "enabled", False)) if policy is not None else None,
+            last_run_id=str(getattr(last_refresh_run, "id", "") or "") or None,
+            last_run_status=getattr(last_refresh_run, "status", None),
+            last_run_at=_support_inventory_iso(getattr(last_refresh_run, "requested_at", None)),
+            next_due_at=_support_inventory_iso(getattr(policy, "next_due_at", None)),
+            can_request_refresh=False,
+        ),
+        signals=SupportTicketInventorySignals(
+            stale_inventory=freshness == "stale",
+            missing_inventory=freshness == "missing",
+            agent_offline=agent_offline,
+            failed_recent_refresh=failed_recent_refresh,
+            failed_recent_operation=failed_recent_operation,
+        ),
+    )
+
+
+async def _build_support_inventory_context(
+    session: Any,
+    ticket: Ticket,
+    detail: SupportTicketDetailPayload,
+) -> SupportTicketInventoryContext | None:
+    device_id = str(getattr(ticket, "device_id", "") or detail.snapshot.device.device_id or "").strip()
+    if not device_id:
+        return None
+
+    inventory_service = DeviceInventoryService(session)
+    try:
+        latest = await inventory_service.get_latest(device_id)
+        binding_row = await inventory_service.get_binding(device_id)
+        policy = await inventory_service.get_effective_refresh_policy(device_id)
+        refresh_runs = await inventory_service.list_refresh_runs(device_id=device_id, limit=1)
+    except Exception as exc:
+        logger.warning(f"[support_inventory_context] inventory lookup failed: device_id={device_id}, error={exc}")
+        latest = None
+        binding_row = None
+        policy = None
+        refresh_runs = []
+    last_refresh_run = refresh_runs[0] if refresh_runs else None
+    return _compose_support_inventory_context(
+        device_id=device_id,
+        detail=detail,
+        latest=latest,
+        binding=binding_to_dict(binding_row) if binding_row is not None else {},
+        policy=policy,
+        last_refresh_run=last_refresh_run,
+    )
 
 
 @require_auth("admin", "support")
@@ -4313,6 +4778,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
             sla_ola = _build_support_sla_ola_payload(ticket)
             passport_readiness = _build_support_passport_readiness_payload(ticket.ticket_id, passport)
             closure_plan = _build_support_closure_plan_payload(ticket.ticket_id, detail)
+            inventory_context = await _build_support_inventory_context(session, ticket, detail)
     except Exception as exc:
         logger.warning(
             f"[web_support_ticket_workspace] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
@@ -4335,6 +4801,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
         sla_ola=sla_ola,
         passport_readiness=passport_readiness,
         closure_plan=closure_plan,
+        inventory_context=inventory_context,
     )
     return json_model_response(SuccessResponse[SupportTicketWorkspacePayload](data=payload))
 

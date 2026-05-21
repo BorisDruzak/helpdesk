@@ -63,6 +63,17 @@ export type PolicyHealthSimulationResult = {
   would_create_ticket: false;
 };
 
+export type PolicySimulationPayload = {
+  template_code: string;
+  service_code?: string | null;
+  offering_code?: string | null;
+  offering_full_code?: string | null;
+  request_form_data: Record<string, unknown>;
+  custom_fields?: Record<string, unknown>;
+  device_metadata?: Record<string, unknown>;
+  requester_context?: Record<string, unknown>;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -78,13 +89,7 @@ export async function fetchPolicyHealthDashboard(): Promise<PolicyHealthDashboar
   return readJson(response, "Не удалось загрузить health dashboard");
 }
 
-export async function simulatePolicyHealth(payload: {
-  template_code: string;
-  request_form_data: Record<string, unknown>;
-  custom_fields?: Record<string, unknown>;
-  device_metadata?: Record<string, unknown>;
-  requester_context?: Record<string, unknown>;
-}): Promise<PolicyHealthSimulationResult> {
+export async function simulatePolicyHealth(payload: PolicySimulationPayload): Promise<PolicyHealthSimulationResult> {
   const response = await fetch("/api/web/admin/helpdesk/policy-health/simulate", {
     method: "POST",
     credentials: "same-origin",

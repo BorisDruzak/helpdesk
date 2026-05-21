@@ -350,10 +350,13 @@ Gate semantics:
 - `--gate full` is the default for `deploy_workspace_to_remote.py` and `release_server_to_remote.py`; it requires a green CI artifact for the current commit and remains the important final release-checkpoint before publishing a verified release state. Codex must run full gate only after an explicit user request or confirmation. Routine GitHub pushes of dev branches happen immediately after local commit and do not require full gate.
 - `--gate quick` is an explicit staging/iteration mode; it skips only the green full-CI artifact requirement and still requires local verification, relevant focused tests, remote smoke, and browser/live checks for the touched area.
 - `--skip-ci-check` remains an emergency compatibility bypass and should be treated as equivalent to quick gate, not as a normal release path.
+- Full CI is only for a frozen release candidate SHA. Use targeted checks and `--gate quick` while iterating. After a green full CI artifact is produced, do not commit before full-gate release; any new commit is a new release candidate and needs a new full CI artifact.
+- Before full-gate release, run `python scripts/release_candidate_preflight.py`. It checks the current `HEAD`, verifies that `artifacts/ci/<HEAD>/summary.json` exists, requires `summary.commit == HEAD`, requires `status == green`, checks the webapp bundle artifact, and reports release-relevant dirty workspace state before a long release flow starts. Generated `artifacts/*` are ignored by this preflight.
 
 Полный release-checkpoint, запускать только по явному запросу пользователя:
 
 ```powershell
+python scripts/release_candidate_preflight.py
 python scripts/release_server_to_remote.py --gate full
 python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py smoke server
@@ -362,6 +365,7 @@ python scripts/manage_remote_stack.py smoke server
 Более простой full sync, если пользователь явно запросил full gate, но полный release flow не нужен:
 
 ```powershell
+python scripts/release_candidate_preflight.py
 python scripts/deploy_workspace_to_remote.py --gate full
 python scripts/manage_remote_stack.py status control
 python scripts/manage_remote_stack.py smoke server

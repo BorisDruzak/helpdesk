@@ -2792,6 +2792,7 @@ class DeviceInventoryRefreshRun(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     policy_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    bulk_operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     requested_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -2806,7 +2807,141 @@ class DeviceInventoryRefreshRun(Base):
     __table_args__ = (
         Index("ix_device_inventory_refresh_runs_device_requested", "device_id", "requested_at"),
         Index("ix_device_inventory_refresh_runs_policy_requested", "policy_id", "requested_at"),
+        Index("ix_device_inventory_refresh_runs_bulk_operation", "bulk_operation_id"),
         Index("ix_device_inventory_refresh_runs_status", "status"),
+    )
+
+
+class DeviceInventoryBulkOperation(Base):
+    """Tracked fleet operation for batched inventory refresh."""
+    __tablename__ = "device_inventory_bulk_operations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    operation_type: Mapped[str] = mapped_column(String(40), nullable=False, default="inventory_refresh")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned")
+    requested_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    filters: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    wave: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    total_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dispatched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_bulk_operations_requested", "requested_at"),
+        Index("ix_device_inventory_bulk_operations_status", "status"),
+    )
+
+
+class DeviceInventoryBulkOperationItem(Base):
+    """Per-device item in a batched inventory refresh operation."""
+    __tablename__ = "device_inventory_bulk_operation_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    operation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wave_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    job_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_bulk_items_operation", "operation_id"),
+        Index("ix_device_inventory_bulk_items_device", "device_id"),
+        UniqueConstraint("operation_id", "device_id", name="uq_device_inventory_bulk_item_operation_device"),
+    )
+
+
+class DeviceBindingSuggestion(Base):
+    """Pending or reviewed workplace binding suggestion from an agent profile."""
+    __tablename__ = "device_binding_suggestions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="agent_profile")
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    suggested_binding: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    profile_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    confidence: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_binding_suggestions_device_status", "device_id", "status"),
+        Index("ix_device_binding_suggestions_source_ref", "source", "source_ref"),
+    )
+
+
+class DevicePresenceSnapshot(Base):
+    """Privacy-safe presence snapshot for a workplace device."""
+    __tablename__ = "device_presence_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    collected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    session_state: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    current_user: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    idle_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    locked: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_presence_snapshots_device_collected", "device_id", "collected_at"),
+        Index("ix_device_presence_snapshots_state", "session_state"),
+    )
+
+
+class DevicePresenceDailySummary(Base):
+    """Daily aggregate derived from presence snapshots."""
+    __tablename__ = "device_presence_daily_summaries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    summary_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    idle_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    offline_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unknown_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "summary_date", name="uq_device_presence_daily_device_date"),
+        Index("ix_device_presence_daily_device_date", "device_id", "summary_date"),
     )
 
 
