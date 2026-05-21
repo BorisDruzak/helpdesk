@@ -20,32 +20,49 @@ const scopeOptions: Array<{ value: ApprovalConsentScope; label: string }> = [
 ];
 
 const statusOptions = [
-  { value: "pending", label: "Pending" },
+  { value: "pending", label: "Ожидает" },
   { value: "all", label: "Все статусы" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "expired", label: "Expired" },
+  { value: "approved", label: "Согласовано" },
+  { value: "rejected", label: "Отклонено" },
+  { value: "expired", label: "Истекло" },
 ];
 
 const kindOptions = [
   { value: "", label: "Все типы" },
-  { value: "pending_approval", label: "Pending approvals" },
-  { value: "pending_consent", label: "Consent-запросы" },
+  { value: "pending_approval", label: "Согласования" },
+  { value: "pending_consent", label: "Запросы согласия" },
   { value: "ticket_approval", label: "Тикеты" },
-  { value: "change_approval", label: "Changes" },
-  { value: "risky_tool_consent", label: "Risky tools" },
-  { value: "remote_assist_consent", label: "Remote Assist" },
+  { value: "change_approval", label: "Изменения" },
+  { value: "risky_tool_consent", label: "Рискованные команды" },
+  { value: "remote_assist_consent", label: "Удалённая помощь" },
   { value: "closure_approval", label: "Закрытие" },
-  { value: "policy_override", label: "Policy overrides" },
+  { value: "policy_override", label: "Переопределения политик" },
 ];
 
 const riskOptions: Array<{ value: "" | Exclude<ApprovalConsentRisk, "unknown">; label: string }> = [
   { value: "", label: "Любой риск" },
-  { value: "critical", label: "Critical" },
-  { value: "high", label: "High" },
-  { value: "medium", label: "Medium" },
-  { value: "low", label: "Low" },
+  { value: "critical", label: "Критичный" },
+  { value: "high", label: "Высокий" },
+  { value: "medium", label: "Средний" },
+  { value: "low", label: "Низкий" },
 ];
+
+const statusLabels: Record<ApprovalConsentItem["status"], string> = {
+  pending: "Ожидает",
+  approved: "Согласовано",
+  rejected: "Отклонено",
+  expired: "Истекло",
+  canceled: "Отменено",
+  unknown: "Неизвестно",
+};
+
+const riskLabels: Record<ApprovalConsentRisk, string> = {
+  critical: "Критичный",
+  high: "Высокий",
+  medium: "Средний",
+  low: "Низкий",
+  unknown: "Неизвестно",
+};
 
 const severityClasses: Record<ApprovalConsentSeverity, string> = {
   critical: "border-red-300 bg-red-50 text-red-950",
@@ -99,7 +116,7 @@ function kindLabel(kind: ApprovalConsentItem["kind"]) {
     case "ticket_approval":
       return "Тикет";
     case "change_approval":
-      return "Change";
+      return "Изменение";
     case "risky_tool_consent":
       return "Рискованная команда";
     case "remote_assist_consent":
@@ -107,7 +124,7 @@ function kindLabel(kind: ApprovalConsentItem["kind"]) {
     case "closure_approval":
       return "Закрытие";
     case "policy_override":
-      return "Policy override";
+      return "Переопределение политики";
   }
 }
 
@@ -126,7 +143,7 @@ function blockingBadges(item: ApprovalConsentItem) {
     badges.push("Ждёт пользователя");
   }
   if (item.blocking.blocks_change) {
-    badges.push("Блокирует change");
+    badges.push("Блокирует изменение");
   }
   if (item.blocking.blocks_closure) {
     badges.push("Блокирует закрытие");
@@ -143,8 +160,8 @@ function ItemCard({ item }: { item: ApprovalConsentItem }) {
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Badge>{kindLabel(item.kind)}</Badge>
-            <Badge className={riskClasses[item.risk]}>{item.risk}</Badge>
-            <Badge>{item.status}</Badge>
+            <Badge className={riskClasses[item.risk]}>{riskLabels[item.risk]}</Badge>
+            <Badge>{statusLabels[item.status]}</Badge>
             {dueAt ? <Badge>Срок: {dueAt}</Badge> : null}
           </div>
           <h2 className="mt-2 break-words text-base font-semibold text-slate-950">{item.title || "Без названия"}</h2>
@@ -161,7 +178,7 @@ function ItemCard({ item }: { item: ApprovalConsentItem }) {
       <p className="mt-3 break-words text-sm leading-6 text-slate-700">{item.reason}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {item.ticket_number ? <Badge>Тикет: {item.ticket_number}</Badge> : null}
-        {item.change_number ? <Badge>Change: {item.change_number}</Badge> : null}
+        {item.change_number ? <Badge>Изменение: {item.change_number}</Badge> : null}
         {item.context.queue ? <Badge>Очередь: {item.context.queue}</Badge> : null}
         {item.context.assignee ? <Badge>Исполнитель: {item.context.assignee}</Badge> : null}
         {item.requester_name ? <Badge>Инициатор: {item.requester_name}</Badge> : null}
@@ -213,7 +230,7 @@ function EmptyState() {
         <CheckCircle2 className="mt-1 h-6 w-6 shrink-0" />
         <div>
           <h2 className="text-xl font-semibold">Нет ожидающих согласований</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6">Pending approvals, consent-запросы и policy overrides не найдены.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6">Ожидающие согласования, запросы согласия и переопределения политик не найдены.</p>
         </div>
       </div>
     </section>
@@ -270,7 +287,7 @@ export function ApprovalConsentCenterPage() {
                 Центр согласований и согласий
               </h1>
               <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-                Все pending approvals, consent-запросы, рискованные действия, закрытия и policy overrides в одном месте.
+                Все ожидающие согласования, запросы согласия, рискованные действия, закрытия и переопределения политик в одном месте.
               </p>
             </div>
             <button
@@ -284,9 +301,9 @@ export function ApprovalConsentCenterPage() {
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
             <label className="text-xs font-semibold text-slate-600">
-              Scope
+              Охват
               <select
-                aria-label="Scope"
+                aria-label="Охват"
                 value={scope}
                 onChange={(event) => updateQuery({ scope: event.target.value as ApprovalConsentScope })}
                 className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900"
@@ -402,7 +419,7 @@ export function ApprovalConsentCenterPage() {
 
         <footer className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <Clock3 className="h-4 w-4" />
-          Первый cut read-only: действия approve/reject показываются только если backend отдаёт безопасный typed action.
+          Первый cut read-only: действия подтверждения и отклонения показываются только если backend отдаёт безопасный typed action.
         </footer>
       </div>
     </main>
