@@ -39,6 +39,21 @@ DATABASE_URL = os.getenv(
 # Enable database persistence (set to False to disable DB features)
 ENABLE_DB_PERSISTENCE = os.getenv("ENABLE_DB_PERSISTENCE", "true").lower() == "true"
 
+# Pilot/readiness policy flags. Defaults keep local/dev behavior compatible;
+# pilot-like deployments should override them through env/server .env.
+PILOT_STAND_MODE = os.getenv("PILOT_STAND_MODE", "false").lower() == "true"
+REQUIRE_HTTPS = os.getenv("REQUIRE_HTTPS", "false").lower() == "true"
+REQUIRE_WSS = os.getenv("REQUIRE_WSS", "false").lower() == "true"
+AUTH_ALLOW_QUERY_TOKEN = os.getenv("AUTH_ALLOW_QUERY_TOKEN", "true").lower() == "true"
+PILOT_MIN_AGENT_VERSION = os.getenv("PILOT_MIN_AGENT_VERSION", "").strip()
+WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", "false").lower() == "true"
+WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
+WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
+TECH_BACKUP_STATUS_PATH = os.getenv("TECH_BACKUP_STATUS_PATH", "").strip()
+TECH_RESTORE_DRILL_STATUS_PATH = os.getenv("TECH_RESTORE_DRILL_STATUS_PATH", "").strip()
+TECH_RELEASE_STATUS_PATH = os.getenv("TECH_RELEASE_STATUS_PATH", "").strip()
+TECH_BUSINESS_SMOKE_STATUS_PATH = os.getenv("TECH_BUSINESS_SMOKE_STATUS_PATH", "").strip()
+
 # ============================================================================
 # File Paths
 # ============================================================================

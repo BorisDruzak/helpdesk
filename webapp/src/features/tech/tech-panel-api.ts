@@ -1,4 +1,6 @@
 export type TechStatus = "ok" | "success" | "warning" | "degraded" | "error" | "critical" | string;
+export type TechReadinessStatus = "ready" | "degraded" | "blocked";
+export type TechGateStatus = "ok" | "warning" | "blocked" | "unknown";
 
 export type TechOverviewPayload = {
   alerts?: TechAlert[];
@@ -66,6 +68,174 @@ export type TechPanelSnapshot = {
   userAuditEvents: TechAuditEvent[];
 };
 
+export type TechReadinessGate = {
+  key: string;
+  title: string;
+  status: TechGateStatus;
+  severity: "info" | "warning" | "critical";
+  description: string;
+  evidence?: string | null;
+  action_label?: string | null;
+  action_href?: string | null;
+};
+
+export type TechSmokeStep = {
+  key: string;
+  status: string;
+  title?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+};
+
+export type TechSmokeResult = {
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  steps?: TechSmokeStep[];
+  artifact?: string | null;
+  [key: string]: unknown;
+};
+
+export type TechMarkerStatus = {
+  status?: string | null;
+  finished_at?: string | null;
+  target?: string | null;
+  duration_seconds?: number | null;
+  artifact?: string | null;
+  [key: string]: unknown;
+};
+
+export type TechProblemDevice = {
+  device_id: string;
+  hostname?: string | null;
+  status?: string | null;
+  last_seen_at?: string | null;
+  agent_version?: string | null;
+  reasons?: string[];
+  href?: string | null;
+};
+
+export type TechPanelV2Snapshot = {
+  generated_at: string;
+  readiness: {
+    status: TechReadinessStatus;
+    score?: number | null;
+    blockers: TechReadinessGate[];
+    warnings: TechReadinessGate[];
+    gates: TechReadinessGate[];
+  };
+  security: {
+    auth_mode: {
+      db_users_enabled: boolean;
+      config_fallback_enabled: boolean;
+      in_memory_fallback_possible: boolean;
+      status: TechGateStatus;
+      notes: string[];
+    };
+    session_cookie: {
+      secure?: boolean | null;
+      httponly?: boolean | null;
+      samesite?: "strict" | "lax" | "none" | "unknown" | null;
+      status: TechGateStatus;
+      notes: string[];
+    };
+    token_channels: {
+      query_token_allowed: boolean;
+      query_token_attempts_recent?: number | null;
+      status: TechGateStatus;
+    };
+    agent_connection_policy: {
+      mode?: string | null;
+      status: TechGateStatus;
+      pending_requests: number;
+      stale_pending_requests: number;
+    };
+    audit: {
+      failed_logins_recent: number;
+      locked_users_count: number;
+      invalid_agent_tokens_recent: number;
+    };
+  };
+  runtime: {
+    services: Array<{ key: string; title: string; status: "ok" | "degraded" | "down" | "unknown"; details?: string | null; last_seen_at?: string | null }>;
+    web_sockets: { ui_connections: number; agent_connections: number };
+    schedulers: {
+      operation_watchdog: string;
+      ticket_sla_watchdog: string;
+      ticket_auto_close_watchdog: string;
+      inventory_scheduler?: string | null;
+      observer_refresh_runtime?: string | null;
+    };
+  };
+  database: {
+    persistence_enabled: boolean;
+    reachable: boolean;
+    latency_ms?: number | null;
+    database?: string | null;
+    pool_status?: string | null;
+    alembic_current?: string | null;
+    alembic_head?: string | null;
+    migrations_status: TechGateStatus;
+    last_backup?: TechMarkerStatus | null;
+    last_restore_drill?: TechMarkerStatus | null;
+  };
+  agents: {
+    total: number;
+    online: number;
+    offline: number;
+    stale: number;
+    pending_connection_requests: number;
+    reprovision_required: number;
+    invalid_token_recent: number;
+    below_baseline?: number | null;
+    update_in_progress: number;
+    update_failed_recent: number;
+    update_timed_out_recent: number;
+    awaiting_handshake_confirm: number;
+    problem_devices: TechProblemDevice[];
+  };
+  operations: {
+    queued_stuck: number;
+    sent_stuck: number;
+    running_stuck: number;
+    waiting_consent?: number | null;
+    recent_failed?: number | null;
+    outbox_backlog?: number | null;
+    recent_nack_count?: number | null;
+    items: TechStuckOperation[];
+  };
+  logs: {
+    problem_logs: TechLogEntry[];
+    error_count?: number | null;
+    warning_count?: number | null;
+    critical_count?: number | null;
+  };
+  alerts: TechAlert[];
+  release: {
+    branch?: string | null;
+    commit?: string | null;
+    deployed_at?: string | null;
+    webapp_bundle_commit?: string | null;
+    gate?: "full" | "quick" | "bypassed" | "unknown";
+    dirty?: boolean | null;
+    remote_profile?: string | null;
+  };
+  smoke: {
+    last_health_smoke?: TechSmokeResult | null;
+    last_business_smoke?: TechSmokeResult | null;
+    status: TechGateStatus;
+  };
+  links: {
+    observer: string;
+    inventory: string;
+    device_operations?: string | null;
+    agent_updates: string;
+    command_center: string;
+    approval_center: string;
+    logs?: string | null;
+  };
+};
+
 type ErrorResponse = {
   error?: string;
   error_code?: string;
@@ -102,6 +272,19 @@ async function readLegacyResponse<T extends Record<string, unknown>>(
     throw new TechPanelApiError(errorPayload?.error ?? fallbackMessage, response.status, errorPayload?.error_code);
   }
   return payload as T;
+}
+
+async function readSnapshotResponse(response: Response): Promise<TechPanelV2Snapshot> {
+  const payload = await readJson<TechPanelV2Snapshot | ErrorResponse>(response);
+  if (!response.ok || !payload || (payload as ErrorResponse).status === "error") {
+    const errorPayload = payload && (payload as ErrorResponse).status === "error" ? (payload as ErrorResponse) : null;
+    throw new TechPanelApiError(
+      errorPayload?.error ?? "Не удалось загрузить снимок техпанели.",
+      response.status,
+      errorPayload?.error_code,
+    );
+  }
+  return payload as TechPanelV2Snapshot;
 }
 
 export async function fetchTechOverview(): Promise<TechOverviewPayload> {
@@ -182,4 +365,9 @@ export async function fetchTechPanelSnapshot(): Promise<TechPanelSnapshot> {
     stuckOperations,
     userAuditEvents,
   };
+}
+
+export async function fetchTechPanelV2Snapshot(): Promise<TechPanelV2Snapshot> {
+  const response = await fetch("/api/web/admin/tech/snapshot", { credentials: "same-origin" });
+  return readSnapshotResponse(response);
 }

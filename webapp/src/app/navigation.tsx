@@ -268,7 +268,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Техпанель",
-    description: "Health, alerts, проблемные логи и audit feed сервера",
+    description: "Готовность стенда, безопасность, runtime, PostgreSQL, агенты, операции и smoke",
     icon: Server,
     section: "admin",
     workspace: "admin",

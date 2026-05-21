@@ -441,28 +441,37 @@ describe("appRoutes", () => {
         });
       }
 
-      if (url.endsWith("/api/web/admin/tech/overview")) {
-        return jsonResponse(createTechOverviewPayload());
-      }
-
-      if (url.endsWith("/api/web/admin/tech/alerts")) {
-        return jsonResponse(createTechAlertsPayload());
-      }
-
-      if (url.startsWith("/api/web/admin/tech/logs?")) {
-        return jsonResponse(createTechLogsPayload());
-      }
-
-      if (url.endsWith("/api/web/admin/tech/operations/stuck")) {
-        return jsonResponse({ status: "ok", operations: [] });
-      }
-
-      if (url.startsWith("/api/web/admin/tech/agents/audit?")) {
-        return jsonResponse({ status: "ok", events: [] });
-      }
-
-      if (url.startsWith("/api/web/admin/tech/users/audit?")) {
-        return jsonResponse({ status: "ok", events: [] });
+      if (url.endsWith("/api/web/admin/tech/snapshot")) {
+        return jsonResponse({
+          generated_at: "2026-05-21T08:00:00Z",
+          readiness: {
+            status: "blocked",
+            score: 40,
+            blockers: [{ key: "postgres_reachable", title: "PostgreSQL недоступен", status: "blocked", severity: "critical", description: "PostgreSQL health check failed" }],
+            warnings: [],
+            gates: [{ key: "postgres_reachable", title: "PostgreSQL недоступен", status: "blocked", severity: "critical", description: "PostgreSQL health check failed" }],
+          },
+          security: {
+            auth_mode: { db_users_enabled: true, config_fallback_enabled: false, in_memory_fallback_possible: false, status: "ok", notes: [] },
+            session_cookie: { secure: false, httponly: true, samesite: "lax", status: "warning", notes: [] },
+            token_channels: { query_token_allowed: true, status: "warning" },
+            agent_connection_policy: { mode: "manual", status: "ok", pending_requests: 0, stale_pending_requests: 0 },
+            audit: { failed_logins_recent: 0, locked_users_count: 0, invalid_agent_tokens_recent: 0 },
+          },
+          runtime: {
+            services: [{ key: "api", title: "API", status: "ok" }],
+            web_sockets: { ui_connections: 0, agent_connections: 0 },
+            schedulers: { operation_watchdog: "running", ticket_sla_watchdog: "running", ticket_auto_close_watchdog: "running", inventory_scheduler: "unknown", observer_refresh_runtime: "unknown" },
+          },
+          database: { persistence_enabled: true, reachable: false, migrations_status: "unknown", last_backup: null, last_restore_drill: null },
+          agents: { total: 0, online: 0, offline: 0, stale: 0, pending_connection_requests: 0, reprovision_required: 0, invalid_token_recent: 0, below_baseline: null, update_in_progress: 0, update_failed_recent: 0, update_timed_out_recent: 0, awaiting_handshake_confirm: 0, problem_devices: [] },
+          operations: { queued_stuck: 0, sent_stuck: 0, running_stuck: 0, items: [] },
+          logs: { problem_logs: [{ id: "log-1", level: "error", message: "Inventory refresh runtime already running", created_at: "2026-05-21T07:55:00Z" }] },
+          alerts: [{ id: "alert-1", title: "Операции требуют внимания", severity: "critical" }],
+          release: { gate: "unknown" },
+          smoke: { status: "unknown", last_business_smoke: null, last_health_smoke: null },
+          links: { observer: "/app/admin/observer", inventory: "/app/admin/inventory", device_operations: "/app/admin/device-operations", agent_updates: "/app/admin/agent-updates", command_center: "/app/support", approval_center: "/app/support/approvals", logs: "/app/admin/tech?tab=logs" },
+        });
       }
 
       throw new Error(`Unexpected fetch: ${url}`);
@@ -470,11 +479,11 @@ describe("appRoutes", () => {
 
     renderApp(["/app/admin/tech"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Техпанель сервера" })).toBeInTheDocument();
-    expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
-    expect(await screen.findByText("Операции требуют внимания")).toBeInTheDocument();
-    expect(await screen.findByText("Inventory refresh runtime already running")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/tech/overview", { credentials: "same-origin" });
+    expect(await screen.findByRole("heading", { name: "Техпанель стенда" })).toBeInTheDocument();
+    expect(await screen.findByText("BLOCKED")).toBeInTheDocument();
+    expect(await screen.findByText("PostgreSQL недоступен")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Логи и сигналы/ })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/tech/snapshot", { credentials: "same-origin" });
   });
 
   it("opens requester help without a web session", async () => {

@@ -12,6 +12,7 @@ from auth.context import AuthContext, AuthType
 from auth.service import AuthService
 from app.db import get_session
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+from config import AUTH_ALLOW_QUERY_TOKEN
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
@@ -72,6 +73,12 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
     # Try query parameter (fallback, with warning)
     token = request.query.get("token")
     if token:
+        if not AUTH_ALLOW_QUERY_TOKEN:
+            logger.warning(
+                f"[AuthMiddleware] Token passed via query parameter was rejected by policy: "
+                f"path={request.path}"
+            )
+            return None
         logger.warning(
             f"[AuthMiddleware] Token passed via query parameter (insecure): "
             f"path={request.path}"

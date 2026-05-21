@@ -7,6 +7,7 @@ from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
 from auth.service import AuthService
+from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
     WebSessionLoginRequest,
@@ -100,10 +101,11 @@ async def handle_web_session_login(request):
     response.set_cookie(
         WEB_SESSION_COOKIE_NAME,
         token,
-        httponly=True,
+        httponly=WEB_SESSION_COOKIE_HTTPONLY,
         max_age=24 * 60 * 60,
         path="/",
-        samesite="Lax",
+        samesite=WEB_SESSION_COOKIE_SAMESITE,
+        secure=WEB_SESSION_COOKIE_SECURE,
     )
     return response
 

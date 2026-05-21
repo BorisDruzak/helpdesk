@@ -37,6 +37,7 @@ from config import (
 )
 from tech.dismiss_store import dismiss_alert, is_alert_dismissed
 from tech.log_buffer import list_log_records, remove_log_record
+from tech.snapshot import build_tech_panel_v2_snapshot
 from websocket.protocol import send_ws_command, send_ws_rpc_request
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from shared.redaction import redact_sensitive_payload
@@ -1051,6 +1052,12 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
 @require_auth("admin", "support", "auditor")
 async def handle_tech_overview(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "overview": await _build_overview(request)})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_snapshot(request: web.Request) -> web.Response:
+    overview = await _build_overview(request)
+    return web.json_response(await build_tech_panel_v2_snapshot(request, overview))
 
 
 @require_auth("admin", "support", "auditor")

@@ -70,6 +70,29 @@ Verification so far:
 - `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q`, `python scripts/build_context_index.py --force`, `python scripts/verify_workspace.py` and `git diff --check` passed.
 - Remote quick release, `pnpm --dir webapp run check:remote:webapp` and MCP browser signoff remain pending until after local commit/push.
 
+## Active Work: P0 Tech Panel v2 — Pilot Readiness & Runtime Health
+
+Status: in progress / first production-safe read-only cut.
+
+Goal:
+
+- Turn `/app/admin/tech` into a production-like stand Tech Panel that answers pilot readiness, blockers, degradation, security/auth/session/TLS, PostgreSQL/migrations/backup/restore, agents, operations/outbox/watchdogs, logs and release smoke.
+
+Scope:
+
+- Add typed read-only `GET /api/web/admin/tech/snapshot` while keeping legacy tech endpoints.
+- Build readiness gates from config, PostgreSQL health, auth/session policy, connection policy, scheduler/runtime state and marker files for release/smoke/backup/restore.
+- Redesign the React page into a Russian Tech Panel workspace with Overview, Security, Runtime, Database, Agents, Operations, Logs/Signals and Release/Smoke tabs.
+- Keep the first cut read-only: refresh and navigation links only; no restart/revoke/approve/retry/cancel/SQL/env editing actions.
+- Update docs/navigation catalog and targeted backend/frontend tests.
+
+Known gaps for this cut:
+
+- Backup, restore drill, release and business smoke are marker-file based and may be `unknown` until scripts write the configured JSON artifacts.
+- HTTPS/WSS and session-cookie gates are config/introspection based; no proxy-origin guessing from the request.
+- Alembic current/head remains `unknown` unless a safe marker/status source is available.
+- No dangerous control-plane or token-management actions are added to the browser UI.
+
 ## Active Work: Operator Command Center
 
 Status: accepted / release-candidate.
