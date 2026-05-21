@@ -6,18 +6,34 @@
   BASE_URL=https://192.168.100.17:9443 python scripts/smoke_test.py
 """
 import os
+import ssl
 import sys
+import urllib.parse
 
 import urllib.request
 import urllib.error
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8666")
+INSECURE_TLS = str(os.environ.get("SMOKE_INSECURE_TLS") or os.environ.get("REMOTE_SMOKE_INSECURE_TLS") or "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+
+def _ssl_context_for(url: str) -> ssl.SSLContext | None:
+    if not INSECURE_TLS:
+        return None
+    if urllib.parse.urlparse(url).scheme.lower() != "https":
+        return None
+    return ssl._create_unverified_context()
 
 
 def get(url: str, expected_status: int = 200) -> bool:
     try:
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=5, context=_ssl_context_for(url)) as r:
             if r.status != expected_status:
                 print(f"  FAIL {url} -> {r.status} (expected {expected_status})")
                 return False

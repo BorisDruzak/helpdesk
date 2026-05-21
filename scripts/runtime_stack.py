@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--levels", default="")
     parser.add_argument("--contains", default="")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--base-url", default="", help="Used by smoke: override BASE_URL")
+    parser.add_argument("--insecure-tls", action="store_true", help="Used by smoke: allow self-signed HTTPS certs")
     return parser.parse_args()
 
 
@@ -99,7 +101,7 @@ def main() -> None:
     if args.action == "smoke":
         if args.target not in {"server", "all"}:
             raise SystemExit("Smoke is supported only for the server target.")
-        completed = smoke_server()
+        completed = smoke_server(base_url=args.base_url or None, insecure_tls=True if args.insecure_tls else None)
         if completed.stdout.strip():
             print(completed.stdout.strip())
         return

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,62 @@ def test_main_writes_release_marker_to_remote_worktree_path(monkeypatch: pytest.
     assert payload["alembic_head"] == "20260519_097"
     assert "password" not in str(payload).lower()
     assert "token" not in str(payload).lower()
+
+
+def test_main_forwards_https_smoke_options(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    marker_path = tmp_path / "release-flow-smoke.json"
+    calls: list[str] = []
+    smoke_commands: list[list[str]] = []
+
+    def args() -> argparse.Namespace:
+        return argparse.Namespace(
+            workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+            branch="codex/helpdesk-process-model",
+            remote="altserver@192.168.100.17",
+            allow_local_dirty=True,
+            gate="quick",
+            skip_verify=True,
+            skip_ci_check=False,
+            skip_smoke=False,
+            skip_migrations=True,
+            leave_running=True,
+            smoke_attempts=1,
+            smoke_delay=0,
+            smoke_base_url="https://192.168.100.17:9443",
+            smoke_insecure_tls=True,
+            release_status_path=marker_path,
+            require_marker_write=True,
+        )
+
+    def capture_smoke(command: list[str], *, cwd: Path, attempts: int, delay_seconds: float) -> None:
+        smoke_commands.append(command)
+
+    monkeypatch.setattr(release, "parse_args", args)
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "release_temp" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda *args, **kwargs: calls.append("upload"))
+    monkeypatch.setattr(release, "run_step", lambda command, *, cwd, label: calls.append(label))
+    monkeypatch.setattr(release, "run_smoke_with_retries", capture_smoke)
+
+    release.main()
+
+    assert smoke_commands == [
+        [
+            sys.executable,
+            str(Path(r"C:\Users\admin-2\CodexProjects\pc_client") / "scripts" / "manage_remote_stack.py"),
+            "--remote",
+            "altserver@192.168.100.17",
+            "smoke",
+            "server",
+            "--base-url",
+            "https://192.168.100.17:9443",
+            "--insecure-tls",
+        ]
+    ]
 
 
 def test_parse_alembic_revision_output_ignores_head_marker() -> None:

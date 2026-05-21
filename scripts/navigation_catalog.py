@@ -1770,6 +1770,8 @@ TOPICS: tuple[Topic, ...] = (
             "restore drill marker",
             "release marker",
             "remote release marker",
+            "remote smoke base url",
+            "https smoke",
             "app/admin/tech",
             "app/admin/operations",
             "operation detail",

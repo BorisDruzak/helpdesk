@@ -24,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contains", default="", help="Used by logs: substring search")
     parser.add_argument("--json", action="store_true", help="Return machine-readable JSON where supported")
     parser.add_argument("--remote", default=DEFAULT_REMOTE)
+    parser.add_argument("--base-url", default="", help="Used by smoke: override remote smoke BASE_URL")
+    parser.add_argument("--insecure-tls", action="store_true", help="Used by smoke: allow self-signed HTTPS certs")
     return parser.parse_args()
 
 
@@ -49,6 +51,11 @@ def build_remote_command(args: argparse.Namespace) -> str:
             command.extend(["--levels", shlex.quote(args.levels)])
         if args.contains:
             command.extend(["--contains", shlex.quote(args.contains)])
+    if args.action == "smoke":
+        if args.base_url:
+            command.extend(["--base-url", shlex.quote(args.base_url)])
+        if args.insecure_tls:
+            command.append("--insecure-tls")
     if args.json:
         command.append("--json")
     return f"cd {shlex.quote(REMOTE_ROOT)} && {' '.join(command)}"

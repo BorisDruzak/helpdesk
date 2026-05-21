@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,7 @@ AGENT_UNIT = "pc-client-agent"
 CONTROL_UNIT = "pc-client-control"
 CONTROL_STATE_FILE = SERVER_DATA_ROOT / "control_plane_state.json"
 DEFAULT_ADMIN_ORIGIN = "http://192.168.100.17:8666"
+DEFAULT_REMOTE_SMOKE_BASE_URL = "http://192.168.100.17:8666"
 
 SYSTEMD_TARGETS = {"server", "agent", "control"}
 ALL_TARGETS = (*SYSTEMD_TARGETS, "all")
@@ -127,6 +129,15 @@ def _run(
 
 def _run_shell(command: str, *, check: bool = True, capture_output: bool = True) -> subprocess.CompletedProcess[str]:
     return _run(["/bin/bash", "-lc", command], cwd=WORKSPACE_ROOT, check=check, capture_output=capture_output)
+
+
+def _truthy_env(name: str) -> bool:
+    return str(os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _remote_smoke_base_url(override: str | None = None) -> str:
+    value = str(override or os.getenv("REMOTE_SMOKE_BASE_URL") or DEFAULT_REMOTE_SMOKE_BASE_URL).strip()
+    return value.rstrip("/") or DEFAULT_REMOTE_SMOKE_BASE_URL
 
 
 def _systemctl_show(unit: str, properties: Iterable[str]) -> dict[str, str]:
@@ -414,9 +425,14 @@ def wait_for_target_state(
     return last_status
 
 
-def smoke_server() -> subprocess.CompletedProcess[str]:
+def smoke_server(base_url: str | None = None, insecure_tls: bool | None = None) -> subprocess.CompletedProcess[str]:
+    resolved_base_url = _remote_smoke_base_url(base_url)
+    allow_insecure_tls = _truthy_env("REMOTE_SMOKE_INSECURE_TLS") if insecure_tls is None else bool(insecure_tls)
+    env_prefix = f"BASE_URL={shlex.quote(resolved_base_url)}"
+    if allow_insecure_tls:
+        env_prefix += " REMOTE_SMOKE_INSECURE_TLS=true SMOKE_INSECURE_TLS=true"
     return _run_shell(
-        f"cd {WORKSPACE_ROOT} && BASE_URL=http://192.168.100.17:8666 {SERVER_PYTHON} scripts/smoke_test.py",
+        f"cd {shlex.quote(str(WORKSPACE_ROOT))} && {env_prefix} {shlex.quote(str(SERVER_PYTHON))} scripts/smoke_test.py",
         check=True,
     )
 

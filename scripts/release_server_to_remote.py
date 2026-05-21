@@ -98,6 +98,17 @@ def parse_args() -> argparse.Namespace:
         help="Seconds to wait between remote smoke retries.",
     )
     parser.add_argument(
+        "--smoke-base-url",
+        default=os.environ.get("REMOTE_SMOKE_BASE_URL", ""),
+        help="Override remote smoke BASE_URL. Defaults to remote server env REMOTE_SMOKE_BASE_URL.",
+    )
+    parser.add_argument(
+        "--smoke-insecure-tls",
+        action="store_true",
+        default=str(os.environ.get("REMOTE_SMOKE_INSECURE_TLS", "")).strip().lower() in {"1", "true", "yes", "on"},
+        help="Allow self-signed HTTPS certs during remote smoke.",
+    )
+    parser.add_argument(
         "--release-status-path",
         default=None,
         help=(
@@ -484,8 +495,13 @@ def main() -> None:
         started_server = True
 
         if not args.skip_smoke:
+            smoke_command = [*remote_command_base, "smoke", "server"]
+            if args.smoke_base_url:
+                smoke_command.extend(["--base-url", args.smoke_base_url])
+            if args.smoke_insecure_tls:
+                smoke_command.append("--insecure-tls")
             run_smoke_with_retries(
-                [*remote_command_base, "smoke", "server"],
+                smoke_command,
                 cwd=workspace,
                 attempts=args.smoke_attempts,
                 delay_seconds=args.smoke_delay,
