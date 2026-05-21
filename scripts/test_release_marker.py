@@ -123,6 +123,12 @@ def test_main_collects_alembic_current_and_head_after_migration(monkeypatch: pyt
     assert payload["migrations_skipped"] is False
 
 
+def test_parse_alembic_revision_output_ignores_head_marker() -> None:
+    assert release._parse_alembic_revision_output("097 (head)\n") == "097"
+    assert release._parse_alembic_revision_output("20260519_097 (head)\n") == "20260519_097"
+    assert release._parse_alembic_revision_output("head\n") is None
+
+
 def test_restore_drill_marker_writer(tmp_path: Path) -> None:
     output = tmp_path / "restore-drill.json"
 

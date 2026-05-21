@@ -239,8 +239,8 @@ def _parse_alembic_revision_output(output: str) -> str | None:
         line = raw_line.strip()
         if not line or line.lower().startswith(("info ", "context impl", "will assume")):
             continue
-        match = re.search(r"\b([0-9a-z][0-9a-z_]{3,})\b", line, flags=re.IGNORECASE)
-        if match:
+        match = re.match(r"^([0-9A-Za-z][0-9A-Za-z_.-]*)\b", line)
+        if match and any(ch.isdigit() for ch in match.group(1)):
             return match.group(1)
     return None
 
