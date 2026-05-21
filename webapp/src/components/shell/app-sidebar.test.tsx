@@ -78,6 +78,17 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("button", { name: /Каталог и заявки/ })).toBeInTheDocument();
   });
 
+  it("renders device operations as a disabled contextual item without a device workspace", () => {
+    render(
+      <MemoryRouter initialEntries={["/app/admin/device-operations"]}>
+        <AppSidebar hasAdminAccess hasSupportAccess permissions={fullPermissions} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("link", { name: /Операции устройства/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Операции устройства")).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("allows collapsing the active admin domain after it was auto-expanded", () => {
     render(
       <MemoryRouter initialEntries={["/app/admin/registry"]}>

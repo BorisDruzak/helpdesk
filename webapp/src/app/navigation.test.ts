@@ -61,6 +61,14 @@ describe("navigation helpers", () => {
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();
   });
 
+  it("keeps device operations last in the devices domain", () => {
+    const devicesDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
+      (domain) => domain.id === "devices-agents",
+    );
+
+    expect(devicesDomain?.items.at(-1)?.label).toBe("Операции устройства");
+  });
+
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");

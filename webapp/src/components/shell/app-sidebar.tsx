@@ -6,11 +6,13 @@ import {
   ADMIN_HOME_PATH,
   type AppNavItem,
   type AppWorkspaceId,
+  canUseNavigationItemInContext,
   getActiveNavigationDomain,
   getActiveWorkspace,
   getVisibleNavigationDomains,
   getVisibleNavigationItems,
   isNavItemActive,
+  resolveNavigationItemTarget,
 } from "../../app/navigation";
 import { cn } from "../../shared/ui/cn";
 
@@ -73,15 +75,44 @@ function resolveSidebarWorkspace({
 function SidebarNavLink({
   collapsed = false,
   item,
-  pathname,
+  currentPath,
 }: {
   collapsed?: boolean;
   item: AppNavItem;
-  pathname: string;
+  currentPath: string;
 }) {
   const Icon = item.icon;
-  const isActive = isNavItemActive(item, pathname);
+  const isAvailable = canUseNavigationItemInContext(item, currentPath);
+  const target = resolveNavigationItemTarget(item, currentPath);
+  const isActive = isAvailable && isNavItemActive(item, currentPath);
   const title = `${item.label}: ${item.description}`;
+  const content = (
+    <>
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-panel bg-white/14 text-current transition-colors">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className={cn("min-w-0 space-y-1", collapsed ? "sr-only" : "")}>
+        <span className="block font-semibold leading-none">{item.label}</span>
+        <span className="block text-xs leading-4 text-current/70">{item.description}</span>
+      </span>
+    </>
+  );
+
+  if (!isAvailable || !target) {
+    return (
+      <span
+        aria-disabled="true"
+        aria-label={item.label}
+        className={cn(
+          "flex cursor-not-allowed items-start gap-3 rounded-panel px-3 py-2.5 text-sm text-brand-50/45",
+          collapsed ? "justify-center px-2" : "",
+        )}
+        title={collapsed ? `${title}. Откройте операции из инвентаря или карточки устройства` : undefined}
+      >
+        {content}
+      </span>
+    );
+  }
 
   return (
     <Link
@@ -93,15 +124,9 @@ function SidebarNavLink({
         isActive ? "bg-white text-brand-900 shadow-soft" : "text-brand-50/90 hover:bg-white/10 hover:text-white",
       )}
       title={collapsed ? title : undefined}
-      to={item.to}
+      to={target}
     >
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-panel bg-white/14 text-current transition-colors">
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className={cn("min-w-0 space-y-1", collapsed ? "sr-only" : "")}>
-        <span className="block font-semibold leading-none">{item.label}</span>
-        <span className="block text-xs leading-4 text-current/70">{item.description}</span>
-      </span>
+      {content}
     </Link>
   );
 }
@@ -109,16 +134,16 @@ function SidebarNavLink({
 function SupportSidebar({
   collapsed,
   items,
-  pathname,
+  currentPath,
 }: {
   collapsed: boolean;
   items: AppNavItem[];
-  pathname: string;
+  currentPath: string;
 }) {
   return (
     <nav aria-label="Навигация поддержки" className="space-y-1">
       {items.map((item) => (
-        <SidebarNavLink collapsed={collapsed} item={item} key={item.to} pathname={pathname} />
+        <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
       ))}
     </nav>
   );
@@ -126,14 +151,14 @@ function SupportSidebar({
 
 function AdminSidebar({
   collapsed,
-  pathname,
+  currentPath,
   permissions,
 }: {
   collapsed: boolean;
-  pathname: string;
+  currentPath: string;
   permissions: string[];
 }) {
-  const activeDomain = getActiveNavigationDomain(pathname, permissions);
+  const activeDomain = getActiveNavigationDomain(currentPath, permissions);
   const domains = getVisibleNavigationDomains("admin", permissions);
   const primaryItems = getVisibleNavigationItems("admin", permissions, { includeWorkspaceHome: true }).filter(
     (item) => item.isWorkspaceHome,
@@ -170,7 +195,7 @@ function AdminSidebar({
   return (
     <nav aria-label="Навигация администрирования" className="space-y-4">
       {primaryItems.map((item) => (
-        <SidebarNavLink collapsed={collapsed} item={item} key={item.to} pathname={pathname} />
+        <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
       ))}
 
       <div className="space-y-2">
@@ -213,7 +238,7 @@ function AdminSidebar({
               {isOpen ? (
                 <div className="space-y-1 px-1 pb-2" id={panelId}>
                   {domain.items.map((item) => (
-                    <SidebarNavLink collapsed={collapsed} item={item} key={item.to} pathname={pathname} />
+                    <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
                   ))}
                 </div>
               ) : null}
@@ -234,6 +259,7 @@ export function AppSidebar({
   showCollapseToggle = false,
 }: AppSidebarProps) {
   const location = useLocation();
+  const currentPath = `${location.pathname}${location.search}${location.hash}`;
   const workspace = resolveSidebarWorkspace({
     hasAdminAccess,
     hasSupportAccess,
@@ -274,10 +300,10 @@ export function AppSidebar({
 
       <div className="flex-1 overflow-y-auto pr-1">
         {workspace === "support" ? (
-          <SupportSidebar collapsed={collapsed} items={supportItems} pathname={location.pathname} />
+          <SupportSidebar collapsed={collapsed} currentPath={currentPath} items={supportItems} />
         ) : null}
         {workspace === "admin" ? (
-          <AdminSidebar collapsed={collapsed} pathname={location.pathname} permissions={permissions} />
+          <AdminSidebar collapsed={collapsed} currentPath={currentPath} permissions={permissions} />
         ) : null}
       </div>
 

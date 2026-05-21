@@ -44,6 +44,7 @@ export type AppNavItem = {
   label: string;
   order: number;
   permission?: string;
+  requiresDeviceContext?: boolean;
   section: AppWorkspaceId;
   shortLabel?: string;
   to: string;
@@ -227,7 +228,8 @@ export const appNavigation: AppNavItem[] = [
     to: "/app/admin/device-operations",
     permission: "admin.inventory.view",
     activePatterns: ["/app/admin/device-operations/*"],
-    order: 30,
+    order: 90,
+    requiresDeviceContext: true,
   },
   {
     label: "Обновления агента",
@@ -414,6 +416,44 @@ function normalizePath(path: string) {
     return withoutQuery.replace(/\/+$/, "");
   }
   return withoutQuery || "/";
+}
+
+export function getDeviceOperationsContext(path: string): string | null {
+  const pathname = normalizePath(path);
+  const basePath = "/app/admin/device-operations";
+  if (pathname !== basePath && !pathname.startsWith(`${basePath}/`)) {
+    return null;
+  }
+
+  const pathDeviceId = pathname.slice(basePath.length).replace(/^\/+/, "").split("/", 1)[0] ?? "";
+  if (pathDeviceId) {
+    return decodeURIComponent(pathDeviceId);
+  }
+
+  const query = path.split("#", 1)[0]?.split("?", 2)[1];
+  if (!query) {
+    return null;
+  }
+
+  const params = new URLSearchParams(query);
+  return params.get("device_id") || params.get("device");
+}
+
+export function canUseNavigationItemInContext(item: AppNavItem, path: string): boolean {
+  return !item.requiresDeviceContext || Boolean(getDeviceOperationsContext(path));
+}
+
+export function resolveNavigationItemTarget(item: AppNavItem, path: string): string | null {
+  if (!item.requiresDeviceContext) {
+    return item.to;
+  }
+
+  const deviceId = getDeviceOperationsContext(path);
+  if (!deviceId) {
+    return null;
+  }
+
+  return `/app/admin/device-operations/${encodeURIComponent(deviceId)}`;
 }
 
 function canShowItem(item: AppNavItem, permissions: string[]) {

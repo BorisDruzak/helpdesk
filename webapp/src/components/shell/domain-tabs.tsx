@@ -1,6 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
 
-import { getActiveNavigationDomain, isNavItemActive } from "../../app/navigation";
+import {
+  canUseNavigationItemInContext,
+  getActiveNavigationDomain,
+  isNavItemActive,
+  resolveNavigationItemTarget,
+} from "../../app/navigation";
 import { cn } from "../../shared/ui/cn";
 
 type DomainTabsProps = {
@@ -24,7 +29,22 @@ export function DomainTabs({ permissions }: DomainTabsProps) {
     >
       <div className="flex min-w-max items-center gap-1">
         {activeDomain.items.map((item) => {
-          const isActive = isNavItemActive(item, currentPath);
+          const isAvailable = canUseNavigationItemInContext(item, currentPath);
+          const target = resolveNavigationItemTarget(item, currentPath);
+          const isActive = isAvailable && isNavItemActive(item, currentPath);
+
+          if (!isAvailable || !target) {
+            return (
+              <span
+                aria-disabled="true"
+                className="cursor-not-allowed border-b-2 border-transparent px-3 py-2 text-sm font-semibold text-slate-300"
+                key={item.to}
+                title="Откройте операции из инвентаря или карточки устройства"
+              >
+                {item.shortLabel ?? item.label}
+              </span>
+            );
+          }
 
           return (
             <Link
@@ -36,7 +56,7 @@ export function DomainTabs({ permissions }: DomainTabsProps) {
                   : "border-transparent text-slate-500 hover:border-brand-200 hover:text-brand-700",
               )}
               key={item.to}
-              to={item.to}
+              to={target}
             >
               {item.shortLabel ?? item.label}
             </Link>
