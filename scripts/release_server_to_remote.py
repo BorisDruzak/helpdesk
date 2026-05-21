@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -233,6 +234,48 @@ def run_smoke_with_retries(
     raise last_error
 
 
+def _parse_alembic_revision_output(output: str) -> str | None:
+    for raw_line in str(output or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.lower().startswith(("info ", "context impl", "will assume")):
+            continue
+        match = re.search(r"\b([0-9a-z][0-9a-z_]{3,})\b", line, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _run_remote_migration_status(workspace: Path, remote: str, *alembic_args: str) -> str | None:
+    command = [
+        sys.executable,
+        str(workspace / "scripts" / "run_remote_migrations.py"),
+        "--remote",
+        remote,
+        *alembic_args,
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        if stderr:
+            print(f"WARNING: alembic {' '.join(alembic_args)} failed: {stderr}", file=sys.stderr)
+        return None
+    return _parse_alembic_revision_output(completed.stdout)
+
+
+def collect_remote_alembic_revisions(*, workspace: Path, remote: str) -> tuple[str | None, str | None]:
+    current = _run_remote_migration_status(workspace, remote, "current")
+    head = _run_remote_migration_status(workspace, remote, "heads")
+    return current, head
+
+
 def write_release_status_marker(
     path: Path,
     *,
@@ -291,6 +334,8 @@ def main() -> None:
     workspace = args.workspace
     started_server = False
     bundle_archive: Path | None = None
+    alembic_current: str | None = None
+    alembic_head: str | None = None
 
     try:
         commit = detect_commit(workspace)
@@ -339,6 +384,10 @@ def main() -> None:
                 cwd=workspace,
                 label="migrate",
             )
+            alembic_current, alembic_head = collect_remote_alembic_revisions(
+                workspace=workspace,
+                remote=args.remote,
+            )
         assert bundle_archive is not None
         upload_webapp_bundle(
             bundle_archive,
@@ -376,6 +425,8 @@ def main() -> None:
                     dirty=_workspace_dirty(workspace),
                     remote_profile=args.remote,
                     webapp_bundle_commit=commit,
+                    alembic_current=alembic_current,
+                    alembic_head=alembic_head,
                     migrations_skipped=bool(args.skip_migrations),
                 )
                 print(f"[release-marker] wrote {marker_path}")

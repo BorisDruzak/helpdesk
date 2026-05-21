@@ -78,6 +78,51 @@ def test_main_writes_release_marker_after_success(monkeypatch: pytest.MonkeyPatc
     assert payload["migrations_skipped"] is True
 
 
+def test_main_collects_alembic_current_and_head_after_migration(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    marker_path = tmp_path / "release-flow-alembic.json"
+    calls: list[str] = []
+
+    def args() -> argparse.Namespace:
+        return argparse.Namespace(
+            workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+            branch="codex/helpdesk-process-model",
+            remote="altserver@192.168.100.17",
+            allow_local_dirty=True,
+            gate="quick",
+            skip_verify=True,
+            skip_ci_check=False,
+            skip_smoke=True,
+            skip_migrations=False,
+            leave_running=True,
+            smoke_attempts=1,
+            smoke_delay=0,
+            release_status_path=marker_path,
+            require_marker_write=True,
+        )
+
+    monkeypatch.setattr(release, "parse_args", args)
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "release_temp" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda *args, **kwargs: calls.append("upload"))
+    monkeypatch.setattr(release, "run_step", lambda command, *, cwd, label: calls.append(label))
+    monkeypatch.setattr(
+        release,
+        "collect_remote_alembic_revisions",
+        lambda *, workspace, remote: ("20260519_097", "20260519_097"),
+    )
+
+    release.main()
+
+    payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert payload["alembic_current"] == "20260519_097"
+    assert payload["alembic_head"] == "20260519_097"
+    assert payload["migrations_skipped"] is False
+
+
 def test_restore_drill_marker_writer(tmp_path: Path) -> None:
     output = tmp_path / "restore-drill.json"
 

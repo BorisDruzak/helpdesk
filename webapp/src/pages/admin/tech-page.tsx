@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -86,7 +86,7 @@ function EmptyState({ children }: { children: string }) {
   return <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-slate-500">{children}</p>;
 }
 
-function SafeLink({ href, children }: { href?: string | null; children: string }) {
+function SafeLink({ href, children }: { href?: string | null; children: ReactNode }) {
   if (!href) return <span className="text-sm text-slate-400">{children}</span>;
   return (
     <Link className="inline-flex items-center gap-2 text-sm font-semibold text-brand-700 hover:text-brand-900" to={href}>
@@ -565,7 +565,7 @@ function OperationsTable({ items }: { items: TechStuckOperation[] }) {
       </div>
       {items.map((operation) => (
         <div className="grid min-w-[820px] grid-cols-[minmax(180px,1fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_100px_130px] gap-3 border-t border-border px-4 py-3 text-sm" key={operation.operation_id}>
-          <span className="font-semibold text-slate-950">{operation.operation_id}</span>
+          <SafeLink href={`/app/admin/operations/${operation.operation_id}`}>{operation.operation_id}</SafeLink>
           <SafeLink href={operation.device_id ? `/app/admin/device-operations/${operation.device_id}` : null}>{operation.device_id ?? "нет device"}</SafeLink>
           <SafeLink href={operation.ticket_id ? `/app/tickets/${operation.ticket_id}` : null}>{operation.ticket_id ? String(operation.ticket_id) : "нет ticket"}</SafeLink>
           <Badge tone={toneForStatus(operation.status)}>{operation.status ?? "unknown"}</Badge>

@@ -95,7 +95,7 @@ Known gaps for this cut:
 
 ## Active Work: Tech Panel v2.1 - Pilot Diagnostic Locator & Evidence Markers
 
-Status: implemented locally / verification in progress.
+Status: follow-up implementation in progress / focused scripts and frontend checks green.
 
 Goal:
 
@@ -105,20 +105,23 @@ Scope:
 
 - Add `GET /api/web/admin/tech/locate?q=...` for support/admin/auditor with safe links only.
 - Extend Tech snapshot with query-token attempt count, below-baseline devices, baseline metadata and inventory scheduler details.
-- Add safe marker-writing scripts/helpers for release status, business smoke status and restore drill evidence.
+- Add safe marker-writing scripts/helpers for release status, business smoke status, backup status and restore drill evidence.
 - Update Tech Panel UI with the locator panel, baseline list, query-token attempts and scheduler duplicate status.
 - Keep browser surface read-only: no restart/stop, raw SQL, env edit, token revocation, approval, retry/cancel, remote assist launch or consent bypass.
 
 Known gaps:
 
-- Business smoke first cut does not perform a real agent handshake unless an explicit safe device/test agent is provided.
-- Mixed-content checks stay HTTP/header-level unless browser tooling is explicitly run by the caller.
+- Business smoke can now create a test ticket and enqueue `inventory.collect` only when explicitly requested by CLI flags; a real agent handshake still requires a safe device/test agent.
+- Mixed-content/WSS checks are available through the optional Playwright-backed `--browser-check`; headless runtime availability remains an environment prerequisite.
 - Release marker writing is local-path first; remote marker persistence remains follow-up unless a safe configured local/remote path is provided.
 
 Implemented:
 
 - Quick Locator endpoint/UI for ticket code/id, device id, hostname, operation id, Observer trace id and bounded problem-log matches.
-- Release marker helper in `scripts/release_server_to_remote.py`, standalone `scripts/business_smoke.py`, and safe `scripts/write_restore_drill_marker.py`.
+- Quick Locator now accepts non-UUID trace ids of length >= 8 and returns grouped root-cause diagnosis from ticket/device/operation/outbox/approval/Observer signals.
+- Read-only operation detail route `/app/admin/operations/:operationId` consumes existing `GET /api/operations/{operation_id}` and exposes only safe context links.
+- Release marker helper in `scripts/release_server_to_remote.py` writes Alembic current/head after remote migration when available; standalone `scripts/business_smoke.py`, safe `scripts/write_restore_drill_marker.py` and `scripts/write_backup_status_marker.py` write readiness evidence markers.
+- `scripts/business_smoke.py` supports optional HTTPS cookie check, Playwright mixed-content/WSS check, explicit test ticket creation, support workspace read, explicit `inventory.collect` smoke and operation result polling.
 - Query-token attempt counter in auth middleware with bounded process-local storage and no token values.
 - Tech snapshot additions for query-token attempts, below-baseline device lists/baseline metadata and inventory scheduler duplicate-task details.
 - Runtime inventory scheduler `status_snapshot()` now includes active task count, duplicate detection, last tick and last error.

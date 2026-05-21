@@ -235,6 +235,7 @@ function locatorPayload(overrides: Partial<TechLocatorPayload> = {}): TechLocato
         signals: { ticket_open: true, ticket_sla_risk: true, pending_approval: true },
         links: [
           { label: "Открыть тикет", href: "/app/tickets/ticket-1", kind: "ticket" },
+          { label: "Операция", href: "/app/admin/operations/op-1", kind: "operation" },
           { label: "Device Operations", href: "/app/admin/device-operations/device-1", kind: "device_operations" },
         ],
       },
@@ -337,6 +338,7 @@ describe("AdminTechPage v2", () => {
     await waitFor(() => expect(locateTechQuery).toHaveBeenCalledWith("T-910571"));
     expect(await screen.findByText(/Pilot workstation cannot print/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть тикет" })).toHaveAttribute("href", "/app/tickets/ticket-1");
+    expect(screen.getByRole("link", { name: "Операция" })).toHaveAttribute("href", "/app/admin/operations/op-1");
     expect(screen.getByRole("link", { name: "Device Operations" })).toHaveAttribute("href", "/app/admin/device-operations/device-1");
   });
 

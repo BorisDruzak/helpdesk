@@ -124,6 +124,8 @@ python scripts/deploy_workspace_to_remote.py --gate quick
 
 `release_server_to_remote.py` может писать safe release marker для Tech Panel readiness: `--release-status-path <path>` или `TECH_RELEASE_STATUS_PATH`, опционально `--require-marker-write`. Marker содержит branch/commit/gate/deployed_at/webapp bundle commit/dirty/remote profile и migration status, если он доступен; секреты, raw env и DATABASE_URL туда не пишутся. Ошибка записи marker не валит release без `--require-marker-write`.
 
+После успешного remote migration step release flow запрашивает Alembic `current` и `heads` через `scripts/run_remote_migrations.py` и записывает `alembic_current` / `alembic_head` в release marker, если значения доступны. Backup/restore/business-smoke evidence для Tech Panel пишется отдельными safe marker tools: `scripts/write_backup_status_marker.py`, `scripts/write_restore_drill_marker.py` и `scripts/business_smoke.py`; browser UI эти marker-файлы только читает и не запускает restore, raw SQL, restart или tool actions.
+
 12. Поднять сервер на Linux и прогнать smoke:
 
 ```powershell

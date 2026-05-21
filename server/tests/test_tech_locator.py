@@ -203,6 +203,41 @@ async def test_trace_id_locates_observer_trace(test_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_string_trace_id_locates_observer_trace_and_summary_groups_root_cause(test_client, test_engine):
+    seeded = await _seed_locator_context(test_engine)
+    string_trace_id = "trace-pilot-print-0001"
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    async with session_maker() as session:
+        session.add(
+            ObserverTrace(
+                trace_id=string_trace_id,
+                root_span_id=str(uuid.uuid4()),
+                root_kind="tool_call",
+                ticket_id=seeded["ticket_id"],
+                device_id=seeded["device_id"],
+                operation_id=seeded["operation_id"],
+                status="failed",
+                started_at=now - timedelta(minutes=6),
+                finished_at=now - timedelta(minutes=5),
+                error_count=2,
+                attrs_json={"title": "string trace id failed", "latest_error": "password=must-not-leak"},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(f"/api/web/admin/tech/locate?q={string_trace_id}", headers=_admin_headers())
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    trace_match = next(item for item in payload["matches"] if item["kind"] == "trace")
+    assert trace_match["context"]["trace_id"] == string_trace_id
+    assert "must-not-leak" not in str(payload)
+    assert "Вероятная причина" in payload["summary"]["primary_diagnosis"]
+    assert "Observer" in payload["summary"]["primary_diagnosis"]
+
+
+@pytest.mark.asyncio
 async def test_no_match_and_short_query_are_controlled(test_client, test_engine):
     await _seed_locator_context(test_engine)
 

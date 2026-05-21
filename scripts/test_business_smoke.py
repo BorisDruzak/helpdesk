@@ -69,6 +69,71 @@ def test_business_smoke_writes_success_marker_without_secrets(tmp_path: Path) ->
     assert "pc_client_web_session=secret" not in output.read_text(encoding="utf-8")
 
 
+def test_business_smoke_runs_optional_business_acceptance_steps(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "business-smoke-business.json"
+    client = FakeClient(
+        {
+            ("POST", "/api/web/session/login"): FakeResponse(
+                200,
+                {"status": "success"},
+                {"set-cookie": "pc_client_web_session=secret; Secure; HttpOnly; SameSite=Lax"},
+            ),
+            ("GET", "/api/web/session/me"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/support/bootstrap"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/support/command-center"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/support/approvals"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/admin/tech/snapshot"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/admin/device-operations/device-1"): FakeResponse(200, {"status": "success"}),
+            ("GET", "/api/web/admin/devices/device-1/updates"): FakeResponse(200, {"status": "success", "data": {}}),
+            ("POST", "/api/tickets/create"): FakeResponse(200, {"status": "ok", "ticket": {"ticket_id": "ticket-1"}}),
+            ("GET", "/api/web/support/tickets/ticket-1/workspace"): FakeResponse(200, {"status": "success", "data": {}}),
+            ("POST", "/api/web/support/tickets/ticket-1/tools/run"): FakeResponse(
+                202,
+                {"status": "success", "data": {"operation_id": "operation-1", "dispatch_status": "accepted"}},
+            ),
+            ("GET", "/api/operations/operation-1"): FakeResponse(
+                200,
+                {"status": "success", "operation": {"operation_id": "operation-1", "status": "succeeded"}},
+            ),
+        }
+    )
+    monkeypatch.setattr(business_smoke, "run_browser_https_wss_check", lambda **_kwargs: [
+        {"key": "browser_mixed_content", "status": "success", "duration_ms": 1},
+        {"key": "browser_wss", "status": "success", "duration_ms": 1},
+    ])
+
+    marker = business_smoke.run_business_smoke(
+        base_url="https://stand.example",
+        username="admin",
+        password="super-secret",
+        output=output,
+        client=client,
+        require_https=True,
+        require_secure_cookie=True,
+        browser_check=True,
+        device_id="device-1",
+        create_test_ticket=True,
+        run_safe_tool="inventory.collect",
+        operation_wait_seconds=1,
+        check_update_recommendation=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    keys = [step["key"] for step in payload["steps"]]
+    assert marker["status"] == "success"
+    assert "ticket_create_optional" in keys
+    assert "support_queue_action" in keys
+    assert "safe_tool_inventory_collect" in keys
+    assert "operation_result_check" in keys
+    assert "update_recommendation" in keys
+    assert "browser_mixed_content" in keys
+    assert "browser_wss" in keys
+    assert payload["created_ticket_id"] == "ticket-1"
+    assert payload["safe_tool_operation_id"] == "operation-1"
+    assert "super-secret" not in output.read_text(encoding="utf-8")
+    assert "pc_client_web_session=secret" not in output.read_text(encoding="utf-8")
+
+
 def test_business_smoke_writes_failed_marker_on_failed_step(tmp_path: Path) -> None:
     output = tmp_path / "business-smoke-failed.json"
     client = FakeClient(

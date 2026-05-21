@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -14,6 +15,11 @@ from datetime import datetime, timezone
 from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
+
+
+SECRET_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|token|secret|api[_-]?key|authorization|cookie)\b\s*[:=]\s*[^,\s;&]+"
+)
 
 
 class HttpStepError(RuntimeError):
@@ -91,6 +97,80 @@ def _write_marker(output: Path, payload: dict[str, Any]) -> None:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _response_payload(response: Any) -> dict[str, Any]:
+    payload = getattr(response, "payload", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _nested(payload: dict[str, Any], *keys: str) -> Any:
+    current: Any = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _redact_error(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "step failed"
+    return SECRET_PATTERN.sub(lambda match: f"{match.group(1)}=***REDACTED***", text)[:240]
+
+
+def run_browser_https_wss_check(*, base_url: str, username: str, password: str, timeout: float) -> list[dict[str, Any]]:
+    started = time.monotonic()
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:  # pragma: no cover - depends on optional runtime
+        return [
+            _step("browser_mixed_content", "failed", started, error=f"Playwright unavailable: {_redact_error(exc)}"),
+            _step("browser_wss", "failed", started, error="Playwright unavailable"),
+        ]
+
+    mixed_content_errors: list[str] = []
+    websocket_urls: list[str] = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
+            page.on(
+                "console",
+                lambda message: mixed_content_errors.append(message.text)
+                if "mixed content" in message.text.lower()
+                else None,
+            )
+            page.on("websocket", lambda websocket: websocket_urls.append(websocket.url))
+            login_response = context.request.post(
+                f"{base_url.rstrip('/')}/api/web/session/login",
+                data=json.dumps({"login": username, "password": password}),
+                headers={"Content-Type": "application/json"},
+                timeout=timeout * 1000,
+            )
+            if not login_response.ok:
+                raise RuntimeError(f"login failed with HTTP {login_response.status}")
+            page.goto(f"{base_url.rstrip('/')}/app/admin/tech", wait_until="networkidle", timeout=timeout * 1000)
+            browser.close()
+    except Exception as exc:  # pragma: no cover - exercised through script/live runs
+        return [
+            _step("browser_mixed_content", "failed", started, error=_redact_error(exc)),
+            _step("browser_wss", "failed", started, error=_redact_error(exc)),
+        ]
+
+    steps = []
+    if mixed_content_errors:
+        steps.append(_step("browser_mixed_content", "failed", started, error=mixed_content_errors[0][:240]))
+    else:
+        steps.append(_step("browser_mixed_content", "success", started))
+    insecure_ws = [url for url in websocket_urls if url.lower().startswith("ws://")]
+    if insecure_ws:
+        steps.append(_step("browser_wss", "failed", started, error=f"insecure websocket URL observed: {insecure_ws[0]}"))
+    else:
+        steps.append(_step("browser_wss", "success", started))
+    return steps
+
+
 def run_business_smoke(
     *,
     base_url: str,
@@ -101,12 +181,19 @@ def run_business_smoke(
     timeout: float = 15.0,
     require_https: bool = False,
     require_secure_cookie: bool = False,
+    browser_check: bool = False,
     device_id: str | None = None,
+    create_test_ticket: bool = False,
+    run_safe_tool: str | None = None,
+    operation_wait_seconds: float = 0.0,
+    check_update_recommendation: bool = False,
 ) -> dict[str, Any]:
     started_at = _now()
     steps: list[dict[str, Any]] = []
     smoke_client = client or UrlLibClient(base_url, timeout)
     failed = False
+    created_ticket_id: str | None = None
+    safe_tool_operation_id: str | None = None
 
     def fail_fast(key: str, message: str, started: float) -> None:
         nonlocal failed
@@ -135,6 +222,17 @@ def run_business_smoke(
         else:
             fail_fast("secure_cookie_flags", "Set-Cookie is missing Secure/HttpOnly/SameSite evidence", started)
 
+    if browser_check and not failed:
+        browser_steps = run_browser_https_wss_check(
+            base_url=base_url,
+            username=username,
+            password=password,
+            timeout=timeout,
+        )
+        steps.extend(browser_steps)
+        if any(step.get("status") == "failed" for step in browser_steps):
+            failed = True
+
     for key, path in [
         ("session_me", "/api/web/session/me"),
         ("support_bootstrap", "/api/web/support/bootstrap"),
@@ -159,6 +257,92 @@ def run_business_smoke(
         except HttpStepError as exc:
             fail_fast("device_operations_optional", f"HTTP {exc.status}: {exc}", started)
 
+    if check_update_recommendation and device_id and not failed:
+        started = time.monotonic()
+        try:
+            smoke_client.request("GET", f"/api/web/admin/devices/{urllib.parse.quote(device_id)}/updates")
+            steps.append(_step("update_recommendation", "success", started))
+        except HttpStepError as exc:
+            fail_fast("update_recommendation", f"HTTP {exc.status}: {exc}", started)
+
+    if create_test_ticket and not failed:
+        started = time.monotonic()
+        if not device_id:
+            fail_fast("ticket_create_optional", "--create-test-ticket requires --device-id", started)
+        else:
+            try:
+                response = smoke_client.request(
+                    "POST",
+                    "/api/tickets/create",
+                    {
+                        "device_id": device_id,
+                        "title": "Business smoke test ticket",
+                        "description": "Automated business smoke test ticket. Safe to close after validation.",
+                        "user_display_name": "business-smoke",
+                        "urgency": "low",
+                        "importance": "low",
+                    },
+                )
+                payload = _response_payload(response)
+                created_ticket_id = str(_nested(payload, "ticket", "ticket_id") or "").strip() or None
+                if not created_ticket_id:
+                    raise HttpStepError(response.status, "ticket_id missing in create response")
+                steps.append(_step("ticket_create_optional", "success", started))
+            except HttpStepError as exc:
+                fail_fast("ticket_create_optional", f"HTTP {exc.status}: {exc}", started)
+
+    if created_ticket_id and not failed:
+        started = time.monotonic()
+        try:
+            smoke_client.request("GET", f"/api/web/support/tickets/{urllib.parse.quote(created_ticket_id)}/workspace")
+            steps.append(_step("support_queue_action", "success", started))
+        except HttpStepError as exc:
+            fail_fast("support_queue_action", f"HTTP {exc.status}: {exc}", started)
+
+    if run_safe_tool and not failed:
+        started = time.monotonic()
+        if run_safe_tool != "inventory.collect":
+            fail_fast("safe_tool_inventory_collect", "only inventory.collect is allowed by this first-cut smoke", started)
+        elif not created_ticket_id:
+            fail_fast("safe_tool_inventory_collect", "--run-safe-tool requires --create-test-ticket in this first cut", started)
+        else:
+            try:
+                response = smoke_client.request(
+                    "POST",
+                    f"/api/web/support/tickets/{urllib.parse.quote(created_ticket_id)}/tools/run",
+                    {"tool_name": run_safe_tool, "preset_id": None, "params": {}},
+                )
+                payload = _response_payload(response)
+                safe_tool_operation_id = str(
+                    _nested(payload, "data", "operation_id") or payload.get("operation_id") or ""
+                ).strip() or None
+                if not safe_tool_operation_id:
+                    raise HttpStepError(response.status, "operation_id missing in tool response")
+                steps.append(_step("safe_tool_inventory_collect", "success", started))
+            except HttpStepError as exc:
+                fail_fast("safe_tool_inventory_collect", f"HTTP {exc.status}: {exc}", started)
+
+    if safe_tool_operation_id and operation_wait_seconds > 0 and not failed:
+        started = time.monotonic()
+        deadline = time.monotonic() + operation_wait_seconds
+        last_status = "unknown"
+        try:
+            while True:
+                response = smoke_client.request("GET", f"/api/operations/{urllib.parse.quote(safe_tool_operation_id)}")
+                payload = _response_payload(response)
+                last_status = str(_nested(payload, "operation", "status") or payload.get("status") or "unknown")
+                if last_status in {"succeeded", "failed", "timed_out", "cancelled", "canceled", "waiting_consent"}:
+                    break
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(min(0.5, max(0.05, deadline - time.monotonic())))
+            if last_status in {"succeeded", "waiting_consent"}:
+                steps.append(_step("operation_result_check", "success", started))
+            else:
+                fail_fast("operation_result_check", f"operation status={last_status}", started)
+        except HttpStepError as exc:
+            fail_fast("operation_result_check", f"HTTP {exc.status}: {exc}", started)
+
     payload = {
         "status": "failed" if failed else "success",
         "started_at": started_at,
@@ -167,6 +351,10 @@ def run_business_smoke(
         "steps": steps,
         "artifact": None,
     }
+    if created_ticket_id:
+        payload["created_ticket_id"] = created_ticket_id
+    if safe_tool_operation_id:
+        payload["safe_tool_operation_id"] = safe_tool_operation_id
     _write_marker(output, payload)
     return payload
 
@@ -182,6 +370,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-agent-step", action="store_true")
     parser.add_argument("--require-https", action="store_true")
     parser.add_argument("--require-secure-cookie", action="store_true")
+    parser.add_argument("--browser-check", action="store_true")
+    parser.add_argument("--create-test-ticket", action="store_true")
+    parser.add_argument("--run-safe-tool", choices=("inventory.collect",))
+    parser.add_argument("--operation-wait-seconds", type=float, default=0.0)
+    parser.add_argument("--check-update-recommendation", action="store_true")
     return parser.parse_args()
 
 
@@ -195,7 +388,12 @@ def main() -> None:
         timeout=args.timeout,
         require_https=args.require_https,
         require_secure_cookie=args.require_secure_cookie,
+        browser_check=args.browser_check,
         device_id=None if args.skip_agent_step else args.device_id,
+        create_test_ticket=args.create_test_ticket,
+        run_safe_tool=args.run_safe_tool,
+        operation_wait_seconds=args.operation_wait_seconds,
+        check_update_recommendation=args.check_update_recommendation,
     )
     print(json.dumps({"status": payload["status"], "output": str(args.output)}, ensure_ascii=False))
     if payload["status"] != "success":

@@ -153,7 +153,10 @@ def _operation_match(operation: Operation) -> dict[str, Any]:
     error = _redact_text(operation.error_message or operation.error_code)
     if error:
         reason_parts.append(error)
-    links = [_safe_link("Observer", f"/app/admin/observer?operation_id={quote(operation.operation_id)}", "observer")]
+    links = [
+        _safe_link("Операция", f"/app/admin/operations/{quote(operation.operation_id)}", "operation"),
+        _safe_link("Observer", f"/app/admin/observer?operation_id={quote(operation.operation_id)}", "observer"),
+    ]
     if operation.ticket_id:
         links.insert(0, _safe_link("Открыть тикет", f"/app/tickets/{operation.ticket_id}", "ticket"))
     if operation.device_id:
@@ -233,6 +236,44 @@ def _log_matches(query: str, *, limit: int) -> list[dict[str, Any]]:
         if len(matches) >= limit:
             break
     return matches
+
+
+def _diagnosis_for_matches(matches: list[dict[str, Any]]) -> str | None:
+    if not matches:
+        return None
+    signals: dict[str, bool] = {}
+    kinds: set[str] = set()
+    for match in matches:
+        kinds.add(str(match.get("kind") or "unknown"))
+        raw_signals = match.get("signals") if isinstance(match.get("signals"), dict) else {}
+        for key, value in raw_signals.items():
+            signals[str(key)] = signals.get(str(key), False) or bool(value)
+    reasons: list[str] = []
+    if signals.get("agent_offline"):
+        reasons.append("агент offline")
+    if signals.get("stale_agent"):
+        reasons.append("агент stale")
+    if signals.get("outbox_backlog"):
+        reasons.append("есть outbox backlog")
+    if signals.get("failed_operation"):
+        reasons.append("есть failed operation")
+    if signals.get("stuck_operation"):
+        reasons.append("есть stuck operation")
+    if signals.get("waiting_consent") or signals.get("pending_consent"):
+        reasons.append("операция ждёт consent")
+    if signals.get("pending_approval"):
+        reasons.append("есть pending approval")
+    if signals.get("ticket_sla_risk"):
+        reasons.append("есть SLA risk")
+    if signals.get("observer_errors"):
+        reasons.append("Observer показывает ошибки")
+    if reasons:
+        return "Вероятная причина: " + ", ".join(reasons[:5]) + "."
+    if "ticket" in kinds:
+        return "Вероятная причина: тикет найден без критичных runtime-сигналов."
+    if "device" in kinds or "hostname" in kinds:
+        return "Вероятная причина: устройство найдено без критичных runtime-сигналов."
+    return str(matches[0].get("reason") or "Контекст найден.")
 
 
 async def _counts_for_ticket(session: Any, ticket_id: str) -> tuple[int, int]:
@@ -318,12 +359,12 @@ async def locate_tech_query(
                     kind = "hostname" if device.hostname and normalized.lower() in device.hostname.lower() else "device"
                     matches.append(_device_match(request, device, failed_count=failed, stuck_count=stuck, outbox_backlog=outbox, kind=kind))
 
-            if UUID_RE.match(normalized) and len(matches) < capped_limit:
+            if (UUID_RE.match(normalized) or broad) and len(matches) < capped_limit:
                 operation = await session.get(Operation, normalized)
                 if operation is not None:
                     matches.append(_operation_match(operation))
 
-            if include_traces and UUID_RE.match(normalized) and len(matches) < capped_limit:
+            if include_traces and (UUID_RE.match(normalized) or len(normalized) >= 8) and len(matches) < capped_limit:
                 trace = await session.get(ObserverTrace, normalized)
                 if trace is not None:
                     matches.append(_trace_match(trace))
@@ -350,7 +391,7 @@ async def locate_tech_query(
     if not matches:
         primary = "По запросу ничего не найдено. Проверьте ticket code, hostname, device_id, operation_id или trace_id."
     else:
-        primary = matches[0]["reason"]
+        primary = _diagnosis_for_matches(matches) or matches[0]["reason"]
     return {
         "status": "ok",
         "query": query,

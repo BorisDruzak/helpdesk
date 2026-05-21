@@ -15,6 +15,7 @@ import {
   AdminKnowledgePage,
   AdminModulesPage,
   AdminObserverPage,
+  AdminOperationDetailPage,
   AdminPlaybooksPage,
   AdminPolicyHealthPage,
   AdminProblemsPage,
@@ -299,6 +300,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminDeviceOperationsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/operations/:operationId",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminOperationDetailPage />
               </WorkspaceAccessGate>
             )
           },

@@ -56,6 +56,10 @@ export const AdminDeviceOperationsPage = lazy(() =>
   import("../../pages/admin/device-operations-page").then((module) => ({ default: module.AdminDeviceOperationsPage })),
 );
 
+export const AdminOperationDetailPage = lazy(() =>
+  import("../../pages/admin/operation-detail-page").then((module) => ({ default: module.AdminOperationDetailPage })),
+);
+
 export const AdminAgentUpdatesPage = lazy(() =>
   import("../../pages/admin/agent-updates-page").then((module) => ({ default: module.AdminAgentUpdatesPage })),
 );
