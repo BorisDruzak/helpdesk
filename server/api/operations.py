@@ -17,6 +17,7 @@ from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
+from auth.middleware import require_auth
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from shared.tool_contracts import normalize_risk_level
@@ -312,6 +313,29 @@ async def handle_get_operation(request: web.Request) -> web.Response:
             "status": "error",
             "error": str(e)
         }, status=500)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_admin_get_operation(request: web.Request) -> web.Response:
+    """
+    GET /api/web/admin/operations/{operation_id}
+
+    Read-only web-session alias for the Tech Panel operation detail page.
+    """
+    try:
+        operation_id = request.match_info["operation_id"]
+        async with get_session() as session:
+            repo = OperationsRepo(session)
+            operation = await repo.get_by_operation_id(operation_id)
+            if not operation:
+                return web.json_response(
+                    {"status": "error", "error": "Operation not found", "error_code": "NOT_FOUND"},
+                    status=404,
+                )
+            return web.json_response({"status": "success", "operation": _operation_payload(operation)})
+    except Exception as exc:
+        logger.error(f"[handle_web_admin_get_operation] Error: {exc}", exc_info=True)
+        return web.json_response({"status": "error", "error": "Operation lookup failed"}, status=500)
 
 
 async def handle_retry_operation(request: web.Request) -> web.Response:

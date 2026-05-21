@@ -189,6 +189,27 @@ async def test_operation_id_locates_operation_and_redacts_error(test_client, tes
 
 
 @pytest.mark.asyncio
+async def test_web_admin_operation_detail_alias_uses_web_auth(test_client, test_engine):
+    seeded = await _seed_locator_context(test_engine)
+
+    response = await test_client.get(
+        f"/api/web/admin/operations/{seeded['operation_id']}",
+        headers=_support_headers(),
+    )
+    forbidden = await test_client.get(
+        f"/api/web/admin/operations/{seeded['operation_id']}",
+        headers=_requester_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["operation"]["operation_id"] == seeded["operation_id"]
+    assert payload["operation"]["ticket_id"] == seeded["ticket_id"]
+    assert forbidden.status == 403
+
+
+@pytest.mark.asyncio
 async def test_trace_id_locates_observer_trace(test_client, test_engine):
     seeded = await _seed_locator_context(test_engine)
 

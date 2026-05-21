@@ -29,7 +29,7 @@ describe("fetchOperationDetail", () => {
 
     const payload = await fetchOperationDetail("op-1");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/operations/op-1", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/operations/op-1", { credentials: "same-origin" });
     expect(payload.operation.operation_id).toBe("op-1");
     expect(payload.links.device_operations).toBe("/app/admin/device-operations/device-1");
     expect(payload.links.ticket).toBe("/app/tickets/ticket-1");

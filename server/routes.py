@@ -273,6 +273,7 @@ from api.events import handle_get_ticket_events, handle_get_device_events, handl
 from api.operations import (
     handle_get_operations,
     handle_get_operation,
+    handle_web_admin_get_operation,
     handle_cancel_operation,
     handle_retry_operation,
     handle_approve_consent,
@@ -796,6 +797,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/agents/audit', handle_tech_agents_audit),
         web.get('/api/web/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
+        web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_get_operation),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
         web.get('/api/web/admin/inventory/dashboard', handle_web_admin_inventory_dashboard),

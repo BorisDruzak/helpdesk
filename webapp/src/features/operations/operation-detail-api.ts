@@ -92,7 +92,7 @@ function linksForOperation(operation: OperationDetail): OperationDetailPayload["
 }
 
 export async function fetchOperationDetail(operationId: string): Promise<OperationDetailPayload> {
-  const response = await fetch(`/api/operations/${encodeURIComponent(operationId)}`, {
+  const response = await fetch(`/api/web/admin/operations/${encodeURIComponent(operationId)}`, {
     credentials: "same-origin",
   });
   const payload = await readJson<SuccessResponse | ErrorResponse>(response);
