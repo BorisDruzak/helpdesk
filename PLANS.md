@@ -34,6 +34,42 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: Webapp Workspace Navigation IA
+
+Status: local verification passed / commit and remote browser signoff pending.
+
+Goal:
+
+- Restructure the new React webapp navigation from a flat mixed Support/Admin list into `workspace -> domain group -> local tabs`, while preserving routes, permissions, workspace access gates, ticket workspace shell behavior and public requester/help flows.
+
+Scope:
+
+- React webapp navigation source of truth, AppShell, AppSidebar, AppTopbar workspace switching, workspace access helpers, `/app/admin` landing page and route-level domain tabs.
+- Route semantics: `/app/support` remains the Support Work Center, `/app/admin` becomes the Admin Center instead of redirecting to inventory, and existing `/app/tickets`, `/app/admin/*`, `/app/help`, `/app/ticket*` routes remain intact.
+- Docs/navigation sync only where route semantics or source-of-truth navigation references change.
+
+Decisions:
+
+- Treat this as a React webapp UI boundary change, not a backend/API change. Do not add fake metrics or backend contracts.
+- Keep `/app/tickets` isolated from the global AppShell exactly as the current ticket workspace behavior requires.
+- Use permission-filtered navigation helpers as the single source for sidebar groups, workspace labels/search placeholder, active matching, domain tabs, admin/support landing cards and workspace switch fallbacks.
+- Store last support/admin workspace paths in localStorage only for safe workspace-owned `/app/*` paths, with SSR/test guards and fallback to workspace home when access or permission no longer allows a stored route.
+
+Verification target:
+
+- Focused Vitest: navigation helpers, sidebar workspace/domain behavior, router/admin center and workspace switch history.
+- Full webapp `pnpm test`, `pnpm build`, `python scripts/verify_workspace.py`, and if available `pnpm run check:remote:webapp`.
+- Browser MCP check at `https://192.168.100.17:9443/admin` for Support/Admin sidebar separation, Admin Center cards, domain tabs and workspace switch context restore.
+- Full CI/full gate remains an explicit final release checkpoint and must not be run without user request.
+
+Verification so far:
+
+- RED targeted tests failed before implementation for missing navigation helpers, admin center route and grouped sidebar behavior.
+- Focused `pnpm --dir webapp test -- src/app/navigation.test.ts src/components/shell/app-sidebar.test.tsx src/app/router.test.tsx` passed: 3 files / 17 tests.
+- Full `pnpm --dir webapp test` passed: 59 files / 283 tests.
+- `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q`, `python scripts/build_context_index.py --force`, `python scripts/verify_workspace.py` and `git diff --check` passed.
+- Remote quick release, `pnpm --dir webapp run check:remote:webapp` and MCP browser signoff remain pending until after local commit/push.
+
 ## Active Work: Operator Command Center
 
 Status: accepted / release-candidate.

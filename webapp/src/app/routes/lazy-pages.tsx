@@ -38,6 +38,10 @@ export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );
 
+export const AdminCenterPage = lazy(() =>
+  import("../../pages/admin").then((module) => ({ default: module.AdminCenterPage })),
+);
+
 export const AdminDevicePage = lazy(() =>
   import("../../pages/admin/device-page").then((module) => ({ default: module.AdminDevicePage })),
 );

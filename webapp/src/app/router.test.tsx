@@ -276,7 +276,7 @@ describe("appRoutes", () => {
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 
-  it("redirects /app/admin to inventory for admin session", async () => {
+  it("renders /app/admin as the admin center for admin session", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -287,14 +287,22 @@ describe("appRoutes", () => {
         });
       }
 
+      if (url.endsWith("/api/web/notifications/unread_count")) {
+        return jsonResponse({ status: "ok", unread_count: 0 });
+      }
+
+      if (url.endsWith("/api/web/admin/connection-requests")) {
+        return jsonResponse({ status: "success", data: { connection_requests: [] } });
+      }
+
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
     renderApp(["/app/admin"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Агенты" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Инвентарь устройств/ })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Устройства и агенты/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
   });
 
   it("opens Capability Studio for admin users", async () => {
@@ -375,7 +383,7 @@ describe("appRoutes", () => {
     renderApp(["/app/admin/capabilities"], fetchMock as typeof fetch);
 
     expect(await screen.findByRole("heading", { name: "Capabilities" }, { timeout: 5000 })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /Возможности/ })).toBeInTheDocument();
+    expect((await screen.findAllByRole("link", { name: /Возможности/ })).length).toBeGreaterThan(0);
     expect(await screen.findByText("server.dns.resolve")).toBeInTheDocument();
     expect(await screen.findByText("zabbix.problems.lookup")).toBeInTheDocument();
   });

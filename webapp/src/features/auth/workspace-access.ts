@@ -1,15 +1,35 @@
-import { ADMIN_HOME_PATH, SUPPORT_HOME_PATH } from "../../app/navigation";
+import {
+  ADMIN_HOME_PATH,
+  SUPPORT_HOME_PATH,
+  canAccessNavigationPath,
+  isWorkspacePath,
+} from "../../app/navigation";
 import type { WebSession } from "./api";
 
 export type AppWorkspace = "support" | "admin";
+
+type WorkspaceStorage = Pick<Storage, "getItem" | "setItem">;
 
 const WORKSPACE_PATHS: Record<AppWorkspace, string> = {
   support: SUPPORT_HOME_PATH,
   admin: ADMIN_HOME_PATH
 };
 
+const WORKSPACE_HISTORY_KEYS: Record<AppWorkspace, string> = {
+  support: "pc-client:last-support-path",
+  admin: "pc-client:last-admin-path"
+};
+
 function isWorkspace(value: string | null | undefined): value is AppWorkspace {
   return value === "support" || value === "admin";
+}
+
+function getBrowserStorage(): WorkspaceStorage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage;
 }
 
 export function getWorkspacePath(workspace: AppWorkspace): string {
@@ -47,19 +67,67 @@ export function resolveNextWorkspacePath(
   nextPath: string | null,
   session: WebSession | null
 ): string | null {
-  if (
-    nextPath &&
-    ["/app/support", "/app/tickets", "/app/reports", "/app/knowledge", "/app/settings"].some((prefix) =>
-      nextPath.startsWith(prefix)
-    ) &&
-    hasWorkspaceAccess(session, "support")
-  ) {
-    return nextPath === "/app/support" ? SUPPORT_HOME_PATH : nextPath;
+  if (nextPath && isWorkspacePath(nextPath, "support") && hasWorkspaceAccess(session, "support")) {
+    return canAccessNavigationPath(nextPath, session?.permissions ?? []) ? nextPath : SUPPORT_HOME_PATH;
   }
 
-  if (nextPath && nextPath.startsWith("/app/admin") && hasWorkspaceAccess(session, "admin")) {
-    return nextPath === "/app/admin" ? ADMIN_HOME_PATH : nextPath;
+  if (nextPath && isWorkspacePath(nextPath, "admin") && hasWorkspaceAccess(session, "admin")) {
+    return canAccessNavigationPath(nextPath, session?.permissions ?? []) ? nextPath : ADMIN_HOME_PATH;
   }
 
   return resolveDefaultWorkspacePath(session);
+}
+
+export function readWorkspaceHistoryPath(
+  workspace: AppWorkspace,
+  storage: WorkspaceStorage | null | undefined = getBrowserStorage()
+): string | null {
+  const value = storage?.getItem(WORKSPACE_HISTORY_KEYS[workspace]) ?? null;
+  if (!value || !isWorkspacePath(value, workspace)) {
+    return null;
+  }
+
+  return value;
+}
+
+export function writeWorkspaceHistoryPath(
+  workspace: AppWorkspace,
+  path: string,
+  storage: WorkspaceStorage | null | undefined = getBrowserStorage()
+): void {
+  if (!storage || !isWorkspacePath(path, workspace)) {
+    return;
+  }
+
+  storage.setItem(WORKSPACE_HISTORY_KEYS[workspace], path);
+}
+
+export function rememberWorkspacePath(
+  path: string,
+  session: WebSession | null,
+  storage: WorkspaceStorage | null | undefined = getBrowserStorage()
+): void {
+  const workspace = isWorkspacePath(path, "admin") ? "admin" : isWorkspacePath(path, "support") ? "support" : null;
+  if (!workspace || !hasWorkspaceAccess(session, workspace)) {
+    return;
+  }
+
+  writeWorkspaceHistoryPath(workspace, path, storage);
+}
+
+export function resolveWorkspaceSwitchPath(
+  workspace: AppWorkspace,
+  session: WebSession | null,
+  storage: WorkspaceStorage | null | undefined = getBrowserStorage()
+): string | null {
+  if (!hasWorkspaceAccess(session, workspace)) {
+    return resolveDefaultWorkspacePath(session);
+  }
+
+  const storedPath = readWorkspaceHistoryPath(workspace, storage);
+  if (storedPath && canAccessNavigationPath(storedPath, session?.permissions ?? [])) {
+    return storedPath;
+  }
+
+  return getWorkspacePath(workspace);
 }

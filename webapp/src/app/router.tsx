@@ -1,9 +1,9 @@
 import { Suspense, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
-import { ADMIN_HOME_PATH } from "./navigation";
 import { AppShell } from "./layouts/app-shell";
 import {
+  AdminCenterPage,
   AdminAgentUpdatesPage,
   AdminChangesPage,
   AdminDeviceOperationsPage,
@@ -256,7 +256,7 @@ export const appRoutes: RouteObject[] = [
             path: "admin",
             element: (
               <WorkspaceAccessGate workspace="admin">
-                <Navigate replace to={ADMIN_HOME_PATH} />
+                <AdminCenterPage />
               </WorkspaceAccessGate>
             )
           },
