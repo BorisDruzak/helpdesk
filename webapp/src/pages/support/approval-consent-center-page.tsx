@@ -64,6 +64,49 @@ const riskLabels: Record<ApprovalConsentRisk, string> = {
   unknown: "Неизвестно",
 };
 
+const sectionCopy: Partial<Record<ApprovalConsentSection["key"], { title: string; description: string }>> = {
+  waiting_me: {
+    title: "Ждёт меня",
+    description: "Согласования, где текущий оператор указан исполнителем или согласующим.",
+  },
+  waiting_user: {
+    title: "Ждёт пользователя",
+    description: "Запросы согласия, которые должен подтвердить пользователь.",
+  },
+  overdue: {
+    title: "Просрочено",
+    description: "Срок согласования или запроса согласия уже истёк.",
+  },
+  high_risk: {
+    title: "Высокий риск",
+    description: "Согласования и запросы согласия с высоким или критичным риском.",
+  },
+  ticket_approvals: {
+    title: "Тикеты",
+    description: "Согласования в процессе обработки тикетов.",
+  },
+  change_approvals: {
+    title: "Изменения",
+    description: "Согласования изменений.",
+  },
+  risky_tool_consents: {
+    title: "Рискованные команды",
+    description: "Операции, ожидающие согласия перед запуском.",
+  },
+  remote_assist_consents: {
+    title: "Удалённая помощь",
+    description: "Сессии удалённой помощи, ожидающие согласия пользователя.",
+  },
+  closure_approvals: {
+    title: "Закрытие",
+    description: "Блокеры закрытия тикета, похожие на согласование.",
+  },
+  policy_overrides: {
+    title: "Переопределения политик",
+    description: "Ожидающие запросы на переопределение политик, если источник существует.",
+  },
+};
+
 const severityClasses: Record<ApprovalConsentSeverity, string> = {
   critical: "border-red-300 bg-red-50 text-red-950",
   warning: "border-amber-300 bg-amber-50 text-amber-950",
@@ -210,12 +253,13 @@ function ItemCard({ item }: { item: ApprovalConsentItem }) {
 }
 
 function SectionCard({ section }: { section: ApprovalConsentSection }) {
+  const copy = sectionCopy[section.key] ?? { title: section.title, description: section.description };
   return (
     <section className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="break-words text-sm font-semibold text-slate-950">{section.title}</h3>
-          <p className="mt-1 break-words text-xs leading-5 text-slate-600">{section.description}</p>
+          <h3 className="break-words text-sm font-semibold text-slate-950">{copy.title}</h3>
+          <p className="mt-1 break-words text-xs leading-5 text-slate-600">{copy.description}</p>
         </div>
         <Badge className={severityClasses[section.severity]}>{section.count}</Badge>
       </div>
@@ -282,7 +326,7 @@ export function ApprovalConsentCenterPage() {
         <header className="surface-panel px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-700">Support</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-700">Поддержка</p>
               <h1 className="mt-2 break-words font-display text-3xl font-semibold tracking-tight text-slate-950">
                 Центр согласований и согласий
               </h1>
@@ -419,7 +463,7 @@ export function ApprovalConsentCenterPage() {
 
         <footer className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <Clock3 className="h-4 w-4" />
-          Первый cut read-only: действия подтверждения и отклонения показываются только если backend отдаёт безопасный typed action.
+          Первый срез работает только для просмотра: действия подтверждения и отклонения показываются только если сервер отдаёт безопасное типизированное действие.
         </footer>
       </div>
     </main>
