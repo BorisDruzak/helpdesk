@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import ssl
 import sys
 import time
 import urllib.error
@@ -36,11 +38,16 @@ class HttpResponse:
 
 
 class UrlLibClient:
-    def __init__(self, base_url: str, timeout: float) -> None:
+    def __init__(self, base_url: str, timeout: float, *, insecure_tls: bool | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.cookie_jar = CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
+        handlers: list[Any] = [urllib.request.HTTPCookieProcessor(self.cookie_jar)]
+        if insecure_tls is None:
+            insecure_tls = _truthy_env("BUSINESS_SMOKE_INSECURE_TLS") or _truthy_env("REMOTE_SMOKE_INSECURE_TLS")
+        if insecure_tls and urllib.parse.urlparse(self.base_url).scheme.lower() == "https":
+            handlers.append(urllib.request.HTTPSHandler(context=ssl._create_unverified_context()))
+        self.opener = urllib.request.build_opener(*handlers)
 
     def request(self, method: str, path: str, json_body: dict | None = None) -> HttpResponse:
         data = None
@@ -71,6 +78,10 @@ class UrlLibClient:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _truthy_env(key: str) -> bool:
+    return str(os.environ.get(key) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _step(key: str, status: str, started: float, *, error: str | None = None) -> dict[str, Any]:
@@ -181,6 +192,7 @@ def run_business_smoke(
     timeout: float = 15.0,
     require_https: bool = False,
     require_secure_cookie: bool = False,
+    insecure_tls: bool | None = None,
     browser_check: bool = False,
     device_id: str | None = None,
     create_test_ticket: bool = False,
@@ -190,7 +202,7 @@ def run_business_smoke(
 ) -> dict[str, Any]:
     started_at = _now()
     steps: list[dict[str, Any]] = []
-    smoke_client = client or UrlLibClient(base_url, timeout)
+    smoke_client = client or UrlLibClient(base_url, timeout, insecure_tls=insecure_tls)
     failed = False
     created_ticket_id: str | None = None
     safe_tool_operation_id: str | None = None
@@ -370,6 +382,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-agent-step", action="store_true")
     parser.add_argument("--require-https", action="store_true")
     parser.add_argument("--require-secure-cookie", action="store_true")
+    parser.add_argument("--insecure-tls", action="store_true", help="Allow self-signed HTTPS certificates for stand smoke.")
     parser.add_argument("--browser-check", action="store_true")
     parser.add_argument("--create-test-ticket", action="store_true")
     parser.add_argument("--run-safe-tool", choices=("inventory.collect",))
@@ -388,6 +401,7 @@ def main() -> None:
         timeout=args.timeout,
         require_https=args.require_https,
         require_secure_cookie=args.require_secure_cookie,
+        insecure_tls=True if args.insecure_tls else None,
         browser_check=args.browser_check,
         device_id=None if args.skip_agent_step else args.device_id,
         create_test_ticket=args.create_test_ticket,

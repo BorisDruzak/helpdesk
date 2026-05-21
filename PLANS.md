@@ -122,7 +122,7 @@ Implemented:
 - Read-only operation detail route `/app/admin/operations/:operationId` consumes existing `GET /api/operations/{operation_id}` and exposes only safe context links.
 - Release marker helper in `scripts/release_server_to_remote.py` writes Alembic current/head after remote migration when available and writes `/var/chat_bot/pc_client/...` marker paths directly on the remote host; standalone `scripts/business_smoke.py`, safe `scripts/write_restore_drill_marker.py` and `scripts/write_backup_status_marker.py` write readiness evidence markers.
 - Remote `smoke server` and release smoke gates now support HTTPS pilot stands through `REMOTE_SMOKE_BASE_URL` / `REMOTE_SMOKE_INSECURE_TLS` or explicit `--base-url` / `--insecure-tls` flags, avoiding false failures after `REQUIRE_HTTPS=true`.
-- `scripts/business_smoke.py` supports optional HTTPS cookie check, Playwright mixed-content/WSS check, explicit test ticket creation, support workspace read, explicit `inventory.collect` smoke and operation result polling.
+- `scripts/business_smoke.py` supports optional HTTPS cookie check, self-signed stand TLS via `--insecure-tls` / `BUSINESS_SMOKE_INSECURE_TLS`, Playwright mixed-content/WSS check, explicit test ticket creation, support workspace read, explicit `inventory.collect` smoke and operation result polling.
 - Query-token attempt counter in auth middleware with bounded process-local storage and no token values.
 - Tech snapshot additions for query-token attempts, below-baseline device lists/baseline metadata and inventory scheduler duplicate-task details.
 - Runtime inventory scheduler `status_snapshot()` now includes active task count, duplicate detection, last tick and last error.

@@ -69,6 +69,43 @@ def test_business_smoke_writes_success_marker_without_secrets(tmp_path: Path) ->
     assert "pc_client_web_session=secret" not in output.read_text(encoding="utf-8")
 
 
+def test_url_client_can_allow_self_signed_https(monkeypatch) -> None:
+    captured_handlers = []
+
+    def fake_build_opener(*handlers):
+        captured_handlers.extend(handlers)
+
+        class FakeOpener:
+            pass
+
+        return FakeOpener()
+
+    monkeypatch.setattr(business_smoke.urllib.request, "build_opener", fake_build_opener)
+
+    business_smoke.UrlLibClient("https://stand.example", timeout=5.0, insecure_tls=True)
+
+    assert any(isinstance(handler, business_smoke.urllib.request.HTTPSHandler) for handler in captured_handlers)
+
+
+def test_url_client_reads_insecure_tls_from_env(monkeypatch) -> None:
+    captured_handlers = []
+
+    def fake_build_opener(*handlers):
+        captured_handlers.extend(handlers)
+
+        class FakeOpener:
+            pass
+
+        return FakeOpener()
+
+    monkeypatch.setenv("BUSINESS_SMOKE_INSECURE_TLS", "true")
+    monkeypatch.setattr(business_smoke.urllib.request, "build_opener", fake_build_opener)
+
+    business_smoke.UrlLibClient("https://stand.example", timeout=5.0)
+
+    assert any(isinstance(handler, business_smoke.urllib.request.HTTPSHandler) for handler in captured_handlers)
+
+
 def test_business_smoke_runs_optional_business_acceptance_steps(tmp_path: Path, monkeypatch) -> None:
     output = tmp_path / "business-smoke-business.json"
     client = FakeClient(

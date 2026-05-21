@@ -144,6 +144,8 @@ python scripts/manage_remote_stack.py smoke server --base-url https://192.168.10
 
 The default can also come from remote `server/.env`: `REMOTE_SMOKE_BASE_URL=https://192.168.100.17:9443` and `REMOTE_SMOKE_INSECURE_TLS=true` for the current self-signed stand certificate. `release_server_to_remote.py` reuses the same remote smoke path via `--smoke-base-url` / `--smoke-insecure-tls` or those env values, so quick/full release gates do not fail just because `REQUIRE_HTTPS=true`.
 
+For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/business_smoke.py` with `--require-https --require-secure-cookie --insecure-tls` or set `BUSINESS_SMOKE_INSECURE_TLS=true`; the marker still must not include the smoke password or session cookie value.
+
 `manage_remote_stack.py status server` и `scripts/runtime_stack.py status server` теперь дополнительно показывают `external_listener`, если порт `8666` занят не тем процессом, который считает своим systemd-unit. Для `start server` и `stop server` canonical runtime сначала вычищает stray `server.py` из этого workspace, чтобы ручной запуск в shell не ломал transient-unit.
 `scripts/run_server.py` и `scripts/run_control_plane.py` считаются единственными canonical wrappers для server/control-plane runtime: они прокидывают repo root в import path/PYTHONPATH, чтобы sibling-пакет `shared/*` был доступен и на Linux, и в локальных repro.
 
