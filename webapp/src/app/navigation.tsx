@@ -160,7 +160,7 @@ export const appNavigation: AppNavItem[] = [
     order: 30,
   },
   {
-    label: "Отчеты",
+    label: "Отчёты",
     description: "KPI, сроки ответа и динамика",
     icon: BarChart3,
     section: "support",
