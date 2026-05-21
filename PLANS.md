@@ -142,7 +142,7 @@ Verification target:
 
 ## Active Work: P1 Approval/Consent Center
 
-Status: implemented / production-oriented cut pending release signoff.
+Status: accepted / release-candidate.
 
 Goal:
 
@@ -162,11 +162,13 @@ Read-only / known gaps:
 - Policy override items return zero because no first-class pending policy override source is exposed yet.
 - Change, Remote Assist and operation rows link to context, but the center does not bypass consent or expose raw operation/Remote Assist secrets.
 
-Verification target:
+Verification:
 
-- `server/tests/test_approval_consent_center.py`, command-center and device-operations regressions, `python -m compileall -q server`.
-- `pnpm --dir webapp test -- approval-consent`, `pnpm --dir webapp test -- command-center`, `pnpm --dir webapp build`.
-- `python scripts/verify_workspace.py`, `git diff --check`, browser smoke for `/app/support/approvals` before release acceptance.
+- Backend: `server/tests/test_approval_consent_center.py`, command-center and device-operations regressions, `python -m compileall -q server`.
+- Frontend: `pnpm --dir webapp test -- approval-consent`, `pnpm --dir webapp test -- command-center`, `pnpm --dir webapp build`.
+- Workspace: `python scripts/verify_workspace.py`, `git diff --check`.
+- Live stand acceptance on `0dabb033`: `/api/web/support/approvals` returned 200 for admin/support, 403 for requester, 401 for unauth/invalid bearer; live/seed sources produced ticket, change, risky tool, remote assist and closure approval/consent items; policy override stayed at zero by design; secret scan found no Remote Assist or operation raw secret fields in the payload.
+- Browser smoke: `/app/support/approvals`, `/app/support` pending approval/consent links and `/app/tickets/a1111111-1111-4111-8111-111111111111` compact `Согласования и согласия` block passed with no console errors.
 
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
