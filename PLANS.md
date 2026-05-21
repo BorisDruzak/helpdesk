@@ -125,6 +125,7 @@ Implemented:
 - `scripts/business_smoke.py` supports optional HTTPS cookie check, self-signed stand TLS via `--insecure-tls` / `BUSINESS_SMOKE_INSECURE_TLS`, Playwright mixed-content/WSS check, explicit test ticket creation, support workspace read, explicit `inventory.collect` smoke and operation result polling.
 - Query-token attempt counter in auth middleware with bounded process-local storage and no token values.
 - Tech snapshot additions for query-token attempts, below-baseline device lists/baseline metadata and inventory scheduler duplicate-task details.
+- Agent baseline now counts only real post-handshake devices with numeric agent versions; pending provisioning stubs and non-numeric canaries stay out of below-version counts and should be handled as cleanup/provisioning data quality.
 - Runtime inventory scheduler `status_snapshot()` now includes active task count, duplicate detection, last tick and last error.
 
 ## Active Work: Operator Command Center

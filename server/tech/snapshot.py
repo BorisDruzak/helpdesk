@@ -587,6 +587,12 @@ def _version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in parts[:4]) if parts else (0,)
 
 
+def _is_agent_baseline_candidate(*, protocol_version: str | None, agent_version: str | None) -> bool:
+    if str(protocol_version or "").strip().lower() == "pending":
+        return False
+    return bool(re.search(r"\d+", str(agent_version or "")))
+
+
 def _version_lt(left: str, right: str) -> bool:
     left_tuple = _version_tuple(left)
     right_tuple = _version_tuple(right)
@@ -606,7 +612,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
         stale_cutoff = now - timedelta(seconds=300)
         async with get_session() as session:
             query = (
-                select(Device.device_id, Device.hostname, Device.agent_version, Device.last_seen_at)
+                select(Device.device_id, Device.hostname, Device.agent_version, Device.protocol_version, Device.last_seen_at)
                 .where(
                     and_(
                         Device.deleted_at.is_(None),
@@ -622,11 +628,11 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                 .limit(20)
             )
             rows = (await session.execute(query)).all()
-            for device_id, hostname, agent_version, last_seen_at in rows:
+            for device_id, hostname, agent_version, protocol_version, last_seen_at in rows:
                 reasons: list[str] = []
                 if last_seen_at and last_seen_at < stale_cutoff:
                     reasons.append("stale")
-                if min_version and _version_lt(str(agent_version or ""), min_version):
+                if min_version and _is_agent_baseline_candidate(protocol_version=protocol_version, agent_version=agent_version) and _version_lt(str(agent_version or ""), min_version):
                     reasons.append("below baseline")
                 problem_devices.append(
                     {
@@ -642,12 +648,12 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
             if min_version:
                 all_versions = (
                     await session.execute(
-                        select(Device.device_id, Device.hostname, Device.agent_version, Device.last_seen_at).where(Device.deleted_at.is_(None)).order_by(Device.last_seen_at.desc())
+                        select(Device.device_id, Device.hostname, Device.agent_version, Device.protocol_version, Device.last_seen_at).where(Device.deleted_at.is_(None)).order_by(Device.last_seen_at.desc())
                     )
                 ).all()
                 below_baseline = 0
-                for device_id, hostname, agent_version, last_seen_at in all_versions:
-                    if _version_lt(str(agent_version or ""), min_version):
+                for device_id, hostname, agent_version, protocol_version, last_seen_at in all_versions:
+                    if _is_agent_baseline_candidate(protocol_version=protocol_version, agent_version=agent_version) and _version_lt(str(agent_version or ""), min_version):
                         below_baseline += 1
                         if len(below_baseline_devices) < 50:
                             below_baseline_devices.append(

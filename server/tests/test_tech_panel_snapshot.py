@@ -335,3 +335,12 @@ def test_inventory_scheduler_duplicate_status_affects_gate():
     gate = next(item for item in gates if item["key"] == "inventory_scheduler_health")
     assert gate["status"] == "blocked"
     assert "duplicate" in (gate["evidence"] or "")
+
+
+@pytest.mark.no_db
+def test_agent_baseline_excludes_pending_stubs_and_non_numeric_canaries():
+    from tech.snapshot import _is_agent_baseline_candidate
+
+    assert _is_agent_baseline_candidate(protocol_version="pending", agent_version="") is False
+    assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="observer-canary") is False
+    assert _is_agent_baseline_candidate(protocol_version="ws_ticket_v3", agent_version="3.1.19") is True
