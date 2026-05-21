@@ -150,6 +150,18 @@ export const appNavigation: AppNavItem[] = [
     order: 20,
   },
   {
+    label: "Согласования",
+    description: "Approval, consent, risky actions, закрытие и policy overrides",
+    icon: KeyRound,
+    section: "support",
+    workspace: "support",
+    domainId: "support-primary",
+    to: "/app/support/approvals",
+    permission: "ticket.queue.view",
+    activePatterns: ["/app/support/approvals/*"],
+    order: 30,
+  },
+  {
     label: "База знаний",
     description: "Статьи и категории",
     icon: BookOpen,

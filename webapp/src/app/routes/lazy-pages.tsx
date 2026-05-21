@@ -18,6 +18,12 @@ export const SupportCommandCenterPage = lazy(() =>
   import("../../pages/support/command-center-page").then((module) => ({ default: module.SupportCommandCenterPage })),
 );
 
+export const ApprovalConsentCenterPage = lazy(() =>
+  import("../../pages/support/approval-consent-center-page").then((module) => ({
+    default: module.ApprovalConsentCenterPage,
+  })),
+);
+
 export const ReportsPage = lazy(() =>
   import("../../pages/reports").then((module) => ({ default: module.ReportsPage })),
 );

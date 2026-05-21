@@ -123,6 +123,7 @@ from web_api.change_handlers import (
     handle_web_changes_create,
     handle_web_changes_list,
 )
+from web_api.approval_handlers import handle_web_support_approvals
 from tickets.form_pack_handlers import (
     handle_ticket_form_pack_current,
     handle_ticket_form_pack_detail,
@@ -677,6 +678,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/session/me', handle_web_session_me),
         web.get('/api/web/support/bootstrap', handle_web_support_bootstrap),
         web.get('/api/web/support/command-center', handle_web_support_command_center),
+        web.get('/api/web/support/approvals', handle_web_support_approvals),
         web.get('/api/web/support/workspace/summary', handle_web_support_workspace_summary),
         web.post('/api/web/support/workspace/cleanup-noise', handle_web_support_cleanup_noise),
         web.get('/api/web/support/queue', handle_web_support_queue),

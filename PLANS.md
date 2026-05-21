@@ -140,6 +140,34 @@ Verification target:
 - `pnpm --dir webapp test -- device-operations`, focused inventory/tickets tests and `pnpm --dir webapp build`.
 - `python scripts/verify_workspace.py`, `git diff --check`, quick remote/browser smoke at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: P1 Approval/Consent Center
+
+Status: implemented / production-oriented cut pending release signoff.
+
+Goal:
+
+- Add a unified support/admin read workspace for approvals, user consent, risky action consent, closure approval blockers and policy override work without replacing source-domain workflows.
+
+Implemented:
+
+- Backend typed endpoint `GET /api/web/support/approvals` with DTOs and `ApprovalConsentCenterService`.
+- React route `/app/support/approvals`, navigation item `Согласования`, typed frontend client and Russian read-only page with scope/status/kind/risk filters, KPI strip, sections and item cards.
+- Real read sources for `ticket_approvals`, `change_approvals`, `operations.status=waiting_consent`, `remote_access_sessions` pending consent and closure-like ticket approvals.
+- Command Center pending approval/consent actions now deep-link to Approval/Consent Center.
+- Ticket workspace context shows a compact `Согласования и согласия` block when ticket approvals or waiting-consent operations exist.
+
+Read-only / known gaps:
+
+- Mutating approve/reject/delegate/cancel/resend actions are not wired in this cut; source-domain typed endpoints remain the safe action surfaces.
+- Policy override items return zero because no first-class pending policy override source is exposed yet.
+- Change, Remote Assist and operation rows link to context, but the center does not bypass consent or expose raw operation/Remote Assist secrets.
+
+Verification target:
+
+- `server/tests/test_approval_consent_center.py`, command-center and device-operations regressions, `python -m compileall -q server`.
+- `pnpm --dir webapp test -- approval-consent`, `pnpm --dir webapp test -- command-center`, `pnpm --dir webapp build`.
+- `python scripts/verify_workspace.py`, `git diff --check`, browser smoke for `/app/support/approvals` before release acceptance.
+
 ## Active Work: P0 Web UI Workbench and Studio Hardening
 
 Status: accepted / production-oriented cut in progress.

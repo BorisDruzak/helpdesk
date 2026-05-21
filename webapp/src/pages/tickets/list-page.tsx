@@ -1773,6 +1773,9 @@ export function TicketListPage() {
   const firstQueueActionId = queueActionOptions[0]?.id ?? null;
   const firstStatusActionValue = statusActionOptions[0]?.value ?? null;
   const selectedTicketQuality = workspaceQuery.data?.detail.quality ?? null;
+  const approvalSummary = workspaceQuery.data?.detail.ticket.approval_summary ?? null;
+  const waitingConsentOperations =
+    workspaceQuery.data?.detail.snapshot.latest_operations.filter((operation) => operation.status === "waiting_consent") ?? [];
   const selectedTicketProblemsQuery = useQuery({
     enabled: Boolean(selectedTicketId && sidebarTab === "quality"),
     queryKey: ["ticket", selectedTicketId, "problems"],
@@ -3311,6 +3314,48 @@ export function TicketListPage() {
                   deviceContext={viewModel.right.context.device}
                   inventoryContext={viewModel.right.inventoryContext}
                 />
+
+                {approvalSummary?.pending_count || waitingConsentOperations.length ? (
+                  <section className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">Согласования и согласия</p>
+                        <h3 className="mt-1 break-words font-semibold text-white">
+                          Есть ожидания, которые могут блокировать работу
+                        </h3>
+                      </div>
+                      <Link
+                        className="inline-flex h-9 shrink-0 items-center rounded-md border border-amber-200/30 bg-amber-100/10 px-3 text-xs font-semibold text-amber-50 hover:bg-amber-100/20"
+                        to={`/app/support/approvals?kind=${waitingConsentOperations.length ? "pending_consent" : "pending_approval"}`}
+                      >
+                        Открыть в Центре
+                      </Link>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {approvalSummary?.pending_count ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Ждёт согласования: {approvalSummary.pending_count}
+                        </span>
+                      ) : null}
+                      {waitingConsentOperations.length ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Ждёт согласия пользователя: {waitingConsentOperations.length}
+                        </span>
+                      ) : null}
+                      {approvalSummary?.current_action_owner ? (
+                        <span className="rounded-md border border-amber-200/30 bg-black/10 px-2 py-1 text-xs font-semibold text-amber-50">
+                          Владелец действия: {approvalSummary.current_action_owner}
+                        </span>
+                      ) : null}
+                    </div>
+                    {approvalSummary?.items?.length ? (
+                      <p className="mt-3 break-words text-xs leading-5 text-amber-50/90">
+                        {approvalSummary.items.find((item) => item.status === "requested" || item.status === "pending")?.reason ??
+                          "Откройте центр согласований для общего списка pending approvals и consent-запросов."}
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
 
                 <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Заявитель</p>

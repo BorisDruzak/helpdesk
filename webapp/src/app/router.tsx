@@ -21,6 +21,7 @@ import {
   AdminQualityPage,
   AdminRegistryPage,
   AdminRequestTemplateStudioPage,
+  ApprovalConsentCenterPage,
   AdminServiceCatalogPage,
   HelpPage,
   KnowledgeBasePage,
@@ -201,6 +202,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="support">
                 <SupportCommandCenterPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "support/approvals",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <ApprovalConsentCenterPage />
               </WorkspaceAccessGate>
             )
           },

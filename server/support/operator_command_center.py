@@ -122,12 +122,13 @@ SECTION_SPECS: dict[str, SectionSpec] = {
         "Ожидает согласования",
         "Тикеты, заблокированные согласованием.",
         "warning",
-        "/app/tickets?smart_view=pending_approval",
+        "/app/support/approvals?kind=pending_approval",
     ),
     "pending_consent": SectionSpec(
         "Ожидает согласия",
         "Операция или удаленная помощь ожидает согласия пользователя.",
         "warning",
+        "/app/support/approvals?kind=pending_consent",
     ),
     "failed_operation": SectionSpec(
         "Ошибки операций",
