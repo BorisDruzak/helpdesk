@@ -78,6 +78,23 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("button", { name: /Каталог и заявки/ })).toBeInTheDocument();
   });
 
+  it("allows collapsing the active admin domain after it was auto-expanded", () => {
+    render(
+      <MemoryRouter initialEntries={["/app/admin/registry"]}>
+        <AppSidebar hasAdminAccess hasSupportAccess permissions={fullPermissions} />
+      </MemoryRouter>,
+    );
+
+    const systemGroup = screen.getByRole("button", { name: /Система/ });
+    expect(systemGroup).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: /Реестры/ })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(systemGroup);
+
+    expect(systemGroup).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: /Реестры/ })).not.toBeInTheDocument();
+  });
+
   it("hides admin groups that have no visible children", () => {
     render(
       <MemoryRouter initialEntries={["/app/admin/access"]}>

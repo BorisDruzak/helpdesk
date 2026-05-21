@@ -138,13 +138,26 @@ function AdminSidebar({
   const primaryItems = getVisibleNavigationItems("admin", permissions, { includeWorkspaceHome: true }).filter(
     (item) => item.isWorkspaceHome,
   );
-  const [userOpenGroups, setUserOpenGroups] = useState<string[]>(readOpenGroups);
+  const activeDomainId = activeDomain?.id;
+  const [userOpenGroups, setUserOpenGroups] = useState<string[]>(() => {
+    const storedGroups = readOpenGroups();
+    return activeDomainId && !storedGroups.includes(activeDomainId) ? [...storedGroups, activeDomainId] : storedGroups;
+  });
 
   useEffect(() => {
-    if (activeDomain && !userOpenGroups.includes(activeDomain.id)) {
-      setUserOpenGroups((current) => [...current, activeDomain.id]);
+    if (!activeDomainId) {
+      return;
     }
-  }, [activeDomain, userOpenGroups]);
+
+    setUserOpenGroups((current) => {
+      if (current.includes(activeDomainId)) {
+        return current;
+      }
+      const next = [...current, activeDomainId];
+      writeOpenGroups(next);
+      return next;
+    });
+  }, [activeDomainId]);
 
   function toggleGroup(groupId: string) {
     setUserOpenGroups((current) => {
@@ -163,7 +176,7 @@ function AdminSidebar({
       <div className="space-y-2">
         {domains.map((domain) => {
           const isActiveGroup = activeDomain?.id === domain.id;
-          const isOpen = isActiveGroup || userOpenGroups.includes(domain.id);
+          const isOpen = userOpenGroups.includes(domain.id);
           const panelId = `admin-sidebar-${domain.id}`;
           const Icon = domain.icon;
 
