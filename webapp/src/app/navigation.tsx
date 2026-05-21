@@ -151,7 +151,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Согласования",
-    description: "Approval, consent, risky actions, закрытие и policy overrides",
+    description: "Согласования, запросы согласия, рискованные действия, закрытие и переопределения политик",
     icon: KeyRound,
     section: "support",
     workspace: "support",
