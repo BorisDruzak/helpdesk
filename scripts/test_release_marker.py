@@ -123,6 +123,62 @@ def test_main_collects_alembic_current_and_head_after_migration(monkeypatch: pyt
     assert payload["migrations_skipped"] is False
 
 
+def test_main_writes_release_marker_to_remote_worktree_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    remote_marker_path = "/var/chat_bot/pc_client/artifacts/tech/release_status.json"
+    calls: list[str] = []
+    remote_writes: list[tuple[str, dict[str, object]]] = []
+
+    def args() -> argparse.Namespace:
+        return argparse.Namespace(
+            workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
+            branch="codex/helpdesk-process-model",
+            remote="altserver@192.168.100.17",
+            allow_local_dirty=True,
+            gate="quick",
+            skip_verify=True,
+            skip_ci_check=False,
+            skip_smoke=True,
+            skip_migrations=False,
+            leave_running=True,
+            smoke_attempts=1,
+            smoke_delay=0,
+            release_status_path=remote_marker_path,
+            require_marker_write=True,
+        )
+
+    def write_remote(path: str, *, payload: dict[str, object], remote: str, cwd: Path) -> dict[str, object]:
+        assert remote == "altserver@192.168.100.17"
+        remote_writes.append((path, payload))
+        return payload
+
+    monkeypatch.setattr(release, "parse_args", args)
+    monkeypatch.setattr(release, "detect_commit", lambda workspace: "abc123")
+    monkeypatch.setattr(
+        release,
+        "prepare_webapp_bundle_archive",
+        lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "release_temp" / commit / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(release, "upload_webapp_bundle", lambda *args, **kwargs: calls.append("upload"))
+    monkeypatch.setattr(release, "run_step", lambda command, *, cwd, label: calls.append(label))
+    monkeypatch.setattr(
+        release,
+        "collect_remote_alembic_revisions",
+        lambda *, workspace, remote: ("20260519_097", "20260519_097"),
+    )
+    monkeypatch.setattr(release, "write_remote_release_status_marker", write_remote)
+
+    release.main()
+
+    assert len(remote_writes) == 1
+    path, payload = remote_writes[0]
+    assert path == remote_marker_path
+    assert payload["commit"] == "abc123"
+    assert payload["alembic_current"] == "20260519_097"
+    assert payload["alembic_head"] == "20260519_097"
+    assert "password" not in str(payload).lower()
+    assert "token" not in str(payload).lower()
+
+
 def test_parse_alembic_revision_output_ignores_head_marker() -> None:
     assert release._parse_alembic_revision_output("097 (head)\n") == "097"
     assert release._parse_alembic_revision_output("20260519_097 (head)\n") == "20260519_097"

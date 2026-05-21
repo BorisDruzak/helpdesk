@@ -1769,6 +1769,7 @@ TOPICS: tuple[Topic, ...] = (
             "backup marker",
             "restore drill marker",
             "release marker",
+            "remote release marker",
             "app/admin/tech",
             "app/admin/operations",
             "operation detail",

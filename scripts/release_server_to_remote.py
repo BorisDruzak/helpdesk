@@ -99,9 +99,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--release-status-path",
-        type=Path,
         default=None,
-        help="Write a local Tech Panel release marker JSON after successful release. Defaults to TECH_RELEASE_STATUS_PATH.",
+        help=(
+            "Write a Tech Panel release marker JSON after successful release. "
+            "Local paths are written locally; paths under /var/chat_bot/pc_client "
+            "are written on the remote host over SSH. Defaults to TECH_RELEASE_STATUS_PATH."
+        ),
     )
     parser.add_argument(
         "--require-marker-write",
@@ -276,8 +279,7 @@ def collect_remote_alembic_revisions(*, workspace: Path, remote: str) -> tuple[s
     return current, head
 
 
-def write_release_status_marker(
-    path: Path,
+def build_release_status_payload(
     *,
     branch: str | None,
     commit: str,
@@ -304,9 +306,84 @@ def write_release_status_marker(
         payload["alembic_current"] = alembic_current
     if alembic_head:
         payload["alembic_head"] = alembic_head
+    return payload
+
+
+def write_release_status_marker(
+    path: Path | str,
+    payload: dict[str, object] | None = None,
+    *,
+    branch: str | None = None,
+    commit: str | None = None,
+    gate: str | None = None,
+    dirty: bool = False,
+    remote_profile: str | None = None,
+    webapp_bundle_commit: str | None = None,
+    alembic_current: str | None = None,
+    alembic_head: str | None = None,
+    migrations_skipped: bool = False,
+) -> dict[str, object]:
+    if payload is None:
+        if commit is None or gate is None or remote_profile is None:
+            raise ValueError("commit, gate and remote_profile are required when payload is not provided")
+        payload = build_release_status_payload(
+            branch=branch,
+            commit=commit,
+            gate=gate,
+            dirty=dirty,
+            remote_profile=remote_profile,
+            webapp_bundle_commit=webapp_bundle_commit,
+            alembic_current=alembic_current,
+            alembic_head=alembic_head,
+            migrations_skipped=migrations_skipped,
+        )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _normalize_posix_marker_path(path: Path | str) -> str:
+    normalized = str(path).replace("\\", "/")
+    if not normalized.startswith("/"):
+        return normalized
+    while normalized.startswith("//"):
+        normalized = normalized[1:]
+    return normalized
+
+
+def _is_remote_release_marker_path(path: Path | str) -> bool:
+    normalized = _normalize_posix_marker_path(path)
+    remote_root = DEFAULT_REMOTE_WORKTREE.rstrip("/")
+    return normalized == remote_root or normalized.startswith(f"{remote_root}/")
+
+
+def write_remote_release_status_marker(
+    path: Path | str,
+    *,
+    payload: dict[str, object],
+    remote: str,
+    cwd: Path,
+) -> dict[str, object]:
+    remote_path = _normalize_posix_marker_path(path)
+    writer = (
+        "import pathlib, sys; "
+        "p = pathlib.Path(sys.argv[1]); "
+        "p.parent.mkdir(parents=True, exist_ok=True); "
+        "p.write_text(sys.stdin.read(), encoding='utf-8')"
+    )
+    command = [_ssh_binary()]
+    if DEFAULT_KEY.exists():
+        command.extend(["-i", str(DEFAULT_KEY)])
+    command.extend([remote, f"python3 -c {shlex.quote(writer)} {shlex.quote(remote_path)}"])
+    subprocess.run(
+        command,
+        cwd=cwd,
+        input=json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
     return payload
 
 
@@ -322,11 +399,11 @@ def _workspace_dirty(workspace: Path) -> bool:
     return bool(completed.stdout.strip())
 
 
-def _release_marker_path(args: argparse.Namespace) -> Path | None:
+def _release_marker_path(args: argparse.Namespace) -> str | None:
     configured = getattr(args, "release_status_path", None) or os.environ.get("TECH_RELEASE_STATUS_PATH")
     if not configured:
         return None
-    return Path(configured)
+    return str(configured)
 
 
 def main() -> None:
@@ -417,8 +494,7 @@ def main() -> None:
         marker_path = _release_marker_path(args)
         if marker_path is not None:
             try:
-                write_release_status_marker(
-                    marker_path,
+                marker_payload = build_release_status_payload(
                     branch=args.branch,
                     commit=commit,
                     gate=effective_gate,
@@ -429,7 +505,17 @@ def main() -> None:
                     alembic_head=alembic_head,
                     migrations_skipped=bool(args.skip_migrations),
                 )
-                print(f"[release-marker] wrote {marker_path}")
+                if _is_remote_release_marker_path(marker_path):
+                    write_remote_release_status_marker(
+                        marker_path,
+                        payload=marker_payload,
+                        remote=args.remote,
+                        cwd=workspace,
+                    )
+                    print(f"[release-marker] wrote remote {args.remote}:{marker_path}")
+                else:
+                    write_release_status_marker(marker_path, marker_payload)
+                    print(f"[release-marker] wrote {marker_path}")
             except Exception as exc:
                 if getattr(args, "require_marker_write", False):
                     raise
