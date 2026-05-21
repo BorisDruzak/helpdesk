@@ -61,6 +61,8 @@ python scripts/check_webapp_cutover.py --json
 pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443
 ```
 
+If `--base-url` is omitted, the helper reads `PC_CLIENT_BROWSER_BASE_URL`, then `REMOTE_SMOKE_BASE_URL`, and finally falls back to `https://192.168.100.17:9443`. Do not rely on the old `http://192.168.100.17:8666` default for pilot-like stands.
+
 3. Убедиться, что helper подтвердил:
   - `/app -> /app/admin`;
   - `GET /api/web/session/me`;

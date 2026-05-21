@@ -180,6 +180,13 @@ def test_main_writes_release_marker_to_remote_worktree_path(monkeypatch: pytest.
     assert "token" not in str(payload).lower()
 
 
+def test_remote_release_marker_path_respects_env_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PC_CLIENT_REMOTE_ROOT", "/srv/pc_client")
+
+    assert release._is_remote_release_marker_path("/srv/pc_client/artifacts/tech/release_status.json")
+    assert not release._is_remote_release_marker_path("/var/chat_bot/pc_client/artifacts/tech/release_status.json")
+
+
 def test_main_forwards_https_smoke_options(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     marker_path = tmp_path / "release-flow-smoke.json"
     calls: list[str] = []

@@ -37,11 +37,27 @@ DEFAULT_SCP = Path(r"C:\Windows\System32\OpenSSH\scp.exe")
 DEFAULT_REMOTE_WORKTREE = "/var/chat_bot/pc_client"
 
 
+def _env_value(name: str, default: str) -> str:
+    return str(os.environ.get(name) or default).strip() or default
+
+
+def _default_remote() -> str:
+    return _env_value("PC_CLIENT_REMOTE", "altserver@192.168.100.17")
+
+
+def _default_remote_worktree() -> str:
+    return _env_value("PC_CLIENT_REMOTE_ROOT", DEFAULT_REMOTE_WORKTREE).rstrip("/")
+
+
+def _ssh_key() -> Path:
+    return Path(_env_value("PC_CLIENT_SSH_KEY", str(DEFAULT_KEY)))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=DEFAULT_WORKSPACE)
     parser.add_argument("--branch")
-    parser.add_argument("--remote", default="altserver@192.168.100.17")
+    parser.add_argument("--remote", default=_default_remote())
     parser.add_argument(
         "--allow-local-dirty",
         action="store_true",
@@ -192,9 +208,10 @@ def upload_webapp_bundle(
     remote_archive = f"/tmp/{archive_path.name}"
     scp_command = [_scp_binary()]
     ssh_command = [_ssh_binary()]
-    if DEFAULT_KEY.exists():
-        scp_command.extend(["-i", str(DEFAULT_KEY)])
-        ssh_command.extend(["-i", str(DEFAULT_KEY)])
+    key = _ssh_key()
+    if key.exists():
+        scp_command.extend(["-i", str(key)])
+        ssh_command.extend(["-i", str(key)])
 
     scp_command.extend([str(archive_path), f"{remote}:{remote_archive}"])
     run_step(scp_command, cwd=cwd, label="upload-webapp-copy")
@@ -365,7 +382,7 @@ def _normalize_posix_marker_path(path: Path | str) -> str:
 
 def _is_remote_release_marker_path(path: Path | str) -> bool:
     normalized = _normalize_posix_marker_path(path)
-    remote_root = DEFAULT_REMOTE_WORKTREE.rstrip("/")
+    remote_root = _default_remote_worktree()
     return normalized == remote_root or normalized.startswith(f"{remote_root}/")
 
 
@@ -384,8 +401,9 @@ def write_remote_release_status_marker(
         "p.write_text(sys.stdin.read(), encoding='utf-8')"
     )
     command = [_ssh_binary()]
-    if DEFAULT_KEY.exists():
-        command.extend(["-i", str(DEFAULT_KEY)])
+    key = _ssh_key()
+    if key.exists():
+        command.extend(["-i", str(key)])
     command.extend([remote, f"python3 -c {shlex.quote(writer)} {shlex.quote(remote_path)}"])
     subprocess.run(
         command,
@@ -481,7 +499,7 @@ def main() -> None:
             bundle_archive,
             cwd=workspace,
             remote=args.remote,
-            remote_worktree=DEFAULT_REMOTE_WORKTREE,
+            remote_worktree=_default_remote_worktree(),
         )
 
         remote_command_base = [
@@ -496,9 +514,11 @@ def main() -> None:
 
         if not args.skip_smoke:
             smoke_command = [*remote_command_base, "smoke", "server"]
-            if args.smoke_base_url:
-                smoke_command.extend(["--base-url", args.smoke_base_url])
-            if args.smoke_insecure_tls:
+            smoke_base_url = getattr(args, "smoke_base_url", "")
+            smoke_insecure_tls = bool(getattr(args, "smoke_insecure_tls", False))
+            if smoke_base_url:
+                smoke_command.extend(["--base-url", smoke_base_url])
+            if smoke_insecure_tls:
                 smoke_command.append("--insecure-tls")
             run_smoke_with_retries(
                 smoke_command,

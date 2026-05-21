@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -12,6 +13,22 @@ DEFAULT_REMOTE = "altserver@192.168.100.17"
 DEFAULT_KEY = Path(r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519")
 REMOTE_ROOT = "/var/chat_bot/pc_client"
 REMOTE_SERVER_PYTHON = "/var/chat_bot/pc_client/server/venv/bin/python"
+
+
+def _env_value(name: str, default: str) -> str:
+    return str(os.environ.get(name) or default).strip() or default
+
+
+def _remote_root() -> str:
+    return _env_value("PC_CLIENT_REMOTE_ROOT", REMOTE_ROOT).rstrip("/")
+
+
+def _remote_server_python() -> str:
+    return _env_value("PC_CLIENT_REMOTE_SERVER_PYTHON", f"{_remote_root()}/server/venv/bin/python")
+
+
+def _ssh_key() -> Path:
+    return Path(_env_value("PC_CLIENT_SSH_KEY", str(DEFAULT_KEY)))
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--levels", default="", help="Used by logs: comma-separated levels")
     parser.add_argument("--contains", default="", help="Used by logs: substring search")
     parser.add_argument("--json", action="store_true", help="Return machine-readable JSON where supported")
-    parser.add_argument("--remote", default=DEFAULT_REMOTE)
+    parser.add_argument("--remote", default=_env_value("PC_CLIENT_REMOTE", DEFAULT_REMOTE))
     parser.add_argument("--base-url", default="", help="Used by smoke: override remote smoke BASE_URL")
     parser.add_argument("--insecure-tls", action="store_true", help="Used by smoke: allow self-signed HTTPS certs")
     return parser.parse_args()
@@ -31,14 +48,15 @@ def parse_args() -> argparse.Namespace:
 
 def ssh_base_command() -> list[str]:
     command = ["ssh"]
-    if DEFAULT_KEY.exists():
-        command.extend(["-i", str(DEFAULT_KEY)])
+    key = _ssh_key()
+    if key.exists():
+        command.extend(["-i", str(key)])
     return command
 
 
 def build_remote_command(args: argparse.Namespace) -> str:
     command = [
-        shlex.quote(REMOTE_SERVER_PYTHON),
+        shlex.quote(_remote_server_python()),
         "scripts/runtime_stack.py",
         shlex.quote(args.action),
         shlex.quote(args.target),
@@ -58,7 +76,7 @@ def build_remote_command(args: argparse.Namespace) -> str:
             command.append("--insecure-tls")
     if args.json:
         command.append("--json")
-    return f"cd {shlex.quote(REMOTE_ROOT)} && {' '.join(command)}"
+    return f"cd {shlex.quote(_remote_root())} && {' '.join(command)}"
 
 
 def main() -> None:

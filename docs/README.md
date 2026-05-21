@@ -14,6 +14,7 @@
 - `server/docs/CODEMAP.md` - карта серверной части.
 - `pc_agent/docs/CODEMAP.md` - карта агентской части.
 - `docs/LOCAL_WORKFLOW.md` - локальная разработка, deploy, remote stack, browser checks.
+- `docs/PILOT_RELEASE_GATE.md` - pilot readiness evidence, business/browser smoke, stand profile env, GitHub gate expectations and soak criteria.
 - `docs/CONTEXT_EFFICIENCY.md` - как экономить контекст и пользоваться `task_intake`, `agent_find`, `docs_drift_check`.
 
 ## По областям

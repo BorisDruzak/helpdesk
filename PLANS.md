@@ -113,7 +113,7 @@ Known gaps:
 
 - Business smoke can now create a test ticket and enqueue `inventory.collect` only when explicitly requested by CLI flags; a real agent handshake still requires a safe device/test agent.
 - Mixed-content/WSS checks are available through the optional Playwright-backed `--browser-check`; headless runtime availability remains an environment prerequisite.
-- Release marker writing is local-path first; remote marker persistence remains follow-up unless a safe configured local/remote path is provided.
+- GitHub branch protection / required status checks must still be enforced in GitHub settings; local repo scripts and docs can describe the gate, but cannot enable protected-branch policy by themselves.
 
 Implemented:
 
@@ -123,6 +123,7 @@ Implemented:
 - Release marker helper in `scripts/release_server_to_remote.py` writes Alembic current/head after remote migration when available and writes `/var/chat_bot/pc_client/...` marker paths directly on the remote host; standalone `scripts/business_smoke.py`, safe `scripts/write_restore_drill_marker.py` and `scripts/write_backup_status_marker.py` write readiness evidence markers.
 - Remote `smoke server` and release smoke gates now support HTTPS pilot stands through `REMOTE_SMOKE_BASE_URL` / `REMOTE_SMOKE_INSECURE_TLS` or explicit `--base-url` / `--insecure-tls` flags, avoiding false failures after `REQUIRE_HTTPS=true`.
 - `scripts/business_smoke.py` supports optional HTTPS cookie check, self-signed stand TLS via `--insecure-tls` / `BUSINESS_SMOKE_INSECURE_TLS`, Playwright mixed-content/WSS check, explicit test ticket creation, support workspace read, explicit `inventory.collect` smoke and operation result polling.
+- Runtime/release/migration/browser signoff helpers now accept stand profile env (`PC_CLIENT_REMOTE`, `PC_CLIENT_REMOTE_ROOT`, `PC_CLIENT_REMOTE_SERVER_PYTHON`, `PC_CLIENT_SSH_KEY`, `PC_CLIENT_BROWSER_BASE_URL`) and no longer force the old HTTP browser signoff default.
 - Query-token attempt counter in auth middleware with bounded process-local storage and no token values.
 - Tech snapshot additions for query-token attempts, below-baseline device lists/baseline metadata and inventory scheduler duplicate-task details.
 - Agent baseline now counts only real post-handshake devices with numeric agent versions; pending provisioning stubs and non-numeric canaries stay out of below-version counts and should be handled as cleanup/provisioning data quality.

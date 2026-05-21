@@ -144,6 +144,8 @@ python scripts/manage_remote_stack.py smoke server --base-url https://192.168.10
 
 The default can also come from remote `server/.env`: `REMOTE_SMOKE_BASE_URL=https://192.168.100.17:9443` and `REMOTE_SMOKE_INSECURE_TLS=true` for the current self-signed stand certificate. `release_server_to_remote.py` reuses the same remote smoke path via `--smoke-base-url` / `--smoke-insecure-tls` or those env values, so quick/full release gates do not fail just because `REQUIRE_HTTPS=true`.
 
+Stand-specific remote defaults are profile/env driven, with the current stand kept only as fallback. Use `PC_CLIENT_REMOTE`, `PC_CLIENT_REMOTE_ROOT`, `PC_CLIENT_REMOTE_SERVER_PYTHON` and `PC_CLIENT_SSH_KEY` for deploy/control/migration helpers, and `PC_CLIENT_BROWSER_BASE_URL` or `REMOTE_SMOKE_BASE_URL` for browser signoff. This keeps new stands out of code edits and avoids stale `http://...:8666` assumptions.
+
 For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/business_smoke.py` with `--require-https --require-secure-cookie --insecure-tls` or set `BUSINESS_SMOKE_INSECURE_TLS=true`; the marker still must not include the smoke password or session cookie value.
 
 `manage_remote_stack.py status server` и `scripts/runtime_stack.py status server` теперь дополнительно показывают `external_listener`, если порт `8666` занят не тем процессом, который считает своим systemd-unit. Для `start server` и `stop server` canonical runtime сначала вычищает stray `server.py` из этого workspace, чтобы ручной запуск в shell не ломал transient-unit.
