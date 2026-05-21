@@ -247,3 +247,91 @@ def test_readiness_aggregation_warning_only_is_degraded_and_all_ok_is_ready():
 
     assert aggregate_readiness(warning)["status"] == "degraded"
     assert aggregate_readiness(ok)["status"] == "ready"
+
+
+@pytest.mark.no_db
+def test_query_token_attempt_counter_tracks_rejected_attempts_without_token(monkeypatch):
+    from types import SimpleNamespace
+
+    import config
+    import auth.middleware as middleware
+
+    middleware.reset_query_token_auth_attempts()
+    monkeypatch.setattr(config, "AUTH_ALLOW_QUERY_TOKEN", False)
+
+    request = SimpleNamespace(query={"token": "raw-secret-token"}, headers={}, path="/api/web/admin/tech/snapshot")
+    assert middleware.extract_token_from_header(request) is None
+
+    assert middleware.get_query_token_auth_attempts(window_seconds=3600) == 1
+    paths = middleware.get_recent_query_token_auth_paths(limit=5)
+    assert paths == [
+        {
+            "path": "/api/web/admin/tech/snapshot",
+            "rejected": True,
+            "ts": paths[0]["ts"],
+        }
+    ]
+    assert "raw-secret-token" not in str(paths)
+
+
+@pytest.mark.no_db
+async def test_security_snapshot_includes_query_token_attempt_count(monkeypatch):
+    import auth.middleware as middleware
+    from tech.snapshot import build_security_snapshot
+
+    middleware.reset_query_token_auth_attempts()
+    monkeypatch.setattr(middleware, "get_query_token_auth_attempts", lambda window_seconds=3600: 3)
+
+    snapshot = await build_security_snapshot(
+        {"audit_counters": {}, "agent_health": {}},
+        {
+            "AUTH_UI_DB_USERS_ENABLED": True,
+            "AUTH_UI_CONFIG_FALLBACK_ENABLED": False,
+            "AUTH_ALLOW_QUERY_TOKEN": False,
+            "WEB_SESSION_COOKIE_SECURE": True,
+            "WEB_SESSION_COOKIE_HTTPONLY": True,
+            "WEB_SESSION_COOKIE_SAMESITE": "lax",
+        },
+        database_reachable=False,
+    )
+
+    assert snapshot["token_channels"]["query_token_attempts_recent"] == 3
+
+
+@pytest.mark.no_db
+def test_inventory_scheduler_duplicate_status_affects_gate():
+    from tech.snapshot import build_readiness_gates
+
+    gates = build_readiness_gates(
+        config_values={
+            "ENABLE_DB_PERSISTENCE": True,
+            "PILOT_STAND_MODE": True,
+            "AUTH_UI_CONFIG_FALLBACK_ENABLED": False,
+            "AUTH_ALLOW_QUERY_TOKEN": False,
+            "REQUIRE_HTTPS": True,
+            "REQUIRE_WSS": True,
+            "WEB_SESSION_COOKIE_SECURE": True,
+            "WEB_SESSION_COOKIE_HTTPONLY": True,
+            "WEB_SESSION_COOKIE_SAMESITE": "lax",
+            "PILOT_MIN_AGENT_VERSION": "3.1.50",
+        },
+        database={"reachable": True, "migrations_status": "ok", "last_restore_drill": {"status": "success"}},
+        security={"agent_connection_policy": {"mode": "manual", "status": "ok"}},
+        runtime={
+            "schedulers": {"inventory_scheduler": "running"},
+            "scheduler_details": {
+                "inventory_scheduler": {
+                    "enabled": True,
+                    "running": True,
+                    "active_task_count": 2,
+                    "duplicate_task_detected": True,
+                }
+            },
+        },
+        agents={"below_baseline": 0},
+        smoke={"status": "ok", "last_business_smoke": {"status": "success"}},
+    )
+
+    gate = next(item for item in gates if item["key"] == "inventory_scheduler_health")
+    assert gate["status"] == "blocked"
+    assert "duplicate" in (gate["evidence"] or "")

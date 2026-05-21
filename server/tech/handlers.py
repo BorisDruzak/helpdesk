@@ -36,6 +36,7 @@ from config import (
     OPERATION_EXECUTION_TIMEOUT,
 )
 from tech.dismiss_store import dismiss_alert, is_alert_dismissed
+from tech.locator import locate_tech_query
 from tech.log_buffer import list_log_records, remove_log_record
 from tech.snapshot import build_tech_panel_v2_snapshot
 from websocket.protocol import send_ws_command, send_ws_rpc_request
@@ -1058,6 +1059,34 @@ async def handle_tech_overview(request: web.Request) -> web.Response:
 async def handle_tech_snapshot(request: web.Request) -> web.Response:
     overview = await _build_overview(request)
     return web.json_response(await build_tech_panel_v2_snapshot(request, overview))
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_tech_locate(request: web.Request) -> web.Response:
+    query = str(request.query.get("q") or "").strip()
+    if not query:
+        return web.json_response(
+            {"status": "error", "error": "q is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    limit = _parse_query_limit(request.query.get("limit"), default=10, cap=25)
+    include_logs = request.query.get("include_logs", "true").lower() not in {"0", "false", "no", "off"}
+    include_traces = request.query.get("include_traces", "true").lower() not in {"0", "false", "no", "off"}
+    try:
+        return web.json_response(
+            await locate_tech_query(
+                request,
+                query=query,
+                limit=limit,
+                include_logs=include_logs,
+                include_traces=include_traces,
+            )
+        )
+    except ValueError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
 
 
 @require_auth("admin", "support", "auditor")

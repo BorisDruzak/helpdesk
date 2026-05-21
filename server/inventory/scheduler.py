@@ -46,8 +46,10 @@ class InventoryRefreshRuntime:
         self.enabled = bool(enabled)
         self.tool_service_factory = tool_service_factory
         self._task: asyncio.Task | None = None
+        self._tasks: set[asyncio.Task] = set()
         self._running = False
         self.last_run_at: datetime | None = None
+        self.last_error: str | None = None
         self.last_dispatch_count = 0
 
     async def start(self) -> None:
@@ -55,6 +57,8 @@ class InventoryRefreshRuntime:
             return
         self._running = True
         self._task = asyncio.create_task(self._run_loop(), name="inventory-refresh-runtime")
+        self._tasks.add(self._task)
+        self._task.add_done_callback(self._tasks.discard)
         logger.info("[inventory_refresh] runtime started")
 
     async def stop(self) -> None:
@@ -73,7 +77,9 @@ class InventoryRefreshRuntime:
         while self._running:
             try:
                 await self.run_once()
+                self.last_error = None
             except Exception as exc:
+                self.last_error = str(exc)
                 logger.opt(exception=exc).warning("[inventory_refresh] loop failed")
             await asyncio.sleep(self.interval_sec)
 
@@ -159,10 +165,15 @@ class InventoryRefreshRuntime:
         return {"due": len(due), "dispatched": dispatched, "skipped_offline": skipped_offline}
 
     def status_snapshot(self) -> dict[str, Any]:
+        active_task_count = sum(1 for task in self._tasks if not task.done())
         return {
             "enabled": self.enabled,
             "running": self._running,
+            "active_task_count": active_task_count,
+            "duplicate_task_detected": active_task_count > 1,
             "interval_sec": self.interval_sec,
             "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
+            "last_tick_at": self.last_run_at.isoformat() if self.last_run_at else None,
             "last_dispatch_count": self.last_dispatch_count,
+            "last_error": self.last_error,
         }

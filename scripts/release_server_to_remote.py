@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import shlex
 import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -92,6 +95,17 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_SMOKE_DELAY_SECONDS,
         help="Seconds to wait between remote smoke retries.",
+    )
+    parser.add_argument(
+        "--release-status-path",
+        type=Path,
+        default=None,
+        help="Write a local Tech Panel release marker JSON after successful release. Defaults to TECH_RELEASE_STATUS_PATH.",
+    )
+    parser.add_argument(
+        "--require-marker-write",
+        action="store_true",
+        help="Fail release if writing the release status marker fails.",
     )
     return parser.parse_args()
 
@@ -219,6 +233,59 @@ def run_smoke_with_retries(
     raise last_error
 
 
+def write_release_status_marker(
+    path: Path,
+    *,
+    branch: str | None,
+    commit: str,
+    gate: str,
+    dirty: bool,
+    remote_profile: str,
+    webapp_bundle_commit: str | None = None,
+    alembic_current: str | None = None,
+    alembic_head: str | None = None,
+    migrations_skipped: bool = False,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "status": "success",
+        "branch": branch,
+        "commit": commit,
+        "deployed_at": datetime.now(timezone.utc).isoformat(),
+        "webapp_bundle_commit": webapp_bundle_commit or commit,
+        "gate": gate,
+        "dirty": dirty,
+        "remote_profile": remote_profile,
+        "migrations_skipped": bool(migrations_skipped),
+    }
+    if alembic_current:
+        payload["alembic_current"] = alembic_current
+    if alembic_head:
+        payload["alembic_head"] = alembic_head
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _workspace_dirty(workspace: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=workspace,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return bool(completed.stdout.strip())
+
+
+def _release_marker_path(args: argparse.Namespace) -> Path | None:
+    configured = getattr(args, "release_status_path", None) or os.environ.get("TECH_RELEASE_STATUS_PATH")
+    if not configured:
+        return None
+    return Path(configured)
+
+
 def main() -> None:
     args = parse_args()
     workspace = args.workspace
@@ -297,6 +364,25 @@ def main() -> None:
                 attempts=args.smoke_attempts,
                 delay_seconds=args.smoke_delay,
             )
+
+        marker_path = _release_marker_path(args)
+        if marker_path is not None:
+            try:
+                write_release_status_marker(
+                    marker_path,
+                    branch=args.branch,
+                    commit=commit,
+                    gate=effective_gate,
+                    dirty=_workspace_dirty(workspace),
+                    remote_profile=args.remote,
+                    webapp_bundle_commit=commit,
+                    migrations_skipped=bool(args.skip_migrations),
+                )
+                print(f"[release-marker] wrote {marker_path}")
+            except Exception as exc:
+                if getattr(args, "require_marker_write", False):
+                    raise
+                print(f"WARNING: failed to write release marker: {exc}", file=sys.stderr)
 
     finally:
         if started_server and not args.leave_running:

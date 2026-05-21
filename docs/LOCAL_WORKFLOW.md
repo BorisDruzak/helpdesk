@@ -122,6 +122,8 @@ python scripts/deploy_workspace_to_remote.py --gate quick
 
 `deploy_workspace_to_remote.py` и `release_server_to_remote.py` по умолчанию работают в `--gate full` и требуют green CI artifact для текущего commit. Поэтому Codex не запускает их без явного `--gate quick` во время итераций и не запускает full gate без явного запроса пользователя. Экстренный старый bypass `--skip-ci-check` оставлен для совместимости и считается эквивалентом quick gate; для полного `release_server_to_remote.py` он прокидывается во внутренний шаг `deploy_workspace_to_remote.py`.
 
+`release_server_to_remote.py` может писать safe release marker для Tech Panel readiness: `--release-status-path <path>` или `TECH_RELEASE_STATUS_PATH`, опционально `--require-marker-write`. Marker содержит branch/commit/gate/deployed_at/webapp bundle commit/dirty/remote profile и migration status, если он доступен; секреты, raw env и DATABASE_URL туда не пишутся. Ошибка записи marker не валит release без `--require-marker-write`.
+
 12. Поднять сервер на Linux и прогнать smoke:
 
 ```powershell

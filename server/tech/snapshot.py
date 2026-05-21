@@ -23,6 +23,7 @@ from app.db.models import (
     ServerConfig,
 )
 from app.repos.connection_requests_repo import CONNECTION_POLICY_KEY, POLICY_ACCEPT_ALL, POLICY_MANUAL, POLICY_REJECT_ALL
+import auth.middleware as auth_middleware
 from config import OPERATION_ACCEPTED_TIMEOUT, OPERATION_DELIVERY_TIMEOUT, OPERATION_EXECUTION_TIMEOUT
 
 Status = str
@@ -260,14 +261,26 @@ def build_readiness_gates(
     )
 
     inventory_scheduler = str((runtime.get("schedulers") or {}).get("inventory_scheduler") or "unknown").lower()
+    scheduler_details = runtime.get("scheduler_details") if isinstance(runtime.get("scheduler_details"), dict) else {}
+    inventory_details = (
+        scheduler_details.get("inventory_scheduler")
+        if isinstance(scheduler_details.get("inventory_scheduler"), dict)
+        else {}
+    )
+    duplicate_detected = bool(inventory_details.get("duplicate_task_detected"))
+    active_task_count = _safe_int(inventory_details.get("active_task_count"))
+    if duplicate_detected:
+        inventory_gate_status = "blocked" if bool(config_values.get("PILOT_STAND_MODE")) else "warning"
+    else:
+        inventory_gate_status = "ok" if inventory_scheduler in {"running", "disabled"} else ("warning" if inventory_scheduler else "unknown")
     gates.append(
         _gate(
             "inventory_scheduler_health",
             "Inventory scheduler healthy",
-            "ok" if inventory_scheduler in {"running", "disabled"} else ("warning" if inventory_scheduler else "unknown"),
-            "warning" if inventory_scheduler not in {"running", "disabled"} else "info",
+            inventory_gate_status,
+            "critical" if inventory_gate_status == "blocked" else ("warning" if inventory_gate_status != "ok" else "info"),
             "Gate показывает, включён ли scheduler и есть ли runtime signal; duplicate-task detection остаётся отдельным hardening.",
-            evidence=f"inventory_scheduler={inventory_scheduler or 'unknown'}",
+            evidence=f"inventory_scheduler={inventory_scheduler or 'unknown'}, active_task_count={active_task_count}, duplicate={str(duplicate_detected).lower()}",
             action_label="Открыть inventory",
             action_href="/app/admin/inventory",
         )
@@ -429,7 +442,17 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
     service_health = overview.get("service_health") if isinstance(overview.get("service_health"), dict) else {}
     inventory_runtime = request.app.get("inventory_refresh_runtime")
     inventory_enabled = bool(config_values.get("INVENTORY_REFRESH_SCHEDULER_ENABLED"))
-    inventory_running = bool(getattr(inventory_runtime, "_running", False)) if inventory_runtime is not None else False
+    inventory_runtime_snapshot = None
+    if inventory_runtime is not None and callable(getattr(inventory_runtime, "status_snapshot", None)):
+        try:
+            inventory_runtime_snapshot = inventory_runtime.status_snapshot()
+        except Exception:
+            inventory_runtime_snapshot = None
+    inventory_running = (
+        bool(inventory_runtime_snapshot.get("running"))
+        if isinstance(inventory_runtime_snapshot, dict)
+        else (bool(getattr(inventory_runtime, "_running", False)) if inventory_runtime is not None else False)
+    )
     if not inventory_enabled:
         inventory_status = "disabled"
     elif inventory_running:
@@ -458,6 +481,15 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         "inventory_scheduler": inventory_status,
         "observer_refresh_runtime": str(service_health.get("observer_refresh_runtime") or "unknown"),
     }
+    if not isinstance(inventory_runtime_snapshot, dict):
+        inventory_runtime_snapshot = {
+            "enabled": inventory_enabled,
+            "running": inventory_running,
+            "active_task_count": 0,
+            "duplicate_task_detected": False,
+            "last_tick_at": None,
+            "last_error": None,
+        }
     return {
         "services": [
             service("api", "API", str(service_health.get("api") or "unknown")),
@@ -475,6 +507,7 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
             "agent_connections": _safe_int(service_health.get("agent_ws_connections")),
         },
         "schedulers": schedulers,
+        "scheduler_details": {"inventory_scheduler": inventory_runtime_snapshot},
     }
 
 
@@ -537,7 +570,7 @@ async def build_security_snapshot(overview: dict[str, Any], config_values: dict[
         },
         "token_channels": {
             "query_token_allowed": query_allowed,
-            "query_token_attempts_recent": None,
+            "query_token_attempts_recent": auth_middleware.get_query_token_auth_attempts(window_seconds=3600),
             "status": "warning" if query_allowed else "ok",
         },
         "agent_connection_policy": await _connection_policy_snapshot(database_reachable),
@@ -561,12 +594,13 @@ def _version_lt(left: str, right: str) -> bool:
     return left_tuple + (0,) * (length - len(left_tuple)) < right_tuple + (0,) * (length - len(right_tuple))
 
 
-async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> tuple[int | None, list[dict[str, Any]]]:
+async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> tuple[int | None, list[dict[str, Any]], list[dict[str, Any]]]:
     min_version = str(config_values.get("PILOT_MIN_AGENT_VERSION") or "").strip()
     below_baseline: int | None = None if not min_version else 0
     problem_devices: list[dict[str, Any]] = []
+    below_baseline_devices: list[dict[str, Any]] = []
     if not database_reachable:
-        return below_baseline, problem_devices
+        return below_baseline, problem_devices, below_baseline_devices
     try:
         now = datetime.now(timezone.utc)
         stale_cutoff = now - timedelta(seconds=300)
@@ -608,19 +642,34 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
             if min_version:
                 all_versions = (
                     await session.execute(
-                        select(Device.agent_version).where(Device.deleted_at.is_(None))
+                        select(Device.device_id, Device.hostname, Device.agent_version, Device.last_seen_at).where(Device.deleted_at.is_(None)).order_by(Device.last_seen_at.desc())
                     )
-                ).scalars().all()
-                below_baseline = sum(1 for version in all_versions if _version_lt(str(version or ""), min_version))
+                ).all()
+                below_baseline = 0
+                for device_id, hostname, agent_version, last_seen_at in all_versions:
+                    if _version_lt(str(agent_version or ""), min_version):
+                        below_baseline += 1
+                        if len(below_baseline_devices) < 50:
+                            below_baseline_devices.append(
+                                {
+                                    "device_id": device_id,
+                                    "hostname": hostname,
+                                    "status": "below_baseline",
+                                    "last_seen_at": _iso(last_seen_at),
+                                    "agent_version": agent_version,
+                                    "reasons": ["below baseline"],
+                                    "href": f"/app/admin/device-operations/{device_id}",
+                                }
+                            )
     except SQLAlchemyError:
-        return below_baseline, problem_devices
-    return below_baseline, problem_devices
+        return below_baseline, problem_devices, below_baseline_devices
+    return below_baseline, problem_devices, below_baseline_devices
 
 
 async def build_agents_snapshot(overview: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> dict[str, Any]:
     agent = overview.get("agent_health") if isinstance(overview.get("agent_health"), dict) else {}
     update = overview.get("update_health") if isinstance(overview.get("update_health"), dict) else {}
-    below_baseline, problem_devices = await _agent_db_enrichment(agent, config_values, database_reachable)
+    below_baseline, problem_devices, below_baseline_devices = await _agent_db_enrichment(agent, config_values, database_reachable)
     online = _safe_int(agent.get("online_count") or agent.get("online"))
     offline = _safe_int(agent.get("offline_count") or agent.get("offline"))
     stale = _safe_int(agent.get("stale_count") or agent.get("stale"))
@@ -633,6 +682,12 @@ async def build_agents_snapshot(overview: dict[str, Any], config_values: dict[st
         "reprovision_required": _safe_int(agent.get("reprovision_required_count") or agent.get("reprovision_required")),
         "invalid_token_recent": _safe_int(agent.get("invalid_token_recent")),
         "below_baseline": below_baseline,
+        "below_baseline_devices": below_baseline_devices,
+        "baseline": {
+            "min_version": str(config_values.get("PILOT_MIN_AGENT_VERSION") or "").strip() or None,
+            "below_baseline_count": below_baseline,
+            "devices": below_baseline_devices,
+        },
         "update_in_progress": _safe_int(update.get("in_progress")),
         "update_failed_recent": _safe_int(update.get("failed_recent")),
         "update_timed_out_recent": _safe_int(update.get("timed_out_recent")),

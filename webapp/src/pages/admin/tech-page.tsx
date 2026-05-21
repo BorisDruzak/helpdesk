@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -6,8 +6,8 @@ import {
   Database,
   ExternalLink,
   FileWarning,
-  Link2,
   LockKeyhole,
+  Search,
   RefreshCcw,
   Server,
   ShieldCheck,
@@ -25,10 +25,15 @@ import { StatTile } from "../../components/ui/stat-tile";
 import { Tabs } from "../../components/ui/tabs";
 import {
   fetchTechPanelV2Snapshot,
+  locateTechQuery,
   type TechAlert,
   type TechGateStatus,
+  type TechInventorySchedulerDetails,
+  type TechLocatorMatch,
+  type TechLocatorPayload,
   type TechLogEntry,
   type TechPanelV2Snapshot,
+  type TechProblemDevice,
   type TechReadinessGate,
   type TechReadinessStatus,
   type TechSmokeResult,
@@ -156,6 +161,147 @@ function KpiStrip({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
   );
 }
 
+const locatorSignalLabels: Array<[keyof TechLocatorMatch["signals"], string]> = [
+  ["agent_offline", "agent offline"],
+  ["stale_agent", "stale agent"],
+  ["failed_operation", "failed operation"],
+  ["stuck_operation", "stuck operation"],
+  ["waiting_consent", "waiting consent"],
+  ["outbox_backlog", "outbox backlog"],
+  ["observer_errors", "observer errors"],
+  ["pending_approval", "pending approval"],
+  ["pending_consent", "pending consent"],
+  ["inventory_missing_or_stale", "stale inventory"],
+  ["ticket_sla_risk", "SLA risk"],
+];
+
+function LocatorMatchCard({ match }: { match: TechLocatorMatch }) {
+  const signals = locatorSignalLabels.filter(([key]) => Boolean(match.signals[key]));
+  return (
+    <div className="rounded-lg border border-border bg-white px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="info">{match.kind}</Badge>
+            <Badge tone={toneForStatus(match.severity)} withDot>
+              {match.severity}
+            </Badge>
+            {match.status ? <span className="text-xs font-semibold uppercase text-slate-500">{match.status}</span> : null}
+          </div>
+          <p className="mt-2 font-semibold text-slate-950">{match.title}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{match.reason}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {[
+              match.context.ticket_code,
+              match.context.ticket_id,
+              match.context.device_id,
+              match.context.hostname,
+              match.context.operation_id,
+              match.context.trace_id,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+      </div>
+      {signals.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {signals.map(([key, label]) => (
+            <Badge key={key} tone="warning">
+              {label}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {match.links.length ? (
+        <div className="mt-4 flex flex-wrap gap-3">
+          {match.links.map((link) => (
+            <SafeLink href={link.href} key={`${link.kind}:${link.href}`}>
+              {link.label}
+            </SafeLink>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function QuickLocatorPanel() {
+  const [query, setQuery] = useState("");
+  const [payload, setPayload] = useState<TechLocatorPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = query.trim();
+    setError(null);
+    setValidation(null);
+    if (normalized.length < 2) {
+      setPayload(null);
+      setValidation("Введите минимум 2 символа: ticket, device_id, hostname, operation_id или trace_id.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const nextPayload = await locateTechQuery(normalized);
+      setPayload(nextPayload);
+    } catch (caught) {
+      setPayload(null);
+      setError(caught instanceof Error ? caught.message : "Не удалось выполнить быструю локализацию проблемы.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Быстрая локализация проблемы</CardTitle>
+        <CardDescription>Поиск по ticket, device_id, hostname, operation_id или trace_id с безопасными ссылками на контекст.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form className="flex flex-col gap-3 md:flex-row" onSubmit={handleSubmit}>
+          <input
+            className="h-11 flex-1 rounded-lg border border-border bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="ticket, device_id, hostname, operation_id или trace_id"
+            type="search"
+            value={query}
+          />
+          <Button disabled={isLoading} leadingIcon={<Search className="h-4 w-4" />} type="submit">
+            {isLoading ? "Ищем..." : "Найти"}
+          </Button>
+        </form>
+        {validation ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{validation}</p> : null}
+        {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p> : null}
+        {payload ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+              <Badge tone={toneForStatus(payload.summary.highest_severity)} withDot>
+                {payload.summary.highest_severity}
+              </Badge>
+              <span>Совпадений: {payload.summary.match_count}</span>
+              <span>{formatDateTime(payload.generated_at)}</span>
+            </div>
+            {payload.summary.primary_diagnosis && payload.matches.length ? <p className="text-sm leading-6 text-slate-700">{payload.summary.primary_diagnosis}</p> : null}
+            {payload.matches.length ? (
+              <div className="space-y-3">
+                {payload.matches.map((match) => (
+                  <LocatorMatchCard key={`${match.kind}:${match.id}`} match={match} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState>По запросу ничего не найдено. Проверьте ticket code, hostname, device_id, operation_id или trace_id.</EmptyState>
+            )}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function GateList({ gates }: { gates: TechReadinessGate[] }) {
   return (
     <div className="space-y-3">
@@ -251,6 +397,7 @@ function SecurityTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           <MetricRow label="cookie HttpOnly" value={security.session_cookie.httponly} />
           <MetricRow label="cookie SameSite" value={security.session_cookie.samesite} />
           <MetricRow label="query token allowed" value={security.token_channels.query_token_allowed} status={security.token_channels.status} />
+          <MetricRow label="query token attempts recent" value={`${security.token_channels.query_token_attempts_recent ?? 0} attempts`} />
           <MetricRow label="connection policy" value={security.agent_connection_policy.mode ?? "unknown"} status={security.agent_connection_policy.status} />
           <MetricRow label="failed logins recent" value={security.audit.failed_logins_recent} />
           <MetricRow label="locked users" value={security.audit.locked_users_count} />
@@ -262,21 +409,44 @@ function SecurityTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
 }
 
 function RuntimeTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
+  const inventory: TechInventorySchedulerDetails | null | undefined = snapshot.runtime.scheduler_details?.inventory_scheduler;
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {snapshot.runtime.services.map((service) => (
-        <Card key={service.key}>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-3">
-              {service.title}
-              <Badge tone={toneForStatus(service.status)} withDot>
-                {service.status}
-              </Badge>
-            </CardTitle>
-            <CardDescription>{service.details ?? "runtime health signal"}</CardDescription>
-          </CardHeader>
-        </Card>
-      ))}
+    <div className="space-y-6">
+      <div className="grid gap-4 xl:grid-cols-3">
+        {snapshot.runtime.services.map((service) => (
+          <Card key={service.key}>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3">
+                {service.title}
+                <Badge tone={toneForStatus(service.status)} withDot>
+                  {service.status}
+                </Badge>
+              </CardTitle>
+              <CardDescription>{service.details ?? "runtime health signal"}</CardDescription>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Inventory scheduler details</CardTitle>
+          <CardDescription>Runtime signal for duplicate task detection and last scheduler activity.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {inventory ? (
+            <>
+              <MetricRow label="enabled" value={inventory.enabled} />
+              <MetricRow label="running" value={inventory.running} />
+              <MetricRow label="active task count" value={inventory.active_task_count ?? 0} status={inventory.duplicate_task_detected ? "warning" : "ok"} />
+              <MetricRow label="duplicate detected" value={inventory.duplicate_task_detected} status={inventory.duplicate_task_detected ? "warning" : "ok"} />
+              <MetricRow label="last tick" value={formatDateTime(inventory.last_tick_at)} />
+              <MetricRow label="last error" value={inventory.last_error} />
+            </>
+          ) : (
+            <EmptyState>Нет runtime details для inventory scheduler.</EmptyState>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -315,8 +485,25 @@ function DatabaseTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
   );
 }
 
+function BaselineDeviceList({ devices }: { devices: TechProblemDevice[] }) {
+  if (!devices.length) return <EmptyState>Агентов ниже baseline в snapshot нет.</EmptyState>;
+  return (
+    <div className="space-y-3">
+      {devices.map((device) => (
+        <div className="grid gap-3 rounded-lg border border-border px-4 py-3 text-sm md:grid-cols-[minmax(150px,1fr)_minmax(140px,0.8fr)_120px_minmax(150px,0.8fr)]" key={device.device_id}>
+          <SafeLink href={device.href ?? `/app/admin/device-operations/${device.device_id}`}>{device.device_id}</SafeLink>
+          <span className="text-slate-700">{device.hostname ?? "hostname unknown"}</span>
+          <span className="font-semibold text-slate-950">{device.agent_version ?? "unknown"}</span>
+          <span className="text-xs text-slate-500">{formatDateTime(device.last_seen_at)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AgentsTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
   const agents = snapshot.agents;
+  const baselineDevices = agents.baseline?.devices ?? agents.below_baseline_devices ?? [];
   return (
     <div className="space-y-6">
       <div className="grid gap-4 xl:grid-cols-4">
@@ -347,6 +534,18 @@ function AgentsTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           ) : (
             <EmptyState>Проблемных устройств в snapshot нет.</EmptyState>
           )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Agents below baseline</CardTitle>
+          <CardDescription>
+            PILOT_MIN_AGENT_VERSION={valueText(agents.baseline?.min_version, "not configured")} · below baseline:{" "}
+            {valueText(agents.baseline?.below_baseline_count ?? agents.below_baseline)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BaselineDeviceList devices={baselineDevices} />
         </CardContent>
       </Card>
     </div>
@@ -564,6 +763,7 @@ export function AdminTechPage() {
       {snapshot ? (
         <>
           <ReadinessBanner snapshot={snapshot} />
+          <QuickLocatorPanel />
           <KpiStrip snapshot={snapshot} />
           <Tabs items={tabItems} onValueChange={(value) => setActiveTab(value as TabKey)} value={activeTab} />
           <ActiveTab snapshot={snapshot} tab={activeTab} />

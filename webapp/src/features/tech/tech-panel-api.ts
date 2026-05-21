@@ -115,6 +115,16 @@ export type TechProblemDevice = {
   href?: string | null;
 };
 
+export type TechInventorySchedulerDetails = {
+  enabled?: boolean | null;
+  running?: boolean | null;
+  active_task_count?: number | null;
+  duplicate_task_detected?: boolean | null;
+  last_tick_at?: string | null;
+  last_error?: string | null;
+  [key: string]: unknown;
+};
+
 export type TechPanelV2Snapshot = {
   generated_at: string;
   readiness: {
@@ -166,6 +176,10 @@ export type TechPanelV2Snapshot = {
       inventory_scheduler?: string | null;
       observer_refresh_runtime?: string | null;
     };
+    scheduler_details?: {
+      inventory_scheduler?: TechInventorySchedulerDetails | null;
+      [key: string]: TechInventorySchedulerDetails | null | undefined;
+    };
   };
   database: {
     persistence_enabled: boolean;
@@ -193,6 +207,12 @@ export type TechPanelV2Snapshot = {
     update_timed_out_recent: number;
     awaiting_handshake_confirm: number;
     problem_devices: TechProblemDevice[];
+    below_baseline_devices?: TechProblemDevice[];
+    baseline?: {
+      min_version?: string | null;
+      below_baseline_count?: number | null;
+      devices?: TechProblemDevice[];
+    };
   };
   operations: {
     queued_stuck: number;
@@ -233,6 +253,76 @@ export type TechPanelV2Snapshot = {
     command_center: string;
     approval_center: string;
     logs?: string | null;
+  };
+};
+
+export type TechLocatorSeverity = "ok" | "info" | "warning" | "critical" | "unknown";
+export type TechLocatorKind = "ticket" | "device" | "hostname" | "operation" | "trace" | "log" | "unknown";
+
+export type TechLocatorLink = {
+  label: string;
+  href: string;
+  kind:
+    | "ticket"
+    | "device_operations"
+    | "observer"
+    | "operation"
+    | "approval_center"
+    | "command_center"
+    | "inventory"
+    | "agent_updates"
+    | "logs";
+};
+
+export type TechLocatorMatch = {
+  kind: TechLocatorKind;
+  id: string;
+  title: string;
+  status?: string | null;
+  severity: TechLocatorSeverity;
+  reason: string;
+  context: {
+    ticket_id?: string | null;
+    ticket_code?: string | null;
+    device_id?: string | null;
+    hostname?: string | null;
+    operation_id?: string | null;
+    trace_id?: string | null;
+    requester_id?: string | null;
+    queue_id?: string | number | null;
+    assignee_id?: string | null;
+    tool_name?: string | null;
+    operation_status?: string | null;
+    agent_online?: boolean | null;
+    last_seen_at?: string | null;
+  };
+  signals: {
+    ticket_open?: boolean;
+    ticket_sla_risk?: boolean;
+    agent_offline?: boolean;
+    stale_agent?: boolean;
+    failed_operation?: boolean;
+    stuck_operation?: boolean;
+    waiting_consent?: boolean;
+    outbox_backlog?: boolean;
+    observer_errors?: boolean;
+    pending_approval?: boolean;
+    pending_consent?: boolean;
+    inventory_missing_or_stale?: boolean;
+  };
+  links: TechLocatorLink[];
+};
+
+export type TechLocatorPayload = {
+  status: "ok";
+  query: string;
+  normalized_query: string;
+  generated_at: string;
+  matches: TechLocatorMatch[];
+  summary: {
+    match_count: number;
+    highest_severity: TechLocatorSeverity;
+    primary_diagnosis?: string | null;
   };
 };
 
@@ -370,4 +460,21 @@ export async function fetchTechPanelSnapshot(): Promise<TechPanelSnapshot> {
 export async function fetchTechPanelV2Snapshot(): Promise<TechPanelV2Snapshot> {
   const response = await fetch("/api/web/admin/tech/snapshot", { credentials: "same-origin" });
   return readSnapshotResponse(response);
+}
+
+export async function locateTechQuery(query: string): Promise<TechLocatorPayload> {
+  const normalized = query.trim();
+  const response = await fetch(`/api/web/admin/tech/locate?q=${encodeURIComponent(normalized)}`, {
+    credentials: "same-origin",
+  });
+  const payload = await readJson<TechLocatorPayload | ErrorResponse>(response);
+  if (!response.ok || !payload || (payload as ErrorResponse).status === "error") {
+    const errorPayload = payload && (payload as ErrorResponse).status === "error" ? (payload as ErrorResponse) : null;
+    throw new TechPanelApiError(
+      errorPayload?.error ?? "Не удалось выполнить быструю локализацию проблемы.",
+      response.status,
+      errorPayload?.error_code,
+    );
+  }
+  return payload as TechLocatorPayload;
 }

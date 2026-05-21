@@ -5,14 +5,15 @@ Protects all /api/* endpoints (except whitelist) with token authentication.
 Creates AuthContext from token and attaches it to request.
 """
 from aiohttp import web
+from collections import deque
 from datetime import datetime, timezone
 from loguru import logger
 from typing import Optional
+import config
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
 from app.db import get_session
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
-from config import AUTH_ALLOW_QUERY_TOKEN
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
@@ -27,6 +28,8 @@ WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/ticket_forms/",
     "/api/notifications",
 )
+QUERY_TOKEN_ATTEMPT_MAX = 500
+_QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_ATTEMPT_MAX)
 
 
 # Whitelist of endpoints that don't require authentication
@@ -39,6 +42,42 @@ AUTH_WHITELIST = {
     "/api/connection_request",
     "/api/connection_request/status",
 }
+
+
+def _record_query_token_attempt(request: web.Request, *, rejected: bool) -> None:
+    _QUERY_TOKEN_AUTH_ATTEMPTS.append(
+        {
+            "ts": datetime.now(timezone.utc),
+            "path": str(getattr(request, "path", "")),
+            "rejected": bool(rejected),
+        }
+    )
+
+
+def get_query_token_auth_attempts(window_seconds: int = 3600) -> int:
+    cutoff = datetime.now(timezone.utc).timestamp() - max(int(window_seconds or 0), 0)
+    return sum(
+        1
+        for item in list(_QUERY_TOKEN_AUTH_ATTEMPTS)
+        if isinstance(item.get("ts"), datetime) and item["ts"].timestamp() >= cutoff
+    )
+
+
+def get_recent_query_token_auth_paths(limit: int = 10) -> list[dict[str, object]]:
+    capped = max(1, min(int(limit or 10), 50))
+    recent = list(_QUERY_TOKEN_AUTH_ATTEMPTS)[-capped:]
+    return [
+        {
+            "path": str(item.get("path") or ""),
+            "ts": item["ts"].isoformat() if isinstance(item.get("ts"), datetime) else None,
+            "rejected": bool(item.get("rejected")),
+        }
+        for item in recent
+    ]
+
+
+def reset_query_token_auth_attempts() -> None:
+    _QUERY_TOKEN_AUTH_ATTEMPTS.clear()
 
 
 def extract_token_from_header(request: web.Request) -> Optional[str]:
@@ -73,7 +112,9 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
     # Try query parameter (fallback, with warning)
     token = request.query.get("token")
     if token:
-        if not AUTH_ALLOW_QUERY_TOKEN:
+        rejected = not bool(getattr(config, "AUTH_ALLOW_QUERY_TOKEN", True))
+        _record_query_token_attempt(request, rejected=rejected)
+        if rejected:
             logger.warning(
                 f"[AuthMiddleware] Token passed via query parameter was rejected by policy: "
                 f"path={request.path}"

@@ -3,8 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchTechPanelV2Snapshot } from "../../features/tech/tech-panel-api";
-import type { TechPanelV2Snapshot } from "../../features/tech/tech-panel-api";
+import { fetchTechPanelV2Snapshot, locateTechQuery } from "../../features/tech/tech-panel-api";
+import type { TechLocatorPayload, TechPanelV2Snapshot } from "../../features/tech/tech-panel-api";
 import { AdminTechPage } from "./tech-page";
 
 vi.mock("../../features/tech/tech-panel-api", async (importOriginal) => {
@@ -12,6 +12,7 @@ vi.mock("../../features/tech/tech-panel-api", async (importOriginal) => {
   return {
     ...actual,
     fetchTechPanelV2Snapshot: vi.fn(),
+    locateTechQuery: vi.fn(),
   };
 });
 
@@ -76,7 +77,7 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
         status: "warning",
         notes: ["Secure не включён"],
       },
-      token_channels: { query_token_allowed: true, query_token_attempts_recent: 0, status: "warning" },
+      token_channels: { query_token_allowed: true, query_token_attempts_recent: 2, status: "warning" },
       agent_connection_policy: {
         mode: "accept_all",
         status: "warning",
@@ -97,6 +98,16 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
         ticket_auto_close_watchdog: "running",
         inventory_scheduler: "enabled_not_running",
         observer_refresh_runtime: "unknown",
+      },
+      scheduler_details: {
+        inventory_scheduler: {
+          enabled: true,
+          running: false,
+          active_task_count: 2,
+          duplicate_task_detected: true,
+          last_tick_at: null,
+          last_error: "duplicate runtime task detected",
+        },
       },
     },
     database: {
@@ -124,6 +135,20 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
       update_failed_recent: 1,
       update_timed_out_recent: 0,
       awaiting_handshake_confirm: 1,
+      baseline: {
+        min_version: "3.1.50",
+        below_baseline_count: 1,
+        devices: [
+          {
+            device_id: "device-1",
+            hostname: "pc-support-01",
+            agent_version: "3.1.40",
+            last_seen_at: "2026-05-21T07:00:00Z",
+            reasons: ["below baseline"],
+            href: "/app/admin/device-operations/device-1",
+          },
+        ],
+      },
       problem_devices: [
         {
           device_id: "device-1",
@@ -191,6 +216,33 @@ function snapshot(overrides: Partial<TechPanelV2Snapshot> = {}): TechPanelV2Snap
   };
 }
 
+function locatorPayload(overrides: Partial<TechLocatorPayload> = {}): TechLocatorPayload {
+  return {
+    status: "ok",
+    query: "T-910571",
+    normalized_query: "T-910571",
+    generated_at: "2026-05-21T08:01:00Z",
+    summary: { match_count: 1, highest_severity: "warning", primary_diagnosis: "Найден тикет с рисками." },
+    matches: [
+      {
+        kind: "ticket",
+        id: "ticket-1",
+        title: "T-910571 · Pilot workstation cannot print",
+        status: "in_progress",
+        severity: "warning",
+        reason: "Тикет открыт, есть SLA risk.",
+        context: { ticket_id: "ticket-1", ticket_code: "T-910571", device_id: "device-1", hostname: "pc-support-01" },
+        signals: { ticket_open: true, ticket_sla_risk: true, pending_approval: true },
+        links: [
+          { label: "Открыть тикет", href: "/app/tickets/ticket-1", kind: "ticket" },
+          { label: "Device Operations", href: "/app/admin/device-operations/device-1", kind: "device_operations" },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe("AdminTechPage v2", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -217,6 +269,7 @@ describe("AdminTechPage v2", () => {
     fireEvent.click(screen.getByRole("button", { name: /Безопасность/ }));
     expect(screen.getAllByText(/config fallback/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/query token/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("2 attempts")).toBeInTheDocument();
     expect(screen.getAllByText(/cookie/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/connection policy/i).length).toBeGreaterThan(0);
 
@@ -226,11 +279,15 @@ describe("AdminTechPage v2", () => {
     expect(screen.getAllByText(/backup/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/restore drill/i).length).toBeGreaterThan(0);
 
+    fireEvent.click(screen.getByRole("button", { name: /Runtime/ }));
+    expect(screen.getByText(/duplicate runtime task detected/)).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /Агенты/ }));
     expect(screen.getAllByText(/online/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/offline/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/stale/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /device-1/i })).toHaveAttribute("href", "/app/admin/device-operations/device-1");
+    expect(screen.getAllByRole("link", { name: /device-1/i })[0]).toHaveAttribute("href", "/app/admin/device-operations/device-1");
+    expect(screen.getByText("3.1.40")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Операции/ }));
     expect(screen.getByText("op-1")).toBeInTheDocument();
@@ -265,5 +322,44 @@ describe("AdminTechPage v2", () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText(/Снимок техпанели недоступен/)).toBeInTheDocument());
+  });
+
+  it("renders quick locator and ticket/device links", async () => {
+    vi.mocked(fetchTechPanelV2Snapshot).mockResolvedValue(snapshot());
+    vi.mocked(locateTechQuery).mockResolvedValue(locatorPayload());
+
+    renderPage();
+    await screen.findByText("BLOCKED");
+
+    fireEvent.change(screen.getByPlaceholderText(/ticket, device_id, hostname/i), { target: { value: "T-910571" } });
+    fireEvent.click(screen.getByRole("button", { name: "Найти" }));
+
+    await waitFor(() => expect(locateTechQuery).toHaveBeenCalledWith("T-910571"));
+    expect(await screen.findByText(/Pilot workstation cannot print/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Открыть тикет" })).toHaveAttribute("href", "/app/tickets/ticket-1");
+    expect(screen.getByRole("link", { name: "Device Operations" })).toHaveAttribute("href", "/app/admin/device-operations/device-1");
+  });
+
+  it("renders quick locator empty and error states", async () => {
+    vi.mocked(fetchTechPanelV2Snapshot).mockResolvedValue(snapshot());
+    vi.mocked(locateTechQuery)
+      .mockResolvedValueOnce(
+        locatorPayload({
+          matches: [],
+          summary: { match_count: 0, highest_severity: "unknown", primary_diagnosis: "По запросу ничего не найдено." },
+        }),
+      )
+      .mockRejectedValueOnce(new Error("Locator unavailable"));
+
+    renderPage();
+    await screen.findByText("BLOCKED");
+
+    fireEvent.change(screen.getByPlaceholderText(/ticket, device_id, hostname/i), { target: { value: "missing-ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: "Найти" }));
+    expect(await screen.findByText(/По запросу ничего не найдено/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/ticket, device_id, hostname/i), { target: { value: "device-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Найти" }));
+    expect(await screen.findByText(/Locator unavailable/)).toBeInTheDocument();
   });
 });

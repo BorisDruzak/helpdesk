@@ -93,6 +93,36 @@ Known gaps for this cut:
 - Alembic current/head remains `unknown` unless a safe marker/status source is available.
 - No dangerous control-plane or token-management actions are added to the browser UI.
 
+## Active Work: Tech Panel v2.1 - Pilot Diagnostic Locator & Evidence Markers
+
+Status: implemented locally / verification in progress.
+
+Goal:
+
+- Make `/app/admin/tech` useful during pilot testing by adding read-only quick localization for tickets/devices/operations/traces/logs, marker writers for release/business smoke/restore evidence, query-token telemetry, baseline device lists and inventory scheduler duplicate-task status.
+
+Scope:
+
+- Add `GET /api/web/admin/tech/locate?q=...` for support/admin/auditor with safe links only.
+- Extend Tech snapshot with query-token attempt count, below-baseline devices, baseline metadata and inventory scheduler details.
+- Add safe marker-writing scripts/helpers for release status, business smoke status and restore drill evidence.
+- Update Tech Panel UI with the locator panel, baseline list, query-token attempts and scheduler duplicate status.
+- Keep browser surface read-only: no restart/stop, raw SQL, env edit, token revocation, approval, retry/cancel, remote assist launch or consent bypass.
+
+Known gaps:
+
+- Business smoke first cut does not perform a real agent handshake unless an explicit safe device/test agent is provided.
+- Mixed-content checks stay HTTP/header-level unless browser tooling is explicitly run by the caller.
+- Release marker writing is local-path first; remote marker persistence remains follow-up unless a safe configured local/remote path is provided.
+
+Implemented:
+
+- Quick Locator endpoint/UI for ticket code/id, device id, hostname, operation id, Observer trace id and bounded problem-log matches.
+- Release marker helper in `scripts/release_server_to_remote.py`, standalone `scripts/business_smoke.py`, and safe `scripts/write_restore_drill_marker.py`.
+- Query-token attempt counter in auth middleware with bounded process-local storage and no token values.
+- Tech snapshot additions for query-token attempts, below-baseline device lists/baseline metadata and inventory scheduler duplicate-task details.
+- Runtime inventory scheduler `status_snapshot()` now includes active task count, duplicate detection, last tick and last error.
+
 ## Active Work: Operator Command Center
 
 Status: accepted / release-candidate.
