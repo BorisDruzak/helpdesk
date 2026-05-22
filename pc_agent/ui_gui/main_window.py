@@ -24,6 +24,7 @@ from loguru import logger
 from .consent_dialog import ConsentDialog
 from .remote_assist_dialog import RemoteAssistConsentDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
+from .dynamic_form_widget import DynamicFormWidget
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
@@ -35,6 +36,43 @@ from pc_agent.version import AGENT_VERSION
 def gui_soft_shadows_enabled() -> bool:
     raw = os.environ.get("PC_AGENT_ENABLE_GUI_SHADOWS", "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def default_agent_registration_form() -> dict[str, Any]:
+    return {
+        "key": "agent_device_registration",
+        "title": "Регистрация рабочего места",
+        "description": "Подтвердите, кто работает за этим ПК. Данные создают заявку на регистрацию и не создают обращение.",
+        "fields": [
+            {"key": "full_name", "label": "ФИО", "type": "text", "required": True},
+            {"key": "display_name", "label": "Отображаемое имя", "type": "text", "required": False},
+            {"key": "login", "label": "Логин", "type": "text", "required": True},
+            {"key": "email", "label": "Email", "type": "text", "required": False},
+            {"key": "phone", "label": "Телефон", "type": "text", "required": False},
+            {"key": "department", "label": "Подразделение", "type": "text", "required": False},
+            {"key": "building", "label": "Здание", "type": "text", "required": False},
+            {"key": "floor", "label": "Этаж", "type": "text", "required": False},
+            {"key": "room", "label": "Кабинет", "type": "text", "required": False},
+            {
+                "key": "relationship_type",
+                "label": "Тип ПК",
+                "type": "select",
+                "required": True,
+                "options": [
+                    {"value": "primary_user", "label": "Мой основной ПК"},
+                    {"value": "shared_user", "label": "Общий ПК"},
+                    {"value": "temporary_user", "label": "Временное рабочее место"},
+                ],
+            },
+            {
+                "key": "is_shared_device",
+                "label": "Это общий ПК",
+                "type": "checkbox",
+                "placeholder": "Да",
+                "visible_when": {"field": "relationship_type", "equals": "shared_user"},
+            },
+        ],
+    }
 
 
 class MainWindow(QMainWindow):
@@ -449,35 +487,14 @@ class MainWindow(QMainWindow):
 
         registration_group = QGroupBox("Регистрация пользователя")
         registration_outer = QVBoxLayout(registration_group)
-        registration_form = QFormLayout()
         self.registration_status_label = QLabel("Не загружено")
-        self.registration_full_name_input = QLineEdit()
-        self.registration_display_name_input = QLineEdit()
-        self.registration_login_input = QLineEdit()
-        self.registration_email_input = QLineEdit()
-        self.registration_phone_input = QLineEdit()
-        self.registration_department_input = QLineEdit()
-        self.registration_building_input = QLineEdit()
-        self.registration_floor_input = QLineEdit()
-        self.registration_room_input = QLineEdit()
-        self.registration_relationship_combo = QComboBox()
-        self.registration_relationship_combo.addItem("Мой основной ПК", "primary_user")
-        self.registration_relationship_combo.addItem("Общий ПК", "shared_user")
-        self.registration_relationship_combo.addItem("Временное рабочее место", "temporary_user")
-        self.registration_shared_checkbox = QCheckBox("Это общий ПК")
-        registration_form.addRow("Статус:", self.registration_status_label)
-        registration_form.addRow("ФИО:", self.registration_full_name_input)
-        registration_form.addRow("Отображаемое имя:", self.registration_display_name_input)
-        registration_form.addRow("Логин:", self.registration_login_input)
-        registration_form.addRow("Email:", self.registration_email_input)
-        registration_form.addRow("Телефон:", self.registration_phone_input)
-        registration_form.addRow("Подразделение:", self.registration_department_input)
-        registration_form.addRow("Здание:", self.registration_building_input)
-        registration_form.addRow("Этаж:", self.registration_floor_input)
-        registration_form.addRow("Кабинет:", self.registration_room_input)
-        registration_form.addRow("Тип ПК:", self.registration_relationship_combo)
-        registration_form.addRow("", self.registration_shared_checkbox)
-        registration_outer.addLayout(registration_form)
+        self.registration_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
+        registration_outer.addWidget(self.registration_status_label)
+        self._registration_form_def = default_agent_registration_form()
+        self._registration_registry_options: dict[str, Any] = {}
+        self.registration_form_widget = DynamicFormWidget()
+        self.registration_form_widget.set_form(self._registration_form_def)
+        registration_outer.addWidget(self.registration_form_widget)
         registration_actions = QHBoxLayout()
         self.registration_save_btn = QPushButton("Сохранить локально")
         self.registration_save_btn.clicked.connect(self._on_save_registration_profile_clicked)
@@ -485,9 +502,12 @@ class MainWindow(QMainWindow):
         self.registration_submit_btn.clicked.connect(self._on_submit_registration_profile_clicked)
         self.registration_confirm_btn = QPushButton("Подтвердить данные")
         self.registration_confirm_btn.clicked.connect(self._on_confirm_registration_claim_clicked)
+        self.registration_refresh_btn = QPushButton("Обновить форму")
+        self.registration_refresh_btn.clicked.connect(self._on_refresh_registration_form_clicked)
         registration_actions.addWidget(self.registration_save_btn)
         registration_actions.addWidget(self.registration_submit_btn)
         registration_actions.addWidget(self.registration_confirm_btn)
+        registration_actions.addWidget(self.registration_refresh_btn)
         registration_actions.addStretch()
         registration_outer.addLayout(registration_actions)
         identity_section_layout.addWidget(registration_group)
@@ -1679,52 +1699,89 @@ class MainWindow(QMainWindow):
             logger.warning(f"[ui] failed to load registration profile: {exc}")
             profile = {}
         self.registration_status_label.setText(str(profile.get("registration_status") or "unregistered"))
-        self.registration_full_name_input.setText(str(profile.get("full_name") or ""))
-        self.registration_display_name_input.setText(str(profile.get("display_name") or ""))
-        self.registration_login_input.setText(str(profile.get("login") or ""))
-        self.registration_email_input.setText(str(profile.get("email") or ""))
-        self.registration_phone_input.setText(str(profile.get("phone") or ""))
-        self.registration_department_input.setText(str(profile.get("department") or ""))
-        self.registration_building_input.setText(str(profile.get("building") or ""))
-        self.registration_floor_input.setText(str(profile.get("floor") or ""))
-        self.registration_room_input.setText(str(profile.get("room") or ""))
-        relationship = str(profile.get("relationship_type") or "primary_user")
-        idx = self.registration_relationship_combo.findData(relationship)
-        self.registration_relationship_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        self.registration_shared_checkbox.setChecked(bool(profile.get("is_shared_device")))
+        self.registration_form_widget.set_form(
+            self._registration_form_def,
+            values=profile,
+            registry_options=self._registration_registry_options,
+        )
+        api_url = self.api_url_input.text().strip() if hasattr(self, "api_url_input") else ""
+        if api_url:
+            self._apply_runtime_api_url(api_url)
+        self._spawn_gui_task(self._async_load_registration_form(), name="registration.load_form")
+
+    def _apply_registration_form_payload(self, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        form = payload.get("form")
+        if isinstance(form, dict):
+            self._registration_form_def = form
+        registry_options = payload.get("registry_options")
+        if isinstance(registry_options, dict):
+            self._registration_registry_options = registry_options
+        manager = UserProfileManager()
+        profile = manager.load()
+        registration = payload.get("registration") if isinstance(payload.get("registration"), dict) else {}
+        if registration:
+            profile["registration_status"] = str(registration.get("status") or profile.get("registration_status") or "unknown")
+            pending_claim = registration.get("pending_claim") if isinstance(registration.get("pending_claim"), dict) else {}
+            pending_claim_id = registration.get("pending_claim_id") or pending_claim.get("claim_id")
+            if pending_claim_id:
+                profile["last_claim_id"] = str(pending_claim_id)
+            profile = manager.save(profile)
+        self.registration_status_label.setText(str(profile.get("registration_status") or "unregistered"))
+        self.registration_form_widget.set_form(
+            self._registration_form_def,
+            values=profile,
+            registry_options=self._registration_registry_options,
+        )
+
+    async def _async_load_registration_form(self) -> None:
+        try:
+            payload = await self.chat_panel.ticket_client.get_registration_form()
+        except Exception as exc:
+            logger.info(f"[ui] registration form unavailable, using local fallback: {exc}")
+            return
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            logger.info(f"[ui] registration form unavailable: {payload.get('http_status') or payload.get('error')}")
+            return
+        self._apply_registration_form_payload(payload)
 
     def _collect_registration_profile_from_form(self) -> dict:
         try:
             current_profile = UserProfileManager().load()
         except Exception:
             current_profile = {}
-        profile = {
-            "full_name": self.registration_full_name_input.text(),
-            "display_name": self.registration_display_name_input.text(),
-            "login": self.registration_login_input.text(),
-            "email": self.registration_email_input.text(),
-            "phone": self.registration_phone_input.text(),
-            "department": self.registration_department_input.text(),
-            "building": self.registration_building_input.text(),
-            "floor": self.registration_floor_input.text(),
-            "room": self.registration_room_input.text(),
-            "relationship_type": self.registration_relationship_combo.currentData() or "primary_user",
-            "is_shared_device": self.registration_shared_checkbox.isChecked(),
-        }
+        profile = self.registration_form_widget.values(visible_only=True)
+        profile["relationship_type"] = str(profile.get("relationship_type") or "primary_user")
+        profile["is_shared_device"] = bool(profile.get("is_shared_device") or profile["relationship_type"] == "shared_user")
         for key in ("last_claim_id", "last_submitted_at", "registration_status"):
             if current_profile.get(key):
                 profile[key] = current_profile[key]
         return profile
 
+    def _validate_registration_form(self) -> bool:
+        missing = self.registration_form_widget.validate_required_fields(show_feedback=True)
+        if missing:
+            self._set_settings_status("Заполните обязательные поля регистрации: " + ", ".join(missing), error=True)
+            return False
+        return True
+
     def _on_save_registration_profile_clicked(self) -> None:
+        if not self._validate_registration_form():
+            return
         profile = UserProfileManager().save(self._collect_registration_profile_from_form())
         self.registration_status_label.setText(str(profile.get("registration_status") or "local"))
         self._set_settings_status("Профиль регистрации сохранён локально.", error=False)
+
+    def _on_refresh_registration_form_clicked(self) -> None:
+        self._spawn_gui_task(self._async_load_registration_form(), name="registration.refresh_form")
 
     def _on_submit_registration_profile_clicked(self) -> None:
         self._spawn_gui_task(self._async_submit_registration_profile(), name="registration.submit_profile")
 
     async def _async_submit_registration_profile(self) -> None:
+        if not self._validate_registration_form():
+            return
         profile = UserProfileManager().save(self._collect_registration_profile_from_form())
         result = await self.chat_panel.ticket_client.submit_registration_profile(profile, user_confirmed=False)
         registration = result.get("registration") if isinstance(result, dict) else {}
@@ -1745,7 +1802,20 @@ class MainWindow(QMainWindow):
         profile = manager.load()
         claim_id = str(profile.get("last_claim_id") or "").strip()
         if not claim_id:
-            self._set_settings_status("Нет заявки регистрации для подтверждения.", error=True)
+            if not self._validate_registration_form():
+                return
+            profile = manager.save(self._collect_registration_profile_from_form())
+            result = await self.chat_panel.ticket_client.submit_registration_profile(profile, user_confirmed=True)
+            registration = result.get("registration") if isinstance(result, dict) else {}
+            if isinstance(registration, dict):
+                profile["last_claim_id"] = registration.get("claim_id") or profile.get("last_claim_id")
+                profile["registration_status"] = registration.get("status") or profile.get("registration_status")
+                profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
+                saved = manager.save(profile)
+                self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
+                self._set_settings_status("Данные регистрации отправлены и подтверждены.", error=False)
+            else:
+                self._set_settings_status("Некорректный ответ регистрации.", error=True)
             return
         result = await self.chat_panel.ticket_client.confirm_registration_claim(claim_id)
         registration = result.get("registration") if isinstance(result, dict) else {}

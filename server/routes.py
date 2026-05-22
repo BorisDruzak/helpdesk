@@ -463,6 +463,7 @@ from web_api.knowledge_handlers import (
 from web_api.registry_handlers import (
     handle_registry_agent_claim_confirm,
     handle_registry_agent_profile,
+    handle_registry_agent_registration_form,
     handle_registry_agent_registration_status,
     handle_registry_options,
     handle_registry_profile_upsert,
@@ -913,6 +914,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.post('/api/registry/agent/profile', handle_registry_agent_profile),
+        web.get('/api/registry/agent/registration-form', handle_registry_agent_registration_form),
         web.get('/api/registry/agent/registration-status', handle_registry_agent_registration_status),
         web.post('/api/registry/agent/claims/{claim_id}/confirm', handle_registry_agent_claim_confirm),
         web.get('/api/service-catalog/current', handle_service_catalog_current),

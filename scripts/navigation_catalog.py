@@ -1401,6 +1401,7 @@ TOPICS: tuple[Topic, ...] = (
         first_files=(
             "server/registry/service.py",
             "server/registry/registration_service.py",
+            "server/registry/registration_form_service.py",
             "server/app/repos/registry_repo.py",
             "server/app/repos/registration_repo.py",
             "server/web_api/registry_handlers.py",
@@ -1412,6 +1413,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/dto/support.py",
             "pc_agent/core/user_profile.py",
             "pc_agent/ui_gui/main_window.py",
+            "pc_agent/ui_gui/dynamic_form_widget.py",
             "pc_agent/ui_gui/chat_panel.py",
             "pc_agent/ui_gui/server_api.py",
             "webapp/src/pages/admin/registry-page.tsx",
@@ -1429,6 +1431,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "RegistryIngestionService" --dir server',
             'python scripts/agent_find.py "RegistrationService" --dir server',
+            'python scripts/agent_find.py "registration-form" --dir server',
             'python scripts/agent_find.py "registry/profile" --dir server',
             'python scripts/agent_find.py "sync_registry_profile" --dir pc_agent',
             "python -m pytest server/tests/test_device_registration_service.py -q",
@@ -1463,6 +1466,7 @@ TOPICS: tuple[Topic, ...] = (
         exact_paths=(
             "server/app/repos/registry_repo.py",
             "server/app/repos/registration_repo.py",
+            "server/registry/registration_form_service.py",
             "server/web_api/registry_handlers.py",
             "server/web_api/admin_handlers.py",
             "server/app/db/models.py",
@@ -1472,6 +1476,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/dto/support.py",
             "pc_agent/core/user_profile.py",
             "pc_agent/ui_gui/main_window.py",
+            "pc_agent/ui_gui/dynamic_form_widget.py",
             "pc_agent/ui_gui/chat_panel.py",
             "pc_agent/ui_gui/server_api.py",
             "webapp/src/pages/admin/registry-page.tsx",

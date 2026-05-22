@@ -106,6 +106,8 @@
 
 ### 2.5 GUI (Qt)
 
+2026-05-23: `pc_agent/ui_gui/dynamic_form_widget.py` is the reusable schema/field renderer for both ticket creation and agent user registration. `chat_panel.py` keeps compatibility aliases for `TicketDynamicFieldsWidget`, while `main_window.py` loads `GET /api/registry/agent/registration-form` and submits/confirm registration through the existing registration endpoints instead of the ticket create flow.
+
 New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains focused Qt Widgets for the redesigned ticket detail page, currently `TicketHeaderWidget`, compact `NextActionCard`, `TicketRightInfoPanel`, `TimelineItemWidget` and `TicketComposerWidget` wired to view models with ticket title/status/actions, resolved-ticket confirm/reject actions in the header menu, requester next action, requester facts, a single visual SLA/deadline block with `SlaProgressBar` rows, access code, optional real device facts, requester-safe system/diagnostic/attachment/user/support timeline events and terminal-status composer disabled states. Mapped requester and specialist message events render as dedicated `TimelineUserMessage` / `TimelineSupportMessage` bubbles instead of centered system cards. The old `ChatPanel` left meta panel and raw access-code/link strip remain only as hidden compatibility objects and are not added to the visible detail layout; missing device/inventory payloads must not be shown as an offline device. Create-ticket wizard result widgets live in `pc_agent/ui_gui/ticket_create_wizard_widgets.py`.
 | Файл | Назначение |
 |------|------------|

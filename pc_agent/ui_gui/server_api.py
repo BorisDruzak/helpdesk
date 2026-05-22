@@ -552,6 +552,20 @@ class TicketApiClient:
             logger.info("Registration status fetch error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def get_registration_form(self) -> dict:
+        url = f"{self.base_url}/registry/agent/registration-form"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registration form fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def confirm_registration_claim(self, claim_id: str) -> dict:
         url = f"{self.base_url}/registry/agent/claims/{claim_id}/confirm"
         session = await self._get_session()

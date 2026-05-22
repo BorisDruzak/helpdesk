@@ -6,7 +6,7 @@ from loguru import logger
 from app.db import get_session
 from app.db.models import Device
 from auth.middleware import require_auth
-from app.repos.registry_repo import RegistryRepo
+from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
 
@@ -15,23 +15,6 @@ import uuid
 
 def _success(data: dict) -> web.Response:
     return web.json_response({"status": "success", "data": data})
-
-
-def _option(value: object, label: object) -> dict[str, str]:
-    return {"value": str(value or "").strip(), "label": str(label or value or "").strip()}
-
-
-def _compact_options(items: list[dict[str, str]]) -> list[dict[str, str]]:
-    result: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for item in items:
-        value = str(item.get("value") or "").strip()
-        label = str(item.get("label") or value).strip()
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        result.append({"value": value, "label": label})
-    return result
 
 
 def _validate_uuid_device_id(value: str | None) -> str | None:
@@ -73,6 +56,27 @@ async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy:
     return _forbidden()
 
 
+async def _resolve_registration_form_device_id(request: web.Request) -> str | web.Response:
+    auth_context = request["auth_context"]
+    role = auth_context.actor_role
+    if role == "user":
+        return _forbidden("user cannot access agent registration form")
+    if role == "agent":
+        actor_device_id = _validate_uuid_device_id(auth_context.actor_id)
+        if not actor_device_id:
+            return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+        body_device_id = str(request.query.get("device_id") or "").strip()
+        if body_device_id and _validate_uuid_device_id(body_device_id) != actor_device_id:
+            return _forbidden("forbidden device_id")
+        return actor_device_id
+    if role in {"admin", "support"}:
+        device_id = _validate_uuid_device_id(str(request.query.get("device_id") or "").strip())
+        if not device_id:
+            return web.json_response({"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"}, status=400)
+        return device_id
+    return _forbidden()
+
+
 @require_auth("admin")
 async def handle_web_admin_registry(_request: web.Request) -> web.Response:
     try:
@@ -105,62 +109,25 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
 @require_auth("admin", "support", "user", "agent")
 async def handle_registry_options(_request: web.Request) -> web.Response:
     async with get_session() as session:
-        repo = RegistryRepo(session)
-        assets = await repo.list_assets(limit=500)
-        people = await repo.list_people(limit=500)
-        locations = await repo.list_locations(limit=500)
-        departments = await repo.list_departments()
-        services = await repo.list_services()
+        payload = await build_lightweight_registry_options(session)
 
-    return _success(
-        {
-            "devices": _compact_options(
-                [
-                    _option(
-                        asset.device_id or asset.asset_id,
-                        asset.hostname or asset.name or asset.device_id or asset.asset_id,
-                    )
-                    for asset in assets
-                ]
-            ),
-            "users": _compact_options(
-                [
-                    _option(
-                        person.person_id,
-                        person.display_name or person.full_name or person.person_id,
-                    )
-                    for person in people
-                ]
-            ),
-            "locations": _compact_options(
-                [
-                    _option(
-                        location.location_id,
-                        " / ".join(
-                            str(part).strip()
-                            for part in (location.building, location.room)
-                            if str(part or "").strip()
-                        )
-                        or location.display_name
-                        or location.location_id,
-                    )
-                    for location in locations
-                ]
-            ),
-            "departments": _compact_options(
-                [
-                    _option(department.department_id, department.name or department.code)
-                    for department in departments
-                ]
-            ),
-            "services": _compact_options(
-                [
-                    _option(service.service_id, service.name or service.code)
-                    for service in services
-                ]
-            ),
-        }
-    )
+    return _success(payload)
+
+
+@require_auth("admin", "support", "agent")
+async def handle_registry_agent_registration_form(request: web.Request) -> web.Response:
+    try:
+        resolved_device_id = await _resolve_registration_form_device_id(request)
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if isinstance(resolved_device_id, web.Response):
+        return resolved_device_id
+    device_id = resolved_device_id
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        payload = await build_registration_form_payload(session, device_id)
+    return _success(payload)
 
 
 @require_auth("admin", "support", "agent")

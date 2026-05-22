@@ -75,3 +75,32 @@ async def test_registration_api_client_unwraps_success_data(monkeypatch):
 
     assert result == {"registration": {"claim_id": "claim-1", "status": "pending_user_confirmation"}}
     assert fake_session.calls[0]["json"]["device_id"] == "device-1"
+
+
+@pytest.mark.asyncio
+async def test_registration_api_client_get_registration_form_unwraps_success_data(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            payload={
+                "status": "success",
+                "data": {
+                    "form": {"key": "agent_device_registration", "fields": [{"key": "full_name"}]},
+                    "registration": {"status": "unregistered"},
+                    "registry_options": {},
+                },
+            }
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_registration_form()
+
+    assert result["form"]["key"] == "agent_device_registration"
+    assert result["registration"]["status"] == "unregistered"
+    assert fake_session.calls[0]["method"] == "GET"
+    assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/registration-form"
