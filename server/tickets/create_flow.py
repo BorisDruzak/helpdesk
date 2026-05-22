@@ -221,6 +221,26 @@ async def create_ticket_with_side_effects(
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
+    requester_person_id = None
+    requester_binding_id = None
+    requester_registration_status = "unregistered"
+    requester_registration_context: dict[str, Any] = {"status": "unregistered"}
+    try:
+        from registry.registration_service import RegistrationService
+
+        registration_service = RegistrationService(session)
+        registration_status = await registration_service.get_device_registration_status(device_id)
+        active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
+        if isinstance(active_binding, dict) and active_binding.get("binding_id"):
+            requester_person_id = active_binding.get("person_id")
+            requester_binding_id = active_binding.get("binding_id")
+            requester_registration_status = "admin_confirmed"
+        else:
+            requester_registration_status = str((registration_status or {}).get("status") or "unregistered")
+        requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
+    except Exception as exc:
+        logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
+
     ticket = await ticket_repo.create_ticket(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -242,6 +262,9 @@ async def create_ticket_with_side_effects(
         reporting_category=reporting_category,
         service_owner_actor_id=service_owner_actor_id,
         support_group_code=support_group_code,
+        requester_person_id=requester_person_id,
+        requester_binding_id=requester_binding_id,
+        requester_registration_status=requester_registration_status,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})
@@ -273,6 +296,7 @@ async def create_ticket_with_side_effects(
     custom_fields["priority_decision"] = priority_decision
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
+    custom_fields["requester_registration"] = requester_registration_context
 
     try:
         from registry.service import RegistryIngestionService

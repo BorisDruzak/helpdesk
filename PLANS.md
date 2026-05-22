@@ -648,3 +648,52 @@ Verification:
 - Passed: focused `presence.collect`/inventory/registry/config-loader agent tests, full `pc_agent/tests/`, focused server no-db/inventory presentation tests, webapp full Vitest suite, webapp typecheck/build, `compileall`, docs link check, workspace verification and diff whitespace checks.
 - Passed remote/browser smoke: `/app/admin/inventory` fleet dashboard opens, bulk-refresh dry-run works, `/app/admin/device` shows the inventory card, and `DeviceInventoryPanel` now exposes Registration/Presence tabs even before the first inventory snapshot.
 - Windows-local DB-backed inventory v3/v4 service tests skip by design. The remote runtime venv does not include pytest, so DB-backed Linux pytest must run in CI or a test venv, not on the production runtime venv.
+
+## Active Work: Device Registration Claims and Authoritative User Binding
+
+Status: in progress on branch `codex/helpdesk-process-model`.
+
+Goal:
+
+- Replace direct self-reported requester-profile ownership assignment with a controlled device registration workflow: claim creation, user/admin confirmation, conflict handling, active authoritative binding, audit history and ticket requester enrichment.
+
+Classification:
+
+- Cross-cutting DB/API/server-agent-web change. Contract surfaces: DB schema/models/repos, `/api/registry*` and `/api/web/admin/registry*`, handshake `handshake_ack.payload.registration`, ticket create requester context, React registry payload, agent GUI/API profile handling.
+
+Scope:
+
+- Server DB: add `registry_person_identities`, `device_registration_claims`, `device_user_bindings`, `device_registration_events`; extend `device_inventory_bindings` and `tickets`.
+- Server domain: add `RegistrationRepo` and `RegistrationService`; make `RegistryIngestionService.ingest_requester_profile()` create/update claims and suggestions without directly assigning `registry_assets.assigned_person_id`.
+- Server API: add agent/user registration profile/status/confirm endpoints and admin claim approve/reject/binding revoke/timeline endpoints.
+- Server integrations: include registration status in handshake ack; enrich ticket creation from active primary binding without blocking unregistered devices.
+- Webapp: extend `/app/admin/registry` with registration tab, badges, claim actions and new registry quality signals.
+- Agent: add local user profile manager, registration API methods, handshake registration status handling and minimal GUI/status integration.
+
+Non-goals:
+
+- Do not convert `devices` into owner records.
+- Do not trust self-reported profile data as authoritative.
+- Do not change token/fingerprint/device-auth semantics.
+- Do not run full CI/full deploy gate unless explicitly requested after a frozen candidate.
+
+Execution plan:
+
+- [ ] Step 1: Complete discovery of current migrations, models, registry/ticket/handshake/webapp/agent entrypoints.
+- [ ] Step 2: Add failing server service/API/ticket/handshake tests around no direct assignment, approve/reject/conflict, status payload and ticket enrichment.
+- [ ] Step 3: Add migration `098` and SQLAlchemy models/columns/indexes.
+- [ ] Step 4: Implement `RegistrationRepo` and `RegistrationService` with identity normalization, claim dedupe, conflict detection, active binding sync, events and inventory binding sync.
+- [ ] Step 5: Modify registry ingestion and snapshot payload/data-quality signals.
+- [ ] Step 6: Add registration HTTP endpoints and route registration with auth boundary checks.
+- [ ] Step 7: Add handshake registration payload and ticket requester binding enrichment.
+- [ ] Step 8: Extend React admin registry API/types/page and run webapp type/build checks.
+- [ ] Step 9: Add agent user profile manager/API/status handling and focused agent tests.
+- [ ] Step 10: Run targeted verification: workspace verify, server registration/registry/inventory/ticket/auth tests, agent tests and webapp build/typecheck.
+
+Verification matrix:
+
+- Server focused: `python -m pytest server/tests/test_device_registration_service.py server/tests/test_registration_api.py -q`.
+- Registry/inventory/ticket regressions: `python -m pytest server/tests/test_registry_service.py server/tests/test_inventory_v4_service.py server/tests/test_soft_delete_auth.py -q` plus ticket create tests found during implementation.
+- Agent focused: `python -m pytest pc_agent/tests/test_user_profile_manager.py pc_agent/tests/test_registration_status.py pc_agent/tests/test_connection_request_flow.py -q`.
+- Webapp: run the actual package script from `webapp/package.json` (`pnpm --dir webapp run build` or available typecheck).
+- General: `python scripts/verify_workspace.py`, migration import/syntax check, and `git diff --check`.

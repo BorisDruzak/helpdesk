@@ -854,6 +854,9 @@ class TicketEventsRepo:
         reporting_category: Optional[str] = None,
         service_owner_actor_id: Optional[str] = None,
         support_group_code: Optional[str] = None,
+        requester_person_id: Optional[str] = None,
+        requester_binding_id: Optional[str] = None,
+        requester_registration_status: Optional[str] = None,
     ) -> Ticket:
         """
         Create a new ticket.
@@ -892,6 +895,9 @@ class TicketEventsRepo:
             reporting_category=reporting_category,
             service_owner_actor_id=service_owner_actor_id,
             support_group_code=support_group_code,
+            requester_person_id=requester_person_id,
+            requester_binding_id=requester_binding_id,
+            requester_registration_status=requester_registration_status,
             created_at=now,
             updated_at=now,
             requester_id=requester_id,
@@ -1037,6 +1043,7 @@ class TicketEventsRepo:
             "request_type", "business_criticality", "reporting_category",
             "service_owner_actor_id", "support_group_code",
             "assignee_id", "requester_id", "sla_policy_id", "resolved_at", "closed_at",
+            "requester_person_id", "requester_binding_id", "requester_registration_status",
             "resolution_code", "root_cause", "parent_ticket_id",
             "next_action_owner", "next_action_due_at", "status_reason", "requester_status",
             "resolution_summary", "requester_resolution_summary", "evidence_required",

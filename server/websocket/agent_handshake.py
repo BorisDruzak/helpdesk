@@ -751,6 +751,43 @@ async def handle_handshake(
             )
     
     # Phase E: Отправляем handshake_ack с server_capabilities и desired_revision
+    registration_payload = {
+        "status": "unknown",
+        "requires_user_action": False,
+        "requires_admin_action": False,
+    }
+    if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+        try:
+            async with get_session() as session:
+                from registry.registration_service import RegistrationService
+
+                status_payload = await RegistrationService(session).get_device_registration_status(device_id)
+                active_person = status_payload.get("active_person") if isinstance(status_payload, dict) else None
+                active_binding = status_payload.get("active_binding") if isinstance(status_payload, dict) else None
+                pending_claim = status_payload.get("pending_claim") if isinstance(status_payload, dict) else None
+                registration_payload = {
+                    "status": status_payload.get("status", "unknown"),
+                    "person": {
+                        "person_id": active_person.get("person_id"),
+                        "display_name": active_person.get("display_name"),
+                    }
+                    if isinstance(active_person, dict)
+                    else None,
+                    "binding": {
+                        "binding_id": active_binding.get("binding_id"),
+                        "relationship_type": active_binding.get("relationship_type"),
+                        "confirmed_at": active_binding.get("confirmed_at"),
+                    }
+                    if isinstance(active_binding, dict)
+                    else None,
+                    "pending_claim_id": pending_claim.get("claim_id") if isinstance(pending_claim, dict) else None,
+                    "requires_user_action": bool(status_payload.get("requires_user_action")),
+                    "requires_admin_action": bool(status_payload.get("requires_admin_action")),
+                    "conflict_reason": status_payload.get("conflict_reason"),
+                }
+        except Exception as exc:
+            logger.warning(f"[handshake] registration status lookup failed for device_id={device_id}: {exc}")
+
     from config import SERVER_CAPABILITIES
     
     handshake_ack = {
@@ -765,7 +802,8 @@ async def handle_handshake(
             "server_version": "3.0.0",  # Phase E: версия сервера
             "open_tickets": open_tickets,  # Phase D: Send open tickets
             "desired_revision": desired_revision,  # Device config revision
-            "server_capabilities": SERVER_CAPABILITIES  # Из config.py
+            "server_capabilities": SERVER_CAPABILITIES,  # Из config.py
+            "registration": registration_payload,
         },
         "meta": {
             "timestamp": datetime.now(timezone.utc).isoformat(),

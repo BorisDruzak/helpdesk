@@ -516,6 +516,56 @@ class TicketApiClient:
             logger.info("Registry profile sync network error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def submit_registration_profile(self, profile: dict, *, user_confirmed: bool = False) -> dict:
+        url = f"{self.base_url}/registry/agent/profile"
+        payload = {
+            "device_id": self.device_id,
+            "requester_id": profile.get("login") or self.user_display_name or self.device_id,
+            "display_name": profile.get("display_name") or profile.get("full_name") or self.user_display_name,
+            "profile": profile or {},
+            "user_confirmed": bool(user_confirmed),
+        }
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    logger.info("Registration profile submit skipped: HTTP %s", response.status)
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return json.loads(response_text)
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registration profile submit error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def get_registration_status(self) -> dict:
+        url = f"{self.base_url}/registry/agent/registration-status?device_id={self.device_id}"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return json.loads(response_text)
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registration status fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def confirm_registration_claim(self, claim_id: str) -> dict:
+        url = f"{self.base_url}/registry/agent/claims/{claim_id}/confirm"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return json.loads(response_text)
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registration claim confirm error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def get_registry_options(self) -> dict:
         """Получает справочники для picker-полей формы обращения."""
         url = f"{self.base_url}/registry/options"

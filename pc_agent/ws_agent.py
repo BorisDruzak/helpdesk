@@ -1803,6 +1803,19 @@ class WSAgent:
                     self.server_capabilities = set(str(item) for item in server_capabilities)
                 else:
                     self.server_capabilities = set()
+                registration = payload.get("registration")
+                if isinstance(registration, dict):
+                    try:
+                        from pc_agent.core.user_profile import UserProfileManager
+
+                        manager = UserProfileManager()
+                        profile = manager.load()
+                        profile["registration_status"] = str(registration.get("status") or "unknown")
+                        if registration.get("pending_claim_id"):
+                            profile["last_claim_id"] = str(registration.get("pending_claim_id"))
+                        manager.save(profile)
+                    except Exception as exc:
+                        logger.debug("Registration status persistence skipped: {}", exc)
                 if self.flusher:
                     self.flusher.supports_outbox_batch = "outbox_batch_v1" in self.server_capabilities
                 try:

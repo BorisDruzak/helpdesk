@@ -1360,7 +1360,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="registry_objects",
         title="Registry objects / Реестры",
-        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets, requester profile sync creates people/locations/departments, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, typed support queue rows expose priority/assignee display data plus authoritative queue counts for the SaaS workspace, typed support workspace snapshots expose requester phone/email/source and location floor from registry records plus selected-ticket compact `inventory_context` for device/agent/inventory/binding/refresh signals, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps, safe env_uuid duplicate cleanup and manual selected-agent archive via `DELETE /api/web/admin/devices/{device_id}` using the soft-delete token/outbox/operation cleanup path.",
+        summary="Lightweight registry for people, departments, buildings/rooms, PC/printer assets, services, vendors and support queues; agent handshake auto-creates PC assets and returns non-blocking registration status, requester profile sync now creates controlled device registration claims and suggestions instead of directly assigning owners, active `device_user_bindings` are the authoritative device-person link, ticket create enriches requester registration fields from active primary bindings, request forms use registry-backed picker fields, requester-safe field visibility/process metadata and clearable file metadata, ticket detail/admin UI expose registry context, typed support queue rows expose priority/assignee display data plus authoritative queue counts for the SaaS workspace, typed support workspace snapshots expose requester phone/email/source and location floor from registry records plus selected-ticket compact `inventory_context` for device/agent/inventory/binding/refresh signals, admin registry shows pending/conflict registrations, active bindings and unregistered devices, admin inventory surfaces identity source/duplicate warnings, token panel/revoke with ISO timestamps, safe env_uuid duplicate cleanup and manual selected-agent archive via `DELETE /api/web/admin/devices/{device_id}` using the soft-delete token/outbox/operation cleanup path.",
         aliases=(
             "registry",
             "registries",
@@ -1377,6 +1377,11 @@ TOPICS: tuple[Topic, ...] = (
             "service source",
             "data quality",
             "registry profile",
+            "registration claim",
+            "device registration",
+            "device user binding",
+            "device_user_bindings",
+            "registry_person_identities",
             "identity source",
             "env_uuid",
             "duplicate devices",
@@ -1395,7 +1400,9 @@ TOPICS: tuple[Topic, ...] = (
         ),
         first_files=(
             "server/registry/service.py",
+            "server/registry/registration_service.py",
             "server/app/repos/registry_repo.py",
+            "server/app/repos/registration_repo.py",
             "server/web_api/registry_handlers.py",
             "server/web_api/admin_handlers.py",
             "server/app/db/models.py",
@@ -1403,6 +1410,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tickets/create_flow.py",
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",
+            "pc_agent/core/user_profile.py",
             "pc_agent/ui_gui/chat_panel.py",
             "pc_agent/ui_gui/server_api.py",
             "webapp/src/pages/admin/registry-page.tsx",
@@ -1418,8 +1426,10 @@ TOPICS: tuple[Topic, ...] = (
         ),
         suggested_commands=(
             'python scripts/agent_find.py "RegistryIngestionService" --dir server',
+            'python scripts/agent_find.py "RegistrationService" --dir server',
             'python scripts/agent_find.py "registry/profile" --dir server',
             'python scripts/agent_find.py "sync_registry_profile" --dir pc_agent',
+            "python -m pytest server/tests/test_device_registration_service.py -q",
             "python -m pytest server/tests/test_registry_service.py server/tests/test_registry_web_api.py -v --tb=short",
             "pnpm --dir webapp run build",
         ),
@@ -1427,6 +1437,7 @@ TOPICS: tuple[Topic, ...] = (
         skills=(DOCS_SYNC_SKILL, MIGRATIONS_SKILL, TESTS_SKILL, BROWSER_CHECK_SKILL),
         checks=(
             "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/test_device_registration_service.py -q",
             "python -m pytest server/tests/test_registry_service.py server/tests/test_registry_web_api.py -v --tb=short",
             "python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -v --tb=short",
             "pnpm --dir webapp run test",
@@ -1445,6 +1456,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         exact_paths=(
             "server/app/repos/registry_repo.py",
+            "server/app/repos/registration_repo.py",
             "server/web_api/registry_handlers.py",
             "server/web_api/admin_handlers.py",
             "server/app/db/models.py",
@@ -1452,6 +1464,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/websocket/agent_handshake.py",
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",
+            "pc_agent/core/user_profile.py",
             "pc_agent/ui_gui/chat_panel.py",
             "pc_agent/ui_gui/server_api.py",
             "webapp/src/pages/admin/registry-page.tsx",

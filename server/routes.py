@@ -461,8 +461,16 @@ from web_api.knowledge_handlers import (
     handle_web_knowledge_templates,
 )
 from web_api.registry_handlers import (
+    handle_registry_agent_claim_confirm,
+    handle_registry_agent_profile,
+    handle_registry_agent_registration_status,
     handle_registry_options,
     handle_registry_profile_upsert,
+    handle_web_admin_registry_binding_revoke,
+    handle_web_admin_registry_device_timeline,
+    handle_web_admin_registry_registration_approve,
+    handle_web_admin_registry_registration_reject,
+    handle_web_admin_registry_registrations,
     handle_web_admin_registry,
 )
 from web_api.reports_handlers import handle_web_reports_summary
@@ -840,6 +848,11 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
         web.post('/api/web/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         web.get('/api/web/admin/registry', handle_web_admin_registry),
+        web.get('/api/web/admin/registry/registrations', handle_web_admin_registry_registrations),
+        web.post('/api/web/admin/registry/registrations/{claim_id}/approve', handle_web_admin_registry_registration_approve),
+        web.post('/api/web/admin/registry/registrations/{claim_id}/reject', handle_web_admin_registry_registration_reject),
+        web.post('/api/web/admin/registry/bindings/{binding_id}/revoke', handle_web_admin_registry_binding_revoke),
+        web.get('/api/web/admin/registry/devices/{device_id}/registration-timeline', handle_web_admin_registry_device_timeline),
         web.get('/api/web/admin/forms/current', handle_web_admin_forms_current),
         web.post('/api/web/admin/forms/route-preview', handle_web_admin_forms_route_preview),
         web.post('/api/web/admin/forms/process-preview', handle_web_admin_forms_process_preview),
@@ -899,6 +912,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
+        web.post('/api/registry/agent/profile', handle_registry_agent_profile),
+        web.get('/api/registry/agent/registration-status', handle_registry_agent_registration_status),
+        web.post('/api/registry/agent/claims/{claim_id}/confirm', handle_registry_agent_claim_confirm),
         web.get('/api/service-catalog/current', handle_service_catalog_current),
         web.post('/api/service-catalog/preview', handle_service_catalog_preview),
         web.get('/api/service-catalog/services/{service_code}', handle_service_catalog_service),

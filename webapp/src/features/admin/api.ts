@@ -332,6 +332,11 @@ export type AdminRegistryPayload = {
     departments: number;
     services: number;
     vendors: number;
+    registrations_pending: number;
+    registrations_conflicts: number;
+    unregistered_devices: number;
+    active_bindings: number;
+    stale_bindings: number;
     data_quality_issues: number;
     suggestions: number;
   };
@@ -351,6 +356,13 @@ export type AdminRegistryPayload = {
     service_id: string | null;
     vendor_id: string | null;
     owner_name: string | null;
+    registration_status: string | null;
+    active_binding_id: string | null;
+    active_person_id: string | null;
+    active_person_name: string | null;
+    pending_claim_count: number;
+    last_claim_at: string | null;
+    current_os_user: string | null;
     department_name: string | null;
     location_name: string | null;
     service_name: string | null;
@@ -429,6 +441,48 @@ export type AdminRegistryPayload = {
     object_type: string;
     object_id: string;
   }>;
+  registration_claims: AdminRegistrationClaim[];
+  active_bindings: AdminDeviceUserBinding[];
+};
+
+export type AdminRegistrationClaim = {
+  claim_id: string;
+  device_id: string;
+  asset_id: string | null;
+  person_id: string | null;
+  person_name: string | null;
+  status: string;
+  claim_type: string;
+  relationship_type: string;
+  confidence: number | null;
+  submitted_at: string | null;
+  conflict_reason: string | null;
+  profile_snapshot: Record<string, unknown>;
+};
+
+export type AdminDeviceUserBinding = {
+  binding_id: string;
+  device_id: string;
+  asset_id: string | null;
+  person_id: string;
+  person_name: string | null;
+  relationship_type: string;
+  status: string;
+  confirmed_at: string | null;
+  confirmed_by_admin: string | null;
+};
+
+export type AdminRegistrationTimelineItem = {
+  event_id: string;
+  claim_id: string | null;
+  binding_id: string | null;
+  device_id: string;
+  person_id: string | null;
+  event_type: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  event_at: string | null;
+  payload: Record<string, unknown>;
 };
 
 type SuccessResponse<T> = {
@@ -456,6 +510,54 @@ export class AdminWorkspaceApiError extends Error {
     this.status = status;
     this.errorCode = errorCode;
   }
+}
+
+export async function fetchAdminRegistrationClaims(status?: string): Promise<{ items: AdminRegistrationClaim[] }> {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set("status", status);
+  }
+  const response = await fetch(`/api/web/admin/registry/registrations${params.toString() ? `?${params}` : ""}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить заявки регистрации");
+}
+
+export async function approveAdminRegistrationClaim(claimId: string, replaceExisting = false): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/registrations/${encodeURIComponent(claimId)}/approve`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ replace_existing: replaceExisting })
+  });
+  await readSuccessResponse(response, "Не удалось подтвердить регистрацию");
+}
+
+export async function rejectAdminRegistrationClaim(claimId: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/registrations/${encodeURIComponent(claimId)}/reject`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason })
+  });
+  await readSuccessResponse(response, "Не удалось отклонить регистрацию");
+}
+
+export async function revokeAdminDeviceUserBinding(bindingId: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/bindings/${encodeURIComponent(bindingId)}/revoke`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason })
+  });
+  await readSuccessResponse(response, "Не удалось отозвать привязку");
+}
+
+export async function fetchAdminDeviceRegistrationTimeline(deviceId: string): Promise<{ items: AdminRegistrationTimelineItem[] }> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/registration-timeline`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить историю регистрации");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

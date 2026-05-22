@@ -61,6 +61,9 @@ class Ticket(Base):
     urgency_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     importance_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     requester_id: Mapped[str] = mapped_column(Text, nullable=False)
+    requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    requester_registration_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     assignee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
@@ -144,6 +147,9 @@ class Ticket(Base):
         Index("ix_tickets_queue_status_priority", "queue_id", "status", "priority"),
         Index("ix_tickets_assignee_status", "assignee_id", "status"),
         Index("ix_tickets_requester_created", "requester_id", "created_at"),
+        Index("ix_tickets_requester_person_created", "requester_person_id", "created_at"),
+        Index("ix_tickets_requester_binding", "requester_binding_id"),
+        Index("ix_tickets_requester_registration_status", "requester_registration_status"),
         Index("ix_tickets_service_offering_created", "service_code", "offering_code", "created_at"),
         Index("ix_tickets_catalog_service_created", "catalog_service_id", "created_at"),
         Index("ix_tickets_catalog_offering_created", "catalog_offering_id", "created_at"),
@@ -2589,6 +2595,238 @@ class RegistryAsset(Base):
     )
 
 
+class RegistryPersonIdentity(Base):
+    """Normalized identity alias for a registry person."""
+    __tablename__ = "registry_person_identities"
+
+    identity_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    person_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    identifier: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_identifier: Mapped[str] = mapped_column(Text, nullable=False)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "normalized_identifier", name="uq_registry_person_identities_provider_identifier"),
+        Index("ix_registry_person_identities_person", "person_id"),
+        Index("ix_registry_person_identities_provider_identifier", "provider", "normalized_identifier"),
+    )
+
+
+class DeviceRegistrationClaim(Base):
+    """Self-reported or admin-created claim that a person is related to a device."""
+    __tablename__ = "device_registration_claims"
+
+    claim_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_assets.asset_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    person_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    claim_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="primary_user")
+    profile_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    device_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="agent_profile")
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    user_confirmed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    conflict_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "claim_type IN ('self_reported', 'agent_detected', 'admin_created', 'presence_inferred', 'import', 'sso')",
+            name="ck_device_registration_claims_type",
+        ),
+        sa.CheckConstraint(
+            "status IN ('draft', 'self_reported', 'pending_user_confirmation', 'user_confirmed', "
+            "'pending_admin_review', 'approved', 'rejected', 'superseded', 'expired', 'conflict')",
+            name="ck_device_registration_claims_status",
+        ),
+        sa.CheckConstraint(
+            "relationship_type IN ('primary_user', 'responsible', 'owner', 'shared_user', 'temporary_user')",
+            name="ck_device_registration_claims_relationship",
+        ),
+        Index("ix_device_registration_claims_device_status", "device_id", "status"),
+        Index("ix_device_registration_claims_person_status", "person_id", "status"),
+        Index("ix_device_registration_claims_status_submitted", "status", "submitted_at"),
+        Index("ix_device_registration_claims_source_ref", "source", "source_ref"),
+        Index("ix_device_registration_claims_device_submitted", "device_id", "submitted_at"),
+    )
+
+
+class DeviceUserBinding(Base):
+    """Authoritative device-to-person binding derived from an approved registration claim."""
+    __tablename__ = "device_user_bindings"
+
+    binding_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_assets.asset_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    person_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    relationship_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="primary_user")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="active")
+    source_claim_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="registration_claim")
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    valid_from: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    confirmed_by_user_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    confirmed_by_admin: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    revoked_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    revoke_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "relationship_type IN ('primary_user', 'responsible', 'owner', 'shared_user', 'temporary_user')",
+            name="ck_device_user_bindings_relationship",
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'active', 'stale', 'revoked', 'transferred')",
+            name="ck_device_user_bindings_status",
+        ),
+        Index("ix_device_user_bindings_device_status", "device_id", "status"),
+        Index("ix_device_user_bindings_person_status", "person_id", "status"),
+        Index("ix_device_user_bindings_asset_status", "asset_id", "status"),
+        Index("ix_device_user_bindings_source_claim", "source_claim_id"),
+        Index("ix_device_user_bindings_relationship_status", "relationship_type", "status"),
+        Index(
+            "uq_device_user_bindings_active_primary_device",
+            "device_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'active' AND relationship_type = 'primary_user'"),
+        ),
+    )
+
+
+class DeviceRegistrationEvent(Base):
+    """Audit event for registration claims and active bindings."""
+    __tablename__ = "device_registration_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    claim_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    binding_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("devices.device_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    person_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    event_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_device_registration_events_device_event_at", "device_id", "event_at"),
+        Index("ix_device_registration_events_person_event_at", "person_id", "event_at"),
+        Index("ix_device_registration_events_claim", "claim_id"),
+        Index("ix_device_registration_events_binding", "binding_id"),
+        Index("ix_device_registration_events_type_event_at", "event_type", "event_at"),
+    )
+
+
 class DeviceConfig(Base):
     """
     Device configuration model.
@@ -2717,6 +2955,10 @@ class DeviceInventoryBinding(Base):
     __tablename__ = "device_inventory_bindings"
 
     device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    person_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    asset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    source_binding_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    registration_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     building: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     floor: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     room: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
@@ -2734,6 +2976,13 @@ class DeviceInventoryBinding(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_device_inventory_bindings_person", "person_id"),
+        Index("ix_device_inventory_bindings_asset", "asset_id"),
+        Index("ix_device_inventory_bindings_source_binding", "source_binding_id"),
+        Index("ix_device_inventory_bindings_registration_status", "registration_status"),
+    )
 
 
 class DeviceInventoryBindingHistory(Base):
