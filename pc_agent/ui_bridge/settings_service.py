@@ -16,7 +16,7 @@ import aiohttp
 import yaml
 from loguru import logger
 
-from pc_agent.config.config_loader import ConfigLoader, Settings, get_config, get_config_base
+from pc_agent.config.config_loader import CORE_ENABLED_MODULES, ConfigLoader, Settings, get_config, get_config_base
 from pc_agent.core.database import db_manager
 from pc_agent.core.identity import IdentityManager
 from pc_agent.core.runtime_paths import resolve_data_root
@@ -37,6 +37,8 @@ class AgentSettingsService:
     async def get_settings(self) -> Dict[str, Any]:
         cfg = get_config()
         data = cfg.model_dump()
+        data["core_enabled_modules"] = list(CORE_ENABLED_MODULES)
+        data["configured_enabled_modules"] = self._read_configured_enabled_modules()
         device_id = self._get_device_id()
         token = await self._get_active_token(device_id)
         data["auth"] = {
@@ -49,6 +51,18 @@ class AgentSettingsService:
             "data_root": str(self._data_root),
         }
         return data
+
+    def _read_configured_enabled_modules(self) -> list[str]:
+        config_path = self._get_config_path()
+        try:
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            logger.warning("[settings] failed to read configured enabled_modules from {}: {}", config_path, exc)
+            return list(get_config().enabled_modules)
+        configured = raw.get("enabled_modules")
+        if not isinstance(configured, list):
+            return list(get_config().enabled_modules)
+        return [str(item).strip() for item in configured if str(item).strip()]
 
     async def update_settings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(payload, dict):

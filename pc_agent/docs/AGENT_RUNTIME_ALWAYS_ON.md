@@ -25,6 +25,8 @@
 - `GET /ui/agent/status` возвращает `agent_version`, `is_release`, `release_channel`, `update_available`, `recommended_version`, `recommended_channel`, `recommended_reason`, `comparison`, `update_checked_at`, `pending_update_*`, `update_request_state`, `update_request_version`, `update_request_operation_id`, `update_request_requested_at`;
 - `POST /ui/agent/update` запускает локальный trigger recommended update: агент запрашивает server-side recommendation и, если есть кандидат, инициирует обычный server update flow для собственного `device_id`; GUI должен сразу перейти в `requesting/requested`, а затем коротким refresh burst дотянуть `pending_restart`, чтобы кнопка не выглядела зависшей.
 
+`GET /ui/settings` возвращает не только эффективный `enabled_modules`, но и `core_enabled_modules` / `configured_enabled_modules`. GUI обязан показывать core-модули отдельной read-only строкой: `system`, `screen`, `diag_logs`, `inventory`, `presence` являются встроенной базой агента, а пакеты из `modules_store` отображаются отдельно и не должны создавать впечатление, что `inventory.collect` выключен.
+
 Таким образом, GUI не выбирает build самостоятельно и не держит отдельную semver/release policy.
 
 ## Tray и окно

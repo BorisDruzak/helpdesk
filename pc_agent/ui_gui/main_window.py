@@ -558,7 +558,15 @@ class MainWindow(QMainWindow):
         modules_group = QGroupBox("Модули и безопасность")
         modules_form = QFormLayout(modules_group)
         self.enabled_modules_input = QLineEdit()
-        self.enabled_modules_input.setPlaceholderText("system, screen, ...")
+        self.enabled_modules_input.setPlaceholderText("system, screen, diag_logs, inventory, presence")
+        self.core_modules_label = QLabel("system, screen, diag_logs, inventory, presence")
+        self.core_modules_label.setWordWrap(True)
+        self.core_modules_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.core_modules_label.setStyleSheet(
+            f"font-family: Consolas, 'Courier New', monospace; font-size: 11px; padding: 8px; "
+            f"background: {theme.BG_INPUT}; border: 1px solid {theme.BORDER}; border-radius: 10px; "
+            f"color: {theme.TEXT_SECONDARY};"
+        )
         self.allow_remote_code_checkbox = QCheckBox("Разрешить удалённое выполнение кода")
         self.installed_modules_label = QLabel("—")
         self.installed_modules_label.setWordWrap(True)
@@ -569,10 +577,11 @@ class MainWindow(QMainWindow):
             f"color: {theme.TEXT_SECONDARY};"
         )
         modules_form.addRow("Включённые модули:", self.enabled_modules_input)
+        modules_form.addRow("Всегда включены:", self.core_modules_label)
         self.enabled_modules_hint = QLabel(
             "В списке — встроенные модули, которые агент загружает при старте. "
-            "«system» и «screen» всегда добавляются автоматически (их нельзя отключить через YAML). "
-            "Остальные имена (например diag_logs) подключаются только если они есть в образе агента; "
+            "«system», «screen», «diag_logs», «inventory» и «presence» всегда добавляются автоматически (их нельзя отключить через YAML). "
+            "Остальные имена подключаются только если они есть в образе агента; "
             "пакеты из modules_store обрабатываются отдельно (см. установленные модули ниже)."
         )
         self.enabled_modules_hint.setWordWrap(True)
@@ -1568,6 +1577,7 @@ class MainWindow(QMainWindow):
         logging_cfg = settings.get("logging", {}) or {}
         ui_cfg = settings.get("ui", {}) or {}
         enabled_modules = settings.get("enabled_modules", [])
+        core_enabled_modules = settings.get("core_enabled_modules", [])
         installed_modules = settings.get("installed_modules", [])
         auth = settings.get("auth", {})
         meta = settings.get("meta", {})
@@ -1596,6 +1606,7 @@ class MainWindow(QMainWindow):
         self.logging_retention_input.setText(str(logging_cfg.get("retention", "14 days")))
         self.logging_compression_input.setText(str(logging_cfg.get("compression", "zip")))
         self.data_dir_input.setText(str(paths.get("data_dir", "")))
+        self.core_modules_label.setText(", ".join(core_enabled_modules if isinstance(core_enabled_modules, list) else []))
         self.enabled_modules_input.setText(", ".join(enabled_modules if isinstance(enabled_modules, list) else []))
         self.installed_modules_label.setText(self._repair_text(self._format_installed_modules_text(installed_modules)))
         self.allow_remote_code_checkbox.setChecked(bool(security.get("allow_remote_code", False)))
