@@ -31,6 +31,7 @@ import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { StatTile } from "../../components/ui/stat-tile";
 import {
+  archiveAdminDevice,
   approveAdminConnectionRequest,
   cleanupAdminEnvUuidDuplicates,
   fetchAdminConnectionPolicy,
@@ -72,6 +73,8 @@ const POLICY_LABELS: Record<AdminConnectionPolicy, string> = {
   manual: "Ручное одобрение",
   reject_all: "Отклонять все",
 };
+
+const ARCHIVE_AGENT_REASON = "Архивация тестового агента из inventory";
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -143,6 +146,7 @@ export function AdminInventoryPage() {
   );
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [cleanupFeedback, setCleanupFeedback] = useState<string | null>(null);
+  const [archiveFeedback, setArchiveFeedback] = useState<string | null>(null);
   const [fleetStaleDays, setFleetStaleDays] = useState("7");
   const [bulkMode, setBulkMode] = useState<"stale" | "missing" | "department" | "building">("stale");
   const [bulkFilter, setBulkFilter] = useState("");
@@ -228,6 +232,25 @@ export function AdminInventoryPage() {
     },
     onError: (error) => {
       setCleanupFeedback(error instanceof Error ? error.message : "Не удалось выполнить чистку дублей.");
+    },
+  });
+
+  const archiveDeviceMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDevice?.device_id) {
+        throw new Error("Не выбран агент.");
+      }
+      return archiveAdminDevice(selectedDevice.device_id, ARCHIVE_AGENT_REASON);
+    },
+    onSuccess: async () => {
+      setArchiveFeedback("Агент архивирован и скрыт из активного inventory.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-devices-page"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-device-tokens", selectedDevice?.device_id] }),
+      ]);
+    },
+    onError: (error) => {
+      setArchiveFeedback(error instanceof Error ? error.message : "Не удалось архивировать агента.");
     },
   });
 
@@ -573,9 +596,22 @@ export function AdminInventoryPage() {
         </Card>
 
         <AgentDetailsPanel
+          archiveBusy={archiveDeviceMutation.isPending}
+          archiveFeedback={archiveFeedback}
           cleanupBusy={cleanupMutation.isPending}
           cleanupFeedback={cleanupFeedback}
           device={selectedDevice}
+          onArchive={() => {
+            if (!selectedDevice) {
+              return;
+            }
+            const confirmed = window.confirm(
+              `Архивировать агента ${selectedDevice.hostname || compactId(selectedDevice.device_id)}? Токены будут отозваны, активные операции отменены.`
+            );
+            if (confirmed) {
+              archiveDeviceMutation.mutate();
+            }
+          }}
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
           onOpenAgentUpdates={() => {
@@ -1175,9 +1211,12 @@ function RolloutPanel({
 }
 
 function AgentDetailsPanel({
+  archiveBusy,
+  archiveFeedback,
   cleanupBusy,
   cleanupFeedback,
   device,
+  onArchive,
   onCleanupApply,
   onCleanupPreview,
   onOpenAgentUpdates,
@@ -1188,9 +1227,12 @@ function AgentDetailsPanel({
   rolloutAssignments,
   tokenSummary,
 }: {
+  archiveBusy: boolean;
+  archiveFeedback: string | null;
   cleanupBusy: boolean;
   cleanupFeedback: string | null;
   device: DeviceItem | null;
+  onArchive: () => void;
   onCleanupApply: () => void;
   onCleanupPreview: () => void;
   onOpenAgentUpdates: () => void;
@@ -1302,6 +1344,7 @@ function AgentDetailsPanel({
             )}
 
             {cleanupFeedback ? <p className="text-sm text-slate-600">{cleanupFeedback}</p> : null}
+            {archiveFeedback ? <p className="text-sm text-slate-600">{archiveFeedback}</p> : null}
 
             <div className="space-y-2">
               <Button
@@ -1338,6 +1381,16 @@ function AgentDetailsPanel({
                 variant="outline"
               >
                 Запустить плейбук
+              </Button>
+              <Button
+                className="w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                disabled={archiveBusy}
+                leadingIcon={<Trash2 className="h-4 w-4" />}
+                onClick={onArchive}
+                size="sm"
+                variant="outline"
+              >
+                Архивировать агента
               </Button>
             </div>
           </>

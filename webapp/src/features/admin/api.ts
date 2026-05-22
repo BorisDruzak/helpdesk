@@ -80,6 +80,14 @@ export type AdminDeviceCleanupPayload = {
   kept_device_ids: string[];
 };
 
+export type AdminDeviceArchivePayload = {
+  device_id: string;
+  was_online: boolean;
+  is_deleted: boolean;
+  deleted_by: string | null;
+  delete_reason: string | null;
+};
+
 export type AdminDeviceTokensPayload = {
   device_id: string;
   summary: {
@@ -534,6 +542,18 @@ export async function cleanupAdminEnvUuidDuplicates(payload: {
     })
   });
   return readSuccessResponse(response, "Не удалось выполнить безопасную чистку дублей");
+}
+
+export async function archiveAdminDevice(deviceId: string, reason: string): Promise<AdminDeviceArchivePayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ reason }),
+  });
+  return readOkResponse(response, "Не удалось архивировать агента");
 }
 
 export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDeviceTokensPayload> {

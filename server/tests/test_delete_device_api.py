@@ -165,6 +165,32 @@ async def test_delete_device_requires_admin_role(test_client):
 
 
 @pytest.mark.asyncio
+async def test_web_admin_delete_device_alias_archives_device(test_client):
+    device_id = str(uuid.uuid4())
+    await _seed_device_with_related_rows(device_id)
+
+    response = await test_client.delete(
+        f"/api/web/admin/devices/{device_id}",
+        headers=_admin_headers(),
+        json={"reason": "inventory archive action"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["device_id"] == device_id
+    assert payload["is_deleted"] is True
+    assert payload["delete_reason"] == "inventory archive action"
+
+    async with get_session() as session:
+        device = await session.get(Device, device_id)
+
+    assert device is not None
+    assert device.deleted_at is not None
+    assert device.delete_reason == "inventory archive action"
+
+
+@pytest.mark.asyncio
 async def test_delete_device_archives_device_and_preserves_history(test_client):
     device_id = str(uuid.uuid4())
     await _seed_device_with_related_rows(device_id)

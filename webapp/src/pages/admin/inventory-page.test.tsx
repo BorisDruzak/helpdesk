@@ -236,6 +236,17 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
       });
     }
 
+    if (url.includes("/api/web/admin/devices/") && method === "DELETE") {
+      return jsonResponse({
+        status: "ok",
+        device_id: "11111111-1111-4111-8111-111111111111",
+        is_deleted: true,
+        was_online: true,
+        deleted_by: "admin-test",
+        delete_reason: "Архивация тестового агента из inventory",
+      });
+    }
+
     return jsonResponse({ status: "error", error: `Unhandled test request ${method} ${url}` }, 500);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -289,6 +300,28 @@ describe("AdminInventoryPage", () => {
 
     expect((await screen.findAllByText("web-server-01")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1").length).toBeGreaterThan(0);
+  });
+
+  it("archives the selected agent from the inventory details panel", async () => {
+    const fetchMock = installFetchMock();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderInventory();
+
+    expect((await screen.findAllByText("web-server-01")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Архивировать агента/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/devices/11111111-1111-4111-8111-111111111111",
+        expect.objectContaining({
+          method: "DELETE",
+          body: JSON.stringify({ reason: "Архивация тестового агента из inventory" }),
+        })
+      );
+    });
+    expect(await screen.findByText("Агент архивирован и скрыт из активного inventory.")).toBeInTheDocument();
   });
 
   it("renders fleet inventory dashboard and dry-run import preview", async () => {

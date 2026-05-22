@@ -804,6 +804,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_get_operation),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
+        web.delete('/api/web/admin/devices/{device_id}', handle_delete_device),
         web.get('/api/web/admin/inventory/dashboard', handle_web_admin_inventory_dashboard),
         web.post('/api/web/admin/inventory/bindings/import', handle_web_admin_inventory_bindings_import),
         web.get('/api/web/admin/inventory/bindings/export.csv', handle_web_admin_inventory_bindings_export_csv),
