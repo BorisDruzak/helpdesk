@@ -60,6 +60,7 @@
 - `3.1.54` supersedes `3.1.53` for Remote Assist elevated/admin stability: the UAC helper no longer uses `socket.makefile().readline()` with a timeout, so idle elevated sessions do not crash with `OSError: cannot read from timed out object` and normal control can continue after pauses. Publish it as a new build/upload/rollout target; do not overwrite `3.1.53` artifacts.
 - `3.1.55` supersedes `3.1.54` as the Remote Assist runtime-module bootstrap: the GUI creates sessions through `pc_agent.remote_assist.runtime_host`, which loads the managed `remote_assist_runtime` module from `modules_store` when installed and falls back to the bundled implementation otherwise. Publish it as a new build/upload/rollout target; do not overwrite `3.1.54` artifacts.
 - `3.1.56` supersedes `3.1.55` for Remote Assist elevated/admin helper diagnostics and stale-helper proof: helper launch/client logs include agent version, PID, executable and port, and the helper treats `OSError: cannot read from timed out object` as an idle timeout instead of crashing with a traceback. Publish it as a new build/upload/rollout target; do not overwrite `3.1.55` artifacts.
+- `3.1.57` supersedes `3.1.56` for local settings module visibility: `GET /ui/settings` exposes effective/core/configured module lists and the GUI shows always-on core modules (`system`, `screen`, `diag_logs`, `inventory`, `presence`) separately from `modules_store` packages. Publish Windows and Linux builds as new upload/rollout targets; do not overwrite `3.1.56` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 
