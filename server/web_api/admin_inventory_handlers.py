@@ -64,6 +64,10 @@ def _inventory_history_item(row) -> AdminDeviceInventoryHistoryItem:
 def _inventory_binding_item(device_id: str, row) -> AdminDeviceInventoryBinding:
     return AdminDeviceInventoryBinding(
         device_id=device_id,
+        person_id=getattr(row, "person_id", None) if row is not None else None,
+        asset_id=getattr(row, "asset_id", None) if row is not None else None,
+        source_binding_id=getattr(row, "source_binding_id", None) if row is not None else None,
+        registration_status=getattr(row, "registration_status", None) if row is not None else None,
         building=getattr(row, "building", None) if row is not None else None,
         floor=getattr(row, "floor", None) if row is not None else None,
         room=getattr(row, "room", None) if row is not None else None,

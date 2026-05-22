@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
+import uuid
 
 from app.db.models import Device
 from registry.service import RegistryIngestionService
@@ -19,11 +20,12 @@ def _user_headers() -> dict[str, str]:
 @pytest.mark.asyncio
 async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
 
     async with session_maker() as session:
         session.add(
             Device(
-                device_id="device-registry-api",
+                device_id=device_id,
                 protocol_version="ws_ticket_v3",
                 agent_version="1.2.0",
                 hostname="DOC-214-02",
@@ -36,14 +38,14 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
         )
         service = RegistryIngestionService(session)
         await service.ingest_agent_handshake(
-            device_id="device-registry-api",
+            device_id=device_id,
             hostname="DOC-214-02",
             os_name="Windows 11",
             agent_version="1.2.0",
             metadata={},
         )
         await service.ingest_requester_profile(
-            device_id="device-registry-api",
+            device_id=device_id,
             requester_id="agent-profile:petrova",
             display_name="Петрова Анна",
             profile={
@@ -66,8 +68,9 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
     assert data["summary"]["people_count"] == 1
     assert data["summary"]["locations_count"] == 1
     assert data["summary"]["data_quality_issue_count"] >= 1
-    assert data["assets"][0]["device_id"] == "device-registry-api"
-    assert data["assets"][0]["assigned_person_display_name"] == "Петрова Анна"
+    assert data["assets"][0]["device_id"] == device_id
+    assert data["assets"][0]["assigned_person_display_name"] is None
+    assert data["assets"][0]["registration_status"] == "pending"
     assert data["locations"][0]["building"] == "Здание 2"
     assert data["people"][0]["department_name"] == "Документооборот"
 
@@ -75,11 +78,12 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
 @pytest.mark.asyncio
 async def test_registry_profile_endpoint_syncs_agent_profile(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
 
     async with session_maker() as session:
         session.add(
             Device(
-                device_id="device-profile-api",
+                device_id=device_id,
                 protocol_version="ws_ticket_v3",
                 agent_version="1.2.0",
                 hostname="PROF-101",
@@ -96,7 +100,7 @@ async def test_registry_profile_endpoint_syncs_agent_profile(test_client, test_e
         "/api/registry/profile",
         headers=_admin_headers(),
         json={
-            "device_id": "device-profile-api",
+            "device_id": device_id,
             "requester_id": "agent-profile:sidorov",
             "display_name": "Сидоров Сергей",
             "profile": {
@@ -114,17 +118,18 @@ async def test_registry_profile_endpoint_syncs_agent_profile(test_client, test_e
     assert payload["status"] == "success"
     assert payload["data"]["person"]["display_name"] == "Сидоров Сергей"
     assert payload["data"]["location"]["building"] == "Здание 3"
-    assert payload["data"]["asset"]["device_id"] == "device-profile-api"
+    assert payload["data"]["asset"]["device_id"] == device_id
 
 
 @pytest.mark.asyncio
 async def test_registry_options_available_to_agent_request_forms(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
 
     async with session_maker() as session:
         session.add(
             Device(
-                device_id="device-registry-options",
+                device_id=device_id,
                 protocol_version="ws_ticket_v3",
                 agent_version="1.2.0",
                 hostname="OPT-214",
@@ -137,14 +142,14 @@ async def test_registry_options_available_to_agent_request_forms(test_client, te
         )
         service = RegistryIngestionService(session)
         await service.ingest_agent_handshake(
-            device_id="device-registry-options",
+            device_id=device_id,
             hostname="OPT-214",
             os_name="Windows 11",
             agent_version="1.2.0",
             metadata={},
         )
         await service.ingest_requester_profile(
-            device_id="device-registry-options",
+            device_id=device_id,
             requester_id="agent-profile:options",
             display_name="Иван Иванов",
             profile={
@@ -163,7 +168,7 @@ async def test_registry_options_available_to_agent_request_forms(test_client, te
 
     assert payload["status"] == "success"
     data = payload["data"]
-    assert {"value": "device-registry-options", "label": "OPT-214"} in data["devices"]
+    assert {"value": device_id, "label": "OPT-214"} in data["devices"]
     assert any(item["label"] == "Иван Иванов" for item in data["users"])
     assert any(item["label"] == "ИТ" for item in data["departments"])
     assert any(item["label"] == "Здание 4 / 214" for item in data["locations"])

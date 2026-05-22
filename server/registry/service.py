@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import DevicePresenceSnapshot
 from app.repos.registry_repo import RegistryRepo
 
 
@@ -103,12 +105,24 @@ class RegistrySnapshotService:
         bindings = []
         for asset in assets:
             if asset.device_id:
-                bindings.extend(await registration_service.repo.list_active_bindings_for_device(asset.device_id))
+                bindings.extend(await registration_service.repo.list_bindings_for_device(asset.device_id))
 
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
         departments_by_id = {department.department_id: department for department in departments}
         active_by_device = {binding.device_id: binding for binding in bindings if binding.status == "active"}
+        latest_presence_by_device: dict[str, DevicePresenceSnapshot] = {}
+        device_ids = [asset.device_id for asset in assets if asset.device_id]
+        if device_ids:
+            presence_rows = (
+                await self.session.execute(
+                    select(DevicePresenceSnapshot)
+                    .where(DevicePresenceSnapshot.device_id.in_(device_ids))
+                    .order_by(DevicePresenceSnapshot.device_id, desc(DevicePresenceSnapshot.collected_at))
+                )
+            ).scalars().all()
+            for row in presence_rows:
+                latest_presence_by_device.setdefault(row.device_id, row)
         pending_by_device: dict[str, list[Any]] = {}
         for claim in claims:
             if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review", "conflict"}:
@@ -153,7 +167,7 @@ class RegistrySnapshotService:
             if conflict:
                 data_quality.append({
                     "kind": "registration_conflict",
-                    "severity": "error",
+                    "severity": "danger",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
                     "title": "Registration conflict",
@@ -170,6 +184,24 @@ class RegistrySnapshotService:
                     "title": "Registration binding is stale",
                     "description": binding.device_id,
                     "details": binding.device_id,
+                })
+        for asset in assets:
+            active_binding = active_by_device.get(asset.device_id or "")
+            presence = latest_presence_by_device.get(asset.device_id or "")
+            person = people_by_id.get(active_binding.person_id if active_binding else "")
+            current_user = (presence.current_user if presence else None) or ""
+            known_login = ""
+            if person:
+                known_login = (person.email or person.profile_key or person.display_name or "").split("@", 1)[0].lower()
+            if active_binding and current_user and known_login and known_login not in current_user.lower():
+                data_quality.append({
+                    "kind": "presence_user_mismatch",
+                    "severity": "warning",
+                    "object_type": "asset",
+                    "object_id": asset.asset_id,
+                    "title": "Presence user differs from active binding",
+                    "description": asset.name,
+                    "details": asset.name,
                 })
         for location in locations:
             if location.status == "pending":
@@ -308,7 +340,9 @@ class RegistrySnapshotService:
                     ).isoformat()
                     if pending_by_device.get(asset.device_id or "")
                     else None,
-                    "current_os_user": None,
+                    "current_os_user": latest_presence_by_device.get(asset.device_id or "").current_user
+                    if asset.device_id in latest_presence_by_device
+                    else None,
                     "last_seen_at": asset.last_seen_at.isoformat() if asset.last_seen_at else None,
                     "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
                     "ticket_count": ticket_counts.get(asset.device_id or "", 0),

@@ -221,6 +221,29 @@ async def create_ticket_with_side_effects(
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
+    asset_id = None
+    registry_context: dict[str, Any] | None = None
+    if requester_profile:
+        try:
+            from registry.service import RegistryIngestionService
+
+            registry_result = await RegistryIngestionService(session).ingest_requester_profile(
+                device_id=device_id,
+                requester_id=requester_id,
+                display_name=user_display_name,
+                profile=requester_profile or {},
+            )
+            asset_id = registry_result.asset_id
+            registry_context = {
+                "person_id": registry_result.person_id,
+                "asset_id": registry_result.asset_id,
+                "location_id": registry_result.location_id,
+                "department_id": registry_result.department_id,
+                "registration": registry_result.registration,
+                "source": "agent_profile",
+            }
+        except Exception as exc:
+            logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
     requester_person_id = None
     requester_binding_id = None
     requester_registration_status = "unregistered"
@@ -230,13 +253,34 @@ async def create_ticket_with_side_effects(
 
         registration_service = RegistrationService(session)
         registration_status = await registration_service.get_device_registration_status(device_id)
+        submitted_registration = registry_context.get("registration") if isinstance(registry_context, dict) else None
+        if isinstance(submitted_registration, dict) and submitted_registration.get("status") == "conflict":
+            registration_status = {
+                **(registration_status if isinstance(registration_status, dict) else {}),
+                "status": "conflict",
+                "active_binding": None,
+                "active_person": None,
+                "pending_claim": {
+                    "claim_id": submitted_registration.get("claim_id"),
+                    "status": "conflict",
+                    "conflict_reason": submitted_registration.get("conflict_reason"),
+                },
+                "requires_admin_action": True,
+                "conflict_reason": submitted_registration.get("conflict_reason"),
+            }
         active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
         if isinstance(active_binding, dict) and active_binding.get("binding_id"):
             requester_person_id = active_binding.get("person_id")
             requester_binding_id = active_binding.get("binding_id")
+            asset_id = active_binding.get("asset_id") or asset_id
             requester_registration_status = "admin_confirmed"
         else:
-            requester_registration_status = str((registration_status or {}).get("status") or "unregistered")
+            pending_claim = registration_status.get("pending_claim") if isinstance(registration_status, dict) else None
+            requester_registration_status = str(
+                (pending_claim or {}).get("status")
+                or (registration_status or {}).get("status")
+                or "unregistered"
+            )
         requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
@@ -262,6 +306,7 @@ async def create_ticket_with_side_effects(
         reporting_category=reporting_category,
         service_owner_actor_id=service_owner_actor_id,
         support_group_code=support_group_code,
+        asset_id=asset_id,
         requester_person_id=requester_person_id,
         requester_binding_id=requester_binding_id,
         requester_registration_status=requester_registration_status,
@@ -297,25 +342,8 @@ async def create_ticket_with_side_effects(
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
     custom_fields["requester_registration"] = requester_registration_context
-
-    try:
-        from registry.service import RegistryIngestionService
-
-        registry_result = await RegistryIngestionService(session).ingest_requester_profile(
-            device_id=device_id,
-            requester_id=requester_id,
-            display_name=user_display_name,
-            profile=requester_profile or {},
-        )
-        custom_fields["registry_context"] = {
-            "person_id": registry_result.person_id,
-            "asset_id": registry_result.asset_id,
-            "location_id": registry_result.location_id,
-            "department_id": registry_result.department_id,
-            "source": "agent_profile",
-        }
-    except Exception as exc:
-        logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
+    if registry_context:
+        custom_fields["registry_context"] = registry_context
 
     public_access_code: Optional[str] = None
     if include_public_access:

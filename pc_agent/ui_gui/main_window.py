@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime, timezone
 from typing import Set, Optional, Dict, Any
 import aiohttp
 from PySide6.QtWidgets import (
@@ -26,6 +27,7 @@ from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidge
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
+from pc_agent.core.user_profile import UserProfileManager
 from pc_agent.remote_assist.runtime_host import create_remote_assist_thread
 from pc_agent.version import AGENT_VERSION
 
@@ -444,6 +446,51 @@ class MainWindow(QMainWindow):
         self.config_path_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
         device_layout.addRow(self.config_path_hint)
         identity_section_layout.addWidget(device_group)
+
+        registration_group = QGroupBox("Регистрация пользователя")
+        registration_outer = QVBoxLayout(registration_group)
+        registration_form = QFormLayout()
+        self.registration_status_label = QLabel("Не загружено")
+        self.registration_full_name_input = QLineEdit()
+        self.registration_display_name_input = QLineEdit()
+        self.registration_login_input = QLineEdit()
+        self.registration_email_input = QLineEdit()
+        self.registration_phone_input = QLineEdit()
+        self.registration_department_input = QLineEdit()
+        self.registration_building_input = QLineEdit()
+        self.registration_floor_input = QLineEdit()
+        self.registration_room_input = QLineEdit()
+        self.registration_relationship_combo = QComboBox()
+        self.registration_relationship_combo.addItem("Мой основной ПК", "primary_user")
+        self.registration_relationship_combo.addItem("Общий ПК", "shared_user")
+        self.registration_relationship_combo.addItem("Временное рабочее место", "temporary_user")
+        self.registration_shared_checkbox = QCheckBox("Это общий ПК")
+        registration_form.addRow("Статус:", self.registration_status_label)
+        registration_form.addRow("ФИО:", self.registration_full_name_input)
+        registration_form.addRow("Отображаемое имя:", self.registration_display_name_input)
+        registration_form.addRow("Логин:", self.registration_login_input)
+        registration_form.addRow("Email:", self.registration_email_input)
+        registration_form.addRow("Телефон:", self.registration_phone_input)
+        registration_form.addRow("Подразделение:", self.registration_department_input)
+        registration_form.addRow("Здание:", self.registration_building_input)
+        registration_form.addRow("Этаж:", self.registration_floor_input)
+        registration_form.addRow("Кабинет:", self.registration_room_input)
+        registration_form.addRow("Тип ПК:", self.registration_relationship_combo)
+        registration_form.addRow("", self.registration_shared_checkbox)
+        registration_outer.addLayout(registration_form)
+        registration_actions = QHBoxLayout()
+        self.registration_save_btn = QPushButton("Сохранить локально")
+        self.registration_save_btn.clicked.connect(self._on_save_registration_profile_clicked)
+        self.registration_submit_btn = QPushButton("Отправить на сервер")
+        self.registration_submit_btn.clicked.connect(self._on_submit_registration_profile_clicked)
+        self.registration_confirm_btn = QPushButton("Подтвердить данные")
+        self.registration_confirm_btn.clicked.connect(self._on_confirm_registration_claim_clicked)
+        registration_actions.addWidget(self.registration_save_btn)
+        registration_actions.addWidget(self.registration_submit_btn)
+        registration_actions.addWidget(self.registration_confirm_btn)
+        registration_actions.addStretch()
+        registration_outer.addLayout(registration_actions)
+        identity_section_layout.addWidget(registration_group)
 
         server_group = QGroupBox("Адреса сервера")
         server_form = QFormLayout(server_group)
@@ -1616,6 +1663,7 @@ class MainWindow(QMainWindow):
         token_masked = auth.get("token_masked") or self._repair_text("нет")
         self.token_hint_label.setText(self._repair_text(f"Текущий токен: {token_masked}"))
         self.config_path_label.setText(str(meta.get("config_path", "—")))
+        self._load_registration_profile_to_form()
         self._runtime_logs_dir = None
         self._repair_widget_texts(self.settings_page)
         self._apply_settings_page_theme()
@@ -1623,6 +1671,89 @@ class MainWindow(QMainWindow):
         self._settings_snapshot = self._collect_settings_payload(include_auth=False).get("settings", {})
         self._settings_form_loaded = True
         self._on_settings_field_changed()
+
+    def _load_registration_profile_to_form(self) -> None:
+        try:
+            profile = UserProfileManager().load()
+        except Exception as exc:
+            logger.warning(f"[ui] failed to load registration profile: {exc}")
+            profile = {}
+        self.registration_status_label.setText(str(profile.get("registration_status") or "unregistered"))
+        self.registration_full_name_input.setText(str(profile.get("full_name") or ""))
+        self.registration_display_name_input.setText(str(profile.get("display_name") or ""))
+        self.registration_login_input.setText(str(profile.get("login") or ""))
+        self.registration_email_input.setText(str(profile.get("email") or ""))
+        self.registration_phone_input.setText(str(profile.get("phone") or ""))
+        self.registration_department_input.setText(str(profile.get("department") or ""))
+        self.registration_building_input.setText(str(profile.get("building") or ""))
+        self.registration_floor_input.setText(str(profile.get("floor") or ""))
+        self.registration_room_input.setText(str(profile.get("room") or ""))
+        relationship = str(profile.get("relationship_type") or "primary_user")
+        idx = self.registration_relationship_combo.findData(relationship)
+        self.registration_relationship_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.registration_shared_checkbox.setChecked(bool(profile.get("is_shared_device")))
+
+    def _collect_registration_profile_from_form(self) -> dict:
+        try:
+            current_profile = UserProfileManager().load()
+        except Exception:
+            current_profile = {}
+        profile = {
+            "full_name": self.registration_full_name_input.text(),
+            "display_name": self.registration_display_name_input.text(),
+            "login": self.registration_login_input.text(),
+            "email": self.registration_email_input.text(),
+            "phone": self.registration_phone_input.text(),
+            "department": self.registration_department_input.text(),
+            "building": self.registration_building_input.text(),
+            "floor": self.registration_floor_input.text(),
+            "room": self.registration_room_input.text(),
+            "relationship_type": self.registration_relationship_combo.currentData() or "primary_user",
+            "is_shared_device": self.registration_shared_checkbox.isChecked(),
+        }
+        for key in ("last_claim_id", "last_submitted_at", "registration_status"):
+            if current_profile.get(key):
+                profile[key] = current_profile[key]
+        return profile
+
+    def _on_save_registration_profile_clicked(self) -> None:
+        profile = UserProfileManager().save(self._collect_registration_profile_from_form())
+        self.registration_status_label.setText(str(profile.get("registration_status") or "local"))
+        self._set_settings_status("Профиль регистрации сохранён локально.", error=False)
+
+    def _on_submit_registration_profile_clicked(self) -> None:
+        self._spawn_gui_task(self._async_submit_registration_profile(), name="registration.submit_profile")
+
+    async def _async_submit_registration_profile(self) -> None:
+        profile = UserProfileManager().save(self._collect_registration_profile_from_form())
+        result = await self.chat_panel.ticket_client.submit_registration_profile(profile, user_confirmed=False)
+        registration = result.get("registration") if isinstance(result, dict) else {}
+        if not isinstance(registration, dict):
+            raise RuntimeError("Некорректный ответ регистрации")
+        profile["last_claim_id"] = registration.get("claim_id") or profile.get("last_claim_id")
+        profile["registration_status"] = registration.get("status") or profile.get("registration_status")
+        profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
+        saved = UserProfileManager().save(profile)
+        self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
+        self._set_settings_status("Профиль регистрации отправлен.", error=False)
+
+    def _on_confirm_registration_claim_clicked(self) -> None:
+        self._spawn_gui_task(self._async_confirm_registration_claim(), name="registration.confirm_claim")
+
+    async def _async_confirm_registration_claim(self) -> None:
+        manager = UserProfileManager()
+        profile = manager.load()
+        claim_id = str(profile.get("last_claim_id") or "").strip()
+        if not claim_id:
+            self._set_settings_status("Нет заявки регистрации для подтверждения.", error=True)
+            return
+        result = await self.chat_panel.ticket_client.confirm_registration_claim(claim_id)
+        registration = result.get("registration") if isinstance(result, dict) else {}
+        if isinstance(registration, dict):
+            profile["registration_status"] = registration.get("status") or profile.get("registration_status")
+            saved = manager.save(profile)
+            self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
+        self._set_settings_status("Данные регистрации подтверждены.", error=False)
 
     async def _async_load_settings(self) -> None:
         self._set_settings_buttons_enabled(False)

@@ -54,6 +54,7 @@ TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_AUDITOR_TOKEN = "test-ui-auditor-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
+TEST_AGENT_PREFIX = "test-agent:"
 
 _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
@@ -881,6 +882,13 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
                 "created_at": "2026-01-01T00:00:00+00:00",
                 "type": "ui",
             }
+        if token.startswith(TEST_AGENT_PREFIX):
+            return {
+                "user_login": token.split(":", 1)[1],
+                "actor_role": "agent",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "agent",
+            }
         return None
 
     async def fake_extract_auth_context(request):
@@ -916,6 +924,13 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
                 actor_id=token.split(":", 1)[1],
                 actor_role="user",
                 auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token and token.startswith(TEST_AGENT_PREFIX):
+            return AuthContext(
+                actor_id=token.split(":", 1)[1],
+                actor_role="agent",
+                auth_type=AuthType.AGENT_TOKEN,
                 token=token,
             )
         return AuthContext(

@@ -12,6 +12,7 @@ import {
   applyAdminDeviceBindingSuggestion,
   collectAdminDeviceInventory,
   collectAdminDevicePresence,
+  fetchAdminDeviceRegistrationTimeline,
   fetchAdminDeviceInventory,
   ignoreAdminDeviceBindingSuggestion,
   saveAdminDeviceInventoryBinding,
@@ -158,6 +159,12 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
     retry: false,
     refetchInterval: 30_000,
   });
+  const registrationTimelineQuery = useQuery({
+    queryKey: ["admin-device-registration-timeline", deviceId],
+    queryFn: () => fetchAdminDeviceRegistrationTimeline(deviceId!),
+    enabled: Boolean(deviceId),
+    retry: false,
+  });
 
   const collectMutation = useMutation({
     mutationFn: () => collectAdminDeviceInventory(deviceId!),
@@ -223,6 +230,7 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
   const suggestions = data?.binding_suggestions ?? [];
   const pendingSuggestions = suggestions.filter((item) => item.status === "pending");
   const presence = data?.presence ?? null;
+  const registrationTimeline = registrationTimelineQuery.data?.items ?? [];
 
   useEffect(() => {
     setBindingForm({
@@ -487,7 +495,29 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
             ) : null}
 
             {tab === "registration" ? (
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-4 xl:grid-cols-3">
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-950">Регистрация пользователя</h4>
+                  <p className="mt-1 text-sm text-slate-500">Текущий подтвержденный контекст берется из active device_user_binding.</p>
+                  <div className="mt-4 grid gap-2 text-sm">
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">Статус</p>
+                      <p className="mt-1 font-semibold text-slate-950">{valueText(binding?.registration_status, "Не зарегистрирован")}</p>
+                    </div>
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">Пользователь</p>
+                      <p className="mt-1 font-semibold text-slate-950">{valueText(binding?.responsible_user, "Нет active binding")}</p>
+                    </div>
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">Логин</p>
+                      <p className="mt-1 font-semibold text-slate-950">{valueText(binding?.responsible_user_login)}</p>
+                    </div>
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">История</p>
+                      <p className="mt-1 font-semibold text-slate-950">{registrationTimeline.length} событий</p>
+                    </div>
+                  </div>
+                </div>
                 <div className="rounded-lg border border-border bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -567,6 +597,22 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                           </div>
                         );
                       })
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-white p-4 xl:col-span-3">
+                  <h4 className="text-sm font-semibold text-slate-950">Timeline регистрации</h4>
+                  <div className="mt-4 space-y-2">
+                    {registrationTimeline.length ? registrationTimeline.slice(0, 8).map((item) => (
+                      <div className="rounded-md bg-surface-subtle px-3 py-2 text-sm" key={item.event_id}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900">{item.event_type}</span>
+                          <span className="text-xs text-slate-500">{formatDateTime(item.event_at)}</span>
+                        </div>
+                        <p className="mt-1 text-slate-500">{[item.actor_role, item.actor_id].filter(Boolean).join(" · ") || "system"}</p>
+                      </div>
+                    )) : (
+                      <p className="text-sm text-slate-500">События регистрации пока не записаны.</p>
                     )}
                   </div>
                 </div>

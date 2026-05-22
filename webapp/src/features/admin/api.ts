@@ -138,6 +138,10 @@ export type AdminDeviceInventoryPayload = {
 
 export type AdminDeviceInventoryBinding = {
   device_id: string;
+  person_id?: string | null;
+  asset_id?: string | null;
+  source_binding_id?: string | null;
+  registration_status?: string | null;
   building: string | null;
   floor: string | null;
   room: string | null;
@@ -523,12 +527,21 @@ export async function fetchAdminRegistrationClaims(status?: string): Promise<{ i
   return readSuccessResponse(response, "Не удалось загрузить заявки регистрации");
 }
 
-export async function approveAdminRegistrationClaim(claimId: string, replaceExisting = false): Promise<void> {
+export async function approveAdminRegistrationClaim(
+  claimId: string,
+  replaceExisting = false,
+  adminOverrideUserConfirmation = false,
+  reason?: string
+): Promise<void> {
   const response = await fetch(`/api/web/admin/registry/registrations/${encodeURIComponent(claimId)}/approve`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ replace_existing: replaceExisting })
+    body: JSON.stringify({
+      replace_existing: replaceExisting,
+      admin_override_user_confirmation: adminOverrideUserConfirmation,
+      reason,
+    })
   });
   await readSuccessResponse(response, "Не удалось подтвердить регистрацию");
 }

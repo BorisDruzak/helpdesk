@@ -52,6 +52,66 @@ except ImportError:
     DB_AVAILABLE = False
 
 
+def _default_registration_payload() -> dict[str, Any]:
+    return {
+        "status": "unknown",
+        "requires_user_action": False,
+        "requires_admin_action": False,
+    }
+
+
+async def build_registration_payload_for_handshake(
+    device_id: str,
+    *,
+    session_factory: Any | None = None,
+    service_cls: Any | None = None,
+    db_available: bool | None = None,
+    db_persistence_enabled: bool | None = None,
+) -> dict[str, Any]:
+    if not (DB_AVAILABLE if db_available is None else db_available):
+        return _default_registration_payload()
+    if not (ENABLE_DB_PERSISTENCE if db_persistence_enabled is None else db_persistence_enabled):
+        return _default_registration_payload()
+
+    try:
+        session_factory = session_factory or get_session
+        async with session_factory() as session:
+            if service_cls is None:
+                from registry.registration_service import RegistrationService
+
+                service_cls = RegistrationService
+            status_payload = await service_cls(session).get_device_registration_status(device_id)
+            active_person = status_payload.get("active_person") if isinstance(status_payload, dict) else None
+            active_binding = status_payload.get("active_binding") if isinstance(status_payload, dict) else None
+            pending_claim = status_payload.get("pending_claim") if isinstance(status_payload, dict) else None
+            return {
+                "status": status_payload.get("status", "unknown"),
+                "person": {
+                    "person_id": active_person.get("person_id"),
+                    "display_name": active_person.get("display_name"),
+                }
+                if isinstance(active_person, dict)
+                else None,
+                "binding": {
+                    "binding_id": active_binding.get("binding_id"),
+                    "relationship_type": active_binding.get("relationship_type"),
+                    "confirmed_at": active_binding.get("confirmed_at"),
+                }
+                if isinstance(active_binding, dict)
+                else None,
+                "pending_claim_id": pending_claim.get("claim_id") if isinstance(pending_claim, dict) else None,
+                "requires_user_action": bool(status_payload.get("requires_user_action")),
+                "requires_admin_action": bool(status_payload.get("requires_admin_action")),
+                "conflict_reason": status_payload.get("conflict_reason"),
+            }
+    except Exception as exc:
+        logger.warning(
+            "[handshake] registration status lookup failed "
+            f"for device_id_prefix={str(device_id)[:8]}: {exc.__class__.__name__}"
+        )
+        return _default_registration_payload()
+
+
 async def _confirm_update_operation_from_handshake(
     *,
     session: Any,
@@ -751,42 +811,7 @@ async def handle_handshake(
             )
     
     # Phase E: Отправляем handshake_ack с server_capabilities и desired_revision
-    registration_payload = {
-        "status": "unknown",
-        "requires_user_action": False,
-        "requires_admin_action": False,
-    }
-    if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
-        try:
-            async with get_session() as session:
-                from registry.registration_service import RegistrationService
-
-                status_payload = await RegistrationService(session).get_device_registration_status(device_id)
-                active_person = status_payload.get("active_person") if isinstance(status_payload, dict) else None
-                active_binding = status_payload.get("active_binding") if isinstance(status_payload, dict) else None
-                pending_claim = status_payload.get("pending_claim") if isinstance(status_payload, dict) else None
-                registration_payload = {
-                    "status": status_payload.get("status", "unknown"),
-                    "person": {
-                        "person_id": active_person.get("person_id"),
-                        "display_name": active_person.get("display_name"),
-                    }
-                    if isinstance(active_person, dict)
-                    else None,
-                    "binding": {
-                        "binding_id": active_binding.get("binding_id"),
-                        "relationship_type": active_binding.get("relationship_type"),
-                        "confirmed_at": active_binding.get("confirmed_at"),
-                    }
-                    if isinstance(active_binding, dict)
-                    else None,
-                    "pending_claim_id": pending_claim.get("claim_id") if isinstance(pending_claim, dict) else None,
-                    "requires_user_action": bool(status_payload.get("requires_user_action")),
-                    "requires_admin_action": bool(status_payload.get("requires_admin_action")),
-                    "conflict_reason": status_payload.get("conflict_reason"),
-                }
-        except Exception as exc:
-            logger.warning(f"[handshake] registration status lookup failed for device_id={device_id}: {exc}")
+    registration_payload = await build_registration_payload_for_handshake(device_id)
 
     from config import SERVER_CAPABILITIES
     

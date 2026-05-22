@@ -1362,6 +1362,10 @@ class AdminDeviceInventoryBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str
+    person_id: str | None = None
+    asset_id: str | None = None
+    source_binding_id: str | None = None
+    registration_status: str | None = None
     building: str | None = None
     floor: str | None = None
     room: str | None = None

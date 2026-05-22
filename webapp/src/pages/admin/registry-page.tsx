@@ -140,7 +140,7 @@ export function AdminRegistryPage() {
   }, [query, registry]);
   const firstAssetWithDevice = visibleRegistry?.assets.find((asset) => asset.device_id) ?? null;
 
-  const runClaimAction = async (claim: AdminRegistrationClaim, action: "approve" | "replace" | "reject") => {
+  const runClaimAction = async (claim: AdminRegistrationClaim, action: "approve" | "replace" | "reject" | "override") => {
     setActionError(null);
     setActionClaimId(claim.claim_id);
     try {
@@ -150,6 +150,12 @@ export function AdminRegistryPage() {
           return;
         }
         await rejectAdminRegistrationClaim(claim.claim_id, reason.trim());
+      } else if (action === "override") {
+        const reason = window.prompt("Причина админского подтверждения без пользователя", "Проверено администратором") ?? "";
+        if (!reason.trim()) {
+          return;
+        }
+        await approveAdminRegistrationClaim(claim.claim_id, false, true, reason.trim());
       } else {
         await approveAdminRegistrationClaim(claim.claim_id, action === "replace");
       }
@@ -321,14 +327,25 @@ export function AdminRegistryPage() {
                     </div>
                     <span className="text-slate-700">{claim.confidence == null ? "-" : `${Math.round(claim.confidence * 100)}%`}</span>
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        disabled={actionClaimId === claim.claim_id}
-                        onClick={() => void runClaimAction(claim, "approve")}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Подтвердить
-                      </Button>
+                      {claim.status === "pending_user_confirmation" || claim.status === "self_reported" ? (
+                        <Button
+                          disabled={actionClaimId === claim.claim_id}
+                          onClick={() => void runClaimAction(claim, "override")}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Админское подтверждение
+                        </Button>
+                      ) : (
+                        <Button
+                          disabled={actionClaimId === claim.claim_id}
+                          onClick={() => void runClaimAction(claim, "approve")}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Подтвердить
+                        </Button>
+                      )}
                       {claim.status === "conflict" ? (
                         <Button
                           disabled={actionClaimId === claim.claim_id}

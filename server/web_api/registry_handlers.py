@@ -4,9 +4,12 @@ from aiohttp import web
 from loguru import logger
 
 from app.db import get_session
+from app.db.models import Device
 from auth.middleware import require_auth
-from registry.registration_service import RegistrationConflictError, RegistrationService
+from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
+
+import uuid
 
 
 def _success(data: dict) -> web.Response:
@@ -28,6 +31,64 @@ def _compact_options(items: list[dict[str, str]]) -> list[dict[str, str]]:
         seen.add(value)
         result.append({"value": value, "label": label})
     return result
+
+
+def _validate_uuid_device_id(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return str(uuid.UUID(text))
+    except ValueError as exc:
+        raise RegistrationValidationError("device_id must be a valid UUID") from exc
+
+
+async def _device_exists(session, device_id: str) -> bool:
+    return await session.get(Device, device_id) is not None
+
+
+def _forbidden(message: str = "forbidden") -> web.Response:
+    return web.json_response({"status": "error", "error": message, "error_code": "FORBIDDEN"}, status=403)
+
+
+async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy: bool = False) -> str | web.Response:
+    auth_context = request["auth_context"]
+    body_device_id = str(data.get("device_id") or "").strip()
+    role = auth_context.actor_role
+    if role == "user":
+        return _forbidden("user cannot submit registration profile for arbitrary device")
+    if role == "agent":
+        actor_device_id = _validate_uuid_device_id(auth_context.actor_id)
+        if not actor_device_id:
+            return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+        if body_device_id and _validate_uuid_device_id(body_device_id) != actor_device_id:
+            return _forbidden("forbidden device_id")
+        return actor_device_id
+    if role in {"admin", "support"}:
+        device_id = _validate_uuid_device_id(body_device_id)
+        if not device_id:
+            return web.json_response({"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"}, status=400)
+        return device_id
+    return _forbidden()
+
+
+def _user_can_confirm_claim(auth_context, claim) -> bool:
+    actor_id = str(auth_context.actor_id or "").strip().lower()
+    if auth_context.actor_role in {"admin", "support"}:
+        return True
+    if auth_context.actor_role == "agent":
+        return claim.device_id == str(auth_context.actor_id or "").strip()
+    if auth_context.actor_role == "user":
+        source_ref = str(claim.source_ref or "").strip().lower()
+        profile = claim.profile_snapshot or {}
+        identities = {
+            source_ref,
+            str(profile.get("requester_id") or "").strip().lower(),
+            str(profile.get("login") or "").strip().lower(),
+            str(profile.get("email") or "").strip().lower(),
+        }
+        return bool(actor_id and actor_id in identities)
+    return False
 
 
 @require_auth("admin")
@@ -126,19 +187,24 @@ async def handle_registry_options(_request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin", "support", "user", "agent")
+@require_auth("admin", "support", "agent")
 async def handle_registry_profile_upsert(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json()
-    body_device_id = str(data.get("device_id") or "").strip()
-    device_id = body_device_id or str(auth_context.actor_id or "").strip() or None
-    if auth_context.actor_role == "agent" and body_device_id and body_device_id != auth_context.actor_id:
-        return web.json_response({"status": "error", "error": "forbidden device_id", "error_code": "FORBIDDEN"}, status=403)
+    try:
+        resolved_device_id = await _resolve_submit_device_id(request, data, legacy=True)
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if isinstance(resolved_device_id, web.Response):
+        return resolved_device_id
+    device_id = resolved_device_id
     requester_id = str(data.get("requester_id") or auth_context.actor_id or "").strip() or None
     display_name = str(data.get("display_name") or "").strip() or None
     profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
 
     async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
         service = RegistryIngestionService(session)
         result = await service.ingest_requester_profile(
             device_id=device_id,
@@ -175,14 +241,17 @@ async def handle_registry_profile_upsert(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin", "support", "user", "agent")
+@require_auth("admin", "support", "agent")
 async def handle_registry_agent_profile(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json()
-    body_device_id = str(data.get("device_id") or "").strip()
-    device_id = body_device_id or str(auth_context.actor_id or "").strip()
-    if auth_context.actor_role == "agent" and body_device_id and body_device_id != auth_context.actor_id:
-        return web.json_response({"status": "error", "error": "forbidden device_id", "error_code": "FORBIDDEN"}, status=403)
+    try:
+        resolved_device_id = await _resolve_submit_device_id(request, data)
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if isinstance(resolved_device_id, web.Response):
+        return resolved_device_id
+    device_id = resolved_device_id
     requester_id = str(data.get("requester_id") or auth_context.actor_id or "").strip() or None
     display_name = str(data.get("display_name") or "").strip() or None
     profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
@@ -190,6 +259,8 @@ async def handle_registry_agent_profile(request: web.Request) -> web.Response:
         profile = {**profile, "user_confirmed": bool(data.get("user_confirmed"))}
     try:
         async with get_session() as session:
+            if not await _device_exists(session, device_id):
+                return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
             result = await RegistrationService(session).submit_agent_profile_claim(
                 device_id=device_id,
                 requester_id=requester_id,
@@ -199,7 +270,7 @@ async def handle_registry_agent_profile(request: web.Request) -> web.Response:
                 actor_role=auth_context.actor_role,
             )
             await session.commit()
-    except ValueError as exc:
+    except (ValueError, RegistrationValidationError) as exc:
         return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
     return _success(result)
 
@@ -210,6 +281,12 @@ async def handle_registry_agent_registration_status(request: web.Request) -> web
     device_id = str(request.query.get("device_id") or auth_context.actor_id or "").strip()
     if auth_context.actor_role == "agent" and device_id != auth_context.actor_id:
         return web.json_response({"status": "error", "error": "forbidden device_id", "error_code": "FORBIDDEN"}, status=403)
+    if auth_context.actor_role == "user":
+        return web.json_response({"status": "error", "error": "forbidden device_id", "error_code": "FORBIDDEN"}, status=403)
+    try:
+        device_id = _validate_uuid_device_id(device_id) or ""
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
     async with get_session() as session:
         payload = await RegistrationService(session).get_device_registration_status(device_id)
     return _success(payload)
@@ -224,7 +301,7 @@ async def handle_registry_agent_claim_confirm(request: web.Request) -> web.Respo
         claim = await service.repo.get_claim(claim_id)
         if claim is None:
             return web.json_response({"status": "error", "error": "claim not found", "error_code": "NOT_FOUND"}, status=404)
-        if auth_context.actor_role == "agent" and claim.device_id != auth_context.actor_id:
+        if not _user_can_confirm_claim(auth_context, claim):
             return web.json_response({"status": "error", "error": "forbidden claim", "error_code": "FORBIDDEN"}, status=403)
         payload = await service.confirm_claim_by_user(claim_id, actor_id=auth_context.actor_id)
         await session.commit()
@@ -262,6 +339,8 @@ async def handle_web_admin_registry_registration_approve(request: web.Request) -
                 reviewed_by=auth_context.actor_id,
                 actor_role=auth_context.actor_role,
                 replace_existing=bool(data.get("replace_existing")),
+                admin_override_user_confirmation=bool(data.get("admin_override_user_confirmation") or data.get("force")),
+                override_reason=str(data.get("reason") or "").strip() or None,
             )
             await session.commit()
     except RegistrationConflictError as exc:

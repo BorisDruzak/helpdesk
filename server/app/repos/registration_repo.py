@@ -68,6 +68,13 @@ class RegistrationRepo:
         )
         return list(result.scalars().all())
 
+    async def list_bindings_for_device(self, device_id: str, active_only: bool = False) -> list[DeviceUserBinding]:
+        stmt = select(DeviceUserBinding).where(DeviceUserBinding.device_id == str(device_id))
+        if active_only:
+            stmt = stmt.where(DeviceUserBinding.status == "active")
+        result = await self.session.execute(stmt.order_by(desc(DeviceUserBinding.created_at)))
+        return list(result.scalars().all())
+
     async def list_bindings_for_person(self, person_id: str, active_only: bool = True) -> list[DeviceUserBinding]:
         stmt = select(DeviceUserBinding).where(DeviceUserBinding.person_id == str(person_id))
         if active_only:
@@ -180,7 +187,15 @@ class RegistrationRepo:
             )
             self.session.add(row)
         else:
-            row.person_id = str(person_id)
+            if row.person_id != str(person_id):
+                row.last_seen_at = now
+                row.metadata_json = {
+                    **(row.metadata_json or {}),
+                    **(metadata or {}),
+                    "collision_person_id": str(person_id),
+                }
+                await self.session.flush()
+                return row
             row.identifier = clean_identifier
             row.verified = bool(row.verified or verified)
             row.source = source or row.source

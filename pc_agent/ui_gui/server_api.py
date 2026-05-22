@@ -533,7 +533,7 @@ class TicketApiClient:
                 if response.status != 200:
                     logger.info("Registration profile submit skipped: HTTP %s", response.status)
                     return {"status": "error", "http_status": response.status, "body": response_text}
-                return json.loads(response_text)
+                return self._unwrap_success_data(json.loads(response_text))
         except (aiohttp.ClientError, json.JSONDecodeError) as exc:
             logger.info("Registration profile submit error: %s", exc)
             return {"status": "error", "error": str(exc)}
@@ -547,7 +547,7 @@ class TicketApiClient:
                 response_text = await response.text()
                 if response.status != 200:
                     return {"status": "error", "http_status": response.status, "body": response_text}
-                return json.loads(response_text)
+                return self._unwrap_success_data(json.loads(response_text))
         except (aiohttp.ClientError, json.JSONDecodeError) as exc:
             logger.info("Registration status fetch error: %s", exc)
             return {"status": "error", "error": str(exc)}
@@ -561,10 +561,16 @@ class TicketApiClient:
                 response_text = await response.text()
                 if response.status != 200:
                     return {"status": "error", "http_status": response.status, "body": response_text}
-                return json.loads(response_text)
+                return self._unwrap_success_data(json.loads(response_text))
         except (aiohttp.ClientError, json.JSONDecodeError) as exc:
             logger.info("Registration claim confirm error: %s", exc)
             return {"status": "error", "error": str(exc)}
+
+    @staticmethod
+    def _unwrap_success_data(payload: dict) -> dict:
+        if isinstance(payload, dict) and payload.get("status") == "success" and isinstance(payload.get("data"), dict):
+            return payload["data"]
+        return payload
 
     async def get_registry_options(self) -> dict:
         """Получает справочники для picker-полей формы обращения."""

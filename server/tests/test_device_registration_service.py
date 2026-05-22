@@ -12,6 +12,8 @@ from app.db.models import (
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     DeviceInventoryBinding,
+    DeviceInventoryBindingHistory,
+    RegistryPersonIdentity,
     DeviceUserBinding,
     RegistryAsset,
 )
@@ -266,3 +268,175 @@ async def test_registry_ingestion_profile_creates_registration_claim_without_ass
     assert result.asset_id == asset.asset_id
     assert result.registration["claim_id"] == claim.claim_id
     assert asset.assigned_person_id is None
+
+
+@pytest.mark.asyncio
+async def test_approve_unconfirmed_claim_requires_explicit_admin_override(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        result = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="unconfirmed",
+            display_name="Unconfirmed User",
+            profile={"full_name": "Unconfirmed User", "email": "unconfirmed@example.test"},
+        )
+        with pytest.raises(RegistrationConflictError):
+            await service.approve_claim(result["registration"]["claim_id"], reviewed_by="admin")
+        approved = await service.approve_claim(
+            result["registration"]["claim_id"],
+            reviewed_by="admin",
+            admin_override_user_confirmation=True,
+            override_reason="verified by phone",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        binding = await session.get(DeviceUserBinding, approved["binding"]["binding_id"])
+        event = (
+            await session.execute(
+                select(DeviceRegistrationEvent).where(
+                    DeviceRegistrationEvent.claim_id == result["registration"]["claim_id"],
+                    DeviceRegistrationEvent.event_type == "admin_approved",
+                )
+            )
+        ).scalar_one()
+
+    assert binding.status == "active"
+    assert event.payload["admin_override_user_confirmation"] is True
+    assert event.payload["override_reason"] == "verified by phone"
+
+
+@pytest.mark.asyncio
+async def test_approving_second_claim_same_person_device_reuses_active_binding(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        first = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="same-user",
+            display_name="Same User",
+            profile={"full_name": "Same User", "email": "same@example.test", "user_confirmed": True},
+        )
+        first_approved = await service.approve_claim(first["registration"]["claim_id"], reviewed_by="admin")
+        second = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="same-user",
+            display_name="Same User",
+            profile={"full_name": "Same User", "email": "same@example.test", "user_confirmed": True},
+        )
+        second_approved = await service.approve_claim(second["registration"]["claim_id"], reviewed_by="admin")
+        await session.commit()
+
+    async with session_maker() as session:
+        bindings = (
+            await session.execute(
+                select(DeviceUserBinding).where(
+                    DeviceUserBinding.device_id == device_id,
+                    DeviceUserBinding.status == "active",
+                    DeviceUserBinding.relationship_type == "primary_user",
+                )
+            )
+        ).scalars().all()
+        claim = await session.get(DeviceRegistrationClaim, second["registration"]["claim_id"])
+
+    assert second_approved["binding"]["binding_id"] == first_approved["binding"]["binding_id"]
+    assert len(bindings) == 1
+    assert claim.status in {"approved", "superseded"}
+
+
+@pytest.mark.asyncio
+async def test_revoke_active_primary_clears_asset_and_inventory_registration(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        result = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="revoke-user",
+            display_name="Revoke User",
+            profile={"full_name": "Revoke User", "email": "revoke@example.test", "user_confirmed": True},
+        )
+        approved = await service.approve_claim(result["registration"]["claim_id"], reviewed_by="admin")
+        await service.revoke_binding(approved["binding"]["binding_id"], revoked_by="admin", reason="test revoke")
+        await session.commit()
+
+    async with session_maker() as session:
+        asset = (await session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device_id))).scalar_one()
+        inventory = await session.get(DeviceInventoryBinding, device_id)
+        history = (
+            await session.execute(
+                select(DeviceInventoryBindingHistory).where(DeviceInventoryBindingHistory.device_id == device_id)
+            )
+        ).scalars().all()
+
+    assert asset.assigned_person_id is None
+    assert inventory.person_id is None
+    assert inventory.source_binding_id is None
+    assert inventory.registration_status == "revoked"
+    assert any(row.reason == "registration_revoked" for row in history)
+
+
+@pytest.mark.asyncio
+async def test_verified_identity_collision_reuses_existing_person_without_stealing_identity(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    first_device_id = str(uuid.uuid4())
+    second_device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add_all([_device(first_device_id), _device(second_device_id)])
+        service = RegistrationService(session)
+        first = await service.submit_agent_profile_claim(
+            device_id=first_device_id,
+            requester_id="identity-a",
+            display_name="Identity A",
+            profile={"full_name": "Identity A", "email": "collision@example.test"},
+        )
+        identity = (
+            await session.execute(
+                select(RegistryPersonIdentity).where(
+                    RegistryPersonIdentity.provider == "email",
+                    RegistryPersonIdentity.normalized_identifier == "collision@example.test",
+                )
+            )
+        ).scalar_one()
+        identity.verified = True
+        second = await service.submit_agent_profile_claim(
+            device_id=second_device_id,
+            requester_id="identity-b",
+            display_name="Identity B",
+            profile={"full_name": "Identity B", "email": "collision@example.test"},
+        )
+        await session.commit()
+
+    assert second["person"]["person_id"] == first["person"]["person_id"]
+
+
+@pytest.mark.asyncio
+async def test_registration_service_rejects_invalid_or_missing_device_id_before_fk_error(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        service = RegistrationService(session)
+        with pytest.raises(ValueError, match="valid UUID"):
+            await service.submit_agent_profile_claim(
+                device_id="not-a-device",
+                requester_id="bad",
+                display_name="Bad",
+                profile={"full_name": "Bad"},
+            )
+        with pytest.raises(ValueError, match="device not found"):
+            await service.submit_agent_profile_claim(
+                device_id=str(uuid.uuid4()),
+                requester_id="missing",
+                display_name="Missing",
+                profile={"full_name": "Missing"},
+            )
