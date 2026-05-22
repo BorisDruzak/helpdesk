@@ -223,27 +223,47 @@ async def create_ticket_with_side_effects(
     ticket_id = new_ticket_id()
     asset_id = None
     registry_context: dict[str, Any] | None = None
-    if requester_profile:
-        try:
-            from registry.service import RegistryIngestionService
+    existing_active_binding = None
+    try:
+        from app.repos.registration_repo import RegistrationRepo
 
-            registry_result = await RegistryIngestionService(session).ingest_requester_profile(
-                device_id=device_id,
-                requester_id=requester_id,
-                display_name=user_display_name,
-                profile=requester_profile or {},
-            )
-            asset_id = registry_result.asset_id
+        existing_active_binding = await RegistrationRepo(session).get_active_primary_binding(device_id)
+        if existing_active_binding:
+            asset_id = existing_active_binding.asset_id
             registry_context = {
-                "person_id": registry_result.person_id,
-                "asset_id": registry_result.asset_id,
-                "location_id": registry_result.location_id,
-                "department_id": registry_result.department_id,
-                "registration": registry_result.registration,
-                "source": "agent_profile",
+                "person_id": existing_active_binding.person_id,
+                "asset_id": existing_active_binding.asset_id,
+                "registration": {
+                    "binding_id": existing_active_binding.binding_id,
+                    "status": "admin_confirmed",
+                    "relationship_type": existing_active_binding.relationship_type,
+                },
+                "source": "active_registration_binding",
             }
-        except Exception as exc:
-            logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
+    except Exception as exc:
+        logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
+    if requester_profile:
+        if existing_active_binding is None:
+            try:
+                from registry.service import RegistryIngestionService
+
+                registry_result = await RegistryIngestionService(session).ingest_requester_profile(
+                    device_id=device_id,
+                    requester_id=requester_id,
+                    display_name=user_display_name,
+                    profile=requester_profile or {},
+                )
+                asset_id = registry_result.asset_id
+                registry_context = {
+                    "person_id": registry_result.person_id,
+                    "asset_id": registry_result.asset_id,
+                    "location_id": registry_result.location_id,
+                    "department_id": registry_result.department_id,
+                    "registration": registry_result.registration,
+                    "source": "agent_profile",
+                }
+            except Exception as exc:
+                logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
     requester_person_id = None
     requester_binding_id = None
     requester_registration_status = "unregistered"

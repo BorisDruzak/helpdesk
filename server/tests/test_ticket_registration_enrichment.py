@@ -63,6 +63,46 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
 
 
 @pytest.mark.asyncio
+async def test_ticket_with_active_binding_ignores_conflicting_requester_profile(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        result = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="ticket-active-profile",
+            display_name="Ticket Active Profile",
+            profile={"full_name": "Ticket Active Profile", "email": "ticket-active-profile@example.test", "user_confirmed": True},
+        )
+        approved = await service.approve_claim(result["registration"]["claim_id"], reviewed_by="admin")
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id="different-requester",
+            title="Need help",
+            description="Need help",
+            user_display_name="Different Requester",
+            requester_profile={"full_name": "Different Requester", "email": "different-requester@example.test"},
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, created["ticket_id"])
+        claims = (
+            await session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.device_id == device_id))
+        ).scalars().all()
+
+    assert ticket.requester_person_id == approved["binding"]["person_id"]
+    assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+    assert ticket.requester_registration_status == "admin_confirmed"
+    assert ticket.asset_id == approved["binding"]["asset_id"]
+    assert len(claims) == 1
+    assert claims[0].status == "approved"
+
+
+@pytest.mark.asyncio
 async def test_ticket_with_requester_profile_creates_claim_and_pending_status(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -107,7 +147,14 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
             display_name="First Ticket",
             profile={"full_name": "First Ticket", "email": "first-ticket@example.test", "user_confirmed": True},
         )
-        await service.approve_claim(first["registration"]["claim_id"], reviewed_by="admin")
+        approved = await service.approve_claim(first["registration"]["claim_id"], reviewed_by="admin")
+        conflict = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="second-ticket",
+            display_name="Second Ticket",
+            profile={"full_name": "Second Ticket", "email": "second-ticket@example.test", "user_confirmed": True},
+        )
+        await service.revoke_binding(approved["binding"]["binding_id"], revoked_by="admin", reason="test conflict without active")
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -115,7 +162,6 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
             title="Need help",
             description="Need help",
             user_display_name="Second Ticket",
-            requester_profile={"full_name": "Second Ticket", "email": "second-ticket@example.test", "user_confirmed": True},
         )
         await session.commit()
 
@@ -126,3 +172,4 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
     assert ticket.requester_binding_id is None
     assert ticket.requester_registration_status == "conflict"
     assert ticket.custom_fields["requester_registration"]["status"] == "conflict"
+    assert ticket.custom_fields["requester_registration"]["pending_claim"]["claim_id"] == conflict["registration"]["claim_id"]
