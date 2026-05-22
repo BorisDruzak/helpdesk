@@ -134,24 +134,25 @@ Server-side admin tooling may store a separate presentation override for a capab
 
 ## inventory.collect v2
 
-`inventory.collect` is a core built-in read-only module intended for endpoint device cards, passports and support diagnostics. It returns a normalized `device.inventory.snapshot` result with identity, platform, hardware/resource, network, optional printer/software summary, agent health and warnings.
+`inventory.collect` is a core built-in read-only module intended for endpoint device cards, passports and support diagnostics. It returns a normalized `device.inventory.snapshot` result with identity, platform, hardware/resource, network, optional printer/software/process summary, agent health and warnings.
 
 Privacy boundary:
 
-- allowed: hostname/FQDN, current endpoint user name, OS/platform, CPU/memory/disk utilization, network interface/IP/MAC data, optional printer names/status, coarse key-app summary and agent metadata;
+- allowed: hostname/FQDN, current endpoint user name, OS/platform, CPU/memory/disk utilization, network interface/IP/MAC data, optional printer names/status, bounded real process list (`processes.items`) and coarse key-app summary retained for compatibility, and agent metadata;
 - forbidden: keystrokes, screenshots, window titles, browser history, URLs, document contents, clipboard contents, personal messages or file listings.
 
 The tool declares:
 
-- detailed `output_schema` paths such as `identity.hostname`, `resources.disks[].mount`, `network.interfaces[].ipv4`, `printers.items[].driver`, `printers.items[].uri`, `software.key_apps[].id`, `software.key_apps[].source`, `hardware.serial_number` and `hardware.asset_tag`;
+- detailed `output_schema` paths such as `identity.hostname`, `resources.disks[].mount`, `network.interfaces[].ipv4`, `printers.items[].driver`, `printers.items[].uri`, `processes.items[].pid`, `processes.items[].name`, `processes.items[].cpu_percent`, `processes.items[].memory_rss_bytes`, `software.key_apps[].id`, `software.key_apps[].source`, `hardware.serial_number` and `hardware.asset_tag`;
 - `output_contract.kind=device.inventory.snapshot`;
-- `output_contract.device_card.slots=["identity","health","platform","hardware","network","printers","software","agent"]`;
-- a default `presentation_schema` with identity field grid, resource metric cards, OS/agent and hardware grids, disks/network/printers/software/warnings blocks and collapsed raw JSON fallback.
+- `output_contract.device_card.slots=["identity","health","platform","hardware","network","printers","processes","software","agent"]`;
+- a default `presentation_schema` with identity field grid, resource metric cards, OS/agent and hardware grids, disks/network/printers/processes/warnings blocks and collapsed raw JSON fallback.
 
 v2 additions are still best-effort and read-only:
 
 - printer details include default printer, queue items, status, driver, URI/port, location, network/shared flags, queue length and `last_error` where the OS exposes them safely;
 - key-app detection uses static trusted profiles (`libreoffice`, `r7_office`, `yandex_browser`, `chromium_or_chrome`, `kaspersky`, `vipnet`, `openvpn`, remote-support clients and selected office/workspace clients) instead of enumerating all installed software;
+- process collection uses `psutil` to return a bounded top-50 real running-process table sorted by memory with `pid`, `name`, `status`, `username`, CPU, RSS memory and create time; it does not collect command lines, window titles, browser URLs or document/file contents;
 - optional hardware identifiers include manufacturer, model, serial number, BIOS version and asset tag when readable without elevated access.
 
 Optional collectors must fail soft: unavailable DNS/printer/software/hardware details are reported in `warnings` or section-local `warnings` and do not fail the whole tool. Server-side device binding fields (building, floor, room, department, responsible user, inventory number and notes) are manually entered inventory metadata, not agent-collected surveillance data.

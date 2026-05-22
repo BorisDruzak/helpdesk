@@ -159,6 +159,32 @@ INVENTORY_COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
                 "warnings": {"type": "array", "items": {"type": "string"}},
             },
         },
+        "processes": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer"},
+                "limit": {"type": "integer"},
+                "truncated": {"type": "boolean"},
+                "sort_by": {"type": "string"},
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "pid": {"type": "integer"},
+                            "name": {"type": "string"},
+                            "status": {"type": "string"},
+                            "username": {"type": "string"},
+                            "cpu_percent": {"type": "number"},
+                            "memory_rss_bytes": {"type": "integer"},
+                            "memory_mb": {"type": "number"},
+                            "created_at": {"type": "string", "format": "date-time"},
+                        },
+                    },
+                },
+                "warnings": {"type": "array", "items": {"type": "string"}},
+            },
+        },
         "warnings": {"type": "array", "items": {"type": "string"}},
     },
 }
@@ -169,7 +195,7 @@ INVENTORY_COLLECT_OUTPUT_CONTRACT: dict[str, Any] = {
     "version": "1.0",
     "device_card": {
         "eligible": True,
-        "slots": ["identity", "health", "platform", "hardware", "network", "printers", "software", "agent"],
+        "slots": ["identity", "health", "platform", "hardware", "network", "printers", "processes", "software", "agent"],
         "priority": 100,
     },
     "evidence": {
@@ -289,15 +315,16 @@ INVENTORY_COLLECT_PRESENTATION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "table",
-            "id": "software",
-            "title": "Ключевое ПО",
-            "rows_path": "software.key_apps",
+            "id": "processes",
+            "title": "Процессы",
+            "rows_path": "processes.items",
             "columns": [
-                {"path": "name", "label": "Приложение"},
-                {"path": "present", "label": "Найдено"},
-                {"path": "version", "label": "Версия", "empty_text": "-"},
+                {"path": "name", "label": "Процесс"},
+                {"path": "pid", "label": "PID"},
                 {"path": "status", "label": "Статус", "empty_text": "-"},
-                {"path": "source", "label": "Источник", "empty_text": "-"},
+                {"path": "cpu_percent", "label": "CPU", "unit": "%", "format": "percent"},
+                {"path": "memory_mb", "label": "RAM", "unit": "MB"},
+                {"path": "username", "label": "Пользователь", "empty_text": "-"},
             ],
         },
         {

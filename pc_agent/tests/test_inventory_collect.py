@@ -24,6 +24,9 @@ def test_inventory_collect_returns_structured_snapshot():
     assert "memory_percent" in result["resources"]
     assert isinstance(result["resources"]["disks"], list)
     assert isinstance(result["network"]["interfaces"], list)
+    assert isinstance(result["processes"]["items"], list)
+    assert result["processes"]["limit"] == 50
+    assert "truncated" in result["processes"]
     assert isinstance(result["warnings"], list)
 
 
@@ -47,6 +50,12 @@ def test_inventory_collect_output_schema_exposes_path_picker_fields():
     assert app_props["id"]["type"] == "string"
     assert app_props["status"]["type"] == "string"
     assert app_props["source"]["type"] == "string"
+    processes_props = props["processes"]["properties"]
+    assert processes_props["count"]["type"] == "integer"
+    assert processes_props["items"]["items"]["properties"]["pid"]["type"] == "integer"
+    assert processes_props["items"]["items"]["properties"]["name"]["type"] == "string"
+    assert processes_props["items"]["items"]["properties"]["cpu_percent"]["type"] == "number"
+    assert processes_props["items"]["items"]["properties"]["memory_rss_bytes"]["type"] == "integer"
     printer_props = props["printers"]["properties"]["items"]["items"]["properties"]
     assert printer_props["driver"]["type"] == "string"
     assert printer_props["uri"]["type"] == "string"
@@ -66,7 +75,10 @@ def test_inventory_collect_contract_and_presentation_schema_declare_device_card(
 
     block_ids = {block.get("id") for block in INVENTORY_COLLECT_PRESENTATION_SCHEMA["blocks"]}
     assert {"identity", "resources", "os_agent", "disks", "network_interfaces"} <= block_ids
-    assert {"hardware", "printers", "software", "warnings"} <= block_ids
+    assert {"hardware", "printers", "processes", "warnings"} <= block_ids
+    processes_block = next(block for block in INVENTORY_COLLECT_PRESENTATION_SCHEMA["blocks"] if block.get("id") == "processes")
+    assert processes_block["title"] == "Процессы"
+    assert processes_block["rows_path"] == "processes.items"
     assert INVENTORY_COLLECT_PRESENTATION_SCHEMA["fallback"]["show_raw_json"] is True
 
 
@@ -151,9 +163,34 @@ def test_inventory_collect_v2_merges_optional_printers_software_and_hardware(mon
             "asset_tag": "INV-42",
         },
     )
+    monkeypatch.setattr(
+        InventoryCollector,
+        "_collect_processes",
+        lambda self, warnings: {
+            "count": 1,
+            "limit": 50,
+            "truncated": False,
+            "sort_by": "memory",
+            "items": [
+                {
+                    "pid": 123,
+                    "name": "python.exe",
+                    "status": "running",
+                    "username": "user",
+                    "cpu_percent": 1.5,
+                    "memory_rss_bytes": 104857600,
+                    "memory_mb": 100.0,
+                    "created_at": "2026-05-22T10:00:00Z",
+                }
+            ],
+            "warnings": [],
+        },
+    )
 
     result = _collect()
 
     assert result["printers"]["items"][0]["driver"] == "HP Universal"
     assert result["software"]["key_apps"][0]["id"] == "libreoffice"
+    assert result["processes"]["items"][0]["name"] == "python.exe"
+    assert result["processes"]["items"][0]["memory_mb"] == 100.0
     assert result["hardware"]["serial_number"] == "SN-42"

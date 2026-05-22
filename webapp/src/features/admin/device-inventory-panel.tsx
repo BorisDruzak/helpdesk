@@ -383,7 +383,7 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                 { value: "hardware", label: "Железо" },
                 { value: "network", label: "Сеть" },
                 { value: "printers", label: "Принтеры" },
-                { value: "software", label: "ПО" },
+                { value: "processes", label: "Процессы" },
                 { value: "binding", label: "Привязка" },
                 { value: "history", label: "История" },
                 { value: "registration", label: "Регистрация" },

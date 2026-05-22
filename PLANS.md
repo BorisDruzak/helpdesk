@@ -563,6 +563,31 @@ Known verification limitation:
 
 - Local Windows DB-backed server `pytest` fixtures still hang on existing `test_client` DB tests, including pre-existing presentation override tests. The v2 DB migration and API/browser path were verified on the real PostgreSQL stand instead.
 
+## Active Work: Inventory Processes Items / Agent 3.1.59
+
+Status: implemented locally / release verification pending on branch `codex/helpdesk-process-model`.
+
+Goal:
+
+- Extend `inventory.collect` so device inventory shows real running processes instead of using the legacy "Ключевое ПО" presentation block as the primary operational list.
+
+Scope:
+
+- Agent: add bounded `processes.items` to the core built-in `inventory.collect` payload, sorted by memory and limited to 50 rows.
+- Shared descriptor: add `processes` to the output schema/device-card slots and repoint the default presentation table to `processes.items` with title "Процессы".
+- Compatibility: keep `software.key_apps` in the payload for existing server summaries/reports.
+- Release: bump agent to `3.1.59`, build and publish Windows/Linux release artifacts after local checks.
+
+Verification plan:
+
+- `python -m pytest pc_agent/tests/test_inventory_collect.py pc_agent/tests/test_linux_packaging.py -q --tb=short` -> 8 passed.
+- `pnpm --dir webapp test -- src/features/admin/device-inventory-panel.test.tsx src/components/module-result/tool-result-event-card.test.tsx` -> 2 files / 7 tests passed.
+- `python -m pytest pc_agent/tests/ -q --tb=short` -> 342 passed, 7 subtests passed.
+- `pnpm --dir webapp build` passed.
+- `python scripts/verify_workspace.py` passed.
+- `python -m pytest server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -q --tb=short` -> 6 passed.
+- Packaged Windows/Linux verify and live `inventory.collect` on ADMIN-2 after rollout are pending.
+
 ## Active Work: Inventory v3 / Lightweight CMDB
 
 Status: accepted / verified on branch `codex/inventory-v3-lightweight-cmdb`, commit `3b9b50c`.

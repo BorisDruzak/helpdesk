@@ -47,12 +47,12 @@ describe("ToolResultEventCard", () => {
     expect(screen.getByText("resolved")).toBeInTheDocument();
   });
 
-  it("renders inventory v2 printer and software blocks", () => {
+  it("renders inventory v2 printer and process blocks", () => {
     render(
       <ToolResultEventCard
         result={{
           printers: { items: [{ name: "Office HP", driver: "HP Universal", status: "idle" }] },
-          software: { key_apps: [{ name: "LibreOffice", version: "7.6", status: "ok" }] },
+          processes: { items: [{ name: "python.exe", pid: 123, status: "running" }] },
         }}
         presentationSchema={{
           version: "1.0",
@@ -66,9 +66,9 @@ describe("ToolResultEventCard", () => {
             },
             {
               type: "table",
-              title: "Ключевое ПО",
-              rows_path: "software.key_apps",
-              columns: [{ path: "name", label: "Приложение" }, { path: "version", label: "Версия" }],
+              title: "Процессы",
+              rows_path: "processes.items",
+              columns: [{ path: "name", label: "Процесс" }, { path: "pid", label: "PID" }],
             },
           ],
         }}
@@ -77,7 +77,7 @@ describe("ToolResultEventCard", () => {
 
     expect(screen.getByText("Office HP")).toBeInTheDocument();
     expect(screen.getByText("HP Universal")).toBeInTheDocument();
-    expect(screen.getByText("LibreOffice")).toBeInTheDocument();
-    expect(screen.getByText("7.6")).toBeInTheDocument();
+    expect(screen.getByText("python.exe")).toBeInTheDocument();
+    expect(screen.getByText("123")).toBeInTheDocument();
   });
 });

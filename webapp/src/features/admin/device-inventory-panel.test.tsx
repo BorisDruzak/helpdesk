@@ -47,6 +47,25 @@ function inventoryPayload() {
           software: {
             key_apps: [{ id: "libreoffice", name: "LibreOffice", present: true, version: "7.6", status: "ok" }],
           },
+          processes: {
+            count: 1,
+            limit: 50,
+            truncated: false,
+            sort_by: "memory",
+            items: [
+              {
+                pid: 123,
+                name: "python.exe",
+                status: "running",
+                username: "ivan",
+                cpu_percent: 2.5,
+                memory_mb: 128,
+                memory_rss_bytes: 134217728,
+                created_at: "2026-05-18T09:00:00Z",
+              },
+            ],
+            warnings: [],
+          },
         },
         presentation_schema: {},
         effective_presentation_schema: {
@@ -63,10 +82,10 @@ function inventoryPayload() {
             },
             {
               type: "table",
-              id: "software",
-              title: "Ключевое ПО",
-              rows_path: "software.key_apps",
-              columns: [{ path: "name", label: "Приложение" }, { path: "version", label: "Версия" }],
+              id: "processes",
+              title: "Процессы",
+              rows_path: "processes.items",
+              columns: [{ path: "name", label: "Процесс" }, { path: "pid", label: "PID" }],
             },
           ],
           fallback: { show_raw_json: true },
@@ -169,7 +188,7 @@ describe("DeviceInventoryPanel", () => {
     expect(screen.getByText("77%")).toBeInTheDocument();
     expect(screen.getByText("DeskPro")).toBeInTheDocument();
     expect(screen.getByText("HP Universal")).toBeInTheDocument();
-    expect(screen.getByText("LibreOffice")).toBeInTheDocument();
+    expect(screen.getByText("python.exe")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /История/i }));
     expect(screen.getByText("Binding changes")).toBeInTheDocument();

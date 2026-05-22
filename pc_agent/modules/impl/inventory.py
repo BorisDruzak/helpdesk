@@ -17,6 +17,7 @@ import re
 import shutil
 import socket
 import subprocess
+import time
 from typing import Any
 
 import psutil
@@ -394,6 +395,76 @@ class InventoryCollector(BaseCollector):
     def _collect_software(self, warnings: list[str]) -> dict[str, Any]:
         return detect_key_apps(warnings, os_name=platform.system())
 
+    def _collect_processes(self, warnings: list[str], *, limit: int = 50, sort_by: str = "memory") -> dict[str, Any]:
+        process_warnings: list[str] = []
+        processes: list[dict[str, Any]] = []
+
+        try:
+            probes = list(psutil.process_iter(["pid", "name"]))
+            for proc in probes:
+                try:
+                    proc.cpu_percent(interval=None)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    continue
+            time.sleep(0.05)
+
+            for proc in psutil.process_iter(["pid", "name", "status", "username", "create_time"]):
+                try:
+                    info = proc.info
+                    memory_rss_bytes = 0
+                    try:
+                        memory_rss_bytes = int(proc.memory_info().rss)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                        pass
+                    try:
+                        cpu_percent = float(proc.cpu_percent(interval=None))
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                        cpu_percent = 0.0
+                    processes.append(
+                        {
+                            "pid": int(info.get("pid") or 0),
+                            "name": str(info.get("name") or ""),
+                            "status": str(info.get("status") or "unknown"),
+                            "username": str(info.get("username") or ""),
+                            "cpu_percent": round(cpu_percent, 2),
+                            "memory_rss_bytes": memory_rss_bytes,
+                            "memory_mb": round(memory_rss_bytes / (1024 * 1024), 2),
+                            "created_at": _iso_from_epoch(info.get("create_time")),
+                        }
+                    )
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    continue
+        except Exception as exc:
+            self._warn(warnings, "process list is unavailable", exc)
+            process_warnings.append(str(exc))
+
+        if sort_by == "cpu":
+            processes.sort(
+                key=lambda item: (
+                    float(item.get("cpu_percent") or 0.0),
+                    int(item.get("memory_rss_bytes") or 0),
+                ),
+                reverse=True,
+            )
+        else:
+            processes.sort(
+                key=lambda item: (
+                    int(item.get("memory_rss_bytes") or 0),
+                    float(item.get("cpu_percent") or 0.0),
+                ),
+                reverse=True,
+            )
+
+        count = len(processes)
+        return {
+            "count": count,
+            "limit": limit,
+            "truncated": count > limit,
+            "sort_by": sort_by,
+            "items": processes[:limit],
+            "warnings": process_warnings,
+        }
+
     @exposed_tool(
         name="collect",
         description="Collect a privacy-safe endpoint inventory snapshot for device cards",
@@ -418,6 +489,7 @@ class InventoryCollector(BaseCollector):
             interfaces, primary_mac = self._collect_interfaces(primary_ip, warnings)
             printers = self._collect_printers(warnings)
             software = self._collect_software(warnings)
+            processes = self._collect_processes(warnings)
 
             return {
                 "schema_version": "1.0",
@@ -453,5 +525,6 @@ class InventoryCollector(BaseCollector):
                 },
                 "printers": printers,
                 "software": software,
+                "processes": processes,
                 "warnings": warnings,
             }
