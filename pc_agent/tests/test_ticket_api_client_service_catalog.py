@@ -1,4 +1,5 @@
 import sys
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,56 @@ async def test_get_service_catalog_current_reads_safe_catalog(monkeypatch):
     assert call["method"] == "GET"
     assert call["url"] == "http://localhost:8666/api/service-catalog/current"
     assert call["headers"]["Authorization"] == "Bearer token-123"
+
+
+@pytest.mark.asyncio
+async def test_get_service_catalog_current_refreshes_rotated_db_token(monkeypatch, tmp_path):
+    db_path = tmp_path / "storage.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE auth_tokens (
+                token TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                is_active INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO auth_tokens (token, device_id, created_at, is_active) VALUES (?, ?, ?, 1)",
+            ("fresh-token", "device-1", 2.0),
+        )
+
+    class FakeDbManager:
+        _db_path = str(db_path)
+
+    import pc_agent.core.database as database_module
+
+    monkeypatch.setattr(database_module, "db_manager", FakeDbManager())
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="stale-token",
+    )
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            text_payload='{"catalog_version":"v1","services":[]}',
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    await client.get_service_catalog_current()
+
+    call = fake_session.calls[0]
+    assert call["headers"]["Authorization"] == "Bearer fresh-token"
+    assert client.auth_token == "fresh-token"
 
 
 @pytest.mark.asyncio

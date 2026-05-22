@@ -437,10 +437,48 @@ class TicketApiClient:
         Returns:
             dict: Словарь с заголовками
         """
+        self._refresh_auth_token_from_local_db()
         headers = {}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
         return headers
+
+    def _refresh_auth_token_from_local_db(self) -> None:
+        """Refresh GUI API token after agent reprovision rotates it in storage.db."""
+        device_id = str(self.device_id or "").strip()
+        if not device_id:
+            return
+        try:
+            import sqlite3
+            from pc_agent.core.database import db_manager
+
+            db_path = getattr(db_manager, "_db_path", None)
+            if not db_path:
+                return
+            path = Path(db_path)
+            if not path.exists():
+                return
+            with sqlite3.connect(path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT token FROM auth_tokens
+                    WHERE device_id = ? AND is_active = 1
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (device_id,),
+                ).fetchone()
+            if not row or not row[0]:
+                return
+            token = str(row[0]).strip()
+            if token and token != self.auth_token:
+                logger.info(
+                    "TicketApiClient refreshed auth token from local DB: device_id={}...",
+                    device_id[:8],
+                )
+                self.auth_token = token
+        except Exception as exc:
+            logger.debug("TicketApiClient auth token refresh skipped: {}", exc)
     
     async def close(self):
         """
