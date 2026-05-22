@@ -374,6 +374,8 @@ TOPICS: tuple[Topic, ...] = (
             "status contract",
             "triaged legacy alias",
             "chat",
+            "attachment_refs",
+            "ticket attachments",
             "queue",
             "public queue privacy",
             "public_queue_code",

@@ -41,8 +41,9 @@ import {
   UserRound,
   UsersRound,
   Wrench,
+  X,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -85,9 +86,11 @@ import {
   postSupportQueueMassAction,
   postSupportWorkspaceCleanupNoise,
   updateSupportQueueSavedView,
+  uploadSupportTicketAttachment,
   type SupportQueueMassActionRequest,
   type SupportQueueSavedViewUpsertRequest,
   type SupportQueueScope,
+  type SupportTicketAttachmentUpload,
   type SupportTicketEvidenceCandidatePayload,
   type SupportTicketTimelineFilter,
   type SupportTicketWorkspacePayload,
@@ -154,6 +157,17 @@ type WorkspaceResizeState = {
   startLeft: number;
   startRight: number;
 };
+
+function formatAttachmentSize(size: number | null | undefined) {
+  const bytes = Number(size ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 KB";
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
 type AutomationLaunchDraft =
   | { kind: "tool"; id: string }
   | { kind: "playbook"; id: string }
@@ -1345,6 +1359,9 @@ export function TicketListPage() {
   const [search, setSearch] = useState(() => initialUrlStateRef.current.search ?? initialUrlStateRef.current.similarGroup ?? "");
   const [composerMode, setComposerMode] = useState<ComposerMode>("public");
   const [composerText, setComposerText] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<SupportTicketAttachmentUpload[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>(() => getInitialWorkspaceRightTab());
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => (initialUrlStateRef.current.shouldOpenQueue ? "queue" : getInitialWorkspaceMode()));
@@ -1370,6 +1387,7 @@ export function TicketListPage() {
   const [automationCatalogSearch, setAutomationCatalogSearch] = useState("");
   const [showUnavailableAutomation, setShowUnavailableAutomation] = useState(false);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const selectedTicketIdRef = useRef<string | null>(null);
   const markedReadRef = useRef<string | null>(null);
   const resizeStateRef = useRef<WorkspaceResizeState | null>(null);
@@ -1404,7 +1422,22 @@ export function TicketListPage() {
 
   useEffect(() => {
     selectedTicketIdRef.current = selectedTicketId;
+    setPendingAttachments([]);
+    setAttachmentError(null);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
   }, [selectedTicketId]);
+
+  useEffect(() => {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "0px";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 40), 176);
+    textarea.style.height = `${nextHeight}px`;
+  }, [composerText, composerMode, pendingAttachments.length]);
 
   useEffect(() => {
     persistWorkspaceMode(workspaceMode);
@@ -1846,13 +1879,45 @@ export function TicketListPage() {
       if (!selectedTicketId) {
         return null;
       }
-      return postSupportTicketMessage(selectedTicketId, composerText.trim(), composerMode);
+      return postSupportTicketMessage(
+        selectedTicketId,
+        composerText.trim(),
+        composerMode,
+        pendingAttachments.map((item) => item.artifact_id).filter(Boolean),
+      );
     },
     onSuccess: async () => {
       setComposerText("");
+      setPendingAttachments([]);
+      setAttachmentError(null);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
       await refreshSelectedTicketData();
     },
   });
+
+  const handleAttachmentInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    if (!selectedTicketId || files.length === 0) {
+      return;
+    }
+    setUploadingAttachments(true);
+    setAttachmentError(null);
+    try {
+      const uploaded: SupportTicketAttachmentUpload[] = [];
+      for (const file of files) {
+        uploaded.push(await uploadSupportTicketAttachment(selectedTicketId, file));
+      }
+      setPendingAttachments((current) => [...current, ...uploaded]);
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "Не удалось прикрепить файл");
+    } finally {
+      setUploadingAttachments(false);
+      input.value = "";
+    }
+  };
 
   const toolRunMutation = useMutation({
     mutationFn: async (toolName: string) => {
@@ -2186,6 +2251,12 @@ export function TicketListPage() {
     : orderedClosureBlockers.slice(0, CLOSURE_BLOCKER_VISIBLE_LIMIT);
   const closureGuide = closureFocus ? closureFocusGuide(closureFocus) : null;
   const internalNoteAllowed = selectedTicket?.canSendInternalNote ?? false;
+  const composerHasContent = Boolean(composerText.trim() || pendingAttachments.length > 0);
+  const composerCanSend =
+    composerHasContent &&
+    !messageMutation.isPending &&
+    !uploadingAttachments &&
+    (composerMode !== "internal" || internalNoteAllowed);
   const actionError =
     messageMutation.error ||
     operatorActionMutation.error ||
@@ -2566,7 +2637,7 @@ export function TicketListPage() {
 
           {workspaceMode !== "queue" && selectedTicket ? (
             <>
-              <div className="border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
+              <div className="min-h-[176px] max-h-[48vh] resize-y overflow-auto border-b border-white/10 bg-[#0b1624]/70 px-5 py-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="mb-2 flex items-center gap-3 text-sm text-slate-400">
@@ -2592,6 +2663,105 @@ export function TicketListPage() {
                       ) : null}
                       <span>SLA: {selectedTicket.nextAction.remainingLabel}</span>
                     </div>
+                  </div>
+                  <div className="relative shrink-0">
+                    <button
+                      aria-expanded={moreOpen}
+                      className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
+                      disabled={operatorActionMutation.isPending || ticketVisibilityMutation.isPending}
+                      onClick={() => setMoreOpen((open) => !open)}
+                      type="button"
+                    >
+                      Ещё
+                    </button>
+                    {moreOpen ? (
+                      <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
+                        <button
+                          className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
+                          }`}
+                          disabled={!session?.user_login || !selectedTicketIsUnassigned}
+                          onClick={() => openOperatorAction("assign_self")}
+                          type="button"
+                        >
+                          Взять себе
+                        </button>
+                        <div className="my-1 border-t border-white/10" />
+                        {selectedTicket.hiddenFromWorkspace ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canUnhideFromWorkspace || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("unhide")}
+                            type="button"
+                          >
+                            <Eye className="h-4 w-4" />
+                            Вернуть в списки
+                          </button>
+                        ) : (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canHideFromWorkspace || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("hide")}
+                            type="button"
+                          >
+                            <EyeOff className="h-4 w-4" />
+                            Скрыть у всех
+                          </button>
+                        )}
+                        {isAdmin && selectedTicket.archivedAt ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canUnarchiveTicket || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("unarchive")}
+                            type="button"
+                          >
+                            <ArchiveRestore className="h-4 w-4" />
+                            Вернуть из архива
+                          </button>
+                        ) : null}
+                        {isAdmin && !selectedTicket.archivedAt ? (
+                          <button
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!selectedTicket.canArchiveTicket || ticketVisibilityMutation.isPending}
+                            onClick={() => ticketVisibilityMutation.mutate("archive")}
+                            type="button"
+                          >
+                            <Archive className="h-4 w-4" />
+                            Архивировать
+                          </button>
+                        ) : null}
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={statusActionOptions.length === 0}
+                          onClick={() => openOperatorAction("status")}
+                          type="button"
+                        >
+                          Сменить статус
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={queueActionOptions.length === 0}
+                          onClick={() => openOperatorAction("queue")}
+                          type="button"
+                        >
+                          Сменить очередь
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                          onClick={() => openOperatorAction("priority")}
+                          type="button"
+                        >
+                          Изменить приоритет
+                        </button>
+                        <button
+                          className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
+                          onClick={() => openOperatorAction("reroute")}
+                          type="button"
+                        >
+                          Пересчитать маршрут
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2625,109 +2795,6 @@ export function TicketListPage() {
                   </div>
                 </section>
 
-                <div className="mt-3 flex items-center justify-end">
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <button
-                        aria-expanded={moreOpen}
-                        className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-slate-200 hover:text-white disabled:opacity-50"
-                        disabled={operatorActionMutation.isPending || ticketVisibilityMutation.isPending}
-                        onClick={() => setMoreOpen((open) => !open)}
-                        type="button"
-                      >
-                        Ещё
-                      </button>
-                      {moreOpen ? (
-                        <div className="absolute right-0 z-20 mt-2 max-h-[min(70vh,520px)] w-[340px] overflow-y-auto rounded-xl border border-white/10 bg-[#101d30] p-1 shadow-2xl shadow-black/40">
-                          <button
-                            className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-                              selectedTicketIsUnassigned ? "bg-blue-600 text-white hover:bg-blue-500" : "text-slate-500"
-                            }`}
-                            disabled={!session?.user_login || !selectedTicketIsUnassigned}
-                            onClick={() => openOperatorAction("assign_self")}
-                            type="button"
-                          >
-                            Взять себе
-                          </button>
-                          <div className="my-1 border-t border-white/10" />
-                          {selectedTicket.hiddenFromWorkspace ? (
-                            <button
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={!selectedTicket.canUnhideFromWorkspace || ticketVisibilityMutation.isPending}
-                              onClick={() => ticketVisibilityMutation.mutate("unhide")}
-                              type="button"
-                            >
-                              <Eye className="h-4 w-4" />
-                              Вернуть в списки
-                            </button>
-                          ) : (
-                            <button
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={!selectedTicket.canHideFromWorkspace || ticketVisibilityMutation.isPending}
-                              onClick={() => ticketVisibilityMutation.mutate("hide")}
-                              type="button"
-                            >
-                              <EyeOff className="h-4 w-4" />
-                              Скрыть у всех
-                            </button>
-                          )}
-                          {isAdmin && selectedTicket.archivedAt ? (
-                            <button
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={!selectedTicket.canUnarchiveTicket || ticketVisibilityMutation.isPending}
-                              onClick={() => ticketVisibilityMutation.mutate("unarchive")}
-                              type="button"
-                            >
-                              <ArchiveRestore className="h-4 w-4" />
-                              Вернуть из архива
-                            </button>
-                          ) : null}
-                          {isAdmin && !selectedTicket.archivedAt ? (
-                            <button
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={!selectedTicket.canArchiveTicket || ticketVisibilityMutation.isPending}
-                              onClick={() => ticketVisibilityMutation.mutate("archive")}
-                              type="button"
-                            >
-                              <Archive className="h-4 w-4" />
-                              Архивировать
-                            </button>
-                          ) : null}
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={statusActionOptions.length === 0}
-                            onClick={() => openOperatorAction("status")}
-                            type="button"
-                          >
-                            Сменить статус
-                          </button>
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={queueActionOptions.length === 0}
-                            onClick={() => openOperatorAction("queue")}
-                            type="button"
-                          >
-                            Сменить очередь
-                          </button>
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => openOperatorAction("priority")}
-                            type="button"
-                          >
-                            Изменить приоритет
-                          </button>
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/10"
-                            onClick={() => openOperatorAction("reroute")}
-                            type="button"
-                          >
-                            Пересчитать маршрут
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
                 {operatorActionDraft && operatorActionMeta ? (
                   <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm" role="presentation">
                     <section
@@ -3202,40 +3269,76 @@ export function TicketListPage() {
 
                 <div className="border-t border-white/10 bg-[#0b1624] p-3">
                   <div className="rounded-xl border border-white/10 bg-[#0d1828]">
-                    <div className="flex items-center gap-4 border-b border-white/10 px-4">
-                      {(["public", "internal"] as const).map((mode) => (
-                        <button
-                          className={`border-b-2 py-2.5 text-sm font-semibold ${
-                            composerMode === mode ? "border-blue-500 text-blue-200" : "border-transparent text-slate-400"
-                          }`}
-                          disabled={mode === "internal" && !internalNoteAllowed}
-                          key={mode}
-                          onClick={() => setComposerMode(mode)}
-                          type="button"
-                        >
-                          {mode === "public" ? "Публичный ответ" : "Внутренняя заметка"}
-                          {mode === "internal" ? <Lock className="ml-2 inline h-3.5 w-3.5" /> : null}
-                        </button>
-                      ))}
-                    </div>
                     <textarea
-                      className="h-20 min-h-16 max-h-44 w-full resize-y bg-transparent px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      className="min-h-10 max-h-44 w-full resize-y overflow-y-auto bg-transparent px-4 py-2.5 text-sm leading-5 text-white outline-none placeholder:text-slate-500"
                       data-testid="support-reply-composer"
                       onChange={(event) => setComposerText(event.currentTarget.value)}
-                      placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Напишите внутреннюю заметку для команды..."}
+                      placeholder={composerMode === "public" ? "Напишите сообщение пользователю..." : "Внутренняя заметка для команды..."}
+                      rows={1}
                       value={composerText}
                       ref={composerTextareaRef}
                     />
+                    {pendingAttachments.length ? (
+                      <div className="mx-4 mb-2 flex flex-wrap gap-2">
+                        {pendingAttachments.map((attachment) => (
+                          <span
+                            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300"
+                            key={attachment.artifact_id}
+                          >
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                            <span className="max-w-[220px] truncate">{attachment.name || attachment.filename}</span>
+                            <span className="shrink-0 text-slate-500">{formatAttachmentSize(attachment.size)}</span>
+                            <button
+                              aria-label={`Убрать вложение ${attachment.name || attachment.filename}`}
+                              className="rounded text-slate-500 hover:text-white"
+                              onClick={() => setPendingAttachments((current) => current.filter((item) => item.artifact_id !== attachment.artifact_id))}
+                              type="button"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {attachmentError ? (
+                      <p className="mx-4 mb-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">{attachmentError}</p>
+                    ) : null}
                     <div className="flex items-center gap-2 px-4 pb-3">
-                      <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400" type="button">
+                      <input
+                        className="hidden"
+                        multiple
+                        onChange={handleAttachmentInputChange}
+                        ref={attachmentInputRef}
+                        type="file"
+                      />
+                      <button
+                        aria-label="Прикрепить файлы"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!selectedTicketId || uploadingAttachments}
+                        onClick={() => attachmentInputRef.current?.click()}
+                        title={uploadingAttachments ? "Прикрепляем..." : "Прикрепить файлы"}
+                        type="button"
+                      >
                         <Paperclip className="h-4 w-4" />
                       </button>
                       <button className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300" type="button">
                         Шаблоны
                       </button>
                       <button
+                        aria-label={composerMode === "internal" ? "Переключить на публичный ответ" : "Переключить на внутреннюю заметку"}
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 ${
+                          composerMode === "internal" ? "bg-amber-400/15 text-amber-200" : "text-slate-400 hover:text-white"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                        disabled={!internalNoteAllowed}
+                        onClick={() => setComposerMode((mode) => (mode === "internal" ? "public" : "internal"))}
+                        title={composerMode === "internal" ? "Внутренняя заметка" : "Публичный ответ"}
+                        type="button"
+                      >
+                        <Lock className="h-4 w-4" />
+                      </button>
+                      <button
                         className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50"
-                        disabled={!composerText.trim() || messageMutation.isPending || (composerMode === "internal" && !internalNoteAllowed)}
+                        disabled={!composerCanSend}
                         onClick={() => messageMutation.mutate()}
                         type="button"
                       >

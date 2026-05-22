@@ -37,7 +37,7 @@ from app.db.models import (
     TicketResolutionPassport,
     ContinuousImprovementAction,
 )
-from app.repos import DevicesRepo, NotificationRepo
+from app.repos import ArtifactsRepo, DevicesRepo, NotificationRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
@@ -57,10 +57,12 @@ from tickets.handlers import (
     _chat_counters_by_ticket_ids,
     _get_ticket_or_response,
     _message_role_from_auth,
+    _normalize_attachment_refs,
     _push_ticket_event,
     _queue_code_map,
     _reconcile_queue_scope_state,
     _resolution_confirmation_pending,
+    _resolve_attachment_descriptors,
     _serialize_message,
     _store_resolution_confirmation_state,
     _ticket_payload,
@@ -5490,9 +5492,16 @@ async def handle_web_support_send_message(request: web.Request):
         )
 
     text = str(data.get("text") or "").strip()
-    if not text:
+    try:
+        attachment_refs = _normalize_attachment_refs(data.get("attachment_refs"))
+    except ValueError as exc:
         return web.json_response(
-            {"status": "error", "error": "Нужно передать текст сообщения"},
+            {"status": "error", "error": str(exc), "error_code": "INVALID_ATTACHMENT_REFS"},
+            status=400,
+        )
+    if not text and not attachment_refs:
+        return web.json_response(
+            {"status": "error", "error": "Нужно передать текст сообщения или вложение"},
             status=400,
         )
 
@@ -5510,6 +5519,26 @@ async def handle_web_support_send_message(request: web.Request):
             if denied:
                 return denied
 
+            artifacts_repo = ArtifactsRepo(session)
+            attachments: list[dict[str, Any]] = []
+            if attachment_refs:
+                try:
+                    attachments = await _resolve_attachment_descriptors(
+                        artifacts_repo,
+                        ticket.ticket_id,
+                        ticket.device_id,
+                        attachment_refs,
+                    )
+                except ValueError as exc:
+                    return web.json_response(
+                        {
+                            "status": "error",
+                            "error": str(exc),
+                            "error_code": "INVALID_ATTACHMENT_REFS",
+                        },
+                        status=400,
+                    )
+
             sender_role = _message_role_from_auth(auth_context)
             message_id = str(uuid.uuid4())
             payload = {
@@ -5520,6 +5549,9 @@ async def handle_web_support_send_message(request: web.Request):
                 "text": text,
                 "visibility": visibility,
             }
+            if attachment_refs:
+                payload["attachment_refs"] = attachment_refs
+                payload["attachments"] = attachments
             payload = enrich_chat_payload_with_requester_name(ticket, payload)
             result = await repo.add_event(
                 ticket_id=ticket.ticket_id,
@@ -5543,7 +5575,7 @@ async def handle_web_support_send_message(request: web.Request):
             ts=result[1].isoformat() if result and result[1] is not None else None,
             visibility=visibility,
             direction="to_agent",
-            attachments=[],
+            attachments=attachments,
             reply_to=None,
             **_requester_timeline_projection_fields({"event_type": "chat_message", "payload": payload}, ticket=ticket, payload=payload),
         )

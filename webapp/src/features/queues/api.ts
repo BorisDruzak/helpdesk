@@ -1086,6 +1086,17 @@ export type SupportPlaybookRunActionResult = {
   message: string;
 };
 
+export type SupportTicketAttachmentUpload = {
+  artifact_id: string;
+  filename: string;
+  url: string;
+  size: number;
+  sha256: string;
+  mime_type: string;
+  kind: string;
+  name?: string;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -1393,7 +1404,8 @@ export async function fetchSupportTicketTimeline(
 export async function postSupportTicketMessage(
   ticketId: string,
   text: string,
-  visibility: "internal" | "public" = "public"
+  visibility: "internal" | "public" = "public",
+  attachmentRefs: string[] = []
 ): Promise<SupportMessageActionResult> {
   const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/messages`, {
     method: "POST",
@@ -1403,7 +1415,8 @@ export async function postSupportTicketMessage(
     },
     body: JSON.stringify({
       text,
-      visibility
+      visibility,
+      attachment_refs: attachmentRefs
     })
   });
   const payload = await readJson<SuccessResponse<SupportMessageActionResult> | ErrorResponse>(response);
@@ -1418,6 +1431,40 @@ export async function postSupportTicketMessage(
   }
 
   return payload.data;
+}
+
+export async function uploadSupportTicketAttachment(ticketId: string, file: File): Promise<SupportTicketAttachmentUpload> {
+  const formData = new FormData();
+  formData.append("file", file, file.name || "attachment.bin");
+  formData.append("ticket_id", ticketId);
+  formData.append("kind", file.type.startsWith("image/") ? "screenshot" : file.type.startsWith("video/") ? "screen_recording" : "file");
+
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    body: formData
+  });
+  const payload = await readJson<(SupportTicketAttachmentUpload & { status: "success" }) | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new SupportBootstrapApiError(
+      errorPayload?.error ?? "Не удалось прикрепить файл",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return {
+    artifact_id: payload.artifact_id,
+    filename: payload.filename,
+    url: payload.url,
+    size: payload.size,
+    sha256: payload.sha256,
+    mime_type: payload.mime_type,
+    kind: payload.kind,
+    name: file.name || payload.filename
+  };
 }
 
 export async function postSupportTicketRead(ticketId: string, lastReadEventId: number): Promise<SupportTicketReadPayload> {

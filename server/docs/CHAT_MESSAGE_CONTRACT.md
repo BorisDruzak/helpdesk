@@ -177,17 +177,22 @@ id  | agent_seq | created_at          | sender_role | text
 
 ## Attachments
 
+Support UI first uploads files through `POST /api/upload` with `ticket_id`, then sends a message through
+`POST /api/web/support/tickets/{ticket_id}/messages` with `attachment_refs: ["<artifact_id>"]`.
+The message can contain text, attachments, or both. The server resolves artifact descriptors into
+`payload.attachments` and keeps the original `payload.attachment_refs` for stable artifact identity.
+
 ### Формат вложений
 
 ```json
 {
+    "attachment_refs": ["att-123"],
     "attachments": [
         {
-            "id": "att-123",
+            "artifact_id": "att-123",
             "type": "image",
-            "filename": "screenshot.png",
-            "url": "https://storage.example.com/att-123",
-            "size": 102400,
+            "name": "screenshot.png",
+            "url": "/api/artifacts/att-123/download",
             "mime_type": "image/png"
         }
     ]

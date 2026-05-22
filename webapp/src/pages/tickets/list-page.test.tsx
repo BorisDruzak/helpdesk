@@ -26,6 +26,7 @@ import {
   createSupportQueueSavedView,
   deleteSupportQueueSavedView,
   updateSupportQueueSavedView,
+  uploadSupportTicketAttachment,
   type SupportQueuePayload,
   type SupportTicketTimelinePayload,
   type SupportQueueScope,
@@ -82,6 +83,7 @@ vi.mock("../../features/queues/api", async (importOriginal) => {
     createSupportQueueSavedView: vi.fn(),
     deleteSupportQueueSavedView: vi.fn(),
     updateSupportQueueSavedView: vi.fn(),
+    uploadSupportTicketAttachment: vi.fn(),
   };
 });
 
@@ -129,6 +131,7 @@ const postSupportWorkspaceCleanupNoiseMock = vi.mocked(postSupportWorkspaceClean
 const createSupportQueueSavedViewMock = vi.mocked(createSupportQueueSavedView);
 const deleteSupportQueueSavedViewMock = vi.mocked(deleteSupportQueueSavedView);
 const updateSupportQueueSavedViewMock = vi.mocked(updateSupportQueueSavedView);
+const uploadSupportTicketAttachmentMock = vi.mocked(uploadSupportTicketAttachment);
 const fetchTicketProblemLinksMock = vi.mocked(fetchTicketProblemLinks);
 
 function queuePayload(overrides: Partial<SupportQueuePayload> = {}): SupportQueuePayload {
@@ -1321,10 +1324,45 @@ describe("TicketListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /РћС‚РїСЂР°РІРёС‚СЊ|Отправить/ }));
 
     await waitFor(() => {
-      expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "public reply", "public");
+      expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "public reply", "public", []);
     });
     await waitFor(() => {
       expect(fetchSupportTicketWorkspaceMock.mock.calls.length).toBeGreaterThan(1);
+    });
+  });
+
+  it("uploads attachments and sends them from the composer", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+    uploadSupportTicketAttachmentMock.mockResolvedValue({
+      artifact_id: "artifact-1",
+      filename: "artifact-1.txt",
+      url: "/api/artifacts/artifact-1/download",
+      size: 12,
+      sha256: "hash",
+      mime_type: "text/plain",
+      kind: "file",
+      name: "log.txt",
+    });
+    postSupportTicketMessageMock.mockResolvedValue({ ticket_id: "ticket-1", message: {} } as any);
+
+    const view = renderTicketListPage("/app/tickets/ticket-1");
+    await screen.findByTestId("support-reply-composer");
+
+    const fileInput = view.container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+    const file = new File(["hello"], "log.txt", { type: "text/plain" });
+    fireEvent.change(fileInput!, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(uploadSupportTicketAttachmentMock).toHaveBeenCalledWith("ticket-1", file);
+    });
+    expect(await screen.findByText("log.txt")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Отправить/ }));
+
+    await waitFor(() => {
+      expect(postSupportTicketMessageMock).toHaveBeenCalledWith("ticket-1", "", "public", ["artifact-1"]);
     });
   });
 

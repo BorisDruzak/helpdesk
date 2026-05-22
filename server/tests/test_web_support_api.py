@@ -12,6 +12,7 @@ from app.db.models import (
     AccessGroup,
     AccessGroupMember,
     AccessGroupPermission,
+    Artifact,
     Device,
     Operation,
     Playbook,
@@ -2715,6 +2716,64 @@ async def test_web_support_message_action_returns_typed_result_and_persists_even
     detail_payload = await detail_response.json()
     assert detail_response.status == 200, await detail_response.text()
     assert detail_payload["data"]["timeline"][0]["text"] == "Начал диагностику, скоро пришлю результат."
+
+
+@pytest.mark.asyncio
+async def test_web_support_message_action_accepts_attachment_refs(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-attachment",
+            title="Нужно вложение",
+            description="Оператор прикладывает файл.",
+            status="in_progress",
+            requester_id="user-attachment",
+            queue_id=queue.id,
+            assignee_id="support-test",
+        )
+        artifact = Artifact(
+            artifact_id=str(uuid.uuid4()),
+            storage_path="support-log.txt",
+            original_name="support-log.txt",
+            mime_type="text/plain",
+            size_bytes=128,
+            sha256="a" * 64,
+            kind="file",
+            device_id="device-attachment",
+            ticket_id=ticket.ticket_id,
+            operation_id=None,
+            expires_at=None,
+        )
+        ticket_id = ticket.ticket_id
+        artifact_id = artifact.artifact_id
+        session.add_all([ticket, artifact])
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_support_headers(),
+        json={
+            "text": "",
+            "visibility": "public",
+            "attachment_refs": [artifact_id],
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+
+    assert payload["status"] == "success"
+    assert payload["data"]["message"]["attachments"][0]["artifact_id"] == artifact_id
+    assert payload["data"]["message"]["attachments"][0]["name"] == "support-log.txt"
+
+    detail_response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    detail_payload = await detail_response.json()
+    assert detail_response.status == 200, await detail_response.text()
+    assert detail_payload["data"]["timeline"][0]["attachments"][0]["artifact_id"] == artifact_id
 
 
 @pytest.mark.asyncio
