@@ -483,6 +483,12 @@ Retention/archive, backup/restore baseline, runbooks.
 
 **Backup baseline:** daily full (pg_basebackup), WAL archiving, retention 14 daily + 8 weekly. Runbooks: RUNBOOK_BACKUP_RESTORE.md, RUNBOOK_RETENTION_ARCHIVE.md, RUNBOOK_INCIDENT_DB_RECOVERY.md.
 
+### Admin ticket purge
+
+- `POST /api/web/admin/tickets/purge/preview` is the dry-run contract for irreversible ticket removal. It accepts `ticket_ids`, returns found/missing ids, related row counts, blockers and `can_purge`.
+- `POST /api/web/admin/tickets/purge` requires `confirm=true` and is admin-only. It refuses to run while a target ticket has active `operations`, active Remote Assist sessions, or child tickets that are not included in the same purge set.
+- Purge deletes non-FK ticket-owned data explicitly (`ticket_events`, archive rows, operations outbox links, Remote Assist rows, artifacts metadata/files, agent runtime/observer rows, observer traces/errors) and then deletes `tickets`, leaving FK-owned ticket tables to database cascades.
+
 ---
 
 ## Чеклист этапов 10–12

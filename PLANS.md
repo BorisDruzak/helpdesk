@@ -34,6 +34,34 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: Admin Ticket Purge
+
+Status: implementation complete / targeted API tests passed; workspace verification pending.
+
+Goal:
+
+- Add an admin-only hard purge path for test/noise tickets that first previews affected rows and blockers, then deletes ticket-owned data without leaving non-FK orphan rows.
+
+Scope:
+
+- Backend service for purge preview/apply over ticket ids.
+- Typed/admin web endpoints for preview and confirmed purge.
+- Cleanup of known non-FK ticket references: ticket events/archive, operations, remote assist rows, artifacts metadata/files, agent runtime/observer rows and observer projections, before relying on existing FK cascades for ticket-owned tables.
+- Safety blockers for active operations and active Remote Assist sessions.
+- Docs/CODEMAP sync and focused DB/API tests.
+
+Non-goals:
+
+- No requester/support access to hard delete.
+- No automatic scheduled purge.
+- No schema migration unless tests reveal a required FK/constraint change.
+
+Verification target:
+
+- Focused pytest for preview counts, admin-only authorization, blockers and successful purge of FK + non-FK tables: `python -m pytest server/tests/test_ticket_purge_api.py -q` -> 4 passed.
+- `python scripts/verify_workspace.py`.
+- Broader server tests only if touched shared behavior requires it.
+
 ## Active Work: Webapp Workspace Navigation IA
 
 Status: local verification passed / commit and remote browser signoff pending.

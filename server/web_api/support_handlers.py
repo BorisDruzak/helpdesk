@@ -90,6 +90,7 @@ from knowledge.passport_draft_service import KnowledgePassportDraftService
 from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
+from tickets.purge_service import TicketPurgeBlockedError, TicketPurgeService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
 from tools.service import ToolExecutionService
@@ -3564,6 +3565,54 @@ async def handle_web_support_unarchive_ticket(request: web.Request):
         event_type="ticket_unarchived_from_workspace",
         admin_only=True,
     )
+
+
+@require_auth("admin")
+async def handle_web_admin_ticket_purge_preview(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    try:
+        ticket_ids = TicketPurgeService.normalize_ticket_ids(data.get("ticket_ids"))
+    except ValueError as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+
+    async with get_session() as session:
+        result = await TicketPurgeService(session).preview(ticket_ids)
+        return json_model_response(SuccessResponse[dict](data=result))
+
+
+@require_auth("admin")
+async def handle_web_admin_ticket_purge(request: web.Request):
+    data = await _read_support_json(request)
+    if isinstance(data, web.Response):
+        return data
+    if data.get("confirm") is not True:
+        return _support_json_error(
+            "confirm must be true for ticket purge",
+            status=400,
+            error_code="VALIDATION_ERROR",
+        )
+    try:
+        ticket_ids = TicketPurgeService.normalize_ticket_ids(data.get("ticket_ids"))
+    except ValueError as exc:
+        return _support_json_error(str(exc), status=400, error_code="VALIDATION_ERROR")
+
+    auth_context = request.get("auth_context")
+    actor_id = getattr(auth_context, "actor_id", None)
+    reason = str(data.get("reason") or "").strip() or None
+    async with get_session() as session:
+        service = TicketPurgeService(session)
+        try:
+            result = await service.purge(ticket_ids, actor_id=actor_id, reason=reason)
+        except TicketPurgeBlockedError as exc:
+            return _support_json_error(
+                "Ticket purge is blocked by active related records",
+                status=409,
+                error_code="TICKET_PURGE_BLOCKED",
+                data=exc.preview,
+            )
+        return json_model_response(SuccessResponse[dict](data=result))
 
 
 def _mass_action_item(

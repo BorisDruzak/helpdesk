@@ -296,6 +296,8 @@ from web_api.access_handlers import (
     handle_web_admin_access_update_group,
 )
 from web_api.support_handlers import (
+    handle_web_admin_ticket_purge,
+    handle_web_admin_ticket_purge_preview,
     handle_web_support_assign_ticket,
     handle_web_support_bootstrap,
     handle_web_support_approval_decision,
@@ -744,6 +746,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/remote-assist/{session_id}/end', handle_remote_assist_end),
         web.post('/api/web/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
+        web.post('/api/web/admin/tickets/purge/preview', handle_web_admin_ticket_purge_preview),
+        web.post('/api/web/admin/tickets/purge', handle_web_admin_ticket_purge),
         web.get('/api/web/admin/capabilities', handle_diagnostics_capabilities),
         web.get('/api/web/tool-presentations', handle_tool_presentation_get),
         web.put('/api/web/tool-presentations', handle_tool_presentation_put),
