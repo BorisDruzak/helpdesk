@@ -6,6 +6,7 @@ from loguru import logger
 from app.db import get_session
 from app.db.models import Device
 from auth.middleware import require_auth
+from app.repos.registry_repo import RegistryRepo
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
 
@@ -72,25 +73,6 @@ async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy:
     return _forbidden()
 
 
-def _user_can_confirm_claim(auth_context, claim) -> bool:
-    actor_id = str(auth_context.actor_id or "").strip().lower()
-    if auth_context.actor_role in {"admin", "support"}:
-        return True
-    if auth_context.actor_role == "agent":
-        return claim.device_id == str(auth_context.actor_id or "").strip()
-    if auth_context.actor_role == "user":
-        source_ref = str(claim.source_ref or "").strip().lower()
-        profile = claim.profile_snapshot or {}
-        identities = {
-            source_ref,
-            str(profile.get("requester_id") or "").strip().lower(),
-            str(profile.get("login") or "").strip().lower(),
-            str(profile.get("email") or "").strip().lower(),
-        }
-        return bool(actor_id and actor_id in identities)
-    return False
-
-
 @require_auth("admin")
 async def handle_web_admin_registry(_request: web.Request) -> web.Response:
     try:
@@ -123,64 +105,58 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
 @require_auth("admin", "support", "user", "agent")
 async def handle_registry_options(_request: web.Request) -> web.Response:
     async with get_session() as session:
-        snapshot = await RegistrySnapshotService(session).build_snapshot()
-
-    assets = snapshot.get("assets") if isinstance(snapshot.get("assets"), list) else []
-    people = snapshot.get("people") if isinstance(snapshot.get("people"), list) else []
-    locations = snapshot.get("locations") if isinstance(snapshot.get("locations"), list) else []
-    departments = snapshot.get("departments") if isinstance(snapshot.get("departments"), list) else []
-    services = snapshot.get("services") if isinstance(snapshot.get("services"), list) else []
+        repo = RegistryRepo(session)
+        assets = await repo.list_assets(limit=500)
+        people = await repo.list_people(limit=500)
+        locations = await repo.list_locations(limit=500)
+        departments = await repo.list_departments()
+        services = await repo.list_services()
 
     return _success(
         {
             "devices": _compact_options(
                 [
                     _option(
-                        item.get("device_id") or item.get("asset_id") or item.get("id"),
-                        item.get("hostname") or item.get("name") or item.get("device_id") or item.get("asset_id"),
+                        asset.device_id or asset.asset_id,
+                        asset.hostname or asset.name or asset.device_id or asset.asset_id,
                     )
-                    for item in assets
-                    if isinstance(item, dict)
+                    for asset in assets
                 ]
             ),
             "users": _compact_options(
                 [
                     _option(
-                        item.get("person_id") or item.get("id"),
-                        item.get("display_name") or item.get("full_name") or item.get("person_id"),
+                        person.person_id,
+                        person.display_name or person.full_name or person.person_id,
                     )
-                    for item in people
-                    if isinstance(item, dict)
+                    for person in people
                 ]
             ),
             "locations": _compact_options(
                 [
                     _option(
-                        item.get("location_id") or item.get("id"),
+                        location.location_id,
                         " / ".join(
                             str(part).strip()
-                            for part in (item.get("building"), item.get("room"))
+                            for part in (location.building, location.room)
                             if str(part or "").strip()
                         )
-                        or item.get("display_name")
-                        or item.get("location_id"),
+                        or location.display_name
+                        or location.location_id,
                     )
-                    for item in locations
-                    if isinstance(item, dict)
+                    for location in locations
                 ]
             ),
             "departments": _compact_options(
                 [
-                    _option(item.get("department_id") or item.get("id"), item.get("name") or item.get("code"))
-                    for item in departments
-                    if isinstance(item, dict)
+                    _option(department.department_id, department.name or department.code)
+                    for department in departments
                 ]
             ),
             "services": _compact_options(
                 [
-                    _option(item.get("service_id") or item.get("id"), item.get("name") or item.get("code"))
-                    for item in services
-                    if isinstance(item, dict)
+                    _option(service.service_id, service.name or service.code)
+                    for service in services
                 ]
             ),
         }
@@ -288,6 +264,8 @@ async def handle_registry_agent_registration_status(request: web.Request) -> web
     except RegistrationValidationError as exc:
         return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
     async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
         payload = await RegistrationService(session).get_device_registration_status(device_id)
     return _success(payload)
 
@@ -301,7 +279,7 @@ async def handle_registry_agent_claim_confirm(request: web.Request) -> web.Respo
         claim = await service.repo.get_claim(claim_id)
         if claim is None:
             return web.json_response({"status": "error", "error": "claim not found", "error_code": "NOT_FOUND"}, status=404)
-        if not _user_can_confirm_claim(auth_context, claim):
+        if not await service.can_confirm_claim_for_actor(claim, auth_context):
             return web.json_response({"status": "error", "error": "forbidden claim", "error_code": "FORBIDDEN"}, status=403)
         payload = await service.confirm_claim_by_user(claim_id, actor_id=auth_context.actor_id)
         await session.commit()

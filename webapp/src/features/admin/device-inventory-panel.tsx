@@ -1,4 +1,4 @@
-import { RefreshCcw, Save } from "lucide-react";
+import { RefreshCcw, Save, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -15,6 +15,7 @@ import {
   fetchAdminDeviceRegistrationTimeline,
   fetchAdminDeviceInventory,
   ignoreAdminDeviceBindingSuggestion,
+  revokeAdminDeviceUserBinding,
   saveAdminDeviceInventoryBinding,
   saveAdminDeviceInventoryRefreshPolicy,
   type AdminBindingSuggestionItem,
@@ -231,6 +232,15 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
   const pendingSuggestions = suggestions.filter((item) => item.status === "pending");
   const presence = data?.presence ?? null;
   const registrationTimeline = registrationTimelineQuery.data?.items ?? [];
+
+  const revokeRegistrationMutation = useMutation({
+    mutationFn: () => revokeAdminDeviceUserBinding(binding?.source_binding_id ?? "", "revoked from device card"),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-device-registration-timeline", deviceId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
+    },
+  });
 
   useEffect(() => {
     setBindingForm({
@@ -516,6 +526,40 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                       <p className="text-xs uppercase text-slate-500">История</p>
                       <p className="mt-1 font-semibold text-slate-950">{registrationTimeline.length} событий</p>
                     </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-950">Активная привязка</h4>
+                  <div className="mt-4 grid gap-2 text-sm">
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">ID привязки</p>
+                      <p className="mt-1 break-all font-semibold text-slate-950">{valueText(binding?.source_binding_id)}</p>
+                    </div>
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">ID пользователя</p>
+                      <p className="mt-1 break-all font-semibold text-slate-950">{valueText(binding?.person_id)}</p>
+                    </div>
+                    <div className="rounded-md bg-surface-subtle px-3 py-2">
+                      <p className="text-xs uppercase text-slate-500">Статус</p>
+                      <p className="mt-1 font-semibold text-slate-950">{valueText(binding?.registration_status)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Button
+                      disabled={!binding?.source_binding_id || revokeRegistrationMutation.isPending}
+                      leadingIcon={<Trash2 className="h-4 w-4" />}
+                      onClick={() => revokeRegistrationMutation.mutate()}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {revokeRegistrationMutation.isPending ? "Отзывается" : "Отозвать регистрацию"}
+                    </Button>
+                    {revokeRegistrationMutation.isError ? (
+                      <span className="text-sm text-rose-600">Не удалось отозвать регистрацию</span>
+                    ) : null}
+                    {revokeRegistrationMutation.isSuccess ? (
+                      <span className="text-sm text-emerald-700">Регистрация отозвана</span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-white p-4">

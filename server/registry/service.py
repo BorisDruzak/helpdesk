@@ -6,13 +6,70 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DevicePresenceSnapshot
+from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity
 from app.repos.registry_repo import RegistryRepo
+from app.repos.registration_repo import normalize_identifier
 
 
 def _clean(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _presence_identity_match(current_user: str | None, identities: list[RegistryPersonIdentity]) -> bool | None:
+    user = str(current_user or "").strip()
+    if not user or not identities:
+        return None
+    current_values = {
+        normalize_identifier("windows_login", user),
+        normalize_identifier("ui_login", user),
+    }
+    if "\\" in user:
+        current_values.add(normalize_identifier("ui_login", user.split("\\", 1)[1]))
+    current_values = {value for value in current_values if value}
+    if not current_values:
+        return None
+
+    comparable_seen = False
+    for identity in identities:
+        provider = str(identity.provider or "").strip().lower()
+        normalized = str(identity.normalized_identifier or "").strip().lower()
+        if not normalized:
+            continue
+        if provider in {"windows_login", "ui_login", "ad"}:
+            comparable_seen = True
+            if normalized in current_values:
+                return True
+            if "\\" in normalized and normalized.split("\\", 1)[1] in current_values:
+                return True
+        elif provider == "email":
+            local_part = normalized.split("@", 1)[0]
+            if local_part:
+                comparable_seen = True
+                if local_part in current_values:
+                    return True
+                if any(value.endswith(f"\\{local_part}") for value in current_values):
+                    return True
+    return False if comparable_seen else None
+
+
+def _asset_registration_status(
+    device_id: str | None,
+    active_primary_by_device: dict[str, Any],
+    active_shared_by_device: dict[str, list[Any]],
+    pending_by_device: dict[str, list[Any]],
+) -> str:
+    key = str(device_id or "")
+    pending_claims = pending_by_device.get(key, [])
+    if active_primary_by_device.get(key):
+        return "admin_confirmed"
+    if active_shared_by_device.get(key):
+        return "shared_device"
+    if any(claim.status == "conflict" for claim in pending_claims):
+        return "conflict"
+    if pending_claims:
+        return "pending"
+    return "unregistered"
 
 
 @dataclass(frozen=True)
@@ -110,7 +167,29 @@ class RegistrySnapshotService:
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
         departments_by_id = {department.department_id: department for department in departments}
-        active_by_device = {binding.device_id: binding for binding in bindings if binding.status == "active"}
+        active_primary_by_device = {
+            binding.device_id: binding
+            for binding in bindings
+            if binding.status == "active" and binding.relationship_type == "primary_user"
+        }
+        active_shared_by_device: dict[str, list[Any]] = {}
+        active_any_by_device: dict[str, Any] = {}
+        for binding in bindings:
+            if binding.status != "active":
+                continue
+            active_any_by_device.setdefault(binding.device_id, binding)
+            if binding.relationship_type == "shared_user":
+                active_shared_by_device.setdefault(binding.device_id, []).append(binding)
+        identities_by_person: dict[str, list[RegistryPersonIdentity]] = {}
+        person_ids = [person.person_id for person in people]
+        if person_ids:
+            identity_rows = (
+                await self.session.execute(
+                    select(RegistryPersonIdentity).where(RegistryPersonIdentity.person_id.in_(person_ids))
+                )
+            ).scalars().all()
+            for identity in identity_rows:
+                identities_by_person.setdefault(identity.person_id, []).append(identity)
         latest_presence_by_device: dict[str, DevicePresenceSnapshot] = {}
         device_ids = [asset.device_id for asset in assets if asset.device_id]
         if device_ids:
@@ -131,7 +210,7 @@ class RegistrySnapshotService:
 
         data_quality = []
         for asset in assets:
-            active_binding = active_by_device.get(asset.device_id or "")
+            active_binding = active_any_by_device.get(asset.device_id or "")
             pending_claims = pending_by_device.get(asset.device_id or "", [])
             if asset.asset_type == "pc" and not asset.location_id:
                 data_quality.append({
@@ -186,14 +265,12 @@ class RegistrySnapshotService:
                     "details": binding.device_id,
                 })
         for asset in assets:
-            active_binding = active_by_device.get(asset.device_id or "")
+            active_binding = active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")
             presence = latest_presence_by_device.get(asset.device_id or "")
-            person = people_by_id.get(active_binding.person_id if active_binding else "")
             current_user = (presence.current_user if presence else None) or ""
-            known_login = ""
-            if person:
-                known_login = (person.email or person.profile_key or person.display_name or "").split("@", 1)[0].lower()
-            if active_binding and current_user and known_login and known_login not in current_user.lower():
+            identities = identities_by_person.get(active_binding.person_id if active_binding else "", [])
+            presence_match = _presence_identity_match(current_user, identities)
+            if active_binding and presence_match is False:
                 data_quality.append({
                     "kind": "presence_user_mismatch",
                     "severity": "warning",
@@ -217,7 +294,7 @@ class RegistrySnapshotService:
 
         suggestions = []
         for asset in assets:
-            active_binding = active_by_device.get(asset.device_id or "")
+            active_binding = active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")
             person = people_by_id.get(active_binding.person_id if active_binding else asset.assigned_person_id or "")
             if asset.hostname and person:
                 suggestions.append({
@@ -279,7 +356,7 @@ class RegistrySnapshotService:
                 "vendors": len(vendors),
                 "registrations_pending": sum(1 for claim in claims if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review"}),
                 "registrations_conflicts": sum(1 for claim in claims if claim.status == "conflict"),
-                "unregistered_devices": sum(1 for asset in assets if asset.asset_type == "pc" and not active_by_device.get(asset.device_id or "")),
+                "unregistered_devices": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
                 "active_bindings": sum(1 for binding in bindings if binding.status == "active"),
                 "stale_bindings": sum(1 for binding in bindings if binding.status == "stale"),
                 "data_quality_issue_count": len(data_quality),
@@ -321,17 +398,31 @@ class RegistrySnapshotService:
                     "service_name": None,
                     "vendor_id": asset.vendor_id,
                     "vendor_name": None,
-                    "registration_status": "admin_confirmed"
-                    if active_by_device.get(asset.device_id or "")
-                    else ("conflict" if any(claim.status == "conflict" for claim in pending_by_device.get(asset.device_id or "", [])) else ("pending" if pending_by_device.get(asset.device_id or "") else "unregistered")),
-                    "active_binding_id": active_by_device.get(asset.device_id or "").binding_id
-                    if active_by_device.get(asset.device_id or "")
+                    "registration_status": _asset_registration_status(
+                        asset.device_id,
+                        active_primary_by_device,
+                        active_shared_by_device,
+                        pending_by_device,
+                    ),
+                    "active_binding_id": (
+                        active_primary_by_device.get(asset.device_id or "")
+                        or active_any_by_device.get(asset.device_id or "")
+                    ).binding_id
+                    if (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or ""))
                     else None,
-                    "active_person_id": active_by_device.get(asset.device_id or "").person_id
-                    if active_by_device.get(asset.device_id or "")
+                    "active_person_id": (
+                        active_primary_by_device.get(asset.device_id or "")
+                        or active_any_by_device.get(asset.device_id or "")
+                    ).person_id
+                    if (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or ""))
                     else None,
-                    "active_person_name": people_by_id.get(active_by_device.get(asset.device_id or "").person_id).display_name
-                    if active_by_device.get(asset.device_id or "") and active_by_device.get(asset.device_id or "").person_id in people_by_id
+                    "active_person_name": people_by_id.get(
+                        (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")).person_id
+                    ).display_name
+                    if (
+                        (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or ""))
+                        and (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")).person_id in people_by_id
+                    )
                     else None,
                     "pending_claim_count": len(pending_by_device.get(asset.device_id or "", [])),
                     "last_claim_at": max(

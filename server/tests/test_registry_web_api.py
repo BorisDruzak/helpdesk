@@ -122,7 +122,7 @@ async def test_registry_profile_endpoint_syncs_agent_profile(test_client, test_e
 
 
 @pytest.mark.asyncio
-async def test_registry_options_available_to_agent_request_forms(test_client, test_engine):
+async def test_registry_options_available_to_agent_request_forms_without_full_snapshot(test_client, test_engine, monkeypatch):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -162,6 +162,10 @@ async def test_registry_options_available_to_agent_request_forms(test_client, te
         )
         await session.commit()
 
+    async def fail_snapshot(*_args, **_kwargs):
+        raise AssertionError("registry options must not build full admin snapshot")
+
+    monkeypatch.setattr("web_api.registry_handlers.RegistrySnapshotService.build_snapshot", fail_snapshot)
     response = await test_client.get("/api/registry/options", headers=_user_headers())
     assert response.status == 200, await response.text()
     payload = await response.json()

@@ -219,6 +219,41 @@ class RegistrationRepo:
         )
         return result.scalar_one_or_none()
 
+    async def find_identity(self, provider: str, identifier: str) -> RegistryPersonIdentity | None:
+        normalized = normalize_identifier(provider, identifier)
+        if not normalized:
+            return None
+        result = await self.session.execute(
+            select(RegistryPersonIdentity)
+            .where(
+                RegistryPersonIdentity.provider == str(provider),
+                RegistryPersonIdentity.normalized_identifier == normalized,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_identities_for_person(self, person_id: str | None) -> list[RegistryPersonIdentity]:
+        if not person_id:
+            return []
+        result = await self.session.execute(
+            select(RegistryPersonIdentity)
+            .where(RegistryPersonIdentity.person_id == str(person_id))
+            .order_by(RegistryPersonIdentity.provider, RegistryPersonIdentity.normalized_identifier)
+        )
+        return list(result.scalars().all())
+
+    async def list_identities_for_person_ids(self, person_ids: list[str]) -> list[RegistryPersonIdentity]:
+        ids = [str(item) for item in person_ids if item]
+        if not ids:
+            return []
+        result = await self.session.execute(
+            select(RegistryPersonIdentity)
+            .where(RegistryPersonIdentity.person_id.in_(ids))
+            .order_by(RegistryPersonIdentity.person_id, RegistryPersonIdentity.provider)
+        )
+        return list(result.scalars().all())
+
     async def create_binding(self, **fields: Any) -> DeviceUserBinding:
         row = DeviceUserBinding(binding_id=fields.pop("binding_id", new_id()), **fields)
         self.session.add(row)

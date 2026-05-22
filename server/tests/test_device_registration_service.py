@@ -421,6 +421,89 @@ async def test_verified_identity_collision_reuses_existing_person_without_steali
 
 
 @pytest.mark.asyncio
+async def test_verified_identity_keeps_existing_person_fields_on_conflicting_self_report(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    first_device_id = str(uuid.uuid4())
+    second_device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add_all([_device(first_device_id), _device(second_device_id)])
+        service = RegistrationService(session)
+        first = await service.submit_agent_profile_claim(
+            device_id=first_device_id,
+            requester_id="verified-owner",
+            display_name="Verified Owner",
+            profile={
+                "full_name": "Verified Owner",
+                "email": "verified@example.test",
+                "phone": "100",
+                "department": "Original Department",
+            },
+        )
+        identity = (
+            await session.execute(
+                select(RegistryPersonIdentity).where(
+                    RegistryPersonIdentity.provider == "email",
+                    RegistryPersonIdentity.normalized_identifier == "verified@example.test",
+                )
+            )
+        ).scalar_one()
+        identity.verified = True
+        await service.submit_agent_profile_claim(
+            device_id=second_device_id,
+            requester_id="verified-conflict",
+            display_name="Conflicting Self Report",
+            profile={
+                "full_name": "Conflicting Self Report",
+                "email": "verified@example.test",
+                "phone": "999",
+                "department": "Wrong Department",
+            },
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        person = await session.get(RegistryPersonIdentity, identity.identity_id)
+        owner = await RegistrationService(session).registry_repo.get_person(first["person"]["person_id"])
+
+    assert person.person_id == first["person"]["person_id"]
+    assert owner.display_name == "Verified Owner"
+    assert owner.full_name == "Verified Owner"
+    assert owner.phone == "100"
+
+
+@pytest.mark.asyncio
+async def test_unverified_identity_can_refresh_self_reported_person_fields(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    first_device_id = str(uuid.uuid4())
+    second_device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add_all([_device(first_device_id), _device(second_device_id)])
+        service = RegistrationService(session)
+        first = await service.submit_agent_profile_claim(
+            device_id=first_device_id,
+            requester_id="unverified-owner",
+            display_name="Old Self Report",
+            profile={"full_name": "Old Self Report", "email": "unverified@example.test", "phone": "100"},
+        )
+        await service.submit_agent_profile_claim(
+            device_id=second_device_id,
+            requester_id="unverified-owner",
+            display_name="Updated Self Report",
+            profile={"full_name": "Updated Self Report", "email": "unverified@example.test", "phone": "200"},
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        owner = await RegistrationService(session).registry_repo.get_person(first["person"]["person_id"])
+
+    assert owner.display_name == "Updated Self Report"
+    assert owner.full_name == "Updated Self Report"
+    assert owner.phone == "200"
+
+
+@pytest.mark.asyncio
 async def test_registration_service_rejects_invalid_or_missing_device_id_before_fk_error(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 

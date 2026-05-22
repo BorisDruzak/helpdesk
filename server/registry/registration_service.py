@@ -195,14 +195,16 @@ class RegistrationService:
         ]
         for provider, identifier in identity_candidates:
             if identifier:
-                person = await self.repo.find_person_by_identity(provider, str(identifier))
+                identity = await self.repo.find_identity(provider, str(identifier))
+                person = await self.registry_repo.get_person(identity.person_id) if identity else None
                 if person:
-                    person.display_name = display_name or person.display_name
-                    person.full_name = profile.get("full_name") or person.full_name
-                    person.phone = profile.get("phone") or person.phone
-                    person.email = profile.get("email") or person.email
-                    person.department_id = department_id or person.department_id
-                    person.location_id = location_id or person.location_id
+                    if not identity.verified:
+                        person.display_name = display_name or person.display_name
+                        person.full_name = profile.get("full_name") or person.full_name
+                        person.phone = profile.get("phone") or person.phone
+                        person.email = profile.get("email") or person.email
+                        person.department_id = department_id or person.department_id
+                        person.location_id = location_id or person.location_id
                     person.last_seen_at = datetime.now(timezone.utc)
                     await self.session.flush()
                     return person
@@ -431,6 +433,80 @@ class RegistrationService:
         if not conflict_reason and REGISTRATION_POLICY["auto_approve_first_binding"] and not REGISTRATION_POLICY["require_admin_confirmation"]:
             return await self.approve_claim(claim.claim_id, reviewed_by=actor_id or "system", actor_role="system")
         return self._build_submit_payload(person=person, asset=asset, claim=claim)
+
+    def _normalized_actor_identities(self, actor_id: str | None) -> dict[str, set[str]]:
+        raw = str(actor_id or "").strip()
+        values: dict[str, set[str]] = {"ui_login": set(), "windows_login": set(), "email": set()}
+        if not raw:
+            return values
+        for provider in values:
+            normalized = normalize_identifier(provider, raw)
+            if normalized:
+                values[provider].add(normalized)
+        if "\\" in raw:
+            local = raw.split("\\", 1)[1]
+            normalized = normalize_identifier("ui_login", local)
+            if normalized:
+                values["ui_login"].add(normalized)
+        if "@" in raw:
+            local = raw.split("@", 1)[0]
+            normalized = normalize_identifier("ui_login", local)
+            if normalized:
+                values["ui_login"].add(normalized)
+        return values
+
+    def _identity_matches_actor(self, *, provider: str, identifier: str | None, actor_values: dict[str, set[str]]) -> bool:
+        provider_key = str(provider or "").strip().lower()
+        if provider_key in {"agent_profile", "manual"}:
+            provider_key = "ui_login"
+        if provider_key == "ad":
+            provider_key = "windows_login"
+        if provider_key == "phone":
+            return False
+        normalized = normalize_identifier(provider_key, identifier)
+        if not normalized:
+            return False
+        if normalized in actor_values.get(provider_key, set()):
+            return True
+        if provider_key == "email":
+            local = normalized.split("@", 1)[0]
+            return local in actor_values.get("ui_login", set())
+        return False
+
+    async def can_confirm_claim_for_actor(self, claim: Any, auth_context: Any) -> bool:
+        actor_role = str(getattr(auth_context, "actor_role", "") or "")
+        actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+        if actor_role in {"admin", "support"}:
+            return True
+        if actor_role == "agent":
+            return claim.device_id == actor_id
+        if actor_role != "user" or not actor_id:
+            return False
+
+        actor_values = self._normalized_actor_identities(actor_id)
+        profile = claim.profile_snapshot or {}
+        claim_identity_candidates = [
+            ("ui_login", claim.source_ref),
+            ("ui_login", profile.get("requester_id")),
+            ("ui_login", profile.get("login")),
+            ("windows_login", profile.get("login")),
+            ("windows_login", profile.get("current_user")),
+            ("email", profile.get("email")),
+        ]
+        if any(
+            self._identity_matches_actor(provider=provider, identifier=identifier, actor_values=actor_values)
+            for provider, identifier in claim_identity_candidates
+        ):
+            return True
+
+        for identity in await self.repo.list_identities_for_person(claim.person_id):
+            if self._identity_matches_actor(
+                provider=identity.provider,
+                identifier=identity.normalized_identifier,
+                actor_values=actor_values,
+            ):
+                return True
+        return False
 
     async def approve_claim(
         self,
