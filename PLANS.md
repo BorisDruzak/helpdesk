@@ -565,7 +565,7 @@ Known verification limitation:
 
 ## Active Work: Inventory Processes Items / Agent 3.1.59
 
-Status: implemented locally / release verification pending on branch `codex/helpdesk-process-model`.
+Status: accepted / released on branch `codex/helpdesk-process-model`, commit `8605a03`.
 
 Goal:
 
@@ -586,7 +586,10 @@ Verification plan:
 - `pnpm --dir webapp build` passed.
 - `python scripts/verify_workspace.py` passed.
 - `python -m pytest server/tests/test_inventory_presentation_unit.py server/tests/test_tool_service_auto_install_no_db.py -q --tb=short` -> 6 passed.
-- Packaged Windows/Linux verify and live `inventory.collect` on ADMIN-2 after rollout are pending.
+- Packaged Windows/Linux verify passed for 3.1.59.
+- Uploaded release artifacts to the server registry and assigned stable rollout for `windows_amd64` and `linux_alt_x86_64`.
+- Released the updated web bundle to the stand with quick gate and `--leave-running`.
+- Live `inventory.collect` on ADMIN-2 (`7a3429ec-1c0b-5495-9aad-b284f08ae965`) succeeded: snapshot `f00a5b35-d738-4a72-9762-9cb1094d99a8` contains `processes.items` with 50 rows from 292 processes, and browser verification shows the `Процессы` block with real rows such as `Codex.exe` and `pc_agent.exe`.
 
 ## Active Work: Inventory v3 / Lightweight CMDB
 
