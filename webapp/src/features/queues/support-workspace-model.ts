@@ -174,6 +174,12 @@ export type SupportWorkspaceContext = {
     email: string;
     location: string;
     sourceLabel: string;
+    accountWarning: string | null;
+    accountDeclaredName: string | null;
+    accountLogin: string | null;
+    accountReason: string | null;
+    accountVerification: string | null;
+    activeDeviceOwner: string | null;
   };
   device: {
     id: string | null;

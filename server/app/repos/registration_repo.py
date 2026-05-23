@@ -60,6 +60,19 @@ class RegistrationRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_active_binding_for_device(self, device_id: str, binding_id: str) -> DeviceUserBinding | None:
+        result = await self.session.execute(
+            select(DeviceUserBinding)
+            .where(
+                DeviceUserBinding.device_id == str(device_id),
+                DeviceUserBinding.binding_id == str(binding_id),
+                DeviceUserBinding.status == "active",
+                DeviceUserBinding.relationship_type.in_(["primary_user", "shared_user", "responsible"]),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def list_active_bindings_for_device(self, device_id: str) -> list[DeviceUserBinding]:
         result = await self.session.execute(
             select(DeviceUserBinding)

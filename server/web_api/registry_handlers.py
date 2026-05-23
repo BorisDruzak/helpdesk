@@ -206,11 +206,15 @@ async def handle_registry_agent_account_login_request_get(request: web.Request) 
         row = await service.repo.get_login_request(request_id)
         if row is None or row.device_id != device_id:
             return web.json_response({"status": "error", "error": "request not found", "error_code": "NOT_FOUND"}, status=404)
-        payload = service.serialize_login_request(row)
+        payload = service.serialize_login_request(row, include_session_token=True)
         if row.resulting_session_id:
             session_row = await service.repo.get_session(row.resulting_session_id)
             if session_row:
                 payload = {**payload, "session": await service.serialize_session(session_row)}
+        if payload.get("session_token"):
+            row.metadata_json = {**(row.metadata_json or {})}
+            row.metadata_json.pop("session_token_once", None)
+            await session.commit()
     return _success(payload)
 
 

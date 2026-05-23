@@ -702,14 +702,42 @@ export function mapWorkspaceContext(
   ]
     .filter(Boolean)
     .join(", ");
+  const accountContext: Record<string, unknown> =
+    detail.ticket.requester_account_context && typeof detail.ticket.requester_account_context === "object"
+      ? detail.ticket.requester_account_context
+      : {};
+  const declaredAccount =
+    accountContext.declared_account && typeof accountContext.declared_account === "object"
+      ? accountContext.declared_account as Record<string, unknown>
+      : {};
+  const accountWarning = detail.ticket.requester_account_warning ?? (
+    typeof accountContext.warning === "string" ? accountContext.warning : null
+  );
+  const accountDeclaredName = [
+    declaredAccount.display_name,
+    declaredAccount.full_name,
+    declaredAccount.login,
+  ].find((value) => typeof value === "string" && value.trim()) as string | undefined;
+  const accountVerification = [
+    accountContext.verification_method,
+    accountContext.verification_status,
+  ].filter((value) => typeof value === "string" && value).join(" / ");
   return {
     requester: {
       name: registry?.person_display_name ?? detail.ticket.requester_display_name ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
       department: registry?.department_name ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
-      phone: registry?.person_phone ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
-      email: registry?.person_email ?? "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d",
+      phone: registry?.person_phone ?? (typeof declaredAccount.phone === "string" ? declaredAccount.phone : "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d"),
+      email: registry?.person_email ?? (typeof declaredAccount.email === "string" ? declaredAccount.email : "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d"),
       location: registry?.location_display_name ?? (locationFallback || "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"),
       sourceLabel: requesterSourceLabel(registry?.person_source),
+      accountWarning,
+      accountDeclaredName: accountDeclaredName ?? null,
+      accountLogin: typeof declaredAccount.login === "string" ? declaredAccount.login : null,
+      accountReason: typeof declaredAccount.reason === "string" ? declaredAccount.reason : (
+        typeof accountContext.reason === "string" ? accountContext.reason : null
+      ),
+      accountVerification: accountVerification || null,
+      activeDeviceOwner: typeof accountContext.active_device_person_name === "string" ? accountContext.active_device_person_name : null,
     },
     device: {
       id: device.device_id,

@@ -286,3 +286,40 @@ class AccountSessionManager:
         if not merged.get("display_name"):
             merged["display_name"] = _first_text(merged.get("full_name"), merged.get("login"))
         return self.sanitize(merged)
+
+    def matches_account_state(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
+        sanitized = self.sanitize(session)
+        mode = str(sanitized.get("account_mode") or "")
+        if mode not in ACCOUNT_SESSION_MODES:
+            return False
+        if mode == "registration_pending":
+            registration = state.get("registration") if isinstance(state.get("registration"), dict) else {}
+            return str(registration.get("status") or "") in {
+                "self_reported",
+                "pending_user_confirmation",
+                "user_confirmed",
+                "pending_admin_review",
+                "conflict",
+            }
+        session_id = str(sanitized.get("account_session_id") or "")
+        if not session_id:
+            return False
+        accounts = [item for item in (state or {}).get("accounts") or [] if isinstance(item, dict)]
+        server_sessions = [item for item in (state or {}).get("server_sessions") or [] if isinstance(item, dict)]
+        if mode == "confirmed_binding":
+            binding_id = str(sanitized.get("binding_id") or "")
+            return any(
+                item.get("account_mode") == "confirmed_binding"
+                and item.get("verification_status") == "verified"
+                and str(item.get("session_id") or "") == session_id
+                and str(item.get("binding_id") or "") == binding_id
+                for item in server_sessions + accounts
+            )
+        if mode == "verified_other_account":
+            return any(
+                item.get("account_mode") == "verified_other_account"
+                and item.get("verification_status") == "verified"
+                and str(item.get("session_id") or "") == session_id
+                for item in accounts + server_sessions
+            )
+        return False

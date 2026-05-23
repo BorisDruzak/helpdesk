@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Device, DeviceRegistrationClaim, Ticket
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
+from tests.conftest import TEST_AGENT_PREFIX
 from tickets.create_flow import create_ticket_with_side_effects
 
 
@@ -368,3 +369,31 @@ async def test_registration_pending_account_after_revoke_marks_pending_without_b
     assert ticket.asset_id == pending["asset"]["asset_id"]
     assert ticket.requester_registration_status in {"pending_user_confirmation", "registration_pending"}
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "registration_pending"
+
+
+@pytest.mark.asyncio
+async def test_agent_create_with_required_invalid_session_returns_403_before_ticket_create(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        headers={"Authorization": f"Bearer {TEST_AGENT_PREFIX}{device_id}"},
+        json={
+            "device_id": device_id,
+            "title": "Need help",
+            "description": "Need help",
+            "requester_account": {"session_id": str(uuid.uuid4())},
+            "require_account_session": True,
+        },
+    )
+
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "ACCOUNT_SESSION_NOT_FOUND"
+    async with session_maker() as session:
+        tickets = (await session.execute(select(Ticket).where(Ticket.device_id == device_id))).scalars().all()
+    assert tickets == []

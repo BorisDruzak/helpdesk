@@ -81,12 +81,18 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
             account_session.get("account_mode") == "verified_other_account"
             and account_session.get("verification_status") == "verified"
         ):
+            if not account_session.get("base_binding_id") or not await registration_repo.get_active_binding_for_device(
+                device_id,
+                str(account_session.get("base_binding_id")),
+            ):
+                continue
             declared = account_session.get("declared_account") if isinstance(account_session.get("declared_account"), dict) else {}
             accounts.append(
                 {
                     "account_mode": "verified_other_account",
                     "session_id": account_session.get("session_id"),
                     "session_token": None,
+                    "source_request_id": account_session.get("source_request_id"),
                     "person_id": account_session.get("person_id"),
                     "display_name": declared.get("display_name") or declared.get("full_name") or declared.get("login"),
                     "full_name": declared.get("full_name"),

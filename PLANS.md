@@ -34,6 +34,20 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: Device Account Session Hardening
+
+Status: in progress.
+
+Goal:
+
+- Harden server-issued requester account sessions for the PC agent: shared binding login, binding revocation invalidation, verified other-account token enforcement, local session validation and support-visible other-account warning context.
+
+Verification target:
+
+- Focused server tests for `AccountSessionService`, registration API and ticket registration enrichment.
+- Focused agent tests for account-session manager/gate/client helpers.
+- `python -m compileall server pc_agent`, webapp build/typecheck, `python scripts/verify_workspace.py`, `git diff --check`.
+
 ## Active Work: Admin Ticket Purge
 
 Status: implementation complete / targeted API tests passed; workspace verification pending.

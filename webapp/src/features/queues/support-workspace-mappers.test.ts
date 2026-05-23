@@ -880,7 +880,7 @@ describe("support workspace mappers", () => {
       now: NOW,
     });
 
-    expect(viewModel.right.context?.requester).toEqual({
+    expect(viewModel.right.context?.requester).toMatchObject({
       name: "Александр Смирнов",
       department: "Отдел маркетинга",
       phone: "+7 (495) 123-45-67",
@@ -896,6 +896,42 @@ describe("support workspace mappers", () => {
       category: "Не указана",
       service: "Корпоративный сайт",
       similarTicketsCount: 0,
+    });
+  });
+
+  it("maps verified other-account warning context", () => {
+    const detail = detailPayload();
+    detail.ticket.requester_account_warning = "ticket_created_from_other_account_on_registered_device";
+    detail.ticket.requester_account_context = {
+      warning: "ticket_created_from_other_account_on_registered_device",
+      verification_status: "verified",
+      verification_method: "admin_approval",
+      active_device_person_name: "Registered Owner",
+      declared_account: {
+        full_name: "Temporary User",
+        login: "temp.user",
+        email: "temp@example.test",
+        phone: "+15551234567",
+        reason: "Shift replacement",
+      },
+    };
+
+    const viewModel = mapSupportWorkspaceViewModel({
+      activeQueueId: null,
+      activeSmartView: "all",
+      detail,
+      queue: queuePayload(),
+      selectedTicketId: "ticket-1",
+      now: NOW,
+    });
+
+    expect(viewModel.right.context?.requester).toMatchObject({
+      accountWarning: "ticket_created_from_other_account_on_registered_device",
+      accountDeclaredName: "Temporary User",
+      accountLogin: "temp.user",
+      accountReason: "Shift replacement",
+      accountVerification: "admin_approval / verified",
+      activeDeviceOwner: "Registered Owner",
     });
   });
 

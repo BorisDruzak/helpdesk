@@ -562,6 +562,47 @@ async def test_other_account_login_request_and_admin_approval_endpoints(test_cli
     approved_payload = await approved.json()
     assert approved_payload["data"]["session"]["account_mode"] == "verified_other_account"
     assert approved_payload["data"]["session"]["declared_account"]["phone"] == "+15551234567"
+    assert approved_payload["data"].get("session_token")
+
+    polled = await test_client.get(
+        f"/api/registry/agent/account-login-requests/{request_id}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert polled.status == 200, await polled.text()
+    polled_payload = await polled.json()
+    session_id = polled_payload["data"]["session"]["session_id"]
+    session_token = polled_payload["data"]["session_token"]
+    assert session_token == approved_payload["data"]["session_token"]
+
+    second_poll = await test_client.get(
+        f"/api/registry/agent/account-login-requests/{request_id}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert second_poll.status == 200, await second_poll.text()
+    assert "session_token" not in (await second_poll.json())["data"]
+
+    missing_token = await test_client.get(
+        f"/api/registry/agent/account-sessions/{session_id}/validate",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert missing_token.status == 403
+    missing_payload = await missing_token.json()
+    assert missing_payload["error_code"] == "ACCOUNT_SESSION_TOKEN_REQUIRED"
+
+    wrong_token = await test_client.get(
+        f"/api/registry/agent/account-sessions/{session_id}/validate?session_token=wrong",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert wrong_token.status == 403
+    wrong_payload = await wrong_token.json()
+    assert wrong_payload["error_code"] == "ACCOUNT_SESSION_TOKEN_INVALID"
+
+    valid = await test_client.get(
+        f"/api/registry/agent/account-sessions/{session_id}/validate?session_token={session_token}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert valid.status == 200, await valid.text()
+    assert (await valid.json())["data"]["valid"] is True
 
 
 @pytest.mark.asyncio

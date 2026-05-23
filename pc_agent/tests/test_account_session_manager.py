@@ -120,6 +120,103 @@ def test_existing_confirmed_session_is_enriched_from_account_state(tmp_path):
     assert enriched["phone"] == "+10000000001"
 
 
+def test_confirmed_session_requires_server_session_id_for_account_state_match(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    session = manager.save(
+        {
+            "account_mode": "confirmed_binding",
+            "device_id": "device-1",
+            "binding_id": "binding-1",
+            "registration_status": "admin_confirmed",
+        }
+    )
+
+    assert not manager.matches_account_state(
+        session,
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "session_id": "server-session-1",
+                }
+            ]
+        },
+    )
+
+
+def test_confirmed_session_matches_account_state_by_server_session_and_binding(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    session = manager.save(
+        {
+            "account_mode": "confirmed_binding",
+            "account_session_id": "server-session-1",
+            "device_id": "device-1",
+            "binding_id": "binding-1",
+            "registration_status": "admin_confirmed",
+        }
+    )
+
+    assert manager.matches_account_state(
+        session,
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "session_id": "server-session-1",
+                }
+            ],
+            "server_sessions": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "session_id": "server-session-1",
+                    "binding_id": "binding-1",
+                    "verification_status": "verified",
+                }
+            ],
+        },
+    )
+
+
+def test_verified_other_session_requires_same_server_session_in_account_state(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    session = manager.save(
+        {
+            "account_mode": "verified_other_account",
+            "account_session_id": "server-session-other",
+            "device_id": "device-1",
+            "base_binding_id": "binding-registered",
+            "registration_status": "other_account",
+        }
+    )
+
+    assert not manager.matches_account_state(
+        session,
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-registered",
+                }
+            ]
+        },
+    )
+    assert manager.matches_account_state(
+        session,
+        {
+            "accounts": [
+                {
+                    "account_mode": "verified_other_account",
+                    "session_id": "server-session-other",
+                    "base_binding_id": "binding-registered",
+                    "verification_status": "verified",
+                }
+            ]
+        },
+    )
+
+
 def test_registration_pending_session_shape(tmp_path):
     manager = AccountSessionManager(data_root=tmp_path)
 

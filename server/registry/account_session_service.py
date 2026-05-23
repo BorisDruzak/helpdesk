@@ -80,6 +80,7 @@ class AccountSessionService:
     async def serialize_session(self, row: DeviceAccountSession) -> dict[str, Any]:
         person = await self._serialize_person(row.person_id)
         declared = row.declared_account or {}
+        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
         return {
             "session_id": row.session_id,
             "account_mode": row.account_mode,
@@ -94,6 +95,7 @@ class AccountSessionService:
             "declared_account": declared,
             "reason": row.reason,
             "warning_code": row.warning_code,
+            "source_request_id": metadata.get("source_request_id"),
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "verified_at": row.verified_at.isoformat() if row.verified_at else None,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None,
@@ -105,8 +107,8 @@ class AccountSessionService:
             "person": person,
         }
 
-    def serialize_login_request(self, row: DeviceAccountLoginRequest) -> dict[str, Any]:
-        return {
+    def serialize_login_request(self, row: DeviceAccountLoginRequest, *, include_session_token: bool = False) -> dict[str, Any]:
+        payload = {
             "request_id": row.request_id,
             "device_id": row.device_id,
             "requested_account": row.requested_account or {},
@@ -122,10 +124,14 @@ class AccountSessionService:
             "rejection_reason": row.rejection_reason,
             "resulting_session_id": row.resulting_session_id,
         }
+        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+        if include_session_token and metadata.get("session_token_once"):
+            payload["session_token"] = str(metadata.get("session_token_once"))
+        return payload
 
     async def create_confirmed_binding_session(self, *, device_id: str, binding_id: str) -> dict[str, Any]:
-        binding = await self.registration_repo.get_active_primary_binding(device_id)
-        if binding is None or binding.binding_id != str(binding_id):
+        binding = await self.registration_repo.get_active_binding_for_device(device_id, binding_id)
+        if binding is None:
             raise ValueError("active binding not found for device")
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
@@ -197,8 +203,9 @@ class AccountSessionService:
         if request.status != "pending_verification":
             raise ValueError("account login request is not pending")
         declared = dict(request.requested_account or {})
+        token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
-            session_token_hash=None,
+            session_token_hash=_token_hash(token),
             device_id=request.device_id,
             account_mode="verified_other_account",
             verification_status="verified",
@@ -213,13 +220,19 @@ class AccountSessionService:
             verified_by=reviewed_by,
             metadata_json={"source_request_id": request.request_id},
         )
-        await self.repo.mark_login_request(
+        request = await self.repo.mark_login_request(
             request.request_id,
             status="approved",
             reviewed_by=reviewed_by,
             resulting_session_id=row.session_id,
         )
-        return {"request": self.serialize_login_request(request), "session": await self.serialize_session(row)}
+        request.metadata_json = {**(request.metadata_json or {}), "session_token_once": token}
+        await self.session.flush()
+        return {
+            "request": self.serialize_login_request(request),
+            "session": await self.serialize_session(row),
+            "session_token": token,
+        }
 
     async def reject_login_request(self, request_id: str, *, reviewed_by: str, reason: str) -> dict[str, Any]:
         row = await self.repo.mark_login_request(
@@ -250,6 +263,18 @@ class AccountSessionService:
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_INVALID", "session": await self.serialize_session(row)}
         if row.session_token_hash and not session_token:
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_REQUIRED", "session": await self.serialize_session(row)}
+        if row.account_mode == "confirmed_binding":
+            if not row.binding_id:
+                return {"valid": False, "error_code": "ACCOUNT_SESSION_BINDING_INACTIVE", "session": await self.serialize_session(row)}
+            binding = await self.registration_repo.get_active_binding_for_device(row.device_id, row.binding_id)
+            if binding is None:
+                return {"valid": False, "error_code": "ACCOUNT_SESSION_BINDING_INACTIVE", "session": await self.serialize_session(row)}
+        if row.account_mode == "verified_other_account":
+            if not row.base_binding_id:
+                return {"valid": False, "error_code": "ACCOUNT_SESSION_BASE_BINDING_INACTIVE", "session": await self.serialize_session(row)}
+            binding = await self.registration_repo.get_active_binding_for_device(row.device_id, row.base_binding_id)
+            if binding is None:
+                return {"valid": False, "error_code": "ACCOUNT_SESSION_BASE_BINDING_INACTIVE", "session": await self.serialize_session(row)}
         return {"valid": True, "session": await self.serialize_session(row)}
 
     async def list_device_sessions(self, device_id: str) -> list[dict[str, Any]]:

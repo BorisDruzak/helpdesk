@@ -466,10 +466,26 @@ async def create_ticket_with_side_effects(
             }
         elif account_mode == "confirmed_binding":
             requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
-            if isinstance(active_binding, dict) and active_binding.get("binding_id") == requested_binding_id:
-                requester_person_id = active_binding.get("person_id")
-                requester_binding_id = active_binding.get("binding_id")
-                asset_id = active_binding.get("asset_id") or asset_id
+            session_binding = None
+            if requester_account_session_validation and requested_binding_id:
+                from app.repos.registration_repo import RegistrationRepo
+
+                session_binding = await RegistrationRepo(session).get_active_binding_for_device(device_id, requested_binding_id)
+            if session_binding is not None or (
+                isinstance(active_binding, dict) and active_binding.get("binding_id") == requested_binding_id
+            ):
+                binding_payload = (
+                    {
+                        "person_id": session_binding.person_id,
+                        "binding_id": session_binding.binding_id,
+                        "asset_id": session_binding.asset_id,
+                    }
+                    if session_binding is not None
+                    else active_binding
+                )
+                requester_person_id = binding_payload.get("person_id")
+                requester_binding_id = binding_payload.get("binding_id")
+                asset_id = binding_payload.get("asset_id") or asset_id
                 requester_registration_status = "admin_confirmed"
                 requester_account_context = {
                     **_safe_account_payload(requester_account or {}),

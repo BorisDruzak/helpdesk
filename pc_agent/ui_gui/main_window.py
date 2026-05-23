@@ -1188,7 +1188,7 @@ class MainWindow(QMainWindow):
             self.account_gate_page.render({}, local_session=self._account_session, error=message)
             return
         self._account_state = state if isinstance(state, dict) else {}
-        if not self._is_local_account_session_valid(self._account_session, self._account_state):
+        if not await self._validate_local_account_session_with_server(self._account_session, self._account_state):
             self._account_session = {"schema_version": 1, "account_mode": "none"}
             self._account_session_manager.clear()
         else:
@@ -1201,26 +1201,22 @@ class MainWindow(QMainWindow):
         self._render_profile_status()
 
     def _is_local_account_session_valid(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
+        return self._account_session_manager.matches_account_state(session, state)
+
+    async def _validate_local_account_session_with_server(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
         mode = str(session.get("account_mode") or "")
-        if mode not in {"confirmed_binding", "registration_pending", "verified_other_account"}:
-            return False
-        accounts = [item for item in state.get("accounts") or [] if isinstance(item, dict)]
-        if mode == "confirmed_binding":
-            binding_id = str(session.get("binding_id") or "")
-            return any(item.get("account_mode") == "confirmed_binding" and item.get("binding_id") == binding_id for item in accounts)
         if mode == "registration_pending":
-            registration = state.get("registration") if isinstance(state.get("registration"), dict) else {}
-            return str(registration.get("status") or "") in {
-                "self_reported",
-                "pending_user_confirmation",
-                "user_confirmed",
-                "pending_admin_review",
-                "conflict",
-            }
-        if mode == "verified_other_account":
-            base_binding_id = str(session.get("base_binding_id") or "")
-            return any(item.get("binding_id") == base_binding_id for item in accounts)
-        return False
+            return self._is_local_account_session_valid(session, state)
+        if mode not in {"confirmed_binding", "verified_other_account"}:
+            return False
+        session_id = str(session.get("account_session_id") or "").strip()
+        if not session_id:
+            return False
+        validated = await self.chat_panel.ticket_client.validate_account_session(
+            session_id,
+            session_token=str(session.get("session_token") or "").strip() or None,
+        )
+        return isinstance(validated, dict) and validated.get("valid") is True
 
     def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
         self._spawn_gui_task(self._async_account_login_confirmed(account), name="account.login_confirmed")
@@ -1249,6 +1245,25 @@ class MainWindow(QMainWindow):
 
     async def _async_account_login_other(self, profile: dict[str, Any]) -> None:
         if str(profile.get("account_mode") or "") == "verified_other_account" and str(profile.get("session_id") or "").strip():
+            if not str(profile.get("session_token") or "").strip() and str(profile.get("source_request_id") or "").strip():
+                request_payload = await self.chat_panel.ticket_client.get_account_login_request(
+                    str(profile.get("source_request_id") or "").strip()
+                )
+                if isinstance(request_payload, dict) and request_payload.get("session_token"):
+                    profile = {
+                        **profile,
+                        "session_token": request_payload.get("session_token"),
+                        "session": request_payload.get("session"),
+                    }
+                    if isinstance(request_payload.get("session"), dict):
+                        profile = {**request_payload["session"], "session_token": request_payload.get("session_token")}
+            if not str(profile.get("session_token") or "").strip():
+                self.account_gate_page.render(
+                    self._account_state,
+                    local_session=self._account_session,
+                    error="Не удалось получить серверный токен сессии аккаунта. Обновите состояние и попробуйте снова.",
+                )
+                return
             self._account_session = self._account_session_manager.save(
                 self._account_session_manager.build_verified_other_account_session(
                     profile,

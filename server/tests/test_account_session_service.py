@@ -27,13 +27,25 @@ def _device(device_id: str) -> Device:
     )
 
 
-async def _approved_binding(session, device_id: str, email: str = "owner@example.test") -> dict:
+async def _approved_binding(
+    session,
+    device_id: str,
+    email: str = "owner@example.test",
+    *,
+    relationship_type: str = "primary_user",
+) -> dict:
     service = RegistrationService(session)
     claim = await service.submit_agent_profile_claim(
         device_id=device_id,
         requester_id=email,
         display_name="Registered Owner",
-        profile={"full_name": "Registered Owner", "email": email, "phone": "+10000000001", "user_confirmed": True},
+        profile={
+            "full_name": "Registered Owner",
+            "email": email,
+            "phone": "+10000000001",
+            "relationship_type": relationship_type,
+            "user_confirmed": True,
+        },
     )
     return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
 
@@ -71,6 +83,37 @@ async def test_confirmed_binding_session_creation_and_validation(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_shared_binding_can_create_confirmed_binding_session(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(
+            session,
+            device_id,
+            email="shared@example.test",
+            relationship_type="shared_user",
+        )
+        service = AccountSessionService(session)
+
+        created = await service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        validated = await service.validate_session(
+            device_id=device_id,
+            session_id=created["session"]["session_id"],
+            session_token=created.get("session_token"),
+        )
+        await session.commit()
+
+    assert approved["binding"]["relationship_type"] == "shared_user"
+    assert created["session"]["account_mode"] == "confirmed_binding"
+    assert created["session"]["binding_id"] == approved["binding"]["binding_id"]
+    assert validated["valid"] is True
+
+
+@pytest.mark.asyncio
 async def test_other_account_login_request_approval_creates_verified_session(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -102,10 +145,97 @@ async def test_other_account_login_request_approval_creates_verified_session(tes
     assert approved_request["session"]["account_mode"] == "verified_other_account"
     assert approved_request["session"]["verification_method"] == "admin_approval"
     assert approved_request["session"]["base_binding_id"] == approved["binding"]["binding_id"]
-    assert approved_request.get("session_token") is None
+    assert approved_request.get("session_token")
     assert approved_request["session"]["declared_account"]["phone"] == "+15551234567"
     assert approved_request["session"]["reason"] == "Temporary replacement"
     assert validated["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_verified_other_account_session_requires_valid_token(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await _approved_binding(session, device_id)
+        service = AccountSessionService(session)
+        request = await service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+        approved_request = await service.approve_login_request(request["request_id"], reviewed_by="admin")
+        missing = await service.validate_session(
+            device_id=device_id,
+            session_id=approved_request["session"]["session_id"],
+        )
+        wrong = await service.validate_session(
+            device_id=device_id,
+            session_id=approved_request["session"]["session_id"],
+            session_token="wrong-token",
+        )
+        valid = await service.validate_session(
+            device_id=device_id,
+            session_id=approved_request["session"]["session_id"],
+            session_token=approved_request["session_token"],
+        )
+        await session.commit()
+
+    assert missing["valid"] is False
+    assert missing["error_code"] == "ACCOUNT_SESSION_TOKEN_REQUIRED"
+    assert wrong["valid"] is False
+    assert wrong["error_code"] == "ACCOUNT_SESSION_TOKEN_INVALID"
+    assert valid["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_revoked_confirmed_binding_invalidates_session(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        account_service = AccountSessionService(session)
+        created = await account_service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        await RegistrationService(session).revoke_binding(approved["binding"]["binding_id"], revoked_by="admin")
+
+        invalid = await account_service.validate_session(
+            device_id=device_id,
+            session_id=created["session"]["session_id"],
+            session_token=created.get("session_token"),
+        )
+        await session.commit()
+
+    assert invalid["valid"] is False
+    assert invalid["error_code"] == "ACCOUNT_SESSION_BINDING_INACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_revoked_base_binding_invalidates_verified_other_account_session(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        account_service = AccountSessionService(session)
+        request = await account_service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+        approved_request = await account_service.approve_login_request(request["request_id"], reviewed_by="admin")
+        await RegistrationService(session).revoke_binding(approved["binding"]["binding_id"], revoked_by="admin")
+
+        invalid = await account_service.validate_session(
+            device_id=device_id,
+            session_id=approved_request["session"]["session_id"],
+            session_token=approved_request["session_token"],
+        )
+        await session.commit()
+
+    assert invalid["valid"] is False
+    assert invalid["error_code"] == "ACCOUNT_SESSION_BASE_BINDING_INACTIVE"
 
 
 @pytest.mark.asyncio

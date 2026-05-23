@@ -3476,6 +3476,22 @@ export function TicketListPage() {
                       {viewModel.right.context.requester.sourceLabel}
                     </span>
                   </div>
+                  {viewModel.right.context.requester.accountWarning === "ticket_created_from_other_account_on_registered_device" ? (
+                    <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-50">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+                        <div className="min-w-0">
+                          <p className="font-semibold">Обращение создано с другого аккаунта на зарегистрированном устройстве.</p>
+                          <dl className="mt-2 grid gap-1 text-xs leading-5 text-amber-50/85">
+                            <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
+                            <ContextInfoRow icon={UsersRound} label="Зарегистрированный владелец" value={viewModel.right.context.requester.activeDeviceOwner} />
+                            <ContextInfoRow icon={ShieldCheck} label="Проверка" value={viewModel.right.context.requester.accountVerification} />
+                            <ContextInfoRow icon={MessageSquare} label="Причина" value={viewModel.right.context.requester.accountReason} />
+                          </dl>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <dl className="mt-4 grid gap-2">
                     <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.phone} />
                     <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.email} />
