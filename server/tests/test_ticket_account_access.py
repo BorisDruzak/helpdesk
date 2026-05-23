@@ -15,6 +15,7 @@ from registry.registration_service import RegistrationService
 from tickets.account_access_service import TicketAccountAccessService
 from tickets.create_flow import create_ticket_with_side_effects
 from tests.conftest import TEST_AGENT_PREFIX
+from tests.test_ticket_form_packs import _ensure_default_sla_policy, _ensure_fallback_queue
 from uploads.handlers import _require_agent_ticket_account_access
 
 
@@ -122,6 +123,40 @@ async def test_agent_create_preview_requires_account_session(test_client):
 
     assert response.status == 403
     assert payload["error_code"] == "ACCOUNT_SESSION_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_agent_create_preview_accepts_valid_account_session(test_client, test_engine):
+    await _ensure_fallback_queue(test_engine)
+    await _ensure_default_sla_policy(test_engine)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        account = await AccountSessionService(session).create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create/preview",
+        headers=_agent_headers(device_id),
+        json={
+            "request_template_key": "printer",
+            "form_pack_key": "request_forms",
+            "form_payload": {"room": "214"},
+            "requester_account": {
+                "session_id": account["session"]["session_id"],
+                "session_token": account["session_token"],
+            },
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["preview"]["request_template_key"] == "printer"
 
 
 @pytest.mark.asyncio

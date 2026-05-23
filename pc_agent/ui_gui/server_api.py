@@ -954,7 +954,7 @@ class TicketApiClient:
             payload["requester_account"] = account_payload
 
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()

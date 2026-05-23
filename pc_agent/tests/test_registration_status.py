@@ -289,6 +289,27 @@ async def test_create_ticket_sends_only_requester_account_session_when_passed(mo
 
 
 @pytest.mark.asyncio
+async def test_preview_ticket_create_includes_account_session(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(FakeResponse(payload={"status": "ok", "preview": {}}))
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    await client.preview_ticket_create(
+        request_template_key="printer",
+        account_session={"account_session_id": "session-1", "session_token": "token-1"},
+    )
+
+    call = fake_session.calls[0]
+    assert call["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}
+    assert call["headers"]["X-Account-Session-Id"] == "session-1"
+    assert call["headers"]["X-Account-Session-Token"] == "token-1"
+
+
+@pytest.mark.asyncio
 async def test_ticket_actions_include_account_session(monkeypatch):
     client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
     fake_session = FakeSession(FakeResponse(payload={"status": "ok", "tickets": [], "ticket": {"ticket_id": "ticket-1"}}))
