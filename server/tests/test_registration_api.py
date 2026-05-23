@@ -484,7 +484,6 @@ async def test_confirmed_binding_session_endpoint_real_agent_token(test_engine):
         device_id = str(uuid.uuid4())
         token = await AuthService(app["state"]).generate_agent_token(device_id=device_id, expires_hours=1)
         async with session_maker() as session:
-            session.add(_device(device_id))
             claim = await RegistrationService(session).submit_agent_profile_claim(
                 device_id=device_id,
                 requester_id="registered@example.test",

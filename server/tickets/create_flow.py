@@ -490,7 +490,8 @@ async def create_ticket_with_side_effects(
                 requester_account_context = {
                     **_safe_account_payload(requester_account or {}),
                     "account_mode": "confirmed_binding",
-                    "validation": "active_binding_confirmed",
+                    "validation": (requester_account or {}).get("validation")
+                    or ("server_session_verified" if requester_account_session_validation else "active_binding_confirmed"),
                 }
             else:
                 requester_registration_status = "no_account"
