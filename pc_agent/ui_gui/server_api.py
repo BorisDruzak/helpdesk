@@ -584,6 +584,67 @@ class TicketApiClient:
             logger.info("Account state fetch error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def create_confirmed_binding_account_session(self, binding_id: str) -> dict:
+        url = f"{self.base_url}/registry/agent/account-sessions/confirmed-binding"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers, json={"binding_id": binding_id}) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось войти в аккаунт")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Confirmed binding account session create error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def request_other_account_login(self, profile: dict) -> dict:
+        url = f"{self.base_url}/registry/agent/account-login-requests"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers, json=profile or {}) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось отправить заявку на вход")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Other account login request error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def get_account_login_request(self, request_id: str) -> dict:
+        url = f"{self.base_url}/registry/agent/account-login-requests/{request_id}"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось проверить заявку на вход")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Other account login request fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def validate_account_session(self, session_id: str, session_token: Optional[str] = None) -> dict:
+        url = f"{self.base_url}/registry/agent/account-sessions/{session_id}/validate"
+        session = await self._get_session()
+        headers = self._get_headers()
+        params = {"session_token": session_token} if session_token else None
+        try:
+            async with session.get(url, headers=headers, params=params) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    payload = self._decode_error_payload(response_text)
+                    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                    if data:
+                        return data
+                    return self._api_error_result(response.status, response_text, fallback="Сессия аккаунта недействительна")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Account session validate error: %s", exc)
+            return {"status": "error", "valid": False, "error": str(exc)}
+
     async def confirm_registration_claim(self, claim_id: str) -> dict:
         url = f"{self.base_url}/registry/agent/claims/{claim_id}/confirm"
         session = await self._get_session()
@@ -732,7 +793,15 @@ class TicketApiClient:
         if knowledge_attempts is not None:
             payload["knowledge_attempts"] = knowledge_attempts
         if requester_account is not None:
-            payload["requester_account"] = requester_account
+            session_id = requester_account.get("session_id") or requester_account.get("account_session_id")
+            if session_id:
+                payload["requester_account"] = {
+                    "session_id": session_id,
+                    **({"session_token": requester_account.get("session_token")} if requester_account.get("session_token") else {}),
+                }
+                payload["require_account_session"] = True
+            else:
+                payload["requester_account"] = requester_account
         trace = self._trace_context(
             action="ticket.create",
             category="ticket",

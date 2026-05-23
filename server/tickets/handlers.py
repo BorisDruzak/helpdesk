@@ -920,6 +920,34 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             return _validation_error({"device_id": "device_id is required"})
 
     async with get_session() as session:
+        if auth_context.actor_role == "agent" and data.get("require_account_session"):
+            session_id = ""
+            session_token = None
+            if isinstance(requester_account, dict):
+                session_id = str(
+                    requester_account.get("session_id") or requester_account.get("account_session_id") or ""
+                ).strip()
+                session_token = str(requester_account.get("session_token") or "").strip() or None
+            if not session_id:
+                return _json_error(
+                    "account_session_required",
+                    status=403,
+                    error_code="ACCOUNT_SESSION_REQUIRED",
+                )
+            from registry.account_session_service import AccountSessionService
+
+            validation = await AccountSessionService(session).validate_session(
+                device_id=device_id,
+                session_id=session_id,
+                session_token=session_token,
+            )
+            if not validation.get("valid"):
+                return _json_error(
+                    "account_session_invalid",
+                    status=403,
+                    error_code=validation.get("error_code") or "ACCOUNT_SESSION_INVALID",
+                    details=validation,
+                )
         extra_custom_fields: dict[str, Any] | None = None
         template_process_fields: dict[str, Any] = {}
         catalog_process_fields: dict[str, Any] = {}

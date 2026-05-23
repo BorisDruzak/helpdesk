@@ -2827,6 +2827,86 @@ class DeviceRegistrationEvent(Base):
     )
 
 
+class DeviceAccountSession(Base):
+    """Server-issued requester account session for an authenticated device agent."""
+    __tablename__ = "device_account_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_token_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    account_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    verification_method: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
+    claim_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"), nullable=True)
+    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
+    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    declared_account: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    warning_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    verified_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    verified_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    revoked_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "account_mode IN ('confirmed_binding', 'registration_pending', 'verified_other_account', 'unverified_other_account')",
+            name="ck_device_account_sessions_mode",
+        ),
+        sa.CheckConstraint(
+            "verification_status IN ('verified', 'pending_verification', 'rejected', 'expired', 'revoked')",
+            name="ck_device_account_sessions_verification_status",
+        ),
+        sa.CheckConstraint(
+            "verification_method IS NULL OR verification_method IN ('device_binding', 'registration_claim', 'admin_approval', 'email_otp', 'sso', 'break_glass')",
+            name="ck_device_account_sessions_verification_method",
+        ),
+        Index("ix_device_account_sessions_device_status", "device_id", "verification_status"),
+        Index("ix_device_account_sessions_person_status", "person_id", "verification_status"),
+        Index("ix_device_account_sessions_binding", "binding_id"),
+        Index("ix_device_account_sessions_base_binding", "base_binding_id"),
+        Index("ix_device_account_sessions_token_hash", "session_token_hash"),
+        Index("ix_device_account_sessions_mode_status", "account_mode", "verification_status"),
+    )
+
+
+class DeviceAccountLoginRequest(Base):
+    """Admin-reviewed request to use another requester account on a registered device."""
+    __tablename__ = "device_account_login_requests"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    requested_account: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    matched_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    base_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
+    base_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    verification_method: Mapped[str] = mapped_column(String(40), nullable=False, server_default="admin_approval")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resulting_session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('pending_verification', 'approved', 'rejected', 'expired', 'canceled')",
+            name="ck_device_account_login_requests_status",
+        ),
+        Index("ix_device_account_login_requests_device_status", "device_id", "status"),
+        Index("ix_device_account_login_requests_matched_person_status", "matched_person_id", "status"),
+        Index("ix_device_account_login_requests_base_binding_status", "base_binding_id", "status"),
+        Index("ix_device_account_login_requests_status_requested", "status", "requested_at"),
+    )
+
+
 class DeviceConfig(Base):
     """
     Device configuration model.

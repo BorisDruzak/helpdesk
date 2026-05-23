@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DeviceRegistrationClaim, Ticket
+from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 from tickets.create_flow import create_ticket_with_side_effects
 
@@ -190,6 +191,10 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
             profile={"full_name": "Confirmed Account", "email": "confirmed-account@example.test", "user_confirmed": True},
         )
         approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        account_session = await AccountSessionService(session).create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -199,10 +204,8 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
             user_display_name="Confirmed Account",
             requester_profile={"full_name": "Conflicting Form", "email": "conflicting-form@example.test"},
             requester_account={
-                "account_mode": "confirmed_binding",
-                "binding_id": approved["binding"]["binding_id"],
-                "person_id": approved["binding"]["person_id"],
-                "display_name": "Confirmed Account",
+                "session_id": account_session["session"]["session_id"],
+                "session_token": account_session.get("session_token"),
             },
         )
         await session.commit()
@@ -217,11 +220,12 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
     assert ticket.requester_registration_status == "admin_confirmed"
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "confirmed_binding"
+    assert ticket.custom_fields["requester_account_context"]["validation"] == "server_session_verified"
     assert len(claims) == 1
 
 
 @pytest.mark.asyncio
-async def test_other_account_context_marks_ticket_without_registration_claim(test_engine):
+async def test_verified_other_account_session_marks_ticket_without_registration_claim(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -235,6 +239,19 @@ async def test_other_account_context_marks_ticket_without_registration_claim(tes
             profile={"full_name": "Registered Owner", "email": "registered-owner@example.test", "user_confirmed": True},
         )
         approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        account_service = AccountSessionService(session)
+        request = await account_service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={
+                "full_name": "Other Account",
+                "display_name": "Other Account",
+                "login": "other-account",
+                "email": "other-account@example.test",
+                "phone": "+15551234567",
+                "reason": "Temporary replacement",
+            },
+        )
+        session_payload = await account_service.approve_login_request(request["request_id"], reviewed_by="admin")
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -244,16 +261,8 @@ async def test_other_account_context_marks_ticket_without_registration_claim(tes
             user_display_name="Other Account",
             requester_profile={"full_name": "Other Account", "email": "other-account@example.test"},
             requester_account={
-                "account_session_id": "session-other",
-                "account_mode": "other_account",
-                "display_name": "Other Account",
-                "full_name": "Other Account",
-                "login": "other-account",
-                "email": "other-account@example.test",
-                "created_from_other_account": True,
-                "base_binding_id": approved["binding"]["binding_id"],
-                "base_person_id": approved["binding"]["person_id"],
-                "base_display_name": "Registered Owner",
+                "session_id": session_payload["session"]["session_id"],
+                "session_token": session_payload.get("session_token"),
             },
         )
         await session.commit()
@@ -268,10 +277,51 @@ async def test_other_account_context_marks_ticket_without_registration_claim(tes
     assert ticket.requester_binding_id is None
     assert ticket.asset_id == approved["binding"]["asset_id"]
     assert ticket.custom_fields["requester_account_context"]["created_from_other_account"] is True
+    assert ticket.custom_fields["requester_account_context"]["verification_status"] == "verified"
+    assert ticket.custom_fields["requester_account_context"]["verification_method"] == "admin_approval"
+    assert ticket.custom_fields["requester_account_context"]["declared_account"]["phone"] == "+15551234567"
+    assert ticket.custom_fields["requester_account_context"]["declared_account"]["reason"] == "Temporary replacement"
     assert ticket.custom_fields["requester_account_context"]["active_device_binding_id"] == approved["binding"]["binding_id"]
     assert ticket.custom_fields["requester_account_context"]["warning"] == "ticket_created_from_other_account_on_registered_device"
     assert len(claims) == 1
     assert claims[0].status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_unapproved_other_account_request_cannot_create_verified_ticket(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        claim = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="registered-owner",
+            display_name="Registered Owner",
+            profile={"full_name": "Registered Owner", "email": "registered-owner2@example.test", "user_confirmed": True},
+        )
+        await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        request = await AccountSessionService(session).create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other Account", "login": "other-account", "reason": "Temporary replacement"},
+        )
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id="other-account",
+            title="Need help",
+            description="Need help",
+            user_display_name="Other Account",
+            requester_account={"session_id": request["request_id"]},
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, created["ticket_id"])
+
+    assert ticket.requester_registration_status == "account_session_invalid"
+    assert ticket.custom_fields["requester_account_context"]["validation"] == "server_session_invalid"
 
 
 @pytest.mark.asyncio

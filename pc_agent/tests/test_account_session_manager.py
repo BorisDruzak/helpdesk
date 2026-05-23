@@ -34,6 +34,8 @@ def test_confirmed_binding_session_shape(tmp_path):
 
     session = manager.build_confirmed_binding_session(
         {
+            "session_id": "server-session-1",
+            "session_token": "server-token-1",
             "person_id": "person-1",
             "binding_id": "binding-1",
             "display_name": "Alice",
@@ -46,6 +48,8 @@ def test_confirmed_binding_session_shape(tmp_path):
     )
 
     assert session["account_mode"] == "confirmed_binding"
+    assert session["account_session_id"] == "server-session-1"
+    assert session["session_token"] == "server-token-1"
     assert session["device_id"] == "device-1"
     assert session["person_id"] == "person-1"
     assert session["binding_id"] == "binding-1"
@@ -71,9 +75,13 @@ def test_registration_pending_session_shape(tmp_path):
 def test_other_account_session_preserves_base_binding(tmp_path):
     manager = AccountSessionManager(data_root=tmp_path)
 
-    session = manager.build_other_account_session(
+    session = manager.build_verified_other_account_session(
         {"full_name": "Other User", "login": "other", "email": "other@example.test"},
         {
+            "session_id": "server-session-other",
+            "session_token": "server-token-other",
+            "verification_status": "verified",
+            "verification_method": "admin_approval",
             "binding_id": "binding-registered",
             "person_id": "person-registered",
             "display_name": "Registered User",
@@ -81,9 +89,34 @@ def test_other_account_session_preserves_base_binding(tmp_path):
         device_id="device-1",
     )
 
-    assert session["account_mode"] == "other_account"
+    assert session["account_mode"] == "verified_other_account"
+    assert session["account_session_id"] == "server-session-other"
+    assert session["session_token"] == "server-token-other"
     assert session["created_from_other_account"] is True
     assert session["other_account"] is True
     assert session["base_binding_id"] == "binding-registered"
     assert session["base_person_id"] == "person-registered"
     assert session["base_display_name"] == "Registered User"
+
+
+def test_other_account_session_preserves_phone_and_reason(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+
+    session = manager.build_verified_other_account_session(
+        {
+            "full_name": "Other User",
+            "login": "other",
+            "email": "other@example.test",
+            "phone": "+15551234567",
+            "reason": "Temporary replacement",
+        },
+        {
+            "session_id": "server-session-other",
+            "binding_id": "binding-registered",
+            "person_id": "person-registered",
+        },
+        device_id="device-1",
+    )
+
+    assert session["phone"] == "+15551234567"
+    assert session["reason"] == "Temporary replacement"

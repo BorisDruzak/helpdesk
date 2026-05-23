@@ -93,6 +93,15 @@ def ticket_to_dict(
         "queue_code": _queue_code_from_ticket(ticket, queue_code=queue_code),
         "assignee_id": getattr(ticket, "assignee_id", None),
         "requester_id": getattr(ticket, "requester_id", None),
+        "requester_person_id": getattr(ticket, "requester_person_id", None),
+        "requester_binding_id": getattr(ticket, "requester_binding_id", None),
+        "requester_registration_status": getattr(ticket, "requester_registration_status", None),
+        "requester_account_context": custom_fields.get("requester_account_context") if isinstance(custom_fields.get("requester_account_context"), dict) else None,
+        "requester_account_warning": (
+            custom_fields.get("requester_account_context", {}).get("warning")
+            if isinstance(custom_fields.get("requester_account_context"), dict)
+            else None
+        ),
         "ticket_type": getattr(ticket, "ticket_type", None),
         "priority": getattr(ticket, "priority", None),
         "priority_class": priority_class,

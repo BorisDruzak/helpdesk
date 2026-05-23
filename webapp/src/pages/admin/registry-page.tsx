@@ -11,8 +11,12 @@ import { SearchField } from "../../components/ui/search-field";
 import { StatTile } from "../../components/ui/stat-tile";
 import {
   approveAdminRegistrationClaim,
+  approveAdminAccountLoginRequest,
+  fetchAdminAccountLoginRequests,
   fetchAdminRegistry,
+  rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
+  type AdminAccountLoginRequest,
   type AdminRegistryPayload,
   type AdminRegistrationClaim,
 } from "../../features/admin/api";
@@ -97,6 +101,11 @@ function claimDisplayName(claim: AdminRegistrationClaim): string {
   return claim.person_name ?? profileValue(claim, "display_name") ?? profileValue(claim, "full_name") ?? profileValue(claim, "login") ?? "Пользователь не определен";
 }
 
+function requestedAccountValue(request: AdminAccountLoginRequest, key: string): string | null {
+  const value = request.requested_account?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export function AdminRegistryPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -106,6 +115,12 @@ export function AdminRegistryPage() {
   const registryQuery = useQuery({
     queryKey: ["admin-registry"],
     queryFn: fetchAdminRegistry,
+    retry: false,
+    refetchInterval: 15_000,
+  });
+  const accountLoginRequestsQuery = useQuery({
+    queryKey: ["admin-registry-account-login-requests"],
+    queryFn: () => fetchAdminAccountLoginRequests("pending_verification"),
     retry: false,
     refetchInterval: 15_000,
   });
@@ -139,6 +154,7 @@ export function AdminRegistryPage() {
     );
   }, [query, registry]);
   const firstAssetWithDevice = visibleRegistry?.assets.find((asset) => asset.device_id) ?? null;
+  const accountLoginRequests = accountLoginRequestsQuery.data?.items ?? [];
 
   const runClaimAction = async (claim: AdminRegistrationClaim, action: "approve" | "replace" | "reject" | "override") => {
     setActionError(null);
@@ -159,6 +175,28 @@ export function AdminRegistryPage() {
       } else {
         await approveAdminRegistrationClaim(claim.claim_id, action === "replace");
       }
+      await registryQuery.refetch();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось выполнить действие");
+    } finally {
+      setActionClaimId(null);
+    }
+  };
+
+  const runAccountLoginRequestAction = async (request: AdminAccountLoginRequest, action: "approve" | "reject") => {
+    setActionError(null);
+    setActionClaimId(request.request_id);
+    try {
+      if (action === "approve") {
+        await approveAdminAccountLoginRequest(request.request_id);
+      } else {
+        const reason = window.prompt("Причина отклонения заявки на вход", "Не подтверждено администратором") ?? "";
+        if (!reason.trim()) {
+          return;
+        }
+        await rejectAdminAccountLoginRequest(request.request_id, reason.trim());
+      }
+      await accountLoginRequestsQuery.refetch();
       await registryQuery.refetch();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Не удалось выполнить действие");
@@ -369,6 +407,63 @@ export function AdminRegistryPage() {
                 )) : (
                   <div className="border-t border-border p-4">
                     <EmptyState label="Заявки регистрации пока не найдены." />
+                  </div>
+                )}
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <div className="grid min-w-[900px] grid-cols-[170px_minmax(180px,1fr)_180px_minmax(180px,1fr)_130px_180px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+                  <span>Device ID</span>
+                  <span>Запрошенный аккаунт</span>
+                  <span>Контакты</span>
+                  <span>Причина</span>
+                  <span>Статус</span>
+                  <span>Действия</span>
+                </div>
+                {accountLoginRequests.length ? accountLoginRequests.map((request) => (
+                  <div
+                    className="grid min-w-[900px] grid-cols-[170px_minmax(180px,1fr)_180px_minmax(180px,1fr)_130px_180px] gap-3 border-t border-border px-4 py-3 text-sm"
+                    key={request.request_id}
+                  >
+                    <button
+                      className="truncate text-left text-brand-700 hover:text-brand-900"
+                      onClick={() => navigate(`/app/admin/device?device=${encodeURIComponent(request.device_id)}`)}
+                      type="button"
+                    >
+                      {request.device_id}
+                    </button>
+                    <div>
+                      <p className="font-medium text-slate-800">
+                        {requestedAccountValue(request, "display_name") ?? requestedAccountValue(request, "full_name") ?? requestedAccountValue(request, "login") ?? "Аккаунт не указан"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{requestedAccountValue(request, "login") ?? "login не указан"}</p>
+                    </div>
+                    <span className="text-slate-700">
+                      {[requestedAccountValue(request, "email"), requestedAccountValue(request, "phone")].filter(Boolean).join(" · ") || "Нет данных"}
+                    </span>
+                    <span className="text-slate-700">{request.reason ?? requestedAccountValue(request, "reason") ?? "Не указана"}</span>
+                    <Badge tone={statusTone(request.status)}>{request.status}</Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        disabled={actionClaimId === request.request_id}
+                        onClick={() => void runAccountLoginRequestAction(request, "approve")}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Подтвердить
+                      </Button>
+                      <Button
+                        disabled={actionClaimId === request.request_id}
+                        onClick={() => void runAccountLoginRequestAction(request, "reject")}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        Отклонить
+                      </Button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="border-t border-border p-4">
+                    <EmptyState label="Заявок на вход в другой аккаунт пока нет." />
                   </div>
                 )}
               </div>

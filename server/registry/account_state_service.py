@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repos.registration_repo import RegistrationRepo
 from app.repos.registry_repo import RegistryRepo
+from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
 
@@ -22,6 +23,7 @@ def _identity_value(identities: list[Any], *providers: str) -> str | None:
 async def build_agent_account_state(session: AsyncSession, device_id: str) -> dict[str, Any]:
     registration_repo = RegistrationRepo(session)
     registry_repo = RegistryRepo(session)
+    account_service = AccountSessionService(session)
     registration = await RegistrationService(session).get_device_registration_status(device_id)
     active_bindings = await registration_repo.list_active_bindings_for_device(device_id)
     accounts: list[dict[str, Any]] = []
@@ -72,13 +74,47 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
             }
         )
 
+    server_sessions = await account_service.list_device_sessions(device_id)
+    for account_session in server_sessions:
+        if (
+            account_session.get("account_mode") == "verified_other_account"
+            and account_session.get("verification_status") == "verified"
+        ):
+            declared = account_session.get("declared_account") if isinstance(account_session.get("declared_account"), dict) else {}
+            accounts.append(
+                {
+                    "account_mode": "verified_other_account",
+                    "session_id": account_session.get("session_id"),
+                    "session_token": None,
+                    "person_id": account_session.get("person_id"),
+                    "display_name": declared.get("display_name") or declared.get("full_name") or declared.get("login"),
+                    "full_name": declared.get("full_name"),
+                    "email": declared.get("email"),
+                    "phone": declared.get("phone"),
+                    "login": declared.get("login"),
+                    "reason": account_session.get("reason") or declared.get("reason"),
+                    "base_binding_id": account_session.get("base_binding_id"),
+                    "base_person_id": account_session.get("base_person_id"),
+                    "registration_status": "other_account",
+                    "verification_status": "verified",
+                    "verification_method": account_session.get("verification_method"),
+                    "can_login": True,
+                    "is_primary": False,
+                }
+            )
     has_active_binding = bool(active_bindings)
+    pending_login_requests = await account_service.list_pending_login_requests_for_device(device_id)
     return {
         "device_id": device_id,
         "registration": registration,
         "accounts": accounts,
+        "server_sessions": server_sessions,
+        "pending_login_requests": pending_login_requests,
         "can_register": not has_active_binding,
+        "can_login_confirmed_binding": has_active_binding,
         "can_login_other_account": has_active_binding,
+        "can_request_other_account_login": has_active_binding,
+        "can_use_break_glass_other_account": False,
         "registration_form_available": True,
         "message": (
             "Устройство зарегистрировано. Можно войти как подтвержденный пользователь."

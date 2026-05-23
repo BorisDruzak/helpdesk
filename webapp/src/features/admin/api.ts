@@ -489,6 +489,23 @@ export type AdminRegistrationTimelineItem = {
   payload: Record<string, unknown>;
 };
 
+export type AdminAccountLoginRequest = {
+  request_id: string;
+  device_id: string;
+  requested_account: Record<string, unknown>;
+  matched_person_id: string | null;
+  base_binding_id: string | null;
+  base_person_id: string | null;
+  status: string;
+  verification_method: string;
+  reason: string | null;
+  requested_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+  resulting_session_id: string | null;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -571,6 +588,35 @@ export async function fetchAdminDeviceRegistrationTimeline(deviceId: string): Pr
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить историю регистрации");
+}
+
+export async function fetchAdminAccountLoginRequests(status?: string): Promise<{ items: AdminAccountLoginRequest[] }> {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set("status", status);
+  }
+  const response = await fetch(`/api/web/admin/registry/account-login-requests${params.toString() ? `?${params}` : ""}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить заявки на вход в другой аккаунт");
+}
+
+export async function approveAdminAccountLoginRequest(requestId: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/account-login-requests/${encodeURIComponent(requestId)}/approve`, {
+    method: "POST",
+    credentials: "same-origin"
+  });
+  await readSuccessResponse(response, "Не удалось подтвердить вход в другой аккаунт");
+}
+
+export async function rejectAdminAccountLoginRequest(requestId: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/account-login-requests/${encodeURIComponent(requestId)}/reject`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason })
+  });
+  await readSuccessResponse(response, "Не удалось отклонить вход в другой аккаунт");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

@@ -22,7 +22,7 @@ OTHER_ACCOUNT_FORM = {
             "key": "reason",
             "label": "Почему входите не под зарегистрированным пользователем?",
             "type": "textarea",
-            "required": False,
+            "required": True,
         },
     ],
 }
@@ -46,6 +46,7 @@ def account_gate_view_state(
             "warning": None,
             "primary_account": None,
             "pending_account": None,
+            "approved_other_account": None,
         }
     account_state = account_state or {}
     accounts = [item for item in account_state.get("accounts") or [] if isinstance(item, dict)]
@@ -54,6 +55,14 @@ def account_gate_view_state(
         None,
     )
     pending = next((item for item in accounts if item.get("account_mode") == "registration_pending"), None)
+    approved_other = next(
+        (
+            item
+            for item in accounts
+            if item.get("account_mode") == "verified_other_account" and item.get("can_login", True)
+        ),
+        None,
+    )
     registration = account_state.get("registration") if isinstance(account_state.get("registration"), dict) else {}
     mode = "unregistered"
     if confirmed:
@@ -66,13 +75,18 @@ def account_gate_view_state(
     }:
         mode = "pending"
     warning = None
-    if isinstance(local_session, dict) and local_session.get("account_mode") == "other_account":
+    if isinstance(local_session, dict) and local_session.get("account_mode") in {"verified_other_account", "other_account"}:
         warning = "other_account"
     has_known_account_state = bool(account_state) and isinstance(account_state.get("registration"), dict)
     can_register = bool(account_state.get("can_register"))
     if has_known_account_state and confirmed is None and mode in {"unregistered", "pending"}:
         can_register = True
-    can_login_other = bool(account_state.get("can_login_other_account")) or (has_known_account_state and confirmed is None)
+    can_login_other = (
+        confirmed is not None
+        and bool(account_state.get("can_request_other_account_login") or account_state.get("can_login_other_account"))
+    )
+    if approved_other is not None:
+        can_login_other = True
     return {
         "mode": mode,
         "title": {
@@ -88,6 +102,7 @@ def account_gate_view_state(
         "warning": warning,
         "primary_account": confirmed,
         "pending_account": pending,
+        "approved_other_account": approved_other,
     }
 
 
@@ -105,6 +120,7 @@ class AccountGateWidget(QFrame):
         self._account_state: dict[str, Any] = {}
         self._local_session: dict[str, Any] = {}
         self._primary_account: dict[str, Any] | None = None
+        self._approved_other_account: dict[str, Any] | None = None
         self._showing_other_form = False
 
         layout = QVBoxLayout(self)
@@ -193,6 +209,9 @@ class AccountGateWidget(QFrame):
         self._local_session = local_session or {}
         state = account_gate_view_state(self._account_state, local_session=self._local_session, error=error)
         self._primary_account = state.get("primary_account") if isinstance(state.get("primary_account"), dict) else None
+        self._approved_other_account = (
+            state.get("approved_other_account") if isinstance(state.get("approved_other_account"), dict) else None
+        )
         self.title_label.setText(state["title"])
         self.message_label.setText(state.get("message") or "")
         self.message_label.setVisible(bool(self.message_label.text()))
@@ -215,6 +234,16 @@ class AccountGateWidget(QFrame):
             name = self._primary_account.get("display_name") or self._primary_account.get("full_name") or "аккаунт"
             self.login_button.setText(f"Войти как {name}")
         self.other_button.setVisible(bool(state["show_login_other"]))
+        if self._approved_other_account:
+            name = (
+                self._approved_other_account.get("display_name")
+                or self._approved_other_account.get("full_name")
+                or self._approved_other_account.get("login")
+                or "другой аккаунт"
+            )
+            self.other_button.setText(f"Войти как {name}")
+        elif not self._showing_other_form:
+            self.other_button.setText("Войти в другой аккаунт")
         self.register_button.setVisible(bool(state["show_register"]))
         self.register_button.setText("Продолжить регистрацию" if state.get("mode") == "pending" else "Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))
@@ -226,6 +255,9 @@ class AccountGateWidget(QFrame):
             self.loginConfirmedRequested.emit(dict(self._primary_account))
 
     def _on_other_clicked(self) -> None:
+        if self._approved_other_account:
+            self.loginOtherRequested.emit(dict(self._approved_other_account))
+            return
         if not self._showing_other_form:
             self._showing_other_form = True
             self.other_button.setText("Продолжить")

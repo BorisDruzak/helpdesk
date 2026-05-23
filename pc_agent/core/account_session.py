@@ -12,10 +12,11 @@ from pc_agent.core.runtime_paths import resolve_data_root
 
 
 ACCOUNT_SESSION_SCHEMA_VERSION = 1
-ACCOUNT_SESSION_MODES = {"confirmed_binding", "registration_pending", "other_account"}
+ACCOUNT_SESSION_MODES = {"confirmed_binding", "registration_pending", "verified_other_account"}
 SESSION_FIELDS = {
     "schema_version",
     "account_session_id",
+    "session_token",
     "device_id",
     "account_mode",
     "person_id",
@@ -24,6 +25,8 @@ SESSION_FIELDS = {
     "full_name",
     "login",
     "email",
+    "phone",
+    "reason",
     "registration_status",
     "other_account",
     "base_binding_id",
@@ -114,9 +117,9 @@ class AccountSessionManager:
             result["email"] = str(result["email"]).lower()
             if "@" not in result["email"]:
                 result.pop("email", None)
-        result["other_account"] = bool(result.get("other_account") or mode == "other_account")
+        result["other_account"] = bool(result.get("other_account") or mode == "verified_other_account")
         result["created_from_other_account"] = bool(
-            result.get("created_from_other_account") or mode == "other_account"
+            result.get("created_from_other_account") or mode == "verified_other_account"
         )
         result.setdefault("logged_in_at", _now_iso())
         result["last_seen_at"] = _now_iso()
@@ -132,6 +135,8 @@ class AccountSessionManager:
         return self.sanitize(
             {
                 "device_id": device_id,
+                "account_session_id": account.get("session_id") or account.get("account_session_id"),
+                "session_token": account.get("session_token"),
                 "account_mode": "confirmed_binding",
                 "person_id": account.get("person_id"),
                 "binding_id": account.get("binding_id"),
@@ -167,6 +172,44 @@ class AccountSessionManager:
             }
         )
 
+    def build_verified_other_account_session(
+        self,
+        profile: dict[str, Any],
+        server_session: dict[str, Any] | None,
+        *,
+        device_id: str,
+    ) -> dict[str, Any]:
+        server_session = server_session or {}
+        declared = server_session.get("declared_account") if isinstance(server_session.get("declared_account"), dict) else {}
+        base_account = {
+            **declared,
+            **profile,
+        }
+        return self.sanitize(
+            {
+                "device_id": device_id,
+                "account_session_id": server_session.get("session_id") or server_session.get("account_session_id"),
+                "session_token": server_session.get("session_token"),
+                "account_mode": "verified_other_account",
+                "display_name": base_account.get("display_name") or base_account.get("full_name") or base_account.get("login"),
+                "full_name": base_account.get("full_name"),
+                "login": base_account.get("login"),
+                "email": base_account.get("email"),
+                "phone": base_account.get("phone"),
+                "reason": base_account.get("reason") or server_session.get("reason"),
+                "registration_status": "other_account",
+                "other_account": True,
+                "created_from_other_account": True,
+                "base_binding_id": server_session.get("base_binding_id") or server_session.get("binding_id"),
+                "base_person_id": server_session.get("base_person_id") or server_session.get("person_id"),
+                "base_display_name": server_session.get("base_display_name") or server_session.get("display_name") or server_session.get("full_name"),
+                "metadata": {
+                    "verification_status": server_session.get("verification_status"),
+                    "verification_method": server_session.get("verification_method"),
+                },
+            }
+        )
+
     def build_other_account_session(
         self,
         profile: dict[str, Any],
@@ -178,17 +221,19 @@ class AccountSessionManager:
         return self.sanitize(
             {
                 "device_id": device_id,
-                "account_mode": "other_account",
+                "account_mode": "verified_other_account",
                 "display_name": profile.get("display_name") or profile.get("full_name") or profile.get("login"),
                 "full_name": profile.get("full_name"),
                 "login": profile.get("login"),
                 "email": profile.get("email"),
+                "phone": profile.get("phone"),
+                "reason": profile.get("reason"),
                 "registration_status": "other_account",
                 "other_account": True,
                 "created_from_other_account": True,
                 "base_binding_id": active_account.get("binding_id"),
                 "base_person_id": active_account.get("person_id"),
                 "base_display_name": active_account.get("display_name") or active_account.get("full_name"),
-                "metadata": {"reason": profile.get("reason")},
+                "metadata": {"legacy_local_other_account": "true"},
             }
         )

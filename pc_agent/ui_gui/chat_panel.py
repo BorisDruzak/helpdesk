@@ -4440,7 +4440,7 @@ class ChatPanel(QWidget):
                 mode_label = {
                     "confirmed_binding": "подтвержденный аккаунт",
                     "registration_pending": "регистрация ожидает подтверждения",
-                    "other_account": "другой аккаунт",
+                    "verified_other_account": "другой аккаунт",
                 }.get(str(account.get("account_mode")), "аккаунт")
                 parts.append(mode_label)
                 if account.get("email"):
@@ -4604,7 +4604,7 @@ class ChatPanel(QWidget):
         self._refresh_profile_selector()
 
     def _current_requester_payload(self) -> tuple[dict, str]:
-        profile = self._active_profile() or self._current_account_session() or {}
+        profile = self._current_account_session() or self._active_profile() or {}
         requester_profile = {
             "profile_id": profile.get("id") or "",
             "display_name": profile.get("display_name") or "",
@@ -4691,7 +4691,7 @@ class ChatPanel(QWidget):
 
     def _has_account_session(self) -> bool:
         session = self._current_account_session()
-        return bool(session and session.get("account_mode") in {"confirmed_binding", "registration_pending", "other_account"})
+        return bool(session and session.get("account_mode") in {"confirmed_binding", "registration_pending", "verified_other_account"})
 
     def _refresh_ticket_list_async(self) -> None:
         if not self._has_account_session():

@@ -27,6 +27,7 @@ from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import RegistrationRepo
+from app.repos.account_session_repo import AccountSessionRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
 from app.repos.diagnostic_provider_config_repo import DiagnosticProviderConfigRepo
@@ -59,6 +60,7 @@ __all__ = [
     "TicketFormPacksRepo",
     "RegistryRepo",
     "RegistrationRepo",
+    "AccountSessionRepo",
     "RemoteAccessRepo",
     "DiagnosticRepo",
     "DiagnosticProviderConfigRepo",

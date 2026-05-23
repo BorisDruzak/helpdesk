@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DeviceRegistrationClaim
+from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
 from registry.registration_service import RegistrationService
 from server import create_app
@@ -451,6 +452,147 @@ async def test_account_state_active_binding_returns_confirmed_account(test_clien
     assert account["registration_status"] == "admin_confirmed"
     assert account["can_login"] is True
     assert payload["data"]["can_register"] is False
+
+
+@pytest.mark.asyncio
+async def test_confirmed_binding_session_endpoint_real_agent_token(test_engine):
+    import app.db as app_db
+    import app.db.engine as app_db_engine
+    import auth.service as auth_service_module
+    import web_api.registry_handlers as registry_handlers_module
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def test_get_session():
+        async with session_maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    with patch.object(app_db, "get_session", test_get_session), \
+        patch.object(app_db_engine, "get_session", test_get_session), \
+        patch.object(auth_service_module, "get_session", test_get_session), \
+        patch.object(registry_handlers_module, "get_session", test_get_session):
+        app = create_app()
+        app.on_startup.clear()
+        app.on_cleanup.clear()
+        device_id = str(uuid.uuid4())
+        token = await AuthService(app["state"]).generate_agent_token(device_id=device_id, expires_hours=1)
+        async with session_maker() as session:
+            session.add(_device(device_id))
+            claim = await RegistrationService(session).submit_agent_profile_claim(
+                device_id=device_id,
+                requester_id="registered@example.test",
+                display_name="Registered User",
+                profile={"full_name": "Registered User", "email": "registered@example.test", "user_confirmed": True},
+            )
+            approved = await RegistrationService(session).approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+            await session.commit()
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            response = await client.post(
+                "/api/registry/agent/account-sessions/confirmed-binding",
+                headers=_headers(token),
+                json={"binding_id": approved["binding"]["binding_id"]},
+            )
+            status = response.status
+            text = await response.text()
+            payload = await response.json() if response.content_type == "application/json" else {}
+        finally:
+            await client.close()
+
+    assert status == 200, text
+    assert payload["data"]["session"]["account_mode"] == "confirmed_binding"
+    assert payload["data"]["session"]["binding_id"] == approved["binding"]["binding_id"]
+    assert payload["data"].get("session_token")
+
+
+@pytest.mark.asyncio
+async def test_other_account_login_request_and_admin_approval_endpoints(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="registered@example.test",
+            display_name="Registered User",
+            profile={"full_name": "Registered User", "email": "registered-api@example.test", "user_confirmed": True},
+        )
+        await RegistrationService(session).approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        await session.commit()
+
+    requested = await test_client.post(
+        "/api/registry/agent/account-login-requests",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={
+            "full_name": "Other User",
+            "login": "other",
+            "email": "other@example.test",
+            "phone": "+15551234567",
+            "reason": "Temporary replacement",
+        },
+    )
+    assert requested.status == 200, await requested.text()
+    request_payload = await requested.json()
+    request_id = request_payload["data"]["request_id"]
+
+    listed = await test_client.get(
+        "/api/web/admin/registry/account-login-requests",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    approved = await test_client.post(
+        f"/api/web/admin/registry/account-login-requests/{request_id}/approve",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+        json={},
+    )
+
+    assert listed.status == 200, await listed.text()
+    assert any(item["request_id"] == request_id for item in (await listed.json())["data"]["items"])
+    assert approved.status == 200, await approved.text()
+    approved_payload = await approved.json()
+    assert approved_payload["data"]["session"]["account_mode"] == "verified_other_account"
+    assert approved_payload["data"]["session"]["declared_account"]["phone"] == "+15551234567"
+
+
+@pytest.mark.asyncio
+async def test_account_state_includes_server_sessions_and_pending_login_requests(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="registered@example.test",
+            display_name="Registered User",
+            profile={"full_name": "Registered User", "email": "registered-state@example.test", "user_confirmed": True},
+        )
+        approved = await RegistrationService(session).approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        await AccountSessionService(session).create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        request = await AccountSessionService(session).create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={device_id}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["server_sessions"]
+    assert payload["data"]["pending_login_requests"][0]["request_id"] == request["request_id"]
+    assert payload["data"]["can_request_other_account_login"] is True
 
 
 @pytest.mark.asyncio

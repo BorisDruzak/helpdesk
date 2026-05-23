@@ -27,6 +27,34 @@ def test_account_gate_registered_state_hides_registration():
     assert state["show_login_other"] is True
 
 
+def test_account_gate_approved_other_account_can_be_selected():
+    state = account_gate_view_state(
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "display_name": "Registered User",
+                    "binding_id": "binding-1",
+                    "can_login": True,
+                },
+                {
+                    "account_mode": "verified_other_account",
+                    "display_name": "Approved Guest",
+                    "session_id": "session-1",
+                    "can_login": True,
+                },
+            ],
+            "can_register": False,
+            "can_request_other_account_login": True,
+            "registration": {"status": "admin_confirmed"},
+        }
+    )
+
+    assert state["mode"] == "registered"
+    assert state["show_login_other"] is True
+    assert state["approved_other_account"]["display_name"] == "Approved Guest"
+
+
 def test_account_gate_no_binding_state_shows_registration():
     state = account_gate_view_state(
         {
@@ -39,10 +67,10 @@ def test_account_gate_no_binding_state_shows_registration():
 
     assert state["mode"] == "unregistered"
     assert state["show_register"] is True
-    assert state["show_login_other"] is True
+    assert state["show_login_other"] is False
 
 
-def test_account_gate_unregistered_fallback_shows_registration_and_other_login():
+def test_account_gate_unregistered_fallback_shows_registration_only():
     state = account_gate_view_state(
         {
             "accounts": [],
@@ -54,7 +82,7 @@ def test_account_gate_unregistered_fallback_shows_registration_and_other_login()
 
     assert state["mode"] == "unregistered"
     assert state["show_register"] is True
-    assert state["show_login_other"] is True
+    assert state["show_login_other"] is False
 
 
 def test_account_gate_unknown_state_does_not_offer_account_actions():
@@ -84,6 +112,7 @@ def test_account_gate_pending_state_shows_continue_registration():
     assert state["mode"] == "pending"
     assert state["show_register"] is True
     assert state["show_confirm"] is True
+    assert state["show_login_other"] is False
 
 
 def test_account_gate_other_account_warning():

@@ -704,3 +704,19 @@ Verification matrix:
 - Account gate is the first app page; settings remain available before login, while ticket list/create/detail paths require a valid local account session confirmed against account-state.
 - Other-account login is local-only, does not call registration submit/confirm, and server ticket creation stores `custom_fields.requester_account_context.created_from_other_account=true` plus the active registered-device binding/person context without creating a registration claim.
 - Focused verification added: `server/tests/test_registration_api.py`, `server/tests/test_ticket_registration_enrichment.py`, `pc_agent/tests/test_account_session_manager.py`, `pc_agent/tests/test_account_gate.py`, `pc_agent/tests/test_registration_status.py`.
+
+2026-05-23 server-backed account-session hardening:
+
+- Goal: replace local-only requester account selection with server-issued account sessions while preserving machine-token auth as device auth.
+- Classification: cross-cutting DB/API/server-agent-web change. Contract surfaces: migration/models/repos, `/api/registry/agent/account-*`, admin registry review endpoints, `/api/tickets/create` requester account validation, Qt account gate/session storage, support/admin ticket context.
+- Plan:
+  - [x] Add regression tests for phone/reason preservation, other-account visibility rules, server session creation/validation, other-account request approval, and ticket create with server sessions.
+  - [x] Add migration `099` and SQLAlchemy models for `device_account_sessions` and `device_account_login_requests`.
+  - [x] Implement `AccountSessionRepo` and `AccountSessionService` for confirmed-binding sessions, other-account login requests, admin approve/reject and session validation.
+  - [x] Extend registry endpoints/routes and account-state read model with server sessions, pending requests and allowed actions.
+  - [x] Change ticket create to trust `requester_account.session_id` instead of client-supplied identity payload, leaving legacy self-declared other-account as explicitly unverified.
+  - [x] Update Qt API client, `AccountSessionManager`, account gate and main window so confirmed login creates a server session and other-account login creates an approval request, not an instant local session.
+  - [x] Ensure legacy local requester profiles cannot override selected account sessions in ticket creation.
+  - [x] Add minimal admin registry UI/API client support for reviewing other-account login requests if feasible in this pass.
+  - [x] Update CODEMAP/quick lookup docs for new account-session contract.
+  - [ ] Run focused server/agent tests, compileall, webapp build, workspace verify and diff checks; commit and push.

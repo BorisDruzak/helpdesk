@@ -933,7 +933,7 @@ class MainWindow(QMainWindow):
         self.dashboard_status_value.setText(status_text)
 
     def _active_account_session_for_tickets(self) -> Optional[dict]:
-        if self._account_session.get("account_mode") in {"confirmed_binding", "registration_pending", "other_account"}:
+        if self._account_session.get("account_mode") in {"confirmed_binding", "registration_pending", "verified_other_account"}:
             return self._account_session
         return None
 
@@ -944,7 +944,7 @@ class MainWindow(QMainWindow):
         label = {
             "confirmed_binding": "Подтвержденный аккаунт",
             "registration_pending": "Регистрация ожидает подтверждения",
-            "other_account": "Другой аккаунт",
+            "verified_other_account": "Другой аккаунт",
         }.get(str(session.get("account_mode")), "Аккаунт")
         name = session.get("display_name") or session.get("full_name") or session.get("login") or "Без имени"
         return f"{name} | {label}"
@@ -1047,7 +1047,7 @@ class MainWindow(QMainWindow):
 
     def _is_local_account_session_valid(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
         mode = str(session.get("account_mode") or "")
-        if mode not in {"confirmed_binding", "registration_pending", "other_account"}:
+        if mode not in {"confirmed_binding", "registration_pending", "verified_other_account"}:
             return False
         accounts = [item for item in state.get("accounts") or [] if isinstance(item, dict)]
         if mode == "confirmed_binding":
@@ -1062,14 +1062,27 @@ class MainWindow(QMainWindow):
                 "pending_admin_review",
                 "conflict",
             }
-        if mode == "other_account":
+        if mode == "verified_other_account":
             base_binding_id = str(session.get("base_binding_id") or "")
             return any(item.get("binding_id") == base_binding_id for item in accounts)
         return False
 
     def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
+        self._spawn_gui_task(self._async_account_login_confirmed(account), name="account.login_confirmed")
+
+    async def _async_account_login_confirmed(self, account: dict[str, Any]) -> None:
+        payload = await self.chat_panel.ticket_client.create_confirmed_binding_account_session(str(account.get("binding_id") or ""))
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=str(payload.get("error") or "Не удалось войти"),
+            )
+            return
+        session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+        session_payload = {**session_payload, "session_token": payload.get("session_token")}
         self._account_session = self._account_session_manager.save(
-            self._account_session_manager.build_confirmed_binding_session(account, device_id=self.chat_panel.device_id)
+            self._account_session_manager.build_confirmed_binding_session(session_payload, device_id=self.chat_panel.device_id)
         )
         self.account_gate_page.render(self._account_state, local_session=self._account_session)
         self._set_account_entry_mode(False)
@@ -1077,18 +1090,39 @@ class MainWindow(QMainWindow):
         self._select_sidebar_view("tickets", expand=True)
 
     def _on_account_login_other(self, profile: dict[str, Any]) -> None:
-        active_account = next(
-            (item for item in self._account_state.get("accounts") or [] if isinstance(item, dict) and item.get("account_mode") == "confirmed_binding"),
-            None,
-        )
-        self._account_session = self._account_session_manager.save(
-            self._account_session_manager.build_other_account_session(profile, active_account, device_id=self.chat_panel.device_id)
-        )
+        self._spawn_gui_task(self._async_account_login_other(profile), name="account.login_other")
+
+    async def _async_account_login_other(self, profile: dict[str, Any]) -> None:
+        if str(profile.get("account_mode") or "") == "verified_other_account" and str(profile.get("session_id") or "").strip():
+            self._account_session = self._account_session_manager.save(
+                self._account_session_manager.build_verified_other_account_session(
+                    profile,
+                    profile,
+                    device_id=self.chat_panel.device_id,
+                )
+            )
+            self.account_gate_page.reset_other_form()
+            self.account_gate_page.render(self._account_state, local_session=self._account_session)
+            self._set_account_entry_mode(False)
+            self._render_profile_status()
+            self._select_sidebar_view("tickets", expand=True)
+            return
+        payload = await self.chat_panel.ticket_client.request_other_account_login(profile)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=str(payload.get("error") or "Не удалось отправить заявку"),
+            )
+            return
         self.account_gate_page.reset_other_form()
-        self.account_gate_page.render(self._account_state, local_session=self._account_session)
-        self._set_account_entry_mode(False)
-        self._render_profile_status()
-        self._select_sidebar_view("tickets", expand=True)
+        refreshed = await self.chat_panel.ticket_client.get_account_state()
+        if isinstance(refreshed, dict) and refreshed.get("status") != "error":
+            self._account_state = refreshed
+        self.account_gate_page.render(
+            {**self._account_state, "message": "Заявка на вход в другой аккаунт отправлена. Ожидает подтверждения администратора."},
+            local_session=self._account_session,
+        )
 
     def _on_account_register_requested(self) -> None:
         self._show_registration_entry()
