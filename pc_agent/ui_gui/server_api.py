@@ -574,7 +574,11 @@ class TicketApiClient:
             async with session.get(url, headers=headers) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    return {"status": "error", "http_status": response.status, "body": response_text}
+                    return self._api_error_result(
+                        response.status,
+                        response_text,
+                        fallback="Не удалось проверить аккаунт",
+                    )
                 return self._unwrap_success_data(json.loads(response_text))
         except (aiohttp.ClientError, json.JSONDecodeError) as exc:
             logger.info("Account state fetch error: %s", exc)
@@ -599,6 +603,36 @@ class TicketApiClient:
         if isinstance(payload, dict) and payload.get("status") == "success" and isinstance(payload.get("data"), dict):
             return payload["data"]
         return payload
+
+    @staticmethod
+    def _decode_error_payload(response_text: str) -> dict:
+        try:
+            payload = json.loads(response_text or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _api_error_result(cls, status: int, response_text: str, *, fallback: str) -> dict:
+        payload = cls._decode_error_payload(response_text)
+        error_code = str(payload.get("error_code") or "")
+        message = str(payload.get("error") or fallback)
+        if error_code == "AUTH_REQUIRED":
+            message = (
+                "Требуется авторизация устройства. Дождитесь одобрения агента "
+                "администратором или введите технический токен вручную."
+            )
+        elif error_code == "FORBIDDEN":
+            message = "Недостаточно прав для проверки аккаунта на этом устройстве."
+        elif error_code == "DEVICE_NOT_FOUND":
+            message = "Устройство не найдено на сервере. Проверьте подключение агента."
+        return {
+            "status": "error",
+            "http_status": status,
+            "error_code": error_code or None,
+            "error": message,
+            "body": response_text,
+        }
 
     async def get_registry_options(self) -> dict:
         """Получает справочники для picker-полей формы обращения."""

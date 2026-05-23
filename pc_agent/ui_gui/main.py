@@ -44,7 +44,7 @@ class EventHandler(QObject):
 
 async def verify_token_on_server(api_url: str, token: str) -> bool:
     """
-    Проверяет валидность токена через сервер API.
+    Проверяет валидность agent-token через сервер API.
     
     Args:
         api_url: URL API сервера (например, http://localhost:8666/api)
@@ -57,9 +57,9 @@ async def verify_token_on_server(api_url: str, token: str) -> bool:
         return False
     
     try:
-        # Используем любой защищенный endpoint для проверки токена
-        # Например, /api/agents - он требует авторизацию
-        check_url = f"{api_url}/agents"
+        # Agent GUI now uses HTTP agent endpoints for account/session state.
+        # A locally stored stale token must not open the main requester UI.
+        check_url = f"{api_url}/registry/agent/account-state"
         
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -67,23 +67,47 @@ async def verify_token_on_server(api_url: str, token: str) -> bool:
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
-                # 200 или 404 (пустой список агентов) = токен валиден
-                # 401 = токен невалиден
+                response_text = await response.text()
+                # 200 = токен валиден; 404 может означать валидный auth context,
+                # но отсутствующую/архивную device row, это уже покажет account gate.
                 if response.status in (200, 404):
                     logger.info("✅ Токен проверен и валиден на сервере")
                     return True
-                elif response.status == 401:
-                    logger.warning("❌ Токен невалиден (401 Unauthorized)")
+                if response.status in (401, 403):
+                    logger.warning("❌ Токен невалиден для HTTP agent API: status={}", response.status)
                     return False
-                else:
-                    logger.warning(f"⚠️ Неожиданный статус при проверке токена: {response.status}")
-                    return False
+                logger.warning(
+                    "⚠️ Неожиданный статус при проверке токена: status={}, body_len={}",
+                    response.status,
+                    len(response_text or ""),
+                )
+                # Network/API instability should not silently drop an otherwise
+                # stored token; the account gate will surface the actual issue.
+                return True
     except aiohttp.ClientError as e:
-        logger.error(f"❌ Ошибка сети при проверке токена: {e}")
-        return False
+        logger.warning(f"⚠️ Не удалось проверить токен по сети, не сбрасываю локальный токен: {e}")
+        return True
     except Exception as e:
-        logger.error(f"❌ Неожиданная ошибка при проверке токена: {e}")
-        return False
+        logger.warning(f"⚠️ Неожиданная ошибка проверки токена, не сбрасываю локальный токен: {e}")
+        return True
+
+
+async def deactivate_local_auth_token(token: str | None, device_id: str | None) -> None:
+    """Marks a stale local machine token inactive without logging token value."""
+    if not token:
+        return
+    try:
+        from pc_agent.core.database import db_manager
+
+        if not db_manager:
+            return
+        await db_manager.revoke_auth_token(token)
+        logger.warning(
+            "Локальный agent-token деактивирован после отказа HTTP auth: device_id={}...",
+            str(device_id or "")[:8],
+        )
+    except Exception as exc:
+        logger.debug("Не удалось деактивировать локальный agent-token: {}", exc)
 
 
 async def get_stored_token() -> Optional[str]:
@@ -418,13 +442,15 @@ async def run_gui(
     
     if stored_token:
         logger.info("✅ Найден сохраненный токен в БД агента")
-        # Не проверяем через HTTP API - agent токены работают только через WebSocket
-        # Токен будет проверен при подключении к серверу
-        valid_token = stored_token
-        logger.success("✅ Токен загружен из БД, открываю главное окно")
-        # Сигнализируем main_async(), что авторизация завершена — агент может сразу подключаться по WebSocket
-        if auth_complete_event:
-            auth_complete_event.set()
+        if await verify_token_on_server(api_url, stored_token):
+            valid_token = stored_token
+            logger.success("✅ Токен загружен из БД и проверен, открываю главное окно")
+            # Сигнализируем main_async(), что авторизация завершена — агент может сразу подключаться по WebSocket
+            if auth_complete_event:
+                auth_complete_event.set()
+        else:
+            logger.warning("Сохраненный agent-token не принят сервером; требуется повторная авторизация устройства")
+            await deactivate_local_auth_token(stored_token, device_uuid)
     
     # Если токен невалиден или отсутствует — показываем «Дождитесь авторизации» или диалог ввода токена
     if not valid_token:
@@ -443,11 +469,15 @@ async def run_gui(
             wait_dialog.show()
             result = await future
             if result == 1:  # QDialog.Accepted
-                valid_token = wait_dialog.get_token()
-                if valid_token:
+                candidate_token = wait_dialog.get_token()
+                if candidate_token and await verify_token_on_server(api_url, candidate_token):
+                    valid_token = candidate_token
                     if auth_complete_event:
                         auth_complete_event.set()
                     break
+                if candidate_token:
+                    logger.warning("Полученный из БД agent-token не прошел HTTP проверку; продолжаю ожидание")
+                    await deactivate_local_auth_token(candidate_token, device_uuid)
             if wait_dialog.was_manual_requested():
                 # Пользователь нажал «Ввести токен вручную» — показываем старый диалог
                 if auth_complete_event:
@@ -459,7 +489,7 @@ async def run_gui(
                     logger.error(f"Ошибка при показе диалога токена: {e}")
                     token = None
                 if token:
-                    valid_token = token
+                    candidate_token = token
                     try:
                         from pc_agent.core.database import db_manager
                         if db_manager:
@@ -475,12 +505,16 @@ async def run_gui(
                             row = cursor.fetchone()
                             conn.close()
                             if row:
-                                valid_token = row[0]
+                                candidate_token = row[0]
                     except Exception as e:
                         logger.warning(f"Не удалось загрузить токен из БД: {e}")
-                    if auth_complete_event:
-                        auth_complete_event.set()
-                    break
+                    if await verify_token_on_server(api_url, candidate_token):
+                        valid_token = candidate_token
+                        if auth_complete_event:
+                            auth_complete_event.set()
+                        break
+                    logger.warning("Введенный agent-token не принят сервером; требуется повторная авторизация")
+                    await deactivate_local_auth_token(candidate_token, device_uuid)
                 continue
             # Отмена
             logger.info("Авторизация отменена пользователем")

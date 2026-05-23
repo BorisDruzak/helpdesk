@@ -979,7 +979,7 @@ class MainWindow(QMainWindow):
             self.account_gate_page.render({}, local_session=self._account_session, error=str(exc))
             return
         if isinstance(state, dict) and state.get("status") == "error":
-            message = str(state.get("body") or state.get("error") or "Ошибка проверки аккаунта")
+            message = str(state.get("error") or state.get("body") or "Ошибка проверки аккаунта")
             self.account_gate_page.render({}, local_session=self._account_session, error=message)
             return
         self._account_state = state if isinstance(state, dict) else {}

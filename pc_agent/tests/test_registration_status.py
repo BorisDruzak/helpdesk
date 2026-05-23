@@ -135,6 +135,34 @@ async def test_registration_api_client_get_account_state_unwraps_success_data(mo
 
 
 @pytest.mark.asyncio
+async def test_registration_api_client_get_account_state_normalizes_auth_error(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="stale-token")
+    fake_session = FakeSession(
+        FakeResponse(
+            status=401,
+            payload={
+                "status": "error",
+                "error": "Требуется аутентификация",
+                "error_code": "AUTH_REQUIRED",
+            },
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_account_state()
+
+    assert result["status"] == "error"
+    assert result["http_status"] == 401
+    assert result["error_code"] == "AUTH_REQUIRED"
+    assert "авторизация устройства" in result["error"]
+    assert "\\u0442" not in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_includes_requester_account_when_passed(monkeypatch):
     client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
     fake_session = FakeSession(FakeResponse(payload={"status": "ok", "ticket": {"ticket_id": "ticket-1"}}))
