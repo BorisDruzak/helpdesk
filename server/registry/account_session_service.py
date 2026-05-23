@@ -65,7 +65,21 @@ class AccountSessionService:
             "phone": person.phone,
         }
 
+    async def _person_login(self, person_id: str | None) -> str | None:
+        if not person_id:
+            return None
+        identities = await self.registration_repo.list_identities_for_person(person_id)
+        for provider in ("windows_login", "ui_login", "ad", "agent_profile"):
+            for identity in identities:
+                if str(getattr(identity, "provider", "") or "").lower() == provider:
+                    value = _clean(getattr(identity, "identifier", None))
+                    if value:
+                        return value
+        return None
+
     async def serialize_session(self, row: DeviceAccountSession) -> dict[str, Any]:
+        person = await self._serialize_person(row.person_id)
+        declared = row.declared_account or {}
         return {
             "session_id": row.session_id,
             "account_mode": row.account_mode,
@@ -77,13 +91,18 @@ class AccountSessionService:
             "claim_id": row.claim_id,
             "base_binding_id": row.base_binding_id,
             "base_person_id": row.base_person_id,
-            "declared_account": row.declared_account or {},
+            "declared_account": declared,
             "reason": row.reason,
             "warning_code": row.warning_code,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "verified_at": row.verified_at.isoformat() if row.verified_at else None,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None,
-            "person": await self._serialize_person(row.person_id),
+            "display_name": (person or {}).get("display_name") or declared.get("display_name"),
+            "full_name": (person or {}).get("full_name") or declared.get("full_name"),
+            "email": (person or {}).get("email") or declared.get("email"),
+            "phone": (person or {}).get("phone") or declared.get("phone"),
+            "login": declared.get("login") or await self._person_login(row.person_id),
+            "person": person,
         }
 
     def serialize_login_request(self, row: DeviceAccountLoginRequest) -> dict[str, Any]:

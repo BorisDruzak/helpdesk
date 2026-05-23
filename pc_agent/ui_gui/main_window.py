@@ -1191,6 +1191,10 @@ class MainWindow(QMainWindow):
         if not self._is_local_account_session_valid(self._account_session, self._account_state):
             self._account_session = {"schema_version": 1, "account_mode": "none"}
             self._account_session_manager.clear()
+        else:
+            enriched = self._account_session_manager.enrich_from_account_state(self._account_session, self._account_state)
+            if enriched != self._account_session:
+                self._account_session = self._account_session_manager.save(enriched)
         self.account_gate_page.render(self._account_state, local_session=self._account_session)
         if not self._active_account_session_for_tickets() and self._active_sidebar_view not in {"account_gate", "registration", "settings"}:
             self._select_sidebar_view("account_gate", expand=True)

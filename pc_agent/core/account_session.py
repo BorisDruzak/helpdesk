@@ -50,6 +50,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _first_text(*values: Any) -> str | None:
+    for value in values:
+        text = _clean(value)
+        if text:
+            return text
+    return None
+
+
 @dataclass
 class AccountSessionManager:
     data_root: Path | None = None
@@ -132,18 +144,20 @@ class AccountSessionManager:
         return result
 
     def build_confirmed_binding_session(self, account: dict[str, Any], *, device_id: str) -> dict[str, Any]:
+        person = _dict(account.get("person"))
         return self.sanitize(
             {
                 "device_id": device_id,
                 "account_session_id": account.get("session_id") or account.get("account_session_id"),
                 "session_token": account.get("session_token"),
                 "account_mode": "confirmed_binding",
-                "person_id": account.get("person_id"),
+                "person_id": account.get("person_id") or person.get("person_id"),
                 "binding_id": account.get("binding_id"),
-                "display_name": account.get("display_name") or account.get("full_name"),
-                "full_name": account.get("full_name"),
-                "login": account.get("login"),
-                "email": account.get("email"),
+                "display_name": _first_text(account.get("display_name"), person.get("display_name"), account.get("full_name"), person.get("full_name")),
+                "full_name": _first_text(account.get("full_name"), person.get("full_name")),
+                "login": _first_text(account.get("login"), person.get("login")),
+                "email": _first_text(account.get("email"), person.get("email")),
+                "phone": _first_text(account.get("phone"), person.get("phone")),
                 "registration_status": account.get("registration_status") or "admin_confirmed",
                 "other_account": False,
                 "created_from_other_account": False,
@@ -237,3 +251,38 @@ class AccountSessionManager:
                 "metadata": {"legacy_local_other_account": "true"},
             }
         )
+
+    def enrich_from_account_state(self, session: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+        sanitized = self.sanitize(session)
+        mode = str(sanitized.get("account_mode") or "")
+        accounts = [item for item in (state or {}).get("accounts") or [] if isinstance(item, dict)]
+        match: dict[str, Any] | None = None
+        if mode == "confirmed_binding":
+            binding_id = str(sanitized.get("binding_id") or "")
+            match = next(
+                (
+                    item
+                    for item in accounts
+                    if item.get("account_mode") == "confirmed_binding" and str(item.get("binding_id") or "") == binding_id
+                ),
+                None,
+            )
+        elif mode == "verified_other_account":
+            session_id = str(sanitized.get("account_session_id") or "")
+            match = next(
+                (
+                    item
+                    for item in accounts
+                    if item.get("account_mode") == "verified_other_account" and str(item.get("session_id") or "") == session_id
+                ),
+                None,
+            )
+        if not match:
+            return sanitized
+        merged = dict(sanitized)
+        for key in ("person_id", "binding_id", "display_name", "full_name", "login", "email", "phone", "reason", "base_binding_id", "base_person_id", "base_display_name"):
+            if not merged.get(key) and match.get(key):
+                merged[key] = match.get(key)
+        if not merged.get("display_name"):
+            merged["display_name"] = _first_text(merged.get("full_name"), merged.get("login"))
+        return self.sanitize(merged)

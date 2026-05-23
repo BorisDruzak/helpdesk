@@ -43,6 +43,7 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
                 "display_name": person.display_name,
                 "full_name": person.full_name,
                 "email": email,
+                "phone": person.phone,
                 "login": login,
                 "relationship_type": binding.relationship_type,
                 "registration_status": "admin_confirmed",

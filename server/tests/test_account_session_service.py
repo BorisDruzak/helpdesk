@@ -33,7 +33,7 @@ async def _approved_binding(session, device_id: str, email: str = "owner@example
         device_id=device_id,
         requester_id=email,
         display_name="Registered Owner",
-        profile={"full_name": "Registered Owner", "email": email, "user_confirmed": True},
+        profile={"full_name": "Registered Owner", "email": email, "phone": "+10000000001", "user_confirmed": True},
     )
     return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
 
@@ -61,6 +61,11 @@ async def test_confirmed_binding_session_creation_and_validation(test_engine):
     assert created["session"]["account_mode"] == "confirmed_binding"
     assert created["session"]["verification_status"] == "verified"
     assert created["session"]["binding_id"] == approved["binding"]["binding_id"]
+    assert created["session"]["display_name"] == "Registered Owner"
+    assert created["session"]["full_name"] == "Registered Owner"
+    assert created["session"]["email"] == "owner@example.test"
+    assert created["session"]["phone"] == "+10000000001"
+    assert created["session"]["person"]["display_name"] == "Registered Owner"
     assert validated["valid"] is True
     assert validated["session"]["person_id"] == approved["binding"]["person_id"]
 

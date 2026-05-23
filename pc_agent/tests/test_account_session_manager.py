@@ -57,6 +57,69 @@ def test_confirmed_binding_session_shape(tmp_path):
     assert session["other_account"] is False
 
 
+def test_confirmed_binding_session_reads_nested_server_person(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+
+    session = manager.build_confirmed_binding_session(
+        {
+            "session_id": "server-session-1",
+            "person_id": "person-1",
+            "binding_id": "binding-1",
+            "person": {
+                "person_id": "person-1",
+                "display_name": "Registered User",
+                "full_name": "Registered Smoke User",
+                "email": "Registered@Example.Test",
+                "phone": "+10000000001",
+            },
+        },
+        device_id="device-1",
+    )
+
+    assert session["display_name"] == "Registered User"
+    assert session["full_name"] == "Registered Smoke User"
+    assert session["email"] == "registered@example.test"
+    assert session["phone"] == "+10000000001"
+
+
+def test_existing_confirmed_session_is_enriched_from_account_state(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    saved = manager.save(
+        {
+            "account_mode": "confirmed_binding",
+            "account_session_id": "session-1",
+            "device_id": "device-1",
+            "binding_id": "binding-1",
+            "registration_status": "admin_confirmed",
+        }
+    )
+
+    enriched = manager.enrich_from_account_state(
+        saved,
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "person_id": "person-1",
+                    "display_name": "Registered User",
+                    "full_name": "Registered Smoke User",
+                    "login": "DOMAIN\\registered",
+                    "email": "registered@example.test",
+                    "phone": "+10000000001",
+                }
+            ]
+        },
+    )
+
+    assert enriched["person_id"] == "person-1"
+    assert enriched["display_name"] == "Registered User"
+    assert enriched["full_name"] == "Registered Smoke User"
+    assert enriched["login"] == "DOMAIN\\registered"
+    assert enriched["email"] == "registered@example.test"
+    assert enriched["phone"] == "+10000000001"
+
+
 def test_registration_pending_session_shape(tmp_path):
     manager = AccountSessionManager(data_root=tmp_path)
 

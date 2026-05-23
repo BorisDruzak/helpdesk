@@ -449,6 +449,7 @@ async def test_account_state_active_binding_returns_confirmed_account(test_clien
     assert account["binding_id"] == approved["binding"]["binding_id"]
     assert account["person_id"] == approved["binding"]["person_id"]
     assert account["display_name"] == "Registered User"
+    assert account["email"] == "registered@example.test"
     assert account["registration_status"] == "admin_confirmed"
     assert account["can_login"] is True
     assert payload["data"]["can_register"] is False
@@ -509,6 +510,9 @@ async def test_confirmed_binding_session_endpoint_real_agent_token(test_engine):
     assert status == 200, text
     assert payload["data"]["session"]["account_mode"] == "confirmed_binding"
     assert payload["data"]["session"]["binding_id"] == approved["binding"]["binding_id"]
+    assert payload["data"]["session"]["display_name"] == "Registered User"
+    assert payload["data"]["session"]["email"] == "registered@example.test"
+    assert payload["data"]["session"]["person"]["display_name"] == "Registered User"
     assert payload["data"].get("session_token")
 
 
