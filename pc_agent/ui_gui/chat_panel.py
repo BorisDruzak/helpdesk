@@ -9,7 +9,7 @@ import socket
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import QDate, QDateTime, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPalette
@@ -1904,7 +1904,7 @@ class TicketCreateDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        profile_group = QGroupBox("Профиль инициатора")
+        profile_group = QGroupBox("Аккаунт обращения")
         profile_layout = QVBoxLayout(profile_group)
         self.profile_selector = QComboBox()
         self.profile_selector.currentIndexChanged.connect(self._on_profile_changed)
@@ -1915,7 +1915,7 @@ class TicketCreateDialog(QDialog):
         profile_layout.addWidget(self.profile_summary)
 
         profile_buttons = QHBoxLayout()
-        self.manage_profiles_btn = QPushButton("Профили")
+        self.manage_profiles_btn = QPushButton("Аккаунты")
         self.manage_profiles_btn.clicked.connect(self._on_manage_profiles)
         profile_buttons.addWidget(self.manage_profiles_btn)
         profile_buttons.addStretch(1)
@@ -2260,7 +2260,7 @@ class TicketCreateWizardWidget(QFrame):
         profile_layout = QVBoxLayout(profile_card)
         profile_layout.setContentsMargins(12, 10, 12, 10)
         profile_layout.setSpacing(8)
-        profile_title = QLabel("Профиль инициатора")
+        profile_title = QLabel("Аккаунт обращения")
         profile_title.setObjectName("ProfileFieldLabel")
         profile_layout.addWidget(profile_title)
         self.profile_selector = QComboBox()
@@ -2270,7 +2270,7 @@ class TicketCreateWizardWidget(QFrame):
         self.profile_summary.setWordWrap(True)
         self.profile_summary.setObjectName("ProfileHint")
         profile_layout.addWidget(self.profile_summary)
-        self.manage_profiles_btn = QPushButton("Изменить / создать профиль")
+        self.manage_profiles_btn = QPushButton("Изменить / создать аккаунт")
         self.manage_profiles_btn.setObjectName("SecondaryButton")
         self.manage_profiles_btn.clicked.connect(self._on_manage_profiles)
         profile_layout.addWidget(self.manage_profiles_btn, 0, Qt.AlignmentFlag.AlignLeft)
@@ -2468,7 +2468,7 @@ class TicketCreateWizardWidget(QFrame):
         layout.addWidget(self.diagnostic_consent_hint_label)
 
         summary = QLabel(
-            "После подтверждения обращение создастся с выбранным профилем, шаблоном, описанием и материалами."
+            "После подтверждения обращение создастся с выбранным аккаунтом, шаблоном, описанием и материалами."
         )
         summary.setWordWrap(True)
         summary.setObjectName("ProfileHint")
@@ -2516,7 +2516,7 @@ class TicketCreateWizardWidget(QFrame):
             await self._panel._async_refresh_ticket_form_pack()
             self.refresh_from_panel()
             self.reset_wizard()
-            self._set_status("Форма готова. Начните с выбора профиля.", error=False)
+            self._set_status("Форма готова. Начните с выбора аккаунта.", error=False)
         except Exception as exc:
             logger.error(f"Ошибка подготовки мастера создания тикета: {exc}")
             self._set_status(f"Не удалось подготовить форму: {exc}", error=True)
@@ -3308,7 +3308,7 @@ class TicketCreateWizardWidget(QFrame):
         self._cancel_btn.setEnabled(not self._submitting and self._current_step < 3)
 
         captions = {
-            0: "Шаг 1 из 4. Выберите раздел и тип обращения, затем проверьте профиль инициатора.",
+            0: "Шаг 1 из 4. Выберите раздел и тип обращения, затем проверьте аккаунт обращения.",
             1: "Шаг 2 из 4. Опишите проблему и при желании приложите материалы.",
             2: "Шаг 3 из 4. Проверьте preview процесса, влияние, сроки и данные обращения.",
             3: "Шаг 4 из 4. Обращение создано.",
@@ -3318,7 +3318,7 @@ class TicketCreateWizardWidget(QFrame):
     def _step_validation_error(self, step: int) -> str:
         if step == 0:
             if not self._panel.has_active_profile():
-                return "Выберите профиль инициатора перед переходом дальше."
+                return "Выберите аккаунт обращения перед переходом дальше."
             return "Выберите тип обращения."
         if step == 1:
             missing_fields = self.dynamic_fields_widget.validate_required_fields(show_feedback=True)
@@ -3476,7 +3476,7 @@ class TicketCreateWizardWidget(QFrame):
 
 
 class ProfileSidebarWidget(QFrame):
-    """Левая колонка главного окна: данные активного профиля и переключение."""
+    """Левая колонка главного окна: данные активного аккаунта и переключение."""
 
     def __init__(self, panel: "ChatPanel", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -3491,7 +3491,7 @@ class ProfileSidebarWidget(QFrame):
         outer.setContentsMargins(14, 14, 14, 14)
         outer.setSpacing(12)
 
-        title = QLabel("Профиль инициатора")
+        title = QLabel("Аккаунт")
         title.setObjectName("ProfileSidebarTitle")
         outer.addWidget(title)
 
@@ -3536,7 +3536,7 @@ class ProfileSidebarWidget(QFrame):
 
         outer.addLayout(form)
 
-        combo_label = QLabel("Активный профиль")
+        combo_label = QLabel("Активный аккаунт")
         combo_label.setObjectName("ProfileFieldLabel")
         outer.addWidget(combo_label)
         self._profile_combo = QComboBox()
@@ -3545,7 +3545,7 @@ class ProfileSidebarWidget(QFrame):
 
         btn_row = QVBoxLayout()
         btn_row.setSpacing(8)
-        self._btn_manage = QPushButton("Изменить / создать профиль")
+        self._btn_manage = QPushButton("Изменить / создать аккаунт")
         self._btn_manage.clicked.connect(self._on_manage_clicked)
         btn_row.addWidget(self._btn_manage)
         outer.addLayout(btn_row)
@@ -3571,11 +3571,20 @@ class ProfileSidebarWidget(QFrame):
     def refresh_from_panel(self) -> None:
         profile = self._panel._active_profile()
         if profile is None:
-            self._hint.setText("Профиль не выбран. Создайте или выберите профиль — без него нельзя создать обращение.")
-            self._fld_display.setText("—")
-            self._fld_full.setText("—")
-            self._fld_location.setText("—")
-            self._fld_phone.setText("—")
+            account = self._panel._current_account_session()
+            if account:
+                self._hint.setText("")
+                self._fld_display.setText(str(account.get("display_name") or account.get("login") or "—"))
+                self._fld_full.setText(str(account.get("full_name") or "—"))
+                self._fld_location.setText(str(account.get("registration_status") or account.get("account_mode") or "—"))
+                self._fld_phone.setText(str(account.get("email") or "—"))
+            else:
+                self._hint.setText("Аккаунт не выбран. Войдите в аккаунт — без него нельзя создать обращение.")
+                self._fld_display.setText("—")
+                self._fld_full.setText("—")
+                self._fld_location.setText("—")
+                self._fld_phone.setText("—")
+        if profile is None:
             for w in (
                 self._lbl_display,
                 self._lbl_full,
@@ -3602,7 +3611,7 @@ class ProfileSidebarWidget(QFrame):
             title = p.get("display_name") or p.get("full_name") or "Без имени"
             self._profile_combo.addItem(str(title), p.get("id"))
         if self._profile_combo.count() == 0:
-            self._profile_combo.addItem("(нет профилей)", None)
+            self._profile_combo.addItem("(нет аккаунтов)", None)
         else:
             idx = -1
             if active_id:
@@ -3818,6 +3827,7 @@ class ChatPanel(QWidget):
         device_id: str = "test_pc_01",
         actor_role: str = "support",
         auth_token: Optional[str] = None,
+        account_session_provider: Optional[Callable[[], Optional[dict]]] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -3892,6 +3902,7 @@ class ChatPanel(QWidget):
         self._ticket_detail_refresh_task: Optional[asyncio.Task] = None
         self._ticket_detail_refresh_pending = False
         self._tickets_model: Optional[TicketsListModel] = None
+        self._account_session_provider = account_session_provider
 
         self._profiles_path = resolve_data_root() / "requester_profiles.json"
         self._profiles_data = self._load_profiles()
@@ -4423,7 +4434,19 @@ class ChatPanel(QWidget):
     def current_requester_profile_summary(self) -> str:
         profile = self._active_profile()
         if not profile:
-            return f"Без профиля | {self.user_display_name}"
+            account = self._current_account_session()
+            if account:
+                parts = [account.get("display_name") or account.get("full_name") or account.get("login") or "Без имени"]
+                mode_label = {
+                    "confirmed_binding": "подтвержденный аккаунт",
+                    "registration_pending": "регистрация ожидает подтверждения",
+                    "other_account": "другой аккаунт",
+                }.get(str(account.get("account_mode")), "аккаунт")
+                parts.append(mode_label)
+                if account.get("email"):
+                    parts.append(str(account.get("email")))
+                return " | ".join(parts)
+            return f"Аккаунт не выбран | {self.user_display_name}"
         parts = [profile.get("full_name") or profile.get("display_name") or "Без имени"]
         if profile.get("department"):
             parts.append(profile["department"])
@@ -4435,11 +4458,11 @@ class ChatPanel(QWidget):
         return " | ".join(parts)
 
     def has_active_profile(self) -> bool:
-        return self._active_profile() is not None
+        return self._active_profile() is not None or self._has_account_session()
 
     def open_profile_manager(self, *, start_new: bool = False) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("Профили инициатора")
+        dialog.setWindowTitle("Аккаунты обращения")
         dialog.setMinimumWidth(540)
         theme.apply_agent_dialog_theme(dialog)
         layout = QVBoxLayout(dialog)
@@ -4581,7 +4604,7 @@ class ChatPanel(QWidget):
         self._refresh_profile_selector()
 
     def _current_requester_payload(self) -> tuple[dict, str]:
-        profile = self._active_profile() or {}
+        profile = self._active_profile() or self._current_account_session() or {}
         requester_profile = {
             "profile_id": profile.get("id") or "",
             "display_name": profile.get("display_name") or "",
@@ -4590,6 +4613,8 @@ class ChatPanel(QWidget):
             "building": profile.get("building") or "",
             "room": profile.get("room") or "",
             "phone": profile.get("phone") or "",
+            "login": profile.get("login") or "",
+            "email": profile.get("email") or "",
         }
         display_name = profile.get("display_name") or profile.get("full_name") or self.user_display_name
         return requester_profile, display_name
@@ -4654,7 +4679,25 @@ class ChatPanel(QWidget):
             task.cancel()
         self._pending_tasks.clear()
 
+    def _current_account_session(self) -> Optional[dict]:
+        if self._account_session_provider is None:
+            return None
+        try:
+            session = self._account_session_provider()
+        except Exception as exc:
+            logger.warning(f"[account] failed to read account session: {exc}")
+            return None
+        return session if isinstance(session, dict) and session.get("account_mode") else None
+
+    def _has_account_session(self) -> bool:
+        session = self._current_account_session()
+        return bool(session and session.get("account_mode") in {"confirmed_binding", "registration_pending", "other_account"})
+
     def _refresh_ticket_list_async(self) -> None:
+        if not self._has_account_session():
+            self.tickets_cache = []
+            self._update_tickets_list_ui()
+            return
         self._schedule_singleflight_refresh("_ticket_list_refresh_task", "_ticket_list_refresh_pending", self._async_refresh_ticket_list)
 
     def _refresh_ticket_detail_async(self) -> None:
@@ -5793,8 +5836,11 @@ class ChatPanel(QWidget):
         return mapping.get(raw, raw.replace("_", " "))
 
     def _on_create_ticket(self) -> None:
+        if not self._has_account_session():
+            QMessageBox.warning(self, "Аккаунт обязателен", "Сначала войдите в аккаунт.")
+            return
         if not self.has_active_profile():
-            QMessageBox.warning(self, "Профиль обязателен", "Сначала заполните и выберите профиль инициатора.")
+            QMessageBox.warning(self, "Аккаунт обязателен", "Сначала заполните и выберите аккаунт обращения.")
             self.open_profile_manager(start_new=True)
             return
         self._spawn_task(self._async_open_create_ticket_dialog())
@@ -5867,6 +5913,7 @@ class ChatPanel(QWidget):
         urgency_reason = payload.get("urgency_reason") or ("Срочно" if urgency else "Несрочно")
         importance_reason = payload.get("importance_reason") or ("Важно" if importance else "Неважно")
         requester_profile, display_name = self._current_requester_payload()
+        account_session = self._current_account_session()
         attachment_paths = list(payload.get("attachment_paths") or [])
         action_id = trace_parent_action_id or get_action_trace_recorder().context(
             source="gui_user",
@@ -5897,6 +5944,7 @@ class ChatPanel(QWidget):
                 offering_code=payload.get("offering_code"),
                 offering_full_code=payload.get("offering_full_code"),
                 knowledge_attempts=payload.get("knowledge_attempts"),
+                requester_account=account_session,
                 trace_parent_action_id=action_id,
             )
             if result.get("status") != "ok":

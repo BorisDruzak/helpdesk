@@ -66,6 +66,72 @@ def build_agent_raise_description(
     return " ".join(part for part in parts if part).strip()
 
 
+def _safe_account_payload(account: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "account_session_id",
+        "account_mode",
+        "person_id",
+        "binding_id",
+        "display_name",
+        "full_name",
+        "login",
+        "email",
+        "other_account",
+        "base_binding_id",
+        "base_person_id",
+        "base_display_name",
+        "created_from_other_account",
+    }
+    result: dict[str, Any] = {}
+    for key in allowed:
+        value = account.get(key)
+        if isinstance(value, bool):
+            result[key] = value
+        elif value is not None:
+            result[key] = str(value).strip()[:320]
+    return result
+
+
+def _declared_account_payload(account: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in _safe_account_payload(account).items()
+        if key in {"display_name", "full_name", "login", "email", "account_session_id"}
+    }
+
+
+async def _find_declared_requester_person_id(session: Any, account: dict[str, Any]) -> str | None:
+    try:
+        from app.repos.registration_repo import RegistrationRepo
+
+        repo = RegistrationRepo(session)
+        email = str(account.get("email") or "").strip()
+        if email:
+            person = await repo.find_person_by_identity("email", email)
+            if person:
+                return person.person_id
+        login = str(account.get("login") or "").strip()
+        if login:
+            for provider in ("windows_login", "ui_login", "ad"):
+                person = await repo.find_person_by_identity(provider, login)
+                if person:
+                    return person.person_id
+    except Exception as exc:
+        logger.warning(f"[create] requester account identity lookup failed err={exc}")
+    return None
+
+
+async def _find_registry_asset_id_by_device(session: Any, device_id: str) -> str | None:
+    try:
+        from app.repos.registry_repo import RegistryRepo
+
+        asset = await RegistryRepo(session).get_asset_by_device_id(device_id)
+        return asset.asset_id if asset else None
+    except Exception as exc:
+        logger.warning(f"[create] requester account asset lookup failed device_id={device_id[:8]} err={exc}")
+    return None
+
+
 async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
     if getattr(ticket, "assignee_id", None):
         return ticket
@@ -217,6 +283,7 @@ async def create_ticket_with_side_effects(
     service_owner_actor_id: Optional[str] = None,
     support_group_code: Optional[str] = None,
     extra_custom_fields: Optional[dict[str, Any]] = None,
+    requester_account: Optional[dict[str, Any]] = None,
     state: Any | None = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
@@ -242,8 +309,12 @@ async def create_ticket_with_side_effects(
             }
     except Exception as exc:
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
+    account_mode = ""
+    if isinstance(requester_account, dict):
+        account_mode = str(requester_account.get("account_mode") or "").strip()
+    skip_profile_ingest = account_mode in {"confirmed_binding", "other_account", "registration_pending"}
     if requester_profile:
-        if existing_active_binding is None:
+        if existing_active_binding is None and not skip_profile_ingest:
             try:
                 from registry.service import RegistryIngestionService
 
@@ -268,6 +339,7 @@ async def create_ticket_with_side_effects(
     requester_binding_id = None
     requester_registration_status = "unregistered"
     requester_registration_context: dict[str, Any] = {"status": "unregistered"}
+    requester_account_context: dict[str, Any] = {"account_mode": account_mode or "none"}
     try:
         from registry.registration_service import RegistrationService
 
@@ -289,7 +361,73 @@ async def create_ticket_with_side_effects(
                 "conflict_reason": submitted_registration.get("conflict_reason"),
             }
         active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
-        if isinstance(active_binding, dict) and active_binding.get("binding_id"):
+        if account_mode == "other_account":
+            requester_registration_status = "other_account"
+            requester_binding_id = None
+            requester_person_id = await _find_declared_requester_person_id(session, requester_account or requester_profile or {})
+            if isinstance(active_binding, dict) and active_binding.get("binding_id"):
+                asset_id = active_binding.get("asset_id") or asset_id
+                requester_account_context = {
+                    "account_mode": "other_account",
+                    "account_session_id": str((requester_account or {}).get("account_session_id") or ""),
+                    "created_from_other_account": True,
+                    "declared_account": _declared_account_payload(requester_account or requester_profile or {}),
+                    "active_device_binding_id": active_binding.get("binding_id"),
+                    "active_device_person_id": active_binding.get("person_id"),
+                    "active_device_person_name": (
+                        (registration_status.get("active_person") or {}).get("display_name")
+                        if isinstance(registration_status.get("active_person"), dict)
+                        else None
+                    ),
+                    "warning": "ticket_created_from_other_account_on_registered_device",
+                }
+            else:
+                requester_account_context = {
+                    "account_mode": "other_account",
+                    "account_session_id": str((requester_account or {}).get("account_session_id") or ""),
+                    "created_from_other_account": True,
+                    "declared_account": _declared_account_payload(requester_account or requester_profile or {}),
+                    "warning": "ticket_created_from_other_account",
+                }
+        elif account_mode == "registration_pending":
+            pending_claim = registration_status.get("pending_claim") if isinstance(registration_status, dict) else None
+            requester_registration_status = str(
+                (pending_claim or {}).get("status")
+                or (requester_account or {}).get("registration_status")
+                or "registration_pending"
+            )
+            requester_person_id = (pending_claim or {}).get("person_id")
+            requester_binding_id = None
+            if isinstance(registration_status, dict):
+                active_asset = registration_status.get("asset") if isinstance(registration_status.get("asset"), dict) else None
+                asset_id = (active_asset or {}).get("asset_id") or asset_id
+            if asset_id is None:
+                asset_id = await _find_registry_asset_id_by_device(session, device_id)
+            requester_account_context = {
+                **_safe_account_payload(requester_account or {}),
+                "account_mode": "registration_pending",
+                "validation": "accepted_pending_registration",
+            }
+        elif account_mode == "confirmed_binding":
+            requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
+            if isinstance(active_binding, dict) and active_binding.get("binding_id") == requested_binding_id:
+                requester_person_id = active_binding.get("person_id")
+                requester_binding_id = active_binding.get("binding_id")
+                asset_id = active_binding.get("asset_id") or asset_id
+                requester_registration_status = "admin_confirmed"
+                requester_account_context = {
+                    **_safe_account_payload(requester_account or {}),
+                    "account_mode": "confirmed_binding",
+                    "validation": "active_binding_confirmed",
+                }
+            else:
+                requester_registration_status = "no_account"
+                requester_account_context = {
+                    **_safe_account_payload(requester_account or {}),
+                    "account_mode": "confirmed_binding",
+                    "validation": "active_binding_not_found",
+                }
+        elif isinstance(active_binding, dict) and active_binding.get("binding_id"):
             requester_person_id = active_binding.get("person_id")
             requester_binding_id = active_binding.get("binding_id")
             asset_id = active_binding.get("asset_id") or asset_id
@@ -362,6 +500,7 @@ async def create_ticket_with_side_effects(
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
     custom_fields["requester_registration"] = requester_registration_context
+    custom_fields["requester_account_context"] = requester_account_context
     if registry_context:
         custom_fields["registry_context"] = registry_context
 

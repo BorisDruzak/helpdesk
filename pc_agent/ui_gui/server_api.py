@@ -566,6 +566,20 @@ class TicketApiClient:
             logger.info("Registration form fetch error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def get_account_state(self) -> dict:
+        url = f"{self.base_url}/registry/agent/account-state"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return {"status": "error", "http_status": response.status, "body": response_text}
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Account state fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def confirm_registration_claim(self, claim_id: str) -> dict:
         url = f"{self.base_url}/registry/agent/claims/{claim_id}/confirm"
         session = await self._get_session()
@@ -626,6 +640,7 @@ class TicketApiClient:
         offering_code: Optional[str] = None,
         offering_full_code: Optional[str] = None,
         knowledge_attempts: Optional[list] = None,
+        requester_account: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -682,6 +697,8 @@ class TicketApiClient:
             payload["offering_full_code"] = offering_full_code
         if knowledge_attempts is not None:
             payload["knowledge_attempts"] = knowledge_attempts
+        if requester_account is not None:
+            payload["requester_account"] = requester_account
         trace = self._trace_context(
             action="ticket.create",
             category="ticket",

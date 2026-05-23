@@ -104,3 +104,55 @@ async def test_registration_api_client_get_registration_form_unwraps_success_dat
     assert result["registration"]["status"] == "unregistered"
     assert fake_session.calls[0]["method"] == "GET"
     assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/registration-form"
+
+
+@pytest.mark.asyncio
+async def test_registration_api_client_get_account_state_unwraps_success_data(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            payload={
+                "status": "success",
+                "data": {
+                    "device_id": "device-1",
+                    "accounts": [{"account_mode": "confirmed_binding", "binding_id": "binding-1"}],
+                    "can_register": False,
+                },
+            }
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_account_state()
+
+    assert result["device_id"] == "device-1"
+    assert result["accounts"][0]["binding_id"] == "binding-1"
+    assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/account-state"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_includes_requester_account_when_passed(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(FakeResponse(payload={"status": "ok", "ticket": {"ticket_id": "ticket-1"}}))
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    await client.create_ticket(
+        description="Need help",
+        requester_account={
+            "account_session_id": "session-1",
+            "account_mode": "other_account",
+            "display_name": "Other User",
+            "created_from_other_account": True,
+        },
+    )
+
+    assert fake_session.calls[0]["json"]["requester_account"]["account_session_id"] == "session-1"
+    assert fake_session.calls[0]["json"]["requester_account"]["created_from_other_account"] is True

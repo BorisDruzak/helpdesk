@@ -24,10 +24,12 @@ from loguru import logger
 from .consent_dialog import ConsentDialog
 from .remote_assist_dialog import RemoteAssistConsentDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
+from .account_gate import AccountGateWidget
 from .dynamic_form_widget import DynamicFormWidget
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
+from pc_agent.core.account_session import AccountSessionManager
 from pc_agent.core.user_profile import UserProfileManager
 from pc_agent.remote_assist.runtime_host import create_remote_assist_thread
 from pc_agent.version import AGENT_VERSION
@@ -126,6 +128,10 @@ class MainWindow(QMainWindow):
         self._settings_sections: list[QFrame] = []
         self._settings_section_titles: list[QLabel] = []
         self._settings_section_subtitles: list[QLabel] = []
+        self._account_session_manager = AccountSessionManager()
+        self._account_session: dict[str, Any] = self._account_session_manager.load()
+        self._account_state: dict[str, Any] = {}
+        self._pending_initial_account_state_refresh: bool = False
 
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setWindowFlag(Qt.WindowType.Window, True)
@@ -208,7 +214,11 @@ class MainWindow(QMainWindow):
         )
         self.title_label.hide()
 
-        self.chat_panel = ChatPanel(base_url=None, auth_token=self.auth_token)
+        self.chat_panel = ChatPanel(
+            base_url=None,
+            auth_token=self.auth_token,
+            account_session_provider=self._active_account_session_for_tickets,
+        )
         self.profile_sidebar = ProfileSidebarWidget(self.chat_panel)
         self.profile_sidebar.setMinimumWidth(0)
         self.profile_sidebar.setMaximumWidth(16777215)
@@ -221,6 +231,13 @@ class MainWindow(QMainWindow):
         self.chat_panel.ticketFormPackChanged.connect(lambda _pack: self.ticket_create_page.refresh_from_panel())
         self.chat_panel.set_profile_sidebar(self.profile_sidebar)
         self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
+        self.account_gate_page = AccountGateWidget()
+        self.account_gate_page.loginConfirmedRequested.connect(self._on_account_login_confirmed)
+        self.account_gate_page.loginOtherRequested.connect(self._on_account_login_other)
+        self.account_gate_page.registerRequested.connect(self._on_account_register_requested)
+        self.account_gate_page.confirmRegistrationRequested.connect(self._on_confirm_registration_claim_clicked)
+        self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
+        self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.body_splitter.setChildrenCollapsible(False)
@@ -319,7 +336,7 @@ class MainWindow(QMainWindow):
         profile_text_layout = QVBoxLayout()
         profile_text_layout.setContentsMargins(0, 0, 0, 0)
         profile_text_layout.setSpacing(2)
-        self.sidebar_profile_kicker = QLabel("Профиль инициатора")
+        self.sidebar_profile_kicker = QLabel("Аккаунт")
         self.sidebar_profile_kicker.setObjectName("CardKicker")
         self.sidebar_profile_name_label = QLabel("Без профиля")
         self.sidebar_profile_name_label.setObjectName("CardTitle")
@@ -339,6 +356,7 @@ class MainWindow(QMainWindow):
 
         self.main_content_stack = QStackedWidget()
         self.main_content_stack.setStyleSheet("QStackedWidget { background: transparent; border: none; }")
+        self.main_content_stack.addWidget(self.account_gate_page)
         self.main_content_stack.addWidget(self.dashboard_page)
         self.main_content_stack.addWidget(self.tickets_sidebar)
         self.main_content_stack.addWidget(self.chat_panel)
@@ -376,7 +394,8 @@ class MainWindow(QMainWindow):
         self.chat_panel.ticketsListChanged.connect(self._refresh_dashboard)
         self._render_profile_status()
         self._refresh_dashboard()
-        self._select_sidebar_view("tickets", expand=True)
+        self._select_sidebar_view("account_gate", expand=True)
+        self._pending_initial_account_state_refresh = True
 
         self.settings_page = QWidget()
         self.settings_page.setObjectName("AgentSettingsPage")
@@ -703,6 +722,9 @@ class MainWindow(QMainWindow):
 
         theme.apply_agent_dialog_theme(self.settings_page)
         self.main_content_stack.addWidget(self.settings_page)
+        if self._pending_initial_account_state_refresh:
+            self._pending_initial_account_state_refresh = False
+            self._refresh_account_state()
 
         self.api_url_input.textChanged.connect(self._on_settings_field_changed)
         self.ws_url_input.textChanged.connect(self._on_settings_field_changed)
@@ -848,7 +870,7 @@ class MainWindow(QMainWindow):
         title.setObjectName("MainTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Краткая сводка агента по текущим обращениям и профилю.")
+        subtitle = QLabel("Краткая сводка агента по текущим обращениям и аккаунту.")
         subtitle.setObjectName("MainSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
@@ -865,7 +887,7 @@ class MainWindow(QMainWindow):
 
         detail_row = QHBoxLayout()
         detail_row.setSpacing(14)
-        profile_card, self.dashboard_profile_value = self._make_dashboard_metric("Профиль инициатора", "Без профиля")
+        profile_card, self.dashboard_profile_value = self._make_dashboard_metric("Аккаунт", "Аккаунт не выбран")
         status_card, self.dashboard_status_value = self._make_dashboard_metric("Статус агента", "Релиз актуален")
         detail_row.addWidget(profile_card)
         detail_row.addWidget(status_card)
@@ -917,9 +939,107 @@ class MainWindow(QMainWindow):
         self.dashboard_total_value.setText(str(total_count))
         self.dashboard_open_value.setText(str(open_count))
         self.dashboard_closed_value.setText(str(closed_count))
-        self.dashboard_profile_value.setText(self.chat_panel.current_requester_profile_summary())
+        self.dashboard_profile_value.setText(self._account_summary())
         status_text = self.agent_footer_meta.text() if hasattr(self, "agent_footer_meta") else "Релиз актуален"
         self.dashboard_status_value.setText(status_text)
+
+    def _active_account_session_for_tickets(self) -> Optional[dict]:
+        if self._account_session.get("account_mode") in {"confirmed_binding", "registration_pending", "other_account"}:
+            return self._account_session
+        return None
+
+    def _account_summary(self) -> str:
+        session = self._active_account_session_for_tickets()
+        if not session:
+            return "Аккаунт не выбран"
+        label = {
+            "confirmed_binding": "Подтвержденный аккаунт",
+            "registration_pending": "Регистрация ожидает подтверждения",
+            "other_account": "Другой аккаунт",
+        }.get(str(session.get("account_mode")), "Аккаунт")
+        name = session.get("display_name") or session.get("full_name") or session.get("login") or "Без имени"
+        return f"{name} | {label}"
+
+    def _refresh_account_state(self) -> None:
+        if not hasattr(self, "account_gate_page"):
+            return
+        self.account_gate_page.render_loading()
+        self._spawn_gui_task(self._async_refresh_account_state(), name="account.refresh_state")
+
+    async def _async_refresh_account_state(self) -> None:
+        try:
+            state = await self.chat_panel.ticket_client.get_account_state()
+        except Exception as exc:
+            self.account_gate_page.render({}, local_session=self._account_session, error=str(exc))
+            return
+        if isinstance(state, dict) and state.get("status") == "error":
+            message = str(state.get("body") or state.get("error") or "Ошибка проверки аккаунта")
+            self.account_gate_page.render({}, local_session=self._account_session, error=message)
+            return
+        self._account_state = state if isinstance(state, dict) else {}
+        if not self._is_local_account_session_valid(self._account_session, self._account_state):
+            self._account_session = {"schema_version": 1, "account_mode": "none"}
+            self._account_session_manager.clear()
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._render_profile_status()
+
+    def _is_local_account_session_valid(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
+        mode = str(session.get("account_mode") or "")
+        if mode not in {"confirmed_binding", "registration_pending", "other_account"}:
+            return False
+        accounts = [item for item in state.get("accounts") or [] if isinstance(item, dict)]
+        if mode == "confirmed_binding":
+            binding_id = str(session.get("binding_id") or "")
+            return any(item.get("account_mode") == "confirmed_binding" and item.get("binding_id") == binding_id for item in accounts)
+        if mode == "registration_pending":
+            registration = state.get("registration") if isinstance(state.get("registration"), dict) else {}
+            return str(registration.get("status") or "") in {
+                "self_reported",
+                "pending_user_confirmation",
+                "user_confirmed",
+                "pending_admin_review",
+                "conflict",
+            }
+        if mode == "other_account":
+            base_binding_id = str(session.get("base_binding_id") or "")
+            return any(item.get("binding_id") == base_binding_id for item in accounts)
+        return False
+
+    def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_confirmed_binding_session(account, device_id=self.chat_panel.device_id)
+        )
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._render_profile_status()
+        self._select_sidebar_view("tickets", expand=True)
+
+    def _on_account_login_other(self, profile: dict[str, Any]) -> None:
+        active_account = next(
+            (item for item in self._account_state.get("accounts") or [] if isinstance(item, dict) and item.get("account_mode") == "confirmed_binding"),
+            None,
+        )
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_other_account_session(profile, active_account, device_id=self.chat_panel.device_id)
+        )
+        self.account_gate_page.reset_other_form()
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._render_profile_status()
+        self._select_sidebar_view("tickets", expand=True)
+
+    def _on_account_register_requested(self) -> None:
+        self._show_settings_dialog()
+
+    def _save_registration_pending_account_session(self, profile: dict[str, Any], registration: dict[str, Any]) -> None:
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_registration_pending_session(
+                profile,
+                registration,
+                device_id=self.chat_panel.device_id,
+            )
+        )
+        if hasattr(self, "account_gate_page"):
+            self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._render_profile_status()
 
     def _refresh_sidebar_labels(self) -> None:
         if not self._sidebar_expanded:
@@ -932,20 +1052,16 @@ class MainWindow(QMainWindow):
         self.sidebar_create_ticket_btn.setText("  Создать обращение")
         self.sidebar_tickets_btn.setText("  Обращения")
         self.sidebar_settings_btn.setText("  Настройки")
-        profile = self.chat_panel._active_profile()
-        if profile:
-            full_name = str(profile.get("full_name") or profile.get("display_name") or "Без имени")
-            display = str(profile.get("display_name") or full_name)
+        session = self._active_account_session_for_tickets()
+        if session:
+            full_name = str(session.get("full_name") or session.get("display_name") or session.get("login") or "Без имени")
+            display = str(session.get("display_name") or full_name)
             self.sidebar_profile_name_label.setText(display)
-            self.sidebar_profile_meta_label.setText(
-                " ".join(filter(None, [str(profile.get("building") or ""), str(profile.get("room") or "")]))
-                or profile.get("department")
-                or self.chat_panel.user_display_name
-            )
+            self.sidebar_profile_meta_label.setText(self._account_summary())
             initials_src = display or full_name
         else:
-            self.sidebar_profile_name_label.setText("Без профиля")
-            self.sidebar_profile_meta_label.setText(self.chat_panel.user_display_name)
+            self.sidebar_profile_name_label.setText("Аккаунт не выбран")
+            self.sidebar_profile_meta_label.setText("Войдите для работы с обращениями")
             initials_src = self.chat_panel.user_display_name
         initials = "".join(part[:1] for part in str(initials_src or "AD").replace("-", " ").split()[:2]).upper()
         self.sidebar_avatar_label.setText(initials or "AD")
@@ -974,6 +1090,9 @@ class MainWindow(QMainWindow):
 
     def _on_create_ticket_from_menu(self) -> None:
         logger.info("[ui] open create ticket wizard requested")
+        if not self._active_account_session_for_tickets():
+            self._select_sidebar_view("account_gate", expand=True)
+            return
         self._select_sidebar_view("create", expand=False)
         self.ticket_create_page.reset_wizard()
         self.ticket_create_page._set_status("Открываю форму обращения...", error=False)
@@ -1013,12 +1132,19 @@ class MainWindow(QMainWindow):
         return task
 
     def _select_sidebar_view(self, view_name: str, *, expand: bool) -> None:
+        if view_name in {"dashboard", "tickets", "ticket", "profile", "create"} and not self._active_account_session_for_tickets():
+            view_name = "account_gate"
+            expand = True
         self._active_sidebar_view = view_name
         if view_name in {"create", "ticket"}:
             self._set_sidebar_expanded(False)
         elif expand:
             self._set_sidebar_expanded(True)
-        if view_name == "tickets":
+        if view_name == "account_gate":
+            self._set_sidebar_selection_state(profile=True)
+            self.main_content_stack.setCurrentWidget(self.account_gate_page)
+            self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        elif view_name == "tickets":
             self._set_sidebar_selection_state(tickets=True)
             self.main_content_stack.setCurrentWidget(self.tickets_sidebar)
             self.chat_panel._refresh_ticket_list_async()
@@ -1791,6 +1917,7 @@ class MainWindow(QMainWindow):
         profile["registration_status"] = registration.get("status") or profile.get("registration_status")
         profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
         saved = UserProfileManager().save(profile)
+        self._save_registration_pending_account_session(saved, registration)
         self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_settings_status("Профиль регистрации отправлен.", error=False)
 
@@ -1812,6 +1939,7 @@ class MainWindow(QMainWindow):
                 profile["registration_status"] = registration.get("status") or profile.get("registration_status")
                 profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
                 saved = manager.save(profile)
+                self._save_registration_pending_account_session(saved, registration)
                 self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
                 self._set_settings_status("Данные регистрации отправлены и подтверждены.", error=False)
             else:
@@ -1822,6 +1950,7 @@ class MainWindow(QMainWindow):
         if isinstance(registration, dict):
             profile["registration_status"] = registration.get("status") or profile.get("registration_status")
             saved = manager.save(profile)
+            self._save_registration_pending_account_session(saved, registration)
             self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_settings_status("Данные регистрации подтверждены.", error=False)
 

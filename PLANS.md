@@ -697,3 +697,10 @@ Verification matrix:
 - Agent focused: `python -m pytest pc_agent/tests/test_user_profile_manager.py pc_agent/tests/test_registration_status.py pc_agent/tests/test_connection_request_flow.py -q`.
 - Webapp: run the actual package script from `webapp/package.json` (`pnpm --dir webapp run build` or available typecheck).
 - General: `python scripts/verify_workspace.py`, migration import/syntax check, and `git diff --check`.
+
+2026-05-23 account-session extension:
+
+- Added the requester/account session layer for the Qt agent GUI without changing machine-token auth: `GET /api/registry/agent/account-state`, `AccountSessionManager`, non-modal `AccountGateWidget`, ticket `requester_account` context and other-account ticket marking.
+- Account gate is the first app page; settings remain available before login, while ticket list/create/detail paths require a valid local account session confirmed against account-state.
+- Other-account login is local-only, does not call registration submit/confirm, and server ticket creation stores `custom_fields.requester_account_context.created_from_other_account=true` plus the active registered-device binding/person context without creating a registration claim.
+- Focused verification added: `server/tests/test_registration_api.py`, `server/tests/test_ticket_registration_enrichment.py`, `pc_agent/tests/test_account_session_manager.py`, `pc_agent/tests/test_account_gate.py`, `pc_agent/tests/test_registration_status.py`.

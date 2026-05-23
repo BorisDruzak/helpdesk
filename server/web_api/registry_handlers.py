@@ -6,6 +6,7 @@ from loguru import logger
 from app.db import get_session
 from app.db.models import Device
 from auth.middleware import require_auth
+from registry.account_state_service import build_agent_account_state
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
@@ -127,6 +128,22 @@ async def handle_registry_agent_registration_form(request: web.Request) -> web.R
         if not await _device_exists(session, device_id):
             return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
         payload = await build_registration_form_payload(session, device_id)
+    return _success(payload)
+
+
+@require_auth("admin", "support", "agent")
+async def handle_registry_agent_account_state(request: web.Request) -> web.Response:
+    try:
+        resolved_device_id = await _resolve_registration_form_device_id(request)
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if isinstance(resolved_device_id, web.Response):
+        return resolved_device_id
+    device_id = resolved_device_id
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        payload = await build_agent_account_state(session, device_id)
     return _success(payload)
 
 

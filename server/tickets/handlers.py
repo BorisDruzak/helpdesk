@@ -907,6 +907,9 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
     pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = str(data.get("form_pack_version") or "").strip() or None
     form_payload = data.get("form_payload")
+    requester_account = data.get("requester_account")
+    if requester_account is not None and not isinstance(requester_account, dict):
+        return _validation_error({"requester_account": "requester_account must be an object"})
     knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="agent_gui" if auth_context.actor_role == "agent" else "requester_portal")
 
     if auth_context.actor_role == "agent":
@@ -992,6 +995,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             **template_process_fields,
             **catalog_process_fields,
             extra_custom_fields=extra_custom_fields,
+            requester_account=requester_account,
             state=request.app.get("state"),
         )
         if knowledge_attempts:

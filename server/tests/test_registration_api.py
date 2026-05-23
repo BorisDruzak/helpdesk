@@ -337,6 +337,123 @@ async def test_registration_form_forbids_user_and_validates_admin_device(test_cl
 
 
 @pytest.mark.asyncio
+async def test_account_state_real_agent_token_is_side_effect_free(test_engine):
+    import app.db as app_db
+    import app.db.engine as app_db_engine
+    import auth.service as auth_service_module
+    import web_api.registry_handlers as registry_handlers_module
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def test_get_session():
+        async with session_maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    with patch.object(app_db, "get_session", test_get_session), \
+        patch.object(app_db_engine, "get_session", test_get_session), \
+        patch.object(auth_service_module, "get_session", test_get_session), \
+        patch.object(registry_handlers_module, "get_session", test_get_session):
+        app = create_app()
+        app.on_startup.clear()
+        app.on_cleanup.clear()
+        device_id = str(uuid.uuid4())
+        token = await AuthService(app["state"]).generate_agent_token(device_id=device_id, expires_hours=1)
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            response = await client.get("/api/registry/agent/account-state", headers=_headers(token))
+            status = response.status
+            text = await response.text()
+            payload = await response.json() if response.content_type == "application/json" else {}
+        finally:
+            await client.close()
+
+    assert status == 200, text
+    assert payload["data"]["device_id"] == device_id
+    assert payload["data"]["accounts"] == []
+    assert payload["data"]["can_register"] is True
+    async with session_maker() as session:
+        rows = (await session.execute(
+            DeviceRegistrationClaim.__table__.select().where(DeviceRegistrationClaim.device_id == device_id)
+        )).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_account_state_forbids_user_and_validates_admin_device(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await session.commit()
+
+    user_response = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={device_id}",
+        headers=_headers("test-ui-user:ordinary-user"),
+    )
+    missing_admin_device = await test_client.get(
+        "/api/registry/agent/account-state",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    unknown_admin_device = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={uuid.uuid4()}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    existing_admin_device = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={device_id}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+
+    assert user_response.status == 403
+    assert missing_admin_device.status == 400
+    assert unknown_admin_device.status == 404
+    assert (await unknown_admin_device.json())["error_code"] == "DEVICE_NOT_FOUND"
+    assert existing_admin_device.status == 200
+    payload = await existing_admin_device.json()
+    assert payload["data"]["device_id"] == device_id
+    assert payload["data"]["can_register"] is True
+
+
+@pytest.mark.asyncio
+async def test_account_state_active_binding_returns_confirmed_account(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        claim = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="registered@example.test",
+            display_name="Registered User",
+            profile={"full_name": "Registered User", "email": "registered@example.test", "user_confirmed": True},
+        )
+        approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={device_id}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    account = payload["data"]["accounts"][0]
+    assert account["account_mode"] == "confirmed_binding"
+    assert account["binding_id"] == approved["binding"]["binding_id"]
+    assert account["person_id"] == approved["binding"]["person_id"]
+    assert account["display_name"] == "Registered User"
+    assert account["registration_status"] == "admin_confirmed"
+    assert account["can_login"] is True
+    assert payload["data"]["can_register"] is False
+
+
+@pytest.mark.asyncio
 async def test_admin_approve_and_reject_registration_claim(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     approve_device_id = str(uuid.uuid4())
