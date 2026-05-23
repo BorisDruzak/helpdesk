@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from . import theme
@@ -49,6 +49,27 @@ def account_gate_view_state(
             "approved_other_account": None,
         }
     account_state = account_state or {}
+    if isinstance(local_session, dict) and local_session.get("account_mode") == "pending_other_account_request":
+        return {
+            "mode": "pending_other_account_request",
+            "title": "Заявка на вход в другой аккаунт ожидает подтверждения",
+            "message": "Администратор должен подтвердить вход. Можно проверить статус вручную или дождаться автоматического обновления.",
+            "show_register": False,
+            "show_login_confirmed": False,
+            "show_login_other": False,
+            "show_confirm": False,
+            "show_check_pending_request": True,
+            "warning": "pending_other_account_request",
+            "primary_account": None,
+            "pending_account": {
+                "display_name": local_session.get("display_name") or local_session.get("full_name") or local_session.get("login"),
+                "registration_status": local_session.get("pending_login_request_status") or "pending_verification",
+                "login": local_session.get("login"),
+                "reason": local_session.get("reason"),
+            },
+            "approved_other_account": None,
+            "pending_request_id": local_session.get("pending_login_request_id"),
+        }
     accounts = [item for item in account_state.get("accounts") or [] if isinstance(item, dict)]
     confirmed = next(
         (item for item in accounts if item.get("account_mode") == "confirmed_binding" and item.get("can_login", True)),
@@ -99,6 +120,7 @@ def account_gate_view_state(
         "show_login_confirmed": confirmed is not None,
         "show_login_other": can_login_other,
         "show_confirm": mode == "pending",
+        "show_check_pending_request": False,
         "warning": warning,
         "primary_account": confirmed,
         "pending_account": pending,
@@ -113,6 +135,7 @@ class AccountGateWidget(QFrame):
     confirmRegistrationRequested = Signal()
     refreshRequested = Signal()
     settingsRequested = Signal()
+    checkOtherLoginRequestRequested = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -121,7 +144,11 @@ class AccountGateWidget(QFrame):
         self._local_session: dict[str, Any] = {}
         self._primary_account: dict[str, Any] | None = None
         self._approved_other_account: dict[str, Any] | None = None
+        self._pending_request_id: str | None = None
         self._showing_other_form = False
+        self._pending_poll_timer = QTimer(self)
+        self._pending_poll_timer.setInterval(20000)
+        self._pending_poll_timer.timeout.connect(self._on_check_pending_request)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 32, 32, 32)
@@ -178,11 +205,15 @@ class AccountGateWidget(QFrame):
         self.settings_button = QPushButton("Настройки")
         self.settings_button.setObjectName("SecondaryButton")
         self.settings_button.clicked.connect(self.settingsRequested.emit)
+        self.check_request_button = QPushButton("Проверить статус заявки")
+        self.check_request_button.setObjectName("SecondaryButton")
+        self.check_request_button.clicked.connect(self._on_check_pending_request)
         for button in (
             self.login_button,
             self.other_button,
             self.register_button,
             self.confirm_button,
+            self.check_request_button,
             self.refresh_button,
             self.settings_button,
         ):
@@ -198,6 +229,10 @@ class AccountGateWidget(QFrame):
         self.account_card.hide()
         self.other_form.hide()
 
+    def _on_check_pending_request(self) -> None:
+        if self._pending_request_id:
+            self.checkOtherLoginRequestRequested.emit(self._pending_request_id)
+
     def render(
         self,
         account_state: dict[str, Any] | None,
@@ -212,6 +247,7 @@ class AccountGateWidget(QFrame):
         self._approved_other_account = (
             state.get("approved_other_account") if isinstance(state.get("approved_other_account"), dict) else None
         )
+        self._pending_request_id = str(state.get("pending_request_id") or "").strip() or None
         self.title_label.setText(state["title"])
         self.message_label.setText(state.get("message") or "")
         self.message_label.setVisible(bool(self.message_label.text()))
@@ -230,6 +266,12 @@ class AccountGateWidget(QFrame):
             else ""
         )
         self.login_button.setVisible(bool(state["show_login_confirmed"]))
+        if state.get("warning") == "pending_other_account_request":
+            self.warning_label.setText("Заявка отправлена. До подтверждения вход в другой аккаунт недоступен.")
+            self.warning_label.setVisible(True)
+        elif state.get("warning") not in {"other_account"}:
+            self.warning_label.setText("")
+            self.warning_label.setVisible(False)
         if self._primary_account:
             name = self._primary_account.get("display_name") or self._primary_account.get("full_name") or "аккаунт"
             self.login_button.setText(f"Войти как {name}")
@@ -247,7 +289,13 @@ class AccountGateWidget(QFrame):
         self.register_button.setVisible(bool(state["show_register"]))
         self.register_button.setText("Продолжить регистрацию" if state.get("mode") == "pending" else "Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))
+        self.check_request_button.setVisible(bool(state.get("show_check_pending_request") and self._pending_request_id))
         self.other_form.setVisible(self._showing_other_form)
+        if self._pending_request_id:
+            if not self._pending_poll_timer.isActive():
+                self._pending_poll_timer.start()
+        else:
+            self._pending_poll_timer.stop()
         self.setStyleSheet(theme.main_window_stylesheet())
 
     def _on_login_confirmed(self) -> None:

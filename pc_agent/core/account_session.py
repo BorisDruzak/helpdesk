@@ -13,6 +13,22 @@ from pc_agent.core.runtime_paths import resolve_data_root
 
 ACCOUNT_SESSION_SCHEMA_VERSION = 1
 ACCOUNT_SESSION_MODES = {"confirmed_binding", "registration_pending", "verified_other_account"}
+ACCOUNT_SESSION_STORAGE_MODES = ACCOUNT_SESSION_MODES | {"pending_other_account_request"}
+ACCOUNT_SESSION_INVALID_ERROR_CODES = {
+    "ACCOUNT_SESSION_REQUIRED",
+    "ACCOUNT_SESSION_MISSING",
+    "ACCOUNT_SESSION_INVALID",
+    "ACCOUNT_SESSION_NOT_FOUND",
+    "ACCOUNT_SESSION_REVOKED",
+    "ACCOUNT_SESSION_EXPIRED",
+    "ACCOUNT_SESSION_TOKEN_REQUIRED",
+    "ACCOUNT_SESSION_TOKEN_INVALID",
+    "ACCOUNT_SESSION_BINDING_INACTIVE",
+    "ACCOUNT_SESSION_BASE_BINDING_INACTIVE",
+    "ACCOUNT_SESSION_CLAIM_INACTIVE",
+}
+ACCOUNT_SESSION_REFRESH_ERROR_CODES = {"ACCOUNT_SESSION_CLAIM_APPROVED"}
+ACCOUNT_SESSION_ACCESS_ERROR_CODES = {"ACCOUNT_ACCESS_DENIED"}
 SESSION_FIELDS = {
     "schema_version",
     "account_session_id",
@@ -28,10 +44,17 @@ SESSION_FIELDS = {
     "phone",
     "reason",
     "registration_status",
+    "verification_status",
+    "verification_method",
+    "expires_at",
     "other_account",
     "base_binding_id",
     "base_person_id",
     "base_display_name",
+    "pending_login_request_id",
+    "pending_login_request_status",
+    "pending_login_requested_at",
+    "pending_login_rejection_reason",
     "created_from_other_account",
     "logged_in_at",
     "last_seen_at",
@@ -60,6 +83,45 @@ def _first_text(*values: Any) -> str | None:
         if text:
             return text
     return None
+
+
+def account_session_error_code(error: Any) -> str | None:
+    if isinstance(error, dict):
+        for key in ("error_code", "code"):
+            value = _clean(error.get(key), max_length=120)
+            if value:
+                return value
+        data = error.get("data")
+        if isinstance(data, dict):
+            value = account_session_error_code(data)
+            if value:
+                return value
+        body = error.get("body")
+        if isinstance(body, str):
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = {}
+            value = account_session_error_code(payload)
+            if value:
+                return value
+    text = str(error or "")
+    match = re.search(
+        r"(ACCOUNT_SESSION_[A-Z_]+|ACCOUNT_ACCESS_DENIED)",
+        text,
+    )
+    return match.group(1) if match else None
+
+
+def account_session_error_action(error: Any) -> str:
+    code = account_session_error_code(error)
+    if code in ACCOUNT_SESSION_INVALID_ERROR_CODES:
+        return "clear_session"
+    if code in ACCOUNT_SESSION_REFRESH_ERROR_CODES:
+        return "refresh_account_state"
+    if code in ACCOUNT_SESSION_ACCESS_ERROR_CODES:
+        return "deny_access"
+    return "ignore"
 
 
 @dataclass
@@ -107,12 +169,13 @@ class AccountSessionManager:
     def sanitize(self, session: dict[str, Any] | None) -> dict[str, Any]:
         session = session or {}
         mode = str(session.get("account_mode") or "none").strip()
-        if mode not in ACCOUNT_SESSION_MODES:
+        if mode not in ACCOUNT_SESSION_STORAGE_MODES:
             mode = "none"
         result: dict[str, Any] = {"schema_version": ACCOUNT_SESSION_SCHEMA_VERSION, "account_mode": mode}
         if mode == "none":
             return result
-        result["account_session_id"] = _clean(session.get("account_session_id"), max_length=80) or str(uuid.uuid4())
+        if mode in ACCOUNT_SESSION_MODES:
+            result["account_session_id"] = _clean(session.get("account_session_id"), max_length=80) or str(uuid.uuid4())
         for key in SESSION_FIELDS:
             if key in {"schema_version", "account_session_id", "account_mode", "metadata"}:
                 continue
@@ -122,6 +185,8 @@ class AccountSessionManager:
             if key not in session:
                 continue
             limit = 320 if key == "email" else 300
+            if key in {"reason", "pending_login_rejection_reason"}:
+                limit = 500
             value = _clean(session.get(key), max_length=limit)
             if value:
                 result[key] = value
@@ -159,6 +224,9 @@ class AccountSessionManager:
                 "email": _first_text(account.get("email"), person.get("email")),
                 "phone": _first_text(account.get("phone"), person.get("phone")),
                 "registration_status": account.get("registration_status") or "admin_confirmed",
+                "verification_status": account.get("verification_status") or "verified",
+                "verification_method": account.get("verification_method") or "device_binding",
+                "expires_at": account.get("expires_at"),
                 "other_account": False,
                 "created_from_other_account": False,
             }
@@ -186,6 +254,9 @@ class AccountSessionManager:
                 "login": profile.get("login"),
                 "email": profile.get("email"),
                 "registration_status": registration.get("status") or "registration_pending",
+                "verification_status": server_session.get("verification_status") or "pending_verification",
+                "verification_method": server_session.get("verification_method") or "registration_claim",
+                "expires_at": server_session.get("expires_at"),
                 "metadata": {"claim_id": claim_id} if claim_id else {},
             }
         )
@@ -216,6 +287,9 @@ class AccountSessionManager:
                 "phone": base_account.get("phone"),
                 "reason": base_account.get("reason") or server_session.get("reason"),
                 "registration_status": "other_account",
+                "verification_status": server_session.get("verification_status") or "verified",
+                "verification_method": server_session.get("verification_method") or "admin_approval",
+                "expires_at": server_session.get("expires_at"),
                 "other_account": True,
                 "created_from_other_account": True,
                 "base_binding_id": server_session.get("base_binding_id") or server_session.get("binding_id"),
@@ -225,6 +299,33 @@ class AccountSessionManager:
                     "verification_status": server_session.get("verification_status"),
                     "verification_method": server_session.get("verification_method"),
                 },
+            }
+        )
+
+    def build_pending_other_account_request_session(
+        self,
+        profile: dict[str, Any],
+        request: dict[str, Any],
+        *,
+        device_id: str,
+    ) -> dict[str, Any]:
+        requested = request.get("requested_account") if isinstance(request.get("requested_account"), dict) else {}
+        base = {**requested, **(profile or {})}
+        return self.sanitize(
+            {
+                "device_id": device_id,
+                "account_mode": "pending_other_account_request",
+                "display_name": base.get("display_name") or base.get("full_name") or base.get("login"),
+                "full_name": base.get("full_name"),
+                "login": base.get("login"),
+                "email": base.get("email"),
+                "phone": base.get("phone"),
+                "reason": base.get("reason") or request.get("reason"),
+                "pending_login_request_id": request.get("request_id"),
+                "pending_login_request_status": request.get("status") or "pending_verification",
+                "pending_login_requested_at": request.get("requested_at"),
+                "pending_login_rejection_reason": request.get("rejection_reason"),
+                "metadata": {"pending_other_account_request": "true"},
             }
         )
 

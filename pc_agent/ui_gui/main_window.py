@@ -29,7 +29,11 @@ from .dynamic_form_widget import DynamicFormWidget
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
 from pc_agent.config.config_loader import get_config
-from pc_agent.core.account_session import AccountSessionManager
+from pc_agent.core.account_session import (
+    AccountSessionManager,
+    account_session_error_action,
+    account_session_error_code,
+)
 from pc_agent.core.user_profile import UserProfileManager
 from pc_agent.remote_assist.runtime_host import create_remote_assist_thread
 from pc_agent.version import AGENT_VERSION
@@ -230,6 +234,7 @@ class MainWindow(QMainWindow):
         self.ticket_create_page.ticketCreated.connect(self._on_ticket_created_from_wizard)
         self.ticket_create_page.cancelled.connect(lambda: self._select_sidebar_view("tickets", expand=True))
         self.chat_panel.ticketFormPackChanged.connect(lambda _pack: self.ticket_create_page.refresh_from_panel())
+        self.chat_panel.accountSessionError.connect(self.handle_account_session_error)
         self.chat_panel.set_profile_sidebar(self.profile_sidebar)
         self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
         self.account_gate_page = AccountGateWidget()
@@ -239,6 +244,7 @@ class MainWindow(QMainWindow):
         self.account_gate_page.confirmRegistrationRequested.connect(self._on_confirm_registration_claim_clicked)
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
+        self.account_gate_page.checkOtherLoginRequestRequested.connect(self._on_check_other_login_request)
         self.registration_entry_page = self._build_registration_entry_page()
         self.account_page = self._build_account_page()
 
@@ -996,8 +1002,15 @@ class MainWindow(QMainWindow):
         self.account_page_phone_label = QLabel("—")
         self.account_page_mode_label = QLabel("—")
         self.account_page_status_label = QLabel("—")
+        self.account_page_verification_label = QLabel("—")
+        self.account_page_registration_status_label = QLabel("—")
         self.account_page_binding_label = QLabel("—")
+        self.account_page_session_label = QLabel("—")
+        self.account_page_claim_label = QLabel("—")
         self.account_page_base_owner_label = QLabel("—")
+        self.account_page_expires_label = QLabel("—")
+        self.account_page_last_validated_label = QLabel("—")
+        self.account_page_reason_label = QLabel("—")
         for value_label in (
             self.account_page_display_label,
             self.account_page_full_name_label,
@@ -1006,8 +1019,15 @@ class MainWindow(QMainWindow):
             self.account_page_phone_label,
             self.account_page_mode_label,
             self.account_page_status_label,
+            self.account_page_verification_label,
+            self.account_page_registration_status_label,
             self.account_page_binding_label,
+            self.account_page_session_label,
+            self.account_page_claim_label,
             self.account_page_base_owner_label,
+            self.account_page_expires_label,
+            self.account_page_last_validated_label,
+            self.account_page_reason_label,
         ):
             value_label.setObjectName("ProfileFieldValue")
             value_label.setWordWrap(True)
@@ -1019,9 +1039,16 @@ class MainWindow(QMainWindow):
         details_layout.addRow("Email", self.account_page_email_label)
         details_layout.addRow("Телефон", self.account_page_phone_label)
         details_layout.addRow("Тип входа", self.account_page_mode_label)
-        details_layout.addRow("Статус", self.account_page_status_label)
-        details_layout.addRow("Binding / session", self.account_page_binding_label)
+        details_layout.addRow("Статус сессии", self.account_page_status_label)
+        details_layout.addRow("Проверка", self.account_page_verification_label)
+        details_layout.addRow("Статус регистрации", self.account_page_registration_status_label)
+        details_layout.addRow("Session", self.account_page_session_label)
+        details_layout.addRow("Binding", self.account_page_binding_label)
+        details_layout.addRow("Claim", self.account_page_claim_label)
         details_layout.addRow("Зарегистрированный владелец ПК", self.account_page_base_owner_label)
+        details_layout.addRow("Действует до", self.account_page_expires_label)
+        details_layout.addRow("Последняя проверка", self.account_page_last_validated_label)
+        details_layout.addRow("Причина", self.account_page_reason_label)
         layout.addWidget(details)
 
         actions = QHBoxLayout()
@@ -1058,17 +1085,29 @@ class MainWindow(QMainWindow):
                 "phone": "—",
                 "mode": "Аккаунт не выбран",
                 "status": "none",
+                "verification": "—",
+                "registration_status": "—",
+                "session": "—",
                 "binding": "—",
+                "claim": "—",
                 "base_owner": "—",
+                "expires": "—",
+                "last_validated": "—",
+                "reason": "—",
                 "warning": "Для работы с обращениями выберите подтвержденный аккаунт или пройдите регистрацию.",
             }
         else:
             mode = str(session.get("account_mode") or "")
-            binding = session.get("binding_id") or session.get("session_id") or session.get("account_session_id") or "—"
+            session_id = session.get("account_session_id") or session.get("session_id") or "—"
+            binding = session.get("binding_id") or session.get("base_binding_id") or "—"
+            claim = session.get("claim_id") or session.get("last_claim_id") or "—"
             base_owner = session.get("base_display_name") or session.get("base_person_id") or "—"
+            metadata = session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
             warning = ""
             if mode == "verified_other_account":
                 warning = "Вы вошли не под зарегистрированным пользователем этого ПК. Новые обращения будут помечены для поддержки."
+            if mode == "registration_pending":
+                warning = "Регистрация ожидает подтверждения. Обращения будут помечены как созданные до подтверждения регистрации."
             values = {
                 "display": session.get("display_name") or session.get("full_name") or session.get("login") or "Без имени",
                 "full_name": session.get("full_name") or "—",
@@ -1077,8 +1116,15 @@ class MainWindow(QMainWindow):
                 "phone": session.get("phone") or "—",
                 "mode": self._account_mode_label(mode),
                 "status": session.get("verification_status") or session.get("registration_status") or "—",
+                "verification": session.get("verification_method") or "—",
+                "registration_status": session.get("registration_status") or "—",
+                "session": str(session_id),
                 "binding": str(binding),
+                "claim": str(claim),
                 "base_owner": str(base_owner),
+                "expires": session.get("expires_at") or "—",
+                "last_validated": metadata.get("last_validated_at") or session.get("last_validated_at") or "—",
+                "reason": session.get("reason") or metadata.get("reason") or "—",
                 "warning": warning,
             }
         self.account_page_display_label.setText(str(values["display"]))
@@ -1088,8 +1134,15 @@ class MainWindow(QMainWindow):
         self.account_page_phone_label.setText(str(values["phone"]))
         self.account_page_mode_label.setText(str(values["mode"]))
         self.account_page_status_label.setText(str(values["status"]))
+        self.account_page_verification_label.setText(str(values["verification"]))
+        self.account_page_registration_status_label.setText(str(values["registration_status"]))
+        self.account_page_session_label.setText(str(values["session"]))
         self.account_page_binding_label.setText(str(values["binding"]))
+        self.account_page_claim_label.setText(str(values["claim"]))
         self.account_page_base_owner_label.setText(str(values["base_owner"]))
+        self.account_page_expires_label.setText(str(values["expires"]))
+        self.account_page_last_validated_label.setText(str(values["last_validated"]))
+        self.account_page_reason_label.setText(str(values["reason"]))
         self.account_page_warning_label.setText(str(values["warning"]))
         self.account_page_warning_label.setVisible(bool(values["warning"]))
 
@@ -1114,6 +1167,58 @@ class MainWindow(QMainWindow):
         self.account_gate_page.render(self._account_state, local_session=self._account_session)
         self._render_profile_status()
         self._select_sidebar_view("account_gate", expand=True)
+
+    def _clear_local_account_session_state(self) -> None:
+        self._account_session = {"schema_version": 1, "account_mode": "none"}
+        self._account_session_manager.clear()
+        self.chat_panel.tickets_cache = []
+        self.chat_panel.active_ticket_id = None
+        try:
+            if hasattr(self.chat_panel, "_ticket_detail_timer"):
+                self.chat_panel._ticket_detail_timer.stop()
+            self.chat_panel._reset_active_ticket_cache()
+            self.chat_panel._update_tickets_list_ui()
+        except Exception as exc:
+            logger.debug(f"[account] failed to reset ticket state: {exc}")
+
+    def handle_account_session_error(self, error: Any) -> bool:
+        action = account_session_error_action(error)
+        code = account_session_error_code(error)
+        if action == "clear_session":
+            self._clear_local_account_session_state()
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error="Сессия аккаунта недействительна. Войдите снова.",
+            )
+            self._render_profile_status()
+            self._select_sidebar_view("account_gate", expand=True)
+            return True
+        if action == "refresh_account_state":
+            self._clear_local_account_session_state()
+            self._refresh_account_state()
+            self._show_nonblocking_message(
+                "Аккаунт обновлён",
+                "Регистрация подтверждена. Обновите состояние и войдите как подтверждённый аккаунт.",
+                QMessageBox.Icon.Information,
+            )
+            return True
+        if action == "deny_access":
+            self.chat_panel.active_ticket_id = None
+            try:
+                self.chat_panel._reset_active_ticket_cache()
+                self.chat_panel._show_list_screen()
+            except Exception as exc:
+                logger.debug(f"[account] failed to leave denied ticket: {exc}")
+            self._show_nonblocking_message(
+                "Нет доступа",
+                "У этого аккаунта нет доступа к выбранному обращению.",
+                QMessageBox.Icon.Warning,
+            )
+            return True
+        if code:
+            logger.debug(f"[account] unhandled account-session error: {code}")
+        return False
 
     def _build_registration_entry_page(self) -> QWidget:
         page = QFrame()
@@ -1214,6 +1319,8 @@ class MainWindow(QMainWindow):
 
     async def _validate_local_account_session_with_server(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
         mode = str(session.get("account_mode") or "")
+        if mode == "pending_other_account_request":
+            return bool(str(session.get("pending_login_request_id") or "").strip())
         if mode not in {"confirmed_binding", "verified_other_account", "registration_pending"}:
             return False
         session_id = str(session.get("account_session_id") or "").strip()
@@ -1292,6 +1399,13 @@ class MainWindow(QMainWindow):
                 error=str(payload.get("error") or "Не удалось отправить заявку"),
             )
             return
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_pending_other_account_request_session(
+                profile,
+                payload,
+                device_id=self.chat_panel.device_id,
+            )
+        )
         self.account_gate_page.reset_other_form()
         refreshed = await self.chat_panel.ticket_client.get_account_state()
         if isinstance(refreshed, dict) and refreshed.get("status") != "error":
@@ -1300,6 +1414,58 @@ class MainWindow(QMainWindow):
             {**self._account_state, "message": "Заявка на вход в другой аккаунт отправлена. Ожидает подтверждения администратора."},
             local_session=self._account_session,
         )
+
+    def _on_check_other_login_request(self, request_id: str) -> None:
+        self._spawn_gui_task(self._async_check_other_login_request(request_id), name="account.check_other_request")
+
+    async def _async_check_other_login_request(self, request_id: str) -> None:
+        payload = await self.chat_panel.ticket_client.get_account_login_request(request_id)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=str(payload.get("error") or "Не удалось проверить заявку на вход"),
+            )
+            return
+        status = str(payload.get("status") or "").strip()
+        if status == "approved":
+            session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+            token = str(payload.get("session_token") or "").strip()
+            if session_payload and token:
+                session_payload = {**session_payload, "session_token": token}
+                self._account_session = self._account_session_manager.save(
+                    self._account_session_manager.build_verified_other_account_session(
+                        payload.get("requested_account") if isinstance(payload.get("requested_account"), dict) else {},
+                        session_payload,
+                        device_id=self.chat_panel.device_id,
+                    )
+                )
+                refreshed = await self.chat_panel.ticket_client.get_account_state()
+                if isinstance(refreshed, dict) and refreshed.get("status") != "error":
+                    self._account_state = refreshed
+                self.account_gate_page.reset_other_form()
+                self.account_gate_page.render(self._account_state, local_session=self._account_session)
+                self._set_account_entry_mode(False)
+                self._render_profile_status()
+                self._select_sidebar_view("tickets", expand=True)
+                return
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error="Токен подтверждения уже был выдан. Обновите заявку или обратитесь к администратору.",
+            )
+            return
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_pending_other_account_request_session(
+                payload.get("requested_account") if isinstance(payload.get("requested_account"), dict) else {},
+                payload,
+                device_id=self.chat_panel.device_id,
+            )
+        )
+        message = "Заявка на вход в другой аккаунт ожидает подтверждения администратора."
+        if status == "rejected":
+            message = str(payload.get("rejection_reason") or "Заявка на вход отклонена.")
+        self.account_gate_page.render({**self._account_state, "message": message}, local_session=self._account_session)
 
     def _on_account_register_requested(self) -> None:
         self._show_registration_entry()

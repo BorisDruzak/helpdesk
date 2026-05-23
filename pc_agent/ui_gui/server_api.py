@@ -5,7 +5,10 @@
 from pathlib import Path
 from typing import Any, Optional
 import json
+import re
+import tempfile
 import uuid
+from urllib.parse import unquote
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
 from loguru import logger
@@ -1505,6 +1508,98 @@ class TicketApiClient:
                 logger.error(f"Ошибка сети при upload_attachment: {e}")
                 raise Exception(f"Network error: {e}")
     
+    @staticmethod
+    def _filename_from_content_disposition(value: str | None, *, fallback: str) -> str:
+        header = str(value or "")
+        filename = ""
+        utf8_match = re.search(r"filename\*=UTF-8''([^;]+)", header, flags=re.IGNORECASE)
+        if utf8_match:
+            filename = unquote(utf8_match.group(1).strip().strip('"'))
+        if not filename:
+            plain_match = re.search(r'filename="?([^";]+)"?', header, flags=re.IGNORECASE)
+            if plain_match:
+                filename = plain_match.group(1).strip()
+        filename = filename or fallback
+        filename = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1F]+', "_", filename).strip(" .")
+        return filename[:180] or fallback
+
+    @staticmethod
+    def _default_download_dir() -> Path:
+        path = Path(tempfile.gettempdir()) / "pc_agent_downloads"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @staticmethod
+    def _unique_download_path(path: Path) -> Path:
+        if not path.exists():
+            return path
+        stem = path.stem or "download"
+        suffix = path.suffix
+        for index in range(1, 1000):
+            candidate = path.with_name(f"{stem}-{index}{suffix}")
+            if not candidate.exists():
+                return candidate
+        return path.with_name(f"{stem}-{uuid.uuid4().hex[:8]}{suffix}")
+
+    async def download_artifact(
+        self,
+        artifact_id: str,
+        *,
+        ticket_id: str,
+        account_session: Optional[dict] = None,
+        save_to: Optional[Path | str] = None,
+    ) -> dict:
+        """Download a ticket artifact through the authenticated account-session boundary."""
+        artifact_id = str(artifact_id or "").strip()
+        ticket_id = str(ticket_id or "").strip()
+        if not artifact_id:
+            return {"status": "error", "error_code": "VALIDATION_ERROR", "error": "artifact_id is required"}
+        if not ticket_id:
+            return {"status": "error", "error_code": "VALIDATION_ERROR", "error": "ticket_id is required"}
+
+        url = f"{self.base_url}/artifacts/{artifact_id}/download"
+        session = await self._get_session()
+        headers = self._with_account_headers(self._get_headers(), account_session)
+        try:
+            async with session.get(url, params={"ticket_id": ticket_id}, headers=headers) as response:
+                if response.status != 200:
+                    response_text = await response.text()
+                    return self._api_error_result(
+                        response.status,
+                        response_text,
+                        fallback="Не удалось скачать вложение",
+                    )
+
+                data = await response.read()
+                headers_map = getattr(response, "headers", {}) or {}
+                filename = self._filename_from_content_disposition(
+                    headers_map.get("Content-Disposition") if hasattr(headers_map, "get") else None,
+                    fallback=artifact_id,
+                )
+                if save_to is None:
+                    target = self._default_download_dir() / filename
+                else:
+                    target = Path(save_to)
+                    if target.exists() and target.is_dir():
+                        target = target / filename
+                    elif not target.suffix:
+                        target.mkdir(parents=True, exist_ok=True)
+                        target = target / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target = self._unique_download_path(target)
+                target.write_bytes(data)
+                return {
+                    "status": "success",
+                    "artifact_id": artifact_id,
+                    "ticket_id": ticket_id,
+                    "filename": filename,
+                    "path": str(target),
+                    "size": len(data),
+                }
+        except aiohttp.ClientError as exc:
+            logger.error("Artifact download network error: {}", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def close_ticket(
         self,
         ticket_id: str,
@@ -1600,6 +1695,7 @@ class TicketApiClient:
         tool_name: str,
         preset_id: Optional[str] = None,
         params: Optional[dict] = None,
+        account_session: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -1627,6 +1723,8 @@ class TicketApiClient:
             payload["preset_id"] = preset_id
         if params is not None:
             payload["params"] = params
+        if account_session:
+            payload["requester_account"] = self._account_session_payload(account_session)
         trace = self._trace_context(
             action="ticket.tool.run",
             category="tool",
@@ -1645,7 +1743,7 @@ class TicketApiClient:
         logger.debug(f"POST {url} tool_name={tool_name}, ticket_id={ticket_id}")
 
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()

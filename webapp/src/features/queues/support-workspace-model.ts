@@ -174,6 +174,8 @@ export type SupportWorkspaceContext = {
     email: string;
     location: string;
     sourceLabel: string;
+    accountMode: string | null;
+    accountSessionId: string | null;
     accountWarning: string | null;
     accountDeclaredName: string | null;
     accountLogin: string | null;
@@ -182,6 +184,7 @@ export type SupportWorkspaceContext = {
     accountReason: string | null;
     accountVerification: string | null;
     activeDeviceOwner: string | null;
+    accountBaseBindingId: string | null;
   };
   device: {
     id: string | null;

@@ -713,6 +713,14 @@ export function mapWorkspaceContext(
   const accountWarning = detail.ticket.requester_account_warning ?? (
     typeof accountContext.warning === "string" ? accountContext.warning : null
   );
+  const accountMode = detail.ticket.requester_account_mode ?? (
+    typeof accountContext.account_mode === "string" ? accountContext.account_mode : null
+  );
+  const accountSessionId = detail.ticket.requester_account_session_id ?? (
+    typeof accountContext.account_session_id === "string" ? accountContext.account_session_id : (
+      typeof accountContext.session_id === "string" ? accountContext.session_id : null
+    )
+  );
   const accountDeclaredName = [
     declaredAccount.display_name,
     declaredAccount.full_name,
@@ -730,6 +738,8 @@ export function mapWorkspaceContext(
       email: registry?.person_email ?? (typeof declaredAccount.email === "string" ? declaredAccount.email : "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d"),
       location: registry?.location_display_name ?? (locationFallback || "\u041d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"),
       sourceLabel: requesterSourceLabel(registry?.person_source),
+      accountMode,
+      accountSessionId,
       accountWarning,
       accountDeclaredName: accountDeclaredName ?? null,
       accountLogin: typeof declaredAccount.login === "string" ? declaredAccount.login : null,
@@ -740,6 +750,9 @@ export function mapWorkspaceContext(
       ),
       accountVerification: accountVerification || null,
       activeDeviceOwner: typeof accountContext.active_device_person_name === "string" ? accountContext.active_device_person_name : null,
+      accountBaseBindingId: typeof accountContext.active_device_binding_id === "string" ? accountContext.active_device_binding_id : (
+        typeof accountContext.base_binding_id === "string" ? accountContext.base_binding_id : null
+      ),
     },
     device: {
       id: device.device_id,

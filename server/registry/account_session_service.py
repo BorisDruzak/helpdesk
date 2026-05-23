@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import re
 import secrets
@@ -15,6 +15,9 @@ from app.repos.registry_repo import RegistryRepo
 
 
 OTHER_ACCOUNT_WARNING = "ticket_created_from_other_account_on_registered_device"
+CONFIRMED_BINDING_TTL_HOURS: int | None = None
+VERIFIED_OTHER_ACCOUNT_TTL_HOURS = 24
+REGISTRATION_PENDING_TTL_HOURS = 72
 PENDING_REGISTRATION_CLAIM_STATUSES = {
     "self_reported",
     "pending_user_confirmation",
@@ -26,6 +29,12 @@ PENDING_REGISTRATION_CLAIM_STATUSES = {
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _expires_after(hours: int | None) -> datetime | None:
+    if not hours:
+        return None
+    return _now() + timedelta(hours=int(hours))
 
 
 def _clean(value: Any, *, max_length: int = 320) -> str:
@@ -152,6 +161,7 @@ class AccountSessionService:
             person_id=binding.person_id,
             binding_id=binding.binding_id,
             verified_at=_now(),
+            expires_at=_expires_after(CONFIRMED_BINDING_TTL_HOURS),
             declared_account={},
             metadata_json={},
         )
@@ -181,6 +191,7 @@ class AccountSessionService:
             verification_method="registration_claim",
             person_id=claim.person_id,
             claim_id=claim.claim_id,
+            expires_at=_expires_after(REGISTRATION_PENDING_TTL_HOURS),
             declared_account=claim.profile_snapshot or {},
             metadata_json={"source_claim_id": claim.claim_id},
         )
@@ -279,6 +290,7 @@ class AccountSessionService:
             warning_code=OTHER_ACCOUNT_WARNING,
             verified_at=_now(),
             verified_by=reviewed_by,
+            expires_at=_expires_after(VERIFIED_OTHER_ACCOUNT_TTL_HOURS),
             metadata_json={"source_request_id": request.request_id},
         )
         request = await self.repo.mark_login_request(

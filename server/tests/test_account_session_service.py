@@ -345,6 +345,40 @@ async def test_registration_pending_session_creation_validation_and_claim_invali
 
 
 @pytest.mark.asyncio
+async def test_account_session_ttl_defaults(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        service = AccountSessionService(session)
+        confirmed = await service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        registration = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-ttl@example.test",
+            display_name="Pending TTL",
+            profile={"full_name": "Pending TTL", "email": "pending-ttl@example.test"},
+        )
+        pending = await service.create_registration_pending_session(
+            device_id=device_id,
+            claim_id=registration["registration"]["claim_id"],
+        )
+        request = await service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+        other = await service.approve_login_request(request["request_id"], reviewed_by="admin")
+        await session.commit()
+
+    assert confirmed["session"]["expires_at"] is None
+    assert pending["session"]["expires_at"]
+    assert other["session"]["expires_at"]
+
+
+@pytest.mark.asyncio
 async def test_logout_and_admin_revoke_invalidate_account_sessions(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

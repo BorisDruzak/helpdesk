@@ -46,17 +46,23 @@ The support ticket detail UI must show a visible warning: "Обращение с
 
 Current implementation:
 
-- `confirmed_binding` sessions live until logout, admin revoke, binding revoke, or `expires_at` if set.
-- `verified_other_account` sessions live until logout, admin revoke, base binding revoke, or `expires_at` if set.
-- `registration_pending` sessions are invalidated by terminal claim state.
-
-Recommended follow-up TTLs:
-
-- `confirmed_binding`: 24 hours to 7 days, policy-dependent.
-- `verified_other_account`: 4 to 24 hours.
-- `registration_pending`: 24 to 72 hours.
+- `confirmed_binding` sessions live until logout, admin revoke, binding revoke, or `expires_at` if a deployment policy sets it. The default TTL is currently disabled.
+- `verified_other_account` sessions live until logout, admin revoke, base binding revoke, or `expires_at`. The default TTL is 24 hours.
+- `registration_pending` sessions are invalidated by terminal claim state and also receive `expires_at`. The default TTL is 72 hours.
 
 Follow-up: add a cleanup job for expired/revoked sessions and old account events.
+
+## Ownership Transfer
+
+Entering a verified other account is not an ownership transfer. It only creates a requester account session for ticketing on a registered device and always keeps the active device binding unchanged.
+
+Planned transfer flow:
+
+- create an explicit transfer claim/request;
+- require admin approval;
+- revoke or transfer old active binding and dependent sessions;
+- activate the new binding;
+- sync `registry_assets.assigned_person_id` from the new active binding.
 
 ## Live smoke checklist
 

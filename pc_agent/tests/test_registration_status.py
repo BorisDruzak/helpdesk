@@ -330,3 +330,26 @@ async def test_ticket_actions_include_account_session(monkeypatch):
     assert fake_session.calls[2]["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}
     assert fake_session.calls[2]["headers"]["X-Account-Session-Id"] == "session-1"
     assert fake_session.calls[3]["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}
+
+
+@pytest.mark.asyncio
+async def test_run_tool_includes_account_session(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(FakeResponse(status=202, payload={"status": "accepted", "operation_id": "op-1"}))
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    await client.run_tool(
+        device_id="device-1",
+        ticket_id="ticket-1",
+        tool_name="screen.collect",
+        account_session={"account_session_id": "session-1", "session_token": "token-1"},
+    )
+
+    call = fake_session.calls[0]
+    assert call["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}
+    assert call["headers"]["X-Account-Session-Id"] == "session-1"
+    assert call["headers"]["X-Account-Session-Token"] == "token-1"

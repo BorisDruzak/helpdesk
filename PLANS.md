@@ -46,6 +46,7 @@ Goal:
 Follow-up TODO:
 
 - Add an account-session TTL/cleanup scheduler for expired/revoked sessions and old `device_account_events`.
+- Add a separate registered owner transfer flow: transfer request claim, admin approval, revoke old binding/sessions and activate the new binding.
 
 Verification target:
 

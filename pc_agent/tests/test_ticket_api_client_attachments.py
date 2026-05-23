@@ -12,10 +12,12 @@ from pc_agent.ui_gui.server_api import TicketApiClient
 
 
 class FakeResponse:
-    def __init__(self, status=200, payload=None, text_payload=""):
+    def __init__(self, status=200, payload=None, text_payload="", body: bytes = b"", headers=None):
         self.status = status
         self._payload = payload or {}
         self._text_payload = text_payload
+        self._body = body
+        self.headers = headers or {}
 
     async def __aenter__(self):
         return self
@@ -28,6 +30,9 @@ class FakeResponse:
 
     async def json(self):
         return self._payload
+
+    async def read(self):
+        return self._body
 
 
 class FakeSession:
@@ -433,3 +438,67 @@ async def test_upload_attachment_sends_expected_multipart(monkeypatch):
     assert fields["ticket_id"][0] == "ticket-1"
     assert fields["kind"][0] == "file"
     assert fields["file"][1]["filename"] == Path(tmp.name).name
+
+
+@pytest.mark.asyncio
+async def test_download_artifact_sends_account_session_and_saves_file(monkeypatch, tmp_path):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+    fake_session = FakeSession(
+        FakeResponse(
+            status=200,
+            body=b"hello",
+            headers={"Content-Disposition": "attachment; filename=log.txt"},
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.download_artifact(
+        "artifact-1",
+        ticket_id="ticket-1",
+        account_session={"account_session_id": "session-1", "session_token": "token-1"},
+        save_to=tmp_path,
+    )
+
+    assert result["status"] == "success"
+    assert Path(result["path"]).read_bytes() == b"hello"
+    call = fake_session.calls[0]
+    assert call["url"] == "http://localhost:8666/api/artifacts/artifact-1/download"
+    assert call["params"] == {"ticket_id": "ticket-1"}
+    assert call["headers"]["X-Account-Session-Id"] == "session-1"
+    assert call["headers"]["X-Account-Session-Token"] == "token-1"
+
+
+@pytest.mark.asyncio
+async def test_download_artifact_returns_account_session_error(monkeypatch, tmp_path):
+    client = TicketApiClient(
+        base_url="http://localhost:8666/api",
+        device_id="device-1",
+        user_display_name="User",
+        auth_token="token-123",
+    )
+    fake_session = FakeSession(
+        FakeResponse(
+            status=403,
+            text_payload='{"status":"error","error_code":"ACCOUNT_SESSION_REVOKED","error":"revoked"}',
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.download_artifact("artifact-1", ticket_id="ticket-1", save_to=tmp_path)
+
+    assert result["status"] == "error"
+    assert result["http_status"] == 403
+    assert result["error_code"] == "ACCOUNT_SESSION_REVOKED"

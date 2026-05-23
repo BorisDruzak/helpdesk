@@ -122,3 +122,22 @@ def test_account_gate_other_account_warning():
     )
 
     assert state["warning"] == "other_account"
+
+
+def test_account_gate_pending_other_account_request_state():
+    state = account_gate_view_state(
+        {"accounts": [], "registration": {"status": "admin_confirmed"}},
+        local_session={
+            "account_mode": "pending_other_account_request",
+            "pending_login_request_id": "request-1",
+            "display_name": "Guest User",
+            "login": "guest",
+            "reason": "Shift replacement",
+        },
+    )
+
+    assert state["mode"] == "pending_other_account_request"
+    assert state["show_login_other"] is False
+    assert state["show_check_pending_request"] is True
+    assert state["pending_request_id"] == "request-1"
+    assert state["pending_account"]["display_name"] == "Guest User"

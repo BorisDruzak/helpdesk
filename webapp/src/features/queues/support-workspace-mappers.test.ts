@@ -902,11 +902,14 @@ describe("support workspace mappers", () => {
   it("maps verified other-account warning context", () => {
     const detail = detailPayload();
     detail.ticket.requester_account_warning = "ticket_created_from_other_account_on_registered_device";
+    detail.ticket.requester_account_session_id = "session-other";
+    detail.ticket.requester_account_mode = "verified_other_account";
     detail.ticket.requester_account_context = {
       warning: "ticket_created_from_other_account_on_registered_device",
       verification_status: "verified",
       verification_method: "admin_approval",
       active_device_person_name: "Registered Owner",
+      active_device_binding_id: "binding-owner",
       declared_account: {
         full_name: "Temporary User",
         login: "temp.user",
@@ -927,6 +930,8 @@ describe("support workspace mappers", () => {
 
     expect(viewModel.right.context?.requester).toMatchObject({
       accountWarning: "ticket_created_from_other_account_on_registered_device",
+      accountMode: "verified_other_account",
+      accountSessionId: "session-other",
       accountDeclaredName: "Temporary User",
       accountLogin: "temp.user",
       accountEmail: "temp@example.test",
@@ -934,6 +939,7 @@ describe("support workspace mappers", () => {
       accountReason: "Shift replacement",
       accountVerification: "admin_approval / verified",
       activeDeviceOwner: "Registered Owner",
+      accountBaseBindingId: "binding-owner",
     });
   });
 

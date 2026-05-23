@@ -3495,6 +3495,28 @@ export function TicketListPage() {
                       </div>
                     </div>
                   ) : null}
+                  {viewModel.right.context.requester.accountMode || viewModel.right.context.requester.accountSessionId ? (
+                    <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Аккаунт обращения</p>
+                      {viewModel.right.context.requester.accountMode === "registration_pending" ? (
+                        <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-50">
+                          Обращение создано до подтверждения регистрации пользователя.
+                        </div>
+                      ) : null}
+                      <dl className="mt-3 grid gap-1 text-xs leading-5 text-slate-300">
+                        <ContextInfoRow icon={ShieldCheck} label="Режим" value={viewModel.right.context.requester.accountMode} />
+                        <ContextInfoRow icon={Fingerprint} label="Session" value={viewModel.right.context.requester.accountSessionId} />
+                        <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
+                        <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
+                        <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />
+                        <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.accountPhone} />
+                        <ContextInfoRow icon={MessageSquare} label="Причина" value={viewModel.right.context.requester.accountReason} />
+                        <ContextInfoRow icon={ShieldCheck} label="Проверка" value={viewModel.right.context.requester.accountVerification} />
+                        <ContextInfoRow icon={UsersRound} label="Владелец устройства" value={viewModel.right.context.requester.activeDeviceOwner} />
+                        <ContextInfoRow icon={Fingerprint} label="Base binding" value={viewModel.right.context.requester.accountBaseBindingId} />
+                      </dl>
+                    </div>
+                  ) : null}
                   <dl className="mt-4 grid gap-2">
                     <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.phone} />
                     <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.email} />

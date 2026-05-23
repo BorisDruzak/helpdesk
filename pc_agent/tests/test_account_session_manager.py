@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from pc_agent.core.account_session import AccountSessionManager
+from pc_agent.core.account_session import (
+    AccountSessionManager,
+    account_session_error_action,
+    account_session_error_code,
+)
 
 
 def test_account_session_manager_save_load_clear(tmp_path):
@@ -307,3 +311,28 @@ def test_other_account_session_preserves_phone_and_reason(tmp_path):
 
     assert session["phone"] == "+15551234567"
     assert session["reason"] == "Temporary replacement"
+
+
+def test_pending_other_account_request_session_is_not_logged_in(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+
+    session = manager.save(
+        manager.build_pending_other_account_request_session(
+            {"full_name": "Guest User", "login": "guest", "reason": "Shift replacement"},
+            {"request_id": "request-1", "status": "pending_verification", "requested_at": "2026-05-23T10:00:00+00:00"},
+            device_id="device-1",
+        )
+    )
+
+    assert session["account_mode"] == "pending_other_account_request"
+    assert session["pending_login_request_id"] == "request-1"
+    assert session["reason"] == "Shift replacement"
+    assert not manager.is_logged_in()
+
+
+def test_account_session_error_action_classifies_errors():
+    payload = {"body": '{"error_code":"ACCOUNT_SESSION_REVOKED"}'}
+    assert account_session_error_code(payload) == "ACCOUNT_SESSION_REVOKED"
+    assert account_session_error_action(payload) == "clear_session"
+    assert account_session_error_action({"error_code": "ACCOUNT_ACCESS_DENIED"}) == "deny_access"
+    assert account_session_error_action(Exception("HTTP 403 ACCOUNT_SESSION_CLAIM_APPROVED")) == "refresh_account_state"

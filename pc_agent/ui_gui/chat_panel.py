@@ -1712,6 +1712,7 @@ class MessageBubbleWidget(QFrame):
         text: str,
         ts_text: str,
         attachments: Optional[List[str]] = None,
+        attachment_items: Optional[List[dict]] = None,
         menu_text: Optional[str] = None,
         reply_to: Optional[dict] = None,
         message_context: Optional[dict] = None,
@@ -1802,12 +1803,28 @@ class MessageBubbleWidget(QFrame):
         self._text_label = text_label
         layout.addWidget(text_label)
 
-        for attachment in attachments or []:
+        attachment_items = attachment_items or []
+        for index, attachment in enumerate(attachments or []):
             chip = QLabel(attachment)
             chip.setWordWrap(True)
             chip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             self._attachment_labels.append(chip)
             layout.addWidget(chip)
+            item = attachment_items[index] if index < len(attachment_items) and isinstance(attachment_items[index], dict) else {}
+            artifact_id = str(item.get("artifact_id") or "").strip()
+            ticket_id = str(item.get("ticket_id") or self._panel.active_ticket_id or "").strip()
+            if artifact_id and ticket_id:
+                actions = QHBoxLayout()
+                download_btn = QPushButton("Скачать")
+                download_btn.setObjectName("SecondaryButton")
+                download_btn.clicked.connect(lambda _checked=False, a=artifact_id, t=ticket_id, open_file=False: self._panel.download_attachment(a, t, open_file=open_file))
+                open_btn = QPushButton("Открыть")
+                open_btn.setObjectName("SecondaryButton")
+                open_btn.clicked.connect(lambda _checked=False, a=artifact_id, t=ticket_id, open_file=True: self._panel.download_attachment(a, t, open_file=open_file))
+                actions.addWidget(download_btn)
+                actions.addWidget(open_btn)
+                actions.addStretch(1)
+                layout.addLayout(actions)
 
         if ts_text:
             time_label = QLabel(ts_text)
@@ -3858,6 +3875,7 @@ class ChatPanel(QWidget):
     listNavigationVisibilityChanged = Signal(bool)
     ticketFormPackChanged = Signal(dict)
     ticketsListChanged = Signal()
+    accountSessionError = Signal(object)
 
     def __init__(
         self,
@@ -4740,6 +4758,13 @@ class ChatPanel(QWidget):
             return None
         return session if isinstance(session, dict) and session.get("account_mode") else None
 
+    def _handle_account_session_exception(self, exc: Exception) -> bool:
+        text = str(exc)
+        if "ACCOUNT_SESSION_" in text or "ACCOUNT_ACCESS_DENIED" in text:
+            self.accountSessionError.emit({"error": text})
+            return True
+        return False
+
     def _has_account_session(self) -> bool:
         session = self._current_account_session()
         return bool(session and session.get("account_mode") in {"confirmed_binding", "registration_pending", "verified_other_account"})
@@ -4802,6 +4827,8 @@ class ChatPanel(QWidget):
             self._update_tickets_list_ui()
         except Exception as exc:
             if not self._is_closing:
+                if self._handle_account_session_exception(exc):
+                    return
                 logger.exception(
                     "Ошибка загрузки списка обращений: "
                     f"type={type(exc).__name__} detail={exc!r}"
@@ -4914,6 +4941,8 @@ class ChatPanel(QWidget):
             await self._async_refresh_ticket_list()
         except Exception as exc:
             if not self._is_closing:
+                if self._handle_account_session_exception(exc):
+                    return
                 logger.warning(f"Не удалось отметить сообщения как прочитанные для {ticket_id}: {exc}")
                 self._last_marked_read_event_id[ticket_id] = previous_value
                 if previous_optimistic > 0:
@@ -5037,6 +5066,8 @@ class ChatPanel(QWidget):
             self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
+                if self._handle_account_session_exception(exc):
+                    return
                 logger.exception(
                     "Ошибка загрузки обращения "
                     f"{self.active_ticket_id}: type={type(exc).__name__} detail={exc!r}"
@@ -5083,6 +5114,8 @@ class ChatPanel(QWidget):
             self._update_ticket_detail_ui(ticket, messages, events)
         except Exception as exc:
             if not self._is_closing:
+                if self._handle_account_session_exception(exc):
+                    return
                 logger.error(f"Ошибка догрузки старой истории тикета {self.active_ticket_id}: {exc}")
         finally:
             self._loading_older_history = False
@@ -5234,6 +5267,7 @@ class ChatPanel(QWidget):
                         "sender": requester_full_name if sender_kind == "self" else sender,
                         "text": text or "Вложение",
                         "attachments": self._message_attachment_labels(message),
+                        "attachment_items": self._message_attachment_items(message),
                         "ts_text": self._format_ts(ts),
                         "menu_text": text or " ".join(self._message_attachment_labels(message)),
                         "reply_to": reply_to,
@@ -5417,6 +5451,22 @@ class ChatPanel(QWidget):
         if not labels and attachment_refs:
             labels = [f"📎 {ref}" for ref in attachment_refs[:5]]
         return labels
+
+    def _message_attachment_items(self, message: dict) -> List[dict]:
+        ticket_id = str(message.get("ticket_id") or self.active_ticket_id or "").strip()
+        items: List[dict] = []
+        for item in (message.get("attachments") or [])[:5]:
+            if not isinstance(item, dict):
+                continue
+            artifact_id = str(item.get("artifact_id") or "").strip()
+            if artifact_id:
+                items.append({**item, "ticket_id": str(item.get("ticket_id") or ticket_id)})
+        if not items:
+            for ref in (message.get("attachment_refs") or [])[:5]:
+                artifact_id = str(ref or "").strip()
+                if artifact_id:
+                    items.append({"artifact_id": artifact_id, "ticket_id": ticket_id})
+        return items
 
     def _resolve_reply_reference(self, raw_reply: Optional[dict], message_index: Optional[Dict[str, dict]] = None) -> Optional[dict]:
         if not isinstance(raw_reply, dict):
@@ -5678,6 +5728,7 @@ class ChatPanel(QWidget):
             payload.get("text", ""),
             payload.get("ts_text", ""),
             payload.get("attachments", []),
+            payload.get("attachment_items", []),
             payload.get("menu_text", ""),
             payload.get("reply_to"),
             payload.get("message_context"),
@@ -6038,6 +6089,8 @@ class ChatPanel(QWidget):
             return result
         except Exception as exc:
             logger.error(f"Ошибка создания обращения: {exc}")
+            if self._handle_account_session_exception(exc):
+                return {}
             if raise_errors:
                 raise
             QMessageBox.critical(self, "Ошибка", str(exc))
@@ -6069,6 +6122,30 @@ class ChatPanel(QWidget):
             self._refresh_composer_state()
             return
         self._spawn_task(self._async_send_message(text))
+
+    def download_attachment(self, artifact_id: str, ticket_id: str, *, open_file: bool = False) -> None:
+        self._spawn_task(self._async_download_attachment(artifact_id, ticket_id, open_file=open_file))
+
+    async def _async_download_attachment(self, artifact_id: str, ticket_id: str, *, open_file: bool = False) -> None:
+        try:
+            result = await self.ticket_client.download_artifact(
+                artifact_id,
+                ticket_id=ticket_id,
+                account_session=self._current_account_session(),
+            )
+            if isinstance(result, dict) and result.get("status") == "error":
+                if result.get("error_code") and self._handle_account_session_exception(Exception(str(result))):
+                    return
+                raise RuntimeError(str(result.get("error") or result))
+            path = str(result.get("path") or "")
+            if open_file and path:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            elif path:
+                QMessageBox.information(self, "Вложение скачано", f"Файл сохранён:\n{path}")
+        except Exception as exc:
+            if self._handle_account_session_exception(exc):
+                return
+            QMessageBox.critical(self, "Ошибка", str(exc))
 
     def _composer_text(self) -> str:
         if hasattr(self, "composer"):
@@ -6134,6 +6211,8 @@ class ChatPanel(QWidget):
             self._ensure_timeline_bottom_follow()
         except Exception as exc:
             logger.error(f"Ошибка отправки сообщения: {exc}")
+            if self._handle_account_session_exception(exc):
+                return
             QMessageBox.critical(self, "Ошибка", str(exc))
         finally:
             self._refresh_composer_state()
@@ -6235,6 +6314,8 @@ class ChatPanel(QWidget):
             self._ensure_timeline_bottom_follow()
         except Exception as exc:
             logger.error(f"Ошибка отправки вложений: {exc}")
+            if self._handle_account_session_exception(exc):
+                return
             self.tool_status_label.setText("Ошибка отправки вложений")
             QMessageBox.critical(self, "Ошибка", str(exc))
 
@@ -6278,12 +6359,15 @@ class ChatPanel(QWidget):
                 ticket_id=self.active_ticket_id,
                 tool_name=tool_name,
                 params=params,
+                account_session=self._current_account_session(),
                 trace_parent_action_id=action_id,
             )
             self.tool_status_label.setText(success_text)
             self._refresh_ticket_detail_async()
         except Exception as exc:
             logger.error(f"Ошибка запуска инструмента {tool_name}: {exc}")
+            if self._handle_account_session_exception(exc):
+                return
             self.tool_status_label.setText(f"Ошибка {tool_name}")
             QMessageBox.warning(self, "Инструмент", str(exc))
 

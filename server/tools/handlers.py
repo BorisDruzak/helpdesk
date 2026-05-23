@@ -14,6 +14,55 @@ from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 
 
+def _account_session_error_response(payload: dict, *, status: int = 403) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "account_session_invalid",
+            "error_code": payload.get("error_code") or "ACCOUNT_SESSION_INVALID",
+            "details": payload,
+        },
+        status=status,
+    )
+
+
+async def _require_agent_tool_account_access(
+    *,
+    request: web.Request,
+    auth_context: AuthContext,
+    payload: dict,
+    ticket_id: str,
+) -> web.Response | None:
+    from app.db import get_session
+    from app.repos.ticket_events_repo import TicketEventsRepo
+    from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
+
+    async with get_session() as session:
+        ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
+        if not ticket:
+            return web.json_response({"status": "error", "error": "ticket_not_found"}, status=404)
+        requester_account = requester_account_from_payload(
+            payload,
+            query=request.query,
+            headers=request.headers,
+        )
+        access = TicketAccountAccessService(session)
+        validation = await access.validate_agent_account_session(
+            device_id=auth_context.actor_id,
+            requester_account=requester_account,
+            require=True,
+        )
+        if not validation.get("valid"):
+            return _account_session_error_response(validation)
+        allowed = await access.can_send_message(
+            ticket=ticket,
+            account_session=validation.get("session") or {},
+        )
+        if not allowed:
+            return _account_session_error_response({"error_code": "ACCOUNT_ACCESS_DENIED"})
+    return None
+
+
 def _tool_error_status_code(result: dict) -> int:
     error_code = str(result.get("error_code") or "").strip().upper()
     if error_code == "WS_COMMAND_QUEUE_FULL":
@@ -178,6 +227,16 @@ async def handle_tools_run(request):
                 "error": "Agent token is not allowed for this device context",
                 "error_code": "DEVICE_CONTEXT_MISMATCH",
             }, status=403)
+
+        if auth_context.actor_role == "agent":
+            access_error = await _require_agent_tool_account_access(
+                request=request,
+                auth_context=auth_context,
+                payload=data,
+                ticket_id=ticket_id,
+            )
+            if access_error is not None:
+                return access_error
         
         # Check ?wait=1 parameter
         wait_mode = request.query.get("wait", "0") == "1"
