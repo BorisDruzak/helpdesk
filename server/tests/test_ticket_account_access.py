@@ -146,7 +146,11 @@ async def test_agent_create_preview_accepts_valid_account_session(test_client, t
         json={
             "request_template_key": "printer",
             "form_pack_key": "request_forms",
-            "form_payload": {"room": "214"},
+            "form_payload": {
+                "room": "214",
+                "impact_scope": "department",
+                "work_continuity": "partial_work",
+            },
             "requester_account": {
                 "session_id": account["session"]["session_id"],
                 "session_token": account["session_token"],
