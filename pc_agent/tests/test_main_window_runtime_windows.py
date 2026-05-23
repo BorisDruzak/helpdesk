@@ -174,6 +174,28 @@ def test_main_window_sidebar_resize_tolerates_early_setup_before_footer_card():
     assert "self.footer_status_block.setVisible(expanded)" in resize_source
 
 
+def test_main_window_registration_is_entry_page_not_settings_section():
+    setup_source = inspect.getsource(MainWindow._setup_ui)
+    show_registration_source = inspect.getsource(MainWindow._show_registration_entry)
+    select_source = inspect.getsource(MainWindow._select_sidebar_view)
+
+    assert "self.registration_entry_page = self._build_registration_entry_page()" in setup_source
+    assert "self.main_content_stack.addWidget(self.registration_entry_page)" in setup_source
+    assert 'self._select_sidebar_view("registration", expand=True)' in show_registration_source
+    assert 'view_name in {"account_gate", "registration", "settings"}' in select_source
+    assert 'elif view_name == "registration"' in select_source
+    assert "identity_section_layout.addWidget(registration_group)" not in setup_source
+
+
+def test_main_window_entry_settings_has_back_to_account_gate():
+    setup_source = inspect.getsource(MainWindow._setup_ui)
+    account_entry_source = inspect.getsource(MainWindow._set_account_entry_mode)
+
+    assert "self.settings_back_btn = QPushButton" in setup_source
+    assert "self.settings_back_btn.clicked.connect(self._show_account_gate_entry)" in setup_source
+    assert 'self._active_sidebar_view == "settings"' in account_entry_source
+
+
 def test_main_window_create_ticket_menu_switches_before_async_prepare():
     window = MainWindow.__new__(MainWindow)
     selected: list[tuple[str, bool]] = []
@@ -195,6 +217,7 @@ def test_main_window_create_ticket_menu_switches_before_async_prepare():
             return _prepare()
 
     window.ticket_create_page = _FakeCreatePage()
+    window._active_account_session_for_tickets = lambda: {"account_mode": "confirmed_binding"}
     window._select_sidebar_view = lambda view_name, *, expand: selected.append((view_name, expand))
 
     def _fake_spawn(coro, *, name):

@@ -239,6 +239,7 @@ class MainWindow(QMainWindow):
         self.account_gate_page.confirmRegistrationRequested.connect(self._on_confirm_registration_claim_clicked)
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
+        self.registration_entry_page = self._build_registration_entry_page()
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.body_splitter.setChildrenCollapsible(False)
@@ -358,6 +359,7 @@ class MainWindow(QMainWindow):
         self.main_content_stack = QStackedWidget()
         self.main_content_stack.setStyleSheet("QStackedWidget { background: transparent; border: none; }")
         self.main_content_stack.addWidget(self.account_gate_page)
+        self.main_content_stack.addWidget(self.registration_entry_page)
         self.main_content_stack.addWidget(self.dashboard_page)
         self.main_content_stack.addWidget(self.tickets_sidebar)
         self.main_content_stack.addWidget(self.chat_panel)
@@ -405,12 +407,21 @@ class MainWindow(QMainWindow):
         settings_page_root.setContentsMargins(8, 8, 8, 8)
         settings_page_root.setSpacing(8)
 
+        settings_header_row = QHBoxLayout()
+        settings_header_row.setContentsMargins(0, 0, 0, 0)
+        settings_header_row.setSpacing(8)
         self.settings_header = QLabel("Настройки")
         self._settings_default_header_text = "Настройки"
         self.settings_header.setStyleSheet(
             f"font-size: 16px; font-weight: 700; color: {theme.TEXT_PRIMARY}; background: transparent; padding: 4px 6px;"
         )
-        settings_page_root.addWidget(self.settings_header)
+        settings_header_row.addWidget(self.settings_header, 1)
+        self.settings_back_btn = QPushButton("Назад")
+        self.settings_back_btn.setObjectName("SecondaryButton")
+        self.settings_back_btn.clicked.connect(self._show_account_gate_entry)
+        self.settings_back_btn.hide()
+        settings_header_row.addWidget(self.settings_back_btn, 0)
+        settings_page_root.addLayout(settings_header_row)
         self.settings_subtitle = QLabel(
             "Параметры сгруппированы по смыслу: сначала подключение, затем интерфейс, диагностика и локальные данные."
         )
@@ -508,34 +519,6 @@ class MainWindow(QMainWindow):
         self.config_path_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
         device_layout.addRow(self.config_path_hint)
         identity_section_layout.addWidget(device_group)
-
-        registration_group = QGroupBox("Регистрация пользователя")
-        self.registration_settings_group = registration_group
-        registration_outer = QVBoxLayout(registration_group)
-        self.registration_status_label = QLabel("Не загружено")
-        self.registration_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
-        registration_outer.addWidget(self.registration_status_label)
-        self._registration_form_def = default_agent_registration_form()
-        self._registration_registry_options: dict[str, Any] = {}
-        self.registration_form_widget = DynamicFormWidget()
-        self.registration_form_widget.set_form(self._registration_form_def)
-        registration_outer.addWidget(self.registration_form_widget)
-        registration_actions = QHBoxLayout()
-        self.registration_save_btn = QPushButton("Сохранить локально")
-        self.registration_save_btn.clicked.connect(self._on_save_registration_profile_clicked)
-        self.registration_submit_btn = QPushButton("Отправить на сервер")
-        self.registration_submit_btn.clicked.connect(self._on_submit_registration_profile_clicked)
-        self.registration_confirm_btn = QPushButton("Подтвердить данные")
-        self.registration_confirm_btn.clicked.connect(self._on_confirm_registration_claim_clicked)
-        self.registration_refresh_btn = QPushButton("Обновить форму")
-        self.registration_refresh_btn.clicked.connect(self._on_refresh_registration_form_clicked)
-        registration_actions.addWidget(self.registration_save_btn)
-        registration_actions.addWidget(self.registration_submit_btn)
-        registration_actions.addWidget(self.registration_confirm_btn)
-        registration_actions.addWidget(self.registration_refresh_btn)
-        registration_actions.addStretch()
-        registration_outer.addLayout(registration_actions)
-        identity_section_layout.addWidget(registration_group)
 
         server_group = QGroupBox("Адреса сервера")
         server_form = QFormLayout(server_group)
@@ -972,6 +955,77 @@ class MainWindow(QMainWindow):
         self.account_gate_page.render_loading()
         self._spawn_gui_task(self._async_refresh_account_state(), name="account.refresh_state")
 
+    def _build_registration_entry_page(self) -> QWidget:
+        page = QFrame()
+        page.setObjectName("MainPanel")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(32, 32, 32, 32)
+        outer.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Регистрация пользователя")
+        title.setObjectName("MainTitle")
+        header_row.addWidget(title, 1)
+        back_btn = QPushButton("Назад")
+        back_btn.setObjectName("SecondaryButton")
+        back_btn.clicked.connect(self._show_account_gate_entry)
+        header_row.addWidget(back_btn, 0)
+        outer.addLayout(header_row)
+
+        subtitle = QLabel(
+            "Заполните данные аккаунта для регистрации этого рабочего места. "
+            "Это не создаёт обращение и не меняет технический токен агента."
+        )
+        subtitle.setObjectName("MainSubtitle")
+        subtitle.setWordWrap(True)
+        outer.addWidget(subtitle)
+
+        self.registration_status_label = QLabel("Не загружено")
+        self.registration_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 12px;")
+        outer.addWidget(self.registration_status_label)
+
+        self._registration_form_def = default_agent_registration_form()
+        self._registration_registry_options: dict[str, Any] = {}
+        self.registration_form_widget = DynamicFormWidget()
+        self.registration_form_widget.set_form(self._registration_form_def)
+
+        scroll = QScrollArea(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(self.registration_form_widget)
+        outer.addWidget(scroll, 1)
+
+        self.registration_entry_status_label = QLabel("")
+        self.registration_entry_status_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; background: transparent;")
+        outer.addWidget(self.registration_entry_status_label)
+
+        actions = QHBoxLayout()
+        self.registration_save_btn = QPushButton("Сохранить локально")
+        self.registration_save_btn.setObjectName("SecondaryButton")
+        self.registration_save_btn.clicked.connect(self._on_save_registration_profile_clicked)
+        self.registration_submit_btn = QPushButton("Отправить на сервер")
+        self.registration_submit_btn.setObjectName("PrimaryButton")
+        self.registration_submit_btn.clicked.connect(self._on_submit_registration_profile_clicked)
+        self.registration_confirm_btn = QPushButton("Подтвердить данные")
+        self.registration_confirm_btn.setObjectName("SecondaryButton")
+        self.registration_confirm_btn.clicked.connect(self._on_confirm_registration_claim_clicked)
+        self.registration_refresh_btn = QPushButton("Обновить форму")
+        self.registration_refresh_btn.setObjectName("SecondaryButton")
+        self.registration_refresh_btn.clicked.connect(self._on_refresh_registration_form_clicked)
+        for button in (
+            self.registration_save_btn,
+            self.registration_submit_btn,
+            self.registration_confirm_btn,
+            self.registration_refresh_btn,
+        ):
+            actions.addWidget(button)
+        actions.addStretch(1)
+        outer.addLayout(actions)
+        page.setStyleSheet(theme.main_window_stylesheet())
+        return page
+
     async def _async_refresh_account_state(self) -> None:
         try:
             state = await self.chat_panel.ticket_client.get_account_state()
@@ -987,7 +1041,7 @@ class MainWindow(QMainWindow):
             self._account_session = {"schema_version": 1, "account_mode": "none"}
             self._account_session_manager.clear()
         self.account_gate_page.render(self._account_state, local_session=self._account_session)
-        if not self._active_account_session_for_tickets() and self._active_sidebar_view not in {"account_gate", "settings"}:
+        if not self._active_account_session_for_tickets() and self._active_sidebar_view not in {"account_gate", "registration", "settings"}:
             self._select_sidebar_view("account_gate", expand=True)
         self._render_profile_status()
 
@@ -1058,6 +1112,8 @@ class MainWindow(QMainWindow):
             self.sidebar_shell.setVisible(not enabled)
         if hasattr(self, "security_footer"):
             self.security_footer.setVisible(not enabled)
+        if hasattr(self, "settings_back_btn"):
+            self.settings_back_btn.setVisible(enabled and self._active_sidebar_view == "settings")
         if hasattr(self, "body_splitter"):
             if enabled:
                 self.body_splitter.setSizes([0, 1200])
@@ -1068,35 +1124,12 @@ class MainWindow(QMainWindow):
                 self.body_splitter.setSizes([sidebar_width, 1000])
 
     def _show_registration_entry(self) -> None:
-        self._set_registration_entry_view(True)
-        self._select_sidebar_view("settings", expand=True)
+        self._select_sidebar_view("registration", expand=True)
         self._load_registration_profile_to_form()
-        self._set_settings_status("Заполните форму регистрации пользователя.", error=False)
+        self._set_registration_entry_status("Заполните форму регистрации пользователя.", error=False)
 
-    def _set_registration_entry_view(self, enabled: bool) -> None:
-        if not hasattr(self, "settings_header"):
-            return
-        if enabled:
-            self.settings_header.setText("Регистрация пользователя")
-            self.settings_subtitle.setText(
-                "Заполните данные аккаунта для регистрации этого рабочего места. "
-                "Это не создаёт обращение и не меняет технический токен агента."
-            )
-            for section in self._settings_sections:
-                section.setVisible(section is getattr(self, "identity_settings_section", None))
-            if hasattr(self, "device_settings_group"):
-                self.device_settings_group.hide()
-            if hasattr(self, "registration_settings_group"):
-                self.registration_settings_group.show()
-            return
-        self.settings_header.setText(self._settings_default_header_text)
-        self.settings_subtitle.setText(self._settings_default_subtitle_text)
-        for section in self._settings_sections:
-            section.show()
-        if hasattr(self, "device_settings_group"):
-            self.device_settings_group.show()
-        if hasattr(self, "registration_settings_group"):
-            self.registration_settings_group.show()
+    def _show_account_gate_entry(self) -> None:
+        self._select_sidebar_view("account_gate", expand=True)
 
     def _refresh_sidebar_labels(self) -> None:
         if not self._sidebar_expanded:
@@ -1193,7 +1226,7 @@ class MainWindow(QMainWindow):
             view_name = "account_gate"
             expand = True
         self._active_sidebar_view = view_name
-        self._set_account_entry_mode(view_name in {"account_gate", "settings"} and not self._active_account_session_for_tickets())
+        self._set_account_entry_mode(view_name in {"account_gate", "registration", "settings"} and not self._active_account_session_for_tickets())
         if view_name in {"create", "ticket"}:
             self._set_sidebar_expanded(False)
         elif expand:
@@ -1202,6 +1235,9 @@ class MainWindow(QMainWindow):
             self._set_sidebar_selection_state(profile=True)
             self.main_content_stack.setCurrentWidget(self.account_gate_page)
             self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        elif view_name == "registration":
+            self._set_sidebar_selection_state()
+            self.main_content_stack.setCurrentWidget(self.registration_entry_page)
         elif view_name == "tickets":
             self._set_sidebar_selection_state(tickets=True)
             self.main_content_stack.setCurrentWidget(self.tickets_sidebar)
@@ -1244,7 +1280,6 @@ class MainWindow(QMainWindow):
 
     def _show_settings_dialog(self):
         """Открывает страницу настроек."""
-        self._set_registration_entry_view(False)
         self._select_sidebar_view("settings", expand=True)
         self._settings_form_loaded = False
         self._settings_snapshot = None
@@ -1287,6 +1322,12 @@ class MainWindow(QMainWindow):
         color = theme.DANGER_FG if error else theme.TEXT_MUTED
         self.settings_status_label.setStyleSheet(f"color: {color}; background: transparent;")
         self.settings_status_label.setText(self._repair_text(text))
+
+    def _set_registration_entry_status(self, text: str, error: bool = False) -> None:
+        color = theme.DANGER_FG if error else theme.TEXT_MUTED
+        if hasattr(self, "registration_entry_status_label"):
+            self.registration_entry_status_label.setStyleSheet(f"color: {color}; background: transparent;")
+            self.registration_entry_status_label.setText(self._repair_text(text))
 
     def _set_settings_buttons_enabled(self, enabled: bool) -> None:
         self.test_connection_btn.setEnabled(enabled)
@@ -1947,7 +1988,7 @@ class MainWindow(QMainWindow):
     def _validate_registration_form(self) -> bool:
         missing = self.registration_form_widget.validate_required_fields(show_feedback=True)
         if missing:
-            self._set_settings_status("Заполните обязательные поля регистрации: " + ", ".join(missing), error=True)
+            self._set_registration_entry_status("Заполните обязательные поля регистрации: " + ", ".join(missing), error=True)
             return False
         return True
 
@@ -1956,7 +1997,7 @@ class MainWindow(QMainWindow):
             return
         profile = UserProfileManager().save(self._collect_registration_profile_from_form())
         self.registration_status_label.setText(str(profile.get("registration_status") or "local"))
-        self._set_settings_status("Профиль регистрации сохранён локально.", error=False)
+        self._set_registration_entry_status("Профиль регистрации сохранён локально.", error=False)
 
     def _on_refresh_registration_form_clicked(self) -> None:
         self._spawn_gui_task(self._async_load_registration_form(), name="registration.refresh_form")
@@ -1978,7 +2019,7 @@ class MainWindow(QMainWindow):
         saved = UserProfileManager().save(profile)
         self._save_registration_pending_account_session(saved, registration)
         self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
-        self._set_settings_status("Профиль регистрации отправлен.", error=False)
+        self._set_registration_entry_status("Профиль регистрации отправлен.", error=False)
         self._select_sidebar_view("tickets", expand=True)
 
     def _on_confirm_registration_claim_clicked(self) -> None:
@@ -2001,10 +2042,10 @@ class MainWindow(QMainWindow):
                 saved = manager.save(profile)
                 self._save_registration_pending_account_session(saved, registration)
                 self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
-                self._set_settings_status("Данные регистрации отправлены и подтверждены.", error=False)
+                self._set_registration_entry_status("Данные регистрации отправлены и подтверждены.", error=False)
                 self._select_sidebar_view("tickets", expand=True)
             else:
-                self._set_settings_status("Некорректный ответ регистрации.", error=True)
+                self._set_registration_entry_status("Некорректный ответ регистрации.", error=True)
             return
         result = await self.chat_panel.ticket_client.confirm_registration_claim(claim_id)
         registration = result.get("registration") if isinstance(result, dict) else {}
@@ -2013,7 +2054,7 @@ class MainWindow(QMainWindow):
             saved = manager.save(profile)
             self._save_registration_pending_account_session(saved, registration)
             self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
-        self._set_settings_status("Данные регистрации подтверждены.", error=False)
+        self._set_registration_entry_status("Данные регистрации подтверждены.", error=False)
         self._select_sidebar_view("tickets", expand=True)
 
     async def _async_load_settings(self) -> None:
