@@ -692,6 +692,57 @@ def test_ticket_create_wizard_submit_stays_clickable_to_show_validation_feedback
     assert "self._submit_btn.setEnabled(self._all_required_steps_ready()" not in nav_source
 
 
+def test_ticket_create_wizard_hides_legacy_profile_selector_when_account_session_exists():
+    class _FakeClient:
+        async def preview_ticket_create(self, **_kwargs):
+            return {}
+
+    class _FakePanel:
+        user_display_name = "Tester"
+
+        def __init__(self):
+            self._ticket_form_pack = build_default_ticket_form_pack()
+            self.ticket_client = _FakeClient()
+            self._profiles_data = {
+                "active_profile_id": "legacy-profile",
+                "profiles": [{"id": "legacy-profile", "display_name": "Legacy Profile"}],
+            }
+
+        def ticket_form_pack(self):
+            return self._ticket_form_pack
+
+        def registry_options(self):
+            return {}
+
+        def _profiles(self):
+            return self._profiles_data["profiles"]
+
+        def _current_account_session(self):
+            return {
+                "account_mode": "confirmed_binding",
+                "account_session_id": "session-1",
+                "display_name": "Server Account",
+            }
+
+        def has_active_profile(self):
+            return True
+
+        def current_requester_profile_summary(self):
+            return "Server Account | подтвержденный аккаунт"
+
+        def _save_profiles(self):
+            return None
+
+    app = QApplication.instance() or QApplication([])
+    panel = _FakePanel()
+    wizard = chat_panel_module.TicketCreateWizardWidget(panel)
+    assert app is not None
+
+    assert wizard.profile_selector.isVisible() is False
+    assert wizard.manage_profiles_btn.isVisible() is False
+    assert "Server Account" in wizard.profile_summary.text()
+
+
 async def test_ticket_create_wizard_submit_click_calls_create_when_ready():
     class _FakeClient:
         async def preview_ticket_create(self, **_kwargs):

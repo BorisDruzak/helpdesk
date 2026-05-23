@@ -240,6 +240,7 @@ class MainWindow(QMainWindow):
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
         self.registration_entry_page = self._build_registration_entry_page()
+        self.account_page = self._build_account_page()
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.body_splitter.setChildrenCollapsible(False)
@@ -363,7 +364,7 @@ class MainWindow(QMainWindow):
         self.main_content_stack.addWidget(self.dashboard_page)
         self.main_content_stack.addWidget(self.tickets_sidebar)
         self.main_content_stack.addWidget(self.chat_panel)
-        self.main_content_stack.addWidget(self.profile_sidebar)
+        self.main_content_stack.addWidget(self.account_page)
         self.main_content_stack.addWidget(self.ticket_create_page)
 
         self.body_splitter.addWidget(self.sidebar_shell)
@@ -955,6 +956,156 @@ class MainWindow(QMainWindow):
         self.account_gate_page.render_loading()
         self._spawn_gui_task(self._async_refresh_account_state(), name="account.refresh_state")
 
+    def _build_account_page(self) -> QWidget:
+        page = QFrame()
+        page.setObjectName("MainPanel")
+        page.setStyleSheet(theme.main_window_stylesheet())
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("Аккаунт")
+        title.setObjectName("MainTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel(
+            "Текущий аккаунт обращения выдан сервером для этого устройства. "
+            "Локальные старые профили не используются для входа и не могут заменить выбранный аккаунт."
+        )
+        subtitle.setObjectName("MainSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        self.account_page_warning_label = QLabel("")
+        self.account_page_warning_label.setObjectName("ProfileHint")
+        self.account_page_warning_label.setWordWrap(True)
+        layout.addWidget(self.account_page_warning_label)
+
+        details = QFrame()
+        details.setObjectName("ProfileCard")
+        details_layout = QFormLayout(details)
+        details_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        details_layout.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        details_layout.setHorizontalSpacing(16)
+        details_layout.setVerticalSpacing(10)
+
+        self.account_page_display_label = QLabel("—")
+        self.account_page_full_name_label = QLabel("—")
+        self.account_page_login_label = QLabel("—")
+        self.account_page_email_label = QLabel("—")
+        self.account_page_phone_label = QLabel("—")
+        self.account_page_mode_label = QLabel("—")
+        self.account_page_status_label = QLabel("—")
+        self.account_page_binding_label = QLabel("—")
+        self.account_page_base_owner_label = QLabel("—")
+        for value_label in (
+            self.account_page_display_label,
+            self.account_page_full_name_label,
+            self.account_page_login_label,
+            self.account_page_email_label,
+            self.account_page_phone_label,
+            self.account_page_mode_label,
+            self.account_page_status_label,
+            self.account_page_binding_label,
+            self.account_page_base_owner_label,
+        ):
+            value_label.setObjectName("ProfileFieldValue")
+            value_label.setWordWrap(True)
+            value_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        details_layout.addRow("Отображаемое имя", self.account_page_display_label)
+        details_layout.addRow("ФИО", self.account_page_full_name_label)
+        details_layout.addRow("Логин", self.account_page_login_label)
+        details_layout.addRow("Email", self.account_page_email_label)
+        details_layout.addRow("Телефон", self.account_page_phone_label)
+        details_layout.addRow("Тип входа", self.account_page_mode_label)
+        details_layout.addRow("Статус", self.account_page_status_label)
+        details_layout.addRow("Binding / session", self.account_page_binding_label)
+        details_layout.addRow("Зарегистрированный владелец ПК", self.account_page_base_owner_label)
+        layout.addWidget(details)
+
+        actions = QHBoxLayout()
+        self.account_page_refresh_btn = QPushButton("Обновить")
+        self.account_page_refresh_btn.setObjectName("SecondaryButton")
+        self.account_page_refresh_btn.clicked.connect(self._refresh_account_state)
+        self.account_page_logout_btn = QPushButton("Выйти из аккаунта")
+        self.account_page_logout_btn.setObjectName("SecondaryButton")
+        self.account_page_logout_btn.clicked.connect(self._on_account_logout_clicked)
+        actions.addWidget(self.account_page_refresh_btn)
+        actions.addWidget(self.account_page_logout_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+        return page
+
+    def _account_mode_label(self, mode: str) -> str:
+        return {
+            "confirmed_binding": "Подтвержденный аккаунт устройства",
+            "registration_pending": "Регистрация ожидает подтверждения",
+            "verified_other_account": "Другой аккаунт, подтвержденный администратором",
+        }.get(mode, mode or "Аккаунт не выбран")
+
+    def _refresh_account_page(self) -> None:
+        if not hasattr(self, "account_page_display_label"):
+            return
+        session = self._active_account_session_for_tickets()
+        if not session:
+            values = {
+                "display": "Аккаунт не выбран",
+                "full_name": "—",
+                "login": "—",
+                "email": "—",
+                "phone": "—",
+                "mode": "Аккаунт не выбран",
+                "status": "none",
+                "binding": "—",
+                "base_owner": "—",
+                "warning": "Для работы с обращениями выберите подтвержденный аккаунт или пройдите регистрацию.",
+            }
+        else:
+            mode = str(session.get("account_mode") or "")
+            binding = session.get("binding_id") or session.get("session_id") or session.get("account_session_id") or "—"
+            base_owner = session.get("base_display_name") or session.get("base_person_id") or "—"
+            warning = ""
+            if mode == "verified_other_account":
+                warning = "Вы вошли не под зарегистрированным пользователем этого ПК. Новые обращения будут помечены для поддержки."
+            values = {
+                "display": session.get("display_name") or session.get("full_name") or session.get("login") or "Без имени",
+                "full_name": session.get("full_name") or "—",
+                "login": session.get("login") or "—",
+                "email": session.get("email") or "—",
+                "phone": session.get("phone") or "—",
+                "mode": self._account_mode_label(mode),
+                "status": session.get("verification_status") or session.get("registration_status") or "—",
+                "binding": str(binding),
+                "base_owner": str(base_owner),
+                "warning": warning,
+            }
+        self.account_page_display_label.setText(str(values["display"]))
+        self.account_page_full_name_label.setText(str(values["full_name"]))
+        self.account_page_login_label.setText(str(values["login"]))
+        self.account_page_email_label.setText(str(values["email"]))
+        self.account_page_phone_label.setText(str(values["phone"]))
+        self.account_page_mode_label.setText(str(values["mode"]))
+        self.account_page_status_label.setText(str(values["status"]))
+        self.account_page_binding_label.setText(str(values["binding"]))
+        self.account_page_base_owner_label.setText(str(values["base_owner"]))
+        self.account_page_warning_label.setText(str(values["warning"]))
+        self.account_page_warning_label.setVisible(bool(values["warning"]))
+
+    def _on_account_logout_clicked(self) -> None:
+        self._account_session = {"schema_version": 1, "account_mode": "none"}
+        self._account_session_manager.clear()
+        self.chat_panel.tickets_cache = []
+        self.chat_panel.active_ticket_id = None
+        try:
+            self.chat_panel._update_tickets_list_ui()
+        except Exception as exc:
+            logger.debug(f"[account] failed to clear ticket list after logout: {exc}")
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._render_profile_status()
+        self._select_sidebar_view("account_gate", expand=True)
+
     def _build_registration_entry_page(self) -> QWidget:
         page = QFrame()
         page.setObjectName("MainPanel")
@@ -1286,8 +1437,8 @@ class MainWindow(QMainWindow):
             self.chat_panel._refresh_ticket_list_async()
         elif view_name == "profile":
             self._set_sidebar_selection_state(profile=True)
-            self.main_content_stack.setCurrentWidget(self.profile_sidebar)
-            self.profile_sidebar.refresh_from_panel()
+            self.main_content_stack.setCurrentWidget(self.account_page)
+            self._refresh_account_page()
         elif view_name == "create":
             self._set_sidebar_selection_state()
             self.main_content_stack.setCurrentWidget(self.ticket_create_page)
@@ -1325,6 +1476,7 @@ class MainWindow(QMainWindow):
     def _render_profile_status(self) -> None:
         self._refresh_sidebar_labels()
         self._refresh_dashboard()
+        self._refresh_account_page()
 
     def _ui_bridge_host_port(self) -> tuple[str, int]:
         """Адрес локального UiApiServer — из актуального get_config().ui (как при bind в ws_agent)."""
@@ -1943,7 +2095,6 @@ class MainWindow(QMainWindow):
         token_masked = auth.get("token_masked") or self._repair_text("нет")
         self.token_hint_label.setText(self._repair_text(f"Текущий токен: {token_masked}"))
         self.config_path_label.setText(str(meta.get("config_path", "—")))
-        self._load_registration_profile_to_form()
         self._runtime_logs_dir = None
         self._repair_widget_texts(self.settings_page)
         self._apply_settings_page_theme()

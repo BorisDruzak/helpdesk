@@ -16,7 +16,9 @@ import {
   fetchAdminRegistry,
   rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
+  revokeAdminDeviceUserBinding,
   type AdminAccountLoginRequest,
+  type AdminDeviceUserBinding,
   type AdminRegistryPayload,
   type AdminRegistrationClaim,
 } from "../../features/admin/api";
@@ -155,6 +157,27 @@ export function AdminRegistryPage() {
   }, [query, registry]);
   const firstAssetWithDevice = visibleRegistry?.assets.find((asset) => asset.device_id) ?? null;
   const accountLoginRequests = accountLoginRequestsQuery.data?.items ?? [];
+  const visibleBindings = useMemo(() => {
+    const bindings = registry?.active_bindings ?? [];
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      return bindings;
+    }
+    return bindings.filter((binding) =>
+      [
+        binding.binding_id,
+        binding.device_id,
+        binding.person_id,
+        binding.person_name,
+        binding.relationship_type,
+        binding.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized)
+    );
+  }, [query, registry]);
 
   const runClaimAction = async (claim: AdminRegistrationClaim, action: "approve" | "replace" | "reject" | "override") => {
     setActionError(null);
@@ -200,6 +223,23 @@ export function AdminRegistryPage() {
       await registryQuery.refetch();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Не удалось выполнить действие");
+    } finally {
+      setActionClaimId(null);
+    }
+  };
+
+  const runBindingRevoke = async (binding: AdminDeviceUserBinding) => {
+    setActionError(null);
+    setActionClaimId(binding.binding_id);
+    try {
+      const reason = window.prompt("Причина отзыва регистрации", "Регистрация отозвана администратором") ?? "";
+      if (!reason.trim()) {
+        return;
+      }
+      await revokeAdminDeviceUserBinding(binding.binding_id, reason.trim());
+      await registryQuery.refetch();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Не удалось отозвать регистрацию");
     } finally {
       setActionClaimId(null);
     }
@@ -407,6 +447,49 @@ export function AdminRegistryPage() {
                 )) : (
                   <div className="border-t border-border p-4">
                     <EmptyState label="Заявки регистрации пока не найдены." />
+                  </div>
+                )}
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <div className="grid min-w-[900px] grid-cols-[180px_minmax(180px,1fr)_170px_140px_150px_160px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+                  <span>Device ID</span>
+                  <span>Зарегистрированный профиль</span>
+                  <span>Тип связи</span>
+                  <span>Статус</span>
+                  <span>Подтверждено</span>
+                  <span>Действия</span>
+                </div>
+                {visibleBindings.length ? visibleBindings.map((binding) => (
+                  <div
+                    className="grid min-w-[900px] grid-cols-[180px_minmax(180px,1fr)_170px_140px_150px_160px] gap-3 border-t border-border px-4 py-3 text-sm"
+                    key={binding.binding_id}
+                  >
+                    <button
+                      className="truncate text-left text-brand-700 hover:text-brand-900"
+                      onClick={() => navigate(`/app/admin/device?device=${encodeURIComponent(binding.device_id)}`)}
+                      type="button"
+                    >
+                      {binding.device_id}
+                    </button>
+                    <div>
+                      <p className="font-medium text-slate-800">{binding.person_name ?? binding.person_id}</p>
+                      <p className="mt-1 break-all text-xs text-slate-500">{binding.binding_id}</p>
+                    </div>
+                    <span className="text-slate-700">{binding.relationship_type}</span>
+                    <Badge tone={statusTone(binding.status)}>{binding.status}</Badge>
+                    <span className="text-slate-700">{formatDateTime(binding.confirmed_at)}</span>
+                    <Button
+                      disabled={actionClaimId === binding.binding_id}
+                      onClick={() => void runBindingRevoke(binding)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      Отозвать регистрацию
+                    </Button>
+                  </div>
+                )) : (
+                  <div className="border-t border-border p-4">
+                    <EmptyState label="Активных подтвержденных регистраций пока нет." />
                   </div>
                 )}
               </div>

@@ -2005,6 +2005,22 @@ class TicketCreateDialog(QDialog):
         self._refresh_forms()
 
     def _refresh_profiles(self) -> None:
+        account_reader = getattr(self.panel, "_current_account_session", None)
+        account = account_reader() if callable(account_reader) else None
+        if account:
+            self.profile_selector.blockSignals(True)
+            self.profile_selector.clear()
+            self.profile_selector.addItem(
+                account.get("display_name") or account.get("full_name") or account.get("login") or "Выбранный аккаунт",
+                account.get("account_session_id") or account.get("session_id"),
+            )
+            self.profile_selector.setVisible(False)
+            self.manage_profiles_btn.setVisible(False)
+            self.profile_selector.blockSignals(False)
+            self.profile_summary.setText(self.panel.current_requester_profile_summary())
+            return
+        self.profile_selector.setVisible(True)
+        self.manage_profiles_btn.setVisible(True)
         active_id = self.panel._profiles_data.get("active_profile_id")
         self.profile_selector.blockSignals(True)
         self.profile_selector.clear()
@@ -2023,6 +2039,9 @@ class TicketCreateDialog(QDialog):
         self.profile_summary.setText(self.panel.current_requester_profile_summary())
 
     def _on_profile_changed(self, *_args) -> None:
+        account_reader = getattr(self.panel, "_current_account_session", None)
+        if callable(account_reader) and account_reader():
+            return
         profile_id = self.profile_selector.currentData()
         self.panel._profiles_data["active_profile_id"] = profile_id
         self.panel._save_profiles()
@@ -2604,6 +2623,22 @@ class TicketCreateWizardWidget(QFrame):
         )
 
     def _refresh_profiles(self) -> None:
+        account_reader = getattr(self._panel, "_current_account_session", None)
+        account = account_reader() if callable(account_reader) else None
+        if account:
+            self.profile_selector.blockSignals(True)
+            self.profile_selector.clear()
+            self.profile_selector.addItem(
+                account.get("display_name") or account.get("full_name") or account.get("login") or "Выбранный аккаунт",
+                account.get("account_session_id") or account.get("session_id"),
+            )
+            self.profile_selector.setVisible(False)
+            self.manage_profiles_btn.setVisible(False)
+            self.profile_selector.blockSignals(False)
+            self.profile_summary.setText(self._panel.current_requester_profile_summary() or "Аккаунт выбран.")
+            return
+        self.profile_selector.setVisible(True)
+        self.manage_profiles_btn.setVisible(True)
         active_id = self._panel._profiles_data.get("active_profile_id")
         self.profile_selector.blockSignals(True)
         self.profile_selector.clear()
@@ -2618,6 +2653,9 @@ class TicketCreateWizardWidget(QFrame):
 
     def _on_profile_changed(self, *_args) -> None:
         if self._loading_profile_combo:
+            return
+        account_reader = getattr(self._panel, "_current_account_session", None)
+        if callable(account_reader) and account_reader():
             return
         profile_id = self.profile_selector.currentData()
         self._panel._profiles_data["active_profile_id"] = profile_id
@@ -4432,6 +4470,18 @@ class ChatPanel(QWidget):
         return None
 
     def current_requester_profile_summary(self) -> str:
+        account = self._current_account_session()
+        if account:
+            parts = [account.get("display_name") or account.get("full_name") or account.get("login") or "Без имени"]
+            mode_label = {
+                "confirmed_binding": "подтвержденный аккаунт",
+                "registration_pending": "регистрация ожидает подтверждения",
+                "verified_other_account": "другой аккаунт",
+            }.get(str(account.get("account_mode")), "аккаунт")
+            parts.append(mode_label)
+            if account.get("email"):
+                parts.append(str(account.get("email")))
+            return " | ".join(parts)
         profile = self._active_profile()
         if not profile:
             account = self._current_account_session()
