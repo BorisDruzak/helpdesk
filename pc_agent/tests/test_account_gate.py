@@ -39,7 +39,22 @@ def test_account_gate_no_binding_state_shows_registration():
 
     assert state["mode"] == "unregistered"
     assert state["show_register"] is True
-    assert state["show_login_other"] is False
+    assert state["show_login_other"] is True
+
+
+def test_account_gate_unregistered_fallback_shows_registration_and_other_login():
+    state = account_gate_view_state(
+        {
+            "accounts": [],
+            "can_register": False,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+        }
+    )
+
+    assert state["mode"] == "unregistered"
+    assert state["show_register"] is True
+    assert state["show_login_other"] is True
 
 
 def test_account_gate_pending_state_shows_continue_registration():

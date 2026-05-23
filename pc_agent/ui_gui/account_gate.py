@@ -68,6 +68,10 @@ def account_gate_view_state(
     warning = None
     if isinstance(local_session, dict) and local_session.get("account_mode") == "other_account":
         warning = "other_account"
+    can_register = bool(account_state.get("can_register"))
+    if confirmed is None and mode in {"unregistered", "pending"}:
+        can_register = True
+    can_login_other = bool(account_state.get("can_login_other_account")) or confirmed is None
     return {
         "mode": mode,
         "title": {
@@ -76,9 +80,9 @@ def account_gate_view_state(
             "unregistered": "Для работы с обращениями нужно зарегистрироваться",
         }.get(mode, "Проверяем регистрацию устройства..."),
         "message": str(account_state.get("message") or ""),
-        "show_register": bool(account_state.get("can_register")) and confirmed is None,
+        "show_register": can_register and confirmed is None,
         "show_login_confirmed": confirmed is not None,
-        "show_login_other": bool(account_state.get("can_login_other_account")) and confirmed is not None,
+        "show_login_other": can_login_other,
         "show_confirm": mode == "pending",
         "warning": warning,
         "primary_account": confirmed,
@@ -211,6 +215,7 @@ class AccountGateWidget(QFrame):
             self.login_button.setText(f"Войти как {name}")
         self.other_button.setVisible(bool(state["show_login_other"]))
         self.register_button.setVisible(bool(state["show_register"]))
+        self.register_button.setText("Продолжить регистрацию" if state.get("mode") == "pending" else "Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))
         self.other_form.setVisible(self._showing_other_form)
         self.setStyleSheet(theme.main_window_stylesheet())
