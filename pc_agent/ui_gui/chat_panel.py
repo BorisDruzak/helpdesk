@@ -4788,7 +4788,7 @@ class ChatPanel(QWidget):
         self._ticket_list_refresh_seq += 1
         my_seq = self._ticket_list_refresh_seq
         try:
-            result = await self.ticket_client.list_tickets()
+            result = await self.ticket_client.list_tickets(account_session=self._current_account_session())
             if self._is_closing or my_seq != self._ticket_list_refresh_seq:
                 return
             if result.get("status") != "ok":
@@ -4905,7 +4905,11 @@ class ChatPanel(QWidget):
         previous_optimistic: int,
     ) -> None:
         try:
-            await self.ticket_client.mark_ticket_read(ticket_id, last_read_event_id)
+            await self.ticket_client.mark_ticket_read(
+                ticket_id,
+                last_read_event_id,
+                account_session=self._current_account_session(),
+            )
             await self._async_refresh_ticket_list()
         except Exception as exc:
             if not self._is_closing:
@@ -5010,12 +5014,14 @@ class ChatPanel(QWidget):
                 result = await self.ticket_client.get_ticket(
                     self.active_ticket_id,
                     limit=TICKET_HISTORY_PAGE_SIZE,
+                    account_session=self._current_account_session(),
                 )
                 consume_mode = "replace"
             else:
                 result = await self.ticket_client.get_ticket(
                     self.active_ticket_id,
                     since_event_id=(self._last_detail_event_id or None),
+                    account_session=self._current_account_session(),
                 )
                 consume_mode = "append"
             if self._is_closing or my_seq != self._ticket_detail_refresh_seq:
@@ -5067,6 +5073,7 @@ class ChatPanel(QWidget):
                 self.active_ticket_id,
                 before_event_id=self._oldest_loaded_event_id,
                 limit=TICKET_HISTORY_PAGE_SIZE,
+                account_session=self._current_account_session(),
             )
             if self._is_closing or result.get("status") != "ok":
                 return
@@ -5928,6 +5935,7 @@ class ChatPanel(QWidget):
                 ticket_id,
                 file_path,
                 kind=self._attachment_kind_for_file(file_path),
+                account_session=self._current_account_session(),
                 trace_parent_action_id=trace_parent_action_id,
             )
             artifact_id = uploaded.get("artifact_id")
@@ -5940,6 +5948,7 @@ class ChatPanel(QWidget):
             "Материалы к заявке",
             from_role="user",
             attachment_refs=refs,
+            account_session=self._current_account_session(),
             trace_parent_action_id=trace_parent_action_id,
         )
 
@@ -6115,6 +6124,7 @@ class ChatPanel(QWidget):
                 from_role="user",
                 metadata=metadata,
                 reply_to=reply_to,
+                account_session=self._current_account_session(),
                 trace_parent_action_id=action_id,
             )
             self._clear_composer_text()
@@ -6178,6 +6188,7 @@ class ChatPanel(QWidget):
                     self.active_ticket_id,
                     file_path,
                     kind=kind,
+                    account_session=self._current_account_session(),
                     trace_parent_action_id=action_id,
                 )
                 artifact_id = uploaded.get("artifact_id")
@@ -6213,6 +6224,7 @@ class ChatPanel(QWidget):
                 attachment_refs=refs,
                 metadata=metadata,
                 reply_to=reply_to,
+                account_session=self._current_account_session(),
                 trace_parent_action_id=action_id,
             )
             self._clear_composer_text()
@@ -6322,6 +6334,7 @@ class ChatPanel(QWidget):
                         "option_id": "reject",
                     }
                 },
+                account_session=self._current_account_session(),
                 trace_parent_action_id=action_id,
             )
             if hasattr(self, "resolution_message_widget"):
@@ -6344,6 +6357,7 @@ class ChatPanel(QWidget):
                 self.active_ticket_id,
                 reason="requester_confirmed_resolution",
                 closed_by_role="user",
+                account_session=self._current_account_session(),
                 trace_parent_action_id=action_id,
             )
             await self._async_refresh_ticket_list()

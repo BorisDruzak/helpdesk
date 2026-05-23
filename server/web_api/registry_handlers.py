@@ -176,6 +176,51 @@ async def handle_registry_agent_account_session_confirmed_binding(request: web.R
 
 
 @require_auth("agent")
+async def handle_registry_agent_account_session_registration_pending(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _validate_uuid_device_id(auth_context.actor_id)
+    if not device_id:
+        return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+    data = await request.json() if request.can_read_body else {}
+    claim_id = str(data.get("claim_id") or "").strip()
+    if not claim_id:
+        return web.json_response({"status": "error", "error": "claim_id is required", "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        try:
+            payload = await AccountSessionService(session).create_registration_pending_session(
+                device_id=device_id,
+                claim_id=claim_id,
+            )
+            await session.commit()
+        except ValueError as exc:
+            return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("agent")
+async def handle_registry_agent_account_session_logout(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _validate_uuid_device_id(auth_context.actor_id)
+    if not device_id:
+        return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+    session_id = str(request.match_info.get("session_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await AccountSessionService(session).logout_session(
+                device_id=device_id,
+                session_id=session_id,
+                session_token=str(data.get("session_token") or "").strip() or None,
+            )
+            await session.commit()
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "ACCOUNT_SESSION_INVALID"}, status=403)
+    return _success({"session": payload})
+
+
+@require_auth("agent")
 async def handle_registry_agent_account_login_request_create(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     device_id = _validate_uuid_device_id(auth_context.actor_id)
@@ -259,6 +304,38 @@ async def handle_web_admin_registry_account_login_request_reject(request: web.Re
         except ValueError as exc:
             return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
     return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_device_account_sessions(request: web.Request) -> web.Response:
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    try:
+        device_id = _validate_uuid_device_id(device_id) or ""
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        items = await AccountSessionService(session).list_sessions_for_device_admin(device_id)
+    return _success({"device_id": device_id, "items": items})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_account_session_revoke(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    session_id = str(request.match_info.get("session_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await AccountSessionService(session).revoke_session(
+                session_id=session_id,
+                revoked_by=auth_context.actor_id,
+                reason=str(data.get("reason") or "").strip() or None,
+            )
+            await session.commit()
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "NOT_FOUND"}, status=404)
+    return _success({"session": payload})
 
 
 @require_auth("agent")

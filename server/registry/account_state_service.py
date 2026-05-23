@@ -26,6 +26,7 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
     account_service = AccountSessionService(session)
     registration = await RegistrationService(session).get_device_registration_status(device_id)
     active_bindings = await registration_repo.list_active_bindings_for_device(device_id)
+    server_sessions = await account_service.list_device_sessions(device_id)
     accounts: list[dict[str, Any]] = []
 
     for binding in active_bindings:
@@ -53,7 +54,12 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
         )
 
     pending_claim = registration.get("pending_claim") if isinstance(registration.get("pending_claim"), dict) else None
-    if pending_claim and not accounts:
+    has_pending_server_session = any(
+        item.get("account_mode") == "registration_pending"
+        and item.get("verification_status") == "pending_verification"
+        for item in server_sessions
+    )
+    if pending_claim and not accounts and not has_pending_server_session:
         person = await registry_repo.get_person(pending_claim.get("person_id"))
         snapshot = pending_claim.get("profile_snapshot") if isinstance(pending_claim.get("profile_snapshot"), dict) else {}
         accounts.append(
@@ -75,8 +81,32 @@ async def build_agent_account_state(session: AsyncSession, device_id: str) -> di
             }
         )
 
-    server_sessions = await account_service.list_device_sessions(device_id)
     for account_session in server_sessions:
+        if (
+            account_session.get("account_mode") == "registration_pending"
+            and account_session.get("verification_status") == "pending_verification"
+            and not accounts
+        ):
+            declared = account_session.get("declared_account") if isinstance(account_session.get("declared_account"), dict) else {}
+            accounts.append(
+                {
+                    "account_mode": "registration_pending",
+                    "session_id": account_session.get("session_id"),
+                    "session_token": None,
+                    "person_id": account_session.get("person_id"),
+                    "claim_id": account_session.get("claim_id"),
+                    "display_name": declared.get("display_name") or declared.get("full_name") or declared.get("login"),
+                    "full_name": declared.get("full_name"),
+                    "email": declared.get("email"),
+                    "phone": declared.get("phone"),
+                    "login": declared.get("login"),
+                    "registration_status": (pending_claim or {}).get("status") or registration.get("status"),
+                    "verification_status": "pending_verification",
+                    "verification_method": account_session.get("verification_method"),
+                    "can_login": True,
+                    "is_primary": False,
+                }
+            )
         if (
             account_session.get("account_mode") == "verified_other_account"
             and account_session.get("verification_status") == "verified"

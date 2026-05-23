@@ -64,6 +64,9 @@ class Ticket(Base):
     requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     requester_registration_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    requester_account_session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    requester_account_mode: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    requester_account_warning: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     assignee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     queue_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
@@ -150,6 +153,10 @@ class Ticket(Base):
         Index("ix_tickets_requester_person_created", "requester_person_id", "created_at"),
         Index("ix_tickets_requester_binding", "requester_binding_id"),
         Index("ix_tickets_requester_registration_status", "requester_registration_status"),
+        Index("ix_tickets_requester_account_session_id", "requester_account_session_id"),
+        Index("ix_tickets_device_account_session", "device_id", "requester_account_session_id"),
+        Index("ix_tickets_requester_account_mode", "requester_account_mode"),
+        Index("ix_tickets_requester_account_warning", "requester_account_warning"),
         Index("ix_tickets_service_offering_created", "service_code", "offering_code", "created_at"),
         Index("ix_tickets_catalog_service_created", "catalog_service_id", "created_at"),
         Index("ix_tickets_catalog_offering_created", "catalog_offering_id", "created_at"),
@@ -2904,6 +2911,30 @@ class DeviceAccountLoginRequest(Base):
         Index("ix_device_account_login_requests_matched_person_status", "matched_person_id", "status"),
         Index("ix_device_account_login_requests_base_binding_status", "base_binding_id", "status"),
         Index("ix_device_account_login_requests_status_requested", "status", "requested_at"),
+    )
+
+
+class DeviceAccountEvent(Base):
+    """Audit event for requester account session lifecycle and ticket use."""
+    __tablename__ = "device_account_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"), nullable=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_account_login_requests.request_id", ondelete="SET NULL"), nullable=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    event_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_device_account_events_device_event_at", "device_id", "event_at"),
+        Index("ix_device_account_events_session_event_at", "session_id", "event_at"),
+        Index("ix_device_account_events_request_event_at", "request_id", "event_at"),
+        Index("ix_device_account_events_ticket_event_at", "ticket_id", "event_at"),
+        Index("ix_device_account_events_type_event_at", "event_type", "event_at"),
     )
 
 

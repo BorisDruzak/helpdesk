@@ -640,6 +640,92 @@ async def test_account_state_includes_server_sessions_and_pending_login_requests
 
 
 @pytest.mark.asyncio
+async def test_registration_pending_session_and_logout_endpoints(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-api@example.test",
+            display_name="Pending Api",
+            profile={"full_name": "Pending Api", "email": "pending-api@example.test"},
+        )
+        await session.commit()
+
+    created = await test_client.post(
+        "/api/registry/agent/account-sessions/registration-pending",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"claim_id": claim["registration"]["claim_id"]},
+    )
+    assert created.status == 200, await created.text()
+    created_payload = await created.json()
+    session_id = created_payload["data"]["session"]["session_id"]
+    session_token = created_payload["data"]["session_token"]
+    assert created_payload["data"]["session"]["account_mode"] == "registration_pending"
+    assert created_payload["data"]["session"]["verification_status"] == "pending_verification"
+
+    state = await test_client.get(
+        f"/api/registry/agent/account-state?device_id={device_id}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    assert state.status == 200, await state.text()
+    state_payload = await state.json()
+    assert any(item["session_id"] == session_id for item in state_payload["data"]["server_sessions"])
+
+    logged_out = await test_client.post(
+        f"/api/registry/agent/account-sessions/{session_id}/logout",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"session_token": session_token},
+    )
+    assert logged_out.status == 200, await logged_out.text()
+    assert (await logged_out.json())["data"]["session"]["verification_status"] == "revoked"
+
+    invalid = await test_client.get(
+        f"/api/registry/agent/account-sessions/{session_id}/validate?session_token={session_token}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert invalid.status == 403
+    assert (await invalid.json())["error_code"] == "ACCOUNT_SESSION_REVOKED"
+
+
+@pytest.mark.asyncio
+async def test_admin_lists_and_revokes_device_account_sessions(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="registered-admin-session@example.test",
+            display_name="Registered Admin Session",
+            profile={"full_name": "Registered Admin Session", "email": "registered-admin-session@example.test", "user_confirmed": True},
+        )
+        approved = await RegistrationService(session).approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        account = await AccountSessionService(session).create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        await session.commit()
+
+    listed = await test_client.get(
+        f"/api/web/admin/registry/devices/{device_id}/account-sessions",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    assert listed.status == 200, await listed.text()
+    listed_payload = await listed.json()
+    assert any(item["session_id"] == account["session"]["session_id"] for item in listed_payload["data"]["items"])
+
+    revoked = await test_client.post(
+        f"/api/web/admin/registry/account-sessions/{account['session']['session_id']}/revoke",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+        json={"reason": "test"},
+    )
+    assert revoked.status == 200, await revoked.text()
+    assert (await revoked.json())["data"]["session"]["verification_status"] == "revoked"
+
+
+@pytest.mark.asyncio
 async def test_admin_approve_and_reject_registration_claim(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     approve_device_id = str(uuid.uuid4())

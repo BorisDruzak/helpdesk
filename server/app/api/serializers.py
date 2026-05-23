@@ -96,11 +96,16 @@ def ticket_to_dict(
         "requester_person_id": getattr(ticket, "requester_person_id", None),
         "requester_binding_id": getattr(ticket, "requester_binding_id", None),
         "requester_registration_status": getattr(ticket, "requester_registration_status", None),
+        "requester_account_session_id": getattr(ticket, "requester_account_session_id", None),
+        "requester_account_mode": getattr(ticket, "requester_account_mode", None),
         "requester_account_context": custom_fields.get("requester_account_context") if isinstance(custom_fields.get("requester_account_context"), dict) else None,
         "requester_account_warning": (
+            getattr(ticket, "requester_account_warning", None)
+            or (
             custom_fields.get("requester_account_context", {}).get("warning")
             if isinstance(custom_fields.get("requester_account_context"), dict)
             else None
+            )
         ),
         "ticket_type": getattr(ticket, "ticket_type", None),
         "priority": getattr(ticket, "priority", None),

@@ -506,6 +506,31 @@ export type AdminAccountLoginRequest = {
   resulting_session_id: string | null;
 };
 
+export type AdminDeviceAccountSession = {
+  session_id: string;
+  account_mode: string;
+  verification_status: string;
+  verification_method: string | null;
+  device_id: string;
+  person_id: string | null;
+  binding_id: string | null;
+  claim_id: string | null;
+  base_binding_id: string | null;
+  base_person_id: string | null;
+  display_name: string | null;
+  full_name: string | null;
+  login: string | null;
+  email: string | null;
+  phone: string | null;
+  reason: string | null;
+  warning_code: string | null;
+  created_at: string | null;
+  verified_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -617,6 +642,23 @@ export async function rejectAdminAccountLoginRequest(requestId: string, reason: 
     body: JSON.stringify({ reason })
   });
   await readSuccessResponse(response, "Не удалось отклонить вход в другой аккаунт");
+}
+
+export async function fetchAdminDeviceAccountSessions(deviceId: string): Promise<{ items: AdminDeviceAccountSession[] }> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/account-sessions`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить сессии аккаунтов устройства");
+}
+
+export async function revokeAdminDeviceAccountSession(sessionId: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/account-sessions/${encodeURIComponent(sessionId)}/revoke`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason })
+  });
+  await readSuccessResponse(response, "Не удалось отозвать сессию аккаунта");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

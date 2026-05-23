@@ -40,12 +40,12 @@ Status: in progress.
 
 Goal:
 
-- Harden server-issued requester account sessions for the PC agent: shared binding login, other-account requests on any active registered binding, binding revocation invalidation, verified other-account token enforcement, local session validation and support-visible other-account warning context.
+- Harden server-issued requester account sessions for the PC agent as the requester identity boundary: ticket create/list/detail/message/read access must require a valid account session, registration-pending gets a deterministic server-issued session, logout/revoke is server-side, and support/admin surfaces show session ownership and other-account warnings.
 
 Verification target:
 
-- Focused server tests for `AccountSessionService`, registration API and ticket registration enrichment.
-- Focused agent tests for account-session manager/gate/client helpers.
+- Focused server tests for `AccountSessionService`, registration API, ticket account access and ticket registration enrichment.
+- Focused agent tests for account-session manager/gate/client helpers and chat-panel account propagation.
 - `python -m compileall server pc_agent`, webapp build/typecheck, `python scripts/verify_workspace.py`, `git diff --check`.
 
 ## Active Work: Admin Ticket Purge

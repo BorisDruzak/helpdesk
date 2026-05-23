@@ -21,6 +21,9 @@ class FakeResponse:
     async def text(self):
         return json.dumps(self.payload)
 
+    async def json(self):
+        return self.payload
+
 
 class FakeSession:
     def __init__(self, response):
@@ -198,6 +201,38 @@ async def test_registration_api_client_validates_account_session(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_registration_api_client_creates_pending_session_and_logs_out(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            payload={
+                "status": "success",
+                "data": {
+                    "session": {"session_id": "pending-session-1", "account_mode": "registration_pending"},
+                    "session_token": "pending-token",
+                },
+            }
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    pending = await client.create_registration_pending_account_session("claim-1")
+    assert pending["session"]["session_id"] == "pending-session-1"
+    assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/account-sessions/registration-pending"
+    assert fake_session.calls[0]["json"] == {"claim_id": "claim-1"}
+
+    fake_session.response = FakeResponse(payload={"status": "success", "data": {"session": {"verification_status": "revoked"}}})
+    logged_out = await client.logout_account_session("pending-session-1", session_token="pending-token")
+    assert logged_out["session"]["verification_status"] == "revoked"
+    assert fake_session.calls[1]["url"] == "http://localhost:8666/api/registry/agent/account-sessions/pending-session-1/logout"
+    assert fake_session.calls[1]["json"] == {"session_token": "pending-token"}
+
+
+@pytest.mark.asyncio
 async def test_registration_api_client_get_account_state_normalizes_auth_error(monkeypatch):
     client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="stale-token")
     fake_session = FakeSession(
@@ -251,3 +286,26 @@ async def test_create_ticket_sends_only_requester_account_session_when_passed(mo
         "session_token": "token-1",
     }
     assert fake_session.calls[0]["json"]["require_account_session"] is True
+
+
+@pytest.mark.asyncio
+async def test_ticket_actions_include_account_session(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(FakeResponse(payload={"status": "ok", "tickets": [], "ticket": {"ticket_id": "ticket-1"}}))
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+    account = {"account_session_id": "session-1", "session_token": "token-1"}
+
+    await client.list_tickets(account_session=account)
+    await client.get_ticket("ticket-1", account_session=account)
+    await client.send_message("ticket-1", "hello", account_session=account)
+    await client.mark_ticket_read("ticket-1", 10, account_session=account)
+
+    assert fake_session.calls[0]["params"]["account_session_id"] == "session-1"
+    assert fake_session.calls[1]["params"]["account_session_id"] == "session-1"
+    assert fake_session.calls[2]["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}
+    assert fake_session.calls[2]["headers"]["X-Account-Session-Id"] == "session-1"
+    assert fake_session.calls[3]["json"]["requester_account"] == {"session_id": "session-1", "session_token": "token-1"}

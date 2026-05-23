@@ -220,6 +220,9 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
     assert ticket.requester_person_id == approved["binding"]["person_id"]
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
     assert ticket.requester_registration_status == "admin_confirmed"
+    assert ticket.requester_account_session_id == account_session["session"]["session_id"]
+    assert ticket.requester_account_mode == "confirmed_binding"
+    assert ticket.requester_account_warning is None
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "confirmed_binding"
     assert ticket.custom_fields["requester_account_context"]["validation"] == "server_session_verified"
     assert len(claims) == 1
@@ -275,6 +278,9 @@ async def test_verified_other_account_session_marks_ticket_without_registration_
         ).scalars().all()
 
     assert ticket.requester_registration_status == "other_account"
+    assert ticket.requester_account_session_id == session_payload["session"]["session_id"]
+    assert ticket.requester_account_mode == "verified_other_account"
+    assert ticket.requester_account_warning == "ticket_created_from_other_account_on_registered_device"
     assert ticket.requester_binding_id is None
     assert ticket.asset_id == approved["binding"]["asset_id"]
     assert ticket.custom_fields["requester_account_context"]["created_from_other_account"] is True
@@ -394,6 +400,32 @@ async def test_agent_create_with_required_invalid_session_returns_403_before_tic
     assert response.status == 403, await response.text()
     payload = await response.json()
     assert payload["error_code"] == "ACCOUNT_SESSION_NOT_FOUND"
+    async with session_maker() as session:
+        tickets = (await session.execute(select(Ticket).where(Ticket.device_id == device_id))).scalars().all()
+    assert tickets == []
+
+
+@pytest.mark.asyncio
+async def test_agent_create_without_account_session_returns_403_before_ticket_create(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        headers={"Authorization": f"Bearer {TEST_AGENT_PREFIX}{device_id}"},
+        json={
+            "device_id": device_id,
+            "title": "Need help",
+            "description": "Need help",
+        },
+    )
+
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "ACCOUNT_SESSION_REQUIRED"
     async with session_maker() as session:
         tickets = (await session.execute(select(Ticket).where(Ticket.device_id == device_id))).scalars().all()
     assert tickets == []

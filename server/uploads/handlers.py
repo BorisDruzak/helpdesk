@@ -153,8 +153,40 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
         from app.db import get_session
         from app.repos import ArtifactsRepo
         from app.repos.ticket_events_repo import TicketEventsRepo
+        from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
 
         async with get_session() as session:
+            if is_agent_upload and ticket_id:
+                ticket_repo = TicketEventsRepo(session)
+                ticket = await ticket_repo.get_ticket(ticket_id)
+                if not ticket:
+                    return web.json_response(
+                        {"status": "error", "error": "ticket_not_found"},
+                        status=404,
+                    )
+                requester_account = requester_account_from_payload(
+                    None,
+                    query=request.query,
+                    headers=request.headers,
+                )
+                access = TicketAccountAccessService(session)
+                validation = await access.validate_agent_account_session(
+                    device_id=auth_context.actor_id,
+                    requester_account=requester_account,
+                    require=True,
+                )
+                if not validation.get("valid") or not await access.can_send_message(
+                    ticket=ticket,
+                    account_session=validation.get("session") or {},
+                ):
+                    return web.json_response(
+                        {
+                            "status": "error",
+                            "error": "account_session_invalid",
+                            "error_code": validation.get("error_code") or "ACCOUNT_ACCESS_DENIED",
+                        },
+                        status=403,
+                    )
             if not is_agent_upload:
                 if not ticket_id:
                     return web.json_response(

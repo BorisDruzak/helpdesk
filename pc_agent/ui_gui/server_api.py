@@ -443,6 +443,37 @@ class TicketApiClient:
             headers["Authorization"] = f"Bearer {self.auth_token}"
         return headers
 
+    @staticmethod
+    def _account_session_payload(account_session: Optional[dict]) -> dict:
+        account_session = account_session or {}
+        session_id = account_session.get("session_id") or account_session.get("account_session_id")
+        if not session_id:
+            return {}
+        payload = {"session_id": session_id}
+        if account_session.get("session_token"):
+            payload["session_token"] = account_session.get("session_token")
+        return payload
+
+    def _with_account_headers(self, headers: dict, account_session: Optional[dict]) -> dict:
+        payload = self._account_session_payload(account_session)
+        if not payload:
+            return headers
+        merged = dict(headers)
+        merged["X-Account-Session-Id"] = str(payload["session_id"])
+        if payload.get("session_token"):
+            merged["X-Account-Session-Token"] = str(payload["session_token"])
+        return merged
+
+    @staticmethod
+    def _with_account_params(params: Optional[dict], account_session: Optional[dict]) -> dict:
+        merged = dict(params or {})
+        payload = TicketApiClient._account_session_payload(account_session)
+        if payload:
+            merged["account_session_id"] = str(payload["session_id"])
+            if payload.get("session_token"):
+                merged["session_token"] = str(payload["session_token"])
+        return merged
+
     def _refresh_auth_token_from_local_db(self) -> None:
         """Refresh GUI API token after agent reprovision rotates it in storage.db."""
         device_id = str(self.device_id or "").strip()
@@ -596,6 +627,35 @@ class TicketApiClient:
                 return self._unwrap_success_data(json.loads(response_text))
         except (aiohttp.ClientError, json.JSONDecodeError) as exc:
             logger.info("Confirmed binding account session create error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def create_registration_pending_account_session(self, claim_id: str) -> dict:
+        url = f"{self.base_url}/registry/agent/account-sessions/registration-pending"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers, json={"claim_id": claim_id}) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось создать pending-сессию регистрации")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Registration pending account session create error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def logout_account_session(self, session_id: str, session_token: Optional[str] = None) -> dict:
+        url = f"{self.base_url}/registry/agent/account-sessions/{session_id}/logout"
+        session = await self._get_session()
+        headers = self._get_headers()
+        payload = {"session_token": session_token} if session_token else {}
+        try:
+            async with session.post(url, headers=headers, json=payload) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось выйти из аккаунта")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Account session logout error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
     async def request_other_account_login(self, profile: dict) -> dict:
@@ -793,12 +853,9 @@ class TicketApiClient:
         if knowledge_attempts is not None:
             payload["knowledge_attempts"] = knowledge_attempts
         if requester_account is not None:
-            session_id = requester_account.get("session_id") or requester_account.get("account_session_id")
-            if session_id:
-                payload["requester_account"] = {
-                    "session_id": session_id,
-                    **({"session_token": requester_account.get("session_token")} if requester_account.get("session_token") else {}),
-                }
+            account_payload = self._account_session_payload(requester_account)
+            if account_payload:
+                payload["requester_account"] = account_payload
                 payload["require_account_session"] = True
             else:
                 payload["requester_account"] = requester_account
@@ -1027,7 +1084,7 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при get_ticket_form_pack_current: {e}")
             raise Exception(f"Network error: {e}")
 
-    async def list_tickets(self, *, trace_parent_action_id: Optional[str] = None) -> dict:
+    async def list_tickets(self, *, account_session: Optional[dict] = None, trace_parent_action_id: Optional[str] = None) -> dict:
         """
         Получает список обращений. Для агента передаётся device_id — сервер возвращает только обращения этого устройства.
         
@@ -1038,7 +1095,7 @@ class TicketApiClient:
             Exception: Если HTTP статус != 200, содержит текст ответа для дебага
         """
         url = f"{self.base_url}/tickets"
-        params = {"device_id": self.device_id}
+        params = self._with_account_params({"device_id": self.device_id}, account_session)
         trace = self._trace_context(
             action="ticket.list",
             category="ticket",
@@ -1054,7 +1111,7 @@ class TicketApiClient:
         logger.debug(f"GET {url} device_id={self.device_id[:8]}...")
         
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.get(url, params=params, headers=headers) as response:
                 response_text = await response.text()
@@ -1094,6 +1151,7 @@ class TicketApiClient:
         since_event_id: Optional[int] = None,
         before_event_id: Optional[int] = None,
         limit: Optional[int] = None,
+        account_session: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -1123,6 +1181,7 @@ class TicketApiClient:
                 params["before_event_id"] = int(before_event_id)
             if limit is not None:
                 params["limit"] = int(limit)
+        params = self._with_account_params(params, account_session)
         trace = self._trace_context(
             action="ticket.get",
             category="ticket",
@@ -1140,7 +1199,7 @@ class TicketApiClient:
         logger.debug(f"GET {url}")
         
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.get(url, params=params, headers=headers) as response:
                 response_text = await response.text()
@@ -1192,6 +1251,7 @@ class TicketApiClient:
         attachment_refs: Optional[list[str]] = None,
         metadata: Optional[dict] = None,
         reply_to: Optional[dict] = None,
+        account_session: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -1228,6 +1288,9 @@ class TicketApiClient:
             payload["metadata"] = metadata
         if reply_to:
             payload["reply_to"] = reply_to
+        account_payload = self._account_session_payload(account_session)
+        if account_payload:
+            payload["requester_account"] = account_payload
         trace = self._trace_context(
             action="ticket.message.send",
             category="message",
@@ -1246,7 +1309,7 @@ class TicketApiClient:
         logger.debug(f"POST {url} с payload: {payload}")
         
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
@@ -1288,7 +1351,7 @@ class TicketApiClient:
             logger.error(f"Ошибка сети при send_message: {e}")
             raise Exception(f"Network error: {e}")
 
-    async def mark_ticket_read(self, ticket_id: str, last_read_event_id: int) -> dict:
+    async def mark_ticket_read(self, ticket_id: str, last_read_event_id: int, *, account_session: Optional[dict] = None) -> dict:
         """
         Отмечает последнее входящее сообщение как прочитанное пользователем.
 
@@ -1304,11 +1367,14 @@ class TicketApiClient:
         """
         url = f"{self.base_url}/tickets/{ticket_id}/read"
         payload = {"last_read_event_id": int(last_read_event_id)}
+        account_payload = self._account_session_payload(account_session)
+        if account_payload:
+            payload["requester_account"] = account_payload
 
         logger.debug(f"POST {url} с payload: {payload}")
 
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
@@ -1340,6 +1406,7 @@ class TicketApiClient:
         ticket_id: str,
         file_path: str,
         kind: str = "file",
+        account_session: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -1362,7 +1429,7 @@ class TicketApiClient:
 
         url = f"{self.base_url}/upload"
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
 
         form = aiohttp.FormData()
         trace = self._trace_context(
@@ -1439,6 +1506,7 @@ class TicketApiClient:
         ticket_id: str,
         reason: str = "user_closed",
         closed_by_role: str = "user",
+        account_session: Optional[dict] = None,
         trace_parent_action_id: Optional[str] = None,
     ) -> dict:
         """
@@ -1460,6 +1528,9 @@ class TicketApiClient:
             "closed_by_role": closed_by_role,
             "reason": reason
         }
+        account_payload = self._account_session_payload(account_session)
+        if account_payload:
+            payload["requester_account"] = account_payload
         trace = self._trace_context(
             action="ticket.close",
             category="ticket",
@@ -1477,7 +1548,7 @@ class TicketApiClient:
         logger.debug(f"POST {url} с payload: {payload}")
         
         session = await self._get_session()
-        headers = self._get_headers()
+        headers = self._with_account_headers(self._get_headers(), account_session)
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()

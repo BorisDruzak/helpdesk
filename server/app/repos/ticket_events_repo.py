@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import bindparam, select, and_, or_, text, func, delete, case, update, literal
+from sqlalchemy import bindparam, select, and_, or_, text, func, delete, case, update, literal, false
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -858,6 +858,9 @@ class TicketEventsRepo:
         requester_person_id: Optional[str] = None,
         requester_binding_id: Optional[str] = None,
         requester_registration_status: Optional[str] = None,
+        requester_account_session_id: Optional[str] = None,
+        requester_account_mode: Optional[str] = None,
+        requester_account_warning: Optional[str] = None,
     ) -> Ticket:
         """
         Create a new ticket.
@@ -900,6 +903,9 @@ class TicketEventsRepo:
             requester_person_id=requester_person_id,
             requester_binding_id=requester_binding_id,
             requester_registration_status=requester_registration_status,
+            requester_account_session_id=requester_account_session_id,
+            requester_account_mode=requester_account_mode,
+            requester_account_warning=requester_account_warning,
             created_at=now,
             updated_at=now,
             requester_id=requester_id,
@@ -1283,6 +1289,45 @@ class TicketEventsRepo:
                 stmt = stmt.where(Ticket.assignee_id == filters["assignee_id"])
             if "requester_id" in filters:
                 stmt = stmt.where(Ticket.requester_id == filters["requester_id"])
+            if "requester_account_session_id" in filters:
+                stmt = stmt.where(Ticket.requester_account_session_id == filters["requester_account_session_id"])
+            if "requester_account_mode" in filters:
+                stmt = stmt.where(Ticket.requester_account_mode == filters["requester_account_mode"])
+            if "account_session_access" in filters:
+                access = filters["account_session_access"] or {}
+                mode = str(access.get("account_mode") or "")
+                session_id = str(access.get("session_id") or "")
+                if mode == "confirmed_binding":
+                    clauses = []
+                    if session_id:
+                        clauses.append(Ticket.requester_account_session_id == session_id)
+                    if access.get("binding_id"):
+                        clauses.append(Ticket.requester_binding_id == str(access.get("binding_id")))
+                    if access.get("person_id"):
+                        clauses.append(Ticket.requester_person_id == str(access.get("person_id")))
+                    stmt = stmt.where(or_(*clauses)) if clauses else stmt.where(false())
+                elif mode == "verified_other_account":
+                    stmt = stmt.where(Ticket.requester_account_session_id == session_id)
+                elif mode == "registration_pending":
+                    pending_statuses = [
+                        "self_reported",
+                        "pending_user_confirmation",
+                        "user_confirmed",
+                        "pending_admin_review",
+                        "conflict",
+                        "registration_pending",
+                    ]
+                    clauses = [Ticket.requester_account_session_id == session_id] if session_id else []
+                    if access.get("person_id"):
+                        clauses.append(
+                            and_(
+                                Ticket.requester_person_id == str(access.get("person_id")),
+                                Ticket.requester_registration_status.in_(pending_statuses),
+                            )
+                        )
+                    stmt = stmt.where(or_(*clauses)) if clauses else stmt.where(false())
+                else:
+                    stmt = stmt.where(false())
             if "watching_actor_id" in filters:
                 stmt = stmt.join(TicketWatcher, Ticket.ticket_id == TicketWatcher.ticket_id).where(
                     TicketWatcher.actor_id == filters["watching_actor_id"]

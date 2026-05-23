@@ -1094,6 +1094,15 @@ class MainWindow(QMainWindow):
         self.account_page_warning_label.setVisible(bool(values["warning"]))
 
     def _on_account_logout_clicked(self) -> None:
+        self._spawn_gui_task(self._async_account_logout(), name="account.logout")
+
+    async def _async_account_logout(self) -> None:
+        session_id = str(self._account_session.get("account_session_id") or "").strip()
+        session_token = str(self._account_session.get("session_token") or "").strip() or None
+        if session_id:
+            payload = await self.chat_panel.ticket_client.logout_account_session(session_id, session_token=session_token)
+            if isinstance(payload, dict) and payload.get("status") == "error":
+                logger.warning(f"[account] server logout failed; clearing local session only: {payload}")
         self._account_session = {"schema_version": 1, "account_mode": "none"}
         self._account_session_manager.clear()
         self.chat_panel.tickets_cache = []
@@ -1205,9 +1214,7 @@ class MainWindow(QMainWindow):
 
     async def _validate_local_account_session_with_server(self, session: dict[str, Any], state: dict[str, Any]) -> bool:
         mode = str(session.get("account_mode") or "")
-        if mode == "registration_pending":
-            return self._is_local_account_session_valid(session, state)
-        if mode not in {"confirmed_binding", "verified_other_account"}:
+        if mode not in {"confirmed_binding", "verified_other_account", "registration_pending"}:
             return False
         session_id = str(session.get("account_session_id") or "").strip()
         if not session_id:
@@ -1297,14 +1304,26 @@ class MainWindow(QMainWindow):
     def _on_account_register_requested(self) -> None:
         self._show_registration_entry()
 
-    def _save_registration_pending_account_session(self, profile: dict[str, Any], registration: dict[str, Any]) -> None:
+    async def _save_registration_pending_account_session(self, profile: dict[str, Any], registration: dict[str, Any]) -> None:
+        claim_id = str(registration.get("claim_id") or registration.get("pending_claim_id") or "").strip()
+        if not claim_id:
+            raise RuntimeError("Не удалось создать account session: claim_id отсутствует")
+        payload = await self.chat_panel.ticket_client.create_registration_pending_account_session(claim_id)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            raise RuntimeError(str(payload.get("error") or "Не удалось создать pending account session"))
+        server_session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+        server_session = {**server_session, "session_token": payload.get("session_token")}
         self._account_session = self._account_session_manager.save(
             self._account_session_manager.build_registration_pending_session(
                 profile,
                 registration,
                 device_id=self.chat_panel.device_id,
+                server_session=server_session,
             )
         )
+        refreshed = await self.chat_panel.ticket_client.get_account_state()
+        if isinstance(refreshed, dict) and refreshed.get("status") != "error":
+            self._account_state = refreshed
         if hasattr(self, "account_gate_page"):
             self.account_gate_page.render(self._account_state, local_session=self._account_session)
         self._set_account_entry_mode(False)
@@ -2221,7 +2240,7 @@ class MainWindow(QMainWindow):
         profile["registration_status"] = registration.get("status") or profile.get("registration_status")
         profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
         saved = UserProfileManager().save(profile)
-        self._save_registration_pending_account_session(saved, registration)
+        await self._save_registration_pending_account_session(saved, registration)
         self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_registration_entry_status("Профиль регистрации отправлен.", error=False)
         self._select_sidebar_view("tickets", expand=True)
@@ -2244,7 +2263,7 @@ class MainWindow(QMainWindow):
                 profile["registration_status"] = registration.get("status") or profile.get("registration_status")
                 profile["last_submitted_at"] = datetime.now(timezone.utc).isoformat()
                 saved = manager.save(profile)
-                self._save_registration_pending_account_session(saved, registration)
+                await self._save_registration_pending_account_session(saved, registration)
                 self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
                 self._set_registration_entry_status("Данные регистрации отправлены и подтверждены.", error=False)
                 self._select_sidebar_view("tickets", expand=True)
@@ -2256,7 +2275,7 @@ class MainWindow(QMainWindow):
         if isinstance(registration, dict):
             profile["registration_status"] = registration.get("status") or profile.get("registration_status")
             saved = manager.save(profile)
-            self._save_registration_pending_account_session(saved, registration)
+            await self._save_registration_pending_account_session(saved, registration)
             self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_registration_entry_status("Данные регистрации подтверждены.", error=False)
         self._select_sidebar_view("tickets", expand=True)

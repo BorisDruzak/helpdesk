@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceAccountLoginRequest, DeviceAccountSession
+from app.db.models import DeviceAccountEvent, DeviceAccountLoginRequest, DeviceAccountSession
 
 
 def new_id() -> str:
@@ -42,13 +42,23 @@ class AccountSessionRepo:
         )
         return list(result.scalars().all())
 
-    async def revoke_session(self, session_id: str, *, revoked_by: str | None = None) -> DeviceAccountSession:
+    async def revoke_session(
+        self,
+        session_id: str,
+        *,
+        revoked_by: str | None = None,
+        reason: str | None = None,
+    ) -> DeviceAccountSession:
         row = await self.get_session(session_id)
         if row is None:
             raise ValueError("account session not found")
+        if row.verification_status == "revoked":
+            return row
         row.verification_status = "revoked"
         row.revoked_at = datetime.now(timezone.utc)
         row.revoked_by = revoked_by
+        if reason:
+            row.metadata_json = {**(row.metadata_json or {}), "revoke_reason": reason}
         await self.session.flush()
         return row
 
@@ -95,5 +105,33 @@ class AccountSessionRepo:
         row.reviewed_at = datetime.now(timezone.utc)
         row.rejection_reason = rejection_reason
         row.resulting_session_id = resulting_session_id
+        await self.session.flush()
+        return row
+
+    async def append_event(
+        self,
+        *,
+        device_id: str,
+        event_type: str,
+        session_id: str | None = None,
+        request_id: str | None = None,
+        ticket_id: str | None = None,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> DeviceAccountEvent:
+        row = DeviceAccountEvent(
+            event_id=new_id(),
+            device_id=str(device_id),
+            session_id=session_id,
+            request_id=request_id,
+            ticket_id=ticket_id,
+            event_type=str(event_type),
+            actor_id=actor_id,
+            actor_role=actor_role,
+            payload=payload or {},
+            event_at=datetime.now(timezone.utc),
+        )
+        self.session.add(row)
         await self.session.flush()
         return row

@@ -380,6 +380,9 @@ async def create_ticket_with_side_effects(
     requester_registration_status = "unregistered"
     requester_registration_context: dict[str, Any] = {"status": "unregistered"}
     requester_account_context: dict[str, Any] = {"account_mode": account_mode or "none"}
+    requester_account_session_id: str | None = None
+    requester_account_mode: str | None = None
+    requester_account_warning: str | None = None
     try:
         from registry.registration_service import RegistrationService
 
@@ -450,9 +453,10 @@ async def create_ticket_with_side_effects(
             requester_registration_status = str(
                 (pending_claim or {}).get("status")
                 or (requester_account or {}).get("registration_status")
+                or (requester_account or {}).get("verification_status")
                 or "registration_pending"
             )
-            requester_person_id = (pending_claim or {}).get("person_id")
+            requester_person_id = (pending_claim or {}).get("person_id") or (requester_account or {}).get("person_id")
             requester_binding_id = None
             if isinstance(registration_status, dict):
                 active_asset = registration_status.get("asset") if isinstance(registration_status.get("asset"), dict) else None
@@ -516,6 +520,13 @@ async def create_ticket_with_side_effects(
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
 
+    if isinstance(requester_account_context, dict):
+        requester_account_session_id = str(
+            requester_account_context.get("account_session_id") or requester_account_context.get("session_id") or ""
+        ).strip() or None
+        requester_account_mode = str(requester_account_context.get("account_mode") or "").strip() or None
+        requester_account_warning = str(requester_account_context.get("warning") or "").strip() or None
+
     ticket = await ticket_repo.create_ticket(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -541,6 +552,9 @@ async def create_ticket_with_side_effects(
         requester_person_id=requester_person_id,
         requester_binding_id=requester_binding_id,
         requester_registration_status=requester_registration_status,
+        requester_account_session_id=requester_account_session_id,
+        requester_account_mode=requester_account_mode,
+        requester_account_warning=requester_account_warning,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})
@@ -637,6 +651,11 @@ async def create_ticket_with_side_effects(
                 "is_initial": True,
                 "text": initial_message_text,
                 "visibility": "public",
+                "requester_account_session_id": requester_account_session_id,
+                "requester_account_mode": requester_account_mode,
+                "requester_person_id": requester_person_id,
+                "requester_binding_id": requester_binding_id,
+                "created_from_other_account": requester_account_mode == "verified_other_account",
             },
             trace_id=str(uuid.uuid4()),
             event_id=initial_message_id,
@@ -655,6 +674,24 @@ async def create_ticket_with_side_effects(
         )
 
     try:
+        if requester_account_session_id:
+            from registry.account_session_service import AccountSessionService
+
+            await AccountSessionService(session).repo.append_event(
+                device_id=device_id,
+                session_id=requester_account_session_id,
+                ticket_id=ticket_id,
+                event_type="ticket_created_with_other_account"
+                if requester_account_mode == "verified_other_account"
+                else "ticket_created_with_account_session",
+                actor_id=requester_id,
+                actor_role="agent" if requester_id == device_id else "user",
+                payload={
+                    "account_mode": requester_account_mode,
+                    "requester_registration_status": requester_registration_status,
+                    "warning": requester_account_warning,
+                },
+            )
         await start_ticket_created_playbooks(
             session=session,
             state=state,

@@ -305,3 +305,88 @@ async def test_other_account_login_request_allows_shared_only_registered_device(
     assert request["status"] == "pending_verification"
     assert request["base_binding_id"] == approved["binding"]["binding_id"]
     assert request["base_person_id"] == approved["binding"]["person_id"]
+
+
+@pytest.mark.asyncio
+async def test_registration_pending_session_creation_validation_and_claim_invalidation(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        registration = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending@example.test",
+            display_name="Pending User",
+            profile={"full_name": "Pending User", "email": "pending@example.test"},
+        )
+        claim_id = registration["registration"]["claim_id"]
+        service = AccountSessionService(session)
+
+        created = await service.create_registration_pending_session(device_id=device_id, claim_id=claim_id)
+        valid = await service.validate_session(
+            device_id=device_id,
+            session_id=created["session"]["session_id"],
+            session_token=created["session_token"],
+        )
+        await RegistrationService(session).reject_claim(claim_id, reviewed_by="admin", reason="test")
+        invalid = await service.validate_session(
+            device_id=device_id,
+            session_id=created["session"]["session_id"],
+            session_token=created["session_token"],
+        )
+        await session.commit()
+
+    assert created["session"]["account_mode"] == "registration_pending"
+    assert created["session"]["verification_status"] == "pending_verification"
+    assert created.get("session_token")
+    assert valid["valid"] is True
+    assert invalid["valid"] is False
+    assert invalid["error_code"] == "ACCOUNT_SESSION_CLAIM_INACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_logout_and_admin_revoke_invalidate_account_sessions(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        service = AccountSessionService(session)
+        first = await service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        logged_out = await service.logout_session(
+            device_id=device_id,
+            session_id=first["session"]["session_id"],
+            session_token=first["session_token"],
+        )
+        after_logout = await service.validate_session(
+            device_id=device_id,
+            session_id=first["session"]["session_id"],
+            session_token=first["session_token"],
+        )
+
+        second = await service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        revoked = await service.revoke_session(
+            session_id=second["session"]["session_id"],
+            revoked_by="admin",
+            reason="manual revoke",
+        )
+        after_revoke = await service.validate_session(
+            device_id=device_id,
+            session_id=second["session"]["session_id"],
+            session_token=second["session_token"],
+        )
+        await session.commit()
+
+    assert logged_out["verification_status"] == "revoked"
+    assert after_logout["valid"] is False
+    assert after_logout["error_code"] == "ACCOUNT_SESSION_REVOKED"
+    assert revoked["verification_status"] == "revoked"
+    assert revoked["revoked_by"] == "admin"
+    assert after_revoke["valid"] is False
+    assert after_revoke["error_code"] == "ACCOUNT_SESSION_REVOKED"

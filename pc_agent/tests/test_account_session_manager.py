@@ -224,12 +224,39 @@ def test_registration_pending_session_shape(tmp_path):
         {"full_name": "Pending User", "login": "pending"},
         {"claim_id": "claim-1", "status": "pending_admin_review"},
         device_id="device-1",
+        server_session={"session_id": "pending-session-1", "session_token": "pending-token-1"},
     )
 
     assert session["account_mode"] == "registration_pending"
+    assert session["account_session_id"] == "pending-session-1"
+    assert session["session_token"] == "pending-token-1"
     assert session["registration_status"] == "pending_admin_review"
     assert session["metadata"]["claim_id"] == "claim-1"
     assert session["display_name"] == "Pending User"
+
+
+def test_registration_pending_requires_server_session_in_account_state(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    session = manager.build_registration_pending_session(
+        {"full_name": "Pending User", "login": "pending"},
+        {"claim_id": "claim-1", "status": "pending_admin_review"},
+        device_id="device-1",
+        server_session={"session_id": "pending-session-1", "session_token": "pending-token-1"},
+    )
+
+    assert not manager.matches_account_state(session, {"registration": {"status": "pending_admin_review"}})
+    assert manager.matches_account_state(
+        session,
+        {
+            "server_sessions": [
+                {
+                    "account_mode": "registration_pending",
+                    "session_id": "pending-session-1",
+                    "verification_status": "pending_verification",
+                }
+            ]
+        },
+    )
 
 
 def test_other_account_session_preserves_base_binding(tmp_path):

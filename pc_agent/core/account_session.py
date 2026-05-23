@@ -170,13 +170,17 @@ class AccountSessionManager:
         registration: dict[str, Any],
         *,
         device_id: str,
+        server_session: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        server_session = server_session or {}
         claim_id = registration.get("claim_id") or registration.get("pending_claim_id")
         return self.sanitize(
             {
                 "device_id": device_id,
+                "account_session_id": server_session.get("session_id") or server_session.get("account_session_id"),
+                "session_token": server_session.get("session_token"),
                 "account_mode": "registration_pending",
-                "person_id": registration.get("person_id"),
+                "person_id": server_session.get("person_id") or registration.get("person_id"),
                 "display_name": profile.get("display_name") or profile.get("full_name") or profile.get("login"),
                 "full_name": profile.get("full_name"),
                 "login": profile.get("login"),
@@ -293,14 +297,16 @@ class AccountSessionManager:
         if mode not in ACCOUNT_SESSION_MODES:
             return False
         if mode == "registration_pending":
-            registration = state.get("registration") if isinstance(state.get("registration"), dict) else {}
-            return str(registration.get("status") or "") in {
-                "self_reported",
-                "pending_user_confirmation",
-                "user_confirmed",
-                "pending_admin_review",
-                "conflict",
-            }
+            session_id = str(sanitized.get("account_session_id") or "")
+            if not session_id:
+                return False
+            server_sessions = [item for item in (state or {}).get("server_sessions") or [] if isinstance(item, dict)]
+            return any(
+                item.get("account_mode") == "registration_pending"
+                and item.get("verification_status") == "pending_verification"
+                and str(item.get("session_id") or "") == session_id
+                for item in server_sessions
+            )
         session_id = str(sanitized.get("account_session_id") or "")
         if not session_id:
             return False
