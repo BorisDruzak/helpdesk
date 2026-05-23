@@ -275,3 +275,33 @@ async def test_reject_and_expired_session_are_invalid(test_engine):
     assert rejected["status"] == "rejected"
     assert invalid["valid"] is False
     assert invalid["error_code"] == "ACCOUNT_SESSION_EXPIRED"
+
+
+@pytest.mark.asyncio
+async def test_other_account_login_request_allows_shared_only_registered_device(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(
+            session,
+            device_id,
+            email="shared-owner@example.test",
+            relationship_type="shared_user",
+        )
+        service = AccountSessionService(session)
+
+        request = await service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={
+                "full_name": "Other User",
+                "login": "other",
+                "reason": "Temporary replacement",
+            },
+        )
+        await session.commit()
+
+    assert approved["binding"]["relationship_type"] == "shared_user"
+    assert request["status"] == "pending_verification"
+    assert request["base_binding_id"] == approved["binding"]["binding_id"]
+    assert request["base_person_id"] == approved["binding"]["person_id"]

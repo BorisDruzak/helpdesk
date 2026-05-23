@@ -148,6 +148,15 @@ class AccountSessionService:
         )
         return {"session": await self.serialize_session(row), "session_token": token}
 
+    async def _get_base_binding_for_other_account_login(self, device_id: str):
+        primary = await self.registration_repo.get_active_primary_binding(device_id)
+        if primary is not None:
+            return primary
+        for binding in await self.registration_repo.list_active_bindings_for_device(device_id):
+            if binding.relationship_type in {"responsible", "shared_user"}:
+                return binding
+        return None
+
     async def _match_person_id(self, declared: dict[str, Any]) -> str | None:
         email = declared.get("email")
         if email:
@@ -168,7 +177,7 @@ class AccountSessionService:
         return None
 
     async def create_other_account_login_request(self, *, device_id: str, requested_account: dict[str, Any]) -> dict[str, Any]:
-        active = await self.registration_repo.get_active_primary_binding(device_id)
+        active = await self._get_base_binding_for_other_account_login(device_id)
         if active is None:
             raise ValueError("active binding required for other account login")
         declared = _safe_declared_account(requested_account)

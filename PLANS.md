@@ -40,7 +40,7 @@ Status: in progress.
 
 Goal:
 
-- Harden server-issued requester account sessions for the PC agent: shared binding login, binding revocation invalidation, verified other-account token enforcement, local session validation and support-visible other-account warning context.
+- Harden server-issued requester account sessions for the PC agent: shared binding login, other-account requests on any active registered binding, binding revocation invalidation, verified other-account token enforcement, local session validation and support-visible other-account warning context.
 
 Verification target:
 
