@@ -46,6 +46,51 @@ def _can_upload_to_ticket(auth_context, ticket) -> bool:
     return False
 
 
+def _account_session_error_response(payload: dict, *, status: int = 403) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "account_session_invalid",
+            "error_code": payload.get("error_code") or "ACCOUNT_SESSION_INVALID",
+            "details": payload,
+        },
+        status=status,
+    )
+
+
+async def _require_agent_ticket_account_access(
+    *,
+    session,
+    request: web.Request,
+    auth_context,
+    ticket_id: str,
+    write: bool,
+) -> web.Response | None:
+    from app.repos.ticket_events_repo import TicketEventsRepo
+    from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
+
+    ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
+    if not ticket:
+        return web.json_response({"status": "error", "error": "ticket_not_found"}, status=404)
+    requester_account = requester_account_from_payload(None, query=request.query, headers=request.headers)
+    access = TicketAccountAccessService(session)
+    validation = await access.validate_agent_account_session(
+        device_id=auth_context.actor_id,
+        requester_account=requester_account,
+        require=True,
+    )
+    if not validation.get("valid"):
+        return _account_session_error_response(validation)
+    allowed = (
+        await access.can_send_message(ticket=ticket, account_session=validation.get("session") or {})
+        if write
+        else await access.can_view_ticket(ticket=ticket, account_session=validation.get("session") or {})
+    )
+    if not allowed:
+        return _account_session_error_response({"error_code": "ACCOUNT_ACCESS_DENIED"})
+    return None
+
+
 async def handle_upload(request: web.Request) -> web.StreamResponse:
     """
     HTTP API для загрузки файлов: POST /api/upload
@@ -153,40 +198,18 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
         from app.db import get_session
         from app.repos import ArtifactsRepo
         from app.repos.ticket_events_repo import TicketEventsRepo
-        from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
 
         async with get_session() as session:
             if is_agent_upload and ticket_id:
-                ticket_repo = TicketEventsRepo(session)
-                ticket = await ticket_repo.get_ticket(ticket_id)
-                if not ticket:
-                    return web.json_response(
-                        {"status": "error", "error": "ticket_not_found"},
-                        status=404,
-                    )
-                requester_account = requester_account_from_payload(
-                    None,
-                    query=request.query,
-                    headers=request.headers,
+                access_error = await _require_agent_ticket_account_access(
+                    session=session,
+                    request=request,
+                    auth_context=auth_context,
+                    ticket_id=ticket_id,
+                    write=True,
                 )
-                access = TicketAccountAccessService(session)
-                validation = await access.validate_agent_account_session(
-                    device_id=auth_context.actor_id,
-                    requester_account=requester_account,
-                    require=True,
-                )
-                if not validation.get("valid") or not await access.can_send_message(
-                    ticket=ticket,
-                    account_session=validation.get("session") or {},
-                ):
-                    return web.json_response(
-                        {
-                            "status": "error",
-                            "error": "account_session_invalid",
-                            "error_code": validation.get("error_code") or "ACCOUNT_ACCESS_DENIED",
-                        },
-                        status=403,
-                    )
+                if access_error is not None:
+                    return access_error
             if not is_agent_upload:
                 if not ticket_id:
                     return web.json_response(
@@ -280,44 +303,6 @@ async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
     if not artifact_id:
         return web.json_response({"status": "error", "error": "Missing artifact_id"}, status=400)
 
-    ticket_id_from_request = request.query.get("ticket_id")
-    if not auth_context and ticket_id_from_request:
-        from app.db import get_session
-        from app.repos import ArtifactsRepo
-        from app.repos.ticket_events_repo import TicketEventsRepo
-        from datetime import datetime, timezone
-
-        async with get_session() as session:
-            repo = ArtifactsRepo(session)
-            ticket_repo = TicketEventsRepo(session)
-            artifact = await repo.get_by_id(artifact_id)
-            if not artifact:
-                return web.json_response({"status": "error", "error": "Artifact not found"}, status=404)
-            if artifact.expires_at and artifact.expires_at < datetime.now(timezone.utc):
-                return web.json_response({"status": "error", "error": "Artifact expired"}, status=410)
-            if artifact.ticket_id != ticket_id_from_request and not await ticket_repo.ticket_contains_artifact(
-                ticket_id_from_request, artifact_id
-            ):
-                return web.json_response({"status": "error", "error": "Access denied"}, status=403)
-            storage_path = artifact.storage_path
-            mime_type = artifact.mime_type
-            original_name = artifact.original_name
-        file_path = UPLOAD_DIR / storage_path
-        if not file_path.exists():
-            return web.json_response({"status": "error", "error": "Artifact file not found"}, status=404)
-        with open(file_path, "rb") as f:
-            body = f.read()
-        return web.Response(
-            body=body,
-            status=200,
-            headers={
-                "Content-Type": mime_type,
-                "Content-Length": str(len(body)),
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": f'attachment; filename="{original_name}"',
-            },
-        )
-
     if not auth_context:
         return web.json_response(
             {"status": "error", "error": "Authentication required"},
@@ -336,6 +321,18 @@ async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
         service = ArtifactService(session)
         ticket_id_from_request = request.query.get("ticket_id")
         artifact, reason = await service.get_artifact_for_download(artifact_id, auth_context, ticket_id_from_request=ticket_id_from_request)
+        if artifact is not None and auth_context.auth_type == AuthType.AGENT_TOKEN:
+            target_ticket_id = artifact.ticket_id or ticket_id_from_request
+            if target_ticket_id:
+                access_error = await _require_agent_ticket_account_access(
+                    session=session,
+                    request=request,
+                    auth_context=auth_context,
+                    ticket_id=target_ticket_id,
+                    write=False,
+                )
+                if access_error is not None:
+                    return access_error
 
     if reason == NOT_FOUND:
         return web.json_response({"status": "error", "error": "Artifact not found"}, status=404)

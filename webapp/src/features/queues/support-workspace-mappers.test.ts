@@ -929,6 +929,8 @@ describe("support workspace mappers", () => {
       accountWarning: "ticket_created_from_other_account_on_registered_device",
       accountDeclaredName: "Temporary User",
       accountLogin: "temp.user",
+      accountEmail: "temp@example.test",
+      accountPhone: "+15551234567",
       accountReason: "Shift replacement",
       accountVerification: "admin_approval / verified",
       activeDeviceOwner: "Registered Owner",

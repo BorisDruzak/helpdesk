@@ -41,6 +41,11 @@ Status: in progress.
 Goal:
 
 - Harden server-issued requester account sessions for the PC agent as the requester identity boundary: ticket create/list/detail/message/read access must require a valid account session, registration-pending gets a deterministic server-issued session, logout/revoke is server-side, and support/admin surfaces show session ownership and other-account warnings.
+- Final staging hardening adds artifact-download and handshake leakage guards, explicit ticket visibility policy, support warning rendering, admin account-event visibility, and a live smoke checklist in `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`.
+
+Follow-up TODO:
+
+- Add an account-session TTL/cleanup scheduler for expired/revoked sessions and old `device_account_events`.
 
 Verification target:
 

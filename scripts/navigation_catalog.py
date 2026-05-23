@@ -1438,6 +1438,7 @@ TOPICS: tuple[Topic, ...] = (
         related_docs=(
             "docs/QUICK_LOOKUP.md",
             "server/docs/CODEMAP.md",
+            "server/docs/REGISTRATION_ACCOUNT_SESSIONS.md",
             "pc_agent/docs/CODEMAP.md",
             "PLANS.md",
         ),

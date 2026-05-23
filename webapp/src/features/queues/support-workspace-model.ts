@@ -177,6 +177,8 @@ export type SupportWorkspaceContext = {
     accountWarning: string | null;
     accountDeclaredName: string | null;
     accountLogin: string | null;
+    accountEmail: string | null;
+    accountPhone: string | null;
     accountReason: string | null;
     accountVerification: string | null;
     activeDeviceOwner: string | null;

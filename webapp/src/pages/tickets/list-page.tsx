@@ -3484,6 +3484,9 @@ export function TicketListPage() {
                           <p className="font-semibold">Обращение создано с другого аккаунта на зарегистрированном устройстве.</p>
                           <dl className="mt-2 grid gap-1 text-xs leading-5 text-amber-50/85">
                             <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
+                            <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
+                            <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />
+                            <ContextInfoRow icon={Phone} label="Телефон" value={viewModel.right.context.requester.accountPhone} />
                             <ContextInfoRow icon={UsersRound} label="Зарегистрированный владелец" value={viewModel.right.context.requester.activeDeviceOwner} />
                             <ContextInfoRow icon={ShieldCheck} label="Проверка" value={viewModel.right.context.requester.accountVerification} />
                             <ContextInfoRow icon={MessageSquare} label="Причина" value={viewModel.right.context.requester.accountReason} />

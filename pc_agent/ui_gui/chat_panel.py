@@ -2780,6 +2780,7 @@ class TicketCreateWizardWidget(QFrame):
                 service_code=payload.get("service_code"),
                 offering_code=payload.get("offering_code"),
                 offering_full_code=payload.get("offering_full_code"),
+                account_session=self._panel._current_account_session(),
             )
         except Exception as exc:
             logger.debug(f"Предпросмотр создания обращения недоступен: {exc}")

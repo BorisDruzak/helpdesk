@@ -26,9 +26,10 @@ class ArtifactService:
     """
     Проверка доступа к артефактам для скачивания.
 
-    - Агент (AGENT_TOKEN): доступ только к своим артефактам (artifact.device_id == actor_id).
-    - UI (UI_TOKEN): доступ к артефактам, привязанным к тикету (ticket существует).
-      Артефакты без ticket_id для UI недоступны.
+    - Агент (AGENT_TOKEN): базово только свои артефакты (artifact.device_id == actor_id);
+      ticket-bound downloads are additionally account-session gated in uploads.handlers.
+    - Staff UI: доступ к артефактам, привязанным к существующему тикету.
+    - User UI / public ticket token: только свой тикет.
     """
 
     def __init__(self, session: AsyncSession):
@@ -66,33 +67,35 @@ class ArtifactService:
                 return None, FORBIDDEN
             return artifact, None
 
-        if auth_context.auth_type == AuthType.UI_TOKEN:
-            if artifact.ticket_id:
-                ticket = await self._ticket_repo.get_ticket(artifact.ticket_id)
-                if not ticket:
+        if auth_context.auth_type in {AuthType.UI_TOKEN, AuthType.PUBLIC_TICKET_TOKEN}:
+            target_ticket_id = artifact.ticket_id or ticket_id_from_request
+            if not target_ticket_id:
+                logger.warning(
+                    f"[ArtifactService] FORBIDDEN: UI/public access to artifact {artifact_id} without ticket binding"
+                )
+                return None, FORBIDDEN
+            ticket = await self._ticket_repo.get_ticket(target_ticket_id)
+            if not ticket:
+                logger.warning(
+                    f"[ArtifactService] FORBIDDEN: artifact {artifact_id} ticket_id={target_ticket_id} not found"
+                )
+                return None, FORBIDDEN
+            if artifact.ticket_id != target_ticket_id:
+                contains = await self._ticket_repo.ticket_contains_artifact(target_ticket_id, artifact_id)
+                if not contains:
                     logger.warning(
-                        f"[ArtifactService] FORBIDDEN: artifact {artifact_id} has ticket_id={artifact.ticket_id} but ticket not found"
+                        f"[ArtifactService] FORBIDDEN: artifact {artifact_id} not found in ticket_events for ticket_id={target_ticket_id!r}"
                     )
                     return None, FORBIDDEN
+            if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
+                return (artifact, None) if auth_context.ticket_scope == target_ticket_id else (None, FORBIDDEN)
+            if auth_context.actor_role in {"admin", "support", "auditor"}:
                 return artifact, None
-            # Артефакт без ticket_id (старые загрузки): разрешаем, если передан ticket_id и тикет содержит этот артефакт в событиях
-            if ticket_id_from_request:
-                ticket = await self._ticket_repo.get_ticket(ticket_id_from_request)
-                if not ticket:
-                    logger.warning(
-                        f"[ArtifactService] FORBIDDEN: ticket_id_from_request={ticket_id_from_request!r} not found"
-                    )
-                    return None, FORBIDDEN
-                contains = await self._ticket_repo.ticket_contains_artifact(ticket_id_from_request, artifact_id)
-                if contains:
-                    return artifact, None
-                logger.warning(
-                    f"[ArtifactService] FORBIDDEN: artifact {artifact_id} not found in ticket_events for ticket_id={ticket_id_from_request!r}"
-                )
-            else:
-                logger.warning(
-                    f"[ArtifactService] FORBIDDEN: UI access to artifact {artifact_id} without ticket_id in DB and no ticket_id in request"
-                )
+            if auth_context.actor_role == "user" and auth_context.actor_id == getattr(ticket, "requester_id", None):
+                return artifact, None
+            logger.warning(
+                f"[ArtifactService] FORBIDDEN: actor_role={auth_context.actor_role} cannot download artifact {artifact_id}"
+            )
             return None, FORBIDDEN
 
         return None, FORBIDDEN

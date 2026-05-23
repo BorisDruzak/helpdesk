@@ -1,0 +1,111 @@
+# Device registration account sessions
+
+This document fixes the current production boundary for device registration and requester account sessions. It complements the registry CODEMAP and is intentionally focused on security policy and smoke checks.
+
+## Identity layers
+
+- Device identity is the agent machine identity: `device_id`, machine token, websocket handshake and technical health.
+- Registration binding is the authoritative device-person link in `device_user_bindings`. `registry_assets.assigned_person_id` is derived from the active binding.
+- Account session is the requester identity used by the local agent GUI for ticket actions. Agent machine tokens do not identify the requester.
+
+## Session modes
+
+- `confirmed_binding`: server-issued, verified by an active `device_user_bindings` row for the same device.
+- `verified_other_account`: server-issued after admin approval of `device_account_login_requests`. It never creates a registration claim and never changes the active device binding.
+- `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states.
+
+Agent GUI ticket actions must send the server-issued `session_id` and `session_token`. Client-supplied person, binding or account mode fields are not trusted without server validation.
+
+## Ticket visibility policy
+
+- `confirmed_binding` can see tickets for the same device when one of these matches: `requester_account_session_id`, `requester_binding_id`, or `requester_person_id`. This preserves historical owner tickets created before account sessions existed.
+- `verified_other_account` can see only tickets created with that exact `requester_account_session_id`. It cannot see the registered owner's historical tickets.
+- `registration_pending` can see tickets created with that exact `requester_account_session_id`, plus pending-status tickets for the same pending person when a person id exists.
+- Staff/admin/support visibility remains controlled by staff routes and is not restricted by requester account sessions.
+
+Agent requester actions requiring a valid account session include ticket create, preview, list, detail, snapshot, message, read cursor, upload, artifact download, close/resolution actions and requester-side attachments.
+
+## Artifact and websocket boundaries
+
+- Ticket-bound artifact download by an agent requires a valid account session and `can_view_ticket` access for the ticket.
+- Staff UI downloads use staff authorization; public ticket-token downloads must match the token ticket scope.
+- The websocket handshake must not expose open ticket ids or ticket details before account login. It may expose a diagnostic count only.
+
+## Other-account warning
+
+Tickets created from `verified_other_account` store:
+
+- `requester_account_session_id`
+- `requester_account_mode=verified_other_account`
+- `requester_account_warning=ticket_created_from_other_account_on_registered_device`
+- `custom_fields.requester_account_context` with declared account, phone, reason, verification method/status, and active registered owner/binding context.
+
+The support ticket detail UI must show a visible warning: "Обращение создано с другого аккаунта на зарегистрированном устройстве."
+
+## Lifecycle and TTL
+
+Current implementation:
+
+- `confirmed_binding` sessions live until logout, admin revoke, binding revoke, or `expires_at` if set.
+- `verified_other_account` sessions live until logout, admin revoke, base binding revoke, or `expires_at` if set.
+- `registration_pending` sessions are invalidated by terminal claim state.
+
+Recommended follow-up TTLs:
+
+- `confirmed_binding`: 24 hours to 7 days, policy-dependent.
+- `verified_other_account`: 4 to 24 hours.
+- `registration_pending`: 24 to 72 hours.
+
+Follow-up: add a cleanup job for expired/revoked sessions and old account events.
+
+## Live smoke checklist
+
+### Confirmed owner
+
+1. Device has active primary/responsible/shared binding.
+2. Agent starts and shows account gate.
+3. Login as registered owner.
+4. Create ticket A.
+5. List shows A, detail opens A, message/read/upload work.
+6. Logout.
+7. List/create/detail actions are blocked until a new account session is selected.
+
+### Verified other account
+
+1. Owner has ticket A.
+2. Agent requests other-account login with login, phone and reason.
+3. Admin approves request.
+4. Agent polls request and receives session token once.
+5. Login as verified other account.
+6. Create ticket B.
+7. Other account sees B and cannot see/open A.
+8. Support UI shows the other-account warning on B with declared account, reason, phone, verification and registered owner.
+
+### Registration pending
+
+1. Device has no active binding.
+2. Submit registration form.
+3. Server creates a `registration_pending` account session.
+4. Create ticket C with pending session.
+5. Ticket C has `requester_account_mode=registration_pending`.
+6. Approve/reject the claim and verify the pending session invalidates or the agent switches to confirmed login.
+
+### Revoke
+
+1. Login with a valid account session.
+2. Admin revokes the account session or binding.
+3. Agent refresh detects invalid session and returns to account gate.
+4. Ticket actions are blocked.
+
+### Artifact
+
+1. Upload attachment to own ticket.
+2. Download works with valid account session.
+3. Wrong other-account session cannot download.
+4. No session cannot download.
+
+### Websocket/handshake
+
+1. Start agent without account login.
+2. Confirm no ticket ids/details are visible before account gate login.
+3. After login, ticket list loads through HTTP with account session.

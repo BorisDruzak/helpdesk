@@ -531,6 +531,19 @@ export type AdminDeviceAccountSession = {
   revoked_by: string | null;
 };
 
+export type AdminDeviceAccountEvent = {
+  event_id: string;
+  device_id: string;
+  session_id: string | null;
+  request_id: string | null;
+  ticket_id: string | null;
+  event_type: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  event_at: string | null;
+  payload: Record<string, unknown>;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -649,6 +662,14 @@ export async function fetchAdminDeviceAccountSessions(deviceId: string): Promise
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить сессии аккаунтов устройства");
+}
+
+export async function fetchAdminDeviceAccountEvents(deviceId: string, limit = 50): Promise<{ items: AdminDeviceAccountEvent[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/account-events?${params}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить историю аккаунт-сессий устройства");
 }
 
 export async function revokeAdminDeviceAccountSession(sessionId: string, reason: string): Promise<void> {

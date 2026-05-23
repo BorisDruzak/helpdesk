@@ -733,6 +733,8 @@ export function mapWorkspaceContext(
       accountWarning,
       accountDeclaredName: accountDeclaredName ?? null,
       accountLogin: typeof declaredAccount.login === "string" ? declaredAccount.login : null,
+      accountEmail: typeof declaredAccount.email === "string" ? declaredAccount.email : null,
+      accountPhone: typeof declaredAccount.phone === "string" ? declaredAccount.phone : null,
       accountReason: typeof declaredAccount.reason === "string" ? declaredAccount.reason : (
         typeof accountContext.reason === "string" ? accountContext.reason : null
       ),

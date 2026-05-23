@@ -434,6 +434,29 @@ class AccountSessionService:
     async def list_sessions_for_device_admin(self, device_id: str) -> list[dict[str, Any]]:
         return await self.list_device_sessions(device_id)
 
+    @staticmethod
+    def serialize_event(row: Any) -> dict[str, Any]:
+        return {
+            "event_id": row.event_id,
+            "device_id": row.device_id,
+            "session_id": row.session_id,
+            "request_id": row.request_id,
+            "ticket_id": row.ticket_id,
+            "event_type": row.event_type,
+            "actor_id": row.actor_id,
+            "actor_role": row.actor_role,
+            "event_at": _iso(row.event_at),
+            "payload": row.payload or {},
+        }
+
+    async def list_events_for_device_admin(self, device_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        rows = await self.repo.list_events(device_id=device_id, limit=limit)
+        return [self.serialize_event(row) for row in rows]
+
+    async def list_events_for_session_admin(self, session_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        rows = await self.repo.list_events(session_id=session_id, limit=limit)
+        return [self.serialize_event(row) for row in rows]
+
     async def list_pending_login_requests_for_device(self, device_id: str) -> list[dict[str, Any]]:
         rows = await self.repo.list_login_requests(device_id=device_id, status="pending_verification")
         return [self.serialize_login_request(row) for row in rows]

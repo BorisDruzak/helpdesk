@@ -1124,6 +1124,14 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
         return _validation_error({"priority": str(exc)})
 
     async with get_session() as session:
+        if auth_context.actor_role == "agent":
+            validation = await TicketAccountAccessService(session).validate_agent_account_session(
+                device_id=auth_context.actor_id,
+                requester_account=data.get("requester_account") if isinstance(data.get("requester_account"), dict) else None,
+                require=True,
+            )
+            if not validation.get("valid"):
+                return _account_session_error(validation)
         try:
             if service_code or offering_code or offering_full_code or request_template_key:
                 catalog_selection = await ServiceCatalogRuntimeResolver(session).resolve_selection(

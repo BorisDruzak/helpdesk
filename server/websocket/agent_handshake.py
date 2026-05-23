@@ -786,8 +786,10 @@ async def handle_handshake(
         except Exception as exc:
             logger.warning(f"[handshake] reconcile after modules_inventory failed: {exc}")
     
-    # Phase D: Get open tickets for handshake sync
-    open_tickets = []
+    # Phase D: Count open tickets for technical diagnostics only. Do not send
+    # ticket ids/details in handshake; requester-visible ticket access is
+    # account-session gated over HTTP after the GUI account gate.
+    open_tickets_count = 0
     if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             async with get_session() as session:
@@ -801,8 +803,9 @@ async def handle_handshake(
                 else:
                     ticket_repo = _TicketEventsRepo(session)
                     open_tickets = await ticket_repo.get_open_tickets_for_device(device_id)
+                    open_tickets_count = len(open_tickets)
                     logger.info(
-                        f"[handshake] Found {len(open_tickets)} open tickets "
+                        f"[handshake] Found {open_tickets_count} open tickets "
                         f"for device_id={device_id}"
                     )
         except Exception as e:
@@ -825,7 +828,7 @@ async def handle_handshake(
             "status": "success",
             "message": "Handshake accepted",
             "server_version": "3.0.0",  # Phase E: версия сервера
-            "open_tickets": open_tickets,  # Phase D: Send open tickets
+            "open_tickets_count": open_tickets_count,
             "desired_revision": desired_revision,  # Device config revision
             "server_capabilities": SERVER_CAPABILITIES,  # Из config.py
             "registration": registration_payload,
@@ -837,10 +840,9 @@ async def handle_handshake(
     }
     await ws.send_json(handshake_ack)
     logger.debug(f"📤 Отправлен handshake_ack агенту {device_id}")
-    if open_tickets:
+    if open_tickets_count:
         logger.debug(
-            f"📤 Отправлено {len(open_tickets)} открытых тикетов "
-            f"РІ handshake_ack"
+            f"📤 Отправлен счётчик открытых тикетов в handshake_ack: {open_tickets_count}"
         )
     
     # Enqueue list_tools if needed (с debounce: не ставим, если уже есть pending list_tools)

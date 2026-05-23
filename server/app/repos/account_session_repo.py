@@ -135,3 +135,20 @@ class AccountSessionRepo:
         self.session.add(row)
         await self.session.flush()
         return row
+
+    async def list_events(
+        self,
+        *,
+        device_id: str | None = None,
+        session_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DeviceAccountEvent]:
+        stmt = select(DeviceAccountEvent)
+        if device_id:
+            stmt = stmt.where(DeviceAccountEvent.device_id == str(device_id))
+        if session_id:
+            stmt = stmt.where(DeviceAccountEvent.session_id == str(session_id))
+        result = await self.session.execute(
+            stmt.order_by(desc(DeviceAccountEvent.event_at)).limit(max(1, min(int(limit or 100), 500)))
+        )
+        return list(result.scalars().all())

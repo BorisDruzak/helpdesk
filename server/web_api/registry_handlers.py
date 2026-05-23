@@ -321,6 +321,39 @@ async def handle_web_admin_registry_device_account_sessions(request: web.Request
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_device_account_events(request: web.Request) -> web.Response:
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    try:
+        device_id = _validate_uuid_device_id(device_id) or ""
+        limit = int(request.query.get("limit") or "100")
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    except ValueError:
+        limit = 100
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        items = await AccountSessionService(session).list_events_for_device_admin(device_id, limit=limit)
+    return _success({"device_id": device_id, "items": items})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_account_session_timeline(request: web.Request) -> web.Response:
+    session_id = str(request.match_info.get("session_id") or "").strip()
+    try:
+        limit = int(request.query.get("limit") or "100")
+    except ValueError:
+        limit = 100
+    async with get_session() as session:
+        service = AccountSessionService(session)
+        row = await service.repo.get_session(session_id)
+        if row is None:
+            return web.json_response({"status": "error", "error": "session not found", "error_code": "NOT_FOUND"}, status=404)
+        items = await service.list_events_for_session_admin(session_id, limit=limit)
+    return _success({"session_id": session_id, "items": items})
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_account_session_revoke(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     session_id = str(request.match_info.get("session_id") or "").strip()

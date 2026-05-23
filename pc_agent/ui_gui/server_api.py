@@ -926,6 +926,7 @@ class TicketApiClient:
         service_code: Optional[str] = None,
         offering_code: Optional[str] = None,
         offering_full_code: Optional[str] = None,
+        account_session: Optional[dict] = None,
     ) -> dict:
         """Возвращает серверный предпросмотр маршрута, приоритета и сроков перед созданием обращения."""
         url = f"{self.base_url}/tickets/create/preview"
@@ -948,6 +949,9 @@ class TicketApiClient:
             payload["offering_code"] = offering_code
         if offering_full_code is not None:
             payload["offering_full_code"] = offering_full_code
+        account_payload = self._account_session_payload(account_session)
+        if account_payload:
+            payload["requester_account"] = account_payload
 
         session = await self._get_session()
         headers = self._get_headers()
