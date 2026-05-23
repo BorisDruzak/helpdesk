@@ -68,10 +68,11 @@ def account_gate_view_state(
     warning = None
     if isinstance(local_session, dict) and local_session.get("account_mode") == "other_account":
         warning = "other_account"
+    has_known_account_state = bool(account_state) and isinstance(account_state.get("registration"), dict)
     can_register = bool(account_state.get("can_register"))
-    if confirmed is None and mode in {"unregistered", "pending"}:
+    if has_known_account_state and confirmed is None and mode in {"unregistered", "pending"}:
         can_register = True
-    can_login_other = bool(account_state.get("can_login_other_account")) or confirmed is None
+    can_login_other = bool(account_state.get("can_login_other_account")) or (has_known_account_state and confirmed is None)
     return {
         "mode": mode,
         "title": {
