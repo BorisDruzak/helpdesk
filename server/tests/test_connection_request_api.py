@@ -192,8 +192,9 @@ async def test_connection_request_status_generates_token_on_valid_poll(monkeypat
                 approved_token_delivered_at=None,
             )
 
-        async def mark_approval_delivered(self, *, request_id):
+        async def mark_approval_delivered(self, *, request_id, device_id):
             calls["delivered_request_id"] = request_id
+            calls["delivered_device_id"] = device_id
             return True
 
     class FakeDevicesRepo:
@@ -227,10 +228,27 @@ async def test_connection_request_status_generates_token_on_valid_poll(monkeypat
     assert token == "generated-agent-token"
     assert calls["ensured_device_id"] == device_id
     assert calls["delivered_request_id"] == request_id
+    assert calls["delivered_device_id"] == device_id
     token_kwargs = calls["token_kwargs"]
     assert token_kwargs["device_id"] == device_id
     assert token_kwargs["token"] == "generated-agent-token"
     assert token_kwargs["commit"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_deprecated_raw_approval_token_methods_are_noop():
+    class NoDbSession:
+        async def execute(self, *_args, **_kwargs):
+            raise AssertionError("deprecated raw-token methods must not query DB")
+
+        async def flush(self):
+            raise AssertionError("deprecated raw-token methods must not mutate DB")
+
+    repo = ConnectionRequestsRepo(NoDbSession())
+
+    assert await repo.set_approval_token("device-id", "raw-token") is False
+    assert await repo.consume_approval_token("device-id") is None
 
 
 @pytest.mark.no_db

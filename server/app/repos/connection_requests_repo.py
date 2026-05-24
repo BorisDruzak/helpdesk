@@ -158,37 +158,17 @@ class ConnectionRequestsRepo:
 
     async def set_approval_token(self, device_id: str, token: str) -> bool:
         """
-        Deprecated: raw approval tokens must not be stored in DB.
-        Returns True when an approved request exists.
+        Deprecated no-op: raw approval tokens must never be stored in DB.
         """
-        row = await self.session.execute(
-            select(ConnectionRequest.id)
-            .where(
-                ConnectionRequest.device_id == device_id,
-                ConnectionRequest.status == "approved",
-            )
-            .order_by(ConnectionRequest.created_at.desc())
-            .limit(1)
-        )
-        request_id = row.scalar_one_or_none()
-        if request_id is None:
-            return False
-        result = await self.session.execute(
-            update(ConnectionRequest)
-            .where(ConnectionRequest.id == request_id)
-            .values(
-                approved_token=None,
-                approved_token_delivered_at=None,
-            )
-        )
-        await self.session.flush()
-        return result.rowcount > 0
+        return False
 
-    async def mark_approval_delivered(self, *, request_id: str) -> bool:
+    async def mark_approval_delivered(self, *, request_id: str, device_id: str) -> bool:
         result = await self.session.execute(
             update(ConnectionRequest)
             .where(
                 ConnectionRequest.request_id == request_id,
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "approved",
                 ConnectionRequest.approved_token_delivered_at.is_(None),
             )
             .values(approved_token_delivered_at=datetime.now(timezone.utc), approved_token=None)
@@ -198,35 +178,9 @@ class ConnectionRequestsRepo:
 
     async def consume_approval_token(self, device_id: str) -> Optional[str]:
         """
-        Returns token once and atomically marks it as delivered.
+        Deprecated no-op: raw approved tokens must never be read from DB.
         """
-        row = await self.session.execute(
-            select(ConnectionRequest)
-            .where(
-                ConnectionRequest.device_id == device_id,
-                ConnectionRequest.status == "approved",
-                ConnectionRequest.approved_token.isnot(None),
-                ConnectionRequest.approved_token_delivered_at.is_(None),
-            )
-            .order_by(ConnectionRequest.created_at.desc())
-            .limit(1)
-        )
-        req = row.scalar_one_or_none()
-        if not req:
-            return None
-        token = req.approved_token
-        await self.session.execute(
-            update(ConnectionRequest)
-            .where(
-                ConnectionRequest.device_id == device_id,
-                ConnectionRequest.status == "approved",
-                ConnectionRequest.approved_token.isnot(None),
-                ConnectionRequest.approved_token_delivered_at.is_(None),
-            )
-            .values(approved_token_delivered_at=datetime.now(timezone.utc))
-        )
-        await self.session.flush()
-        return token
+        return None
 
     async def set_rejected(self, device_id: str) -> None:
         now = datetime.now(timezone.utc)

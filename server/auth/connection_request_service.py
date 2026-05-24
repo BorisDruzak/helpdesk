@@ -83,7 +83,7 @@ class ConnectionRequestService:
             if existing_device and existing_device.deleted_at is not None:
                 raise ArchivedDeviceError("Device is archived and must be restored before reprovision.")
             await devices_repo.ensure_device_exists(device_id)
-            claimed = await repo.mark_approval_delivered(request_id=request_id)
+            claimed = await repo.mark_approval_delivered(request_id=request_id, device_id=device_id)
             if not claimed:
                 return None
 
