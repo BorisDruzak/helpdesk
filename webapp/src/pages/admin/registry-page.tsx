@@ -15,7 +15,6 @@ import {
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
   bindAdminRegistryDevicePerson,
-  bulkRevokeAdminRegistryAccountSessions,
   createAdminRegistryDepartment,
   createAdminRegistryLocation,
   createAdminRegistryPerson,
@@ -25,6 +24,10 @@ import {
   mergeAdminRegistryDepartments,
   mergeAdminRegistryLocations,
   mergeAdminRegistryPeople,
+  previewAdminRegistryDepartmentsMerge,
+  previewAdminRegistryDeviceOwnerTransfer,
+  previewAdminRegistryLocationsMerge,
+  previewAdminRegistryPeopleMerge,
   rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
   revokeAdminDeviceAccountSession,
@@ -334,6 +337,7 @@ export function AdminRegistryPage() {
             <RegistryLocationsTab
               locations={visibleRegistry.locations}
               onArchive={(location) => runWithReason("Причина архивации локации", "Локация больше не используется", (reason) => archiveAdminRegistryLocation(location.location_id ?? location.id, reason))}
+              onMergePreview={(masterId, duplicateId) => previewAdminRegistryLocationsMerge({ master_location_id: masterId, duplicate_location_id: duplicateId })}
               onMerge={(masterId, duplicateId, reason) => mutation.mutate(() => mergeAdminRegistryLocations({ master_location_id: masterId, duplicate_location_id: duplicateId, reason }))}
               onSave={(payload) => mutation.mutate(() => (
                 payload.locationId
@@ -346,6 +350,7 @@ export function AdminRegistryPage() {
             <RegistryDepartmentsTab
               departments={visibleRegistry.departments}
               onArchive={(department) => runWithReason("Причина архивации подразделения", "Подразделение больше не используется", (reason) => archiveAdminRegistryDepartment(department.department_id ?? department.id, reason))}
+              onMergePreview={(masterId, duplicateId) => previewAdminRegistryDepartmentsMerge({ master_department_id: masterId, duplicate_department_id: duplicateId })}
               onMerge={(masterId, duplicateId, reason) => mutation.mutate(() => mergeAdminRegistryDepartments({ master_department_id: masterId, duplicate_department_id: duplicateId, reason }))}
               onSave={(payload) => mutation.mutate(() => (
                 payload.departmentId
@@ -364,6 +369,7 @@ export function AdminRegistryPage() {
         initialDuplicateId={mergePersonId}
         open={Boolean(mergePersonId)}
         onClose={() => setMergePersonId(null)}
+        onPreview={(payload) => previewAdminRegistryPeopleMerge(payload)}
         onSubmit={(payload) => mutation.mutate(() => mergeAdminRegistryPeople(payload))}
       />
       <RegistryBindPersonDialog
@@ -386,6 +392,7 @@ export function AdminRegistryPage() {
         people={registry?.people ?? []}
         state={transferDialog}
         onClose={() => setTransferDialog(null)}
+        onPreview={(payload) => previewAdminRegistryDeviceOwnerTransfer(payload)}
         onSubmit={(payload) => mutation.mutate(() => transferAdminRegistryDeviceOwner(payload))}
       />
       <RegistryIdentityDialog

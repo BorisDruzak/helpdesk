@@ -6,16 +6,18 @@ from typing import Any
 import re
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
+    DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceInventoryBindingHistory,
     DeviceRegistrationEvent,
     RegistryAsset,
     RegistryPerson,
+    Ticket,
 )
 from app.repos.registration_repo import RegistrationRepo, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
@@ -502,6 +504,157 @@ class RegistrationService:
                 await self.session.get(DeviceInventoryBinding, device.device_id)
             ),
             "events": {"revoked_sessions": revoked_sessions},
+        }
+
+    async def preview_transfer_owner(
+        self,
+        *,
+        device_id: str,
+        new_person_id: str,
+        old_binding_action: str = "transferred",
+    ) -> dict[str, Any]:
+        if old_binding_action not in {"transferred", "revoked", "keep_as_shared"}:
+            raise RegistrationValidationError("invalid old_binding_action")
+        device = await self._require_device(device_id)
+        person = await self.registry_repo.get_person(new_person_id)
+        if person is None:
+            raise RegistrationValidationError("person not found")
+        asset = await self.registry_repo.get_asset_by_device_id(device.device_id)
+        active_primary = await self.repo.get_active_primary_binding(device.device_id)
+        inventory = await self.session.get(DeviceInventoryBinding, device.device_id)
+
+        changes: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        sessions_to_revoke: list[Any] = []
+        tickets_preserved = 0
+
+        if active_primary and active_primary.person_id == person.person_id:
+            warnings.append("new_person_already_active_primary")
+        elif active_primary:
+            after_status = "active" if old_binding_action == "keep_as_shared" else old_binding_action
+            after_relationship = "shared_user" if old_binding_action == "keep_as_shared" else active_primary.relationship_type
+            changes.append(
+                {
+                    "kind": "binding",
+                    "action": "update",
+                    "object_id": active_primary.binding_id,
+                    "before": {
+                        "person_id": active_primary.person_id,
+                        "relationship_type": active_primary.relationship_type,
+                        "status": active_primary.status,
+                    },
+                    "after": {
+                        "person_id": active_primary.person_id,
+                        "relationship_type": after_relationship,
+                        "status": after_status,
+                        "valid_to": None if old_binding_action == "keep_as_shared" else "now",
+                    },
+                    "severity": "destructive" if old_binding_action != "keep_as_shared" else "warning",
+                }
+            )
+            session_rows = (
+                await self.session.execute(
+                    select(DeviceAccountSession).where(
+                        or_(
+                            DeviceAccountSession.binding_id == active_primary.binding_id,
+                            DeviceAccountSession.base_binding_id == active_primary.binding_id,
+                        ),
+                        DeviceAccountSession.verification_status == "verified",
+                    )
+                )
+            ).scalars().all()
+            sessions_to_revoke = list({row.session_id: row for row in session_rows}.values())
+            for row in sessions_to_revoke:
+                changes.append(
+                    {
+                        "kind": "account_session",
+                        "action": "revoke",
+                        "object_id": row.session_id,
+                        "before": {"verification_status": row.verification_status, "person_id": row.person_id},
+                        "after": {"verification_status": "revoked", "revoked_at": "now"},
+                        "severity": "destructive",
+                    }
+                )
+            ticket_filters = [
+                Ticket.requester_person_id == active_primary.person_id,
+                Ticket.requester_binding_id == active_primary.binding_id,
+            ]
+            if sessions_to_revoke:
+                ticket_filters.append(Ticket.requester_account_session_id.in_([row.session_id for row in sessions_to_revoke]))
+            tickets_preserved = (
+                await self.session.execute(select(Ticket).where(or_(*ticket_filters)))
+            ).scalars().unique().all()
+            tickets_preserved = len(tickets_preserved)
+
+        if not (active_primary and active_primary.person_id == person.person_id):
+            changes.append(
+                {
+                    "kind": "binding",
+                    "action": "create",
+                    "object_id": None,
+                    "before": None,
+                    "after": {
+                        "device_id": device.device_id,
+                        "person_id": person.person_id,
+                        "relationship_type": "primary_user",
+                        "status": "active",
+                        "source": "admin_manual",
+                    },
+                    "severity": "info",
+                }
+            )
+            changes.append(
+                {
+                    "kind": "registry_asset",
+                    "action": "update" if asset else "create",
+                    "object_id": asset.asset_id if asset else None,
+                    "before": {"assigned_person_id": asset.assigned_person_id if asset else None},
+                    "after": {"assigned_person_id": person.person_id},
+                    "severity": "warning",
+                }
+            )
+            changes.append(
+                {
+                    "kind": "inventory_binding",
+                    "action": "update" if inventory else "create",
+                    "object_id": device.device_id,
+                    "before": {
+                        "person_id": inventory.person_id if inventory else None,
+                        "source_binding_id": inventory.source_binding_id if inventory else None,
+                        "registration_status": inventory.registration_status if inventory else None,
+                    },
+                    "after": {
+                        "person_id": person.person_id,
+                        "source_binding_id": "new_binding",
+                        "registration_status": "admin_confirmed",
+                    },
+                    "severity": "warning",
+                }
+            )
+
+        return {
+            "operation": "transfer_owner",
+            "dry_run": True,
+            "requires_confirmation": True,
+            "device_id": device.device_id,
+            "new_person_id": person.person_id,
+            "old_binding_id": active_primary.binding_id if active_primary else None,
+            "old_person_id": active_primary.person_id if active_primary else None,
+            "old_binding_action": old_binding_action,
+            "counts": {
+                "bindings_to_update": 1 if active_primary and active_primary.person_id != person.person_id else 0,
+                "bindings_to_create": 0 if active_primary and active_primary.person_id == person.person_id else 1,
+                "sessions_to_revoke": len(sessions_to_revoke),
+                "tickets_preserved": tickets_preserved,
+            },
+            "ticket_policy": {
+                "requester_person_id": "preserve_existing_requester",
+                "requester_binding_id": "preserve_existing_binding_reference",
+                "requester_account_session_id": "preserve_existing_session_reference",
+            },
+            "changes": changes,
+            "warnings": warnings,
+            "blockers": [],
         }
 
     async def add_shared_user(

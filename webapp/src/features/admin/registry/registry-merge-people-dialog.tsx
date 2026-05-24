@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import type { AdminRegistryPayload } from "../api";
+import type { AdminRegistryOperationPreview, AdminRegistryPayload } from "../api";
+import { RegistryOperationPreview } from "./registry-operation-preview";
 
 type Person = AdminRegistryPayload["people"][number];
 
@@ -12,6 +13,11 @@ type Props = {
   initialDuplicateId?: string | null;
   open: boolean;
   onClose: () => void;
+  onPreview: (payload: {
+    master_person_id: string;
+    duplicate_person_id: string;
+    field_strategy: Record<string, "master" | "duplicate">;
+  }) => Promise<AdminRegistryOperationPreview>;
   onSubmit: (payload: {
     master_person_id: string;
     duplicate_person_id: string;
@@ -22,11 +28,23 @@ type Props = {
 
 const fields = ["full_name", "display_name", "email", "phone", "department_id", "location_id"] as const;
 
-export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onSubmit, open, people }: Props) {
+export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onPreview, onSubmit, open, people }: Props) {
   const [masterId, setMasterId] = useState("");
   const [duplicateId, setDuplicateId] = useState(initialDuplicateId ?? "");
   const [reason, setReason] = useState("");
   const [strategy, setStrategy] = useState<Record<string, "master" | "duplicate">>({});
+  const [preview, setPreview] = useState<AdminRegistryOperationPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setMasterId("");
+    setDuplicateId(initialDuplicateId ?? "");
+    setReason("");
+    setStrategy({});
+    setPreview(null);
+    setPreviewError(null);
+  }, [initialDuplicateId, open]);
   if (!open) return null;
   const master = people.find((item) => item.person_id === masterId);
   const duplicate = people.find((item) => item.person_id === duplicateId);
@@ -36,11 +54,11 @@ export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onSubmi
         <CardHeader><CardTitle>Слияние пользователей</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => setMasterId(event.target.value)}>
+            <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => { setMasterId(event.target.value); setPreview(null); }}>
               <option value="">Master user</option>
               {people.map((person) => <option key={person.person_id} value={person.person_id}>{person.display_name}</option>)}
             </select>
-            <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => setDuplicateId(event.target.value)}>
+            <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => { setDuplicateId(event.target.value); setPreview(null); }}>
               <option value="">Duplicate user</option>
               {people.map((person) => <option key={person.person_id} value={person.person_id}>{person.display_name}</option>)}
             </select>
@@ -55,7 +73,7 @@ export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onSubmi
                   <span>{field}</span>
                   <span>{String(master[field] ?? "Нет")}</span>
                   <span>{String(duplicate[field] ?? "Нет")}</span>
-                  <select className="field-base h-9 px-2 text-sm" value={strategy[field] ?? "master"} onChange={(event) => setStrategy({ ...strategy, [field]: event.target.value as "master" | "duplicate" })}>
+                  <select className="field-base h-9 px-2 text-sm" value={strategy[field] ?? "master"} onChange={(event) => { setStrategy({ ...strategy, [field]: event.target.value as "master" | "duplicate" }); setPreview(null); }}>
                     <option value="master">master</option>
                     <option value="duplicate">duplicate</option>
                   </select>
@@ -64,10 +82,29 @@ export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onSubmi
             </div>
           ) : null}
           <Input placeholder="Причина слияния" value={reason} onChange={(event) => setReason(event.target.value)} />
+          {previewError ? <p className="text-sm text-rose-600">{previewError}</p> : null}
+          <RegistryOperationPreview preview={preview} />
           <div className="flex justify-end gap-2">
             <Button onClick={onClose} variant="ghost">Отмена</Button>
             <Button
-              disabled={!masterId || !duplicateId || masterId === duplicateId || !reason.trim()}
+              disabled={!masterId || !duplicateId || masterId === duplicateId || previewBusy}
+              onClick={async () => {
+                setPreviewBusy(true);
+                setPreviewError(null);
+                try {
+                  setPreview(await onPreview({ master_person_id: masterId, duplicate_person_id: duplicateId, field_strategy: strategy }));
+                } catch (error) {
+                  setPreviewError(error instanceof Error ? error.message : "Не удалось построить предпросмотр");
+                } finally {
+                  setPreviewBusy(false);
+                }
+              }}
+              variant="outline"
+            >
+              {previewBusy ? "Строим..." : "Предпросмотр"}
+            </Button>
+            <Button
+              disabled={!masterId || !duplicateId || masterId === duplicateId || !reason.trim() || !preview}
               onClick={() => onSubmit({ master_person_id: masterId, duplicate_person_id: duplicateId, field_strategy: strategy, reason })}
             >
               Слить

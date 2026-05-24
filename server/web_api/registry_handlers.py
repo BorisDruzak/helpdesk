@@ -654,6 +654,24 @@ async def handle_web_admin_registry_device_bind_person(request: web.Request) -> 
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_device_transfer_owner_preview(request: web.Request) -> web.Response:
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistrationService(session).preview_transfer_owner(
+                device_id=device_id,
+                new_person_id=str(data.get("new_person_id") or "").strip(),
+                old_binding_action=str(data.get("old_binding_action") or "transferred").strip(),
+            )
+    except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
+        status = 409 if isinstance(exc, RegistrationConflictError) else 400
+        code = "REGISTRATION_CONFLICT" if status == 409 else "VALIDATION_ERROR"
+        return web.json_response({"status": "error", "error": str(exc), "error_code": code}, status=status)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_device_transfer_owner(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     device_id = str(request.match_info.get("device_id") or "").strip()
@@ -938,6 +956,18 @@ async def handle_web_admin_registry_location_archive(request: web.Request) -> we
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_locations_merge_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_merge_locations(data, actor_id=auth_context.actor_id)
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_locations_merge(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json() if request.can_read_body else {}
@@ -996,6 +1026,18 @@ async def handle_web_admin_registry_department_archive(request: web.Request) -> 
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_departments_merge_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_merge_departments(data, actor_id=auth_context.actor_id)
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_departments_merge(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json() if request.can_read_body else {}
@@ -1026,6 +1068,18 @@ async def handle_web_admin_registry_policies(request: web.Request) -> web.Respon
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_people_merge_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_merge_people(data, actor_id=auth_context.actor_id)
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_people_merge(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json() if request.can_read_body else {}
@@ -1033,6 +1087,18 @@ async def handle_web_admin_registry_people_merge(request: web.Request) -> web.Re
         async with get_session() as session:
             payload = await RegistryAdminOperationsService(session).merge_people(data, actor_id=auth_context.actor_id)
             await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_bulk(data, actor_id=auth_context.actor_id)
     except (LookupError, ValueError) as exc:
         return _registry_admin_error(exc)
     return _success(payload)

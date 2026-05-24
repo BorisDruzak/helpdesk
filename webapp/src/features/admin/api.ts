@@ -552,6 +552,26 @@ export type AdminDeviceUserBinding = {
   active_sessions_count?: number;
 };
 
+export type AdminRegistryOperationPreview = {
+  operation: string;
+  dry_run: boolean;
+  requires_confirmation?: boolean;
+  counts?: Record<string, number>;
+  results?: Array<Record<string, unknown>>;
+  changes: Array<{
+    kind: string;
+    action: string;
+    object_id?: string | null;
+    before?: unknown;
+    after?: unknown;
+    severity?: "danger" | "destructive" | "info" | "neutral" | "success" | "warning" | string;
+  }>;
+  warnings?: string[];
+  blockers?: string[];
+  ticket_policy?: Record<string, string>;
+  [key: string]: unknown;
+};
+
 export type AdminRegistrationTimelineItem = {
   event_id: string;
   claim_id: string | null;
@@ -785,6 +805,23 @@ export async function transferAdminRegistryDeviceOwner(payload: {
     }),
   });
   await readSuccessResponse(response, "Не удалось передать устройство другому пользователю");
+}
+
+export async function previewAdminRegistryDeviceOwnerTransfer(payload: {
+  device_id: string;
+  new_person_id: string;
+  old_binding_action: "transferred" | "revoked" | "keep_as_shared";
+}): Promise<AdminRegistryOperationPreview> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(payload.device_id)}/transfer-owner/preview`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      new_person_id: payload.new_person_id,
+      old_binding_action: payload.old_binding_action,
+    }),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр передачи устройства");
 }
 
 export async function addAdminRegistrySharedUser(payload: {
@@ -1036,6 +1073,19 @@ export async function mergeAdminRegistryLocations(payload: {
   await readSuccessResponse(response, "Не удалось объединить локации");
 }
 
+export async function previewAdminRegistryLocationsMerge(payload: {
+  master_location_id: string;
+  duplicate_location_id: string;
+}): Promise<AdminRegistryOperationPreview> {
+  const response = await fetch("/api/web/admin/registry/locations/merge/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр слияния локаций");
+}
+
 export async function createAdminRegistryDepartment(payload: {
   code?: string | null;
   name: string;
@@ -1098,6 +1148,19 @@ export async function mergeAdminRegistryDepartments(payload: {
   await readSuccessResponse(response, "Не удалось объединить подразделения");
 }
 
+export async function previewAdminRegistryDepartmentsMerge(payload: {
+  master_department_id: string;
+  duplicate_department_id: string;
+}): Promise<AdminRegistryOperationPreview> {
+  const response = await fetch("/api/web/admin/registry/departments/merge/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр слияния подразделений");
+}
+
 export async function fetchAdminRegistryPolicies(): Promise<AdminRegistryPolicyPayload> {
   const response = await fetch("/api/web/admin/registry/policies", { credentials: "same-origin" });
   return readSuccessResponse(response, "Не удалось загрузить политики реестра");
@@ -1129,6 +1192,34 @@ export async function mergeAdminRegistryPeople(payload: {
     body: JSON.stringify(payload),
   });
   await readSuccessResponse(response, "Не удалось объединить пользователей");
+}
+
+export async function previewAdminRegistryPeopleMerge(payload: {
+  master_person_id: string;
+  duplicate_person_id: string;
+  field_strategy?: Record<string, "master" | "duplicate">;
+}): Promise<AdminRegistryOperationPreview> {
+  const response = await fetch("/api/web/admin/registry/people/merge/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр слияния пользователей");
+}
+
+export async function previewAdminRegistryBulk(payload: {
+  operation: "devices.assign_location" | "devices.assign_department" | "devices.revoke_account_sessions" | "people.assign_department" | "account_sessions.revoke";
+  ids: string[];
+  payload?: Record<string, unknown>;
+}): Promise<AdminRegistryOperationPreview> {
+  const response = await fetch("/api/web/admin/registry/bulk/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр массовой операции");
 }
 
 export async function bulkAssignAdminRegistryDeviceLocation(payload: {

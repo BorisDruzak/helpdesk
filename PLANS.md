@@ -36,7 +36,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: Registry Management Center P1/P2
 
-Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants.
+Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants and preview-protected dangerous operations.
 
 Goal:
 
@@ -52,16 +52,18 @@ Scope:
 - More actionable quality remediation and richer timeline/detail drawer data.
 - Operator docs and live smoke checklist for Registry Management Center.
 - Repeatable A-F live workflow smoke for people/identities, bind, shared/responsible, transfer owner, people merge and locations/departments with API actions plus DB invariant checks.
+- Read-only preview/dry-run contracts for dangerous operations before apply: transfer owner, people merge, location merge, department merge and bulk operations.
 
 Non-goals:
 
 - No AD/LDAP integration in this pass beyond safe placeholders/hooks.
 - No raw lifecycle mutation for binding revoke/transfer/session invalidation; existing `RegistrationService` and `AccountSessionService` remain authoritative.
 - No changes to machine-token or account-session architecture.
+- No registry import apply endpoint in this pass; future import apply must add preview before enabling mutation.
 
 Verification target:
 
-- Focused Registry DB/API tests for locations, departments, policies, merge, bulk actions, import/export where implemented, plus existing P0 registry/account-session/ticket access tests.
+- Focused Registry DB/API tests for previews, locations, departments, policies, merge, bulk actions, import/export where implemented, plus existing P0 registry/account-session/ticket access tests.
 - `pnpm --dir webapp test -- registry`, `pnpm --dir webapp run build`, agent account-session smoke tests, `python -m compileall -q server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
 - Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release, `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`, and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
 

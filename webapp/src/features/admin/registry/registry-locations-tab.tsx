@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import type { AdminRegistryPayload } from "../api";
+import type { AdminRegistryOperationPreview, AdminRegistryPayload } from "../api";
 import { formatDateTime, statusTone } from "./registry-utils";
 import { Badge } from "../../../components/ui/badge";
+import { RegistryOperationPreview } from "./registry-operation-preview";
 
 type LocationRow = AdminRegistryPayload["locations"][number];
 
@@ -23,10 +24,11 @@ type Props = {
     notes: string;
     reason: string;
   }) => void;
+  onMergePreview: (masterId: string, duplicateId: string) => Promise<AdminRegistryOperationPreview>;
   onMerge: (masterId: string, duplicateId: string, reason: string) => void;
 };
 
-export function RegistryLocationsTab({ locations, onArchive, onMerge, onSave }: Props) {
+export function RegistryLocationsTab({ locations, onArchive, onMerge, onMergePreview, onSave }: Props) {
   const [editing, setEditing] = useState<LocationRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -64,7 +66,7 @@ export function RegistryLocationsTab({ locations, onArchive, onMerge, onSave }: 
         )}
       </div>
       <LocationDialog location={editing} open={creating || Boolean(editing)} onClose={() => { setCreating(false); setEditing(null); }} onSave={onSave} />
-      <LocationMergeDialog locations={locations} open={mergeOpen} onClose={() => setMergeOpen(false)} onMerge={onMerge} />
+      <LocationMergeDialog locations={locations} open={mergeOpen} onClose={() => setMergeOpen(false)} onMerge={onMerge} onPreview={onMergePreview} />
     </div>
   );
 }
@@ -118,33 +120,64 @@ function LocationDialog({ location, onClose, onSave, open }: {
   );
 }
 
-function LocationMergeDialog({ locations, onClose, onMerge, open }: {
+function LocationMergeDialog({ locations, onClose, onMerge, onPreview, open }: {
   locations: LocationRow[];
   open: boolean;
   onClose: () => void;
   onMerge: Props["onMerge"];
+  onPreview: Props["onMergePreview"];
 }) {
   const [masterId, setMasterId] = useState("");
   const [duplicateId, setDuplicateId] = useState("");
   const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<AdminRegistryOperationPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setMasterId("");
+    setDuplicateId("");
+    setReason("");
+    setPreview(null);
+    setPreviewError(null);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader><CardTitle>Объединить локации</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => setMasterId(event.target.value)}>
+          <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => { setMasterId(event.target.value); setPreview(null); }}>
             <option value="">Master</option>
             {locations.map((item) => <option key={item.id} value={item.location_id ?? item.id}>{item.display_name}</option>)}
           </select>
-          <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => setDuplicateId(event.target.value)}>
+          <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => { setDuplicateId(event.target.value); setPreview(null); }}>
             <option value="">Duplicate</option>
             {locations.map((item) => <option key={item.id} value={item.location_id ?? item.id}>{item.display_name}</option>)}
           </select>
           <Input placeholder="Причина" value={reason} onChange={(event) => setReason(event.target.value)} />
+          {previewError ? <p className="text-sm text-rose-600">{previewError}</p> : null}
+          <RegistryOperationPreview preview={preview} />
           <div className="flex justify-end gap-2">
             <Button onClick={onClose} variant="ghost">Отмена</Button>
-            <Button disabled={!masterId || !duplicateId || masterId === duplicateId || !reason.trim()} onClick={() => onMerge(masterId, duplicateId, reason)}>Объединить</Button>
+            <Button
+              disabled={!masterId || !duplicateId || masterId === duplicateId || previewBusy}
+              onClick={async () => {
+                setPreviewBusy(true);
+                setPreviewError(null);
+                try {
+                  setPreview(await onPreview(masterId, duplicateId));
+                } catch (error) {
+                  setPreviewError(error instanceof Error ? error.message : "Не удалось построить предпросмотр");
+                } finally {
+                  setPreviewBusy(false);
+                }
+              }}
+              variant="outline"
+            >
+              {previewBusy ? "Строим..." : "Предпросмотр"}
+            </Button>
+            <Button disabled={!masterId || !duplicateId || masterId === duplicateId || !reason.trim() || !preview} onClick={() => onMerge(masterId, duplicateId, reason)}>Объединить</Button>
           </div>
         </CardContent>
       </Card>

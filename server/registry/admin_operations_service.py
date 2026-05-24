@@ -329,6 +329,86 @@ class RegistryAdminOperationsService:
         await self.session.flush()
         return {"master": self._location_payload(master), "duplicate": self._location_payload(duplicate), "moved": {"people": len(people), "assets": len(assets)}}
 
+    async def preview_merge_locations(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        master_id = str(data.get("master_location_id") or "").strip()
+        duplicate_id = str(data.get("duplicate_location_id") or "").strip()
+        if not master_id or not duplicate_id or master_id == duplicate_id:
+            raise ValueError("master_location_id and duplicate_location_id are required")
+        master = await self.session.get(RegistryLocation, master_id)
+        duplicate = await self.session.get(RegistryLocation, duplicate_id)
+        if master is None or duplicate is None:
+            raise LookupError("location not found")
+        people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.location_id == duplicate_id))).scalars().all()
+        assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.location_id == duplicate_id))).scalars().all()
+        inventory_updates = [
+            row
+            for row in (
+                await self.session.execute(
+                    select(DeviceInventoryBinding).where(
+                        DeviceInventoryBinding.device_id.in_([asset.device_id for asset in assets if asset.device_id])
+                    )
+                )
+            ).scalars().all()
+        ] if assets else []
+        changes = [
+            {
+                "kind": "person",
+                "action": "update",
+                "object_id": row.person_id,
+                "before": {"location_id": duplicate_id},
+                "after": {"location_id": master_id},
+                "severity": "warning",
+            }
+            for row in people
+        ]
+        changes.extend(
+            {
+                "kind": "registry_asset",
+                "action": "update",
+                "object_id": row.asset_id,
+                "before": {"location_id": duplicate_id},
+                "after": {"location_id": master_id},
+                "severity": "warning",
+            }
+            for row in assets
+        )
+        changes.extend(
+            {
+                "kind": "inventory_binding",
+                "action": "update",
+                "object_id": row.device_id,
+                "before": {"building": row.building, "floor": row.floor, "room": row.room},
+                "after": {"building": master.building, "floor": master.floor, "room": master.room},
+                "severity": "warning",
+            }
+            for row in inventory_updates
+        )
+        changes.append(
+            {
+                "kind": "location",
+                "action": "mark_merged",
+                "object_id": duplicate_id,
+                "before": {"status": duplicate.status},
+                "after": {"status": "merged", "merged_into": master_id},
+                "severity": "destructive",
+            }
+        )
+        return {
+            "operation": "location_merge",
+            "dry_run": True,
+            "requires_confirmation": True,
+            "master": self._location_payload(master),
+            "duplicate": self._location_payload(duplicate),
+            "counts": {
+                "people_to_move": len(people),
+                "assets_to_move": len(assets),
+                "inventory_bindings_to_update": len(inventory_updates),
+            },
+            "changes": changes,
+            "warnings": [],
+            "blockers": [],
+        }
+
     async def list_departments(self) -> list[dict[str, Any]]:
         rows = (await self.session.execute(select(RegistryDepartment).order_by(RegistryDepartment.name))).scalars().all()
         users, devices = await self._department_counts()
@@ -448,6 +528,86 @@ class RegistryAdminOperationsService:
         )
         await self.session.flush()
         return {"master": self._department_payload(master), "duplicate": self._department_payload(duplicate), "moved": {"people": len(people), "assets": len(assets)}}
+
+    async def preview_merge_departments(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        master_id = str(data.get("master_department_id") or "").strip()
+        duplicate_id = str(data.get("duplicate_department_id") or "").strip()
+        if not master_id or not duplicate_id or master_id == duplicate_id:
+            raise ValueError("master_department_id and duplicate_department_id are required")
+        master = await self.session.get(RegistryDepartment, master_id)
+        duplicate = await self.session.get(RegistryDepartment, duplicate_id)
+        if master is None or duplicate is None:
+            raise LookupError("department not found")
+        people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.department_id == duplicate_id))).scalars().all()
+        assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.department_id == duplicate_id))).scalars().all()
+        inventory_updates = [
+            row
+            for row in (
+                await self.session.execute(
+                    select(DeviceInventoryBinding).where(
+                        DeviceInventoryBinding.device_id.in_([asset.device_id for asset in assets if asset.device_id])
+                    )
+                )
+            ).scalars().all()
+        ] if assets else []
+        changes = [
+            {
+                "kind": "person",
+                "action": "update",
+                "object_id": row.person_id,
+                "before": {"department_id": duplicate_id},
+                "after": {"department_id": master_id},
+                "severity": "warning",
+            }
+            for row in people
+        ]
+        changes.extend(
+            {
+                "kind": "registry_asset",
+                "action": "update",
+                "object_id": row.asset_id,
+                "before": {"department_id": duplicate_id},
+                "after": {"department_id": master_id},
+                "severity": "warning",
+            }
+            for row in assets
+        )
+        changes.extend(
+            {
+                "kind": "inventory_binding",
+                "action": "update",
+                "object_id": row.device_id,
+                "before": {"department": row.department},
+                "after": {"department": master.name},
+                "severity": "warning",
+            }
+            for row in inventory_updates
+        )
+        changes.append(
+            {
+                "kind": "department",
+                "action": "mark_merged",
+                "object_id": duplicate_id,
+                "before": {"status": duplicate.status},
+                "after": {"status": "merged", "merged_into": master_id},
+                "severity": "destructive",
+            }
+        )
+        return {
+            "operation": "department_merge",
+            "dry_run": True,
+            "requires_confirmation": True,
+            "master": self._department_payload(master),
+            "duplicate": self._department_payload(duplicate),
+            "counts": {
+                "people_to_move": len(people),
+                "assets_to_move": len(assets),
+                "inventory_bindings_to_update": len(inventory_updates),
+            },
+            "changes": changes,
+            "warnings": [],
+            "blockers": [],
+        }
 
     async def get_policies(self) -> dict[str, Any]:
         effective = await RegistryPolicyService(self.session).get_policies()
@@ -587,6 +747,138 @@ class RegistryAdminOperationsService:
             },
         }
 
+    async def preview_merge_people(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        master_id = str(data.get("master_person_id") or "").strip()
+        duplicate_id = str(data.get("duplicate_person_id") or "").strip()
+        if not master_id or not duplicate_id or master_id == duplicate_id:
+            raise ValueError("master_person_id and duplicate_person_id are required")
+        master = await self.session.get(RegistryPerson, master_id)
+        duplicate = await self.session.get(RegistryPerson, duplicate_id)
+        if master is None or duplicate is None:
+            raise LookupError("person not found")
+
+        field_strategy = data.get("field_strategy") if isinstance(data.get("field_strategy"), dict) else {}
+        master_identities = (
+            await self.session.execute(select(RegistryPersonIdentity).where(RegistryPersonIdentity.person_id == master_id))
+        ).scalars().all()
+        master_keys = {(row.provider, row.normalized_identifier) for row in master_identities}
+        duplicate_identities = (
+            await self.session.execute(select(RegistryPersonIdentity).where(RegistryPersonIdentity.person_id == duplicate_id))
+        ).scalars().all()
+        identity_conflicts = [
+            row for row in duplicate_identities if (row.provider, row.normalized_identifier) in master_keys
+        ]
+        identities_to_move = [row for row in duplicate_identities if row not in identity_conflicts]
+        bindings = (await self.session.execute(select(DeviceUserBinding).where(DeviceUserBinding.person_id == duplicate_id))).scalars().all()
+        sessions = (
+            await self.session.execute(
+                select(DeviceAccountSession).where(
+                    or_(DeviceAccountSession.person_id == duplicate_id, DeviceAccountSession.base_person_id == duplicate_id)
+                )
+            )
+        ).scalars().all()
+        claims = (await self.session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate_id))).scalars().all()
+        tickets = (await self.session.execute(select(Ticket).where(Ticket.requester_person_id == duplicate_id))).scalars().all()
+        assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.assigned_person_id == duplicate_id))).scalars().all()
+        moved_binding_ids = [row.binding_id for row in bindings]
+        moved_asset_device_ids = [row.device_id for row in assets if row.device_id]
+        inventory_filters = [DeviceInventoryBinding.person_id == duplicate_id]
+        if moved_binding_ids:
+            inventory_filters.append(DeviceInventoryBinding.source_binding_id.in_(moved_binding_ids))
+        if moved_asset_device_ids:
+            inventory_filters.append(DeviceInventoryBinding.device_id.in_(moved_asset_device_ids))
+        inventory_bindings = (
+            await self.session.execute(select(DeviceInventoryBinding).where(or_(*inventory_filters)))
+        ).scalars().all()
+
+        field_changes = {
+            field: {"before": getattr(master, field), "after": getattr(duplicate, field)}
+            for field in ("full_name", "display_name", "email", "phone", "department_id", "location_id")
+            if field_strategy.get(field) == "duplicate" and getattr(master, field) != getattr(duplicate, field)
+        }
+        changes: list[dict[str, Any]] = [
+            {
+                "kind": "person",
+                "action": "update_fields",
+                "object_id": master_id,
+                "before": {field: change["before"] for field, change in field_changes.items()},
+                "after": {field: change["after"] for field, change in field_changes.items()},
+                "severity": "warning",
+            }
+        ] if field_changes else []
+        changes.extend(
+            {
+                "kind": "identity",
+                "action": "move",
+                "object_id": row.identity_id,
+                "before": {"person_id": duplicate_id},
+                "after": {"person_id": master_id},
+                "severity": "warning",
+            }
+            for row in identities_to_move
+        )
+        changes.extend(
+            {
+                "kind": "identity",
+                "action": "mark_conflict",
+                "object_id": row.identity_id,
+                "before": {"person_id": duplicate_id},
+                "after": {"person_id": duplicate_id, "merge_conflict": True, "merged_into_person_id": master_id},
+                "severity": "warning",
+            }
+            for row in identity_conflicts
+        )
+        for kind, rows, object_attr in (
+            ("binding", bindings, "binding_id"),
+            ("account_session", sessions, "session_id"),
+            ("registration_claim", claims, "claim_id"),
+            ("ticket", tickets, "ticket_id"),
+            ("registry_asset", assets, "asset_id"),
+            ("inventory_binding", inventory_bindings, "device_id"),
+        ):
+            changes.extend(
+                {
+                    "kind": kind,
+                    "action": "move_to_master_person",
+                    "object_id": getattr(row, object_attr),
+                    "before": {"person_id": duplicate_id},
+                    "after": {"person_id": master_id},
+                    "severity": "warning",
+                }
+                for row in rows
+            )
+        changes.append(
+            {
+                "kind": "person",
+                "action": "mark_merged",
+                "object_id": duplicate_id,
+                "before": {"status": duplicate.status},
+                "after": {"status": "merged", "merged_into": master_id},
+                "severity": "destructive",
+            }
+        )
+        return {
+            "operation": "people_merge",
+            "dry_run": True,
+            "requires_confirmation": True,
+            "master_person_id": master_id,
+            "duplicate_person_id": duplicate_id,
+            "field_changes": field_changes,
+            "counts": {
+                "identities_to_move": len(identities_to_move),
+                "identity_conflicts": len(identity_conflicts),
+                "bindings_to_move": len(bindings),
+                "sessions_to_move": len(sessions),
+                "claims_to_move": len(claims),
+                "tickets_to_move": len(tickets),
+                "assets_to_move": len(assets),
+                "inventory_bindings_to_move": len(inventory_bindings),
+            },
+            "changes": changes,
+            "warnings": ["verified_identity_conflict"] if identity_conflicts else [],
+            "blockers": [],
+        }
+
     def _validate_bulk_ids(self, data: dict[str, Any]) -> list[str]:
         ids = [str(item).strip() for item in data.get("ids") or [] if str(item).strip()]
         if not ids:
@@ -713,6 +1005,167 @@ class RegistryAdminOperationsService:
                 results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND", "error": str(exc)})
         await self.session.flush()
         return {"results": results}
+
+    async def preview_bulk(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        operation = str(data.get("operation") or "").strip()
+        ids = self._validate_bulk_ids(data)
+        payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+        results: list[dict[str, Any]] = []
+        changes: list[dict[str, Any]] = []
+        warnings: list[str] = []
+
+        if operation == "devices.assign_location":
+            location_id = str(payload.get("location_id") or data.get("location_id") or "").strip()
+            location = await self.session.get(RegistryLocation, location_id)
+            if location is None:
+                raise LookupError("location not found")
+            for device_id in ids:
+                asset = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device_id))).scalar_one_or_none()
+                if asset is None:
+                    results.append({"id": device_id, "success": False, "error_code": "NOT_FOUND"})
+                    continue
+                results.append({"id": device_id, "success": True})
+                changes.append(
+                    {
+                        "kind": "registry_asset",
+                        "action": "update",
+                        "object_id": asset.asset_id,
+                        "before": {"location_id": asset.location_id},
+                        "after": {"location_id": location.location_id},
+                        "severity": "warning",
+                    }
+                )
+                if await self.session.get(DeviceInventoryBinding, device_id):
+                    changes.append(
+                        {
+                            "kind": "inventory_binding",
+                            "action": "update",
+                            "object_id": device_id,
+                            "before": "current_location_fields",
+                            "after": {"building": location.building, "floor": location.floor, "room": location.room},
+                            "severity": "warning",
+                        }
+                    )
+        elif operation == "devices.assign_department":
+            await self._preview_bulk_assign_department(ids, payload, results, changes, target="devices")
+        elif operation == "people.assign_department":
+            await self._preview_bulk_assign_department(ids, payload, results, changes, target="people")
+        elif operation == "devices.revoke_account_sessions":
+            rows = (
+                await self.session.execute(
+                    select(DeviceAccountSession).where(
+                        DeviceAccountSession.device_id.in_(ids),
+                        DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
+                    )
+                )
+            ).scalars().all()
+            for device_id in ids:
+                device_rows = [row for row in rows if row.device_id == device_id]
+                results.append({"id": device_id, "success": True, "affected_sessions": len(device_rows)})
+                changes.extend(
+                    {
+                        "kind": "account_session",
+                        "action": "revoke",
+                        "object_id": row.session_id,
+                        "before": {"verification_status": row.verification_status},
+                        "after": {"verification_status": "revoked", "revoked_at": "now"},
+                        "severity": "destructive",
+                    }
+                    for row in device_rows
+                )
+        elif operation == "account_sessions.revoke":
+            for session_id in ids:
+                row = await self.session.get(DeviceAccountSession, session_id)
+                if row is None:
+                    results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND"})
+                    continue
+                results.append({"id": session_id, "success": True})
+                changes.append(
+                    {
+                        "kind": "account_session",
+                        "action": "revoke",
+                        "object_id": row.session_id,
+                        "before": {"verification_status": row.verification_status},
+                        "after": {"verification_status": "revoked", "revoked_at": "now"},
+                        "severity": "destructive",
+                    }
+                )
+        else:
+            raise ValueError("unsupported bulk preview operation")
+
+        return {
+            "operation": operation,
+            "dry_run": True,
+            "requires_confirmation": True,
+            "counts": {
+                "requested": len(ids),
+                "successful": sum(1 for row in results if row.get("success")),
+                "failed": sum(1 for row in results if not row.get("success")),
+                "changes": len(changes),
+            },
+            "results": results,
+            "changes": changes,
+            "warnings": warnings,
+            "blockers": [],
+        }
+
+    async def _preview_bulk_assign_department(
+        self,
+        ids: list[str],
+        payload: dict[str, Any],
+        results: list[dict[str, Any]],
+        changes: list[dict[str, Any]],
+        *,
+        target: str,
+    ) -> None:
+        department_id = str(payload.get("department_id") or "").strip()
+        department = await self.session.get(RegistryDepartment, department_id)
+        if department is None:
+            raise LookupError("department not found")
+        for item_id in ids:
+            if target == "people":
+                person = await self.session.get(RegistryPerson, item_id)
+                if person is None:
+                    results.append({"id": item_id, "success": False, "error_code": "NOT_FOUND"})
+                    continue
+                results.append({"id": item_id, "success": True})
+                changes.append(
+                    {
+                        "kind": "person",
+                        "action": "update",
+                        "object_id": person.person_id,
+                        "before": {"department_id": person.department_id},
+                        "after": {"department_id": department.department_id},
+                        "severity": "warning",
+                    }
+                )
+            else:
+                asset = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == item_id))).scalar_one_or_none()
+                if asset is None:
+                    results.append({"id": item_id, "success": False, "error_code": "NOT_FOUND"})
+                    continue
+                results.append({"id": item_id, "success": True})
+                changes.append(
+                    {
+                        "kind": "registry_asset",
+                        "action": "update",
+                        "object_id": asset.asset_id,
+                        "before": {"department_id": asset.department_id},
+                        "after": {"department_id": department.department_id},
+                        "severity": "warning",
+                    }
+                )
+                if await self.session.get(DeviceInventoryBinding, item_id):
+                    changes.append(
+                        {
+                            "kind": "inventory_binding",
+                            "action": "update",
+                            "object_id": item_id,
+                            "before": "current_department",
+                            "after": {"department": department.name},
+                            "severity": "warning",
+                        }
+                    )
 
     async def export_csv(self, export_type: str) -> str:
         registry = await self._build_export_rows(export_type)
