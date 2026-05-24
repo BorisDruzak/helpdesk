@@ -4732,6 +4732,7 @@ class ConnectionRequest(Base):
     __tablename__ = "connection_requests"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
@@ -4749,6 +4750,7 @@ class ConnectionRequest(Base):
     )
     resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
+    poll_secret_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     approved_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approved_token_delivered_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True),
@@ -4772,7 +4774,7 @@ class UiUser(Base):
     __tablename__ = "ui_users"
     user_login: Mapped[str] = mapped_column(String(100), primary_key=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    actor_role: Mapped[str] = mapped_column(String(20), nullable=False, server_default="admin")
+    actor_role: Mapped[str] = mapped_column(String(20), nullable=False, server_default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
     failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
     locked_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
@@ -4791,6 +4793,7 @@ class UiUser(Base):
     )
 
     __table_args__ = (
+        sa.CheckConstraint("actor_role IN ('admin', 'support', 'auditor', 'user')", name="ck_ui_users_actor_role"),
         Index("ix_ui_users_is_active", "is_active"),
         Index("ix_ui_users_actor_role", "actor_role"),
         Index("ix_ui_users_locked_until", "locked_until"),

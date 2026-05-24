@@ -264,9 +264,12 @@ async def test_tool_call_started_with_different_operation_ids(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_tool_call_started_uses_auth_context_actor_role(test_client, test_agent, test_engine):
+async def test_tool_call_started_uses_auth_context_actor_role(test_client, test_agent, test_engine, monkeypatch):
     device_id = test_agent.device_id
     ticket_id, _ = await create_test_ticket(test_client, device_id=device_id)
+
+    async def _allow_account_access(**_kwargs):
+        return None
 
     async def _agent_auth_context(_request):
         return AuthContext(
@@ -276,6 +279,7 @@ async def test_tool_call_started_uses_auth_context_actor_role(test_client, test_
             token="test-agent-tool-role",
         )
 
+    monkeypatch.setattr("tools.handlers._require_agent_tool_account_access", _allow_account_access)
     with patch("auth.middleware.extract_auth_context", new=_agent_auth_context):
         tool_resp = await test_client.post(
             "/api/tools/run",

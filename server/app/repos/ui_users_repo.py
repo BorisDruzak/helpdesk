@@ -13,6 +13,7 @@ from app.db.models import UiUser, UiUserAudit
 from shared.redaction import redact_sensitive_payload
 
 VALID_ROLES = ("admin", "support", "auditor", "user")
+DEFAULT_USER_ROLE = "user"
 
 
 class UiUsersRepo:
@@ -45,11 +46,13 @@ class UiUsersRepo:
         self,
         user_login: str,
         password_hash: str,
-        actor_role: str = "admin",
+        actor_role: str = DEFAULT_USER_ROLE,
         actor_id: Optional[str] = None,
     ) -> UiUser:
         """Создать пользователя. Роль нормализуется к admin при невалидной."""
-        role = actor_role if actor_role in VALID_ROLES else "admin"
+        role = (actor_role or DEFAULT_USER_ROLE).strip().lower()
+        if role not in VALID_ROLES:
+            raise ValueError("Invalid actor_role")
         user = UiUser(
             user_login=user_login,
             password_hash=password_hash,
@@ -82,7 +85,10 @@ class UiUsersRepo:
             return None
         before = {"actor_role": user.actor_role, "is_active": user.is_active}
         if actor_role is not None:
-            user.actor_role = actor_role if actor_role in VALID_ROLES else user.actor_role
+            role = str(actor_role or "").strip().lower()
+            if role not in VALID_ROLES:
+                raise ValueError("Invalid actor_role")
+            user.actor_role = role
         if is_active is not None:
             user.is_active = is_active
         after = {"actor_role": user.actor_role, "is_active": user.is_active}

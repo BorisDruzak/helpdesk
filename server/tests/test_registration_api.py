@@ -56,6 +56,27 @@ async def test_agent_cannot_submit_profile_for_different_device_id(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_agent_cannot_assert_user_confirmed(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/registry/agent/profile",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={
+            "profile": {"full_name": "Forged User", "email": "forged@example.test", "user_confirmed": True}
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 403
+    assert payload["error_code"] == "USER_CONFIRMATION_FORBIDDEN"
+
+
+@pytest.mark.asyncio
 async def test_real_generated_agent_token_can_submit_own_registration_profile(test_engine):
     import app.db as app_db
     import app.db.engine as app_db_engine
@@ -588,17 +609,25 @@ async def test_other_account_login_request_and_admin_approval_endpoints(test_cli
     missing_payload = await missing_token.json()
     assert missing_payload["error_code"] == "ACCOUNT_SESSION_TOKEN_REQUIRED"
 
-    wrong_token = await test_client.get(
+    query_token = await test_client.get(
         f"/api/registry/agent/account-sessions/{session_id}/validate?session_token=wrong",
         headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert query_token.status == 400
+    assert (await query_token.json())["error_code"] == "SESSION_TOKEN_QUERY_DISABLED"
+
+    wrong_token = await test_client.post(
+        f"/api/registry/agent/account-sessions/{session_id}/validate",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"session_token": "wrong"},
     )
     assert wrong_token.status == 403
     wrong_payload = await wrong_token.json()
     assert wrong_payload["error_code"] == "ACCOUNT_SESSION_TOKEN_INVALID"
 
-    valid = await test_client.get(
-        f"/api/registry/agent/account-sessions/{session_id}/validate?session_token={session_token}",
-        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    valid = await test_client.post(
+        f"/api/registry/agent/account-sessions/{session_id}/validate",
+        headers={**_headers(f"{TEST_AGENT_PREFIX}{device_id}"), "X-Account-Session-Token": session_token},
     )
     assert valid.status == 200, await valid.text()
     assert (await valid.json())["data"]["valid"] is True
@@ -681,9 +710,10 @@ async def test_registration_pending_session_and_logout_endpoints(test_client, te
     assert logged_out.status == 200, await logged_out.text()
     assert (await logged_out.json())["data"]["session"]["verification_status"] == "revoked"
 
-    invalid = await test_client.get(
-        f"/api/registry/agent/account-sessions/{session_id}/validate?session_token={session_token}",
+    invalid = await test_client.post(
+        f"/api/registry/agent/account-sessions/{session_id}/validate",
         headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"session_token": session_token},
     )
     assert invalid.status == 403
     assert (await invalid.json())["error_code"] == "ACCOUNT_SESSION_REVOKED"

@@ -19,6 +19,20 @@
         return headers;
     }
 
+    function webSessionHeaders(includeContentType) {
+        const headers = {};
+        if (includeContentType) {
+            headers['Content-Type'] = 'application/json';
+        }
+        return headers;
+    }
+
+    function fetchWebSession(url, options) {
+        const requestOptions = Object.assign({}, options || {});
+        requestOptions.credentials = requestOptions.credentials || 'same-origin';
+        return fetch(url, requestOptions);
+    }
+
     async function responseToJson(response, nonJsonMessage) {
         const text = await response.text();
         if (!text || !text.trim()) {
@@ -72,9 +86,11 @@
         authHeaders,
         boolLabel,
         escapeHtml,
+        fetchWebSession,
         formatDate,
         getToken,
         parseServerDate,
         responseToJson,
+        webSessionHeaders,
     });
 })();

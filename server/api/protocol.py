@@ -18,7 +18,7 @@ async def handle_protocol(request):
             "/ws_ui": "UI WebSocket connection"
         },
         "http_endpoints": {
-            "POST /api/login": "Agent authentication",
+            "POST /api/login": "Admin-only manual agent token issue",
             "GET /api/agents": "List connected agents",
             "GET /api/devices": "List device IDs",
             "POST /api/tickets/create": "Create new ticket",
@@ -40,4 +40,3 @@ async def handle_protocol(request):
     }
     
     return web.json_response(protocol_doc)
-

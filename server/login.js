@@ -43,7 +43,6 @@
     }
 
     function persistSession(data) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.token || '');
         localStorage.setItem(USER_LOGIN_KEY, data.user_login || '');
         localStorage.setItem(ROLE_KEY, data.actor_role || '');
     }
@@ -109,23 +108,14 @@
     }
 
     async function fetchCurrentSession() {
-        const token = localStorage.getItem(AUTH_TOKEN_KEY);
-        if (!token) {
-            return null;
-        }
-        const response = await fetch('/api/ui_session', {
-            headers: { Authorization: 'Bearer ' + token },
-        });
-        if (response.status === 401) {
-            clearSession();
-            return null;
-        }
+        const response = await fetch('/api/web/session/me', { credentials: 'same-origin' });
         const data = await responseToJson(response);
-        if (!response.ok || data.status !== 'success') {
+        if (!response.ok || data.status !== 'success' || !data.data) {
             clearSession();
             return null;
         }
-        return data;
+        persistSession(data.data);
+        return data.data;
     }
 
     function redirectForRole(role) {
@@ -147,20 +137,22 @@
             submitBtn.disabled = true;
         }
         try {
-            const response = await fetch('/api/ui_login', {
+            const response = await fetch('/api/web/session/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ login, password, expected_role: targetRole }),
             });
             const data = await responseToJson(response);
+            const session = data.data || data;
             if (!response.ok || data.status !== 'success') {
                 throw new Error(data.error || 'Не удалось выполнить вход.');
             }
-            if (data.actor_role !== targetRole) {
+            if (session.actor_role !== targetRole) {
                 clearSession();
                 throw new Error('Эта учетная запись не подходит для выбранной рабочей зоны.');
             }
-            persistSession(data);
+            persistSession(session);
             redirectForRole(targetRole);
         } catch (error) {
             clearSession();

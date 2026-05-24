@@ -6,7 +6,9 @@ from access_control.service import resolve_session_access
 from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
+from app.repos.ui_users_repo import VALID_ROLES
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
@@ -73,7 +75,19 @@ async def handle_web_session_login(request):
         )
 
     auth_service = AuthService(request.app["state"])
-    ok, actor_role = await auth_service.authenticate(payload.login, payload.password)
+    if not check_rate_limit("web_session_login", f"{client_ip(request)}:{payload.login}", limit=10, window_seconds=60):
+        return rate_limited_response()
+    try:
+        ok, actor_role = await auth_service.authenticate(payload.login, payload.password)
+    except Exception:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Authentication backend unavailable",
+                "error_code": "AUTH_BACKEND_UNAVAILABLE",
+            },
+            status=503,
+        )
     if not ok:
         return web.json_response(
             {
@@ -83,12 +97,38 @@ async def handle_web_session_login(request):
             },
             status=401,
         )
+    if actor_role not in VALID_ROLES:
+        return web.json_response(
+            {"status": "error", "error": "Invalid account role", "error_code": "ROLE_INVALID"},
+            status=403,
+        )
+    expected_role = str(payload.expected_role or "").strip().lower()
+    if expected_role and expected_role in VALID_ROLES and actor_role != expected_role:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": f"Account role mismatch: expected {expected_role}, got {actor_role}",
+                "error_code": "ROLE_MISMATCH",
+                "actor_role": actor_role,
+            },
+            status=403,
+        )
 
-    token = await auth_service.generate_ui_token(
-        user_login=payload.login,
-        actor_role=actor_role,
-        expires_hours=24,
-    )
+    try:
+        token = await auth_service.generate_ui_token(
+            user_login=payload.login,
+            actor_role=actor_role,
+            expires_hours=24,
+        )
+    except Exception:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Authentication backend unavailable",
+                "error_code": "AUTH_BACKEND_UNAVAILABLE",
+            },
+            status=503,
+        )
     response = json_model_response(
         SuccessResponse[WebSessionPayload](
             data=await _build_effective_session_payload(

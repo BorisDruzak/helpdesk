@@ -10,9 +10,9 @@ from loguru import logger
 from config import AUTH_UI_DB_USERS_ENABLED
 from auth.middleware import require_auth
 from app.db import get_session
-from app.repos.ui_users_repo import UiUsersRepo
+from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo
 from app.repos import TicketEventsRepo
-from auth.password_service import hash_password
+from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 
 
 def _check_db_users_enabled() -> Optional[web.Response]:
@@ -79,7 +79,7 @@ async def handle_admin_users_post(request: web.Request) -> web.Response:
         )
     login = (data.get("login") or data.get("user_login") or "").strip()
     password = data.get("password")
-    actor_role = (data.get("actor_role") or "admin").strip()
+    actor_role = (data.get("actor_role") or DEFAULT_USER_ROLE).strip().lower()
     if not login:
         return web.json_response(
             {"status": "error", "error": "login required", "error_code": "VALIDATION_ERROR"},
@@ -88,6 +88,18 @@ async def handle_admin_users_post(request: web.Request) -> web.Response:
     if not password:
         return web.json_response(
             {"status": "error", "error": "password required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    if actor_role not in VALID_ROLES:
+        return web.json_response(
+            {"status": "error", "error": "invalid actor_role", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        validate_password_policy(password, login=login)
+    except PasswordPolicyError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "PASSWORD_POLICY_ERROR"},
             status=400,
         )
     ctx = _auth_context(request)
@@ -103,7 +115,10 @@ async def handle_admin_users_post(request: web.Request) -> web.Response:
                     {"status": "error", "error": "User already exists", "error_code": "CONFLICT"},
                     status=409,
                 )
-            raise
+            return web.json_response(
+                {"status": "error", "error": str(e), "error_code": "VALIDATION_ERROR"},
+                status=400,
+            )
     return web.json_response(
         {
             "status": "ok",
@@ -175,6 +190,11 @@ async def handle_admin_users_patch(request: web.Request) -> web.Response:
             status=400,
         )
     ctx = _auth_context(request)
+    if actor_role is not None and str(actor_role or "").strip().lower() not in VALID_ROLES:
+        return web.json_response(
+            {"status": "error", "error": "invalid actor_role", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
     actor_id = ctx.actor_id if ctx else None
     async with get_session() as session:
         repo = UiUsersRepo(session)
@@ -215,6 +235,13 @@ async def handle_admin_users_password_post(request: web.Request) -> web.Response
     if not password:
         return web.json_response(
             {"status": "error", "error": "password required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        validate_password_policy(password, login=user_login)
+    except PasswordPolicyError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "PASSWORD_POLICY_ERROR"},
             status=400,
         )
     ctx = _auth_context(request)
@@ -287,6 +314,13 @@ async def handle_users_me_password_post(request: web.Request) -> web.Response:
     if not current or not new_pass:
         return web.json_response(
             {"status": "error", "error": "current_password and new_password required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        validate_password_policy(new_pass, login=user_login)
+    except PasswordPolicyError as exc:
+        return web.json_response(
+            {"status": "error", "error": str(exc), "error_code": "PASSWORD_POLICY_ERROR"},
             status=400,
         )
     from auth.password_service import verify_password

@@ -110,16 +110,17 @@ async def test_connection_request_pending_then_approved(monkeypatch):
     bus = _FakeEventBus()
     identity = _FakeIdentity()
 
+    fake_session = _FakeSession(
+        [
+            _FakeResponse(200, {"status": "pending", "request_id": "req-2", "poll_secret": "secret-2"}),
+            _FakeResponse(200, {"status": "pending"}),  # heartbeat
+        ],
+        [_FakeResponse(200, {"status": "approved", "token": "tok-2"})],
+    )
     monkeypatch.setattr(
         flow_mod,
         "ClientSession",
-        lambda: _FakeSession(
-            [
-                _FakeResponse(200, {"status": "pending"}),
-                _FakeResponse(200, {"status": "pending"}),  # heartbeat
-            ],
-            [_FakeResponse(200, {"status": "approved", "token": "tok-2"})],
-        ),
+        lambda: fake_session,
     )
 
     async def _fast_sleep(_):
@@ -140,6 +141,10 @@ async def test_connection_request_pending_then_approved(monkeypatch):
     assert (ok, rejected) == (True, False)
     assert identity.token == "tok-2"
     assert db.saved == [("tok-2", "dev-2")]
+    assert fake_session.post_calls[1][1]["json"]["request_id"] == "req-2"
+    assert fake_session.post_calls[1][1]["json"]["poll_secret"] == "secret-2"
+    assert fake_session.get_calls[0][1]["params"]["request_id"] == "req-2"
+    assert fake_session.get_calls[0][1]["params"]["poll_secret"] == "secret-2"
     assert any(e["event_type"] == "connection_request_pending" for e in bus.events)
     assert any(e["event_type"] == "connection_approved" for e in bus.events)
 
@@ -182,7 +187,7 @@ async def test_connection_request_pending_then_rejected(monkeypatch):
         "ClientSession",
         lambda: _FakeSession(
             [
-                _FakeResponse(200, {"status": "pending"}),
+                _FakeResponse(200, {"status": "pending", "request_id": "req-4", "poll_secret": "secret-4"}),
                 _FakeResponse(200, {"status": "pending"}),  # heartbeat
             ],
             [_FakeResponse(200, {"status": "rejected"})],
@@ -219,7 +224,7 @@ async def test_connection_request_pending_then_archived(monkeypatch):
         "ClientSession",
         lambda: _FakeSession(
             [
-                _FakeResponse(200, {"status": "pending"}),
+                _FakeResponse(200, {"status": "pending", "request_id": "req-archived", "poll_secret": "secret-archived"}),
                 _FakeResponse(200, {"status": "pending"}),
             ],
             [_FakeResponse(200, {"status": "rejected", "error_code": "DEVICE_ARCHIVED", "message": "Device archived"})],

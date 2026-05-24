@@ -199,6 +199,8 @@ async def run_connection_request_flow(
 
         data = await resp.json()
         status = data.get("status")
+        request_id = str(data.get("request_id") or "").strip() or None
+        poll_secret = str(data.get("poll_secret") or "").strip() or None
 
         if status == "approved":
             token = data.get("token")
@@ -217,6 +219,14 @@ async def run_connection_request_flow(
             return (True, False)
 
         if status == "pending":
+            if not request_id or not poll_secret:
+                _write_connection_error(
+                    identity_manager,
+                    db_manager,
+                    error_code="POLL_SECRET_REQUIRED",
+                    message="Server did not return connection request polling credentials",
+                )
+                return (False, False)
             await _publish_event(
                 event_bus,
                 "connection_request_pending",
@@ -234,6 +244,8 @@ async def run_connection_request_flow(
                             "device_id": device_id,
                             "hostname": hostname,
                             "metadata": metadata,
+                            "request_id": request_id,
+                            "poll_secret": poll_secret,
                         },
                         timeout=aiohttp.ClientTimeout(total=5),
                     )
@@ -254,7 +266,11 @@ async def run_connection_request_flow(
                 try:
                     status_resp = await session.get(
                         f"{api_url}/connection_request/status",
-                        params={"device_id": device_id},
+                        params={
+                            "device_id": device_id,
+                            "request_id": request_id,
+                            "poll_secret": poll_secret,
+                        },
                         timeout=aiohttp.ClientTimeout(total=10),
                     )
                 except Exception as e:
@@ -272,6 +288,17 @@ async def run_connection_request_flow(
                             "Отзовите старый токен в админке или восстановите локальный токен агента."
                         ),
                     )
+                if status_resp.status in (400, 403):
+                    status_error = await _read_response_json(status_resp)
+                    error_code = str(status_error.get("error_code") or "")
+                    if error_code in {"POLL_SECRET_REQUIRED", "INVALID_POLL_SECRET"}:
+                        _write_connection_error(
+                            identity_manager,
+                            db_manager,
+                            error_code=error_code,
+                            message="Connection request polling credentials were rejected; create a new request",
+                        )
+                        return (False, False)
                 if status_resp.status != 200:
                     continue
                 status_data = await status_resp.json()

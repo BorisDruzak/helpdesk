@@ -54,6 +54,27 @@ Verification target:
 - Focused agent tests for account-session manager/gate/client helpers and chat-panel account propagation.
 - `python -m compileall server pc_agent`, webapp build/typecheck, `python scripts/verify_workspace.py`, `git diff --check`.
 
+## Active Work: Auth / Registration Security Patch
+
+Status: in progress.
+
+Goal:
+
+- Close critical fail-open and token disclosure paths in user registration, UI auth, legacy UI auth and agent authorization without breaking Protocol V3 or the cookie-based `/api/web/session/login` flow.
+
+Scope:
+
+- Make legacy/public agent token issue admin-only and audited; keep compatibility route but require authenticated admin.
+- Protect manual connection request polling with `request_id` plus one-time high-entropy `poll_secret`, without storing raw poll secrets in the database.
+- Harden production defaults, role validation, UI config fallback, password policy, token revocation scoping and explicit agent token replacement/limits.
+- Reject agent-forged registration confirmation, add safer account-session validation transport and gate legacy localStorage login behind an explicit flag.
+- Update focused server and pc_agent tests plus auth/navigation docs touched by these contracts.
+
+Verification target:
+
+- Focused red/green tests for auth security, connection request security, admin users, registration API and pc_agent connection flow.
+- `python -m pytest server/tests`, `python -m pytest pc_agent/tests`, `python scripts/verify_workspace.py`, and applicable lint/build checks if available in this workspace.
+
 ## Active Work: Admin Ticket Purge
 
 Status: implementation complete / targeted API tests passed; workspace verification pending.

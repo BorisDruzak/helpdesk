@@ -59,14 +59,18 @@ class ConnectionRequestsRepo:
         ip_address: Optional[str] = None,
         hostname: Optional[str] = None,
         metadata: Optional[dict] = None,
+        request_id: Optional[str] = None,
+        poll_secret_hash: Optional[str] = None,
     ) -> ConnectionRequest:
         now = datetime.now(timezone.utc)
         req = ConnectionRequest(
             device_id=device_id,
+            request_id=request_id,
             status="pending",
             ip_address=ip_address,
             hostname=hostname,
             request_metadata=metadata or {},
+            poll_secret_hash=poll_secret_hash,
             last_request_at=now,
         )
         self.session.add(req)
@@ -77,17 +81,21 @@ class ConnectionRequestsRepo:
         self,
         device_id: str,
         metadata_patch: Optional[dict] = None,
+        request_id: Optional[str] = None,
     ) -> bool:
         """Обновляет last_request_at у существующего pending-запроса. Возвращает True если обновлён."""
         now = datetime.now(timezone.utc)
         values = {"last_request_at": now}
         if metadata_patch:
+            where = [
+                ConnectionRequest.device_id == device_id,
+                ConnectionRequest.status == "pending",
+            ]
+            if request_id:
+                where.append(ConnectionRequest.request_id == request_id)
             result = await self.session.execute(
                 select(ConnectionRequest.request_metadata)
-                .where(
-                    ConnectionRequest.device_id == device_id,
-                    ConnectionRequest.status == "pending",
-                )
+                .where(*where)
                 .order_by(ConnectionRequest.created_at.desc())
                 .limit(1)
             )
@@ -96,12 +104,15 @@ class ConnectionRequestsRepo:
             merged_metadata.update(metadata_patch)
             values["request_metadata"] = merged_metadata
 
+        where = [
+            ConnectionRequest.device_id == device_id,
+            ConnectionRequest.status == "pending",
+        ]
+        if request_id:
+            where.append(ConnectionRequest.request_id == request_id)
         result = await self.session.execute(
             update(ConnectionRequest)
-            .where(
-                ConnectionRequest.device_id == device_id,
-                ConnectionRequest.status == "pending",
-            )
+            .where(*where)
             .values(**values)
         )
         await self.session.flush()
@@ -117,22 +128,34 @@ class ConnectionRequestsRepo:
         result = await self.session.execute(q)
         return list(result.scalars().all())
 
-    async def set_approved(self, device_id: str) -> None:
+    async def get_by_request_id(self, request_id: str) -> Optional[ConnectionRequest]:
+        result = await self.session.execute(
+            select(ConnectionRequest)
+            .where(ConnectionRequest.request_id == request_id)
+            .order_by(ConnectionRequest.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def set_approved(self, device_id: str, *, request_id: str | None = None) -> None:
         now = datetime.now(timezone.utc)
+        where = [
+            ConnectionRequest.device_id == device_id,
+            ConnectionRequest.status == "pending",
+        ]
+        if request_id:
+            where.append(ConnectionRequest.request_id == request_id)
         await self.session.execute(
             update(ConnectionRequest)
-            .where(
-                ConnectionRequest.device_id == device_id,
-                ConnectionRequest.status == "pending",
-            )
-            .values(status="approved", resolved_at=now)
+            .where(*where)
+            .values(status="approved", resolved_at=now, approved_token=None)
         )
         await self.session.flush()
 
     async def set_approval_token(self, device_id: str, token: str) -> bool:
         """
-        Persists one-time approval token in latest approved request.
-        Returns True when token was stored.
+        Deprecated: raw approval tokens must not be stored in DB.
+        Returns True when an approved request exists.
         """
         row = await self.session.execute(
             select(ConnectionRequest.id)
@@ -150,9 +173,21 @@ class ConnectionRequestsRepo:
             update(ConnectionRequest)
             .where(ConnectionRequest.id == request_id)
             .values(
-                approved_token=token,
+                approved_token=None,
                 approved_token_delivered_at=None,
             )
+        )
+        await self.session.flush()
+        return result.rowcount > 0
+
+    async def mark_approval_delivered(self, *, request_id: str) -> bool:
+        result = await self.session.execute(
+            update(ConnectionRequest)
+            .where(
+                ConnectionRequest.request_id == request_id,
+                ConnectionRequest.approved_token_delivered_at.is_(None),
+            )
+            .values(approved_token_delivered_at=datetime.now(timezone.utc), approved_token=None)
         )
         await self.session.flush()
         return result.rowcount > 0

@@ -932,6 +932,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/registry/agent/account-sessions/confirmed-binding', handle_registry_agent_account_session_confirmed_binding),
         web.post('/api/registry/agent/account-sessions/registration-pending', handle_registry_agent_account_session_registration_pending),
         web.get('/api/registry/agent/account-sessions/{session_id}/validate', handle_registry_agent_account_session_validate),
+        web.post('/api/registry/agent/account-sessions/{session_id}/validate', handle_registry_agent_account_session_validate),
         web.post('/api/registry/agent/account-sessions/{session_id}/logout', handle_registry_agent_account_session_logout),
         web.post('/api/registry/agent/account-login-requests', handle_registry_agent_account_login_request_create),
         web.get('/api/registry/agent/account-login-requests/{request_id}', handle_registry_agent_account_login_request_get),

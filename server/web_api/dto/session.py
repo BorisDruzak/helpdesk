@@ -18,6 +18,7 @@ class WebSessionLoginRequest(BaseModel):
 
     login: str
     password: str
+    expected_role: str | None = None
 
 
 class WebSessionLogoutPayload(BaseModel):

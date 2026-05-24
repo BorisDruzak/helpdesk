@@ -39,16 +39,20 @@ DATABASE_URL = os.getenv(
 # Enable database persistence (set to False to disable DB features)
 ENABLE_DB_PERSISTENCE = os.getenv("ENABLE_DB_PERSISTENCE", "true").lower() == "true"
 
-# Pilot/readiness policy flags. Defaults keep local/dev behavior compatible;
-# pilot-like deployments should override them through env/server .env.
+# Pilot/readiness policy flags. Insecure local defaults require an explicit opt-in.
+ALLOW_INSECURE_DEV_DEFAULTS = os.getenv("ALLOW_INSECURE_DEV_DEFAULTS", "false").lower() == "true"
 PILOT_STAND_MODE = os.getenv("PILOT_STAND_MODE", "false").lower() == "true"
 REQUIRE_HTTPS = os.getenv("REQUIRE_HTTPS", "false").lower() == "true"
 REQUIRE_WSS = os.getenv("REQUIRE_WSS", "false").lower() == "true"
-AUTH_ALLOW_QUERY_TOKEN = os.getenv("AUTH_ALLOW_QUERY_TOKEN", "true").lower() == "true"
+AUTH_ALLOW_QUERY_TOKEN = os.getenv("AUTH_ALLOW_QUERY_TOKEN", "false").lower() == "true"
 PILOT_MIN_AGENT_VERSION = os.getenv("PILOT_MIN_AGENT_VERSION", "").strip()
-WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", "false").lower() == "true"
+_default_secure_cookie = "true" if PILOT_STAND_MODE else ("false" if ALLOW_INSECURE_DEV_DEFAULTS else "true")
+WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", _default_secure_cookie).lower() == "true"
 WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
 WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
+LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"
+ACCOUNT_SESSION_ALLOW_QUERY_TOKEN = os.getenv("ACCOUNT_SESSION_ALLOW_QUERY_TOKEN", "false").lower() == "true"
+AGENT_TOKEN_MAX_ACTIVE_TOKENS = int(os.getenv("AGENT_TOKEN_MAX_ACTIVE_TOKENS", "2"))
 TECH_BACKUP_STATUS_PATH = os.getenv("TECH_BACKUP_STATUS_PATH", "").strip()
 TECH_RESTORE_DRILL_STATUS_PATH = os.getenv("TECH_RESTORE_DRILL_STATUS_PATH", "").strip()
 TECH_RELEASE_STATUS_PATH = os.getenv("TECH_RELEASE_STATUS_PATH", "").strip()
@@ -421,7 +425,7 @@ TICKET_TAKE_QUEUE_TEST_CODE = (os.getenv("TICKET_TAKE_QUEUE_TEST_CODE", "service
 
 # Stage 10: UI users from DB
 AUTH_UI_DB_USERS_ENABLED = os.getenv("AUTH_UI_DB_USERS_ENABLED", "true").lower() == "true"
-AUTH_UI_CONFIG_FALLBACK_ENABLED = os.getenv("AUTH_UI_CONFIG_FALLBACK_ENABLED", "true").lower() == "true"
+AUTH_UI_CONFIG_FALLBACK_ENABLED = os.getenv("AUTH_UI_CONFIG_FALLBACK_ENABLED", "false").lower() == "true"
 AUTH_UI_MAX_FAILED_ATTEMPTS = int(os.getenv("AUTH_UI_MAX_FAILED_ATTEMPTS", "5"))
 AUTH_UI_LOCK_MINUTES = int(os.getenv("AUTH_UI_LOCK_MINUTES", "15"))
 PUBLIC_TICKET_SESSION_MINUTES = int(os.getenv("PUBLIC_TICKET_SESSION_MINUTES", "15"))
@@ -457,6 +461,35 @@ def _parse_ui_roles() -> dict:
 
 UI_USER_ROLES: dict = _parse_ui_roles()
 TICKET_METRICS_MAX_DAYS = int(os.getenv("TICKET_METRICS_MAX_DAYS", "365"))
+
+
+def _uses_default_ui_passwords() -> bool:
+    if os.getenv("UI_USERS_JSON") or os.getenv("UI_ADMIN_PASSWORD") or os.getenv("UI_USER_PASSWORD"):
+        return False
+    return USERS.get("admin") == "admin123" or USERS.get("user") == "12345"
+
+
+def validate_security_config() -> None:
+    """Fail fast for pilot/production configs that would expose auth surfaces."""
+    errors: list[str] = []
+    strict_mode = PILOT_STAND_MODE and not ALLOW_INSECURE_DEV_DEFAULTS
+    if AUTH_ALLOW_QUERY_TOKEN:
+        errors.append("AUTH_ALLOW_QUERY_TOKEN must be false")
+    if AUTH_UI_CONFIG_FALLBACK_ENABLED and not ALLOW_INSECURE_DEV_DEFAULTS:
+        errors.append("AUTH_UI_CONFIG_FALLBACK_ENABLED requires ALLOW_INSECURE_DEV_DEFAULTS=true")
+    if strict_mode:
+        if not WEB_SESSION_COOKIE_SECURE:
+            errors.append("WEB_SESSION_COOKIE_SECURE must be true in pilot mode")
+        if not REQUIRE_HTTPS:
+            errors.append("REQUIRE_HTTPS must be true in pilot mode")
+        if not REQUIRE_WSS:
+            errors.append("REQUIRE_WSS must be true in pilot mode")
+        if _uses_default_ui_passwords():
+            errors.append("default UI users/passwords are forbidden in pilot mode")
+        if LEGACY_UI_TOKEN_LOGIN_ENABLED:
+            errors.append("LEGACY_UI_TOKEN_LOGIN_ENABLED must be false in pilot mode")
+    if errors:
+        raise RuntimeError("Insecure security configuration: " + "; ".join(errors))
 
 # ============================================================================
 # Protocol V3 Configuration

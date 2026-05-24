@@ -37,6 +37,7 @@ from config import (
     LOG_FORMAT,
     DATABASE_URL,
     ENABLE_DB_PERSISTENCE,
+    validate_security_config,
 )
 # Этап 7.2: очистка истёкших артефактов
 ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
@@ -200,6 +201,7 @@ async def on_startup(app: web.Application):
     Обработчик события запуска приложения.
     Инициализирует подключение к базе данных.
     """
+    validate_security_config()
     if ENABLE_DB_PERSISTENCE:
         try:
             await init_db(DATABASE_URL)

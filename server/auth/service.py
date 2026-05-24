@@ -11,7 +11,7 @@ from loguru import logger
 from app.db import get_session
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
-from app.repos.ui_users_repo import UiUsersRepo
+from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo
 from auth.password_service import verify_password
 
 
@@ -76,8 +76,10 @@ class AuthService:
             AUTH_UI_CONFIG_FALLBACK_ENABLED,
             AUTH_UI_MAX_FAILED_ATTEMPTS,
             AUTH_UI_LOCK_MINUTES,
+            ALLOW_INSECURE_DEV_DEFAULTS,
             UI_USER_ROLES,
         )
+        allow_config_fallback = bool(AUTH_UI_CONFIG_FALLBACK_ENABLED and ALLOW_INSECURE_DEV_DEFAULTS)
         if AUTH_UI_DB_USERS_ENABLED and not self._ui_db_cooldown_active():
             try:
                 async with get_session() as session:
@@ -86,22 +88,27 @@ class AuthService:
                     self._clear_ui_db_cooldown()
                     if user:
                         if not user.is_active:
-                            return False, "admin"
+                            return False, ""
                         if repo.is_locked(user):
-                            return False, "admin"
+                            return False, ""
                         if verify_password(password, user.password_hash):
+                            if user.actor_role not in VALID_ROLES:
+                                logger.warning(
+                                    f"[AuthService] UI login rejected due to invalid DB role: login={login}, role={user.actor_role}"
+                                )
+                                return False, "ROLE_INVALID"
                             await repo.record_login_success(login)
                             return True, user.actor_role
                         await repo.increment_failed_attempts(
                             login, AUTH_UI_MAX_FAILED_ATTEMPTS, AUTH_UI_LOCK_MINUTES
                         )
-                        return False, "admin"
+                        return False, ""
                     # Пользователь не в БД — fallback на config
-                    if not AUTH_UI_CONFIG_FALLBACK_ENABLED:
-                        return False, "admin"
+                    if not allow_config_fallback:
+                        return False, ""
             except Exception as exc:
                 self._mark_ui_db_unavailable()
-                if not AUTH_UI_CONFIG_FALLBACK_ENABLED:
+                if not allow_config_fallback:
                     raise
                 logger.warning(
                     f"[AuthService] DB auth unavailable, falling back to config users: login={login}, error={exc}"
@@ -109,9 +116,12 @@ class AuthService:
         # Config-based auth (legacy или fallback)
         if login in self.state.users and self.state.users[login] == password:
             from config import UI_USER_ROLES
-            role = UI_USER_ROLES.get(login, "admin")
+            role = str(UI_USER_ROLES.get(login, DEFAULT_USER_ROLE) or DEFAULT_USER_ROLE).strip().lower()
+            if role not in VALID_ROLES:
+                logger.warning(f"[AuthService] Config UI login rejected due to invalid role: login={login}, role={role}")
+                return False, "ROLE_INVALID"
             return True, role
-        return False, "admin"
+        return False, ""
     
     @staticmethod
     def _generate_raw_token() -> str:
@@ -126,7 +136,10 @@ class AuthService:
     async def generate_agent_token(
         self,
         device_id: str,
-        expires_hours: Optional[int] = 4320  # 180 дней (180 * 24 = 4320 часов)
+        expires_hours: Optional[int] = 4320,
+        *,
+        replace_existing: bool = False,
+        max_active_tokens: Optional[int] = None,
     ) -> str:
         """
         Генерирует токен для агента с сохранением в БД.
@@ -158,10 +171,15 @@ class AuthService:
                 # agent_tokens.device_id is linked to devices, so we keep a lightweight
                 # placeholder row until the first real handshake fills it with metadata.
                 await devices_repo.ensure_device_exists(device_id)
+                if max_active_tokens is None:
+                    from config import AGENT_TOKEN_MAX_ACTIVE_TOKENS
+                    max_active_tokens = AGENT_TOKEN_MAX_ACTIVE_TOKENS
                 token, _ = await repo.create_agent_token(
                     token=raw_token,
                     device_id=device_id,
-                    expires_at=expires_at
+                    expires_at=expires_at,
+                    replace_existing=replace_existing,
+                    max_active_tokens=max_active_tokens,
                 )
                 logger.info(
                     f"[AuthService] Generated agent token: device_id={device_id}. "
@@ -193,13 +211,19 @@ class AuthService:
         Returns:
             Raw token string (для передачи клиенту)
         """
+        actor_role = str(actor_role or "").strip().lower()
+        if actor_role not in VALID_ROLES:
+            raise ValueError("Invalid actor_role")
         raw_token = self._generate_raw_token()
         
         expires_at = None
         if expires_hours:
             expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
         
-        if self._ui_db_cooldown_active():
+        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED
+        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED)
+
+        if self._ui_db_cooldown_active() and allow_memory_fallback:
             return self._store_legacy_ui_token(
                 raw_token,
                 user_login=user_login,
@@ -221,6 +245,8 @@ class AuthService:
                 return token
         except Exception as exc:
             self._mark_ui_db_unavailable()
+            if not allow_memory_fallback:
+                raise
             logger.warning(
                 f"[AuthService] DB unavailable during UI token issue, using in-memory fallback: "
                 f"user_login={user_login}, role={actor_role}, error={exc}"
@@ -318,7 +344,10 @@ class AuthService:
         Returns:
             Dict с информацией о токене (user_login, actor_role, created_at) или None
         """
-        if self._ui_db_cooldown_active():
+        from config import ALLOW_INSECURE_DEV_DEFAULTS, AUTH_UI_CONFIG_FALLBACK_ENABLED
+        allow_memory_fallback = bool(ALLOW_INSECURE_DEV_DEFAULTS and AUTH_UI_CONFIG_FALLBACK_ENABLED)
+
+        if self._ui_db_cooldown_active() and allow_memory_fallback:
             legacy_data = self._LEGACY_TOKEN_STORE.get(token)
             if legacy_data and legacy_data.get("type") == "ui":
                 expires_at_raw = legacy_data.get("expires_at")
@@ -350,6 +379,8 @@ class AuthService:
                     }
         except Exception as exc:
             self._mark_ui_db_unavailable()
+            if not allow_memory_fallback:
+                raise
             logger.warning(
                 f"[AuthService] DB unavailable during UI token verify, checking in-memory fallback: "
                 f"token={token[:8]}..., error={exc}"

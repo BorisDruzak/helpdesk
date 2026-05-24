@@ -13,11 +13,20 @@ from sqlalchemy import select, text
 from app.db.models import ConnectionRequest, Device
 from app.db import get_session
 from app_keys import STATE_APP_KEY, replace_bound_app_value
+from auth.connection_request_service import ConnectionRequestService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
 def _admin_headers():
     return {"Authorization": "Bearer " + TEST_UI_ADMIN_TOKEN}
+
+
+def _poll_params(device_id: str, payload: dict) -> dict:
+    return {
+        "device_id": device_id,
+        "request_id": payload["request_id"],
+        "poll_secret": payload["poll_secret"],
+    }
 
 
 async def _set_policy(engine, policy: str):
@@ -125,9 +134,13 @@ async def test_connection_request_manual_pending(test_client, test_engine):
     assert r.status == 200
     data = await r.json()
     assert data.get("status") == "pending"
+    assert data.get("request_id")
+    assert data.get("poll_secret")
 
     # status endpoint returns pending
-    r2 = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    legacy = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    assert legacy.status == 400
+    r2 = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, data))
     assert r2.status == 200
     data2 = await r2.json()
     assert data2.get("status") == "pending"
@@ -155,7 +168,7 @@ async def test_connection_request_manual_does_not_block_on_old_token_count(test_
     assert response.status == 200
     assert payload["status"] == "pending"
 
-    status_response = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    status_response = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, payload))
     status_payload = await status_response.json()
 
     assert status_response.status == 200
@@ -191,10 +204,11 @@ async def test_admin_connection_requests_list_approve_reject(test_client, test_e
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
     # Create pending
-    await test_client.post(
+    created = await test_client.post(
         "/api/connection_request",
         json={"device_id": device_id, "hostname": "approve-pc"},
     )
+    created_payload = await created.json()
 
     # List (admin)
     r = await test_client.get("/api/admin/connection_requests", headers=_admin_headers())
@@ -215,14 +229,14 @@ async def test_admin_connection_requests_list_approve_reject(test_client, test_e
     assert data2.get("status") == "ok"
 
     # Status returns token once
-    r3 = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    r3 = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     assert r3.status == 200
     data3 = await r3.json()
     assert data3.get("status") == "approved"
     assert "token" in data3
 
     # Second status call: no token (already consumed)
-    r4 = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    r4 = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     assert r4.status == 200
     data4 = await r4.json()
     assert data4.get("status") == "approved"
@@ -240,6 +254,7 @@ async def test_manual_heartbeat_after_approval_does_not_create_second_pending(te
         json={"device_id": device_id, "hostname": "race-pc"},
     )
     assert initial.status == 200
+    initial_payload = await initial.json()
 
     approved = await test_client.post(
         f"/api/admin/connection_requests/{device_id}/approve",
@@ -250,7 +265,12 @@ async def test_manual_heartbeat_after_approval_does_not_create_second_pending(te
 
     heartbeat = await test_client.post(
         "/api/connection_request",
-        json={"device_id": device_id, "hostname": "race-pc"},
+        json={
+            "device_id": device_id,
+            "hostname": "race-pc",
+            "request_id": initial_payload["request_id"],
+            "poll_secret": initial_payload["poll_secret"],
+        },
     )
     heartbeat_payload = await heartbeat.json()
 
@@ -268,7 +288,7 @@ async def test_manual_heartbeat_after_approval_does_not_create_second_pending(te
 
     assert [row.status for row in rows] == ["approved"]
 
-    status = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    status = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, initial_payload))
     status_payload = await status.json()
     assert status.status == 200
     assert status_payload["status"] == "approved"
@@ -276,24 +296,17 @@ async def test_manual_heartbeat_after_approval_does_not_create_second_pending(te
 
 
 @pytest.mark.asyncio
-async def test_status_consumes_legacy_duplicate_approval_tokens_once(test_client, test_engine):
-    """Pre-fix duplicate approved rows must not deliver multiple tokens."""
+async def test_status_rejects_legacy_pending_without_poll_secret(test_client, test_engine):
+    """Legacy rows without poll_secret_hash cannot deliver tokens by device_id only."""
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
-
-    await test_client.post("/api/connection_request", json={"device_id": device_id, "hostname": "legacy-race"})
-    approved = await test_client.post(
-        f"/api/admin/connection_requests/{device_id}/approve",
-        headers=_admin_headers(),
-        json={},
-    )
-    assert approved.status == 200
 
     async with get_session() as session:
         session.add(
             ConnectionRequest(
                 device_id=device_id,
                 status="approved",
+                request_id="legacy-no-secret",
                 ip_address="127.0.0.1",
                 hostname="legacy-race",
                 request_metadata={},
@@ -306,17 +319,13 @@ async def test_status_consumes_legacy_duplicate_approval_tokens_once(test_client
         )
         await session.commit()
 
-    first = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    first = await test_client.get(
+        "/api/connection_request/status",
+        params={"device_id": device_id, "request_id": "legacy-no-secret", "poll_secret": "anything"},
+    )
     first_payload = await first.json()
-    assert first.status == 200
-    assert first_payload["status"] == "approved"
-    assert first_payload["token"]
-
-    second = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
-    second_payload = await second.json()
-    assert second.status == 200
-    assert second_payload["status"] == "approved"
-    assert "token" not in second_payload
+    assert first.status == 403
+    assert first_payload["error_code"] == "INVALID_POLL_SECRET"
 
 
 @pytest.mark.asyncio
@@ -324,17 +333,18 @@ async def test_admin_reject_request(test_client, test_engine):
     """Create pending, reject; status returns rejected."""
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
-    await test_client.post(
+    created = await test_client.post(
         "/api/connection_request",
         json={"device_id": device_id},
     )
+    created_payload = await created.json()
     r = await test_client.post(
         f"/api/admin/connection_requests/{device_id}/reject",
         headers=_admin_headers(),
         json={},
     )
     assert r.status == 200
-    r2 = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    r2 = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     assert r2.status == 200
     data2 = await r2.json()
     assert data2.get("status") == "rejected"
@@ -344,7 +354,8 @@ async def test_admin_reject_request(test_client, test_engine):
 async def test_connection_request_status_reports_archived_rejection(test_client, test_engine):
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
-    await test_client.post("/api/connection_request", json={"device_id": device_id})
+    created = await test_client.post("/api/connection_request", json={"device_id": device_id})
+    created_payload = await created.json()
 
     async with get_session() as session:
         session.add(
@@ -367,7 +378,7 @@ async def test_connection_request_status_reports_archived_rejection(test_client,
 
     await test_client.delete(f"/api/devices/{device_id}", headers=_admin_headers())
 
-    response = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    response = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     payload = await response.json()
 
     assert response.status == 200
@@ -376,11 +387,12 @@ async def test_connection_request_status_reports_archived_rejection(test_client,
 
 
 @pytest.mark.asyncio
-async def test_status_token_is_db_backed_not_state(test_client, test_engine):
-    """Approved token is consumed from DB without relying on StateManager memory."""
+async def test_status_token_is_not_delivered_after_process_memory_loss(test_client, test_engine):
+    """Approved raw token is not stored in DB; process memory loss yields approved without token."""
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
-    await test_client.post("/api/connection_request", json={"device_id": device_id})
+    created = await test_client.post("/api/connection_request", json={"device_id": device_id})
+    created_payload = await created.json()
     await test_client.post(
         f"/api/admin/connection_requests/{device_id}/approve",
         headers=_admin_headers(),
@@ -394,12 +406,13 @@ async def test_status_token_is_db_backed_not_state(test_client, test_engine):
         legacy_name="state",
         value=test_client.app["state"].__class__(),
     )
+    ConnectionRequestService._APPROVED_TOKENS.clear()
 
-    r = await test_client.get("/api/connection_request/status", params={"device_id": device_id})
+    r = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     assert r.status == 200
     payload = await r.json()
     assert payload.get("status") == "approved"
-    assert payload.get("token")
+    assert not payload.get("token")
 
 
 @pytest.mark.asyncio

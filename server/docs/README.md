@@ -5,6 +5,8 @@
 ![Status](https://img.shields.io/badge/status-Production-brightgreen.svg)
 ![Protocol](https://img.shields.io/badge/protocol-V3-blue.svg)
 
+> Security note 2026-05-23: `POST /api/login` is admin-only for manual agent-token issue; agent self-provisioning uses `POST /api/connection_request` and protected status polling with `request_id` + `poll_secret`. New web UI login uses `/api/web/session/login` and an httpOnly cookie; legacy `/api/ui_login` is disabled unless explicitly enabled.
+
 > **WebSocket сервер для управления удалёнными PC агентами (relay-архитектура)**
 
 PC Agent Server — это серверная часть системы управления удалёнными агентами. Сервер выступает в роли ретранслятора команд между веб-интерфейсом и агентами, обеспечивая надежную доставку, упорядочивание событий и синхронизацию состояния через Protocol V3 (ws_ticket_v3).
@@ -162,9 +164,9 @@ server/
 
 ## 🔐 Безопасность и аутентификация
 
-- **Агенты:** аутентификация по токену при WebSocket handshake (/ws) и при HTTP API. Токен выдаётся через `POST /api/login` по `device_id` (UUID). В БД хранится только SHA256 hash токена.
+- **Агенты:** аутентификация по токену при WebSocket handshake (/ws) и при HTTP API. Agent self-provisioning uses `POST /api/connection_request`; `POST /api/login` is admin-only manual token issue. В БД хранится только SHA256 hash токена.
 - **UI:** логин/пароль через `POST /api/ui_login` → выдача UI токена. WebSocket /ws_ui требует первое сообщение `ui_hello` с токеном.
-- **HTTP API:** все маршруты `/api/*` (кроме whitelist) защищены middleware: требуется токен в заголовке `Authorization: Bearer <token>`, `Authorization: Token <token>` или `X-Auth-Token`. Whitelist: `/api/login`, `/api/ui_login`, `/api/health`.
+- **HTTP API:** все маршруты `/api/*` (кроме whitelist) защищены middleware: требуется токен в заголовке `Authorization: Bearer <token>`, `Authorization: Token <token>` или `X-Auth-Token`. Whitelist no longer includes `POST /api/login`; legacy `/api/ui_login` is disabled by default.
 - **Роли:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для определения роли.
 
 **Подробно:** [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md)

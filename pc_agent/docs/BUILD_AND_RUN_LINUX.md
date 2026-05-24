@@ -48,12 +48,13 @@ echo '{"version":"3.0.0","previous":null}' > "$INSTALL/current.json"
    ```
    UUID можно сгенерировать: `python3 -c "import uuid; print(uuid.uuid4())"`
 
-2. Сервер должен быть запущен. Запросить токен:
+2. Сервер должен быть запущен. Запросить provisioning через connection request либо получить manual token от authenticated admin:
    ```bash
-   curl -s -X POST http://127.0.0.1:8666/api/login \
+   curl -s -X POST http://127.0.0.1:8666/api/connection_request \
      -H "Content-Type: application/json" \
-     -d '{"uuid":"<UUID>"}'
+     -d '{"device_id":"<UUID>","hostname":"linux-agent"}'
    ```
+   Manual policy returns pending `request_id` and `poll_secret`; keep them secret while polling status. Accept-all policy can return `"token": "..."` immediately.
    В ответе: `"token": "..."`.
 
 3. Один раз запустить агент с переменной `AUTH_TOKEN`, чтобы токен сохранился в БД агента (`storage.db`):
@@ -84,7 +85,7 @@ Launcher читает `current.json`, запускает `versions/<version>/pc_
 
 1. Запустить сервер: `python3 scripts/run_server.py`
 2. Собрать launcher и агент (команды выше), разложить в `install_root`, создать `data_root` и `identity.json`
-3. Запросить токен: `POST /api/login` с `uuid` из identity
+3. Request provisioning through `POST /api/connection_request` or ask an authenticated admin to issue a manual token; unauthenticated `POST /api/login` is not supported.
 4. Один раз запустить бинарник агента с `AUTH_TOKEN=...` для сохранения токена в БД
 5. Запускать агент через launcher; проверять handshake в логах
 
@@ -126,3 +127,4 @@ Launcher читает `current.json`, запускает `versions/<version>/pc_
   ```
   (путь замените на свой к venv или системной установке PySide6/Qt/plugins).
 - **Лаунчер и --gui:** Linux-лаунчер по умолчанию передаёт агенту `--gui`. Если окно не появляется, проверьте логи агента (в data_root или консоль при прямом запуске `pc_agent --gui`).
+Security update 2026-05-23: unauthenticated `POST /api/login` is no longer an agent provisioning path. For new installs use the connection-request flow, or have an authenticated admin issue a manual token through the server UI/API. Manual connection-request polling requires the server-returned `request_id` and `poll_secret`.

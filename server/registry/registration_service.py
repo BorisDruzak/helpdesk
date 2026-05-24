@@ -270,6 +270,12 @@ class RegistrationService:
     ) -> dict[str, Any]:
         device = await self._require_device(device_id)
         device_id = device.device_id
+        if (
+            str(actor_role or "").strip().lower() == "agent"
+            and actor_id
+            and bool((profile or {}).get("user_confirmed"))
+        ):
+            raise RegistrationValidationError("agent cannot assert user_confirmed")
         profile_snapshot = _sanitize_profile(profile)
         display_name = _clean(display_name, max_length=300) or profile_snapshot.get("display_name")
         relationship_type = str(profile_snapshot.get("relationship_type") or "primary_user").strip()
@@ -401,7 +407,12 @@ class RegistrationService:
             },
         }
 
-    async def confirm_claim_by_user(self, claim_id: str, actor_id: str | None = None) -> dict[str, Any]:
+    async def confirm_claim_by_user(
+        self,
+        claim_id: str,
+        actor_id: str | None = None,
+        actor_role: str | None = "user",
+    ) -> dict[str, Any]:
         claim = await self.repo.get_claim(claim_id)
         if claim is None:
             raise ValueError("registration claim not found")
@@ -424,7 +435,7 @@ class RegistrationService:
             device_id=claim.device_id,
             person_id=claim.person_id,
             actor_id=actor_id,
-            actor_role="user",
+            actor_role=actor_role or "user",
             payload={"status": new_status},
         )
         await self.session.flush()

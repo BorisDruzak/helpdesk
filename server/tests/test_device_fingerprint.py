@@ -63,13 +63,14 @@ def test_device_fingerprint_blocks_multiple_changed_components():
 
 
 @pytest.mark.asyncio
-async def test_generate_agent_token_rotates_old_active_tokens(test_client):
+async def test_generate_agent_token_enforces_active_token_limit(test_client):
     device_id = str(uuid.uuid4())
     auth_service = AuthService(test_client.app["state"])
 
     first = await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
     second = await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
-    third = await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
+    with pytest.raises(ValueError, match="Active agent token limit exceeded"):
+        await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
 
     async with get_session() as session:
         rows = (
@@ -80,11 +81,34 @@ async def test_generate_agent_token_rotates_old_active_tokens(test_client):
             )
         ).scalars().all()
 
-    assert {AuthTokensRepo.hash_token(first), AuthTokensRepo.hash_token(second), AuthTokensRepo.hash_token(third)} == {
-        row.token_hash for row in rows
-    }
+    assert {AuthTokensRepo.hash_token(first), AuthTokensRepo.hash_token(second)} == {row.token_hash for row in rows}
+    assert sum(1 for row in rows if row.revoked_at is None) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_agent_token_explicit_rotation_revokes_old_active_tokens(test_client):
+    device_id = str(uuid.uuid4())
+    auth_service = AuthService(test_client.app["state"])
+
+    first = await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
+    second = await auth_service.generate_agent_token(
+        device_id=device_id,
+        expires_hours=24,
+        replace_existing=True,
+    )
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(AgentToken)
+                .where(AgentToken.device_id == device_id)
+                .order_by(AgentToken.created_at.asc())
+            )
+        ).scalars().all()
+
+    assert {AuthTokensRepo.hash_token(first), AuthTokensRepo.hash_token(second)} == {row.token_hash for row in rows}
     assert sum(1 for row in rows if row.revoked_at is None) == 1
-    assert rows[-1].token_hash == AuthTokensRepo.hash_token(third)
+    assert rows[-1].token_hash == AuthTokensRepo.hash_token(second)
 
 
 @pytest.mark.asyncio

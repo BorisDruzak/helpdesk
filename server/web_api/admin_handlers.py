@@ -3804,7 +3804,7 @@ async def handle_web_admin_device_token_revoke(request: web.Request):
         )
     async with get_session() as session:
         repo = AuthTokensRepo(session)
-        revoked = await repo.revoke_agent_token_by_hash(token_hash)
+        revoked = await repo.revoke_agent_token_by_hash(token_hash, device_id=device_id)
     if not revoked:
         return web.json_response(
             {"status": "error", "error": "Token not found or already revoked", "error_code": "TOKEN_NOT_FOUND"},

@@ -201,3 +201,7 @@ python ws_agent.py --no-gui
 - [PROTOCOL_V3.md](PROTOCOL_V3.md) — протокол WebSocket
 - [DATABASE.md](DATABASE.md) — таблица auth_tokens
 - [README.md](README.md) — быстрый старт
+Security update 2026-05-23:
+- Agents no longer obtain machine tokens through unauthenticated `POST /api/login`. That endpoint is admin-only server-side compatibility.
+- Automatic reprovisioning uses `POST /api/connection_request`. In manual policy mode the server returns `request_id` and one-time `poll_secret`; the agent keeps them in memory and sends both on heartbeat/status polling.
+- If the server returns `POLL_SECRET_REQUIRED` or `INVALID_POLL_SECRET`, the agent treats the old pending request as unusable and creates a fresh request. Raw tokens and poll secrets must not be logged.

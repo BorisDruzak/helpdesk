@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+import hmac
 import re
 import secrets
 from typing import Any
@@ -61,6 +62,8 @@ def _safe_declared_account(payload: dict[str, Any] | None) -> dict[str, Any]:
 
 
 class AccountSessionService:
+    _LOGIN_REQUEST_TOKENS: dict[str, str] = {}
+
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = AccountSessionRepo(session)
@@ -142,9 +145,10 @@ class AccountSessionService:
             "rejection_reason": row.rejection_reason,
             "resulting_session_id": row.resulting_session_id,
         }
-        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
-        if include_session_token and metadata.get("session_token_once"):
-            payload["session_token"] = str(metadata.get("session_token_once"))
+        if include_session_token:
+            token_once = self._LOGIN_REQUEST_TOKENS.pop(row.request_id, None)
+            if token_once:
+                payload["session_token"] = token_once
         return payload
 
     async def create_confirmed_binding_session(self, *, device_id: str, binding_id: str) -> dict[str, Any]:
@@ -299,7 +303,7 @@ class AccountSessionService:
             reviewed_by=reviewed_by,
             resulting_session_id=row.session_id,
         )
-        request.metadata_json = {**(request.metadata_json or {}), "session_token_once": token}
+        self._LOGIN_REQUEST_TOKENS[request.request_id] = token
         await self.session.flush()
         await self.repo.append_event(
             device_id=row.device_id,
@@ -402,7 +406,10 @@ class AccountSessionService:
             row.verification_status = "expired"
             await self.session.flush()
             return {"valid": False, "error_code": "ACCOUNT_SESSION_EXPIRED", "session": await self.serialize_session(row)}
-        if row.session_token_hash and session_token and row.session_token_hash != _token_hash(session_token):
+        if row.session_token_hash and session_token and not hmac.compare_digest(
+            str(row.session_token_hash or ""),
+            str(_token_hash(session_token) or ""),
+        ):
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_INVALID", "session": await self.serialize_session(row)}
         if row.session_token_hash and not session_token:
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_REQUIRED", "session": await self.serialize_session(row)}

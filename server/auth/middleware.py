@@ -34,7 +34,6 @@ _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_
 
 # Whitelist of endpoints that don't require authentication
 AUTH_WHITELIST = {
-    "/api/login",
     "/api/ui_login",  # UI login endpoint
     "/api/web/session/login",
     "/api/web/session/me",
@@ -112,7 +111,7 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
     # Try query parameter (fallback, with warning)
     token = request.query.get("token")
     if token:
-        rejected = not bool(getattr(config, "AUTH_ALLOW_QUERY_TOKEN", True))
+        rejected = not bool(getattr(config, "AUTH_ALLOW_QUERY_TOKEN", False))
         _record_query_token_attempt(request, rejected=rejected)
         if rejected:
             logger.warning(

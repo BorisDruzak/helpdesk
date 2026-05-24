@@ -378,7 +378,31 @@ async def handle_registry_agent_account_session_validate(request: web.Request) -
     if not device_id:
         return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
     session_id = str(request.match_info.get("session_id") or "").strip()
-    session_token = str(request.query.get("session_token") or "").strip() or None
+    session_token = None
+    if request.method == "POST" and request.can_read_body:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        session_token = str((data or {}).get("session_token") or "").strip() or None
+    if not session_token:
+        auth_header = str(request.headers.get("Authorization") or "").strip()
+        if auth_header.lower().startswith("account-session "):
+            session_token = auth_header.split(" ", 1)[1].strip() or None
+    if not session_token:
+        session_token = str(request.headers.get("X-Account-Session-Token") or "").strip() or None
+    if not session_token and request.query.get("session_token"):
+        import config
+        if not config.ACCOUNT_SESSION_ALLOW_QUERY_TOKEN:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "session_token query parameter is disabled",
+                    "error_code": "SESSION_TOKEN_QUERY_DISABLED",
+                },
+                status=400,
+            )
+        session_token = str(request.query.get("session_token") or "").strip() or None
     async with get_session() as session:
         payload = await AccountSessionService(session).validate_session(
             device_id=device_id,
@@ -457,6 +481,17 @@ async def handle_registry_agent_profile(request: web.Request) -> web.Response:
     requester_id = str(data.get("requester_id") or auth_context.actor_id or "").strip() or None
     display_name = str(data.get("display_name") or "").strip() or None
     profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
+    if auth_context.actor_role == "agent" and (
+        data.get("user_confirmed") is True or profile.get("user_confirmed") is True
+    ):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "agent cannot assert user confirmation",
+                "error_code": "USER_CONFIRMATION_FORBIDDEN",
+            },
+            status=403,
+        )
     if data.get("user_confirmed") is not None:
         profile = {**profile, "user_confirmed": bool(data.get("user_confirmed"))}
     try:
@@ -507,7 +542,11 @@ async def handle_registry_agent_claim_confirm(request: web.Request) -> web.Respo
             return web.json_response({"status": "error", "error": "claim not found", "error_code": "NOT_FOUND"}, status=404)
         if not await service.can_confirm_claim_for_actor(claim, auth_context):
             return web.json_response({"status": "error", "error": "forbidden claim", "error_code": "FORBIDDEN"}, status=403)
-        payload = await service.confirm_claim_by_user(claim_id, actor_id=auth_context.actor_id)
+        payload = await service.confirm_claim_by_user(
+            claim_id,
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+        )
         await session.commit()
     return _success(payload)
 

@@ -6,11 +6,16 @@ from datetime import datetime, timezone
 from aiohttp import web
 from loguru import logger
 from auth.context import AuthType
+from auth.middleware import require_auth
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
+from app.repos.ui_users_repo import VALID_ROLES
+import config
 from .service import AuthService, ArchivedDeviceError
 from .connection_request_service import ConnectionRequestService
 from tech.runtime_audit import write_agent_runtime_audit
 
 
+@require_auth("admin")
 async def handle_login(request):
     """
     HTTP API для генерации токена агента: POST /api/login
@@ -24,6 +29,8 @@ async def handle_login(request):
     try:
         data = await request.json()
         uuid_str = data.get("uuid")
+        if not check_rate_limit("api_login", f"{client_ip(request)}:{uuid_str or ''}", limit=10, window_seconds=60):
+            return rate_limited_response()
         
         if not uuid_str:
             return web.json_response({
@@ -49,7 +56,8 @@ async def handle_login(request):
         try:
             token = await auth_service.generate_agent_token(
                 device_id=uuid_str,
-                expires_hours=4320  # 180 дней (180 * 24 = 4320 часов)
+                expires_hours=4320,
+                replace_existing=False,
             )
         except ArchivedDeviceError:
             return web.json_response({
@@ -69,6 +77,15 @@ async def handle_login(request):
         # Если для устройства был pending запрос на подключение, считаем его закрытым.
         connection_request_service = ConnectionRequestService()
         await connection_request_service.clear_pending_after_manual_token_issue(device_id=uuid_str)
+        auth_context = request.get("auth_context")
+        await write_agent_runtime_audit(
+            device_id=uuid_str,
+            event_type="manual_agent_token_issued",
+            severity="warning",
+            source="auth_login",
+            actor_id=getattr(auth_context, "actor_id", None),
+            actor_role=getattr(auth_context, "actor_role", None),
+        )
         
         return web.json_response({
             "status": "success",
@@ -101,6 +118,17 @@ async def handle_ui_login(request):
         login = data.get("login")
         password = data.get("password")
         expected_role = str(data.get("expected_role") or "").strip().lower()
+        if not config.LEGACY_UI_TOKEN_LOGIN_ENABLED:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Legacy token login is disabled; use /api/web/session/login",
+                    "error_code": "LEGACY_AUTH_DISABLED",
+                },
+                status=410,
+            )
+        if not check_rate_limit("ui_login", f"{client_ip(request)}:{login or ''}", limit=10, window_seconds=60):
+            return rate_limited_response()
         
         if not login or not password:
             return web.json_response({
@@ -120,10 +148,12 @@ async def handle_ui_login(request):
                 "status": "error",
                 "error": "Invalid login or password"
             }, status=401)
-        valid_roles = ("admin", "support", "auditor", "user")
-        if actor_role not in valid_roles:
-            actor_role = "admin"
-        if expected_role and expected_role in valid_roles and actor_role != expected_role:
+        if actor_role not in VALID_ROLES:
+            return web.json_response(
+                {"status": "error", "error": "Invalid account role", "error_code": "ROLE_INVALID"},
+                status=403,
+            )
+        if expected_role and expected_role in VALID_ROLES and actor_role != expected_role:
             logger.warning(
                 f"⚠️  UI login rejected due to role mismatch: login={login}, "
                 f"actual_role={actor_role}, expected_role={expected_role}"
@@ -285,7 +315,7 @@ async def handle_revoke_device_token(request):
         
         async with get_session() as session:
             repo = AuthTokensRepo(session)
-            success = await repo.revoke_agent_token_by_hash(token_hash)
+            success = await repo.revoke_agent_token_by_hash(token_hash, device_id=device_id)
             
             if success:
                 logger.info(f"✅ Токен аннулирован для device_id={device_id[:8]}..., hash={token_hash[:16]}...")

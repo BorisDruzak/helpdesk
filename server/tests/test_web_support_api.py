@@ -35,6 +35,7 @@ from app.db.models import (
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
+from registry.registration_service import RegistrationService
 from registry.service import RegistryIngestionService
 from routes import setup_routes
 from tickets.workflow_profiles import save_workflow_profiles
@@ -1609,6 +1610,7 @@ async def test_web_support_queue_counts_all_target_smart_views(test_client, test
 @pytest.mark.asyncio
 async def test_web_support_ticket_detail_includes_observer_summary(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
+    detail_device_id = "00000000-0000-4000-8000-000000000101"
 
     async with session_maker() as session:
         session.add_all([
@@ -1618,7 +1620,7 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test", "op_a"])
         ticket = Ticket(
             ticket_id=str(uuid.uuid4()),
-            device_id="device-detail",
+            device_id=detail_device_id,
             title="Нужно проверить приложение",
             description="После обновления пропала синхронизация.",
             status="new",
@@ -1637,7 +1639,7 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         ticket_id = ticket.ticket_id
         session.add(
             Device(
-                device_id="device-detail",
+                device_id=detail_device_id,
                 protocol_version="ws_ticket_v3",
                 agent_version="1.2.3",
                 hostname="ws-detail-host",
@@ -1653,13 +1655,13 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
 
         registry_service = RegistryIngestionService(session)
         await registry_service.ingest_agent_handshake(
-            device_id="device-detail",
+            device_id=detail_device_id,
             hostname="ws-detail-host",
             os_name="Windows 11",
             agent_version="1.2.3",
         )
-        await registry_service.ingest_requester_profile(
-            device_id="device-detail",
+        profile_result = await registry_service.ingest_requester_profile(
+            device_id=detail_device_id,
             requester_id="user-a",
             display_name="Иванов Иван",
             profile={
@@ -1670,11 +1672,15 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
                 "phone": "+7 343 000-00-00",
             },
         )
+        registration_service = RegistrationService(session)
+        claim_id = profile_result.registration["claim_id"]
+        await registration_service.confirm_claim_by_user(claim_id, actor_id="user-a", actor_role="user")
+        await registration_service.approve_claim(claim_id, reviewed_by="admin")
 
         repo = TicketEventsRepo(session)
         await repo.add_event(
             ticket_id=ticket_id,
-            device_id="device-detail",
+            device_id=detail_device_id,
             agent_seq=None,
             event_type="chat_message",
             payload={
@@ -1689,7 +1695,7 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         )
         await repo.add_event(
             ticket_id=ticket_id,
-            device_id="device-detail",
+            device_id=detail_device_id,
             agent_seq=None,
             event_type="chat_message",
             payload={
@@ -1707,7 +1713,7 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
         session.add(
             Operation(
                 operation_id="op-detail-lifecycle",
-                device_id="device-detail",
+                device_id=detail_device_id,
                 ticket_id=ticket_id,
                 kind="run_tool",
                 tool_name="network.diagnostics",
@@ -2990,8 +2996,8 @@ async def test_web_support_status_action_reports_workflow_gate_block(test_client
         ticket = Ticket(
             ticket_id=str(uuid.uuid4()),
             device_id="device-status-gate",
-            title="РџСЂРѕРІРµСЂРєР° workflow gate",
-            description="РџРµСЂРµС…РѕРґ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РїРѕ СЂРѕР»Рё.",
+            title="Проверка workflow gate",
+            description="Переход должен быть заблокирован по роли.",
             status="in_progress",
             requester_id="user-status",
             queue_id=queue.id,

@@ -4,6 +4,13 @@
 
 **Дата обновления:** 2026-04-20
 
+Security update 2026-05-23:
+- `POST /api/login` is removed from the unauthenticated whitelist and is admin-only. It is retained only as an audited compatibility path for manual agent-token issue.
+- Manual `connection_request` polling requires `device_id`, `request_id`, and `poll_secret`; the database stores only `poll_secret_hash`, and approved tokens are delivered once.
+- Default query-token auth, config-user fallback, insecure cookies, and legacy `/api/ui_login` bearer-token login are disabled unless explicitly enabled for local development.
+- UI roles fail closed: unknown `actor_role` values do not become `admin`; new users without a role default to `user`.
+- Account-session validation uses POST/header/body by default. Query-string session tokens are disabled unless explicitly enabled for legacy compatibility.
+
 ---
 
 ## Обзор
@@ -114,7 +121,7 @@
 
 Не требуют аутентификации:
 
-- `POST /api/login` — получение токена агента по `device_id` (uuid).
+- `POST /api/login` — admin-only audited compatibility endpoint for manual agent-token issue; it is not in the unauthenticated whitelist.
 - `POST /api/ui_login` — логин UI (логин/пароль → выдача UI токена).
 - `POST /api/web/session/login` — логин нового `webapp` и установка httpOnly cookie-session.
 - `GET /api/ui_session` — проверка текущей UI-сессии по Bearer UI token; возвращает `user_login`, `actor_role`, `auth_type`.

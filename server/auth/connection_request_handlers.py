@@ -23,6 +23,7 @@ from app.repos.connection_requests_repo import (
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
+from auth.rate_limit import check_rate_limit, rate_limited_response
 from auth.service import AuthService, ArchivedDeviceError
 from auth.connection_request_service import ConnectionRequestService
 from auth.device_fingerprint import (
@@ -244,6 +245,10 @@ async def handle_connection_request(request: web.Request) -> web.Response:
         metadata = dict(metadata)
     metadata["machine_id"] = device_id
     ip_address = _get_client_ip(request)
+    request_id = str(data.get("request_id") or "").strip() or None
+    poll_secret = str(data.get("poll_secret") or "").strip() or None
+    if not check_rate_limit("connection_request", f"{ip_address}:{device_id}", limit=30, window_seconds=60):
+        return rate_limited_response()
 
     state = request.app["state"]
     async with get_session() as session:
@@ -353,12 +358,13 @@ async def handle_connection_request(request: web.Request) -> web.Response:
 
         # POLICY_MANUAL: create pending request или обновить last_request_at (heartbeat)
         existing = await repo.get_pending_by_device_id(device_id)
-        if existing:
-            await repo.touch_pending_request(device_id, metadata_patch=metadata)
+        if existing and request_id and poll_secret and existing.request_id == request_id and existing.poll_secret_hash == ConnectionRequestService.hash_poll_secret(poll_secret):
+            await repo.touch_pending_request(device_id, metadata_patch=metadata, request_id=request_id)
             await session.commit()
             return web.json_response({
                 "status": "pending",
                 "message": "Request already pending",
+                "request_id": request_id,
             })
         latest_request = await repo.get_latest_by_device_id(device_id)
         if latest_request and latest_request.status == "approved" and latest_request.approved_token_delivered_at is None:
@@ -380,12 +386,23 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                     "status": "pending",
                     "message": "Request already approved; waiting for token delivery",
                 })
-        await repo.create_request(
-            device_id=device_id,
-            ip_address=ip_address or None,
-            hostname=hostname,
-            metadata=metadata,
-        )
+        new_request_id = str(uuid_lib.uuid4())
+        new_poll_secret = ConnectionRequestService.generate_poll_secret()
+        try:
+            await repo.create_request(
+                device_id=device_id,
+                ip_address=ip_address or None,
+                hostname=hostname,
+                metadata=metadata,
+                request_id=new_request_id,
+                poll_secret_hash=ConnectionRequestService.hash_poll_secret(new_poll_secret),
+            )
+        except Exception as exc:
+            logger.exception(f"Connection request create failed for device_id={device_id[:8]}...: {exc}")
+            return web.json_response(
+                {"status": "error", "error": "Failed to create connection request", "error_code": "INTERNAL_ERROR"},
+                status=500,
+            )
         await session.commit()
     await write_agent_runtime_audit(
         device_id=device_id,
@@ -397,6 +414,8 @@ async def handle_connection_request(request: web.Request) -> web.Response:
     return web.json_response({
         "status": "pending",
         "message": "Wait for authorization from Administrator",
+        "request_id": new_request_id,
+        "poll_secret": new_poll_secret,
     })
 
 
@@ -407,11 +426,24 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
     Token is returned once on approved, then removed from server cache.
     """
     device_id = (request.query.get("device_id") or "").strip()
+    request_id = (request.query.get("request_id") or "").strip()
+    poll_secret = (request.query.get("poll_secret") or "").strip()
     if not device_id:
         return web.json_response(
             {"status": "error", "error": "Missing device_id"},
             status=400,
         )
+    if not request_id or not poll_secret:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "request_id and poll_secret are required",
+                "error_code": "POLL_SECRET_REQUIRED",
+            },
+            status=400,
+        )
+    if not check_rate_limit("connection_request_status", f"{_get_client_ip(request)}:{device_id}:{request_id}", limit=120, window_seconds=60):
+        return rate_limited_response()
     try:
         uuid_lib.UUID(device_id)
     except ValueError:
@@ -421,7 +453,11 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
         )
 
     connection_request_service = ConnectionRequestService()
-    token_once = await connection_request_service.consume_approved_token_once(device_id=device_id)
+    token_once = await connection_request_service.consume_approved_token_once(
+        device_id=device_id,
+        request_id=request_id,
+        poll_secret=poll_secret,
+    )
     if token_once:
         await write_agent_runtime_audit(
             device_id=device_id,
@@ -437,8 +473,18 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
 
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
-        status = await repo.get_status(device_id)
-        latest_request = await repo.get_latest_by_device_id(device_id)
+        latest_request = await repo.get_by_request_id(request_id)
+        if (
+            not latest_request
+            or latest_request.device_id != device_id
+            or not latest_request.poll_secret_hash
+            or latest_request.poll_secret_hash != ConnectionRequestService.hash_poll_secret(poll_secret)
+        ):
+            return web.json_response(
+                {"status": "error", "error": "invalid poll secret", "error_code": "INVALID_POLL_SECRET"},
+                status=403,
+            )
+        status = latest_request.status
         archived_reject = False
         token_limit_blocked = False
         fingerprint_blocked = False
@@ -467,7 +513,7 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
     if status == "approved":
         return web.json_response({
             "status": "approved",
-            "message": "Already approved; token was delivered earlier. Request a new connection if needed.",
+                "message": "Already approved; token was delivered earlier or is no longer available. Request a new connection if needed.",
         })
     if token_limit_blocked:
         return web.json_response(
@@ -540,6 +586,7 @@ async def handle_admin_connection_requests_list(request: web.Request) -> web.Res
         "connection_requests": [
             {
                 "device_id": r.device_id,
+                "request_id": r.request_id,
                 "status": r.status,
                 "ip_address": r.ip_address,
                 "hostname": r.hostname,
@@ -642,10 +689,15 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 status=429,
             )
         await _remember_device_fingerprint(DevicesRepo(session), device_id=device_id, metadata=pending_metadata)
-        await repo.set_approved(device_id)
+        await repo.set_approved(device_id, request_id=pending.request_id)
         await session.commit()
 
-    await connection_request_service.save_approved_token_once(device_id=device_id, token=token)
+    if pending.request_id:
+        await connection_request_service.save_approved_token_once(
+            device_id=device_id,
+            request_id=pending.request_id,
+            token=token,
+        )
     await write_agent_runtime_audit(
         device_id=device_id,
         event_type="connection_request_approved",

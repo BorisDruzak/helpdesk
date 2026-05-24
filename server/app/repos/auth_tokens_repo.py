@@ -49,7 +49,8 @@ class AuthTokensRepo:
         token: str,
         device_id: str,
         expires_at: Optional[datetime] = None,
-        replace_existing: bool = True,
+        replace_existing: bool = False,
+        max_active_tokens: Optional[int] = None,
     ) -> Tuple[str, AgentToken]:
         """
         Create agent token with hashing.
@@ -80,6 +81,10 @@ class AuthTokensRepo:
                 except_token_hash=token_hash,
                 commit=False,
             )
+        elif max_active_tokens is not None:
+            active_count = await self.check_active_token_limit(device_id)
+            if active_count >= max(int(max_active_tokens), 1):
+                raise ValueError(f"Active agent token limit exceeded ({active_count}/{max_active_tokens})")
         
         agent_token = AgentToken(
             token_hash=token_hash,
@@ -440,7 +445,13 @@ class AuthTokensRepo:
         await self.session.execute(stmt)
         
         # Create new token
-        _, new_token_record = await self.create_agent_token(new_token, device_id, expires_at)
+        _, new_token_record = await self.create_agent_token(
+            new_token,
+            device_id,
+            expires_at,
+            replace_existing=False,
+            max_active_tokens=None,
+        )
         
         await self.session.commit()
         logger.info(f"[AuthTokensRepo] Rotated agent token: device_id={device_id}")
@@ -461,6 +472,8 @@ class AuthTokensRepo:
             select(func.count(AgentToken.token_hash))
             .where(AgentToken.device_id == device_id)
             .where(AgentToken.revoked_at.is_(None))
+            .where(AgentToken.replaced_by_token_hash.is_(None))
+            .where((AgentToken.expires_at.is_(None)) | (AgentToken.expires_at > datetime.now(timezone.utc)))
         )
         result = await self.session.execute(stmt)
         count = result.scalar() or 0
@@ -585,7 +598,7 @@ class AuthTokensRepo:
             return True
         return False
     
-    async def revoke_agent_token_by_hash(self, token_hash: str) -> bool:
+    async def revoke_agent_token_by_hash(self, token_hash: str, *, device_id: str) -> bool:
         """
         Revoke agent token by hash.
         
@@ -598,6 +611,7 @@ class AuthTokensRepo:
         stmt = (
             update(AgentToken)
             .where(AgentToken.token_hash == token_hash)
+            .where(AgentToken.device_id == device_id)
             .where(AgentToken.revoked_at.is_(None))
             .values(revoked_at=datetime.now(timezone.utc))
         )
@@ -605,6 +619,6 @@ class AuthTokensRepo:
         await self.session.commit()
         
         if result.rowcount > 0:
-            logger.info(f"[AuthTokensRepo] Revoked agent token by hash: {token_hash[:16]}...")
+            logger.info(f"[AuthTokensRepo] Revoked agent token by hash: device_id={device_id}, hash_prefix={token_hash[:12]}")
             return True
         return False

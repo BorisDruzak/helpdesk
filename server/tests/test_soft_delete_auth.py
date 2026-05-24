@@ -9,6 +9,8 @@ from sqlalchemy import select
 from app.db import get_session
 from app.db.models import ConnectionRequest, Device
 
+TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
+
 
 @pytest.mark.asyncio
 async def test_login_rejects_archived_device(test_client):
@@ -35,7 +37,11 @@ async def test_login_rejects_archived_device(test_client):
         )
         await session.commit()
 
-    response = await test_client.post("/api/login", json={"uuid": device_id})
+    response = await test_client.post(
+        "/api/login",
+        json={"uuid": device_id},
+        headers={"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"},
+    )
     payload = await response.json()
 
     assert response.status == 409
