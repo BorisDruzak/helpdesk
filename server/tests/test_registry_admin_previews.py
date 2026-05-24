@@ -214,7 +214,9 @@ async def test_people_merge_preview_counts_related_records_without_mutation(test
             requester_id="duplicate-user",
             requester_person_id=duplicate.person_id,
         )
-        session.add_all([asset, identity, binding, inventory_binding, claim, ticket])
+        session.add(asset)
+        await session.flush()
+        session.add_all([identity, binding, inventory_binding, claim, ticket])
         await session.flush()
         session.add(account_session)
         await session.flush()
