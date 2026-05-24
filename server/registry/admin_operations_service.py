@@ -1459,7 +1459,7 @@ class RegistryAdminOperationsService:
         for row_number, row in rows:
             person_id = _text(row.get("person_id"), max_length=36)
             existing = await self.session.get(RegistryPerson, person_id) if person_id else None
-            display_name = _text(row.get("display_name") or row.get("full_name"), max_length=300)
+            display_name = _text(row.get("display_name"), max_length=300)
             email = self._normalize_email(row.get("email"))
             errors: list[dict[str, Any]] = []
             if person_id and existing is None:
