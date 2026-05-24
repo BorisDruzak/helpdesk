@@ -218,9 +218,25 @@ describe("SupportCommandCenterPage", () => {
     expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Action Inbox" })).toBeInTheDocument();
     expect(await screen.findByText("Спасти SLA")).toBeInTheDocument();
-    expect(screen.getByText("Настроить VPN")).toBeInTheDocument();
+    expect(screen.getAllByText("Настроить VPN").length).toBeGreaterThan(0);
     expect(screen.getAllByText("SLA риск").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Сообщения пользователей").length).toBeGreaterThan(0);
+    expect(screen.getByText("Сначала:")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ответить" })).toHaveAttribute("href", "/app/tickets/ticket-1");
+  });
+
+  it("keeps consolidated SLA tasks visible in the user replies filter", async () => {
+    vi.mocked(fetchOperatorCommandCenter).mockResolvedValue(payload());
+    vi.mocked(fetchSupportWorkspaceSummary).mockResolvedValue(summary());
+
+    renderPage();
+    const userReplyFilter = (await screen.findAllByText("Сообщения пользователей"))[0].closest("button");
+    expect(userReplyFilter).not.toBeNull();
+    fireEvent.click(userReplyFilter as HTMLButtonElement);
+
+    expect(screen.getAllByText("Настроить VPN").length).toBeGreaterThan(0);
+    expect(screen.getByText("Спасти SLA")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ответить" })).toBeInTheDocument();
   });
 
   it("renders Ticket Briefing after selecting a task", async () => {

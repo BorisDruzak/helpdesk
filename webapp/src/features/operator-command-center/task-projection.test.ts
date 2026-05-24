@@ -148,6 +148,27 @@ describe("filterSupportActionTasks", () => {
       "ticket-2",
     ]);
   });
+
+  it("filters consolidated tasks by matching section key", () => {
+    const tasks = buildSupportActionTasks([
+      section({
+        key: "sla_risk",
+        title: "SLA риск",
+        severity: "critical",
+        items: [item({ ticket_id: "ticket-1", sla: { state: "breached", due_at: "2026-05-20T08:00:00Z" } })],
+      }),
+      section({
+        key: "unread_user_messages",
+        title: "Сообщения пользователей",
+        items: [item({ ticket_id: "ticket-1", unread_user_messages: 1 })],
+      }),
+    ]);
+
+    expect(tasks[0].taskType).toBe("sla_rescue");
+    expect(filterSupportActionTasks(tasks, { sectionKeys: ["unread_user_messages"] }).map((task) => task.ticketId)).toEqual([
+      "ticket-1",
+    ]);
+  });
 });
 
 describe("groupSupportActionTasksForKanban", () => {

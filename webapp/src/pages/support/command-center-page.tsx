@@ -162,36 +162,43 @@ function filterForId(id: ActionFilterId): SupportActionTaskFilter {
   switch (id) {
     case "my_work":
       return {
-        taskTypes: ["reply_user", "sla_rescue", "ola_rescue", "operator_next_action", "operation_failed", "closure_blocker"],
+        sectionKeys: [
+          "unread_user_messages",
+          "sla_risk",
+          "ola_risk",
+          "operator_action",
+          "failed_operation",
+          "closure_blocked",
+        ],
       };
     case "team_queue":
       return {};
     case "new_unassigned":
-      return { taskTypes: ["triage_unassigned"] };
+      return { sectionKeys: ["new_unassigned"] };
     case "sla_ola":
-      return { taskTypes: ["sla_rescue", "ola_rescue"] };
+      return { sectionKeys: ["sla_risk", "ola_risk"] };
     case "sla_risk":
-      return { taskTypes: ["sla_rescue"] };
+      return { sectionKeys: ["sla_risk"] };
     case "ola_risk":
-      return { taskTypes: ["ola_rescue"] };
+      return { sectionKeys: ["ola_risk"] };
     case "unread_user_messages":
-      return { taskTypes: ["reply_user"] };
+      return { sectionKeys: ["unread_user_messages"] };
     case "operator_action":
-      return { taskTypes: ["operator_next_action"] };
+      return { sectionKeys: ["operator_action"] };
     case "pending_approval":
-      return { taskTypes: ["approval_followup"] };
+      return { sectionKeys: ["pending_approval"] };
     case "pending_consent":
-      return { taskTypes: ["consent_waiting"] };
+      return { sectionKeys: ["pending_consent"] };
     case "failed_operation":
-      return { taskTypes: ["operation_failed"] };
+      return { sectionKeys: ["failed_operation"] };
     case "agent_offline_active":
-      return { taskTypes: ["agent_offline"] };
+      return { sectionKeys: ["agent_offline_active"] };
     case "diagnostics_recommended":
-      return { taskTypes: ["diagnostics_needed"] };
+      return { sectionKeys: ["diagnostics_recommended"] };
     case "closure_blocked":
-      return { taskTypes: ["closure_blocker"] };
+      return { sectionKeys: ["closure_blocked"] };
     case "similar_tickets_spike":
-      return { taskTypes: ["similar_spike"] };
+      return { sectionKeys: ["similar_tickets_spike"] };
     case "all":
     default:
       return {};
@@ -210,6 +217,28 @@ function StatusBadge({ children }: { children: ReactNode }) {
       <span className="truncate">{children}</span>
     </span>
   );
+}
+
+function hasSection(task: SupportActionTask, key: CommandCenterSection["key"]) {
+  return task.sectionKeys.includes(key);
+}
+
+function sourceItem(
+  task: SupportActionTask,
+  predicate: (item: CommandCenterItem) => boolean,
+): CommandCenterItem | null {
+  return task.sourceItems.find(predicate) ?? null;
+}
+
+function taskUnreadUserMessages(task: SupportActionTask) {
+  return task.sourceItems.reduce((total, item) => Math.max(total, item.unread_user_messages ?? 0), 0);
+}
+
+function taskReasons(task: SupportActionTask) {
+  const reasons = task.sourceItems
+    .map((item) => item.reason?.trim())
+    .filter((reason): reason is string => Boolean(reason));
+  return [...new Set(reasons)];
 }
 
 function HeaderControls({
@@ -470,19 +499,19 @@ function quickActionsForTask(task: SupportActionTask) {
   if (!task.assignee || task.taskType === "triage_unassigned") {
     actions.push({ label: "Взять", href: task.href });
   }
-  if (task.taskType === "reply_user") {
+  if (hasSection(task, "unread_user_messages")) {
     actions.push({ label: "Ответить", href: task.href });
   }
-  if (task.taskType === "operation_failed") {
+  if (hasSection(task, "failed_operation")) {
     actions.push({ label: "Операции", href: task.href });
   }
-  if (task.taskType === "diagnostics_needed" || task.taskType === "agent_offline") {
+  if (hasSection(task, "diagnostics_recommended") || hasSection(task, "agent_offline_active")) {
     actions.push({ label: "Диагностика", href: task.href });
   }
-  if (task.taskType === "closure_blocker") {
+  if (hasSection(task, "closure_blocked")) {
     actions.push({ label: "Закрытие", href: task.href });
   }
-  if (task.taskType === "similar_spike") {
+  if (hasSection(task, "similar_tickets_spike")) {
     actions.push({ label: "Похожие", href: task.href });
   }
   return actions;
@@ -500,6 +529,7 @@ function ActionTaskRow({
   const title = displayText(task.title, "Без названия");
   const requester = displayText(task.requesterName, "Пользователь не указан");
   const timer = formatTimerState(task.primaryItem);
+  const unreadMessages = taskUnreadUserMessages(task);
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -535,7 +565,7 @@ function ActionTaskRow({
             <StatusBadge>{task.assignee ? `Исполнитель: ${task.assignee}` : "Без исполнителя"}</StatusBadge>
             <StatusBadge>{requester}</StatusBadge>
             {timer ? <StatusBadge>{timer}</StatusBadge> : null}
-            {task.primaryItem.unread_user_messages ? <StatusBadge>Сообщений: {task.primaryItem.unread_user_messages}</StatusBadge> : null}
+            {unreadMessages ? <StatusBadge>Ответ пользователя: {unreadMessages}</StatusBadge> : null}
             {task.serviceCode ? <StatusBadge>service: {task.serviceCode}</StatusBadge> : null}
             {task.offeringCode ? <StatusBadge>offering: {task.offeringCode}</StatusBadge> : null}
           </div>
@@ -591,6 +621,37 @@ function ActionInbox({
         )}
       </div>
     </section>
+  );
+}
+
+function NextActionSummary({ tasks }: { tasks: SupportActionTask[] }) {
+  const firstTask = tasks[0] ?? null;
+  const slaOlaCount = tasks.filter((task) => hasSection(task, "sla_risk") || hasSection(task, "ola_risk")).length;
+  const replyCount = tasks.filter((task) => hasSection(task, "unread_user_messages")).length;
+  const failedOperationCount = tasks.filter((task) => hasSection(task, "failed_operation")).length;
+  const diagnosticsCount = tasks.filter((task) => hasSection(task, "diagnostics_recommended") || hasSection(task, "agent_offline_active")).length;
+
+  if (!firstTask) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-600">
+        <ShieldAlert className="h-4 w-4 text-brand-700" />
+        <span>Нет задач после фильтра</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-slate-700">
+      <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[firstTask.severity]}`} />
+      <span className="font-semibold text-slate-950">Сначала:</span>
+      <span className="max-w-[360px] truncate font-semibold text-brand-800">
+        {firstTask.actionLabel} · {firstTask.ticketNumber ?? firstTask.ticketId}
+      </span>
+      {slaOlaCount ? <StatusBadge>SLA/OLA: {slaOlaCount}</StatusBadge> : null}
+      {replyCount ? <StatusBadge>Ответы: {replyCount}</StatusBadge> : null}
+      {failedOperationCount ? <StatusBadge>Операции: {failedOperationCount}</StatusBadge> : null}
+      {diagnosticsCount ? <StatusBadge>Диагностика: {diagnosticsCount}</StatusBadge> : null}
+    </div>
   );
 }
 
@@ -659,6 +720,17 @@ function TicketBriefingPanel({ task }: { task: SupportActionTask | null }) {
   const item = task.primaryItem;
   const title = displayText(task.title, "Без названия");
   const requester = displayText(task.requesterName, "Пользователь не указан");
+  const reasons = taskReasons(task);
+  const operationItem = sourceItem(task, (source) => Boolean(source.operation?.error_summary));
+  const agentItem = sourceItem(task, (source) => Boolean(source.agent?.connection_state));
+  const diagnosticsItem = sourceItem(task, (source) => Boolean(source.diagnostics?.recommended));
+  const closureItem = sourceItem(task, (source) => Boolean(source.closure?.blocked));
+  const similarItem = sourceItem(task, (source) => Boolean(source.similar_group));
+  const operation = operationItem?.operation;
+  const agent = agentItem?.agent;
+  const diagnostics = diagnosticsItem?.diagnostics;
+  const closure = closureItem?.closure;
+  const similarGroup = similarItem?.similar_group;
 
   return (
     <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -682,7 +754,14 @@ function TicketBriefingPanel({ task }: { task: SupportActionTask | null }) {
 
       <div className="mt-5 space-y-4 text-sm leading-6 text-slate-700">
         <BriefingBlock title="Почему в центре действий">
-          <p>{task.reason}</p>
+          <ul className="grid gap-1">
+            {(reasons.length ? reasons : [task.reason]).map((reason) => (
+              <li key={reason} className="flex gap-2">
+                <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${severityDotClasses[task.severity]}`} />
+                <span>{reason}</span>
+              </li>
+            ))}
+          </ul>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {task.reasonBadges.map((badge) => (
               <span key={badge} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
@@ -701,32 +780,32 @@ function TicketBriefingPanel({ task }: { task: SupportActionTask | null }) {
             <BriefingRow label="Следующее действие" value={formatDateTime(item.next_action_due_at)} />
           </dl>
         </BriefingBlock>
-        {item.operation?.error_summary ? (
+        {operation?.error_summary ? (
           <BriefingBlock title="Ошибка операции">
-            <p>{item.operation.tool_name ?? item.operation.id ?? "операция"}: {item.operation.error_summary}</p>
+            <p>{operation.tool_name ?? operation.id ?? "операция"}: {operation.error_summary}</p>
           </BriefingBlock>
         ) : null}
-        {item.agent?.connection_state ? (
+        {agent?.connection_state ? (
           <BriefingBlock title="Agent state">
             <p>
-              {item.agent.connection_state}; последнее соединение {formatDateTime(item.agent.last_seen_at)}.
+              {agent.connection_state}; последнее соединение {formatDateTime(agent.last_seen_at)}.
             </p>
           </BriefingBlock>
         ) : null}
-        {item.diagnostics?.recommended ? (
+        {diagnostics?.recommended ? (
           <BriefingBlock title="Диагностика">
-            <p>{item.diagnostics.reason ?? item.diagnostics.profile_code ?? "Рекомендована диагностика"}</p>
+            <p>{diagnostics.reason ?? diagnostics.profile_code ?? "Рекомендована диагностика"}</p>
           </BriefingBlock>
         ) : null}
-        {item.closure?.blocked ? (
+        {closure?.blocked ? (
           <BriefingBlock title="Блокер закрытия">
-            <p>{item.closure.primary_blocker ?? `Нужно закрыть ${item.closure.missing_count ?? 1} требований`}</p>
+            <p>{closure.primary_blocker ?? `Нужно закрыть ${closure.missing_count ?? 1} требований`}</p>
           </BriefingBlock>
         ) : null}
-        {item.similar_group ? (
+        {similarGroup ? (
           <BriefingBlock title="Похожие обращения">
             <p>
-              {item.similar_group.count} обращений за {item.similar_group.window_hours} ч. Причина: {item.similar_group.reason}.
+              {similarGroup.count} обращений за {similarGroup.window_hours} ч. Причина: {similarGroup.reason}.
             </p>
           </BriefingBlock>
         ) : null}
@@ -832,6 +911,12 @@ export function SupportCommandCenterPage() {
     }
   }, [filteredTasks, selectedTaskId]);
 
+  useEffect(() => {
+    if (!selectedTaskId && filteredTasks.length > 0) {
+      setSelectedTaskId(filteredTasks[0].id);
+    }
+  }, [filteredTasks, selectedTaskId]);
+
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setQuery(queryDraft.trim());
@@ -897,10 +982,7 @@ export function SupportCommandCenterPage() {
           />
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-2 text-sm text-slate-600">
-                <ShieldAlert className="h-4 w-4 text-brand-700" />
-                <span>{filteredTasks.length} задач после фильтра</span>
-              </div>
+              <NextActionSummary tasks={filteredTasks} />
               <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" aria-label="Режим просмотра">
                 <button
                   type="button"
