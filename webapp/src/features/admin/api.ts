@@ -343,6 +343,18 @@ export type AdminRegistryPayload = {
     stale_bindings: number;
     data_quality_issues: number;
     suggestions: number;
+    devices_total?: number;
+    devices_registered?: number;
+    devices_unregistered?: number;
+    people_total?: number;
+    bindings_active?: number;
+    sessions_active?: number;
+    sessions_other_account?: number;
+    other_account_requests?: number;
+    claims_pending?: number;
+    claims_conflict?: number;
+    shared_devices?: number;
+    quality_issues?: number;
   };
   assets: Array<{
     id: string;
@@ -361,12 +373,23 @@ export type AdminRegistryPayload = {
     vendor_id: string | null;
     owner_name: string | null;
     registration_status: string | null;
+    binding_type?: string | null;
     active_binding_id: string | null;
     active_person_id: string | null;
     active_person_name: string | null;
+    active_bindings?: AdminDeviceUserBinding[];
+    active_sessions_count?: number;
+    active_tickets_count?: number;
     pending_claim_count: number;
     last_claim_at: string | null;
     current_os_user: string | null;
+    latest_presence_user?: string | null;
+    latest_presence_at?: string | null;
+    os?: string | null;
+    agent_version?: string | null;
+    can_bind?: boolean;
+    can_transfer?: boolean;
+    can_revoke?: boolean;
     department_name: string | null;
     location_name: string | null;
     service_name: string | null;
@@ -377,14 +400,25 @@ export type AdminRegistryPayload = {
   }>;
   people: Array<{
     id: string;
+    person_id: string;
     display_name: string;
     full_name: string | null;
     phone: string | null;
     email: string | null;
+    login?: string | null;
     department_id: string | null;
     location_id: string | null;
     department_name: string | null;
     location_name: string | null;
+    identities?: AdminRegistryPersonIdentity[];
+    identity_count?: number;
+    verified_identity_count?: number;
+    primary_device_count?: number;
+    shared_device_count?: number;
+    responsible_device_count?: number;
+    active_ticket_count?: number;
+    active_session_count?: number;
+    last_seen_at?: string | null;
     source: string;
     status: string;
     updated_at: string | null;
@@ -436,6 +470,10 @@ export type AdminRegistryPayload = {
     description: string;
     object_type: string;
     object_id: string;
+    device_id?: string | null;
+    person_id?: string | null;
+    binding_id?: string | null;
+    claim_id?: string | null;
   }>;
   suggestions: Array<{
     kind: string;
@@ -447,6 +485,20 @@ export type AdminRegistryPayload = {
   }>;
   registration_claims: AdminRegistrationClaim[];
   active_bindings: AdminDeviceUserBinding[];
+  bindings?: AdminDeviceUserBinding[];
+  account_sessions?: AdminDeviceAccountSession[];
+  account_login_requests?: AdminAccountLoginRequest[];
+};
+
+export type AdminRegistryPersonIdentity = {
+  identity_id: string;
+  person_id: string;
+  provider: string;
+  identifier: string;
+  normalized_identifier: string;
+  verified: boolean;
+  source: string;
+  last_seen_at: string | null;
 };
 
 export type AdminRegistrationClaim = {
@@ -468,12 +520,22 @@ export type AdminDeviceUserBinding = {
   binding_id: string;
   device_id: string;
   asset_id: string | null;
+  hostname?: string | null;
   person_id: string;
   person_name: string | null;
   relationship_type: string;
   status: string;
+  source?: string | null;
+  source_claim_id?: string | null;
   confirmed_at: string | null;
   confirmed_by_admin: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  last_seen_at?: string | null;
+  revoked_at?: string | null;
+  revoked_by?: string | null;
+  revoke_reason?: string | null;
+  active_sessions_count?: number;
 };
 
 export type AdminRegistrationTimelineItem = {
@@ -621,6 +683,79 @@ export async function revokeAdminDeviceUserBinding(bindingId: string, reason: st
   await readSuccessResponse(response, "Не удалось отозвать привязку");
 }
 
+export async function bindAdminRegistryDevicePerson(payload: {
+  device_id: string;
+  person_id: string;
+  relationship_type: "primary_user" | "shared_user" | "responsible" | "temporary_user";
+  replace_existing?: boolean;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(payload.device_id)}/bind-person`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      person_id: payload.person_id,
+      relationship_type: payload.relationship_type,
+      replace_existing: Boolean(payload.replace_existing),
+      reason: payload.reason,
+    }),
+  });
+  await readSuccessResponse(response, "Не удалось привязать пользователя к устройству");
+}
+
+export async function transferAdminRegistryDeviceOwner(payload: {
+  device_id: string;
+  new_person_id: string;
+  old_binding_action: "transferred" | "revoked" | "keep_as_shared";
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(payload.device_id)}/transfer-owner`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      new_person_id: payload.new_person_id,
+      old_binding_action: payload.old_binding_action,
+      reason: payload.reason,
+    }),
+  });
+  await readSuccessResponse(response, "Не удалось передать устройство другому пользователю");
+}
+
+export async function addAdminRegistrySharedUser(payload: {
+  device_id: string;
+  person_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(payload.device_id)}/shared-users`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ person_id: payload.person_id, reason: payload.reason }),
+  });
+  await readSuccessResponse(response, "Не удалось добавить общего пользователя");
+}
+
+export async function assignAdminRegistryResponsible(payload: {
+  device_id: string;
+  person_id: string;
+  replace_existing?: boolean;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(payload.device_id)}/responsible`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      person_id: payload.person_id,
+      replace_existing: payload.replace_existing ?? true,
+      reason: payload.reason,
+    }),
+  });
+  await readSuccessResponse(response, "Не удалось назначить ответственного");
+}
+
 export async function fetchAdminDeviceRegistrationTimeline(deviceId: string): Promise<{ items: AdminRegistrationTimelineItem[] }> {
   const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/registration-timeline`, {
     credentials: "same-origin"
@@ -664,6 +799,28 @@ export async function fetchAdminDeviceAccountSessions(deviceId: string): Promise
   return readSuccessResponse(response, "Не удалось загрузить сессии аккаунтов устройства");
 }
 
+export async function fetchAdminRegistryAccountSessions(params?: {
+  device_id?: string;
+  person_id?: string;
+  verification_status?: string;
+}): Promise<{ items: AdminDeviceAccountSession[] }> {
+  const searchParams = new URLSearchParams();
+  if (params?.device_id) {
+    searchParams.set("device_id", params.device_id);
+  }
+  if (params?.person_id) {
+    searchParams.set("person_id", params.person_id);
+  }
+  if (params?.verification_status) {
+    searchParams.set("verification_status", params.verification_status);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`/api/web/admin/registry/account-sessions${suffix}`, {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить account sessions");
+}
+
 export async function fetchAdminDeviceAccountEvents(deviceId: string, limit = 50): Promise<{ items: AdminDeviceAccountEvent[] }> {
   const params = new URLSearchParams({ limit: String(limit) });
   const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/account-events?${params}`, {
@@ -680,6 +837,79 @@ export async function revokeAdminDeviceAccountSession(sessionId: string, reason:
     body: JSON.stringify({ reason })
   });
   await readSuccessResponse(response, "Не удалось отозвать сессию аккаунта");
+}
+
+export async function createAdminRegistryPerson(payload: {
+  full_name?: string | null;
+  display_name: string;
+  email?: string | null;
+  phone?: string | null;
+  department_id?: string | null;
+  location_id?: string | null;
+  status?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/people", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось создать пользователя");
+}
+
+export async function updateAdminRegistryPerson(personId: string, payload: {
+  full_name?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  department_id?: string | null;
+  location_id?: string | null;
+  status?: string | null;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/people/${encodeURIComponent(personId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось обновить пользователя");
+}
+
+export async function createAdminRegistryPersonIdentity(personId: string, payload: {
+  provider: string;
+  identifier: string;
+  verified: boolean;
+  reason?: string | null;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/people/${encodeURIComponent(personId)}/identities`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось добавить identity");
+}
+
+export async function updateAdminRegistryPersonIdentity(identityId: string, payload: {
+  verified?: boolean;
+  source?: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/identities/${encodeURIComponent(identityId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось обновить identity");
+}
+
+export async function deleteAdminRegistryPersonIdentity(identityId: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/identities/${encodeURIComponent(identityId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  await readSuccessResponse(response, "Не удалось удалить identity");
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

@@ -178,6 +178,354 @@ class RegistrationService:
             raise RegistrationValidationError("device not found")
         return device
 
+    async def _ensure_asset_for_device(self, device: Device) -> RegistryAsset:
+        asset = await self.registry_repo.get_asset_by_device_id(device.device_id)
+        if asset is not None:
+            return asset
+        return await self.registry_repo.upsert_agent_asset(
+            device_id=device.device_id,
+            hostname=device.hostname,
+            os_name=device.os,
+            agent_version=device.agent_version,
+            metadata={"source": "admin_registry_action"},
+        )
+
+    async def _revoke_account_sessions_for_binding(
+        self,
+        binding_id: str,
+        *,
+        revoked_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        from registry.account_session_service import AccountSessionService
+
+        return await AccountSessionService(self.session).revoke_sessions_for_binding(
+            binding_id=binding_id,
+            revoked_by=revoked_by,
+            reason=reason,
+        )
+
+    async def _create_admin_binding(
+        self,
+        *,
+        device: Device,
+        asset: RegistryAsset,
+        person: RegistryPerson,
+        relationship_type: str,
+        reviewed_by: str | None,
+        reason: str | None,
+        source: str = "admin_manual",
+    ) -> tuple[Any, Any]:
+        now = datetime.now(timezone.utc)
+        claim = await self.repo.create_claim(
+            device_id=device.device_id,
+            asset_id=asset.asset_id,
+            person_id=person.person_id,
+            claim_type="admin_created",
+            status="approved",
+            relationship_type=relationship_type,
+            profile_snapshot={
+                "display_name": person.display_name,
+                "full_name": person.full_name,
+                "email": person.email,
+                "phone": person.phone,
+                "reason": _clean(reason, max_length=1000),
+            },
+            device_snapshot={
+                "hostname": device.hostname or asset.hostname,
+                "os": device.os,
+                "agent_version": device.agent_version,
+            },
+            confidence=Decimal("1.00"),
+            source=source,
+            source_ref=reviewed_by,
+            submitted_at=now,
+            user_confirmed_at=None,
+            reviewed_by=reviewed_by,
+            reviewed_at=now,
+            metadata_json={"reason": _clean(reason, max_length=1000)},
+        )
+        binding = await self.repo.create_binding(
+            device_id=device.device_id,
+            asset_id=asset.asset_id,
+            person_id=person.person_id,
+            relationship_type=relationship_type,
+            status="active",
+            source_claim_id=claim.claim_id,
+            source=source,
+            confidence=Decimal("1.00"),
+            valid_from=now,
+            confirmed_by_admin=reviewed_by,
+            confirmed_at=now,
+            metadata_json={"reason": _clean(reason, max_length=1000), "admin_created": True},
+        )
+        await self.repo.append_event(
+            event_type="admin_binding_created",
+            claim_id=claim.claim_id,
+            binding_id=binding.binding_id,
+            device_id=device.device_id,
+            person_id=person.person_id,
+            actor_id=reviewed_by,
+            actor_role="admin",
+            payload={"relationship_type": relationship_type, "reason": reason},
+        )
+        await self.repo.append_event(
+            event_type="binding_activated",
+            claim_id=claim.claim_id,
+            binding_id=binding.binding_id,
+            device_id=device.device_id,
+            person_id=person.person_id,
+            actor_id=reviewed_by,
+            actor_role="admin",
+            payload={"relationship_type": relationship_type, "source": source},
+        )
+        return claim, binding
+
+    async def _retire_binding(
+        self,
+        binding: Any,
+        *,
+        status: str,
+        reviewed_by: str | None,
+        reason: str | None,
+        event_type: str,
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        binding.status = status
+        binding.valid_to = now
+        binding.revoked_by = reviewed_by
+        binding.revoked_at = now
+        binding.revoke_reason = _clean(reason, max_length=1000)
+        binding.updated_at = now
+        await self.repo.append_event(
+            event_type=event_type,
+            binding_id=binding.binding_id,
+            device_id=binding.device_id,
+            person_id=binding.person_id,
+            actor_id=reviewed_by,
+            actor_role="admin",
+            payload={"reason": reason, "status": status},
+        )
+        revoked_sessions = await self._revoke_account_sessions_for_binding(
+            binding.binding_id,
+            revoked_by=reviewed_by,
+            reason=f"{event_type}: {reason or status}",
+        )
+        if revoked_sessions:
+            await self.repo.append_event(
+                event_type="account_sessions_revoked_due_to_transfer"
+                if status == "transferred"
+                else "account_sessions_revoked_due_to_revoke",
+                binding_id=binding.binding_id,
+                device_id=binding.device_id,
+                person_id=binding.person_id,
+                actor_id=reviewed_by,
+                actor_role="admin",
+                payload={"revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
+            )
+        return revoked_sessions
+
+    async def bind_person_to_device(
+        self,
+        *,
+        device_id: str,
+        person_id: str,
+        relationship_type: str,
+        replace_existing: bool = False,
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        device = await self._require_device(device_id)
+        person = await self.registry_repo.get_person(person_id)
+        if person is None:
+            raise RegistrationValidationError("person not found")
+        if relationship_type not in ALLOWED_RELATIONSHIP_TYPES:
+            raise RegistrationValidationError("invalid relationship_type")
+        asset = await self._ensure_asset_for_device(device)
+        active_bindings = await self.repo.list_active_bindings_for_device(device.device_id)
+        for existing in active_bindings:
+            if existing.person_id == person.person_id and existing.relationship_type == relationship_type:
+                return {
+                    "binding": self._binding_payload(existing),
+                    "asset": _asset_payload(asset),
+                    "inventory_binding": self._inventory_registration_dict(
+                        await self.session.get(DeviceInventoryBinding, device.device_id)
+                    ),
+                    "events": {"reused_existing_binding": True, "revoked_sessions": []},
+                }
+
+        active_primary = next((row for row in active_bindings if row.relationship_type == "primary_user"), None)
+        active_responsible = next((row for row in active_bindings if row.relationship_type == "responsible"), None)
+        if relationship_type == "primary_user" and active_primary and active_primary.person_id != person.person_id:
+            if not replace_existing:
+                raise RegistrationConflictError("active primary binding exists")
+            await self._retire_binding(
+                active_primary,
+                status="transferred",
+                reviewed_by=reviewed_by,
+                reason=reason or "replaced by admin primary binding",
+                event_type="binding_transferred",
+            )
+        if relationship_type == "responsible" and active_responsible and active_responsible.person_id != person.person_id:
+            if not replace_existing:
+                raise RegistrationConflictError("active responsible binding exists")
+            await self._retire_binding(
+                active_responsible,
+                status="transferred",
+                reviewed_by=reviewed_by,
+                reason=reason or "responsible replaced by admin",
+                event_type="binding_transferred",
+            )
+
+        _claim, binding = await self._create_admin_binding(
+            device=device,
+            asset=asset,
+            person=person,
+            relationship_type=relationship_type,
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+        if relationship_type == "primary_user":
+            await self.sync_asset_from_active_binding(binding)
+            await self.sync_inventory_from_active_binding(
+                binding,
+                profile={"login": None, "department": None, "building": None, "floor": None, "room": None},
+                reason="admin_binding_created",
+            )
+        await self.session.flush()
+        return {
+            "binding": self._binding_payload(binding),
+            "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
+            "inventory_binding": self._inventory_registration_dict(
+                await self.session.get(DeviceInventoryBinding, device.device_id)
+            ),
+            "events": {"reused_existing_binding": False},
+        }
+
+    async def transfer_owner(
+        self,
+        *,
+        device_id: str,
+        new_person_id: str,
+        old_binding_action: str = "transferred",
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        if old_binding_action not in {"transferred", "revoked", "keep_as_shared"}:
+            raise RegistrationValidationError("invalid old_binding_action")
+        device = await self._require_device(device_id)
+        person = await self.registry_repo.get_person(new_person_id)
+        if person is None:
+            raise RegistrationValidationError("person not found")
+        asset = await self._ensure_asset_for_device(device)
+        active_primary = await self.repo.get_active_primary_binding(device.device_id)
+        if active_primary and active_primary.person_id == person.person_id:
+            return {
+                "binding": self._binding_payload(active_primary),
+                "asset": _asset_payload(asset),
+                "events": {"reused_existing_binding": True, "revoked_sessions": []},
+            }
+        if active_primary:
+            if old_binding_action == "keep_as_shared":
+                active_primary.relationship_type = "shared_user"
+                active_primary.updated_at = datetime.now(timezone.utc)
+                await self.repo.append_event(
+                    event_type="binding_transferred",
+                    binding_id=active_primary.binding_id,
+                    device_id=active_primary.device_id,
+                    person_id=active_primary.person_id,
+                    actor_id=reviewed_by,
+                    actor_role="admin",
+                    payload={"old_binding_action": old_binding_action, "reason": reason},
+                )
+                revoked_sessions = await self._revoke_account_sessions_for_binding(
+                    active_primary.binding_id,
+                    revoked_by=reviewed_by,
+                    reason=f"owner transfer: {reason or old_binding_action}",
+                )
+            else:
+                revoked_sessions = await self._retire_binding(
+                    active_primary,
+                    status=old_binding_action,
+                    reviewed_by=reviewed_by,
+                    reason=reason or "owner transferred by admin",
+                    event_type="binding_transferred" if old_binding_action == "transferred" else "binding_revoked",
+                )
+        else:
+            revoked_sessions = []
+
+        _claim, binding = await self._create_admin_binding(
+            device=device,
+            asset=asset,
+            person=person,
+            relationship_type="primary_user",
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+        await self.sync_asset_from_active_binding(binding)
+        await self.sync_inventory_from_active_binding(
+            binding,
+            profile={},
+            reason="registration_transferred",
+        )
+        await self.repo.append_event(
+            event_type="binding_transferred",
+            binding_id=binding.binding_id,
+            device_id=device.device_id,
+            person_id=person.person_id,
+            actor_id=reviewed_by,
+            actor_role="admin",
+            payload={
+                "old_binding_id": active_primary.binding_id if active_primary else None,
+                "old_binding_action": old_binding_action,
+                "revoked_session_ids": [row["session_id"] for row in revoked_sessions],
+            },
+        )
+        await self.session.flush()
+        return {
+            "binding": self._binding_payload(binding),
+            "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
+            "inventory_binding": self._inventory_registration_dict(
+                await self.session.get(DeviceInventoryBinding, device.device_id)
+            ),
+            "events": {"revoked_sessions": revoked_sessions},
+        }
+
+    async def add_shared_user(
+        self,
+        *,
+        device_id: str,
+        person_id: str,
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.bind_person_to_device(
+            device_id=device_id,
+            person_id=person_id,
+            relationship_type="shared_user",
+            replace_existing=False,
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+
+    async def assign_responsible(
+        self,
+        *,
+        device_id: str,
+        person_id: str,
+        replace_existing: bool = True,
+        reviewed_by: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        return await self.bind_person_to_device(
+            device_id=device_id,
+            person_id=person_id,
+            relationship_type="responsible",
+            replace_existing=replace_existing,
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+
     async def _find_or_create_person(
         self,
         *,
@@ -702,6 +1050,11 @@ class RegistrationService:
 
     async def revoke_binding(self, binding_id: str, *, revoked_by: str | None = None, reason: str | None = None) -> dict[str, Any]:
         binding = await self.repo.revoke_binding(binding_id, revoked_by=revoked_by, reason=reason)
+        revoked_sessions = await self._revoke_account_sessions_for_binding(
+            binding.binding_id,
+            revoked_by=revoked_by,
+            reason=f"binding revoked: {reason or 'admin revoke'}",
+        )
         replacement = await self.repo.get_active_primary_binding(binding.device_id)
         if replacement:
             await self.sync_asset_from_active_binding(replacement)
@@ -719,10 +1072,23 @@ class RegistrationService:
             person_id=binding.person_id,
             actor_id=revoked_by,
             actor_role="admin",
-            payload={"reason": reason},
+            payload={"reason": reason, "revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
         )
+        if revoked_sessions:
+            await self.repo.append_event(
+                event_type="account_sessions_revoked_due_to_revoke",
+                binding_id=binding.binding_id,
+                device_id=binding.device_id,
+                person_id=binding.person_id,
+                actor_id=revoked_by,
+                actor_role="admin",
+                payload={"revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
+            )
         await self.session.flush()
-        return {"binding": {"binding_id": binding.binding_id, "status": binding.status}}
+        return {
+            "binding": {"binding_id": binding.binding_id, "status": binding.status},
+            "events": {"revoked_sessions": revoked_sessions},
+        }
 
     async def sync_asset_from_active_binding(self, binding: Any) -> None:
         asset = await self.registry_repo.get_asset(binding.asset_id)

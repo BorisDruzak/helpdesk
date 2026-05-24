@@ -758,6 +758,51 @@ Verification matrix:
   - [x] Change ticket create to trust `requester_account.session_id` instead of client-supplied identity payload, leaving legacy self-declared other-account as explicitly unverified.
   - [x] Update Qt API client, `AccountSessionManager`, account gate and main window so confirmed login creates a server session and other-account login creates an approval request, not an instant local session.
   - [x] Ensure legacy local requester profiles cannot override selected account sessions in ticket creation.
+
+## Active Work: Registry Management Center P0
+
+Status: in progress on branch `codex/helpdesk-process-model`.
+
+Goal:
+
+- Turn `/app/admin/registry` from a mostly read-only registry overview into an action-first Registry Management Center for device-user bindings, people identities, registration claims and requester account sessions.
+
+Classification:
+
+- Cross-cutting Registry / typed web boundary / React UI change. Contract surfaces: `server/registry/*`, `server/app/repos/*`, `server/web_api/registry_handlers.py`, `server/routes.py`, `webapp/src/features/admin/api.ts`, `/app/admin/registry`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`.
+
+P0 scope:
+
+- Server: add service-backed admin operations for bind person to device, transfer primary owner, add shared user, assign responsible person, revoke dependent account sessions on binding revoke/transfer, global account-session listing and basic person/identity admin mutations.
+- Server snapshot: expand `GET /api/web/admin/registry` with device summaries, people counts, binding rows, account sessions, login requests and action metadata while preserving existing fields for current consumers.
+- Webapp: refactor `registry-page.tsx` into a page orchestrator and feature components under `webapp/src/features/admin/registry/`; implement tabs `Обзор`, `Устройства`, `Пользователи`, `Привязки`, `Заявки`, `Аккаунт-сессии`, `Качество данных`; keep `Локации`, `Подразделения`, `Политики` as useful P1 placeholders.
+- UX: global search, quick actions, reusable right detail panel, modal actions with reason fields for destructive/ownership operations, React Query invalidation for `admin-registry` and account-session queries.
+
+Non-goals for this pass:
+
+- Full locations/departments/policies CRUD.
+- Person duplicate merge/split workflow beyond showing actionable placeholders.
+- New DB schema unless existing tables cannot represent the P0 lifecycle.
+- Full CI/full release gate unless explicitly requested after a frozen candidate.
+
+Execution plan:
+
+- [x] Step 1: Run intake, rebuild context index, bootstrap web toolchain and inspect existing registry/account-session contracts.
+- [x] Step 2: Add failing backend tests for manual bind, primary conflict, replace/transfer, shared/responsible bindings and dependent account-session revoke.
+- [x] Step 3: Implement `RegistrationService` admin binding helpers and `AccountSessionService` dependent-session revoke/list helpers.
+- [x] Step 4: Add admin registry routes/handlers and update `server/routes.py`.
+- [x] Step 5: Expand `RegistryIngestionService.build_snapshot()` payload with P0 summary/device/person/binding/session fields.
+- [x] Step 6: Add frontend API types and mutation helpers.
+- [x] Step 7: Replace `/app/admin/registry` with orchestrator + P0 tab components, dialogs and detail drawer.
+- [x] Step 8: Update `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` and this plan status.
+- [ ] Step 9: Run focused backend tests, webapp build/test target if available, `compileall`, `verify_workspace.py` and `git diff --check`.
+
+Verification target:
+
+- Backend: `python -m pytest server/tests/test_registry_admin_actions.py -q`, `python -m pytest server/tests/test_device_registration_service.py server/tests/test_registration_api.py server/tests/test_account_session_service.py server/tests/test_ticket_account_access.py -q`.
+- Webapp: `pnpm --dir webapp run build`; run registry-targeted Vitest if a useful test target is added.
+- General: `python -m compileall server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
+- Browser: MCP/browser check at `https://192.168.100.17:9443/admin` after deploy/smoke if this pass reaches remote verification.
   - [x] Add minimal admin registry UI/API client support for reviewing other-account login requests if feasible in this pass.
   - [x] Update CODEMAP/quick lookup docs for new account-session contract.
   - [ ] Run focused server/agent tests, compileall, webapp build, workspace verify and diff checks; commit and push.

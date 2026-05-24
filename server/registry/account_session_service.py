@@ -378,6 +378,30 @@ class AccountSessionService:
         )
         return await self.serialize_session(row)
 
+    async def revoke_sessions_for_binding(
+        self,
+        *,
+        binding_id: str,
+        revoked_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        direct_rows = await self.repo.list_sessions(binding_id=binding_id, verification_status="verified", limit=500)
+        base_rows = await self.repo.list_sessions(base_binding_id=binding_id, verification_status="verified", limit=500)
+        rows_by_id = {row.session_id: row for row in [*direct_rows, *base_rows]}
+        revoked: list[dict[str, Any]] = []
+        for row in rows_by_id.values():
+            updated = await self.repo.revoke_session(row.session_id, revoked_by=revoked_by, reason=reason)
+            await self.repo.append_event(
+                device_id=updated.device_id,
+                session_id=updated.session_id,
+                event_type="account_session_revoked_due_to_binding_change",
+                actor_id=revoked_by,
+                actor_role="admin",
+                payload={"binding_id": binding_id, "reason": reason},
+            )
+            revoked.append(await self.serialize_session(updated))
+        return revoked
+
     async def touch_session(self, *, session_id: str) -> None:
         row = await self.repo.get_session(session_id)
         if row is None:
@@ -452,6 +476,22 @@ class AccountSessionService:
 
     async def list_sessions_for_device_admin(self, device_id: str) -> list[dict[str, Any]]:
         return await self.list_device_sessions(device_id)
+
+    async def list_sessions_admin(
+        self,
+        *,
+        device_id: str | None = None,
+        person_id: str | None = None,
+        verification_status: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        rows = await self.repo.list_sessions(
+            device_id=device_id,
+            person_id=person_id,
+            verification_status=verification_status,
+            limit=limit,
+        )
+        return [await self.serialize_session(row) for row in rows]
 
     @staticmethod
     def serialize_event(row: Any) -> dict[str, Any]:

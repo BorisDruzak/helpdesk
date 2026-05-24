@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
+from registry.account_session_service import AccountSessionService
 
 
 def _clean(value: Any) -> str | None:
@@ -163,6 +164,9 @@ class RegistrySnapshotService:
         for asset in assets:
             if asset.device_id:
                 bindings.extend(await registration_service.repo.list_bindings_for_device(asset.device_id))
+        account_service = AccountSessionService(self.session)
+        account_sessions = await account_service.list_sessions_admin(limit=500)
+        account_login_requests = await account_service.list_login_requests(limit=300)
 
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
@@ -173,13 +177,20 @@ class RegistrySnapshotService:
             if binding.status == "active" and binding.relationship_type == "primary_user"
         }
         active_shared_by_device: dict[str, list[Any]] = {}
+        active_responsible_by_device: dict[str, Any] = {}
         active_any_by_device: dict[str, Any] = {}
+        bindings_by_device: dict[str, list[Any]] = {}
+        bindings_by_person: dict[str, list[Any]] = {}
         for binding in bindings:
+            bindings_by_device.setdefault(binding.device_id, []).append(binding)
+            bindings_by_person.setdefault(binding.person_id, []).append(binding)
             if binding.status != "active":
                 continue
             active_any_by_device.setdefault(binding.device_id, binding)
             if binding.relationship_type == "shared_user":
                 active_shared_by_device.setdefault(binding.device_id, []).append(binding)
+            if binding.relationship_type == "responsible":
+                active_responsible_by_device.setdefault(binding.device_id, binding)
         identities_by_person: dict[str, list[RegistryPersonIdentity]] = {}
         person_ids = [person.person_id for person in people]
         if person_ids:
@@ -207,6 +218,18 @@ class RegistrySnapshotService:
             if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review", "conflict"}:
                 pending_by_device.setdefault(claim.device_id, []).append(claim)
         ticket_counts = await self.repo.count_tickets_by_device_ids([asset.device_id for asset in assets if asset.device_id])
+        active_sessions_by_device: dict[str, list[dict[str, Any]]] = {}
+        active_sessions_by_person: dict[str, list[dict[str, Any]]] = {}
+        sessions_by_binding: dict[str, list[dict[str, Any]]] = {}
+        for account_session in account_sessions:
+            if account_session.get("verification_status") == "verified" and not account_session.get("revoked_at"):
+                active_sessions_by_device.setdefault(account_session.get("device_id") or "", []).append(account_session)
+                if account_session.get("person_id"):
+                    active_sessions_by_person.setdefault(account_session.get("person_id") or "", []).append(account_session)
+                if account_session.get("binding_id"):
+                    sessions_by_binding.setdefault(account_session.get("binding_id") or "", []).append(account_session)
+                if account_session.get("base_binding_id"):
+                    sessions_by_binding.setdefault(account_session.get("base_binding_id") or "", []).append(account_session)
 
         data_quality = []
         for asset in assets:
@@ -218,6 +241,7 @@ class RegistrySnapshotService:
                     "severity": "warning",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
                     "title": "PC without location",
                     "description": asset.name,
                     "details": asset.name,
@@ -228,6 +252,7 @@ class RegistrySnapshotService:
                     "severity": "warning",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
                     "title": "PC without confirmed user",
                     "description": asset.name,
                     "details": asset.name,
@@ -238,6 +263,8 @@ class RegistrySnapshotService:
                     "severity": "info",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
+                    "claim_id": pending_claims[0].claim_id if pending_claims else None,
                     "title": "Registration pending",
                     "description": asset.name,
                     "details": asset.name,
@@ -249,6 +276,8 @@ class RegistrySnapshotService:
                     "severity": "danger",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
+                    "claim_id": conflict.claim_id,
                     "title": "Registration conflict",
                     "description": conflict.conflict_reason or asset.name,
                     "details": conflict.conflict_reason or asset.name,
@@ -260,6 +289,9 @@ class RegistrySnapshotService:
                     "severity": "warning",
                     "object_type": "binding",
                     "object_id": binding.binding_id,
+                    "binding_id": binding.binding_id,
+                    "device_id": binding.device_id,
+                    "person_id": binding.person_id,
                     "title": "Registration binding is stale",
                     "description": binding.device_id,
                     "details": binding.device_id,
@@ -276,6 +308,8 @@ class RegistrySnapshotService:
                     "severity": "warning",
                     "object_type": "asset",
                     "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
+                    "person_id": active_binding.person_id,
                     "title": "Presence user differs from active binding",
                     "description": asset.name,
                     "details": asset.name,
@@ -328,16 +362,39 @@ class RegistrySnapshotService:
 
         def binding_payload(binding: Any) -> dict[str, Any]:
             person = people_by_id.get(binding.person_id or "")
+            asset = next((item for item in assets if item.device_id == binding.device_id), None)
             return {
                 "binding_id": binding.binding_id,
                 "device_id": binding.device_id,
+                "hostname": asset.hostname if asset else None,
                 "asset_id": binding.asset_id,
                 "person_id": binding.person_id,
                 "person_name": person.display_name if person else None,
                 "relationship_type": binding.relationship_type,
                 "status": binding.status,
+                "source": binding.source,
+                "source_claim_id": binding.source_claim_id,
                 "confirmed_at": binding.confirmed_at.isoformat() if binding.confirmed_at else None,
                 "confirmed_by_admin": binding.confirmed_by_admin,
+                "valid_from": binding.valid_from.isoformat() if binding.valid_from else None,
+                "valid_to": binding.valid_to.isoformat() if binding.valid_to else None,
+                "last_seen_at": binding.last_seen_at.isoformat() if binding.last_seen_at else None,
+                "revoked_at": binding.revoked_at.isoformat() if binding.revoked_at else None,
+                "revoked_by": binding.revoked_by,
+                "revoke_reason": binding.revoke_reason,
+                "active_sessions_count": len(sessions_by_binding.get(binding.binding_id, [])),
+            }
+
+        def identity_payload(identity: RegistryPersonIdentity) -> dict[str, Any]:
+            return {
+                "identity_id": identity.identity_id,
+                "person_id": identity.person_id,
+                "provider": identity.provider,
+                "identifier": identity.identifier,
+                "normalized_identifier": identity.normalized_identifier,
+                "verified": bool(identity.verified),
+                "source": identity.source,
+                "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
             }
 
         return {
@@ -358,7 +415,19 @@ class RegistrySnapshotService:
                 "registrations_conflicts": sum(1 for claim in claims if claim.status == "conflict"),
                 "unregistered_devices": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
                 "active_bindings": sum(1 for binding in bindings if binding.status == "active"),
+                "bindings_active": sum(1 for binding in bindings if binding.status == "active"),
                 "stale_bindings": sum(1 for binding in bindings if binding.status == "stale"),
+                "devices_total": sum(1 for asset in assets if asset.asset_type == "pc"),
+                "devices_registered": sum(1 for asset in assets if asset.asset_type == "pc" and active_any_by_device.get(asset.device_id or "")),
+                "devices_unregistered": sum(1 for asset in assets if asset.asset_type == "pc" and not active_any_by_device.get(asset.device_id or "")),
+                "people_total": len(people),
+                "shared_devices": len(active_shared_by_device),
+                "sessions_active": sum(1 for row in account_sessions if row.get("verification_status") == "verified" and not row.get("revoked_at")),
+                "sessions_other_account": sum(1 for row in account_sessions if row.get("account_mode") == "verified_other_account" and row.get("verification_status") == "verified" and not row.get("revoked_at")),
+                "other_account_requests": sum(1 for row in account_login_requests if row.get("status") == "pending_verification"),
+                "claims_pending": sum(1 for claim in claims if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review"}),
+                "claims_conflict": sum(1 for claim in claims if claim.status == "conflict"),
+                "quality_issues": len(data_quality),
                 "data_quality_issue_count": len(data_quality),
                 "data_quality_issues": len(data_quality),
                 "suggestions_count": len(suggestions),
@@ -434,6 +503,35 @@ class RegistrySnapshotService:
                     "current_os_user": latest_presence_by_device.get(asset.device_id or "").current_user
                     if asset.device_id in latest_presence_by_device
                     else None,
+                    "latest_presence_user": latest_presence_by_device.get(asset.device_id or "").current_user
+                    if asset.device_id in latest_presence_by_device
+                    else None,
+                    "latest_presence_at": latest_presence_by_device.get(asset.device_id or "").collected_at.isoformat()
+                    if asset.device_id in latest_presence_by_device
+                    else None,
+                    "os": (asset.discovery_payload or {}).get("os"),
+                    "agent_version": (asset.discovery_payload or {}).get("agent_version"),
+                    "binding_type": (
+                        active_primary_by_device.get(asset.device_id or "")
+                        or active_responsible_by_device.get(asset.device_id or "")
+                        or active_any_by_device.get(asset.device_id or "")
+                    ).relationship_type
+                    if (
+                        active_primary_by_device.get(asset.device_id or "")
+                        or active_responsible_by_device.get(asset.device_id or "")
+                        or active_any_by_device.get(asset.device_id or "")
+                    )
+                    else None,
+                    "active_bindings": [
+                        binding_payload(binding)
+                        for binding in bindings_by_device.get(asset.device_id or "", [])
+                        if binding.status == "active"
+                    ],
+                    "active_sessions_count": len(active_sessions_by_device.get(asset.device_id or "", [])),
+                    "active_tickets_count": ticket_counts.get(asset.device_id or "", 0),
+                    "can_bind": bool(asset.device_id),
+                    "can_transfer": bool(asset.device_id),
+                    "can_revoke": bool(asset.device_id and active_any_by_device.get(asset.device_id or "")),
                     "last_seen_at": asset.last_seen_at.isoformat() if asset.last_seen_at else None,
                     "updated_at": asset.updated_at.isoformat() if asset.updated_at else None,
                     "ticket_count": ticket_counts.get(asset.device_id or "", 0),
@@ -461,6 +559,16 @@ class RegistrySnapshotService:
                     "location_name": locations_by_id.get(person.location_id or "").display_name
                     if person.location_id in locations_by_id
                     else None,
+                    "login": next((identity.identifier for identity in identities_by_person.get(person.person_id, []) if identity.provider in {"windows_login", "ui_login", "ad"}), None),
+                    "identities": [identity_payload(identity) for identity in identities_by_person.get(person.person_id, [])],
+                    "identity_count": len(identities_by_person.get(person.person_id, [])),
+                    "verified_identity_count": sum(1 for identity in identities_by_person.get(person.person_id, []) if identity.verified),
+                    "primary_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "primary_user"),
+                    "shared_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "shared_user"),
+                    "responsible_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "responsible"),
+                    "active_ticket_count": 0,
+                    "active_session_count": len(active_sessions_by_person.get(person.person_id, [])),
+                    "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
                     "updated_at": person.updated_at.isoformat() if person.updated_at else None,
                 }
                 for person in people
@@ -525,7 +633,10 @@ class RegistrySnapshotService:
                 for vendor in vendors
             ],
             "registration_claims": [claim_payload(claim) for claim in claims],
-            "active_bindings": [binding_payload(binding) for binding in bindings],
+            "active_bindings": [binding_payload(binding) for binding in bindings if binding.status == "active"],
+            "bindings": [binding_payload(binding) for binding in bindings],
+            "account_sessions": account_sessions,
+            "account_login_requests": account_login_requests,
             "data_quality": data_quality,
             "suggestions": suggestions,
         }

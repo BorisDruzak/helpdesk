@@ -42,6 +42,32 @@ class AccountSessionRepo:
         )
         return list(result.scalars().all())
 
+    async def list_sessions(
+        self,
+        *,
+        device_id: str | None = None,
+        person_id: str | None = None,
+        binding_id: str | None = None,
+        base_binding_id: str | None = None,
+        verification_status: str | None = None,
+        limit: int = 200,
+    ) -> list[DeviceAccountSession]:
+        stmt = select(DeviceAccountSession)
+        if device_id:
+            stmt = stmt.where(DeviceAccountSession.device_id == str(device_id))
+        if person_id:
+            stmt = stmt.where(DeviceAccountSession.person_id == str(person_id))
+        if binding_id:
+            stmt = stmt.where(DeviceAccountSession.binding_id == str(binding_id))
+        if base_binding_id:
+            stmt = stmt.where(DeviceAccountSession.base_binding_id == str(base_binding_id))
+        if verification_status:
+            stmt = stmt.where(DeviceAccountSession.verification_status == str(verification_status))
+        result = await self.session.execute(
+            stmt.order_by(desc(DeviceAccountSession.created_at)).limit(max(1, min(int(limit or 200), 500)))
+        )
+        return list(result.scalars().all())
+
     async def revoke_session(
         self,
         session_id: str,

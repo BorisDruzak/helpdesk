@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from aiohttp import web
 from loguru import logger
+from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device
+from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity
 from auth.middleware import require_auth
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
@@ -17,6 +18,11 @@ import uuid
 
 def _success(data: dict) -> web.Response:
     return web.json_response({"status": "success", "data": data})
+
+
+def _text(value: object, *, max_length: int = 500) -> str | None:
+    text = str(value or "").strip()
+    return text[:max_length] if text else None
 
 
 def _validate_uuid_device_id(value: str | None) -> str | None:
@@ -621,6 +627,262 @@ async def handle_web_admin_registry_binding_revoke(request: web.Request) -> web.
         )
         await session.commit()
     return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_device_bind_person(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistrationService(session).bind_person_to_device(
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                relationship_type=str(data.get("relationship_type") or "primary_user").strip(),
+                replace_existing=bool(data.get("replace_existing")),
+                reviewed_by=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+    except RegistrationConflictError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "REGISTRATION_CONFLICT"}, status=409)
+    except (RegistrationValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_device_transfer_owner(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistrationService(session).transfer_owner(
+                device_id=device_id,
+                new_person_id=str(data.get("new_person_id") or "").strip(),
+                old_binding_action=str(data.get("old_binding_action") or "transferred").strip(),
+                reviewed_by=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+    except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
+        status = 409 if isinstance(exc, RegistrationConflictError) else 400
+        code = "REGISTRATION_CONFLICT" if status == 409 else "VALIDATION_ERROR"
+        return web.json_response({"status": "error", "error": str(exc), "error_code": code}, status=status)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_device_shared_users(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistrationService(session).add_shared_user(
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                reviewed_by=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+    except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
+        status = 409 if isinstance(exc, RegistrationConflictError) else 400
+        code = "REGISTRATION_CONFLICT" if status == 409 else "VALIDATION_ERROR"
+        return web.json_response({"status": "error", "error": str(exc), "error_code": code}, status=status)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_device_responsible(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = str(request.match_info.get("device_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistrationService(session).assign_responsible(
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                replace_existing=bool(data.get("replace_existing", True)),
+                reviewed_by=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+    except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
+        status = 409 if isinstance(exc, RegistrationConflictError) else 400
+        code = "REGISTRATION_CONFLICT" if status == 409 else "VALIDATION_ERROR"
+        return web.json_response({"status": "error", "error": str(exc), "error_code": code}, status=status)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_account_sessions(request: web.Request) -> web.Response:
+    device_id = str(request.query.get("device_id") or "").strip() or None
+    person_id = str(request.query.get("person_id") or "").strip() or None
+    status = str(request.query.get("verification_status") or request.query.get("status") or "").strip() or None
+    try:
+        limit = int(request.query.get("limit") or "200")
+    except ValueError:
+        limit = 200
+    async with get_session() as session:
+        items = await AccountSessionService(session).list_sessions_admin(
+            device_id=device_id,
+            person_id=person_id,
+            verification_status=status,
+            limit=limit,
+        )
+    return _success({"items": items})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_people_create(request: web.Request) -> web.Response:
+    data = await request.json() if request.can_read_body else {}
+    display_name = _text(data.get("display_name") or data.get("full_name"), max_length=300)
+    if not display_name:
+        return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name=display_name,
+            full_name=_text(data.get("full_name"), max_length=300),
+            phone=_text(data.get("phone"), max_length=80),
+            email=_text(data.get("email"), max_length=320),
+            department_id=_text(data.get("department_id"), max_length=36),
+            location_id=_text(data.get("location_id"), max_length=36),
+            source="manual",
+            status=_text(data.get("status"), max_length=40) or "active",
+            metadata_json={"reason": _text(data.get("reason"), max_length=1000)},
+        )
+        session.add(person)
+        payload = {"person": {"person_id": person.person_id, "display_name": person.display_name}}
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_update(request: web.Request) -> web.Response:
+    person_id = str(request.match_info.get("person_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        person = await session.get(RegistryPerson, person_id)
+        if person is None:
+            return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
+        previous_status = person.status
+        for field, max_length in {
+            "display_name": 300,
+            "full_name": 300,
+            "phone": 80,
+            "email": 320,
+            "department_id": 36,
+            "location_id": 36,
+            "status": 40,
+        }.items():
+            if field in data:
+                setattr(person, field, _text(data.get(field), max_length=max_length))
+        if not person.display_name:
+            return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
+        revoked_bindings: list[dict[str, object]] = []
+        if previous_status != person.status and person.status in {"inactive", "deactivated", "disabled"}:
+            active_bindings = (
+                await session.execute(
+                    select(DeviceUserBinding).where(
+                        DeviceUserBinding.person_id == person.person_id,
+                        DeviceUserBinding.status == "active",
+                    )
+                )
+            ).scalars().all()
+            service = RegistrationService(session)
+            reason = _text(data.get("reason"), max_length=1000) or f"person {person.status}"
+            for binding in active_bindings:
+                result = await service.revoke_binding(
+                    binding.binding_id,
+                    revoked_by=auth_context.actor_id,
+                    reason=reason,
+                )
+                revoked_bindings.append(result["binding"])
+        payload = {
+            "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
+            "revoked_bindings": revoked_bindings,
+        }
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_identity_create(request: web.Request) -> web.Response:
+    person_id = str(request.match_info.get("person_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    provider = str(data.get("provider") or "").strip()
+    identifier = str(data.get("identifier") or "").strip()
+    if not provider or not identifier:
+        return web.json_response({"status": "error", "error": "provider and identifier are required", "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        if await session.get(RegistryPerson, person_id) is None:
+            return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
+        identity = await RegistrationService(session).repo.create_or_update_person_identity(
+            person_id=person_id,
+            provider=provider,
+            identifier=identifier,
+            verified=bool(data.get("verified")),
+            source="admin_manual",
+            metadata={"reason": _text(data.get("reason"), max_length=1000)},
+        )
+        if identity is None:
+            return web.json_response({"status": "error", "error": "identity is empty", "error_code": "VALIDATION_ERROR"}, status=400)
+        if identity.person_id != person_id:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "identity already belongs to another person",
+                    "error_code": "IDENTITY_COLLISION",
+                    "collision_person_id": identity.person_id,
+                },
+                status=409,
+            )
+        payload = {"identity": {
+            "identity_id": identity.identity_id,
+            "person_id": identity.person_id,
+            "provider": identity.provider,
+            "identifier": identity.identifier,
+            "normalized_identifier": identity.normalized_identifier,
+            "verified": identity.verified,
+            "source": identity.source,
+            "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
+        }}
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_identity_update(request: web.Request) -> web.Response:
+    identity_id = str(request.match_info.get("identity_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    async with get_session() as session:
+        identity = await session.get(RegistryPersonIdentity, identity_id)
+        if identity is None:
+            return web.json_response({"status": "error", "error": "identity not found", "error_code": "NOT_FOUND"}, status=404)
+        if "verified" in data:
+            identity.verified = bool(data.get("verified"))
+        if "source" in data:
+            identity.source = _text(data.get("source"), max_length=40) or identity.source
+        payload = {"identity": {"identity_id": identity.identity_id, "verified": identity.verified, "source": identity.source}}
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_identity_delete(request: web.Request) -> web.Response:
+    identity_id = str(request.match_info.get("identity_id") or "").strip()
+    async with get_session() as session:
+        identity = await session.get(RegistryPersonIdentity, identity_id)
+        if identity is None:
+            return web.json_response({"status": "error", "error": "identity not found", "error_code": "NOT_FOUND"}, status=404)
+        await session.delete(identity)
+        await session.commit()
+    return _success({"identity_id": identity_id, "deleted": True})
 
 
 @require_auth("admin")
