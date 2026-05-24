@@ -229,7 +229,7 @@ describe("appRoutes", () => {
 
     renderApp(["/app"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
     expect((await screen.findAllByRole("link", { name: /Рабочий центр/ })).length).toBeGreaterThan(0);
     expect((await screen.findAllByRole("link", { name: /Тикеты/ })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
@@ -265,7 +265,7 @@ describe("appRoutes", () => {
 
     const { router } = renderApp(["/app/support"], fetchMock as typeof fetch);
 
-    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/app/support");
   });
 
@@ -314,7 +314,7 @@ describe("appRoutes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
-    expect(await screen.findByRole("heading", { name: "Рабочий центр" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Центр действий" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
   });
 

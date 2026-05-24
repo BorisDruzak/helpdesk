@@ -1,20 +1,26 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bell,
   CheckCircle2,
   Clock3,
+  Columns3,
+  FileCheck2,
   Inbox,
+  ListChecks,
   MessageSquare,
   RefreshCcw,
   Search,
   ShieldAlert,
-  Sparkles,
+  Stethoscope,
+  UserPlus,
+  Wrench,
+  XCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import { fetchSupportWorkspaceSummary } from "../../features/queues/api";
+import { fetchSupportWorkspaceSummary, type SupportWorkspaceSummaryPayload } from "../../features/queues/api";
 import {
   fetchOperatorCommandCenter,
   type CommandCenterItem,
@@ -23,7 +29,35 @@ import {
   type CommandCenterSeverity,
   type OperatorCommandCenterPayload,
 } from "../../features/operator-command-center/api";
-import { buildPrioritizedAttentionList } from "../../features/operator-command-center/prioritization";
+import {
+  buildSupportActionTasks,
+  filterSupportActionTasks,
+  groupSupportActionTasksForKanban,
+  type KanbanActionColumn,
+  type SupportActionTask,
+  type SupportActionTaskFilter,
+  type SupportActionTaskType,
+} from "../../features/operator-command-center/task-projection";
+
+type ViewMode = "inbox" | "kanban";
+
+type ActionFilterId =
+  | "all"
+  | "my_work"
+  | "team_queue"
+  | "new_unassigned"
+  | "sla_ola"
+  | "sla_risk"
+  | "ola_risk"
+  | "unread_user_messages"
+  | "operator_action"
+  | "pending_approval"
+  | "pending_consent"
+  | "failed_operation"
+  | "agent_offline_active"
+  | "diagnostics_recommended"
+  | "closure_blocked"
+  | "similar_tickets_spike";
 
 const scopeOptions: Array<{ value: CommandCenterScope; label: string }> = [
   { value: "my", label: "Мои" },
@@ -34,9 +68,9 @@ const scopeOptions: Array<{ value: CommandCenterScope; label: string }> = [
 const limitOptions = [6, 8, 12, 20, 25];
 
 const severityClasses: Record<CommandCenterSeverity, string> = {
-  critical: "border-red-300 bg-red-50 text-red-900",
-  warning: "border-amber-300 bg-amber-50 text-amber-900",
-  info: "border-sky-300 bg-sky-50 text-sky-900",
+  critical: "border-red-300 bg-red-50 text-red-950",
+  warning: "border-amber-300 bg-amber-50 text-amber-950",
+  info: "border-sky-300 bg-sky-50 text-sky-950",
 };
 
 const severityDotClasses: Record<CommandCenterSeverity, string> = {
@@ -45,24 +79,27 @@ const severityDotClasses: Record<CommandCenterSeverity, string> = {
   info: "bg-sky-500",
 };
 
+const rowSeverityClasses: Record<CommandCenterSeverity, string> = {
+  critical: "border-l-red-500",
+  warning: "border-l-amber-500",
+  info: "border-l-sky-500",
+};
+
 const mojibakeMarkers = [
   "???",
   "\uFFFD",
   "\u00D0",
   "\u00D1",
-  "\u0420\u045C",
-  "\u0420\u045A",
-  "\u0420\u0452",
-  "\u0420\u0098",
-  "\u0420\u040E",
-  "\u0420\u045F",
-  "\u0420\u045B",
-  "\u0420\u2018",
-  "\u0420\u201D",
-  "\u0421\u0403",
-  "\u0421\u201A",
-  "\u0421\u040A",
-  "\u0421\u040F",
+  "Рњ",
+  "Рќ",
+  "Рџ",
+  "РЎ",
+  "Рђ",
+  "Р",
+  "Р‘",
+  "СЃ",
+  "С‚",
+  "СЊ",
 ];
 
 function displayText(value: string | null | undefined, fallback: string) {
@@ -89,13 +126,82 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function formatTimer(item: CommandCenterItem) {
+function formatTimerState(item: CommandCenterItem) {
   const timer = item.sla?.state && item.sla.state !== "unknown" ? item.sla : item.ola;
   if (!timer?.due_at) {
     return item.next_action_due_at ? `Действие до ${formatDateTime(item.next_action_due_at)}` : null;
   }
   const label = item.sla?.state && item.sla.state !== "unknown" ? "SLA" : "OLA";
-  return `${label}: ${timer.state === "breached" ? "нарушен" : "до"} ${formatDateTime(timer.due_at)}`;
+  const state = timer.state === "breached" ? "просрочен" : timer.state === "risk" ? "риск" : "до";
+  return `${label}: ${state} ${formatDateTime(timer.due_at)}`;
+}
+
+function countBySection(data: OperatorCommandCenterPayload | undefined, key: CommandCenterSection["key"]) {
+  return data?.sections.find((section) => section.key === key)?.count ?? 0;
+}
+
+function taskTypeLabel(type: SupportActionTaskType) {
+  const labels: Record<SupportActionTaskType, string> = {
+    triage_unassigned: "Новый intake",
+    reply_user: "Ответ пользователю",
+    sla_rescue: "SLA rescue",
+    ola_rescue: "OLA rescue",
+    operator_next_action: "Действие оператора",
+    approval_followup: "Согласование",
+    consent_waiting: "Consent",
+    operation_failed: "Ошибка операции",
+    diagnostics_needed: "Диагностика",
+    agent_offline: "Agent offline",
+    closure_blocker: "Блокер закрытия",
+    similar_spike: "Похожие обращения",
+  };
+  return labels[type];
+}
+
+function filterForId(id: ActionFilterId): SupportActionTaskFilter {
+  switch (id) {
+    case "my_work":
+      return {
+        taskTypes: ["reply_user", "sla_rescue", "ola_rescue", "operator_next_action", "operation_failed", "closure_blocker"],
+      };
+    case "team_queue":
+      return {};
+    case "new_unassigned":
+      return { taskTypes: ["triage_unassigned"] };
+    case "sla_ola":
+      return { taskTypes: ["sla_rescue", "ola_rescue"] };
+    case "sla_risk":
+      return { taskTypes: ["sla_rescue"] };
+    case "ola_risk":
+      return { taskTypes: ["ola_rescue"] };
+    case "unread_user_messages":
+      return { taskTypes: ["reply_user"] };
+    case "operator_action":
+      return { taskTypes: ["operator_next_action"] };
+    case "pending_approval":
+      return { taskTypes: ["approval_followup"] };
+    case "pending_consent":
+      return { taskTypes: ["consent_waiting"] };
+    case "failed_operation":
+      return { taskTypes: ["operation_failed"] };
+    case "agent_offline_active":
+      return { taskTypes: ["agent_offline"] };
+    case "diagnostics_recommended":
+      return { taskTypes: ["diagnostics_needed"] };
+    case "closure_blocked":
+      return { taskTypes: ["closure_blocker"] };
+    case "similar_tickets_spike":
+      return { taskTypes: ["similar_spike"] };
+    case "all":
+    default:
+      return {};
+  }
+}
+
+function statusBadgeClass(active: boolean) {
+  return active
+    ? "border-brand-600 bg-brand-700 text-white shadow-sm"
+    : "border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:text-brand-800";
 }
 
 function StatusBadge({ children }: { children: ReactNode }) {
@@ -106,151 +212,13 @@ function StatusBadge({ children }: { children: ReactNode }) {
   );
 }
 
-function KpiCard({
-  count,
-  label,
-  severity,
-  target,
-}: {
-  count: number;
-  label: string;
-  severity: CommandCenterSeverity;
-  target: string;
-}) {
-  return (
-    <a
-      href={`#${target}`}
-      className={`min-w-0 rounded-lg border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm ${severityClasses[severity]}`}
-    >
-      <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${severityDotClasses[severity]}`} />
-        <span className="truncate text-xs font-semibold uppercase tracking-[0.12em]">{label}</span>
-      </div>
-      <div className="mt-2 text-3xl font-semibold tabular-nums">{count}</div>
-    </a>
-  );
-}
-
-function ItemCard({ item, compact = false }: { item: CommandCenterItem; compact?: boolean }) {
-  const timer = formatTimer(item);
-  const title = displayText(item.title, "Без названия");
-  const requester = displayText(item.requester_name, "Пользователь не указан");
-  return (
-    <article className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Link to={item.href} className="min-w-0 text-sm font-semibold text-brand-700 hover:text-brand-900">
-              <span className="break-words">{item.ticket_number ?? item.ticket_id}</span>
-            </Link>
-            <StatusBadge>{item.status}</StatusBadge>
-            {item.priority ? <StatusBadge>{item.priority}</StatusBadge> : null}
-          </div>
-          <h3 className="mt-1 break-words text-base font-semibold text-slate-950">{title}</h3>
-        </div>
-        <Link
-          to={item.href}
-          className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-brand-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
-        >
-          Открыть тикет
-        </Link>
-      </div>
-
-      <p className="mt-3 break-words text-sm leading-6 text-slate-700">{item.reason}</p>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-        {item.queue ? <StatusBadge>Очередь: {item.queue}</StatusBadge> : null}
-        {item.assignee ? <StatusBadge>Исполнитель: {item.assignee}</StatusBadge> : <StatusBadge>Без исполнителя</StatusBadge>}
-        {requester ? <StatusBadge>Инициатор: {requester}</StatusBadge> : null}
-        {timer ? <StatusBadge>{timer}</StatusBadge> : null}
-        {item.unread_user_messages ? <StatusBadge>Сообщений: {item.unread_user_messages}</StatusBadge> : null}
-        {item.service_code ? <StatusBadge>Услуга: {item.service_code}</StatusBadge> : null}
-      </div>
-
-      {!compact && item.operation?.error_summary ? (
-        <p className="mt-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-900">
-          Ошибка операции: {item.operation.error_summary}
-        </p>
-      ) : null}
-      {!compact && item.agent?.connection_state ? (
-        <p className="mt-2 text-xs text-slate-500">
-          Агент: {item.agent.connection_state}, последнее соединение {formatDateTime(item.agent.last_seen_at)}
-        </p>
-      ) : null}
-      {!compact && item.closure?.blocked ? (
-        <p className="mt-2 text-xs text-slate-500">
-          Блокер закрытия: {item.closure.primary_blocker ?? "требуются дополнительные данные"}.
-        </p>
-      ) : null}
-      {!compact && item.similar_group ? (
-        <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          <div className="font-semibold">Похожие тикеты: {item.similar_group.count}</div>
-          <div className="mt-1 break-words text-xs">Примеры: {item.similar_group.sample_ticket_ids.join(", ")}</div>
-          <Link to={item.href} className="mt-2 inline-flex text-sm font-semibold text-amber-900 hover:text-amber-950">
-            Открыть похожие
-          </Link>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function SectionCard({ section }: { section: CommandCenterSection }) {
-  return (
-    <section id={section.key} className="scroll-mt-20 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[section.severity]}`} />
-            <h2 className="break-words text-lg font-semibold text-slate-950">{section.title}</h2>
-          </div>
-          <p className="mt-1 break-words text-sm leading-6 text-slate-600">{section.description}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-2xl font-semibold tabular-nums text-slate-950">{section.count}</span>
-          {section.action ? (
-            <Link to={section.action.href} className="text-sm font-semibold text-brand-700 hover:text-brand-900">
-              {section.action.label}
-            </Link>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3">
-        {section.items.length ? (
-          section.items.map((item) => <ItemCard key={item.id} item={item} />)
-        ) : (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
-            Сейчас нет тикетов в этой секции.
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function EmptyState() {
-  return (
-    <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-8 text-emerald-950">
-      <div className="flex items-start gap-3">
-        <CheckCircle2 className="mt-1 h-6 w-6 shrink-0" />
-        <div>
-          <h2 className="text-xl font-semibold">Нет срочных действий</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6">
-            Новые сообщения, SLA-риск, ошибки операций и блокеры закрытия не обнаружены.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function HeaderControls({
   data,
   scope,
   queue,
   queryDraft,
   limitPerSection,
+  summary,
   onScopeChange,
   onQueueChange,
   onQueryDraftChange,
@@ -265,6 +233,7 @@ function HeaderControls({
   queue: string;
   queryDraft: string;
   limitPerSection: number;
+  summary?: SupportWorkspaceSummaryPayload;
   onScopeChange: (scope: CommandCenterScope) => void;
   onQueueChange: (queue: string) => void;
   onQueryDraftChange: (query: string) => void;
@@ -274,16 +243,11 @@ function HeaderControls({
   onRefresh: () => void;
   refreshing: boolean;
 }) {
-  const queuesQuery = useQuery({
-    queryKey: ["support-workspace-summary", "command-center"],
-    queryFn: () => fetchSupportWorkspaceSummary(1000),
-    staleTime: 30_000,
-  });
-  const queues = queuesQuery.data?.queues ?? [];
+  const queues = summary?.queues ?? [];
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex min-w-[160px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+    <div className="flex flex-wrap items-end gap-3">
+      <label className="flex min-w-[150px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
         Охват
         <select
           className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
@@ -297,7 +261,7 @@ function HeaderControls({
           ))}
         </select>
       </label>
-      <label className="flex min-w-[220px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+      <label className="flex min-w-[210px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
         Очередь
         <select
           className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
@@ -313,7 +277,7 @@ function HeaderControls({
         </select>
       </label>
       <form
-        className="flex min-w-[260px] flex-1 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
+        className="flex min-w-[280px] flex-1 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
         onSubmit={onSearchSubmit}
       >
         Поиск
@@ -344,7 +308,7 @@ function HeaderControls({
         </div>
       </form>
       <label className="flex min-w-[150px] flex-col gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        Показывать
+        Источник
         <select
           className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
           value={limitPerSection}
@@ -352,7 +316,7 @@ function HeaderControls({
         >
           {limitOptions.map((value) => (
             <option key={value} value={value}>
-              {value} в секции
+              лимит секций: {value}
             </option>
           ))}
         </select>
@@ -366,10 +330,461 @@ function HeaderControls({
         <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         Обновить
       </button>
-      <span className="text-xs text-slate-500">
-        Обновлено: {data ? formatDateTime(data.generated_at) : "загрузка"}
-      </span>
+      <span className="text-xs text-slate-500">Обновлено: {data ? formatDateTime(data.generated_at) : "загрузка"}</span>
     </div>
+  );
+}
+
+function TopTaskFilters({
+  data,
+  totalTasks,
+  activeFilter,
+  onFilterChange,
+}: {
+  data?: OperatorCommandCenterPayload;
+  totalTasks: number;
+  activeFilter: ActionFilterId;
+  onFilterChange: (filter: ActionFilterId) => void;
+}) {
+  const filters: Array<{ id: ActionFilterId; label: string; count: number; severity: CommandCenterSeverity }> = [
+    { id: "all", label: "Все действия", count: totalTasks, severity: "info" },
+    { id: "new_unassigned", label: "Новые без владельца", count: countBySection(data, "new_unassigned"), severity: "warning" },
+    { id: "sla_risk", label: "SLA риск", count: countBySection(data, "sla_risk"), severity: "critical" },
+    { id: "ola_risk", label: "OLA риск", count: countBySection(data, "ola_risk"), severity: "critical" },
+    { id: "unread_user_messages", label: "Сообщения пользователей", count: countBySection(data, "unread_user_messages"), severity: "warning" },
+    { id: "operator_action", label: "Действия оператора", count: countBySection(data, "operator_action"), severity: "warning" },
+    { id: "pending_approval", label: "Согласования", count: countBySection(data, "pending_approval"), severity: "warning" },
+    { id: "pending_consent", label: "Consent", count: countBySection(data, "pending_consent"), severity: "warning" },
+    { id: "failed_operation", label: "Ошибки операций", count: countBySection(data, "failed_operation"), severity: "critical" },
+    { id: "agent_offline_active", label: "Agent offline", count: countBySection(data, "agent_offline_active"), severity: "warning" },
+    { id: "diagnostics_recommended", label: "Диагностика", count: countBySection(data, "diagnostics_recommended"), severity: "info" },
+    { id: "closure_blocked", label: "Блокеры закрытия", count: countBySection(data, "closure_blocked"), severity: "warning" },
+    { id: "similar_tickets_spike", label: "Похожие обращения", count: countBySection(data, "similar_tickets_spike"), severity: "warning" },
+  ];
+
+  return (
+    <section className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Фильтры действий">
+      {filters.map((filter) => {
+        const active = activeFilter === filter.id;
+        return (
+          <button
+            key={filter.id}
+            type="button"
+            className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${statusBadgeClass(active)}`}
+            onClick={() => onFilterChange(filter.id)}
+          >
+            <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[filter.severity]}`} />
+            <span>{filter.label}</span>
+            <span className={active ? "text-white/80" : "text-slate-500"}>{filter.count}</span>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+function ActionCenterLeftPane({
+  summary,
+  activeFilter,
+  queue,
+  onFilterChange,
+  onQueueChange,
+}: {
+  summary?: SupportWorkspaceSummaryPayload;
+  activeFilter: ActionFilterId;
+  queue: string;
+  onFilterChange: (filter: ActionFilterId) => void;
+  onQueueChange: (queue: string) => void;
+}) {
+  const views: Array<{ id: ActionFilterId; label: string; detail: string; icon: ReactNode }> = [
+    { id: "my_work", label: "Моя работа", detail: "ответы, SLA, операции", icon: <Inbox className="h-4 w-4" /> },
+    { id: "team_queue", label: "Командная очередь", detail: "все доступные действия", icon: <ListChecks className="h-4 w-4" /> },
+    { id: "new_unassigned", label: "Новые без владельца", detail: `${summary?.views.unassigned ?? 0} в summary`, icon: <UserPlus className="h-4 w-4" /> },
+    { id: "sla_ola", label: "SLA/OLA", detail: `${summary?.views.sla_risk ?? 0} SLA risk`, icon: <Clock3 className="h-4 w-4" /> },
+    { id: "unread_user_messages", label: "Ответы пользователей", detail: `${summary?.views.requester_replied ?? 0} в summary`, icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "failed_operation", label: "Операции", detail: "ошибки и retry", icon: <Wrench className="h-4 w-4" /> },
+    { id: "pending_approval", label: "Согласования и consent", detail: "approval / consent", icon: <Bell className="h-4 w-4" /> },
+    { id: "closure_blocked", label: "Закрытие", detail: "блокеры решения", icon: <FileCheck2 className="h-4 w-4" /> },
+    { id: "similar_tickets_spike", label: "Похожие обращения", detail: "возможный инцидент", icon: <ShieldAlert className="h-4 w-4" /> },
+  ];
+
+  return (
+    <aside className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-3 px-1">
+        <h2 className="text-sm font-semibold text-slate-950">Рабочие виды</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">Фильтры для выбора следующего действия.</p>
+      </div>
+      <div className="grid gap-1">
+        {views.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className={`flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${statusBadgeClass(activeFilter === view.id)}`}
+            onClick={() => onFilterChange(view.id)}
+          >
+            <span className="shrink-0">{view.icon}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{view.label}</span>
+              <span className={activeFilter === view.id ? "block truncate text-xs text-white/75" : "block truncate text-xs text-slate-500"}>
+                {view.detail}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-5 border-t border-slate-100 pt-3">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h3 className="text-sm font-semibold text-slate-950">Очереди</h3>
+          {queue ? (
+            <button className="text-xs font-semibold text-brand-700" type="button" onClick={() => onQueueChange("")}>
+              сброс
+            </button>
+          ) : null}
+        </div>
+        <div className="grid gap-1">
+          {(summary?.queues ?? []).slice(0, 12).map((item) => {
+            const value = item.code ?? item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${statusBadgeClass(queue === value)}`}
+                onClick={() => onQueueChange(value)}
+              >
+                <span className="min-w-0 truncate font-medium">{item.name}</span>
+                <span className={queue === value ? "text-white/80" : "text-slate-500"}>{item.count}</span>
+              </button>
+            );
+          })}
+          {summary && summary.queues.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 px-3 py-3 text-sm text-slate-500">Очереди не найдены.</div>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function quickActionsForTask(task: SupportActionTask) {
+  const actions = [{ label: "Открыть", href: task.href }];
+  if (!task.assignee || task.taskType === "triage_unassigned") {
+    actions.push({ label: "Взять", href: task.href });
+  }
+  if (task.taskType === "reply_user") {
+    actions.push({ label: "Ответить", href: task.href });
+  }
+  if (task.taskType === "operation_failed") {
+    actions.push({ label: "Операции", href: task.href });
+  }
+  if (task.taskType === "diagnostics_needed" || task.taskType === "agent_offline") {
+    actions.push({ label: "Диагностика", href: task.href });
+  }
+  if (task.taskType === "closure_blocker") {
+    actions.push({ label: "Закрытие", href: task.href });
+  }
+  if (task.taskType === "similar_spike") {
+    actions.push({ label: "Похожие", href: task.href });
+  }
+  return actions;
+}
+
+function ActionTaskRow({
+  task,
+  selected,
+  onSelect,
+}: {
+  task: SupportActionTask;
+  selected: boolean;
+  onSelect: (task: SupportActionTask) => void;
+}) {
+  const title = displayText(task.title, "Без названия");
+  const requester = displayText(task.requesterName, "Пользователь не указан");
+  const timer = formatTimerState(task.primaryItem);
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(task);
+    }
+  };
+
+  return (
+    <article
+      className={`border-l-4 ${rowSeverityClasses[task.severity]} rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm transition hover:border-brand-200 hover:bg-slate-50 ${
+        selected ? "ring-2 ring-brand-500" : ""
+      }`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={() => onSelect(task)}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)_auto] xl:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[task.severity]}`} aria-hidden="true" />
+            <span className="text-sm font-semibold text-slate-950">{task.actionLabel}</span>
+            <span className="text-xs font-semibold text-brand-700">{task.ticketNumber ?? task.ticketId}</span>
+            {task.priority ? <StatusBadge>{task.priority}</StatusBadge> : null}
+          </div>
+          <h3 className="mt-1 truncate text-sm font-semibold text-slate-950">{title}</h3>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{task.reason}</p>
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-1.5">
+            <StatusBadge>{task.queue ?? "Очередь не указана"}</StatusBadge>
+            <StatusBadge>{task.assignee ? `Исполнитель: ${task.assignee}` : "Без исполнителя"}</StatusBadge>
+            <StatusBadge>{requester}</StatusBadge>
+            {timer ? <StatusBadge>{timer}</StatusBadge> : null}
+            {task.primaryItem.unread_user_messages ? <StatusBadge>Сообщений: {task.primaryItem.unread_user_messages}</StatusBadge> : null}
+            {task.serviceCode ? <StatusBadge>service: {task.serviceCode}</StatusBadge> : null}
+            {task.offeringCode ? <StatusBadge>offering: {task.offeringCode}</StatusBadge> : null}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {task.reasonBadges.map((badge) => (
+              <span key={badge} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                {badge}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 xl:justify-end" onClick={(event) => event.stopPropagation()}>
+          {quickActionsForTask(task).map((action) => (
+            <Link
+              key={action.label}
+              to={action.href}
+              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:border-brand-300 hover:text-brand-800"
+            >
+              {action.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ActionInbox({
+  tasks,
+  selectedTaskId,
+  onSelectTask,
+}: {
+  tasks: SupportActionTask[];
+  selectedTaskId: string | null;
+  onSelectTask: (task: SupportActionTask) => void;
+}) {
+  return (
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">Action Inbox</h2>
+          <p className="mt-1 text-sm text-slate-600">Плотный список задач: что сделать дальше и почему это важно.</p>
+        </div>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{tasks.length} действий</span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {tasks.length ? (
+          tasks.map((task) => (
+            <ActionTaskRow key={task.id} task={task} selected={selectedTaskId === task.id} onSelect={onSelectTask} />
+          ))
+        ) : (
+          <EmptyTasksState />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function KanbanActionBoard({
+  columns,
+  selectedTaskId,
+  onSelectTask,
+}: {
+  columns: KanbanActionColumn[];
+  selectedTaskId: string | null;
+  onSelectTask: (task: SupportActionTask) => void;
+}) {
+  return (
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">Kanban</h2>
+          <p className="mt-1 text-sm text-slate-600">Read-only раскладка тех же задач по состояниям работы.</p>
+        </div>
+        <Columns3 className="h-5 w-5 text-slate-400" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {columns.map((column) => (
+          <div key={column.key} className="min-h-[180px] rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-950">{column.title}</h3>
+              <span className="text-xs font-semibold text-slate-500">{column.tasks.length}</span>
+            </div>
+            <div className="grid gap-2">
+              {column.tasks.map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  className={`rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-brand-300 ${
+                    selectedTaskId === task.id ? "border-brand-500 ring-2 ring-brand-400" : "border-slate-200"
+                  }`}
+                  onClick={() => onSelectTask(task)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2.5 w-2.5 rounded-full ${severityDotClasses[task.severity]}`} />
+                    <span className="truncate text-xs font-semibold text-brand-700">{task.ticketNumber ?? task.ticketId}</span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-950">{displayText(task.title, "Без названия")}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{task.actionLabel}</p>
+                </button>
+              ))}
+              {column.tasks.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-slate-500">Нет задач</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TicketBriefingPanel({ task }: { task: SupportActionTask | null }) {
+  if (!task) {
+    return (
+      <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-950">Ticket Briefing</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">Выберите задачу слева, чтобы увидеть краткий анализ тикета.</p>
+      </aside>
+    );
+  }
+
+  const item = task.primaryItem;
+  const title = displayText(task.title, "Без названия");
+  const requester = displayText(task.requesterName, "Пользователь не указан");
+
+  return (
+    <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">{taskTypeLabel(task.taskType)}</p>
+          <h2 className="mt-2 break-words text-xl font-semibold text-slate-950">{task.ticketNumber ?? task.ticketId}</h2>
+        </div>
+        <Link to={task.href} className="shrink-0 text-sm font-semibold text-brand-700 hover:text-brand-900">
+          Открыть
+        </Link>
+      </div>
+
+      <h3 className="mt-4 break-words text-base font-semibold text-slate-950">{title}</h3>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <StatusBadge>{task.status}</StatusBadge>
+        {task.priority ? <StatusBadge>{task.priority}</StatusBadge> : null}
+        <StatusBadge>{task.queue ?? "Очередь не указана"}</StatusBadge>
+        <StatusBadge>{task.assignee ? `Исполнитель: ${task.assignee}` : "Без исполнителя"}</StatusBadge>
+      </div>
+
+      <div className="mt-5 space-y-4 text-sm leading-6 text-slate-700">
+        <BriefingBlock title="Почему в центре действий">
+          <p>{task.reason}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {task.reasonBadges.map((badge) => (
+              <span key={badge} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                {badge}
+              </span>
+            ))}
+          </div>
+        </BriefingBlock>
+        <BriefingBlock title="Контекст тикета">
+          <dl className="grid gap-2">
+            <BriefingRow label="Инициатор" value={requester} />
+            <BriefingRow label="service/offering" value={[task.serviceCode, task.offeringCode].filter(Boolean).join(" / ") || "не указано"} />
+            <BriefingRow label="SLA" value={item.sla?.due_at ? `${item.sla.state ?? "unknown"} · ${formatDateTime(item.sla.due_at)}` : "нет данных"} />
+            <BriefingRow label="OLA" value={item.ola?.due_at ? `${item.ola.state ?? "unknown"} · ${formatDateTime(item.ola.due_at)}` : "нет данных"} />
+            <BriefingRow label="Следующий владелец" value={item.next_action_owner ?? "не указан"} />
+            <BriefingRow label="Следующее действие" value={formatDateTime(item.next_action_due_at)} />
+          </dl>
+        </BriefingBlock>
+        {item.operation?.error_summary ? (
+          <BriefingBlock title="Ошибка операции">
+            <p>{item.operation.tool_name ?? item.operation.id ?? "операция"}: {item.operation.error_summary}</p>
+          </BriefingBlock>
+        ) : null}
+        {item.agent?.connection_state ? (
+          <BriefingBlock title="Agent state">
+            <p>
+              {item.agent.connection_state}; последнее соединение {formatDateTime(item.agent.last_seen_at)}.
+            </p>
+          </BriefingBlock>
+        ) : null}
+        {item.diagnostics?.recommended ? (
+          <BriefingBlock title="Диагностика">
+            <p>{item.diagnostics.reason ?? item.diagnostics.profile_code ?? "Рекомендована диагностика"}</p>
+          </BriefingBlock>
+        ) : null}
+        {item.closure?.blocked ? (
+          <BriefingBlock title="Блокер закрытия">
+            <p>{item.closure.primary_blocker ?? `Нужно закрыть ${item.closure.missing_count ?? 1} требований`}</p>
+          </BriefingBlock>
+        ) : null}
+        {item.similar_group ? (
+          <BriefingBlock title="Похожие обращения">
+            <p>
+              {item.similar_group.count} обращений за {item.similar_group.window_hours} ч. Причина: {item.similar_group.reason}.
+            </p>
+          </BriefingBlock>
+        ) : null}
+      </div>
+
+      <Link
+        to={task.href}
+        className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800"
+      >
+        Открыть guided workspace
+      </Link>
+    </aside>
+  );
+}
+
+function BriefingBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</h4>
+      <div className="mt-1">{children}</div>
+    </section>
+  );
+}
+
+function BriefingRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-slate-800">{value}</dd>
+    </div>
+  );
+}
+
+function EmptyTasksState() {
+  return (
+    <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-6 text-emerald-950">
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="mt-1 h-5 w-5 shrink-0" />
+        <div>
+          <h2 className="text-lg font-semibold">Нет срочных действий</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6">По текущему фильтру нет задач. Можно расширить охват или открыть командную очередь.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ErrorState() {
+  return (
+    <section className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-red-950">
+      <div className="flex gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <h2 className="font-semibold">Не удалось загрузить Центр действий</h2>
+          <p className="mt-1 text-sm">Проверьте доступ к support API и повторите обновление.</p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -379,6 +794,16 @@ export function SupportCommandCenterPage() {
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
   const [limitPerSection, setLimitPerSection] = useState(8);
+  const [activeFilter, setActiveFilter] = useState<ActionFilterId>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("inbox");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  const summaryQuery = useQuery({
+    queryKey: ["support-workspace-summary", "command-center"],
+    queryFn: () => fetchSupportWorkspaceSummary(1000),
+    staleTime: 30_000,
+  });
+
   const commandCenterQuery = useQuery({
     queryKey: ["operator-command-center", scope, queue, query, limitPerSection],
     queryFn: () =>
@@ -393,18 +818,33 @@ export function SupportCommandCenterPage() {
       }),
     refetchOnWindowFocus: false,
   });
+
   const data = commandCenterQuery.data;
-  const prioritizedItems = useMemo(
-    () => buildPrioritizedAttentionList(data?.sections ?? [], 10),
-    [data?.sections],
-  );
+  const tasks = useMemo(() => buildSupportActionTasks(data?.sections ?? []), [data?.sections]);
+  const activeTaskFilter = useMemo(() => filterForId(activeFilter), [activeFilter]);
+  const filteredTasks = useMemo(() => filterSupportActionTasks(tasks, activeTaskFilter), [tasks, activeTaskFilter]);
+  const kanbanColumns = useMemo(() => groupSupportActionTasksForKanban(filteredTasks), [filteredTasks]);
+  const selectedTask = filteredTasks.find((task) => task.id === selectedTaskId) ?? null;
+
+  useEffect(() => {
+    if (selectedTaskId && !filteredTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
+    }
+  }, [filteredTasks, selectedTaskId]);
+
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setQuery(queryDraft.trim());
   };
+
   const handleClearSearch = () => {
     setQueryDraft("");
     setQuery("");
+  };
+
+  const refreshAll = () => {
+    void commandCenterQuery.refetch();
+    void summaryQuery.refetch();
   };
 
   return (
@@ -414,9 +854,9 @@ export function SupportCommandCenterPage() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700">Поддержка</p>
-              <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight text-slate-950">Рабочий центр</h1>
+              <h1 className="mt-2 break-words text-3xl font-semibold tracking-tight text-slate-950">Центр действий</h1>
               <p className="mt-2 max-w-4xl break-words text-sm leading-6 text-slate-600">
-                Что требует внимания сейчас: SLA, сообщения пользователей, согласования, операции и блокеры закрытия.
+                Рабочее место оператора: что сделать дальше, почему это важно, кому принадлежит задача и куда открыть guided workspace.
               </p>
             </div>
             <HeaderControls
@@ -425,14 +865,15 @@ export function SupportCommandCenterPage() {
               queue={queue}
               queryDraft={queryDraft}
               limitPerSection={limitPerSection}
+              summary={summaryQuery.data}
               onScopeChange={setScope}
               onQueueChange={setQueue}
               onQueryDraftChange={setQueryDraft}
               onSearchSubmit={handleSearchSubmit}
               onClearSearch={handleClearSearch}
               onLimitPerSectionChange={setLimitPerSection}
-              onRefresh={() => void commandCenterQuery.refetch()}
-              refreshing={commandCenterQuery.isFetching}
+              onRefresh={refreshAll}
+              refreshing={commandCenterQuery.isFetching || summaryQuery.isFetching}
             />
           </div>
           {data?.metadata?.scope_fallback_reason ? (
@@ -442,91 +883,69 @@ export function SupportCommandCenterPage() {
           ) : null}
         </header>
 
-        {commandCenterQuery.isError ? (
-          <section className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-red-950">
-            <div className="flex gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div>
-                <h2 className="font-semibold">Не удалось загрузить рабочий центр</h2>
-                <p className="mt-1 text-sm">Проверьте доступ к support API и повторите обновление.</p>
+        {commandCenterQuery.isError ? <ErrorState /> : null}
+
+        <TopTaskFilters data={data} totalTasks={tasks.length} activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+
+        <section className="grid gap-4 xl:grid-cols-[280px_minmax(520px,1fr)_400px] 2xl:grid-cols-[300px_minmax(620px,1fr)_440px]">
+          <ActionCenterLeftPane
+            summary={summaryQuery.data}
+            activeFilter={activeFilter}
+            queue={queue}
+            onFilterChange={setActiveFilter}
+            onQueueChange={setQueue}
+          />
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <ShieldAlert className="h-4 w-4 text-brand-700" />
+                <span>{filteredTasks.length} задач после фильтра</span>
+              </div>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" aria-label="Режим просмотра">
+                <button
+                  type="button"
+                  className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-semibold ${viewMode === "inbox" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600"}`}
+                  onClick={() => setViewMode("inbox")}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  Inbox
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-semibold ${viewMode === "kanban" ? "bg-white text-brand-800 shadow-sm" : "text-slate-600"}`}
+                  onClick={() => setViewMode("kanban")}
+                >
+                  <Columns3 className="h-4 w-4" />
+                  Kanban
+                </button>
               </div>
             </div>
-          </section>
-        ) : null}
-
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <KpiCard count={data?.summary.critical_count ?? 0} label="Критично" severity="critical" target="attention-first" />
-          <KpiCard count={data?.summary.warning_count ?? 0} label="Предупреждения" severity="warning" target="attention-first" />
-          <KpiCard count={data?.summary.new_unassigned_count ?? 0} label="Новые без владельца" severity="warning" target="new_unassigned" />
-          <KpiCard count={data?.summary.unread_user_messages_count ?? 0} label="Сообщения пользователей" severity="warning" target="unread_user_messages" />
-          <KpiCard count={data?.summary.sla_risk_count ?? 0} label="SLA риск" severity="critical" target="sla_risk" />
-          <KpiCard count={data?.summary.failed_operation_count ?? 0} label="Операции с ошибкой" severity="critical" target="failed_operation" />
-          <KpiCard count={data?.summary.closure_blocked_count ?? 0} label="Блокеры закрытия" severity="warning" target="closure_blocked" />
-        </section>
-
-        {data && data.summary.total_attention_items === 0 ? <EmptyState /> : null}
-
-        <section id="attention-first" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 text-slate-950">
-                <ShieldAlert className="h-5 w-5 text-red-600" />
-                <h2 className="text-xl font-semibold">Сначала обработать</h2>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">Дедуплицированный список тикетов и всплесков по приоритету.</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Clock3 className="h-4 w-4" />
-              SLA, OLA, операции, сообщения, согласия
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 xl:grid-cols-2">
-            {prioritizedItems.length ? (
-              prioritizedItems.map((item) => (
-                <article key={`priority-${item.id}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {item.reason_badges.map((badge) => (
-                      <span key={badge} className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-700">
-                        {badge}
-                      </span>
-                    ))}
-                  </div>
-                  <ItemCard item={item} compact />
-                </article>
-              ))
+            {viewMode === "inbox" ? (
+              <ActionInbox tasks={filteredTasks} selectedTaskId={selectedTaskId} onSelectTask={(task) => setSelectedTaskId(task.id)} />
             ) : (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                Нет приоритетных действий по текущему фильтру.
-              </div>
+              <KanbanActionBoard columns={kanbanColumns} selectedTaskId={selectedTaskId} onSelectTask={(task) => setSelectedTaskId(task.id)} />
             )}
+            {!data && commandCenterQuery.isLoading ? (
+              <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500">Загружаем Центр действий...</div>
+            ) : null}
           </div>
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-2">
-          {(data?.sections ?? []).map((section) => (
-            <SectionCard key={section.key} section={section} />
-          ))}
-          {!data && commandCenterQuery.isLoading ? (
-            <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-sm text-slate-500">
-              Загружаем секции рабочего центра...
-            </div>
-          ) : null}
+          <TicketBriefingPanel task={selectedTask} />
         </section>
 
         <footer className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
           <Inbox className="h-4 w-4" />
-          <span>Это рабочий центр действий, не отчетная панель. Для обработки открывайте тикет в guided workspace.</span>
+          <span>Центр действий не заменяет guided workspace: сложные действия открываются в карточке тикета.</span>
           <span className="inline-flex items-center gap-1">
             <MessageSquare className="h-4 w-4" />
             Сообщения
           </span>
           <span className="inline-flex items-center gap-1">
-            <Bell className="h-4 w-4" />
-            Согласования
+            <Stethoscope className="h-4 w-4" />
+            Диагностика
           </span>
           <span className="inline-flex items-center gap-1">
-            <Sparkles className="h-4 w-4" />
-            Диагностика
+            <XCircle className="h-4 w-4" />
+            Блокеры
           </span>
         </footer>
       </div>
