@@ -746,6 +746,8 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 device_desired_modules,
                 device_modules,
                 device_config,
+                registry_admin_events,
+                registry_admin_policies,
                 registry_assets,
                 registry_people,
                 registry_services,

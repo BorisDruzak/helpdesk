@@ -15,6 +15,9 @@ async def test_registry_export_devices_and_people_csv(test_engine):
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
         person = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Export User", full_name="Export User", source="manual", status="active")
+        session.add(person)
+        await session.flush()
+
         asset = RegistryAsset(
             asset_id=str(uuid.uuid4()),
             asset_type="pc",
@@ -26,7 +29,7 @@ async def test_registry_export_devices_and_people_csv(test_engine):
             status="active",
             discovery_payload={"agent_version": "3.1.59"},
         )
-        session.add_all([person, asset])
+        session.add(asset)
         await session.flush()
         devices_csv = await RegistryAdminOperationsService(session).export_csv("devices")
         people_csv = await RegistryAdminOperationsService(session).export_csv("people")

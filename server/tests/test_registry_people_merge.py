@@ -45,6 +45,9 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
         session.add(_device(device_id))
         master = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Master User", email="master@example.test", source="manual", status="active")
         duplicate = RegistryPerson(person_id=str(uuid.uuid4()), display_name="Duplicate User", phone="+70000000000", source="manual", status="active")
+        session.add_all([master, duplicate])
+        await session.flush()
+
         asset = RegistryAsset(
             asset_id=str(uuid.uuid4()),
             asset_type="pc",
@@ -107,7 +110,7 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
             requester_id="duplicate-user",
             requester_person_id=duplicate.person_id,
         )
-        session.add_all([master, duplicate, asset, identity, binding, account_session, claim, ticket])
+        session.add_all([asset, identity, binding, account_session, claim, ticket])
         await session.flush()
 
         result = await RegistryAdminOperationsService(session).merge_people(
