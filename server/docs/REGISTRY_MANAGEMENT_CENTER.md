@@ -93,7 +93,7 @@ Preview responses use a shared shape:
 Implemented preview operations:
 
 - `transfer_owner`: shows old binding action, new primary binding creation, derived asset/inventory sync, account sessions that will be revoked and ticket references that stay preserved.
-- `people_merge`: shows field winners, identity moves/conflicts, bindings, sessions, claims, tickets, asset owner and inventory rows that will move to the master person.
+- `people_merge`: shows field winners, identity moves/conflicts, bindings, sessions, account login requests, claims, tickets, asset owner and inventory rows that will move to the master person.
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
 - `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
 

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     Device,
     DeviceAccountEvent,
+    DeviceAccountLoginRequest,
     DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceRegistrationClaim,
@@ -836,6 +837,21 @@ class RegistryAdminOperationsService:
                 row.person_id = master_id
             if row.base_person_id == duplicate_id:
                 row.base_person_id = master_id
+        login_requests = (
+            await self.session.execute(
+                select(DeviceAccountLoginRequest).where(
+                    or_(
+                        DeviceAccountLoginRequest.matched_person_id == duplicate_id,
+                        DeviceAccountLoginRequest.base_person_id == duplicate_id,
+                    )
+                )
+            )
+        ).scalars().all()
+        for row in login_requests:
+            if row.matched_person_id == duplicate_id:
+                row.matched_person_id = master_id
+            if row.base_person_id == duplicate_id:
+                row.base_person_id = master_id
         claims = (await self.session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate_id))).scalars().all()
         for row in claims:
             row.person_id = master_id
@@ -883,6 +899,7 @@ class RegistryAdminOperationsService:
                 "identity_conflicts": conflicted_identities,
                 "bindings_moved": len(bindings),
                 "sessions_moved": len(sessions),
+                "login_requests_moved": len(login_requests),
                 "claims_moved": len(claims),
                 "tickets_moved": len(tickets),
                 "assets_moved": len(assets),
@@ -898,6 +915,7 @@ class RegistryAdminOperationsService:
                 "identity_conflicts": conflicted_identities,
                 "bindings": len(bindings),
                 "sessions": len(sessions),
+                "login_requests": len(login_requests),
                 "claims": len(claims),
                 "tickets": len(tickets),
                 "assets": len(assets),
@@ -932,6 +950,16 @@ class RegistryAdminOperationsService:
             await self.session.execute(
                 select(DeviceAccountSession).where(
                     or_(DeviceAccountSession.person_id == duplicate_id, DeviceAccountSession.base_person_id == duplicate_id)
+                )
+            )
+        ).scalars().all()
+        login_requests = (
+            await self.session.execute(
+                select(DeviceAccountLoginRequest).where(
+                    or_(
+                        DeviceAccountLoginRequest.matched_person_id == duplicate_id,
+                        DeviceAccountLoginRequest.base_person_id == duplicate_id,
+                    )
                 )
             )
         ).scalars().all()
@@ -989,6 +1017,7 @@ class RegistryAdminOperationsService:
         for kind, rows, object_attr in (
             ("binding", bindings, "binding_id"),
             ("account_session", sessions, "session_id"),
+            ("account_login_request", login_requests, "request_id"),
             ("registration_claim", claims, "claim_id"),
             ("ticket", tickets, "ticket_id"),
             ("registry_asset", assets, "asset_id"),
@@ -1027,6 +1056,7 @@ class RegistryAdminOperationsService:
                 "identity_conflicts": len(identity_conflicts),
                 "bindings_to_move": len(bindings),
                 "sessions_to_move": len(sessions),
+                "login_requests_to_move": len(login_requests),
                 "claims_to_move": len(claims),
                 "tickets_to_move": len(tickets),
                 "assets_to_move": len(assets),

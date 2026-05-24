@@ -80,6 +80,10 @@ Stage 6 cautious policy editor:
 - Registry policy responses now include defaults, effective values, changed-from-defaults, validation ranges, dangerous-setting warnings, `requires_restart` metadata, dry-run preview and reset-to-defaults.
 - Enabling `registration.auto_approve_first_binding` shows the explicit test-stand warning before save, and policy patch/reset require a reason and write `policy_changed` audit events.
 
+Stage 7 operation invariants:
+
+- Add focused DB-backed invariants for primary binding uniqueness, transfer/revoke derived state, shared/responsible non-ownership changes, merge dangling-reference cleanup, policy audit and bulk partial-success semantics.
+
 ## Active Work: Device Account Session Hardening
 
 Status: in progress.
