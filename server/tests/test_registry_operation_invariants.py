@@ -290,7 +290,9 @@ async def test_people_merge_leaves_no_live_duplicate_person_references(test_engi
             source="admin_manual",
             valid_from=datetime.now(timezone.utc),
         )
-        session.add_all([asset, binding])
+        session.add(asset)
+        await session.flush()
+        session.add(binding)
         await session.flush()
 
         session.add_all(
