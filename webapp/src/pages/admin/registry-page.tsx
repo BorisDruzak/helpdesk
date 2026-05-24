@@ -8,19 +8,30 @@ import { PageHeading } from "../../components/ui/page-heading";
 import { SearchField } from "../../components/ui/search-field";
 import {
   addAdminRegistrySharedUser,
+  adminRegistryExportUrl,
+  archiveAdminRegistryDepartment,
+  archiveAdminRegistryLocation,
   approveAdminAccountLoginRequest,
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
   bindAdminRegistryDevicePerson,
+  bulkRevokeAdminRegistryAccountSessions,
+  createAdminRegistryDepartment,
+  createAdminRegistryLocation,
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
   fetchAdminAccountLoginRequests,
   fetchAdminRegistry,
+  mergeAdminRegistryDepartments,
+  mergeAdminRegistryLocations,
+  mergeAdminRegistryPeople,
   rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
   revokeAdminDeviceAccountSession,
   revokeAdminDeviceUserBinding,
   transferAdminRegistryDeviceOwner,
+  updateAdminRegistryDepartment,
+  updateAdminRegistryLocation,
   updateAdminRegistryPerson,
   type AdminDeviceAccountSession,
   type AdminDeviceUserBinding,
@@ -30,12 +41,16 @@ import {
 import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
 import { RegistryBindPersonDialog, type BindPersonDialogState } from "../../features/admin/registry/registry-bind-person-dialog";
 import { RegistryBindingsTab } from "../../features/admin/registry/registry-bindings-tab";
+import { RegistryDepartmentsTab } from "../../features/admin/registry/registry-departments-tab";
 import { RegistryDetailDrawer } from "../../features/admin/registry/registry-detail-drawer";
 import { RegistryDevicesTab } from "../../features/admin/registry/registry-devices-tab";
 import { RegistryIdentityDialog, type IdentityDialogState } from "../../features/admin/registry/registry-identity-dialog";
+import { RegistryLocationsTab } from "../../features/admin/registry/registry-locations-tab";
+import { RegistryMergePeopleDialog } from "../../features/admin/registry/registry-merge-people-dialog";
 import { RegistryOverviewTab } from "../../features/admin/registry/registry-overview-tab";
 import { RegistryPeopleTab } from "../../features/admin/registry/registry-people-tab";
 import { RegistryPersonEditDialog, type PersonEditDialogState } from "../../features/admin/registry/registry-person-edit-dialog";
+import { RegistryPoliciesTab } from "../../features/admin/registry/registry-policies-tab";
 import { RegistryQualityTab } from "../../features/admin/registry/registry-quality-tab";
 import { RegistryRequestsTab } from "../../features/admin/registry/registry-requests-tab";
 import { RegistryTransferDeviceDialog } from "../../features/admin/registry/registry-transfer-device-dialog";
@@ -79,6 +94,7 @@ export function AdminRegistryPage() {
   const [transferDialog, setTransferDialog] = useState<{ deviceId: string; hostname?: string | null } | null>(null);
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState>(null);
   const [personDialog, setPersonDialog] = useState<PersonEditDialogState>(null);
+  const [mergePersonId, setMergePersonId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const registryQuery = useQuery({
@@ -108,6 +124,7 @@ export function AdminRegistryPage() {
       setTransferDialog(null);
       setIdentityDialog(null);
       setPersonDialog(null);
+      setMergePersonId(null);
       await invalidateRegistry();
     },
   });
@@ -150,6 +167,15 @@ export function AdminRegistryPage() {
       if (person) {
         setIdentityDialog({ personId: person.person_id, personName: person.display_name });
       }
+      return;
+    }
+    if (issue.kind === "duplicate_person" && issue.person_id) {
+      setMergePersonId(issue.person_id);
+      return;
+    }
+    if ((issue.kind === "missing_location" || issue.kind === "asset_missing_location") && issue.device_id) {
+      setTab("devices");
+      setSelection({ kind: "device", id: issue.device_id });
     }
   };
 
@@ -173,6 +199,15 @@ export function AdminRegistryPage() {
     setBindDialog({ deviceId: deviceId.trim(), mode: "primary_user", title: `Привязать ${person.display_name} к устройству`, replaceExisting: false });
   };
 
+  const exportType =
+    tab === "people" ? "people" :
+    tab === "bindings" ? "bindings" :
+    tab === "account_sessions" ? "sessions" :
+    tab === "locations" ? "locations" :
+    tab === "departments" ? "departments" :
+    tab === "quality" ? "quality" :
+    "devices";
+
   return (
     <section className="space-y-6">
       <PageHeading
@@ -187,7 +222,7 @@ export function AdminRegistryPage() {
             <Button leadingIcon={<ShieldCheck className="h-4 w-4" />} onClick={() => setTab("quality")} size="sm" variant="outline">
               Проверка качества
             </Button>
-            <Button disabled leadingIcon={<Download className="h-4 w-4" />} size="sm" variant="ghost">
+            <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => { window.location.href = adminRegistryExportUrl(exportType); }} size="sm" variant="ghost">
               Экспорт
             </Button>
             <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => void registryQuery.refetch()} size="sm">
@@ -256,6 +291,7 @@ export function AdminRegistryPage() {
               onAddIdentity={(person) => setIdentityDialog({ personId: person.person_id, personName: person.display_name })}
               onBindToDevice={bindPersonToKnownDevice}
               onEdit={(person) => setPersonDialog({ person })}
+              onMerge={(person) => setMergePersonId(person.person_id)}
               onSelect={setSelection}
             />
           ) : null}
@@ -294,13 +330,42 @@ export function AdminRegistryPage() {
           {visibleRegistry && tab === "quality" ? (
             <RegistryQualityTab issues={visibleRegistry.data_quality} onFix={handleFixIssue} onSelect={setSelection} suggestions={visibleRegistry.suggestions} />
           ) : null}
-          {tab === "locations" ? <PlaceholderTab title="Локации" /> : null}
-          {tab === "departments" ? <PlaceholderTab title="Подразделения" /> : null}
-          {tab === "policies" ? <PlaceholderTab title="Политики" /> : null}
+          {visibleRegistry && tab === "locations" ? (
+            <RegistryLocationsTab
+              locations={visibleRegistry.locations}
+              onArchive={(location) => runWithReason("Причина архивации локации", "Локация больше не используется", (reason) => archiveAdminRegistryLocation(location.location_id ?? location.id, reason))}
+              onMerge={(masterId, duplicateId, reason) => mutation.mutate(() => mergeAdminRegistryLocations({ master_location_id: masterId, duplicate_location_id: duplicateId, reason }))}
+              onSave={(payload) => mutation.mutate(() => (
+                payload.locationId
+                  ? updateAdminRegistryLocation(payload.locationId, payload)
+                  : createAdminRegistryLocation(payload)
+              ))}
+            />
+          ) : null}
+          {visibleRegistry && tab === "departments" ? (
+            <RegistryDepartmentsTab
+              departments={visibleRegistry.departments}
+              onArchive={(department) => runWithReason("Причина архивации подразделения", "Подразделение больше не используется", (reason) => archiveAdminRegistryDepartment(department.department_id ?? department.id, reason))}
+              onMerge={(masterId, duplicateId, reason) => mutation.mutate(() => mergeAdminRegistryDepartments({ master_department_id: masterId, duplicate_department_id: duplicateId, reason }))}
+              onSave={(payload) => mutation.mutate(() => (
+                payload.departmentId
+                  ? updateAdminRegistryDepartment(payload.departmentId, payload)
+                  : createAdminRegistryDepartment(payload)
+              ))}
+            />
+          ) : null}
+          {tab === "policies" ? <RegistryPoliciesTab /> : null}
         </CardContent>
       </Card>
 
       <RegistryDetailDrawer registry={registry} selection={selection} onClose={() => setSelection(null)} />
+      <RegistryMergePeopleDialog
+        people={registry?.people ?? []}
+        initialDuplicateId={mergePersonId}
+        open={Boolean(mergePersonId)}
+        onClose={() => setMergePersonId(null)}
+        onSubmit={(payload) => mutation.mutate(() => mergeAdminRegistryPeople(payload))}
+      />
       <RegistryBindPersonDialog
         busy={mutation.isPending}
         people={registry?.people ?? []}

@@ -171,6 +171,22 @@ class RegistrySnapshotService:
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
         departments_by_id = {department.department_id: department for department in departments}
+        location_user_counts = {
+            location.location_id: sum(1 for person in people if person.location_id == location.location_id)
+            for location in locations
+        }
+        location_device_counts = {
+            location.location_id: sum(1 for asset in assets if asset.location_id == location.location_id)
+            for location in locations
+        }
+        department_user_counts = {
+            department.department_id: sum(1 for person in people if person.department_id == department.department_id)
+            for department in departments
+        }
+        department_device_counts = {
+            department.department_id: sum(1 for asset in assets if asset.department_id == department.department_id)
+            for department in departments
+        }
         active_primary_by_device = {
             binding.device_id: binding
             for binding in bindings
@@ -324,6 +340,40 @@ class RegistrySnapshotService:
                     "title": "Location pending confirmation",
                     "description": location.display_name,
                     "details": location.display_name,
+                })
+        people_by_identity_key: dict[tuple[str, str], list[Any]] = {}
+        for person_id, identities in identities_by_person.items():
+            for identity in identities:
+                people_by_identity_key.setdefault((identity.provider, identity.normalized_identifier), []).append(identity)
+            if not identities and people_by_id.get(person_id) and people_by_id[person_id].status not in {"merged", "inactive"}:
+                data_quality.append({
+                    "kind": "missing_identity",
+                    "severity": "warning",
+                    "object_type": "person",
+                    "object_id": person_id,
+                    "person_id": person_id,
+                    "title": "Person has no identity",
+                    "description": people_by_id[person_id].display_name,
+                    "details": people_by_id[person_id].display_name,
+                })
+        seen_duplicate_people: set[tuple[str, str]] = set()
+        for (provider, normalized), rows in people_by_identity_key.items():
+            person_ids_for_identity = sorted({row.person_id for row in rows})
+            if len(person_ids_for_identity) > 1:
+                key = (provider, normalized)
+                if key in seen_duplicate_people:
+                    continue
+                seen_duplicate_people.add(key)
+                data_quality.append({
+                    "kind": "duplicate_person",
+                    "severity": "warning",
+                    "object_type": "person",
+                    "object_id": person_ids_for_identity[0],
+                    "person_id": person_ids_for_identity[0],
+                    "duplicate_person_ids": person_ids_for_identity[1:],
+                    "title": "Possible duplicate people",
+                    "description": f"{provider}: {normalized}",
+                    "details": f"{provider}: {normalized}",
                 })
 
         suggestions = []
@@ -583,6 +633,10 @@ class RegistrySnapshotService:
                     "display_name": location.display_name,
                     "status": location.status,
                     "source": location.source,
+                    "notes": (location.metadata_json or {}).get("notes"),
+                    "metadata_json": location.metadata_json or {},
+                    "users_count": location_user_counts.get(location.location_id, 0),
+                    "devices_count": location_device_counts.get(location.location_id, 0),
                     "updated_at": location.updated_at.isoformat() if location.updated_at else None,
                 }
                 for location in locations
@@ -595,6 +649,13 @@ class RegistrySnapshotService:
                     "name": department.name,
                     "status": department.status,
                     "source": department.source,
+                    "parent_id": department.parent_department_id,
+                    "manager_person_id": (department.metadata_json or {}).get("manager_person_id"),
+                    "support_queue": (department.metadata_json or {}).get("support_queue"),
+                    "notes": (department.metadata_json or {}).get("notes"),
+                    "metadata_json": department.metadata_json or {},
+                    "users_count": department_user_counts.get(department.department_id, 0),
+                    "devices_count": department_device_counts.get(department.department_id, 0),
                     "updated_at": department.updated_at.isoformat() if department.updated_at else None,
                 }
                 for department in departments

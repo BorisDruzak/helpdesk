@@ -13,6 +13,7 @@ from app.db.models import DeviceAccountLoginRequest, DeviceAccountSession
 from app.repos.account_session_repo import AccountSessionRepo
 from app.repos.registration_repo import RegistrationRepo
 from app.repos.registry_repo import RegistryRepo
+from registry.policy_service import RegistryPolicyService
 
 
 OTHER_ACCOUNT_WARNING = "ticket_created_from_other_account_on_registered_device"
@@ -69,6 +70,20 @@ class AccountSessionService:
         self.repo = AccountSessionRepo(session)
         self.registration_repo = RegistrationRepo(session)
         self.registry_repo = RegistryRepo(session)
+
+    async def _account_session_policy(self) -> dict[str, Any]:
+        try:
+            policies = await RegistryPolicyService(self.session).get_policies()
+            return policies.get("account_sessions") or {}
+        except Exception:
+            return {
+                "confirmed_binding_ttl_hours": CONFIRMED_BINDING_TTL_HOURS,
+                "verified_other_account_ttl_hours": VERIFIED_OTHER_ACCOUNT_TTL_HOURS,
+                "registration_pending_ttl_hours": REGISTRATION_PENDING_TTL_HOURS,
+                "allow_other_account_login": True,
+                "other_account_requires_reason": True,
+                "allow_other_account_on_shared_or_responsible": True,
+            }
 
     async def _serialize_person(self, person_id: str | None) -> dict[str, Any] | None:
         if not person_id:
@@ -155,6 +170,7 @@ class AccountSessionService:
         binding = await self.registration_repo.get_active_binding_for_device(device_id, binding_id)
         if binding is None:
             raise ValueError("active binding not found for device")
+        policy = await self._account_session_policy()
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
             session_token_hash=_token_hash(token),
@@ -165,7 +181,7 @@ class AccountSessionService:
             person_id=binding.person_id,
             binding_id=binding.binding_id,
             verified_at=_now(),
-            expires_at=_expires_after(CONFIRMED_BINDING_TTL_HOURS),
+            expires_at=_expires_after(policy.get("confirmed_binding_ttl_hours", CONFIRMED_BINDING_TTL_HOURS)),
             declared_account={},
             metadata_json={},
         )
@@ -186,6 +202,7 @@ class AccountSessionService:
             raise ValueError("registration claim does not belong to device")
         if str(claim.status) not in PENDING_REGISTRATION_CLAIM_STATUSES:
             raise ValueError("registration claim is not pending")
+        policy = await self._account_session_policy()
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
             session_token_hash=_token_hash(token),
@@ -195,7 +212,7 @@ class AccountSessionService:
             verification_method="registration_claim",
             person_id=claim.person_id,
             claim_id=claim.claim_id,
-            expires_at=_expires_after(REGISTRATION_PENDING_TTL_HOURS),
+            expires_at=_expires_after(policy.get("registration_pending_ttl_hours", REGISTRATION_PENDING_TTL_HOURS)),
             declared_account=claim.profile_snapshot or {},
             metadata_json={"source_claim_id": claim.claim_id},
         )
@@ -209,9 +226,12 @@ class AccountSessionService:
         return {"session": await self.serialize_session(row), "session_token": token}
 
     async def _get_base_binding_for_other_account_login(self, device_id: str):
+        policy = await self._account_session_policy()
         primary = await self.registration_repo.get_active_primary_binding(device_id)
         if primary is not None:
             return primary
+        if not bool(policy.get("allow_other_account_on_shared_or_responsible", True)):
+            return None
         for binding in await self.registration_repo.list_active_bindings_for_device(device_id):
             if binding.relationship_type in {"responsible", "shared_user"}:
                 return binding
@@ -237,6 +257,9 @@ class AccountSessionService:
         return None
 
     async def create_other_account_login_request(self, *, device_id: str, requested_account: dict[str, Any]) -> dict[str, Any]:
+        policy = await self._account_session_policy()
+        if not bool(policy.get("allow_other_account_login", True)):
+            raise ValueError("other account login is disabled")
         active = await self._get_base_binding_for_other_account_login(device_id)
         if active is None:
             raise ValueError("active binding required for other account login")
@@ -244,7 +267,7 @@ class AccountSessionService:
         if not declared.get("full_name") or not declared.get("login"):
             raise ValueError("full_name and login are required")
         reason = _clean(requested_account.get("reason"), max_length=500)
-        if not reason:
+        if bool(policy.get("other_account_requires_reason", True)) and not reason:
             raise ValueError("reason is required")
         declared["reason"] = reason
         matched_person_id = await self._match_person_id(declared)
@@ -278,6 +301,7 @@ class AccountSessionService:
                 return {"request": self.serialize_login_request(request), "session": await self.serialize_session(existing)}
         if request.status != "pending_verification":
             raise ValueError("account login request is not pending")
+        policy = await self._account_session_policy()
         declared = dict(request.requested_account or {})
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
@@ -294,7 +318,7 @@ class AccountSessionService:
             warning_code=OTHER_ACCOUNT_WARNING,
             verified_at=_now(),
             verified_by=reviewed_by,
-            expires_at=_expires_after(VERIFIED_OTHER_ACCOUNT_TTL_HOURS),
+            expires_at=_expires_after(policy.get("verified_other_account_ttl_hours", VERIFIED_OTHER_ACCOUNT_TTL_HOURS)),
             metadata_json={"source_request_id": request.request_id},
         )
         request = await self.repo.mark_login_request(

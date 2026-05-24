@@ -425,20 +425,33 @@ export type AdminRegistryPayload = {
   }>;
   locations: Array<{
     id: string;
+    location_id?: string;
     building: string | null;
     floor: string | null;
     room: string | null;
     display_name: string;
     source: string;
     status: string;
+    notes?: string | null;
+    users_count?: number;
+    devices_count?: number;
+    metadata_json?: Record<string, unknown>;
     updated_at: string | null;
   }>;
   departments: Array<{
     id: string;
+    department_id?: string;
     code: string | null;
     name: string;
+    parent_id?: string | null;
+    manager_person_id?: string | null;
+    support_queue?: string | null;
     source: string;
     status: string;
+    notes?: string | null;
+    users_count?: number;
+    devices_count?: number;
+    metadata_json?: Record<string, unknown>;
     updated_at: string | null;
   }>;
   services: Array<{
@@ -474,6 +487,7 @@ export type AdminRegistryPayload = {
     person_id?: string | null;
     binding_id?: string | null;
     claim_id?: string | null;
+    duplicate_person_ids?: string[];
   }>;
   suggestions: Array<{
     kind: string;
@@ -602,6 +616,56 @@ export type AdminDeviceAccountEvent = {
   event_type: string;
   actor_id: string | null;
   actor_role: string | null;
+  event_at: string | null;
+  payload: Record<string, unknown>;
+};
+
+export type AdminRegistryPolicyPayload = {
+  defaults: Record<string, Record<string, unknown>>;
+  effective: {
+    registration: {
+      require_user_confirmation: boolean;
+      require_admin_confirmation: boolean;
+      auto_approve_first_binding: boolean;
+      allow_shared_devices: boolean;
+      allow_responsible_binding: boolean;
+      max_primary_devices_per_person: number;
+      stale_after_days: number;
+    };
+    account_sessions: {
+      confirmed_binding_ttl_hours: number | null;
+      verified_other_account_ttl_hours: number;
+      registration_pending_ttl_hours: number;
+      allow_other_account_login: boolean;
+      other_account_requires_reason: boolean;
+      other_account_requires_admin_approval: boolean;
+      allow_other_account_on_shared_or_responsible: boolean;
+    };
+    ticket_visibility: {
+      owner_can_see_historical_tickets: boolean;
+      other_account_only_own_session_tickets: boolean;
+    };
+    warnings?: Record<string, string>;
+  };
+};
+
+export type AdminRegistryTimelineItem = {
+  event_id: string;
+  object_type?: string | null;
+  object_id?: string | null;
+  event_type: string;
+  actor_id?: string | null;
+  actor_role?: string | null;
+  reason?: string | null;
+  related_device_id?: string | null;
+  related_person_id?: string | null;
+  device_id?: string | null;
+  person_id?: string | null;
+  binding_id?: string | null;
+  claim_id?: string | null;
+  session_id?: string | null;
+  request_id?: string | null;
+  ticket_id?: string | null;
   event_at: string | null;
   payload: Record<string, unknown>;
 };
@@ -910,6 +974,225 @@ export async function deleteAdminRegistryPersonIdentity(identityId: string): Pro
     credentials: "same-origin",
   });
   await readSuccessResponse(response, "Не удалось удалить identity");
+}
+
+export async function createAdminRegistryLocation(payload: {
+  building?: string | null;
+  floor?: string | null;
+  room?: string | null;
+  display_name?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/locations", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось создать локацию");
+}
+
+export async function updateAdminRegistryLocation(locationId: string, payload: {
+  building?: string | null;
+  floor?: string | null;
+  room?: string | null;
+  display_name?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/locations/${encodeURIComponent(locationId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось обновить локацию");
+}
+
+export async function archiveAdminRegistryLocation(locationId: string, reason: string, force = false): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/locations/${encodeURIComponent(locationId)}/archive`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, force }),
+  });
+  await readSuccessResponse(response, "Не удалось архивировать локацию");
+}
+
+export async function mergeAdminRegistryLocations(payload: {
+  master_location_id: string;
+  duplicate_location_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/locations/merge", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось объединить локации");
+}
+
+export async function createAdminRegistryDepartment(payload: {
+  code?: string | null;
+  name: string;
+  parent_id?: string | null;
+  manager_person_id?: string | null;
+  support_queue?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/departments", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось создать подразделение");
+}
+
+export async function updateAdminRegistryDepartment(departmentId: string, payload: {
+  code?: string | null;
+  name?: string | null;
+  parent_id?: string | null;
+  manager_person_id?: string | null;
+  support_queue?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/departments/${encodeURIComponent(departmentId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось обновить подразделение");
+}
+
+export async function archiveAdminRegistryDepartment(departmentId: string, reason: string, force = false): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/departments/${encodeURIComponent(departmentId)}/archive`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, force }),
+  });
+  await readSuccessResponse(response, "Не удалось архивировать подразделение");
+}
+
+export async function mergeAdminRegistryDepartments(payload: {
+  master_department_id: string;
+  duplicate_department_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/departments/merge", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось объединить подразделения");
+}
+
+export async function fetchAdminRegistryPolicies(): Promise<AdminRegistryPolicyPayload> {
+  const response = await fetch("/api/web/admin/registry/policies", { credentials: "same-origin" });
+  return readSuccessResponse(response, "Не удалось загрузить политики реестра");
+}
+
+export async function updateAdminRegistryPolicies(payload: {
+  policies: AdminRegistryPolicyPayload["effective"];
+  reason: string;
+}): Promise<AdminRegistryPolicyPayload> {
+  const response = await fetch("/api/web/admin/registry/policies", {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось сохранить политики реестра");
+}
+
+export async function mergeAdminRegistryPeople(payload: {
+  master_person_id: string;
+  duplicate_person_id: string;
+  field_strategy?: Record<string, "master" | "duplicate">;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/people/merge", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось объединить пользователей");
+}
+
+export async function bulkAssignAdminRegistryDeviceLocation(payload: {
+  ids: string[];
+  location_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/bulk/devices/assign-location", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: payload.ids, payload: { location_id: payload.location_id }, reason: payload.reason }),
+  });
+  await readSuccessResponse(response, "Не удалось массово назначить локацию");
+}
+
+export async function bulkAssignAdminRegistryDeviceDepartment(payload: {
+  ids: string[];
+  department_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/bulk/devices/assign-department", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: payload.ids, payload: { department_id: payload.department_id }, reason: payload.reason }),
+  });
+  await readSuccessResponse(response, "Не удалось массово назначить подразделение устройствам");
+}
+
+export async function bulkAssignAdminRegistryPeopleDepartment(payload: {
+  ids: string[];
+  department_id: string;
+  reason: string;
+}): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/bulk/people/assign-department", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: payload.ids, payload: { department_id: payload.department_id }, reason: payload.reason }),
+  });
+  await readSuccessResponse(response, "Не удалось массово назначить подразделение пользователям");
+}
+
+export async function bulkRevokeAdminRegistryAccountSessions(ids: string[], reason: string): Promise<void> {
+  const response = await fetch("/api/web/admin/registry/bulk/account-sessions/revoke", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, reason }),
+  });
+  await readSuccessResponse(response, "Не удалось массово отозвать account sessions");
+}
+
+export async function fetchAdminRegistryTimeline(objectType: string, objectId: string): Promise<{ items: AdminRegistryTimelineItem[] }> {
+  const response = await fetch(`/api/web/admin/registry/timeline/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}`, {
+    credentials: "same-origin",
+  });
+  return readSuccessResponse(response, "Не удалось загрузить timeline");
+}
+
+export function adminRegistryExportUrl(type: "devices" | "people" | "bindings" | "sessions" | "locations" | "departments" | "quality", format = "csv"): string {
+  const params = new URLSearchParams({ type, format });
+  return `/api/web/admin/registry/export?${params.toString()}`;
 }
 
 async function readJson<T>(response: Response): Promise<T | null> {

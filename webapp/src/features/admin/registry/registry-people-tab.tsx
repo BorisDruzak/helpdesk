@@ -1,4 +1,4 @@
-import { Edit3, Fingerprint, Link2, UserCheck } from "lucide-react";
+import { Edit3, Fingerprint, GitMerge, Link2, UserCheck } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -10,10 +10,11 @@ type Props = {
   onAddIdentity: (person: AdminRegistryPayload["people"][number]) => void;
   onBindToDevice: (person: AdminRegistryPayload["people"][number]) => void;
   onEdit: (person: AdminRegistryPayload["people"][number]) => void;
+  onMerge: (person: AdminRegistryPayload["people"][number]) => void;
   onSelect: (selection: RegistrySelection) => void;
 };
 
-export function RegistryPeopleTab({ onAddIdentity, onBindToDevice, onEdit, onSelect, people }: Props) {
+export function RegistryPeopleTab({ onAddIdentity, onBindToDevice, onEdit, onMerge, onSelect, people }: Props) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <div className="grid min-w-[1320px] grid-cols-[190px_160px_150px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_260px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
@@ -38,6 +39,7 @@ export function RegistryPeopleTab({ onAddIdentity, onBindToDevice, onEdit, onSel
             <Button leadingIcon={<UserCheck className="h-4 w-4" />} onClick={() => onSelect({ kind: "person", id: person.person_id })} size="sm" variant="outline">Карточка</Button>
             <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => onEdit(person)} size="sm" variant="ghost">Edit</Button>
             <Button leadingIcon={<Fingerprint className="h-4 w-4" />} onClick={() => onAddIdentity(person)} size="sm" variant="ghost">Identity</Button>
+            <Button leadingIcon={<GitMerge className="h-4 w-4" />} onClick={() => onMerge(person)} size="sm" variant="ghost">Merge</Button>
             <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => onBindToDevice(person)} size="sm" variant="ghost">К устройству</Button>
           </div>
         </div>

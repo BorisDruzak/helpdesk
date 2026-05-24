@@ -2432,6 +2432,49 @@ class RegistryLocation(Base):
     )
 
 
+class RegistryAdminPolicy(Base):
+    """Persisted admin-editable registry policy bundle."""
+    __tablename__ = "registry_admin_policies"
+
+    policy_key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class RegistryAdminEvent(Base):
+    """Generic audit timeline for registry admin operations not tied to a single device registration event."""
+    __tablename__ = "registry_admin_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    object_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    related_device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    related_person_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    event_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_registry_admin_events_object_event_at", "object_type", "object_id", "event_at"),
+        Index("ix_registry_admin_events_device_event_at", "related_device_id", "event_at"),
+        Index("ix_registry_admin_events_person_event_at", "related_person_id", "event_at"),
+        Index("ix_registry_admin_events_type_event_at", "event_type", "event_at"),
+    )
+
+
 class RegistryVendor(Base):
     """External vendor/contractor registry."""
     __tablename__ = "registry_vendors"

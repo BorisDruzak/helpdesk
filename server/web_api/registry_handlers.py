@@ -9,6 +9,7 @@ from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPer
 from auth.middleware import require_auth
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
+from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
@@ -883,6 +884,260 @@ async def handle_web_admin_registry_person_identity_delete(request: web.Request)
         await session.delete(identity)
         await session.commit()
     return _success({"identity_id": identity_id, "deleted": True})
+
+
+def _registry_admin_error(exc: Exception) -> web.Response:
+    if isinstance(exc, LookupError):
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "NOT_FOUND"}, status=404)
+    return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_locations(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            service = RegistryAdminOperationsService(session)
+            if request.method == "POST":
+                payload = await service.create_location(data, actor_id=auth_context.actor_id)
+                await session.commit()
+            else:
+                payload = {"items": await service.list_locations()}
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_location_update(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    location_id = str(request.match_info.get("location_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).update_location(location_id, data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_location_archive(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    location_id = str(request.match_info.get("location_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).archive_location(location_id, data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_locations_merge(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).merge_locations(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_departments(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            service = RegistryAdminOperationsService(session)
+            if request.method == "POST":
+                payload = await service.create_department(data, actor_id=auth_context.actor_id)
+                await session.commit()
+            else:
+                payload = {"items": await service.list_departments()}
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_department_update(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    department_id = str(request.match_info.get("department_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).update_department(department_id, data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_department_archive(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    department_id = str(request.match_info.get("department_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).archive_department(department_id, data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_departments_merge(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).merge_departments(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_policies(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            service = RegistryAdminOperationsService(session)
+            if request.method == "PATCH":
+                payload = await service.update_policies(data, actor_id=auth_context.actor_id)
+                await session.commit()
+            else:
+                payload = await service.get_policies()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_people_merge(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).merge_people(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_devices_assign_location(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).bulk_assign_location(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_devices_assign_department(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).bulk_assign_department(data, actor_id=auth_context.actor_id, target="devices")
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_people_assign_department(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).bulk_assign_department(data, actor_id=auth_context.actor_id, target="people")
+            await session.commit()
+    except (LookupError, ValueError) as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_devices_revoke_account_sessions(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).bulk_revoke_sessions(data, actor_id=auth_context.actor_id, by_device=True)
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_bulk_account_sessions_revoke(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).bulk_revoke_sessions(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_export(request: web.Request) -> web.Response:
+    export_type = str(request.query.get("type") or "devices").strip()
+    export_format = str(request.query.get("format") or "csv").strip().lower()
+    if export_format != "csv":
+        return web.json_response({"status": "error", "error": "only csv export is supported", "error_code": "VALIDATION_ERROR"}, status=400)
+    try:
+        async with get_session() as session:
+            csv_text = await RegistryAdminOperationsService(session).export_csv(export_type)
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    filename = f"registry-{export_type}.csv"
+    return web.Response(
+        text=csv_text,
+        content_type="text/csv",
+        charset="utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_timeline(request: web.Request) -> web.Response:
+    object_type = str(request.match_info.get("object_type") or "").strip()
+    object_id = str(request.match_info.get("object_id") or "").strip()
+    try:
+        limit = int(request.query.get("limit") or "100")
+    except ValueError:
+        limit = 100
+    async with get_session() as session:
+        items = await RegistryAdminOperationsService(session).list_timeline(
+            object_type=object_type,
+            object_id=object_id,
+            limit=limit,
+        )
+    return _success({"items": items})
 
 
 @require_auth("admin")

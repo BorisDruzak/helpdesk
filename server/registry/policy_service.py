@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import RegistryAdminPolicy
+
+
+REGISTRY_POLICY_KEY = "registry_management"
+
+DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
+    "registration": {
+        "require_user_confirmation": True,
+        "require_admin_confirmation": True,
+        "auto_approve_first_binding": False,
+        "allow_shared_devices": True,
+        "allow_responsible_binding": True,
+        "max_primary_devices_per_person": 3,
+        "stale_after_days": 90,
+    },
+    "account_sessions": {
+        "confirmed_binding_ttl_hours": None,
+        "verified_other_account_ttl_hours": 24,
+        "registration_pending_ttl_hours": 72,
+        "allow_other_account_login": True,
+        "other_account_requires_reason": True,
+        "other_account_requires_admin_approval": True,
+        "allow_other_account_on_shared_or_responsible": True,
+    },
+    "ticket_visibility": {
+        "owner_can_see_historical_tickets": True,
+        "other_account_only_own_session_tickets": True,
+    },
+}
+
+
+def _deep_merge_defaults(value: dict[str, Any] | None) -> dict[str, Any]:
+    merged = {section: dict(defaults) for section, defaults in DEFAULT_REGISTRY_POLICIES.items()}
+    for section, section_value in (value or {}).items():
+        if section in merged and isinstance(section_value, dict):
+            merged[section].update(section_value)
+    return merged
+
+
+def _validate_bool(value: Any, *, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field} must be boolean")
+
+
+def _validate_int(value: Any, *, field: str, minimum: int, maximum: int, nullable: bool = False) -> int | None:
+    if value is None and nullable:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be an integer")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    if number < minimum or number > maximum:
+        raise ValueError(f"{field} must be between {minimum} and {maximum}")
+    return number
+
+
+def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
+    merged = _deep_merge_defaults(value)
+    registration = merged["registration"]
+    account_sessions = merged["account_sessions"]
+    ticket_visibility = merged["ticket_visibility"]
+
+    for field in (
+        "require_user_confirmation",
+        "require_admin_confirmation",
+        "auto_approve_first_binding",
+        "allow_shared_devices",
+        "allow_responsible_binding",
+    ):
+        registration[field] = _validate_bool(registration.get(field), field=f"registration.{field}")
+    registration["max_primary_devices_per_person"] = _validate_int(
+        registration.get("max_primary_devices_per_person"),
+        field="registration.max_primary_devices_per_person",
+        minimum=1,
+        maximum=50,
+    )
+    registration["stale_after_days"] = _validate_int(
+        registration.get("stale_after_days"),
+        field="registration.stale_after_days",
+        minimum=1,
+        maximum=3650,
+    )
+
+    account_sessions["confirmed_binding_ttl_hours"] = _validate_int(
+        account_sessions.get("confirmed_binding_ttl_hours"),
+        field="account_sessions.confirmed_binding_ttl_hours",
+        minimum=1,
+        maximum=87600,
+        nullable=True,
+    )
+    account_sessions["verified_other_account_ttl_hours"] = _validate_int(
+        account_sessions.get("verified_other_account_ttl_hours"),
+        field="account_sessions.verified_other_account_ttl_hours",
+        minimum=1,
+        maximum=8760,
+    )
+    account_sessions["registration_pending_ttl_hours"] = _validate_int(
+        account_sessions.get("registration_pending_ttl_hours"),
+        field="account_sessions.registration_pending_ttl_hours",
+        minimum=1,
+        maximum=8760,
+    )
+    for field in (
+        "allow_other_account_login",
+        "other_account_requires_reason",
+        "other_account_requires_admin_approval",
+        "allow_other_account_on_shared_or_responsible",
+    ):
+        account_sessions[field] = _validate_bool(account_sessions.get(field), field=f"account_sessions.{field}")
+
+    for field in ("owner_can_see_historical_tickets", "other_account_only_own_session_tickets"):
+        ticket_visibility[field] = _validate_bool(ticket_visibility.get(field), field=f"ticket_visibility.{field}")
+    if registration["auto_approve_first_binding"] and not registration["require_admin_confirmation"]:
+        # Kept valid for explicit admin choice, but callers can surface this warning.
+        merged.setdefault("warnings", {})["auto_approve_first_binding"] = "first binding can become active without admin review"
+    return merged
+
+
+class RegistryPolicyService:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_policies(self) -> dict[str, Any]:
+        row = await self.session.get(RegistryAdminPolicy, REGISTRY_POLICY_KEY)
+        return validate_registry_policies(row.config_json if row else {})
+
+    async def update_policies(self, value: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        config = validate_registry_policies(value)
+        row = await self.session.get(RegistryAdminPolicy, REGISTRY_POLICY_KEY)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = RegistryAdminPolicy(
+                policy_key=REGISTRY_POLICY_KEY,
+                config_json=config,
+                updated_by=actor_id,
+                updated_at=now,
+            )
+            self.session.add(row)
+        else:
+            row.config_json = config
+            row.updated_by = actor_id
+            row.updated_at = now
+        await self.session.flush()
+        return config

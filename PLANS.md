@@ -34,6 +34,36 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: Registry Management Center P1/P2
+
+Status: in progress / building on completed P0 Registry Management Center.
+
+Goal:
+
+- Turn `/app/admin/registry` from the completed P0 operations center into a fuller CMDB/Identity/Binding operations tool without rewriting the P0 page or weakening registration/account-session security.
+
+Scope:
+
+- Functional Locations and Departments tabs with CRUD, archive, merge, counts and registry events.
+- Registration/account-session/ticket visibility policy editor backed by persisted safe config with default fallbacks.
+- People merge/dedup workflow that moves identities, bindings, sessions, claims, tickets and derived asset assignments without deleting duplicates.
+- Bulk operations for common registry administration: assign locations/departments and revoke account sessions with per-item results.
+- CSV export for devices, people, bindings, sessions, locations, departments and quality issues.
+- More actionable quality remediation and richer timeline/detail drawer data.
+- Operator docs and live smoke checklist for Registry Management Center.
+
+Non-goals:
+
+- No AD/LDAP integration in this pass beyond safe placeholders/hooks.
+- No raw lifecycle mutation for binding revoke/transfer/session invalidation; existing `RegistrationService` and `AccountSessionService` remain authoritative.
+- No changes to machine-token or account-session architecture.
+
+Verification target:
+
+- Focused Registry DB/API tests for locations, departments, policies, merge, bulk actions, import/export where implemented, plus existing P0 registry/account-session/ticket access tests.
+- `pnpm --dir webapp test -- registry`, `pnpm --dir webapp run build`, agent account-session smoke tests, `python -m compileall -q server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
+- Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
+
 ## Active Work: Device Account Session Hardening
 
 Status: in progress.

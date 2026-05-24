@@ -19,6 +19,7 @@ from app.db.models import (
 )
 from app.repos.registration_repo import RegistrationRepo, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
+from registry.policy_service import RegistryPolicyService
 
 
 REGISTRATION_POLICY = {
@@ -167,6 +168,13 @@ class RegistrationService:
         self.session = session
         self.repo = RegistrationRepo(session)
         self.registry_repo = RegistryRepo(session)
+
+    async def _registration_policy(self) -> dict[str, Any]:
+        try:
+            policies = await RegistryPolicyService(self.session).get_policies()
+            return policies.get("registration") or REGISTRATION_POLICY
+        except Exception:
+            return REGISTRATION_POLICY
 
     async def _get_device(self, device_id: str) -> Device | None:
         return await self.session.get(Device, str(device_id))
@@ -341,6 +349,11 @@ class RegistrationService:
             raise RegistrationValidationError("person not found")
         if relationship_type not in ALLOWED_RELATIONSHIP_TYPES:
             raise RegistrationValidationError("invalid relationship_type")
+        policy = await self._registration_policy()
+        if relationship_type == "shared_user" and not bool(policy.get("allow_shared_devices", True)):
+            raise RegistrationConflictError("shared device bindings are disabled by policy")
+        if relationship_type == "responsible" and not bool(policy.get("allow_responsible_binding", True)):
+            raise RegistrationConflictError("responsible bindings are disabled by policy")
         asset = await self._ensure_asset_for_device(device)
         active_bindings = await self.repo.list_active_bindings_for_device(device.device_id)
         for existing in active_bindings:
@@ -668,12 +681,13 @@ class RegistrationService:
             conflict_reason = "device_archived"
 
         user_confirmed = bool(profile_snapshot.get("user_confirmed") or (profile or {}).get("user_confirmed"))
+        policy = await self._registration_policy()
         if conflict_reason:
             status = "conflict"
         elif user_confirmed:
-            status = "pending_admin_review" if REGISTRATION_POLICY["require_admin_confirmation"] else "user_confirmed"
+            status = "pending_admin_review" if policy["require_admin_confirmation"] else "user_confirmed"
         else:
-            status = "pending_user_confirmation" if REGISTRATION_POLICY["require_user_confirmation"] else "pending_admin_review"
+            status = "pending_user_confirmation" if policy["require_user_confirmation"] else "pending_admin_review"
 
         claim = await self.repo.find_pending_claim(device_id=device_id, person_id=person.person_id, source="agent_profile")
         now = datetime.now(timezone.utc)
@@ -789,7 +803,8 @@ class RegistrationService:
         await self.session.flush()
         person = await self.registry_repo.get_person(claim.person_id)
         asset = await self.registry_repo.get_asset(claim.asset_id)
-        if not conflict_reason and REGISTRATION_POLICY["auto_approve_first_binding"] and not REGISTRATION_POLICY["require_admin_confirmation"]:
+        policy = await self._registration_policy()
+        if not conflict_reason and policy["auto_approve_first_binding"] and not policy["require_admin_confirmation"]:
             return await self.approve_claim(claim.claim_id, reviewed_by=actor_id or "system", actor_role="system")
         return self._build_submit_payload(person=person, asset=asset, claim=claim)
 
@@ -888,8 +903,9 @@ class RegistrationService:
                 return await self._build_approved_payload(claim, existing_for_claim)
         if claim.status in {"rejected", "superseded", "expired"}:
             raise ValueError("claim cannot be approved")
+        policy = await self._registration_policy()
         if (
-            REGISTRATION_POLICY["require_user_confirmation"]
+            policy["require_user_confirmation"]
             and not claim.user_confirmed_at
             and not admin_override_user_confirmation
         ):
@@ -1230,7 +1246,8 @@ class RegistrationService:
             for row in await self.repo.list_bindings_for_person(person_id, active_only=True)
             if row.relationship_type == "primary_user"
         )
-        if relationship_type == "primary_user" and primary_count >= int(REGISTRATION_POLICY["max_primary_devices_per_person"]):
+        policy = await self._registration_policy()
+        if relationship_type == "primary_user" and primary_count >= int(policy["max_primary_devices_per_person"]):
             return "person_primary_device_limit"
         device = await self._get_device(device_id)
         if device is not None and getattr(device, "deleted_at", None) is not None:

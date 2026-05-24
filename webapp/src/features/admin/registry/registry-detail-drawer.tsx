@@ -1,9 +1,10 @@
 import { X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
-import type { AdminRegistryPayload } from "../api";
+import { fetchAdminRegistryTimeline, type AdminRegistryPayload } from "../api";
 import { formatDateTime, statusTone, type RegistrySelection } from "./registry-utils";
 
 type Props = {
@@ -22,9 +23,13 @@ function Field({ label, value }: { label: string; value: string | number | null 
 }
 
 export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
-  if (!registry || !selection) {
-    return null;
-  }
+  const timelineQuery = useQuery({
+    queryKey: ["admin-registry-timeline", selection?.kind, selection?.id],
+    queryFn: () => fetchAdminRegistryTimeline(selection!.kind === "session" ? "account_session" : selection!.kind, selection!.id),
+    enabled: Boolean(registry && selection),
+    retry: false,
+  });
+  if (!registry || !selection) return null;
   const device = selection.kind === "device" ? registry.assets.find((item) => item.device_id === selection.id) : null;
   const person = selection.kind === "person" ? registry.people.find((item) => item.person_id === selection.id) : null;
   const binding = selection.kind === "binding" ? (registry.bindings ?? registry.active_bindings).find((item) => item.binding_id === selection.id) : null;
@@ -165,6 +170,24 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
           </CardContent>
         </Card>
       ) : null}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Timeline</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {timelineQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем историю...</p> : null}
+          {(timelineQuery.data?.items ?? []).length ? timelineQuery.data?.items.map((event) => (
+            <div className="rounded-lg border border-border px-3 py-2 text-sm" key={event.event_id}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-slate-900">{event.event_type}</span>
+                <span className="text-xs text-slate-500">{formatDateTime(event.event_at)}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">{event.actor_role ?? "system"} {event.actor_id ? `· ${event.actor_id}` : ""}</p>
+              {event.reason ? <p className="mt-1 text-xs text-slate-600">{event.reason}</p> : null}
+            </div>
+          )) : timelineQuery.isLoading ? null : <p className="text-sm text-slate-500">Событий пока нет.</p>}
+        </CardContent>
+      </Card>
     </aside>
   );
 }
