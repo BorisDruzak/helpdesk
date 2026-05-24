@@ -572,6 +572,26 @@ export type AdminRegistryOperationPreview = {
   [key: string]: unknown;
 };
 
+export type AdminRegistryBulkItem = {
+  id: string;
+  status: "success" | "error";
+  error_code?: string;
+  error?: string;
+  affected_sessions?: number;
+};
+
+export type AdminRegistryBulkResponse = {
+  bulk_operation_id: string;
+  operation: string;
+  summary: {
+    selected: number;
+    success: number;
+    failed: number;
+  };
+  items: AdminRegistryBulkItem[];
+  results?: Array<Record<string, unknown>>;
+};
+
 export type AdminRegistryImportType = "people" | "locations" | "departments" | "device_inventory_mapping";
 
 export type AdminRegistryImportPreview = AdminRegistryOperationPreview & {
@@ -1249,52 +1269,62 @@ export async function bulkAssignAdminRegistryDeviceLocation(payload: {
   ids: string[];
   location_id: string;
   reason: string;
-}): Promise<void> {
+}): Promise<AdminRegistryBulkResponse> {
   const response = await fetch("/api/web/admin/registry/bulk/devices/assign-location", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: payload.ids, payload: { location_id: payload.location_id }, reason: payload.reason }),
   });
-  await readSuccessResponse(response, "Не удалось массово назначить локацию");
+  return readSuccessResponse(response, "Не удалось массово назначить локацию");
 }
 
 export async function bulkAssignAdminRegistryDeviceDepartment(payload: {
   ids: string[];
   department_id: string;
   reason: string;
-}): Promise<void> {
+}): Promise<AdminRegistryBulkResponse> {
   const response = await fetch("/api/web/admin/registry/bulk/devices/assign-department", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: payload.ids, payload: { department_id: payload.department_id }, reason: payload.reason }),
   });
-  await readSuccessResponse(response, "Не удалось массово назначить подразделение устройствам");
+  return readSuccessResponse(response, "Не удалось массово назначить подразделение устройствам");
 }
 
 export async function bulkAssignAdminRegistryPeopleDepartment(payload: {
   ids: string[];
   department_id: string;
   reason: string;
-}): Promise<void> {
+}): Promise<AdminRegistryBulkResponse> {
   const response = await fetch("/api/web/admin/registry/bulk/people/assign-department", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: payload.ids, payload: { department_id: payload.department_id }, reason: payload.reason }),
   });
-  await readSuccessResponse(response, "Не удалось массово назначить подразделение пользователям");
+  return readSuccessResponse(response, "Не удалось массово назначить подразделение пользователям");
 }
 
-export async function bulkRevokeAdminRegistryAccountSessions(ids: string[], reason: string): Promise<void> {
+export async function bulkRevokeAdminRegistryAccountSessions(ids: string[], reason: string): Promise<AdminRegistryBulkResponse> {
   const response = await fetch("/api/web/admin/registry/bulk/account-sessions/revoke", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, reason }),
   });
-  await readSuccessResponse(response, "Не удалось массово отозвать account sessions");
+  return readSuccessResponse(response, "Не удалось массово отозвать account sessions");
+}
+
+export async function bulkRevokeAdminRegistryDeviceAccountSessions(ids: string[], reason: string): Promise<AdminRegistryBulkResponse> {
+  const response = await fetch("/api/web/admin/registry/bulk/devices/revoke-account-sessions", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, reason }),
+  });
+  return readSuccessResponse(response, "Не удалось массово отозвать account sessions устройств");
 }
 
 export async function fetchAdminRegistryTimeline(objectType: string, objectId: string): Promise<{ items: AdminRegistryTimelineItem[] }> {

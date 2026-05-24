@@ -14,13 +14,19 @@ type Props = {
   onTransfer: (device: AdminRegistryPayload["assets"][number]) => void;
   onRevokeSessions: (device: AdminRegistryPayload["assets"][number]) => void;
   onSelect: (selection: RegistrySelection) => void;
+  onToggleSelection: (id: string) => void;
+  onToggleVisibleSelection: (ids: string[]) => void;
+  selectedIds: string[];
 };
 
-export function RegistryDevicesTab({ devices, onBind, onResponsible, onRevokeSessions, onSelect, onShared, onTransfer }: Props) {
+export function RegistryDevicesTab({ devices, onBind, onResponsible, onRevokeSessions, onSelect, onShared, onToggleSelection, onToggleVisibleSelection, onTransfer, selectedIds }: Props) {
   const navigate = useNavigate();
+  const selectableIds = devices.map((device) => device.device_id).filter(Boolean) as string[];
+  const allVisibleSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <div className="grid min-w-[1500px] grid-cols-[220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_120px_360px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+      <div className="grid min-w-[1560px] grid-cols-[48px_220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_120px_360px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+        <input aria-label="Select visible devices" checked={allVisibleSelected} disabled={!selectableIds.length} onChange={() => onToggleVisibleSelection(selectableIds)} type="checkbox" />
         <span>Device / hostname</span>
         <span>Device ID</span>
         <span>OS</span>
@@ -35,7 +41,14 @@ export function RegistryDevicesTab({ devices, onBind, onResponsible, onRevokeSes
         <span>Actions</span>
       </div>
       {devices.length ? devices.map((device) => (
-        <div className="grid min-w-[1500px] grid-cols-[220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_120px_360px] gap-3 border-t border-border px-4 py-3 text-sm" key={device.id}>
+        <div className="grid min-w-[1560px] grid-cols-[48px_220px_220px_120px_120px_160px_180px_150px_150px_150px_100px_120px_360px] gap-3 border-t border-border px-4 py-3 text-sm" key={device.id}>
+          <input
+            aria-label={`Select device ${device.hostname ?? device.device_id ?? device.id}`}
+            checked={Boolean(device.device_id && selectedIds.includes(device.device_id))}
+            disabled={!device.device_id}
+            onChange={() => device.device_id && onToggleSelection(device.device_id)}
+            type="checkbox"
+          />
           <button className="text-left" onClick={() => device.device_id && onSelect({ kind: "device", id: device.device_id })} type="button">
             <p className="font-semibold text-slate-950">{device.hostname ?? device.name ?? "ПК"}</p>
             <p className="mt-1 text-xs text-slate-500">{device.asset_type}</p>

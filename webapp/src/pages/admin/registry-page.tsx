@@ -1,6 +1,6 @@
 import { Download, Plus, RefreshCcw, Search, ShieldCheck, Upload, UserPlus } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -16,6 +16,11 @@ import {
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
   bindAdminRegistryDevicePerson,
+  bulkAssignAdminRegistryDeviceDepartment,
+  bulkAssignAdminRegistryDeviceLocation,
+  bulkAssignAdminRegistryPeopleDepartment,
+  bulkRevokeAdminRegistryAccountSessions,
+  bulkRevokeAdminRegistryDeviceAccountSessions,
   createAdminRegistryDepartment,
   createAdminRegistryLocation,
   createAdminRegistryPerson,
@@ -41,11 +46,13 @@ import {
   type AdminDeviceAccountSession,
   type AdminDeviceUserBinding,
   type AdminRegistrationClaim,
+  type AdminRegistryBulkResponse,
   type AdminRegistryPayload,
 } from "../../features/admin/api";
 import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
 import { RegistryBindPersonDialog, type BindPersonDialogState } from "../../features/admin/registry/registry-bind-person-dialog";
 import { RegistryBindingsTab } from "../../features/admin/registry/registry-bindings-tab";
+import { RegistryBulkActions, type RegistryBulkAction } from "../../features/admin/registry/registry-bulk-actions";
 import { RegistryDepartmentsTab } from "../../features/admin/registry/registry-departments-tab";
 import { RegistryDetailDrawer } from "../../features/admin/registry/registry-detail-drawer";
 import { RegistryDevicesTab } from "../../features/admin/registry/registry-devices-tab";
@@ -103,6 +110,10 @@ export function AdminRegistryPage() {
   const [mergePersonId, setMergePersonId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [bulkResult, setBulkResult] = useState<AdminRegistryBulkResponse | null>(null);
 
   const registryQuery = useQuery({
     queryKey: ["admin-registry"],
@@ -137,12 +148,105 @@ export function AdminRegistryPage() {
     },
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: async (operation: () => Promise<AdminRegistryBulkResponse>) => operation(),
+    onError: (error) => setActionError(error instanceof Error ? error.message : "Bulk action failed"),
+    onSuccess: async (result) => {
+      setActionError(null);
+      setBulkResult(result);
+      await invalidateRegistry();
+    },
+  });
+
   const registry = registryQuery.data ?? null;
   const visibleRegistry = useMemo(
     () => (registry ? filterRegistryPayload(registry, query) : null),
     [query, registry]
   );
   const pendingLoginRequests = accountLoginRequestsQuery.data?.items ?? registry?.account_login_requests ?? [];
+  const toggleSelected = (id: string, setter: Dispatch<SetStateAction<string[]>>) => {
+    setter((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+  const toggleVisibleSelected = (ids: string[], setter: Dispatch<SetStateAction<string[]>>) => {
+    setter((current) => {
+      const visible = new Set(ids);
+      const allSelected = ids.length > 0 && ids.every((id) => current.includes(id));
+      if (allSelected) {
+        return current.filter((id) => !visible.has(id));
+      }
+      return Array.from(new Set([...current, ...ids]));
+    });
+  };
+  const selectedBulkCount =
+    tab === "devices" ? selectedDeviceIds.length :
+    tab === "people" ? selectedPersonIds.length :
+    tab === "account_sessions" ? selectedSessionIds.length :
+    0;
+  const bulkActions: RegistryBulkAction[] = useMemo(() => {
+    if (tab === "devices") {
+      return [
+        { key: "devices.assign_location", label: "Assign location" },
+        { key: "devices.assign_department", label: "Assign department" },
+        { key: "devices.revoke_account_sessions", label: "Revoke sessions" },
+      ];
+    }
+    if (tab === "people") {
+      return [{ key: "people.assign_department", label: "Assign department" }];
+    }
+    if (tab === "account_sessions") {
+      return [{ key: "account_sessions.revoke", label: "Revoke sessions" }];
+    }
+    return [];
+  }, [tab]);
+  const clearCurrentBulkSelection = () => {
+    if (tab === "devices") {
+      setSelectedDeviceIds([]);
+    } else if (tab === "people") {
+      setSelectedPersonIds([]);
+    } else if (tab === "account_sessions") {
+      setSelectedSessionIds([]);
+    }
+  };
+
+  const handleBulkAction = (operation: string) => {
+    if (operation === "devices.assign_location") {
+      const locationId = window.prompt("Location ID", "") ?? "";
+      const reason = window.prompt("Reason", "Bulk assign device location") ?? "";
+      if (locationId.trim() && reason.trim()) {
+        bulkMutation.mutate(() => bulkAssignAdminRegistryDeviceLocation({ ids: selectedDeviceIds, location_id: locationId.trim(), reason: reason.trim() }));
+      }
+      return;
+    }
+    if (operation === "devices.assign_department") {
+      const departmentId = window.prompt("Department ID", "") ?? "";
+      const reason = window.prompt("Reason", "Bulk assign device department") ?? "";
+      if (departmentId.trim() && reason.trim()) {
+        bulkMutation.mutate(() => bulkAssignAdminRegistryDeviceDepartment({ ids: selectedDeviceIds, department_id: departmentId.trim(), reason: reason.trim() }));
+      }
+      return;
+    }
+    if (operation === "devices.revoke_account_sessions") {
+      const reason = window.prompt("Reason", "Bulk revoke device account sessions") ?? "";
+      if (reason.trim()) {
+        bulkMutation.mutate(() => bulkRevokeAdminRegistryDeviceAccountSessions(selectedDeviceIds, reason.trim()));
+      }
+      return;
+    }
+    if (operation === "people.assign_department") {
+      const departmentId = window.prompt("Department ID", "") ?? "";
+      const reason = window.prompt("Reason", "Bulk assign people department") ?? "";
+      if (departmentId.trim() && reason.trim()) {
+        bulkMutation.mutate(() => bulkAssignAdminRegistryPeopleDepartment({ ids: selectedPersonIds, department_id: departmentId.trim(), reason: reason.trim() }));
+      }
+      return;
+    }
+    if (operation === "account_sessions.revoke") {
+      const reason = window.prompt("Reason", "Bulk revoke account sessions") ?? "";
+      if (reason.trim()) {
+        bulkMutation.mutate(() => bulkRevokeAdminRegistryAccountSessions(selectedSessionIds, reason.trim()));
+      }
+    }
+  };
 
   const runWithReason = (label: string, fallback: string, action: (reason: string) => Promise<void>) => {
     const reason = window.prompt(label, fallback) ?? "";
@@ -283,6 +387,15 @@ export function AdminRegistryPage() {
               {registryQuery.error instanceof Error ? registryQuery.error.message : "Не удалось загрузить реестры."}
             </p>
           ) : null}
+          <RegistryBulkActions
+            actions={bulkActions}
+            busy={bulkMutation.isPending}
+            result={bulkResult}
+            selectedCount={selectedBulkCount}
+            onAction={handleBulkAction}
+            onClearResult={() => setBulkResult(null)}
+            onClearSelection={clearCurrentBulkSelection}
+          />
 
           {visibleRegistry && tab === "overview" ? <RegistryOverviewTab registry={visibleRegistry} onFixIssue={handleFixIssue} onSelect={setSelection} /> : null}
           {visibleRegistry && tab === "devices" ? (
@@ -293,7 +406,10 @@ export function AdminRegistryPage() {
               onRevokeSessions={revokeAllDeviceSessions}
               onSelect={setSelection}
               onShared={(deviceId) => setBindDialog({ deviceId, mode: "shared_user", title: "Добавить shared user", replaceExisting: false })}
+              onToggleSelection={(deviceId) => toggleSelected(deviceId, setSelectedDeviceIds)}
+              onToggleVisibleSelection={(deviceIds) => toggleVisibleSelected(deviceIds, setSelectedDeviceIds)}
               onTransfer={(device) => device.device_id && setTransferDialog({ deviceId: device.device_id, hostname: device.hostname })}
+              selectedIds={selectedDeviceIds}
             />
           ) : null}
           {visibleRegistry && tab === "people" ? (
@@ -304,6 +420,9 @@ export function AdminRegistryPage() {
               onEdit={(person) => setPersonDialog({ person })}
               onMerge={(person) => setMergePersonId(person.person_id)}
               onSelect={setSelection}
+              onToggleSelection={(personId) => toggleSelected(personId, setSelectedPersonIds)}
+              onToggleVisibleSelection={(personIds) => toggleVisibleSelected(personIds, setSelectedPersonIds)}
+              selectedIds={selectedPersonIds}
             />
           ) : null}
           {visibleRegistry && tab === "bindings" ? (
@@ -336,6 +455,9 @@ export function AdminRegistryPage() {
               sessions={visibleRegistry.account_sessions ?? []}
               onRevoke={(session: AdminDeviceAccountSession) => runWithReason("Причина отзыва account session", "Отозвано администратором", (reason) => revokeAdminDeviceAccountSession(session.session_id, reason))}
               onSelect={setSelection}
+              onToggleSelection={(sessionId) => toggleSelected(sessionId, setSelectedSessionIds)}
+              onToggleVisibleSelection={(sessionIds) => toggleVisibleSelected(sessionIds, setSelectedSessionIds)}
+              selectedIds={selectedSessionIds}
             />
           ) : null}
           {visibleRegistry && tab === "quality" ? (

@@ -70,6 +70,11 @@ Verification target:
 - `pnpm --dir webapp test -- registry`, `pnpm --dir webapp run build`, agent account-session smoke tests, `python -m compileall -q server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
 - Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release, `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`, and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
 
+Stage 5 bulk polish:
+
+- Bulk apply responses now include `bulk_operation_id`, `summary.selected/success/failed` and normalized per-selected-object `items`, while keeping legacy `results` for compatibility.
+- Devices, People and Account Sessions tabs expose checkbox selection and a shared bulk result panel with failed-row review, copy errors and CSV result export.
+
 ## Active Work: Device Account Session Hardening
 
 Status: in progress.

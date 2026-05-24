@@ -1021,6 +1021,29 @@ class RegistryAdminOperationsService:
             raise ValueError(f"batch limit is {BULK_LIMIT}")
         return ids
 
+    @staticmethod
+    def _bulk_item(result: dict[str, Any]) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "id": result.get("id"),
+            "status": "success" if result.get("success") else "error",
+        }
+        for key in ("error_code", "error", "affected_sessions"):
+            if key in result:
+                item[key] = result.get(key)
+        return item
+
+    def _bulk_response(self, *, operation: str, selected_ids: list[str], results: list[dict[str, Any]]) -> dict[str, Any]:
+        items = [self._bulk_item(result) for result in results]
+        success_count = sum(1 for item in items if item["status"] == "success")
+        failed_count = sum(1 for item in items if item["status"] == "error")
+        return {
+            "bulk_operation_id": _new_id(),
+            "operation": operation,
+            "summary": {"selected": len(selected_ids), "success": success_count, "failed": failed_count},
+            "items": items,
+            "results": results,
+        }
+
     async def bulk_assign_location(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
         ids = self._validate_bulk_ids(data)
@@ -1054,7 +1077,7 @@ class RegistryAdminOperationsService:
             )
             results.append({"id": device_id, "success": True})
         await self.session.flush()
-        return {"results": results}
+        return self._bulk_response(operation="devices.assign_location", selected_ids=ids, results=results)
 
     async def bulk_assign_department(self, data: dict[str, Any], *, actor_id: str | None = None, target: str = "devices") -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
@@ -1102,7 +1125,7 @@ class RegistryAdminOperationsService:
             )
             results.append({"id": item_id, "success": True})
         await self.session.flush()
-        return {"results": results}
+        return self._bulk_response(operation=f"{target}.assign_department", selected_ids=ids, results=results)
 
     async def bulk_revoke_sessions(self, data: dict[str, Any], *, actor_id: str | None = None, by_device: bool = False) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
@@ -1119,26 +1142,59 @@ class RegistryAdminOperationsService:
                     )
                 )
             ).scalars().all()
-            session_ids = [row.session_id for row in rows]
+            existing_devices = {
+                str(device_id)
+                for device_id in (
+                    await self.session.execute(select(Device.device_id).where(Device.device_id.in_(ids)))
+                ).scalars().all()
+            }
+            for device_id in ids:
+                if device_id not in existing_devices:
+                    results.append({"id": device_id, "success": False, "error_code": "NOT_FOUND"})
+                    continue
+                device_rows = [row for row in rows if row.device_id == device_id]
+                revoked_count = 0
+                for row in device_rows:
+                    try:
+                        session = await account_service.revoke_session(session_id=row.session_id, revoked_by=actor_id or "admin", reason=reason)
+                        await self.append_event(
+                            object_type="account_session",
+                            object_id=row.session_id,
+                            event_type="bulk_account_session_revoked",
+                            actor_id=actor_id,
+                            reason=reason,
+                            related_device_id=session.get("device_id"),
+                            related_person_id=session.get("person_id"),
+                        )
+                        revoked_count += 1
+                    except ValueError as exc:
+                        results.append({"id": device_id, "success": False, "error_code": "SESSION_REVOKE_FAILED", "error": str(exc)})
+                        break
+                else:
+                    results.append({"id": device_id, "success": True, "affected_sessions": revoked_count})
         else:
             session_ids = ids
-        for session_id in session_ids:
-            try:
-                session = await account_service.revoke_session(session_id=session_id, revoked_by=actor_id or "admin", reason=reason)
-                await self.append_event(
-                    object_type="account_session",
-                    object_id=session_id,
-                    event_type="bulk_account_session_revoked",
-                    actor_id=actor_id,
-                    reason=reason,
-                    related_device_id=session.get("device_id"),
-                    related_person_id=session.get("person_id"),
-                )
-                results.append({"id": session_id, "success": True})
-            except ValueError as exc:
-                results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND", "error": str(exc)})
+            for session_id in session_ids:
+                try:
+                    session = await account_service.revoke_session(session_id=session_id, revoked_by=actor_id or "admin", reason=reason)
+                    await self.append_event(
+                        object_type="account_session",
+                        object_id=session_id,
+                        event_type="bulk_account_session_revoked",
+                        actor_id=actor_id,
+                        reason=reason,
+                        related_device_id=session.get("device_id"),
+                        related_person_id=session.get("person_id"),
+                    )
+                    results.append({"id": session_id, "success": True})
+                except ValueError as exc:
+                    results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND", "error": str(exc)})
         await self.session.flush()
-        return {"results": results}
+        return self._bulk_response(
+            operation="devices.revoke_account_sessions" if by_device else "account_sessions.revoke",
+            selected_ids=ids,
+            results=results,
+        )
 
     async def preview_bulk(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         operation = str(data.get("operation") or "").strip()

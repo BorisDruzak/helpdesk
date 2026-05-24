@@ -12,16 +12,29 @@ type Props = {
   onEdit: (person: AdminRegistryPayload["people"][number]) => void;
   onMerge: (person: AdminRegistryPayload["people"][number]) => void;
   onSelect: (selection: RegistrySelection) => void;
+  onToggleSelection: (id: string) => void;
+  onToggleVisibleSelection: (ids: string[]) => void;
+  selectedIds: string[];
 };
 
-export function RegistryPeopleTab({ onAddIdentity, onBindToDevice, onEdit, onMerge, onSelect, people }: Props) {
+export function RegistryPeopleTab({ onAddIdentity, onBindToDevice, onEdit, onMerge, onSelect, onToggleSelection, onToggleVisibleSelection, people, selectedIds }: Props) {
+  const visibleIds = people.map((person) => person.person_id).filter(Boolean);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <div className="grid min-w-[1320px] grid-cols-[190px_160px_150px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_260px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+      <div className="grid min-w-[1380px] grid-cols-[48px_190px_160px_150px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_260px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+        <input aria-label="Select visible people" checked={allVisibleSelected} disabled={!visibleIds.length} onChange={() => onToggleVisibleSelection(visibleIds)} type="checkbox" />
         <span>ФИО</span><span>Display</span><span>Login</span><span>Email</span><span>Phone</span><span>Department</span><span>Location</span><span>Status</span><span>Primary</span><span>Shared</span><span>Tickets</span><span>Sessions</span><span>Last seen</span><span>Actions</span>
       </div>
       {people.length ? people.map((person) => (
-        <div className="grid min-w-[1320px] grid-cols-[190px_160px_150px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_260px] gap-3 border-t border-border px-4 py-3 text-sm" key={person.person_id}>
+        <div className="grid min-w-[1380px] grid-cols-[48px_190px_160px_150px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_260px] gap-3 border-t border-border px-4 py-3 text-sm" key={person.person_id}>
+          <input
+            aria-label={`Select person ${person.display_name ?? person.full_name ?? person.person_id}`}
+            checked={selectedIds.includes(person.person_id)}
+            onChange={() => onToggleSelection(person.person_id)}
+            type="checkbox"
+          />
           <button className="text-left font-semibold text-slate-950" onClick={() => onSelect({ kind: "person", id: person.person_id })} type="button">{person.full_name ?? person.display_name}</button>
           <span className="text-slate-700">{person.display_name}</span>
           <span className="text-slate-700">{person.login ?? "Нет"}</span>

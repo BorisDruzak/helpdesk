@@ -95,6 +95,25 @@ Implemented preview operations:
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
 - `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
 
+## Bulk Apply Contract
+
+Bulk apply endpoints return both the legacy `results` list and a normalized operation report for the UI:
+
+```json
+{
+  "bulk_operation_id": "uuid",
+  "operation": "devices.revoke_account_sessions",
+  "summary": {"selected": 47, "success": 42, "failed": 5},
+  "items": [
+    {"id": "device-1", "status": "success", "affected_sessions": 2},
+    {"id": "device-2", "status": "error", "error_code": "NOT_FOUND"}
+  ],
+  "results": []
+}
+```
+
+`items` is one row per selected object, not one row per affected child record. Device-level session revoke therefore reports selected devices and includes `affected_sessions`. The registry UI shows selected count, success/failed totals, failed rows, copyable errors and CSV export of the report.
+
 ## Import Contract
 
 Registry import is a two-step workflow:
