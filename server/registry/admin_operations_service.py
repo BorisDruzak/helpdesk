@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
 import csv
 import io
@@ -11,6 +12,7 @@ from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    Device,
     DeviceAccountEvent,
     DeviceAccountSession,
     DeviceInventoryBinding,
@@ -31,6 +33,9 @@ from registry.policy_service import DEFAULT_REGISTRY_POLICIES, RegistryPolicySer
 
 
 BULK_LIMIT = 200
+IMPORT_LIMIT = 1000
+IMPORT_TEXT_LIMIT = 2 * 1024 * 1024
+REGISTRY_IMPORT_TYPES = {"people", "locations", "departments", "device_inventory_mapping"}
 
 
 def _new_id() -> str:
@@ -1304,6 +1309,481 @@ class RegistryAdminOperationsService:
         for row in registry["rows"]:
             writer.writerow({column: _csv_safe(row.get(column)) for column in registry["columns"]})
         return output.getvalue()
+
+    async def preview_import_csv(self, import_type: str, csv_text: str) -> dict[str, Any]:
+        import_type = self._normalize_import_type(import_type)
+        rows = self._parse_import_csv(csv_text)
+        if import_type == "people":
+            return await self._preview_import_people(rows)
+        if import_type == "locations":
+            return await self._preview_import_locations(rows)
+        if import_type == "departments":
+            return await self._preview_import_departments(rows)
+        if import_type == "device_inventory_mapping":
+            return await self._preview_import_device_inventory_mapping(rows)
+        raise ValueError("unsupported registry import type")
+
+    async def apply_import_csv(self, import_type: str, csv_text: str, *, actor_id: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        reason = _require_reason(reason)
+        preview = await self.preview_import_csv(import_type, csv_text)
+        if preview["row_errors"] or preview["duplicate_keys"]:
+            raise ValueError("import has validation errors or duplicates")
+        import_type = preview["import_type"]
+        if import_type == "people":
+            await self._apply_import_people(preview["changes"])
+        elif import_type == "locations":
+            await self._apply_import_locations(preview["changes"])
+        elif import_type == "departments":
+            await self._apply_import_departments(preview["changes"])
+        elif import_type == "device_inventory_mapping":
+            await self._apply_import_device_inventory_mapping(preview["changes"], actor_id=actor_id)
+        else:
+            raise ValueError("unsupported registry import type")
+        await self.append_event(
+            object_type="registry_import",
+            object_id=_new_id(),
+            event_type="registry_import_applied",
+            actor_id=actor_id,
+            reason=reason,
+            payload={
+                "import_type": import_type,
+                "counts": preview["counts"],
+                "changes": preview["changes"][:50],
+                "rows_total": preview["rows_total"],
+            },
+        )
+        await self.session.flush()
+        return {**preview, "dry_run": False, "applied": True}
+
+    def _normalize_import_type(self, import_type: str) -> str:
+        value = str(import_type or "").strip().lower().replace("-", "_")
+        aliases = {
+            "device_inventory": "device_inventory_mapping",
+            "inventory_mapping": "device_inventory_mapping",
+            "devices_inventory_mapping": "device_inventory_mapping",
+        }
+        value = aliases.get(value, value)
+        if value not in REGISTRY_IMPORT_TYPES:
+            raise ValueError("unsupported registry import type")
+        return value
+
+    def _parse_import_csv(self, csv_text: str) -> list[tuple[int, dict[str, str]]]:
+        if not isinstance(csv_text, str) or not csv_text.strip():
+            raise ValueError("csv_text is required")
+        if len(csv_text.encode("utf-8")) > IMPORT_TEXT_LIMIT:
+            raise ValueError("CSV import is too large")
+        reader = csv.DictReader(io.StringIO(csv_text))
+        if not reader.fieldnames:
+            raise ValueError("CSV header is required")
+        rows: list[tuple[int, dict[str, str]]] = []
+        for row_number, row in enumerate(reader, start=2):
+            if len(rows) >= IMPORT_LIMIT:
+                raise ValueError(f"CSV import row limit is {IMPORT_LIMIT}")
+            rows.append(
+                (
+                    row_number,
+                    {
+                        str(key or "").strip(): str(value or "").strip()
+                        for key, value in row.items()
+                        if key is not None
+                    },
+                )
+            )
+        return rows
+
+    def _import_preview_payload(
+        self,
+        import_type: str,
+        rows: list[tuple[int, dict[str, str]]],
+        changes: list[dict[str, Any]],
+        row_errors: list[dict[str, Any]],
+        duplicate_keys: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        creates = sum(1 for change in changes if change.get("action") == "create")
+        updates = sum(1 for change in changes if change.get("action") == "update")
+        skips = sum(1 for change in changes if change.get("action") == "skip")
+        return {
+            "operation": "registry_import",
+            "import_type": import_type,
+            "dry_run": True,
+            "requires_confirmation": True,
+            "rows_total": len(rows),
+            "counts": {
+                "rows_total": len(rows),
+                "creates": creates,
+                "updates": updates,
+                "skips": skips,
+                "duplicates": len(duplicate_keys),
+                "errors": len(row_errors),
+                "changes": creates + updates,
+            },
+            "changes": [change for change in changes if change.get("action") != "skip"],
+            "row_errors": row_errors,
+            "duplicate_keys": duplicate_keys,
+            "blockers": row_errors + duplicate_keys,
+        }
+
+    @staticmethod
+    def _row_error(row_number: int, field: str, message: str) -> dict[str, Any]:
+        return {"row": row_number, "field": field, "message": message}
+
+    @staticmethod
+    def _duplicate_key(row_number: int, key: str, value: str, message: str) -> dict[str, Any]:
+        return {"row": row_number, "key": key, "value": value, "message": message}
+
+    @staticmethod
+    def _normalize_email(value: Any) -> str | None:
+        text = _text(value, max_length=320)
+        return text.lower() if text else None
+
+    @staticmethod
+    def _split_tags(value: Any) -> list[str]:
+        text = _text(value, max_length=1000)
+        if not text:
+            return []
+        return [part.strip() for part in re.split(r"[;,]", text) if part.strip()]
+
+    async def _preview_import_people(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "people"
+        emails = [self._normalize_email(row.get("email")) for _, row in rows]
+        email_counts = Counter(email for email in emails if email)
+        existing_by_email: dict[str, RegistryPerson] = {}
+        if email_counts:
+            result = await self.session.execute(
+                select(RegistryPerson).where(func.lower(RegistryPerson.email).in_(list(email_counts.keys())))
+            )
+            existing_by_email = {str(person.email).lower(): person for person in result.scalars().all() if person.email}
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            person_id = _text(row.get("person_id"), max_length=36)
+            existing = await self.session.get(RegistryPerson, person_id) if person_id else None
+            display_name = _text(row.get("display_name") or row.get("full_name"), max_length=300)
+            email = self._normalize_email(row.get("email"))
+            errors: list[dict[str, Any]] = []
+            if person_id and existing is None:
+                errors.append(self._row_error(row_number, "person_id", "person_id not found"))
+            if not display_name:
+                errors.append(self._row_error(row_number, "display_name", "display_name is required"))
+            department_id = _text(row.get("department_id"), max_length=36)
+            location_id = _text(row.get("location_id"), max_length=36)
+            if department_id and await self.session.get(RegistryDepartment, department_id) is None:
+                errors.append(self._row_error(row_number, "department_id", "department_id not found"))
+            if location_id and await self.session.get(RegistryLocation, location_id) is None:
+                errors.append(self._row_error(row_number, "location_id", "location_id not found"))
+            if errors:
+                row_errors.extend(errors)
+                continue
+            if email and email_counts[email] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "email", email, "email appears more than once in this file"))
+                continue
+            duplicate = existing_by_email.get(email or "")
+            if duplicate is not None and (existing is None or duplicate.person_id != existing.person_id):
+                duplicate_keys.append(self._duplicate_key(row_number, "email", email or "", "email already belongs to another person"))
+                continue
+            after = {
+                "display_name": display_name,
+                "full_name": _text(row.get("full_name"), max_length=300),
+                "email": email,
+                "phone": _text(row.get("phone"), max_length=80),
+                "department_id": department_id,
+                "location_id": location_id,
+                "status": _text(row.get("status"), max_length=30) or (existing.status if existing else "active"),
+            }
+            before = self._person_import_snapshot(existing) if existing else None
+            if before == after:
+                changes.append({"row": row_number, "kind": "person", "action": "skip", "object_id": person_id, "after": after})
+            else:
+                changes.append({"row": row_number, "kind": "person", "action": "update" if existing else "create", "object_id": person_id, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    @staticmethod
+    def _person_import_snapshot(person: RegistryPerson | None) -> dict[str, Any] | None:
+        if person is None:
+            return None
+        return {
+            "display_name": person.display_name,
+            "full_name": person.full_name,
+            "email": person.email,
+            "phone": person.phone,
+            "department_id": person.department_id,
+            "location_id": person.location_id,
+            "status": person.status,
+        }
+
+    async def _apply_import_people(self, changes: list[dict[str, Any]]) -> None:
+        for change in changes:
+            after = change["after"]
+            if change["action"] == "create":
+                person = RegistryPerson(
+                    person_id=_new_id(),
+                    display_name=after["display_name"],
+                    full_name=after.get("full_name"),
+                    email=after.get("email"),
+                    phone=after.get("phone"),
+                    department_id=after.get("department_id"),
+                    location_id=after.get("location_id"),
+                    source="csv_import",
+                    status=after.get("status") or "active",
+                )
+                self.session.add(person)
+            elif change["action"] == "update":
+                person = await self.session.get(RegistryPerson, change["object_id"])
+                if person is None:
+                    raise ValueError("person disappeared before apply")
+                for field, value in after.items():
+                    setattr(person, field, value)
+                person.updated_at = _now()
+
+    async def _preview_import_locations(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "locations"
+        keys = [(self._location_import_key(row), row_number) for row_number, row in rows]
+        key_counts = Counter(key for key, _ in keys if key)
+        existing_locations = (await self.session.execute(select(RegistryLocation))).scalars().all()
+        existing_by_key = {
+            (location.building.strip().casefold(), (location.floor or "").strip().casefold(), (location.room or "").strip().casefold()): location
+            for location in existing_locations
+        }
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            building = _text(row.get("building"), max_length=200)
+            floor = _text(row.get("floor"), max_length=50)
+            room = _text(row.get("room"), max_length=100)
+            location_id = _text(row.get("location_id"), max_length=36)
+            existing = await self.session.get(RegistryLocation, location_id) if location_id else None
+            if location_id and existing is None:
+                row_errors.append(self._row_error(row_number, "location_id", "location_id not found"))
+                continue
+            if not building:
+                row_errors.append(self._row_error(row_number, "building", "building is required"))
+                continue
+            key = self._location_import_key(row)
+            if key and key_counts[key] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "location", "|".join(key), "location appears more than once in this file"))
+                continue
+            duplicate = existing_by_key.get(key)
+            if duplicate is not None and (existing is None or duplicate.location_id != existing.location_id):
+                duplicate_keys.append(self._duplicate_key(row_number, "location", "|".join(key), "location already exists"))
+                continue
+            display_name = _location_display(building, floor, room, _text(row.get("display_name"), max_length=300))
+            metadata = dict(existing.metadata_json or {}) if existing else {}
+            metadata["notes"] = _text(row.get("notes"), max_length=2000)
+            after = {
+                "building": building,
+                "floor": floor,
+                "room": room,
+                "display_name": display_name,
+                "status": _text(row.get("status"), max_length=30) or (existing.status if existing else "active"),
+                "metadata_json": metadata,
+            }
+            before = self._location_payload(existing) if existing else None
+            changes.append({"row": row_number, "kind": "location", "action": "update" if existing else "create", "object_id": location_id, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    @staticmethod
+    def _location_import_key(row: dict[str, str]) -> tuple[str, str, str] | None:
+        building = _text(row.get("building"), max_length=200)
+        if not building:
+            return None
+        return (
+            building.casefold(),
+            (_text(row.get("floor"), max_length=50) or "").casefold(),
+            (_text(row.get("room"), max_length=100) or "").casefold(),
+        )
+
+    async def _apply_import_locations(self, changes: list[dict[str, Any]]) -> None:
+        for change in changes:
+            after = change["after"]
+            if change["action"] == "create":
+                self.session.add(RegistryLocation(location_id=_new_id(), source="csv_import", **after))
+            elif change["action"] == "update":
+                location = await self.session.get(RegistryLocation, change["object_id"])
+                if location is None:
+                    raise ValueError("location disappeared before apply")
+                for field, value in after.items():
+                    setattr(location, field, value)
+                location.updated_at = _now()
+
+    async def _preview_import_departments(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "departments"
+        codes = [_department_code(row.get("code")) for _, row in rows]
+        code_counts = Counter(code for code in codes if code)
+        existing_departments = (await self.session.execute(select(RegistryDepartment))).scalars().all()
+        existing_by_code = {department.code: department for department in existing_departments if department.code}
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            department_id = _text(row.get("department_id"), max_length=36)
+            existing = await self.session.get(RegistryDepartment, department_id) if department_id else None
+            name = _text(row.get("name"), max_length=300)
+            code = _department_code(row.get("code"))
+            if department_id and existing is None:
+                row_errors.append(self._row_error(row_number, "department_id", "department_id not found"))
+                continue
+            if not name:
+                row_errors.append(self._row_error(row_number, "name", "name is required"))
+                continue
+            parent_department_id = _text(row.get("parent_id") or row.get("parent_department_id"), max_length=36)
+            if parent_department_id and await self.session.get(RegistryDepartment, parent_department_id) is None:
+                row_errors.append(self._row_error(row_number, "parent_id", "parent department not found"))
+                continue
+            if code and code_counts[code] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "code", code, "department code appears more than once in this file"))
+                continue
+            duplicate = existing_by_code.get(code or "")
+            if duplicate is not None and (existing is None or duplicate.department_id != existing.department_id):
+                duplicate_keys.append(self._duplicate_key(row_number, "code", code or "", "department code already exists"))
+                continue
+            metadata = dict(existing.metadata_json or {}) if existing else {}
+            metadata.update(
+                {
+                    "manager_person_id": _text(row.get("manager_person_id"), max_length=36),
+                    "support_queue": _text(row.get("support_queue"), max_length=120),
+                    "notes": _text(row.get("notes"), max_length=2000),
+                }
+            )
+            after = {
+                "code": code,
+                "name": name,
+                "parent_department_id": parent_department_id,
+                "status": _text(row.get("status"), max_length=30) or (existing.status if existing else "active"),
+                "metadata_json": metadata,
+            }
+            before = self._department_payload(existing) if existing else None
+            changes.append({"row": row_number, "kind": "department", "action": "update" if existing else "create", "object_id": department_id, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    async def _apply_import_departments(self, changes: list[dict[str, Any]]) -> None:
+        for change in changes:
+            after = change["after"]
+            if change["action"] == "create":
+                self.session.add(RegistryDepartment(department_id=_new_id(), source="csv_import", **after))
+            elif change["action"] == "update":
+                department = await self.session.get(RegistryDepartment, change["object_id"])
+                if department is None:
+                    raise ValueError("department disappeared before apply")
+                for field, value in after.items():
+                    setattr(department, field, value)
+                department.updated_at = _now()
+
+    async def _preview_import_device_inventory_mapping(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "device_inventory_mapping"
+        device_keys = [self._device_import_key(row) for _, row in rows]
+        device_key_counts = Counter(key for key in device_keys if key)
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            device, error = await self._resolve_import_device(row)
+            if error:
+                row_errors.append(self._row_error(row_number, "device_id", error))
+                continue
+            assert device is not None
+            device_key = self._device_import_key(row)
+            if device_key and device_key_counts[device_key] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "device", device_key, "device appears more than once in this file"))
+                continue
+            location_id = _text(row.get("location_id"), max_length=36)
+            department_id = _text(row.get("department_id"), max_length=36)
+            if location_id and await self.session.get(RegistryLocation, location_id) is None:
+                row_errors.append(self._row_error(row_number, "location_id", "location_id not found"))
+                continue
+            if department_id and await self.session.get(RegistryDepartment, department_id) is None:
+                row_errors.append(self._row_error(row_number, "department_id", "department_id not found"))
+                continue
+            asset = (
+                await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device.device_id).limit(1))
+            ).scalar_one_or_none()
+            binding = await self.session.get(DeviceInventoryBinding, device.device_id)
+            after = {
+                "device_id": device.device_id,
+                "asset_id": asset.asset_id if asset else None,
+                "asset_location_id": location_id,
+                "asset_department_id": department_id,
+                "binding": {
+                    "building": _text(row.get("building"), max_length=120),
+                    "floor": _text(row.get("floor"), max_length=64),
+                    "room": _text(row.get("room"), max_length=120),
+                    "department": _text(row.get("department"), max_length=160),
+                    "responsible_user": _text(row.get("responsible_user"), max_length=160),
+                    "responsible_user_login": _text(row.get("responsible_user_login"), max_length=160),
+                    "inventory_number": _text(row.get("inventory_number"), max_length=120),
+                    "status": _text(row.get("status"), max_length=32),
+                    "tags": self._split_tags(row.get("tags")),
+                    "notes": _text(row.get("notes"), max_length=2000),
+                },
+            }
+            before = {
+                "asset": {"location_id": asset.location_id, "department_id": asset.department_id} if asset else None,
+                "binding": self._inventory_binding_snapshot(binding),
+            }
+            changes.append({"row": row_number, "kind": "device_inventory_mapping", "action": "update", "object_id": device.device_id, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    @staticmethod
+    def _device_import_key(row: dict[str, str]) -> str | None:
+        device_id = _text(row.get("device_id"), max_length=36)
+        if device_id:
+            return f"id:{device_id}"
+        hostname = _text(row.get("hostname"), max_length=255)
+        return f"host:{hostname.casefold()}" if hostname else None
+
+    async def _resolve_import_device(self, row: dict[str, str]) -> tuple[Device | None, str | None]:
+        device_id = _text(row.get("device_id"), max_length=36)
+        hostname = _text(row.get("hostname"), max_length=255)
+        if device_id:
+            device = await self.session.get(Device, device_id)
+            return (device, None) if device else (None, "device_id not found")
+        if not hostname:
+            return None, "device_id or hostname is required"
+        devices = (await self.session.execute(select(Device).where(func.lower(Device.hostname) == hostname.lower()))).scalars().all()
+        if not devices:
+            return None, "hostname not found"
+        if len(devices) > 1:
+            return None, "hostname is not unique"
+        return devices[0], None
+
+    @staticmethod
+    def _inventory_binding_snapshot(binding: DeviceInventoryBinding | None) -> dict[str, Any] | None:
+        if binding is None:
+            return None
+        return {
+            "asset_id": binding.asset_id,
+            "building": binding.building,
+            "floor": binding.floor,
+            "room": binding.room,
+            "department": binding.department,
+            "responsible_user": binding.responsible_user,
+            "responsible_user_login": binding.responsible_user_login,
+            "inventory_number": binding.inventory_number,
+            "status": binding.status,
+            "tags": binding.tags or [],
+            "notes": binding.notes,
+        }
+
+    async def _apply_import_device_inventory_mapping(self, changes: list[dict[str, Any]], *, actor_id: str | None = None) -> None:
+        for change in changes:
+            after = change["after"]
+            device_id = after["device_id"]
+            if after.get("asset_id"):
+                asset = await self.session.get(RegistryAsset, after["asset_id"])
+                if asset is not None:
+                    asset.location_id = after.get("asset_location_id")
+                    asset.department_id = after.get("asset_department_id")
+                    asset.updated_at = _now()
+            binding = await self.session.get(DeviceInventoryBinding, device_id)
+            if binding is None:
+                binding = DeviceInventoryBinding(device_id=device_id, asset_id=after.get("asset_id"), tags=[])
+                self.session.add(binding)
+            binding.asset_id = after.get("asset_id") or binding.asset_id
+            for field, value in after["binding"].items():
+                setattr(binding, field, value)
+            binding.updated_by = actor_id
+            binding.updated_at = _now()
 
     async def _build_export_rows(self, export_type: str) -> dict[str, Any]:
         export_type = str(export_type or "").strip().lower()

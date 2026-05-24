@@ -572,6 +572,24 @@ export type AdminRegistryOperationPreview = {
   [key: string]: unknown;
 };
 
+export type AdminRegistryImportType = "people" | "locations" | "departments" | "device_inventory_mapping";
+
+export type AdminRegistryImportPreview = AdminRegistryOperationPreview & {
+  import_type: AdminRegistryImportType;
+  rows_total: number;
+  row_errors: Array<{
+    row: number;
+    field?: string;
+    message: string;
+  }>;
+  duplicate_keys: Array<{
+    row: number;
+    key: string;
+    value: string;
+    message: string;
+  }>;
+};
+
 export type AdminRegistrationTimelineItem = {
   event_id: string;
   claim_id: string | null;
@@ -1284,6 +1302,33 @@ export async function fetchAdminRegistryTimeline(objectType: string, objectId: s
     credentials: "same-origin",
   });
   return readSuccessResponse(response, "Не удалось загрузить timeline");
+}
+
+export async function previewAdminRegistryImport(payload: {
+  type: AdminRegistryImportType;
+  csv_text: string;
+}): Promise<AdminRegistryImportPreview> {
+  const response = await fetch("/api/web/admin/registry/import/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: payload.type, format: "csv", csv_text: payload.csv_text }),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр импорта реестра");
+}
+
+export async function applyAdminRegistryImport(payload: {
+  type: AdminRegistryImportType;
+  csv_text: string;
+  reason: string;
+}): Promise<AdminRegistryImportPreview> {
+  const response = await fetch("/api/web/admin/registry/import/apply", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: payload.type, format: "csv", csv_text: payload.csv_text, reason: payload.reason }),
+  });
+  return readSuccessResponse(response, "Не удалось применить импорт реестра");
 }
 
 export function adminRegistryExportUrl(type: "devices" | "people" | "bindings" | "sessions" | "locations" | "departments" | "quality", format = "csv"): string {

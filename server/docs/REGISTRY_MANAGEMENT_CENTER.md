@@ -51,9 +51,11 @@
   - `POST /api/web/admin/registry/bulk/people/assign-department`
   - `POST /api/web/admin/registry/bulk/account-sessions/revoke`
   - `GET /api/web/admin/registry/export?type=devices|people|bindings|sessions|locations|departments|quality&format=csv`
+  - `POST /api/web/admin/registry/import/preview`
+  - `POST /api/web/admin/registry/import/apply`
   - `GET /api/web/admin/registry/timeline/{object_type}/{object_id}`
 
-There is no `/api/web/admin/registry/import/apply` endpoint in the current Registry Management Center. Inventory binding import remains under `/api/web/admin/inventory/bindings/import`; a future registry import apply must add its own preview contract before enabling apply.
+Registry import is CSV-only and intentionally excludes direct binding import. Supported import types are `people`, `locations`, `departments` and `device_inventory_mapping`.
 
 ## Timeline Contract
 
@@ -92,6 +94,31 @@ Implemented preview operations:
 - `people_merge`: shows field winners, identity moves/conflicts, bindings, sessions, claims, tickets, asset owner and inventory rows that will move to the master person.
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
 - `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
+
+## Import Contract
+
+Registry import is a two-step workflow:
+
+1. `POST /api/web/admin/registry/import/preview`
+2. `POST /api/web/admin/registry/import/apply`
+
+Both endpoints accept JSON:
+
+```json
+{
+  "type": "people",
+  "format": "csv",
+  "csv_text": "display_name,email\nIvan Ivanov,ivan@example.test\n",
+  "reason": "required only for apply"
+}
+```
+
+Preview parses and validates the file without mutating state. It returns row-level errors, duplicate keys, affected counts and a bounded change list. Apply reruns preview first and refuses to mutate if there are any row errors or duplicate keys, then applies all accepted rows in the request transaction and writes one `registry_import_applied` audit event with the import type, counts, reason and sample changes. Supported imports:
+
+- `people`: create/update people by `person_id`, validate required display name, duplicate emails and location/department ids.
+- `locations`: create/update locations and block exact duplicate building/floor/room keys.
+- `departments`: create/update departments and block duplicate department codes.
+- `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id`, `source_binding_id` or account-session state.
 
 ## Smoke Checklist
 

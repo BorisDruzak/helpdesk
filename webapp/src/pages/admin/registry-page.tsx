@@ -1,4 +1,4 @@
-import { Download, Plus, RefreshCcw, Search, ShieldCheck, UserPlus } from "lucide-react";
+import { Download, Plus, RefreshCcw, Search, ShieldCheck, Upload, UserPlus } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
@@ -9,6 +9,7 @@ import { SearchField } from "../../components/ui/search-field";
 import {
   addAdminRegistrySharedUser,
   adminRegistryExportUrl,
+  applyAdminRegistryImport,
   archiveAdminRegistryDepartment,
   archiveAdminRegistryLocation,
   approveAdminAccountLoginRequest,
@@ -26,6 +27,7 @@ import {
   mergeAdminRegistryPeople,
   previewAdminRegistryDepartmentsMerge,
   previewAdminRegistryDeviceOwnerTransfer,
+  previewAdminRegistryImport,
   previewAdminRegistryLocationsMerge,
   previewAdminRegistryPeopleMerge,
   rejectAdminAccountLoginRequest,
@@ -48,6 +50,7 @@ import { RegistryDepartmentsTab } from "../../features/admin/registry/registry-d
 import { RegistryDetailDrawer } from "../../features/admin/registry/registry-detail-drawer";
 import { RegistryDevicesTab } from "../../features/admin/registry/registry-devices-tab";
 import { RegistryIdentityDialog, type IdentityDialogState } from "../../features/admin/registry/registry-identity-dialog";
+import { RegistryImportDialog } from "../../features/admin/registry/registry-import-dialog";
 import { RegistryLocationsTab } from "../../features/admin/registry/registry-locations-tab";
 import { RegistryMergePeopleDialog } from "../../features/admin/registry/registry-merge-people-dialog";
 import { RegistryOverviewTab } from "../../features/admin/registry/registry-overview-tab";
@@ -98,6 +101,7 @@ export function AdminRegistryPage() {
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState>(null);
   const [personDialog, setPersonDialog] = useState<PersonEditDialogState>(null);
   const [mergePersonId, setMergePersonId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const registryQuery = useQuery({
@@ -128,6 +132,7 @@ export function AdminRegistryPage() {
       setIdentityDialog(null);
       setPersonDialog(null);
       setMergePersonId(null);
+      setImportOpen(false);
       await invalidateRegistry();
     },
   });
@@ -227,6 +232,9 @@ export function AdminRegistryPage() {
             </Button>
             <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => { window.location.href = adminRegistryExportUrl(exportType); }} size="sm" variant="ghost">
               Экспорт
+            </Button>
+            <Button leadingIcon={<Upload className="h-4 w-4" />} onClick={() => setImportOpen(true)} size="sm" variant="ghost">
+              Импорт
             </Button>
             <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => void registryQuery.refetch()} size="sm">
               Обновить
@@ -371,6 +379,13 @@ export function AdminRegistryPage() {
         onClose={() => setMergePersonId(null)}
         onPreview={(payload) => previewAdminRegistryPeopleMerge(payload)}
         onSubmit={(payload) => mutation.mutate(() => mergeAdminRegistryPeople(payload))}
+      />
+      <RegistryImportDialog
+        busy={mutation.isPending}
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onPreview={(payload) => previewAdminRegistryImport(payload)}
+        onApply={(payload) => mutation.mutate(() => applyAdminRegistryImport(payload).then(() => undefined))}
       />
       <RegistryBindPersonDialog
         busy={mutation.isPending}

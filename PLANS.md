@@ -36,7 +36,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: Registry Management Center P1/P2
 
-Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants and preview-protected dangerous operations.
+Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants, preview-protected dangerous operations and safe registry import.
 
 Goal:
 
@@ -49,18 +49,19 @@ Scope:
 - People merge/dedup workflow that moves identities, bindings, sessions, claims, tickets and derived asset assignments without deleting duplicates.
 - Bulk operations for common registry administration: assign locations/departments and revoke account sessions with per-item results.
 - CSV export for devices, people, bindings, sessions, locations, departments and quality issues.
+- Safe CSV import for people, locations, departments and device inventory mapping through parse -> validate -> preview -> apply with row-level errors, duplicate detection, rollback-safe apply and audit events.
 - More actionable quality remediation and richer timeline/detail drawer data.
 - Unified Registry Timeline in the drawer for device/person/binding/session/claim: admin, registration and account events must show actor, time, reason, changes and affected entity ids.
 - Operator docs and live smoke checklist for Registry Management Center.
 - Repeatable A-F live workflow smoke for people/identities, bind, shared/responsible, transfer owner, people merge and locations/departments with API actions plus DB invariant checks.
-- Read-only preview/dry-run contracts for dangerous operations before apply: transfer owner, people merge, location merge, department merge and bulk operations.
+- Read-only preview/dry-run contracts for dangerous operations before apply: transfer owner, people merge, location merge, department merge, bulk operations and registry import.
 
 Non-goals:
 
 - No AD/LDAP integration in this pass beyond safe placeholders/hooks.
 - No raw lifecycle mutation for binding revoke/transfer/session invalidation; existing `RegistrationService` and `AccountSessionService` remain authoritative.
 - No changes to machine-token or account-session architecture.
-- No registry import apply endpoint in this pass; future import apply must add preview before enabling mutation.
+- No direct binding import in this pass; binding lifecycle remains service-backed and must not be imported without a dedicated preview/approval model.
 
 Verification target:
 

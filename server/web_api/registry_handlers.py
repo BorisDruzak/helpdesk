@@ -1320,6 +1320,44 @@ async def handle_web_admin_registry_export(request: web.Request) -> web.Response
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_import_preview(request: web.Request) -> web.Response:
+    data = await request.json() if request.can_read_body else {}
+    import_format = str(data.get("format") or "csv").strip().lower()
+    if import_format != "csv":
+        return web.json_response({"status": "error", "error": "only csv import is supported", "error_code": "VALIDATION_ERROR"}, status=400)
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_import_csv(
+                str(data.get("type") or ""),
+                str(data.get("csv_text") or ""),
+            )
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_import_apply(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    import_format = str(data.get("format") or "csv").strip().lower()
+    if import_format != "csv":
+        return web.json_response({"status": "error", "error": "only csv import is supported", "error_code": "VALIDATION_ERROR"}, status=400)
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).apply_import_csv(
+                str(data.get("type") or ""),
+                str(data.get("csv_text") or ""),
+                actor_id=auth_context.actor_id,
+                reason=str(data.get("reason") or ""),
+            )
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_timeline(request: web.Request) -> web.Response:
     object_type = str(request.match_info.get("object_type") or "").strip()
     object_id = str(request.match_info.get("object_id") or "").strip()
