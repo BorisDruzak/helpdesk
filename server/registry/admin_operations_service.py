@@ -529,6 +529,20 @@ class RegistryAdminOperationsService:
         for row in assets:
             row.assigned_person_id = master_id
             row.updated_at = _now()
+        moved_binding_ids = [row.binding_id for row in bindings]
+        moved_asset_device_ids = [row.device_id for row in assets if row.device_id]
+        inventory_filters = [DeviceInventoryBinding.person_id == duplicate_id]
+        if moved_binding_ids:
+            inventory_filters.append(DeviceInventoryBinding.source_binding_id.in_(moved_binding_ids))
+        if moved_asset_device_ids:
+            inventory_filters.append(DeviceInventoryBinding.device_id.in_(moved_asset_device_ids))
+        inventory_bindings = (
+            await self.session.execute(select(DeviceInventoryBinding).where(or_(*inventory_filters)))
+        ).scalars().all()
+        for row in inventory_bindings:
+            row.person_id = master_id
+            row.updated_by = actor_id
+            row.updated_at = _now()
 
         duplicate.status = "merged"
         duplicate.metadata_json = {
@@ -554,6 +568,7 @@ class RegistryAdminOperationsService:
                 "claims_moved": len(claims),
                 "tickets_moved": len(tickets),
                 "assets_moved": len(assets),
+                "inventory_bindings_moved": len(inventory_bindings),
             },
         )
         await self.session.flush()
@@ -568,6 +583,7 @@ class RegistryAdminOperationsService:
                 "claims": len(claims),
                 "tickets": len(tickets),
                 "assets": len(assets),
+                "inventory_bindings": len(inventory_bindings),
             },
         }
 

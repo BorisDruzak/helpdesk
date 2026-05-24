@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import (
     Device,
     DeviceAccountSession,
+    DeviceInventoryBinding,
     DeviceRegistrationClaim,
     DeviceUserBinding,
     RegistryAdminEvent,
@@ -92,6 +93,13 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
             declared_account={},
             metadata_json={},
         )
+        inventory_binding = DeviceInventoryBinding(
+            device_id=device_id,
+            person_id=duplicate.person_id,
+            asset_id=asset.asset_id,
+            source_binding_id=binding.binding_id,
+            registration_status="admin_confirmed",
+        )
         claim = DeviceRegistrationClaim(
             claim_id=str(uuid.uuid4()),
             device_id=device_id,
@@ -113,7 +121,7 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
             requester_id="duplicate-user",
             requester_person_id=duplicate.person_id,
         )
-        session.add_all([identity, binding, claim, ticket])
+        session.add_all([identity, binding, inventory_binding, claim, ticket])
         await session.flush()
 
         session.add(account_session)
@@ -139,6 +147,7 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
         claim_row = await session.get(DeviceRegistrationClaim, claim.claim_id)
         ticket_row = await session.get(Ticket, ticket.ticket_id)
         asset_row = await session.get(RegistryAsset, asset.asset_id)
+        inventory_row = await session.get(DeviceInventoryBinding, device_id)
         event = (await session.execute(select(RegistryAdminEvent).where(RegistryAdminEvent.event_type == "person_merged"))).scalar_one()
 
     assert result["moved"]["identities"] == 1
@@ -150,4 +159,6 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
     assert claim_row.person_id == master.person_id
     assert ticket_row.requester_person_id == master.person_id
     assert asset_row.assigned_person_id == master.person_id
+    assert inventory_row.person_id == master.person_id
+    assert inventory_row.source_binding_id == binding.binding_id
     assert event.reason == "same employee"
