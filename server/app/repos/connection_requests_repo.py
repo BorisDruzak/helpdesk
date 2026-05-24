@@ -27,8 +27,12 @@ class ConnectionRequestsRepo:
         val = row.scalar_one_or_none()
         if val in (POLICY_REJECT_ALL, POLICY_ACCEPT_ALL, POLICY_MANUAL):
             return val
-        # P0 default: new environment auto-approves provisioning.
-        return POLICY_ACCEPT_ALL
+        # Missing policy fails closed to manual approval outside explicit insecure dev.
+        import config
+
+        if getattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", False):
+            return POLICY_ACCEPT_ALL
+        return POLICY_MANUAL
 
     async def set_policy(self, policy: str) -> None:
         if policy not in (POLICY_REJECT_ALL, POLICY_ACCEPT_ALL, POLICY_MANUAL):

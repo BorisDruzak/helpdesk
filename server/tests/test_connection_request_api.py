@@ -10,8 +10,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, text
+import config
 from app.db.models import ConnectionRequest, Device
 from app.db import get_session
+from app.repos.connection_requests_repo import ConnectionRequestsRepo, POLICY_ACCEPT_ALL, POLICY_MANUAL
 from app_keys import STATE_APP_KEY, replace_bound_app_value
 from auth.connection_request_service import ConnectionRequestService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
@@ -38,6 +40,22 @@ async def _set_policy(engine, policy: str):
             ),
             {"p": policy},
         )
+
+
+class _PolicyResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+class _PolicySession:
+    def __init__(self, value):
+        self.value = value
+
+    async def execute(self, _query):
+        return _PolicyResult(self.value)
 
 
 @pytest.mark.asyncio
@@ -108,18 +126,24 @@ async def test_connection_request_accept_all_resolves_existing_pending(test_clie
 
 
 @pytest.mark.asyncio
-async def test_connection_request_defaults_to_accept_all_when_policy_missing(test_client):
-    """Fresh environment without explicit policy should auto-approve in P0."""
-    device_id = str(uuid.uuid4())
-    r = await test_client.post(
-        "/api/connection_request",
-        json={"device_id": device_id, "agent_version": "1.0.0", "os_type": "windows"},
-    )
-    assert r.status == 200
-    data = await r.json()
-    assert data.get("status") == "approved"
-    assert isinstance(data.get("token"), str) and data.get("token")
-    assert data.get("device_id") == device_id
+@pytest.mark.no_db
+async def test_connection_request_defaults_to_manual_when_policy_missing(monkeypatch):
+    """Fresh environment without explicit policy must require manual approval."""
+    monkeypatch.setattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", False)
+    policy = await ConnectionRequestsRepo(_PolicySession(None)).get_policy()
+
+    assert policy == POLICY_MANUAL
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_connection_request_missing_policy_accepts_all_only_for_explicit_insecure_dev(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", True)
+    policy = await ConnectionRequestsRepo(_PolicySession(None)).get_policy()
+
+    assert policy == POLICY_ACCEPT_ALL
 
 
 @pytest.mark.asyncio

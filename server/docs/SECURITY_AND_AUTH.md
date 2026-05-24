@@ -58,8 +58,8 @@ Security update 2026-05-23:
 
 ### 1.3 Отзыв токенов
 
-- **Agent:** `POST /api/devices/{device_id}/tokens/revoke` с телом `{"token_hash": "..."}`. Отзыв по hash (сырой токен клиентом не передаётся).
-- **Список токенов устройства:** `GET /api/devices/{device_id}/tokens` (требует аутентификации). Возвращает список записей с `token_hash`, `token_prefix`, датами, флагом `is_active`.
+- **Agent token revoke:** `POST /api/devices/{device_id}/tokens/revoke` is admin-only. The handler accepts `{"token_hash": "..."}` and revokes only when the hash belongs to the same path `device_id`; audit/log output may include only a short hash prefix, never the full hash or raw token.
+- **Device token list:** `GET /api/devices/{device_id}/tokens` is admin-only. It returns stored token records with `token_hash`, `token_prefix`, timestamps and `is_active`; raw tokens are never returned.
 - **Архивирование устройства:** `DELETE /api/devices/{device_id}` доступен только роли `admin`. Сервер best-effort закрывает live WebSocket-сессию агента, очищает runtime-кэши, отзывает активные agent token, гасит pending connection request / outbox / активные operations и помечает устройство как архивное через `devices.deleted_at/deleted_by/delete_reason`. История аудита, событий, снапшотов и тикетов сохраняется.
 
 ---
@@ -194,7 +194,7 @@ Security update 2026-05-23:
 
 - Используется no-token bootstrap-потоком агента, когда локального токена ещё нет или он был очищен после `401 / Invalid token`.
 - Identity v1: `POST /api/connection_request` должен приходить с каноническим `device_id == machine_id`; в `request_metadata` агент дополнительно передаёт `machine_id`, `install_id` и `machine_id_source` для аудита и UI.
-- Политика берётся из `server_config.connection_policy` (`reject_all`, `accept_all`, `manual`). Если политика явно не задана, P0-режимом по умолчанию считается `accept_all`.
+- Политика берётся из `server_config.connection_policy` (`reject_all`, `accept_all`, `manual`). Если политика явно не задана, безопасный default — `manual`; fallback к `accept_all` допустим только для явного insecure dev режима (`ALLOW_INSECURE_DEV_DEFAULTS=true`) или при явной записи `connection_policy=accept_all`.
 - При `accept_all` сервер:
   - выпускает новый agent token;
   - возвращает его прямо в ответе `{"status":"approved","token":...}`;

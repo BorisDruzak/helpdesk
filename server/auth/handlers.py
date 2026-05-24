@@ -222,6 +222,7 @@ async def handle_ui_session(request):
     )
 
 
+@require_auth("admin")
 async def handle_get_device_tokens(request):
     """
     HTTP API для получения списка токенов устройства: GET /api/devices/{device_id}/tokens
@@ -279,6 +280,7 @@ async def handle_get_device_tokens(request):
         }, status=500)
 
 
+@require_auth("admin")
 async def handle_revoke_device_token(request):
     """
     HTTP API для аннулирования токена устройства: POST /api/devices/{device_id}/tokens/revoke
