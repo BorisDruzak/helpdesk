@@ -5,7 +5,7 @@
 ![Status](https://img.shields.io/badge/status-Production-brightgreen.svg)
 ![Protocol](https://img.shields.io/badge/protocol-V3-blue.svg)
 
-> Security note 2026-05-23: `POST /api/login` is admin-only for manual agent-token issue; agent self-provisioning uses `POST /api/connection_request` and protected status polling with `request_id` + `poll_secret`. New web UI login uses `/api/web/session/login` and an httpOnly cookie; legacy `/api/ui_login` is disabled unless explicitly enabled.
+> Security note 2026-05-23/24: `POST /api/login` is admin-only for manual agent-token issue; agent self-provisioning uses `POST /api/connection_request` and protected status polling with `request_id` + `poll_secret`. Manual approve no longer stores raw approved tokens in process memory; the token is generated only after a valid poll. New web UI login uses `/api/web/session/login` and an httpOnly cookie; legacy `/api/ui_login` is disabled unless explicitly enabled.
 
 > **WebSocket сервер для управления удалёнными PC агентами (relay-архитектура)**
 

@@ -13,6 +13,7 @@ import auth.handlers as auth_handlers
 import app.db as app_db_module
 import app.repos.auth_tokens_repo as auth_tokens_repo_module
 from auth.password_service import PasswordPolicyError, hash_password, parse_encoded, validate_password_policy, verify_password
+from auth.rate_limit import client_ip
 from routes import setup_routes
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
@@ -153,6 +154,26 @@ def test_password_policy_and_hash_are_hardened():
     assert len(salt) >= 32
     assert verify_password("LongEnoughPassword1", encoded)
     assert not verify_password("wrong", encoded)
+
+
+@pytest.mark.no_db
+def test_rate_limit_client_ip_ignores_x_forwarded_for_by_default(monkeypatch):
+    monkeypatch.setattr(config, "TRUST_X_FORWARDED_FOR", False)
+    monkeypatch.setattr(config, "TRUSTED_PROXY_CIDRS", "")
+    request = SimpleNamespace(headers={"X-Forwarded-For": "203.0.113.10"}, remote="198.51.100.5")
+
+    assert client_ip(request) == "198.51.100.5"
+
+
+@pytest.mark.no_db
+def test_rate_limit_client_ip_uses_x_forwarded_for_only_for_trusted_proxy(monkeypatch):
+    monkeypatch.setattr(config, "TRUST_X_FORWARDED_FOR", True)
+    monkeypatch.setattr(config, "TRUSTED_PROXY_CIDRS", "198.51.100.0/24")
+    trusted_request = SimpleNamespace(headers={"X-Forwarded-For": "203.0.113.10"}, remote="198.51.100.5")
+    untrusted_request = SimpleNamespace(headers={"X-Forwarded-For": "203.0.113.10"}, remote="192.0.2.5")
+
+    assert client_ip(trusted_request) == "203.0.113.10"
+    assert client_ip(untrusted_request) == "192.0.2.5"
 
 
 def _bearer(token: str) -> dict[str, str]:

@@ -6,17 +6,19 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import config
 from app.db import get_session
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.connection_requests_repo import ConnectionRequestsRepo
 from app.repos.devices_repo import DevicesRepo
+from auth.service import ArchivedDeviceError
 
 
 class ConnectionRequestService:
     """Keeps pending/approved/rejected connection state in DB only."""
-    _APPROVED_TOKENS: dict[str, str] = {}
 
     @staticmethod
     def generate_poll_secret() -> str:
@@ -25,10 +27,6 @@ class ConnectionRequestService:
     @staticmethod
     def hash_poll_secret(secret: str) -> str:
         return hashlib.sha256(str(secret).encode("utf-8")).hexdigest()
-
-    @classmethod
-    def store_approved_token_once(cls, *, request_id: str, token: str) -> None:
-        cls._APPROVED_TOKENS[request_id] = token
 
     async def record_unauthorized_attempt(
         self,
@@ -61,10 +59,6 @@ class ConnectionRequestService:
                 )
             await session.commit()
 
-    async def save_approved_token_once(self, *, device_id: str, token: str, request_id: str | None = None) -> None:
-        if request_id:
-            self.store_approved_token_once(request_id=request_id, token=token)
-
     async def consume_approved_token_once(
         self,
         *,
@@ -84,11 +78,27 @@ class ConnectionRequestService:
                 or req.approved_token_delivered_at is not None
             ):
                 return None
-            token = self._APPROVED_TOKENS.pop(request_id, None)
-            if token:
-                await repo.mark_approval_delivered(request_id=request_id)
+            devices_repo = DevicesRepo(session)
+            existing_device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
+            if existing_device and existing_device.deleted_at is not None:
+                raise ArchivedDeviceError("Device is archived and must be restored before reprovision.")
+            await devices_repo.ensure_device_exists(device_id)
+            claimed = await repo.mark_approval_delivered(request_id=request_id)
+            if not claimed:
+                return None
+
+            raw_token = secrets.token_hex(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=4320)
+            await AuthTokensRepo(session).create_agent_token(
+                token=raw_token,
+                device_id=device_id,
+                expires_at=expires_at,
+                replace_existing=False,
+                max_active_tokens=config.AGENT_TOKEN_MAX_ACTIVE_TOKENS,
+                commit=False,
+            )
             await session.commit()
-            return token
+            return raw_token
 
     async def clear_pending_after_manual_token_issue(self, *, device_id: str) -> None:
         async with get_session() as session:

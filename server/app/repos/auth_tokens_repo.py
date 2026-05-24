@@ -51,6 +51,7 @@ class AuthTokensRepo:
         expires_at: Optional[datetime] = None,
         replace_existing: bool = False,
         max_active_tokens: Optional[int] = None,
+        commit: bool = True,
     ) -> Tuple[str, AgentToken]:
         """
         Create agent token with hashing.
@@ -100,8 +101,11 @@ class AuthTokensRepo:
         
         self.session.add(agent_token)
         try:
-            await self.session.commit()
-            await self.session.refresh(agent_token)
+            if commit:
+                await self.session.commit()
+                await self.session.refresh(agent_token)
+            else:
+                await self.session.flush()
             logger.info(f"[AuthTokensRepo] Created agent token: device_id={device_id}, prefix={token_prefix}")
             return token, agent_token
         except IntegrityError as e:

@@ -6,16 +6,25 @@ Tests for connection request API (device authorization flow).
 - GET/PATCH /api/admin/connection_policy (admin)
 - GET /api/admin/connection_requests, POST approve/reject (admin)
 """
+from pathlib import Path
+from types import SimpleNamespace
 import uuid
 from datetime import datetime, timedelta, timezone
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import select, text
 import config
 from app.db.models import ConnectionRequest, Device
 from app.db import get_session
 from app.repos.connection_requests_repo import ConnectionRequestsRepo, POLICY_ACCEPT_ALL, POLICY_MANUAL
 from app_keys import STATE_APP_KEY, replace_bound_app_value
+from auth.context import AuthContext, AuthType
+from auth.middleware import auth_middleware
+import auth.middleware as auth_middleware_module
+import auth.connection_request_handlers as connection_request_handlers
 from auth.connection_request_service import ConnectionRequestService
+from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
@@ -56,6 +65,17 @@ class _PolicySession:
 
     async def execute(self, _query):
         return _PolicyResult(self.value)
+
+
+class _FakeSessionContext:
+    async def __aenter__(self):
+        return SimpleNamespace(commit=self._commit)
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def _commit(self):
+        return None
 
 
 @pytest.mark.asyncio
@@ -144,6 +164,132 @@ async def test_connection_request_missing_policy_accepts_all_only_for_explicit_i
     policy = await ConnectionRequestsRepo(_PolicySession(None)).get_policy()
 
     assert policy == POLICY_ACCEPT_ALL
+
+
+@pytest.mark.no_db
+def test_connection_request_service_has_no_process_local_approved_token_store():
+    assert not hasattr(ConnectionRequestService, "_APPROVED_TOKENS")
+    assert not hasattr(ConnectionRequestService, "store_approved_token_once")
+    assert not hasattr(ConnectionRequestService, "save_approved_token_once")
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_connection_request_status_generates_token_on_valid_poll(monkeypatch):
+    device_id = str(uuid.uuid4())
+    request_id = str(uuid.uuid4())
+    poll_secret = "poll-secret"
+    poll_secret_hash = ConnectionRequestService.hash_poll_secret(poll_secret)
+    calls: dict[str, object] = {}
+
+    class FakeRepo:
+        async def get_by_request_id(self, requested_request_id):
+            assert requested_request_id == request_id
+            return SimpleNamespace(
+                device_id=device_id,
+                poll_secret_hash=poll_secret_hash,
+                status="approved",
+                approved_token_delivered_at=None,
+            )
+
+        async def mark_approval_delivered(self, *, request_id):
+            calls["delivered_request_id"] = request_id
+            return True
+
+    class FakeDevicesRepo:
+        async def get_by_device_id(self, requested_device_id, *, include_deleted=False):
+            assert requested_device_id == device_id
+            return None
+
+        async def ensure_device_exists(self, requested_device_id):
+            calls["ensured_device_id"] = requested_device_id
+            return SimpleNamespace(device_id=requested_device_id)
+
+    class FakeAuthTokensRepo:
+        async def create_agent_token(self, **kwargs):
+            calls["token_kwargs"] = kwargs
+            return kwargs["token"], SimpleNamespace(token_hash="hash")
+
+    import auth.connection_request_service as service_module
+
+    monkeypatch.setattr(service_module, "get_session", lambda: _FakeSessionContext())
+    monkeypatch.setattr(service_module, "ConnectionRequestsRepo", lambda _session: FakeRepo())
+    monkeypatch.setattr(service_module, "DevicesRepo", lambda _session: FakeDevicesRepo())
+    monkeypatch.setattr(service_module, "AuthTokensRepo", lambda _session: FakeAuthTokensRepo())
+    monkeypatch.setattr(service_module.secrets, "token_hex", lambda _size: "generated-agent-token")
+
+    token = await ConnectionRequestService().consume_approved_token_once(
+        device_id=device_id,
+        request_id=request_id,
+        poll_secret=poll_secret,
+    )
+
+    assert token == "generated-agent-token"
+    assert calls["ensured_device_id"] == device_id
+    assert calls["delivered_request_id"] == request_id
+    token_kwargs = calls["token_kwargs"]
+    assert token_kwargs["device_id"] == device_id
+    assert token_kwargs["token"] == "generated-agent-token"
+    assert token_kwargs["commit"] is False
+
+
+@pytest.mark.no_db
+def test_connection_request_unique_request_id_migration_declares_partial_unique_index():
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "db"
+        / "migrations"
+        / "versions"
+        / "20260524_102_connection_request_request_id_unique.py"
+    ).read_text(encoding="utf-8")
+
+    assert "uq_connection_requests_request_id_not_null" in migration
+    assert "unique=True" in migration
+    assert "request_id IS NOT NULL" in migration
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_admin_approve_rejects_pending_without_poll_secret(monkeypatch):
+    device_id = str(uuid.uuid4())
+
+    async def fake_extract_auth_context(_request):
+        return AuthContext(
+            actor_id="admin-test",
+            actor_role="admin",
+            auth_type=AuthType.UI_TOKEN,
+            token=TEST_UI_ADMIN_TOKEN,
+        )
+
+    class FakeRepo:
+        async def get_pending_by_device_id(self, requested_device_id):
+            assert requested_device_id == device_id
+            return SimpleNamespace(
+                device_id=device_id,
+                request_id=None,
+                poll_secret_hash=None,
+                request_metadata={},
+            )
+
+    monkeypatch.setattr(auth_middleware_module, "extract_auth_context", fake_extract_auth_context)
+    monkeypatch.setattr(connection_request_handlers, "get_session", lambda: _FakeSessionContext())
+    monkeypatch.setattr(connection_request_handlers, "ConnectionRequestsRepo", lambda _session: FakeRepo())
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            f"/api/admin/connection_requests/{device_id}/approve",
+            headers=_admin_headers(),
+            json={},
+        )
+        payload = await response.json()
+
+    assert response.status == 409
+    assert payload["error_code"] == "POLL_SECRET_MISSING"
 
 
 @pytest.mark.asyncio
@@ -411,8 +557,8 @@ async def test_connection_request_status_reports_archived_rejection(test_client,
 
 
 @pytest.mark.asyncio
-async def test_status_token_is_not_delivered_after_process_memory_loss(test_client, test_engine):
-    """Approved raw token is not stored in DB; process memory loss yields approved without token."""
+async def test_status_token_is_delivered_after_process_memory_loss(test_client, test_engine):
+    """Approved raw token is generated on valid poll, so process memory loss does not break delivery."""
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
     created = await test_client.post("/api/connection_request", json={"device_id": device_id})
@@ -423,20 +569,19 @@ async def test_status_token_is_not_delivered_after_process_memory_loss(test_clie
         json={},
     )
 
-    # Simulate process-local state loss: DB path must still work.
+    # Simulate process-local state loss: delivery must not depend on process memory.
     replace_bound_app_value(
         test_client.app,
         key=STATE_APP_KEY,
         legacy_name="state",
         value=test_client.app["state"].__class__(),
     )
-    ConnectionRequestService._APPROVED_TOKENS.clear()
 
     r = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
     assert r.status == 200
     payload = await r.json()
     assert payload.get("status") == "approved"
-    assert not payload.get("token")
+    assert payload.get("token")
 
 
 @pytest.mark.asyncio

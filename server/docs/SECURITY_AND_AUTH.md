@@ -6,8 +6,9 @@
 
 Security update 2026-05-23:
 - `POST /api/login` is removed from the unauthenticated whitelist and is admin-only. It is retained only as an audited compatibility path for manual agent-token issue.
-- Manual `connection_request` polling requires `device_id`, `request_id`, and `poll_secret`; the database stores only `poll_secret_hash`, and approved tokens are delivered once.
+- Manual `connection_request` polling requires `device_id`, `request_id`, and `poll_secret`; the database stores only `poll_secret_hash`, and approved agent tokens are generated only after a valid poll and delivered once.
 - Default query-token auth, config-user fallback, insecure cookies, and legacy `/api/ui_login` bearer-token login are disabled unless explicitly enabled for local development.
+- Auth-sensitive rate limits ignore `X-Forwarded-For` by default. Set `TRUST_X_FORWARDED_FOR=true` plus `TRUSTED_PROXY_CIDRS` only when requests arrive through trusted reverse proxies.
 - UI roles fail closed: unknown `actor_role` values do not become `admin`; new users without a role default to `user`.
 - Account-session validation uses POST/header/body by default. Query-string session tokens are disabled unless explicitly enabled for legacy compatibility.
 
@@ -199,7 +200,7 @@ Security update 2026-05-23:
   - выпускает новый agent token;
   - возвращает его прямо в ответе `{"status":"approved","token":...}`;
   - обязательно закрывает все существующие `pending` записи в `connection_requests` для этого `device_id`, чтобы не копились ложные stale-request алерты в техпанели.
-- При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а токен выдаётся только после ручного approve оператором. Heartbeat `POST /api/connection_request`, пришедший после approve, но до `GET /api/connection_request/status`, считается уже ожидающим доставки токена и не создаёт второй `pending`-запрос.
+- При `manual` создаётся или обновляется `pending` запись в `connection_requests`, а admin approve только переводит защищённый запрос в `approved`. Raw agent token не хранится в памяти процесса или БД: сервер генерирует его только при валидном `GET /api/connection_request/status` с `device_id + request_id + poll_secret`, сохраняет в БД только hash в `agent_tokens` и помечает approval delivered. Pending-запросы без `request_id` или `poll_secret_hash` не approve-ятся и получают `409 POLL_SECRET_MISSING`; агент должен создать свежую заявку. Heartbeat `POST /api/connection_request`, пришедший после approve, но до `GET /api/connection_request/status`, считается уже ожидающим доставки токена и не создаёт второй `pending`-запрос.
 - При `reject_all` токен не выдаётся, а агент получает `403 CONNECTION_REJECTED`.
 - Если pending-запрос отклонён по причине архивированного устройства, status API должен возвращать `error_code=DEVICE_ARCHIVED`, чтобы агент не сохранял вечный локальный reject-флаг и мог повторить provisioning после административного восстановления устройства.
 - Provisioning writes observer-visible `agent_runtime_audit` events for create/approve/reject/token delivery/token limit/fingerprint mismatch/post-approval delivery wait. Operation-less records are projected as `root_kind=device_provisioning` traces; support/Codex can search them with `/api/admin/tech/observer/search?q=connection_request` or collect `/api/admin/tech/diagnostics/bundle?q=connection_request`.

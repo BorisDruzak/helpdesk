@@ -23,7 +23,7 @@ from app.repos.connection_requests_repo import (
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from auth.middleware import require_auth
-from auth.rate_limit import check_rate_limit, rate_limited_response
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService, ArchivedDeviceError
 from auth.connection_request_service import ConnectionRequestService
 from auth.device_fingerprint import (
@@ -46,13 +46,6 @@ DEVICE_FINGERPRINT_MISMATCH_CODE = "DEVICE_FINGERPRINT_MISMATCH"
 DEVICE_FINGERPRINT_MISMATCH_MESSAGE = (
     "Device fingerprint does not match this machine_id. Check the device or approve reprovision manually."
 )
-
-
-def _get_client_ip(request: web.Request) -> str:
-    xff = request.headers.get("X-Forwarded-For")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote or ""
 
 
 def _token_limit_response_payload(*, active_token_count: int | None = None, error: str | None = None) -> dict:
@@ -244,7 +237,7 @@ async def handle_connection_request(request: web.Request) -> web.Response:
     if metadata:
         metadata = dict(metadata)
     metadata["machine_id"] = device_id
-    ip_address = _get_client_ip(request)
+    ip_address = client_ip(request)
     request_id = str(data.get("request_id") or "").strip() or None
     poll_secret = str(data.get("poll_secret") or "").strip() or None
     if not check_rate_limit("connection_request", f"{ip_address}:{device_id}", limit=30, window_seconds=60):
@@ -423,7 +416,7 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
     """
     GET /api/connection_request/status?device_id=... (no auth).
     Returns: { status: "pending"|"approved"|"rejected", token? }.
-    Token is returned once on approved, then removed from server cache.
+    Token is generated only after request_id + poll_secret validation and returned once.
     """
     device_id = (request.query.get("device_id") or "").strip()
     request_id = (request.query.get("request_id") or "").strip()
@@ -442,7 +435,7 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
             },
             status=400,
         )
-    if not check_rate_limit("connection_request_status", f"{_get_client_ip(request)}:{device_id}:{request_id}", limit=120, window_seconds=60):
+    if not check_rate_limit("connection_request_status", f"{client_ip(request)}:{device_id}:{request_id}", limit=120, window_seconds=60):
         return rate_limited_response()
     try:
         uuid_lib.UUID(device_id)
@@ -453,11 +446,33 @@ async def handle_connection_request_status(request: web.Request) -> web.Response
         )
 
     connection_request_service = ConnectionRequestService()
-    token_once = await connection_request_service.consume_approved_token_once(
-        device_id=device_id,
-        request_id=request_id,
-        poll_secret=poll_secret,
-    )
+    try:
+        token_once = await connection_request_service.consume_approved_token_once(
+            device_id=device_id,
+            request_id=request_id,
+            poll_secret=poll_secret,
+        )
+    except ArchivedDeviceError:
+        return web.json_response(
+            {
+                "status": "rejected",
+                "message": "Device archived by administrator",
+                "error_code": "DEVICE_ARCHIVED",
+            },
+            status=409,
+        )
+    except ValueError as e:
+        await write_agent_runtime_audit(
+            device_id=device_id,
+            event_type="connection_request_token_limit",
+            severity="warning",
+            source="connection_request_status",
+            details_json={"reason": str(e), "error_code": TOKEN_LIMIT_ERROR_CODE},
+        )
+        return web.json_response(
+            _token_limit_response_payload(error=str(e)),
+            status=429,
+        )
     if token_once:
         await write_agent_runtime_audit(
             device_id=device_id,
@@ -616,9 +631,6 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
             status=400,
         )
 
-    state = request.app["state"]
-    auth_service = AuthService(state)
-    connection_request_service = ConnectionRequestService()
     async with get_session() as session:
         repo = ConnectionRequestsRepo(session)
         pending = await repo.get_pending_by_device_id(device_id)
@@ -626,6 +638,15 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
             return web.json_response(
                 {"status": "error", "error": "No pending request for this device"},
                 status=404,
+            )
+        if not pending.request_id or not pending.poll_secret_hash:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Agent must create a fresh connection request",
+                    "error_code": "POLL_SECRET_MISSING",
+                },
+                status=409,
             )
         pending_metadata = pending.request_metadata if isinstance(pending.request_metadata, dict) else {}
         device = await DevicesRepo(session).get_by_device_id(device_id, include_deleted=True)
@@ -656,48 +677,10 @@ async def handle_admin_connection_request_approve(request: web.Request) -> web.R
                 _fingerprint_mismatch_response_payload(verdict=fingerprint_verdict),
                 status=409,
             )
-        try:
-            token = await auth_service.generate_agent_token(
-                device_id=device_id,
-                expires_hours=4320,
-            )
-        except ArchivedDeviceError:
-            return web.json_response(
-                {"status": "error", "error": "Устройство архивировано администратором"},
-                status=409,
-            )
-        except ValueError as e:
-            await repo.touch_pending_request(
-                device_id,
-                metadata_patch={
-                    "reason": "token_limit_exceeded",
-                    "error_code": TOKEN_LIMIT_ERROR_CODE,
-                },
-            )
-            await session.commit()
-            await write_agent_runtime_audit(
-                device_id=device_id,
-                event_type="connection_request_token_limit",
-                severity="warning",
-                source="connection_request_admin",
-                actor_id=request["auth_context"].actor_id if request.get("auth_context") else None,
-                actor_role=request["auth_context"].actor_role if request.get("auth_context") else None,
-                details_json={"reason": str(e), "error_code": TOKEN_LIMIT_ERROR_CODE},
-            )
-            return web.json_response(
-                _token_limit_response_payload(error=str(e)),
-                status=429,
-            )
         await _remember_device_fingerprint(DevicesRepo(session), device_id=device_id, metadata=pending_metadata)
         await repo.set_approved(device_id, request_id=pending.request_id)
         await session.commit()
 
-    if pending.request_id:
-        await connection_request_service.save_approved_token_once(
-            device_id=device_id,
-            request_id=pending.request_id,
-            token=token,
-        )
     await write_agent_runtime_audit(
         device_id=device_id,
         event_type="connection_request_approved",
