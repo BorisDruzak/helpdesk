@@ -36,7 +36,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## Active Work: Registry Management Center P1/P2
 
-Status: in progress / building on completed P0 Registry Management Center.
+Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants.
 
 Goal:
 
@@ -51,6 +51,7 @@ Scope:
 - CSV export for devices, people, bindings, sessions, locations, departments and quality issues.
 - More actionable quality remediation and richer timeline/detail drawer data.
 - Operator docs and live smoke checklist for Registry Management Center.
+- Repeatable A-F live workflow smoke for people/identities, bind, shared/responsible, transfer owner, people merge and locations/departments with API actions plus DB invariant checks.
 
 Non-goals:
 
@@ -62,7 +63,7 @@ Verification target:
 
 - Focused Registry DB/API tests for locations, departments, policies, merge, bulk actions, import/export where implemented, plus existing P0 registry/account-session/ticket access tests.
 - `pnpm --dir webapp test -- registry`, `pnpm --dir webapp run build`, agent account-session smoke tests, `python -m compileall -q server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
-- Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
+- Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release, `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`, and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
 
 ## Active Work: Device Account Session Hardening
 

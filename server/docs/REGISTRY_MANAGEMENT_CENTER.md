@@ -48,6 +48,14 @@
 
 ## Smoke Checklist
 
+For the full workflow smoke, deploy the current commit to the Linux stand and run:
+
+```bash
+python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls
+```
+
+The script issues short-lived admin/agent tokens through `AuthService`, drives admin and agent HTTP APIs, creates unique smoke objects, and verifies the database invariants below without printing raw tokens. It revokes smoke account sessions during cleanup and leaves audit/history records intact.
+
 1. Create a user.
 2. Add and verify an identity.
 3. Bind the user to an unregistered device.
@@ -66,6 +74,15 @@
 16. Change a safe policy value and verify account-session TTL behavior.
 17. Export devices, people, bindings, sessions, locations, departments and quality CSV.
 18. Open Quality tab and use fix actions for missing user, stale binding, missing identity and duplicate person.
+
+`scripts/registry_workflow_smoke.py` covers the high-risk operational scenarios:
+
+- Scenario A: create person, add email/windows identities, verify identity, update person, confirm snapshot/drawer identity payload.
+- Scenario B: bind person as `primary_user`, confirm `device_user_bindings`, `registry_assets`, `device_inventory_bindings`, registration event and confirmed account-session creation.
+- Scenario C: add `shared_user` and `responsible`, confirm primary stays active and agent account-state exposes all relationships.
+- Scenario D: transfer owner, confirm old binding status, new primary, derived asset/inventory state, old session revocation and denied ticket access with the old session.
+- Scenario E: merge duplicate people and confirm identities, bindings, tickets, account sessions and derived owner state move to the master.
+- Scenario F: create/assign/merge locations and departments and confirm people/assets/inventory are updated.
 
 ## Validation
 
