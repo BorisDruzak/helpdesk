@@ -6,7 +6,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device
+from app.db.models import Device, DeviceAccountSession
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
@@ -206,10 +206,13 @@ async def test_revoked_confirmed_binding_invalidates_session(test_engine):
             session_id=created["session"]["session_id"],
             session_token=created.get("session_token"),
         )
+        session_row = await session.get(DeviceAccountSession, created["session"]["session_id"])
         await session.commit()
 
     assert invalid["valid"] is False
-    assert invalid["error_code"] == "ACCOUNT_SESSION_BINDING_INACTIVE"
+    assert invalid["error_code"] == "ACCOUNT_SESSION_REVOKED"
+    assert session_row.verification_status == "revoked"
+    assert session_row.revoked_by == "admin"
 
 
 @pytest.mark.asyncio
@@ -232,10 +235,13 @@ async def test_revoked_base_binding_invalidates_verified_other_account_session(t
             session_id=approved_request["session"]["session_id"],
             session_token=approved_request["session_token"],
         )
+        session_row = await session.get(DeviceAccountSession, approved_request["session"]["session_id"])
         await session.commit()
 
     assert invalid["valid"] is False
-    assert invalid["error_code"] == "ACCOUNT_SESSION_BASE_BINDING_INACTIVE"
+    assert invalid["error_code"] == "ACCOUNT_SESSION_REVOKED"
+    assert session_row.verification_status == "revoked"
+    assert session_row.revoked_by == "admin"
 
 
 @pytest.mark.asyncio
