@@ -671,9 +671,12 @@ export type AdminRegistryPolicyPayload = {
 
 export type AdminRegistryTimelineItem = {
   event_id: string;
+  source?: "registry_admin" | "registration" | "account" | string;
   object_type?: string | null;
   object_id?: string | null;
   event_type: string;
+  canonical_event_type?: string | null;
+  summary?: string | null;
   actor_id?: string | null;
   actor_role?: string | null;
   reason?: string | null;
@@ -688,6 +691,8 @@ export type AdminRegistryTimelineItem = {
   ticket_id?: string | null;
   event_at: string | null;
   payload: Record<string, unknown>;
+  related?: Record<string, unknown>;
+  changes?: Array<Record<string, unknown>>;
 };
 
 type SuccessResponse<T> = {

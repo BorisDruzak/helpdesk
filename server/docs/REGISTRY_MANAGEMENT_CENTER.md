@@ -9,6 +9,7 @@
 - Binding lifecycle operations must go through `RegistrationService`.
 - Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
+- Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
 - Dangerous admin operations expose read-only preview/dry-run endpoints before apply. Preview endpoints must not mutate state, write events or commit; the web UI requires preview before transfer/merge apply.
 
 ## Main API Surface
@@ -53,6 +54,19 @@
   - `GET /api/web/admin/registry/timeline/{object_type}/{object_id}`
 
 There is no `/api/web/admin/registry/import/apply` endpoint in the current Registry Management Center. Inventory binding import remains under `/api/web/admin/inventory/bindings/import`; a future registry import apply must add its own preview contract before enabling apply.
+
+## Timeline Contract
+
+`GET /api/web/admin/registry/timeline/{object_type}/{object_id}` is the drawer timeline source for `device`, `person`, `binding`, `account_session` and `claim`. It merges `registry_admin_events`, `device_registration_events` and `device_account_events` into a common item shape:
+
+- `source`: `registry_admin`, `registration` or `account`.
+- `event_type` plus `canonical_event_type` for UI labels such as `binding_created`, `shared_user_added`, `responsible_assigned`, `people_merged`, `policy_changed` and `bulk_action_applied`.
+- `actor_id`, `actor_role`, `event_at`, `reason`.
+- `summary` for a compact human-readable action line.
+- `related` with affected ids (`device_id`, `person_id`, `binding_id`, `claim_id`, `session_id`, `ticket_id`, `identity_id`, `location_id`, `department_id` when known).
+- `changes`, derived from explicit `payload.changes` or `before`/`after` payloads.
+
+The drawer must render who changed what, when, why and which entities were affected. New registry admin actions should either write a domain event through `RegistrationService`/`AccountSessionService` or a `RegistryAdminEvent` through `RegistryAdminOperationsService.append_event`.
 
 ## Preview Contract
 
@@ -126,6 +140,7 @@ Focused backend:
 ```bash
 python -m pytest server/tests/test_registry_admin_actions.py -q
 python -m pytest server/tests/test_registry_people_admin.py -q
+python -m pytest server/tests/test_registry_timeline_admin.py -q
 python -m pytest server/tests/test_registry_admin_previews.py -q
 python -m pytest server/tests/test_registry_people_merge.py -q
 python -m pytest server/tests/test_registry_locations_admin.py -q

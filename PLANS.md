@@ -50,6 +50,7 @@ Scope:
 - Bulk operations for common registry administration: assign locations/departments and revoke account sessions with per-item results.
 - CSV export for devices, people, bindings, sessions, locations, departments and quality issues.
 - More actionable quality remediation and richer timeline/detail drawer data.
+- Unified Registry Timeline in the drawer for device/person/binding/session/claim: admin, registration and account events must show actor, time, reason, changes and affected entity ids.
 - Operator docs and live smoke checklist for Registry Management Center.
 - Repeatable A-F live workflow smoke for people/identities, bind, shared/responsible, transfer owner, people merge and locations/departments with API actions plus DB invariant checks.
 - Read-only preview/dry-run contracts for dangerous operations before apply: transfer owner, people merge, location merge, department merge and bulk operations.
@@ -64,6 +65,7 @@ Non-goals:
 Verification target:
 
 - Focused Registry DB/API tests for previews, locations, departments, policies, merge, bulk actions, import/export where implemented, plus existing P0 registry/account-session/ticket access tests.
+- Timeline regression: `python -m pytest server/tests/test_registry_timeline_admin.py -q`.
 - `pnpm --dir webapp test -- registry`, `pnpm --dir webapp run build`, agent account-session smoke tests, `python -m compileall -q server pc_agent`, `python scripts/verify_workspace.py`, `git diff --check`.
 - Linux DB validation for DB-backed pytest if the Windows harness stalls, then quick remote release, `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`, and browser smoke at `https://192.168.100.17:9443/app/admin/registry`.
 

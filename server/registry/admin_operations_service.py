@@ -11,6 +11,7 @@ from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    DeviceAccountEvent,
     DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceRegistrationClaim,
@@ -84,6 +85,21 @@ def _csv_safe(value: Any) -> Any:
     return text
 
 
+TIMELINE_CANONICAL_EVENT_TYPES = {
+    "admin_binding_created": "binding_created",
+    "registry_policy_updated": "policy_changed",
+    "person_merged": "people_merged",
+    "bulk_device_location_assigned": "bulk_action_applied",
+    "bulk_devices_department_assigned": "bulk_action_applied",
+    "bulk_people_department_assigned": "bulk_action_applied",
+    "bulk_account_session_revoked": "bulk_action_applied",
+}
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if isinstance(value, datetime) else None
+
+
 class RegistryAdminOperationsService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -120,14 +136,23 @@ class RegistryAdminOperationsService:
 
     @staticmethod
     def serialize_event(row: Any) -> dict[str, Any]:
-        return {
+        payload = getattr(row, "payload", None) or {}
+        source = RegistryAdminOperationsService._event_source(row)
+        related = RegistryAdminOperationsService._event_related(row, payload)
+        event_type = str(getattr(row, "event_type", "") or "")
+        canonical_event_type = RegistryAdminOperationsService._canonical_event_type(event_type, payload)
+        reason = RegistryAdminOperationsService._event_reason(row, payload)
+        item = {
             "event_id": row.event_id,
             "object_type": getattr(row, "object_type", None),
             "object_id": getattr(row, "object_id", None),
-            "event_type": row.event_type,
+            "source": source,
+            "event_type": event_type,
+            "canonical_event_type": canonical_event_type,
+            "summary": RegistryAdminOperationsService._event_summary(event_type, canonical_event_type, related, payload),
             "actor_id": getattr(row, "actor_id", None),
             "actor_role": getattr(row, "actor_role", None),
-            "reason": getattr(row, "reason", None),
+            "reason": reason,
             "related_device_id": getattr(row, "related_device_id", None),
             "related_person_id": getattr(row, "related_person_id", None),
             "device_id": getattr(row, "device_id", None),
@@ -137,9 +162,113 @@ class RegistryAdminOperationsService:
             "session_id": getattr(row, "session_id", None),
             "request_id": getattr(row, "request_id", None),
             "ticket_id": getattr(row, "ticket_id", None),
-            "event_at": row.event_at.isoformat() if getattr(row, "event_at", None) else None,
-            "payload": getattr(row, "payload", None) or {},
+            "event_at": _iso(getattr(row, "event_at", None)),
+            "payload": payload,
+            "related": related,
+            "changes": RegistryAdminOperationsService._event_changes(row, payload),
         }
+        return item
+
+    @staticmethod
+    def _event_source(row: Any) -> str:
+        if isinstance(row, RegistryAdminEvent):
+            return "registry_admin"
+        if isinstance(row, DeviceRegistrationEvent):
+            return "registration"
+        if isinstance(row, DeviceAccountEvent):
+            return "account"
+        return "registry_admin"
+
+    @staticmethod
+    def _canonical_event_type(event_type: str, payload: dict[str, Any]) -> str:
+        if event_type == "admin_binding_created":
+            relationship_type = str(payload.get("relationship_type") or "")
+            if relationship_type == "shared_user":
+                return "shared_user_added"
+            if relationship_type == "responsible":
+                return "responsible_assigned"
+        return TIMELINE_CANONICAL_EVENT_TYPES.get(event_type, event_type)
+
+    @staticmethod
+    def _event_related(row: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        related = {
+            "object_type": getattr(row, "object_type", None),
+            "object_id": getattr(row, "object_id", None),
+            "device_id": getattr(row, "device_id", None) or getattr(row, "related_device_id", None) or payload.get("device_id"),
+            "person_id": getattr(row, "person_id", None) or getattr(row, "related_person_id", None) or payload.get("person_id") or payload.get("matched_person_id"),
+            "binding_id": getattr(row, "binding_id", None) or payload.get("binding_id") or payload.get("base_binding_id") or payload.get("old_binding_id"),
+            "claim_id": getattr(row, "claim_id", None) or payload.get("claim_id") or payload.get("replacement_claim_id"),
+            "session_id": getattr(row, "session_id", None) or payload.get("session_id"),
+            "request_id": getattr(row, "request_id", None) or payload.get("request_id"),
+            "ticket_id": getattr(row, "ticket_id", None) or payload.get("ticket_id"),
+            "identity_id": payload.get("identity_id"),
+            "location_id": payload.get("location_id") or payload.get("master_location_id"),
+            "department_id": payload.get("department_id") or payload.get("master_department_id"),
+        }
+        return {key: value for key, value in related.items() if value is not None}
+
+    @staticmethod
+    def _event_reason(row: Any, payload: dict[str, Any]) -> str | None:
+        return (
+            getattr(row, "reason", None)
+            or payload.get("reason")
+            or payload.get("override_reason")
+            or payload.get("rejection_reason")
+            or payload.get("merge_reason")
+        )
+
+    @staticmethod
+    def _event_changes(row: Any, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        changes = payload.get("changes")
+        if isinstance(changes, list):
+            return [change for change in changes if isinstance(change, dict)]
+        before = payload.get("before")
+        after = payload.get("after")
+        if isinstance(before, dict) and isinstance(after, dict):
+            fields = sorted(set(before.keys()) | set(after.keys()))
+            return [
+                {"field": field, "before": before.get(field), "after": after.get(field)}
+                for field in fields
+                if before.get(field) != after.get(field)
+            ]
+        if isinstance(before, dict) and after is None:
+            return [{"field": field, "before": value, "after": None} for field, value in sorted(before.items())]
+        if before is None and isinstance(after, dict):
+            return [{"field": field, "before": None, "after": value} for field, value in sorted(after.items())]
+        event_type = str(getattr(row, "event_type", "") or "")
+        synthetic: list[dict[str, Any]] = []
+        if "status" in payload:
+            synthetic.append({"field": "status", "after": payload.get("status")})
+        if "relationship_type" in payload:
+            synthetic.append({"field": "relationship_type", "after": payload.get("relationship_type")})
+        if event_type.startswith("account_session_") and payload.get("revoked_at"):
+            synthetic.append({"field": "revoked_at", "after": payload.get("revoked_at")})
+        return synthetic
+
+    @staticmethod
+    def _event_summary(event_type: str, canonical_event_type: str, related: dict[str, Any], payload: dict[str, Any]) -> str:
+        if payload.get("summary"):
+            return str(payload["summary"])
+        labels = {
+            "person_created": "Person created",
+            "person_updated": "Person updated",
+            "identity_added": "Identity added",
+            "identity_verified": "Identity verified",
+            "identity_deleted": "Identity deleted",
+            "binding_created": "Binding created",
+            "binding_revoked": "Binding revoked",
+            "binding_transferred": "Binding transferred",
+            "shared_user_added": "Shared user added",
+            "responsible_assigned": "Responsible person assigned",
+            "location_merged": "Location merged",
+            "department_merged": "Department merged",
+            "people_merged": "People merged",
+            "bulk_action_applied": "Bulk action applied",
+            "policy_changed": "Policy changed",
+        }
+        label = labels.get(canonical_event_type) or labels.get(event_type) or event_type.replace("_", " ")
+        target = related.get("object_id") or related.get("device_id") or related.get("person_id") or related.get("binding_id") or related.get("session_id")
+        return f"{label}: {target}" if target else label
 
     def _location_payload(self, row: RegistryLocation, *, users_count: int = 0, devices_count: int = 0) -> dict[str, Any]:
         metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
@@ -1218,7 +1347,12 @@ class RegistryAdminOperationsService:
         items: list[dict[str, Any]] = []
         admin_stmt = select(RegistryAdminEvent).where(RegistryAdminEvent.object_type == object_type, RegistryAdminEvent.object_id == object_id)
         if object_type == "device":
-            admin_stmt = select(RegistryAdminEvent).where(RegistryAdminEvent.related_device_id == object_id)
+            admin_stmt = select(RegistryAdminEvent).where(
+                or_(
+                    and_(RegistryAdminEvent.object_type == "device", RegistryAdminEvent.object_id == object_id),
+                    RegistryAdminEvent.related_device_id == object_id,
+                )
+            )
             registration_rows = (
                 await self.session.execute(
                     select(DeviceRegistrationEvent).where(DeviceRegistrationEvent.device_id == object_id).order_by(desc(DeviceRegistrationEvent.event_at)).limit(limit)
@@ -1226,25 +1360,14 @@ class RegistryAdminOperationsService:
             ).scalars().all()
             account_rows = (
                 await self.session.execute(
-                    select(DeviceAccountSession)
-                    .where(DeviceAccountSession.device_id == object_id)
-                    .order_by(desc(DeviceAccountSession.created_at))
+                    select(DeviceAccountEvent)
+                    .where(DeviceAccountEvent.device_id == object_id)
+                    .order_by(desc(DeviceAccountEvent.event_at))
                     .limit(limit)
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            items.extend(
-                {
-                    "event_id": f"session:{row.session_id}",
-                    "event_type": f"account_session_{row.verification_status}",
-                    "device_id": row.device_id,
-                    "session_id": row.session_id,
-                    "person_id": row.person_id,
-                    "event_at": row.created_at.isoformat() if row.created_at else None,
-                    "payload": {"account_mode": row.account_mode, "revoked_at": row.revoked_at.isoformat() if row.revoked_at else None},
-                }
-                for row in account_rows
-            )
+            items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "person":
             admin_stmt = select(RegistryAdminEvent).where(or_(RegistryAdminEvent.object_id == object_id, RegistryAdminEvent.related_person_id == object_id))
             registration_rows = (
@@ -1253,6 +1376,24 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
+            session_rows = (
+                await self.session.execute(
+                    select(DeviceAccountSession)
+                    .where(or_(DeviceAccountSession.person_id == object_id, DeviceAccountSession.base_person_id == object_id))
+                    .limit(limit)
+                )
+            ).scalars().all()
+            session_ids = [row.session_id for row in session_rows]
+            if session_ids:
+                account_rows = (
+                    await self.session.execute(
+                        select(DeviceAccountEvent)
+                        .where(DeviceAccountEvent.session_id.in_(session_ids))
+                        .order_by(desc(DeviceAccountEvent.event_at))
+                        .limit(limit)
+                    )
+                ).scalars().all()
+                items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "binding":
             registration_rows = (
                 await self.session.execute(
@@ -1260,9 +1401,41 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
+            session_rows = (
+                await self.session.execute(
+                    select(DeviceAccountSession)
+                    .where(or_(DeviceAccountSession.binding_id == object_id, DeviceAccountSession.base_binding_id == object_id))
+                    .limit(limit)
+                )
+            ).scalars().all()
+            session_ids = [row.session_id for row in session_rows]
+            if session_ids:
+                account_rows = (
+                    await self.session.execute(
+                        select(DeviceAccountEvent)
+                        .where(DeviceAccountEvent.session_id.in_(session_ids))
+                        .order_by(desc(DeviceAccountEvent.event_at))
+                        .limit(limit)
+                    )
+                ).scalars().all()
+                items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "account_session":
-            account_rows = await AccountSessionService(self.session).list_events_for_session_admin(object_id, limit=limit)
-            items.extend(account_rows)
+            rows = (
+                await self.session.execute(
+                    select(DeviceAccountEvent)
+                    .where(DeviceAccountEvent.session_id == object_id)
+                    .order_by(desc(DeviceAccountEvent.event_at))
+                    .limit(limit)
+                )
+            ).scalars().all()
+            items.extend(self.serialize_event(row) for row in rows)
+        elif object_type == "claim":
+            registration_rows = (
+                await self.session.execute(
+                    select(DeviceRegistrationEvent).where(DeviceRegistrationEvent.claim_id == object_id).order_by(desc(DeviceRegistrationEvent.event_at)).limit(limit)
+                )
+            ).scalars().all()
+            items.extend(self.serialize_event(row) for row in registration_rows)
 
         admin_rows = (await self.session.execute(admin_stmt.order_by(desc(RegistryAdminEvent.event_at)).limit(limit))).scalars().all()
         items.extend(self.serialize_event(row) for row in admin_rows)

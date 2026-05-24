@@ -758,6 +758,7 @@ async def handle_web_admin_registry_account_sessions(request: web.Request) -> we
 @require_auth("admin")
 async def handle_web_admin_registry_people_create(request: web.Request) -> web.Response:
     data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
     display_name = _text(data.get("display_name") or data.get("full_name"), max_length=300)
     if not display_name:
         return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
@@ -775,6 +776,29 @@ async def handle_web_admin_registry_people_create(request: web.Request) -> web.R
             metadata_json={"reason": _text(data.get("reason"), max_length=1000)},
         )
         session.add(person)
+        await session.flush()
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="person",
+            object_id=person.person_id,
+            event_type="person_created",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=person.person_id,
+            payload={
+                "person_id": person.person_id,
+                "after": {
+                    "display_name": person.display_name,
+                    "full_name": person.full_name,
+                    "email": person.email,
+                    "phone": person.phone,
+                    "department_id": person.department_id,
+                    "location_id": person.location_id,
+                    "status": person.status,
+                    "source": person.source,
+                },
+            },
+        )
         payload = {"person": {"person_id": person.person_id, "display_name": person.display_name}}
         await session.commit()
     return _success(payload)
@@ -790,6 +814,15 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
         if person is None:
             return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
         previous_status = person.status
+        before = {
+            "display_name": person.display_name,
+            "full_name": person.full_name,
+            "phone": person.phone,
+            "email": person.email,
+            "department_id": person.department_id,
+            "location_id": person.location_id,
+            "status": person.status,
+        }
         for field, max_length in {
             "display_name": 300,
             "full_name": 300,
@@ -826,6 +859,29 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
             "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
             "revoked_bindings": revoked_bindings,
         }
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="person",
+            object_id=person.person_id,
+            event_type="person_updated",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=person.person_id,
+            payload={
+                "person_id": person.person_id,
+                "before": before,
+                "after": {
+                    "display_name": person.display_name,
+                    "full_name": person.full_name,
+                    "phone": person.phone,
+                    "email": person.email,
+                    "department_id": person.department_id,
+                    "location_id": person.location_id,
+                    "status": person.status,
+                },
+                "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
+            },
+        )
         await session.commit()
     return _success(payload)
 
@@ -834,6 +890,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
 async def handle_web_admin_registry_person_identity_create(request: web.Request) -> web.Response:
     person_id = str(request.match_info.get("person_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
     provider = str(data.get("provider") or "").strip()
     identifier = str(data.get("identifier") or "").strip()
     if not provider or not identifier:
@@ -861,6 +918,37 @@ async def handle_web_admin_registry_person_identity_create(request: web.Request)
                 },
                 status=409,
             )
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="identity",
+            object_id=identity.identity_id,
+            event_type="identity_added",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=person_id,
+            payload={
+                "identity_id": identity.identity_id,
+                "person_id": person_id,
+                "after": {
+                    "provider": identity.provider,
+                    "identifier": identity.identifier,
+                    "normalized_identifier": identity.normalized_identifier,
+                    "verified": identity.verified,
+                    "source": identity.source,
+                },
+            },
+        )
+        if identity.verified:
+            await RegistryAdminOperationsService(session).append_event(
+                object_type="identity",
+                object_id=identity.identity_id,
+                event_type="identity_verified",
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                reason=_text(data.get("reason"), max_length=1000),
+                related_person_id=person_id,
+                payload={"identity_id": identity.identity_id, "person_id": person_id, "changes": [{"field": "verified", "after": True}]},
+            )
         payload = {"identity": {
             "identity_id": identity.identity_id,
             "person_id": identity.person_id,
@@ -879,14 +967,32 @@ async def handle_web_admin_registry_person_identity_create(request: web.Request)
 async def handle_web_admin_registry_person_identity_update(request: web.Request) -> web.Response:
     identity_id = str(request.match_info.get("identity_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
     async with get_session() as session:
         identity = await session.get(RegistryPersonIdentity, identity_id)
         if identity is None:
             return web.json_response({"status": "error", "error": "identity not found", "error_code": "NOT_FOUND"}, status=404)
+        before = {"verified": identity.verified, "source": identity.source}
         if "verified" in data:
             identity.verified = bool(data.get("verified"))
         if "source" in data:
             identity.source = _text(data.get("source"), max_length=40) or identity.source
+        event_type = "identity_verified" if before["verified"] is not True and identity.verified is True else "identity_updated"
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="identity",
+            object_id=identity.identity_id,
+            event_type=event_type,
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=identity.person_id,
+            payload={
+                "identity_id": identity.identity_id,
+                "person_id": identity.person_id,
+                "before": before,
+                "after": {"verified": identity.verified, "source": identity.source},
+            },
+        )
         payload = {"identity": {"identity_id": identity.identity_id, "verified": identity.verified, "source": identity.source}}
         await session.commit()
     return _success(payload)
@@ -895,13 +1001,37 @@ async def handle_web_admin_registry_person_identity_update(request: web.Request)
 @require_auth("admin")
 async def handle_web_admin_registry_person_identity_delete(request: web.Request) -> web.Response:
     identity_id = str(request.match_info.get("identity_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
     async with get_session() as session:
         identity = await session.get(RegistryPersonIdentity, identity_id)
         if identity is None:
             return web.json_response({"status": "error", "error": "identity not found", "error_code": "NOT_FOUND"}, status=404)
+        person_id = identity.person_id
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="identity",
+            object_id=identity.identity_id,
+            event_type="identity_deleted",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=identity.person_id,
+            payload={
+                "identity_id": identity.identity_id,
+                "person_id": identity.person_id,
+                "before": {
+                    "provider": identity.provider,
+                    "identifier": identity.identifier,
+                    "normalized_identifier": identity.normalized_identifier,
+                    "verified": identity.verified,
+                    "source": identity.source,
+                },
+                "after": None,
+            },
+        )
         await session.delete(identity)
         await session.commit()
-    return _success({"identity_id": identity_id, "deleted": True})
+    return _success({"identity_id": identity_id, "person_id": person_id, "deleted": True})
 
 
 def _registry_admin_error(exc: Exception) -> web.Response:
