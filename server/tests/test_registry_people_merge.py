@@ -59,6 +59,9 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
             status="active",
             discovery_payload={},
         )
+        session.add(asset)
+        await session.flush()
+
         identity = RegistryPersonIdentity(
             identity_id=str(uuid.uuid4()),
             person_id=duplicate.person_id,
@@ -110,7 +113,10 @@ async def test_people_merge_moves_related_records_and_marks_duplicate(test_engin
             requester_id="duplicate-user",
             requester_person_id=duplicate.person_id,
         )
-        session.add_all([asset, identity, binding, account_session, claim, ticket])
+        session.add_all([identity, binding, claim, ticket])
+        await session.flush()
+
+        session.add(account_session)
         await session.flush()
 
         result = await RegistryAdminOperationsService(session).merge_people(
