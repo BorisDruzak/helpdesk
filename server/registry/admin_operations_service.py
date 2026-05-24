@@ -29,7 +29,7 @@ from app.db.models import (
 )
 from app.repos.registration_repo import normalize_identifier
 from registry.account_session_service import AccountSessionService
-from registry.policy_service import DEFAULT_REGISTRY_POLICIES, RegistryPolicyService
+from registry.policy_service import RegistryPolicyService, build_registry_policy_response
 
 
 BULK_LIMIT = 200
@@ -745,21 +745,45 @@ class RegistryAdminOperationsService:
 
     async def get_policies(self) -> dict[str, Any]:
         effective = await RegistryPolicyService(self.session).get_policies()
-        return {"defaults": DEFAULT_REGISTRY_POLICIES, "effective": effective}
+        return build_registry_policy_response(effective)
+
+    async def preview_policies(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        config = data.get("policies") if isinstance(data.get("policies"), dict) else data
+        return build_registry_policy_response(config, dry_run=True)
 
     async def update_policies(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
         config = data.get("policies") if isinstance(data.get("policies"), dict) else data
         effective = await RegistryPolicyService(self.session).update_policies(config, actor_id=actor_id)
+        response = build_registry_policy_response(effective)
         await self.append_event(
             object_type="policy",
             object_id="registry_management",
-            event_type="registry_policy_updated",
+            event_type="policy_changed",
             actor_id=actor_id,
             reason=reason,
-            payload={"effective": effective},
+            payload={
+                "effective": effective,
+                "changed_from_defaults": response["changed_from_defaults"],
+                "warnings": response["warnings"],
+                "requires_restart": response["requires_restart"],
+            },
         )
-        return {"defaults": DEFAULT_REGISTRY_POLICIES, "effective": effective}
+        return response
+
+    async def reset_policies(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
+        reason = _require_reason(data.get("reason"))
+        effective = await RegistryPolicyService(self.session).reset_to_defaults(actor_id=actor_id)
+        response = build_registry_policy_response(effective)
+        await self.append_event(
+            object_type="policy",
+            object_id="registry_management",
+            event_type="policy_changed",
+            actor_id=actor_id,
+            reason=reason,
+            payload={"effective": effective, "reset_to_defaults": True},
+        )
+        return response
 
     async def merge_people(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,6 +34,23 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
         "owner_can_see_historical_tickets": True,
         "other_account_only_own_session_tickets": True,
     },
+}
+
+REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
+    "registration.max_primary_devices_per_person": {"type": "integer", "minimum": 1, "maximum": 50, "nullable": False},
+    "registration.stale_after_days": {"type": "integer", "minimum": 1, "maximum": 3650, "nullable": False},
+    "account_sessions.confirmed_binding_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 87600, "nullable": True},
+    "account_sessions.verified_other_account_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
+    "account_sessions.registration_pending_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
+}
+
+REGISTRY_POLICY_REQUIRES_RESTART_FIELDS: set[str] = set()
+
+DANGEROUS_POLICY_WARNINGS: dict[str, dict[str, str]] = {
+    "registration.auto_approve_first_binding": {
+        "severity": "warning",
+        "message": "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.",
+    }
 }
 
 
@@ -120,10 +138,56 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
 
     for field in ("owner_can_see_historical_tickets", "other_account_only_own_session_tickets"):
         ticket_visibility[field] = _validate_bool(ticket_visibility.get(field), field=f"ticket_visibility.{field}")
-    if registration["auto_approve_first_binding"] and not registration["require_admin_confirmation"]:
-        # Kept valid for explicit admin choice, but callers can surface this warning.
-        merged.setdefault("warnings", {})["auto_approve_first_binding"] = "first binding can become active without admin review"
     return merged
+
+
+def _iter_policy_paths(value: dict[str, Any]):
+    for section, fields in value.items():
+        if not isinstance(fields, dict):
+            continue
+        for field, field_value in fields.items():
+            yield f"{section}.{field}", field_value
+
+
+def _changed_from_defaults(effective: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    changed: dict[str, dict[str, Any]] = {}
+    defaults = {section: dict(fields) for section, fields in DEFAULT_REGISTRY_POLICIES.items()}
+    for path, effective_value in _iter_policy_paths(effective):
+        section, field = path.split(".", 1)
+        default_value = defaults.get(section, {}).get(field)
+        if effective_value != default_value:
+            changed[path] = {"default": default_value, "effective": effective_value}
+    return changed
+
+
+def _policy_warnings(effective: dict[str, Any]) -> list[dict[str, str]]:
+    warnings: list[dict[str, str]] = []
+    if effective["registration"]["auto_approve_first_binding"]:
+        warning = DANGEROUS_POLICY_WARNINGS["registration.auto_approve_first_binding"]
+        warnings.append(
+            {
+                "field": "registration.auto_approve_first_binding",
+                "severity": warning["severity"],
+                "message": warning["message"],
+            }
+        )
+    return warnings
+
+
+def build_registry_policy_response(value: dict[str, Any] | None = None, *, dry_run: bool = False) -> dict[str, Any]:
+    effective = validate_registry_policies(value or {})
+    changed = _changed_from_defaults(effective)
+    restart_fields = sorted(path for path in changed if path in REGISTRY_POLICY_REQUIRES_RESTART_FIELDS)
+    return {
+        "defaults": deepcopy(DEFAULT_REGISTRY_POLICIES),
+        "effective": effective,
+        "changed_from_defaults": changed,
+        "warnings": _policy_warnings(effective),
+        "validation": deepcopy(REGISTRY_POLICY_VALIDATION),
+        "requires_restart": bool(restart_fields),
+        "restart_required_fields": restart_fields,
+        "dry_run": dry_run,
+    }
 
 
 class RegistryPolicyService:
@@ -152,3 +216,6 @@ class RegistryPolicyService:
             row.updated_at = now
         await self.session.flush()
         return config
+
+    async def reset_to_defaults(self, *, actor_id: str | None = None) -> dict[str, Any]:
+        return await self.update_policies({}, actor_id=actor_id)

@@ -1,94 +1,223 @@
-import { Save, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { AlertTriangle, RefreshCcw, RotateCcw, Save } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import { fetchAdminRegistryPolicies, updateAdminRegistryPolicies, type AdminRegistryPolicyPayload } from "../api";
+import {
+  fetchAdminRegistryPolicies,
+  previewAdminRegistryPolicies,
+  resetAdminRegistryPolicies,
+  updateAdminRegistryPolicies,
+  type AdminRegistryPolicyPayload,
+} from "../api";
 
-function clonePolicies(value: AdminRegistryPolicyPayload["effective"]): AdminRegistryPolicyPayload["effective"] {
-  return JSON.parse(JSON.stringify(value)) as AdminRegistryPolicyPayload["effective"];
+type PolicyEffective = AdminRegistryPolicyPayload["effective"];
+
+const AUTO_APPROVE_WARNING = "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.";
+
+const FIELD_LABELS: Record<string, string> = {
+  "registration.require_user_confirmation": "Require user confirmation",
+  "registration.require_admin_confirmation": "Require admin confirmation",
+  "registration.auto_approve_first_binding": "Auto approve first binding",
+  "registration.allow_shared_devices": "Allow shared devices",
+  "registration.allow_responsible_binding": "Allow responsible binding",
+  "registration.max_primary_devices_per_person": "Max primary devices",
+  "registration.stale_after_days": "Stale after days",
+  "account_sessions.confirmed_binding_ttl_hours": "Confirmed binding TTL hours",
+  "account_sessions.verified_other_account_ttl_hours": "Other account TTL hours",
+  "account_sessions.registration_pending_ttl_hours": "Pending registration TTL hours",
+  "account_sessions.allow_other_account_login": "Allow other account login",
+  "account_sessions.other_account_requires_reason": "Other account requires reason",
+  "account_sessions.other_account_requires_admin_approval": "Other account requires admin approval",
+  "account_sessions.allow_other_account_on_shared_or_responsible": "Allow on shared/responsible",
+  "ticket_visibility.owner_can_see_historical_tickets": "Owner can see historical tickets",
+  "ticket_visibility.other_account_only_own_session_tickets": "Other account only own session tickets",
+};
+
+function clonePolicies(value: PolicyEffective): PolicyEffective {
+  return JSON.parse(JSON.stringify(value)) as PolicyEffective;
+}
+
+function valueAtPath(source: Record<string, Record<string, unknown>>, path: string): unknown {
+  const [section, field] = path.split(".");
+  return source[section]?.[field];
+}
+
+function formatValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return String(value ?? "");
+}
+
+function buildChangedFromDefaults(draft: PolicyEffective, defaults: AdminRegistryPolicyPayload["defaults"]) {
+  const changed: AdminRegistryPolicyPayload["changed_from_defaults"] = {};
+  for (const path of Object.keys(FIELD_LABELS)) {
+    const current = valueAtPath(draft as unknown as Record<string, Record<string, unknown>>, path);
+    const defaultValue = valueAtPath(defaults, path);
+    if (current !== defaultValue) {
+      changed[path] = { default: defaultValue, effective: current };
+    }
+  }
+  return changed;
+}
+
+function buildWarnings(draft: PolicyEffective): AdminRegistryPolicyPayload["warnings"] {
+  return draft.registration.auto_approve_first_binding
+    ? [{ field: "registration.auto_approve_first_binding", severity: "warning", message: AUTO_APPROVE_WARNING }]
+    : [];
 }
 
 export function RegistryPoliciesTab() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["admin-registry-policies"], queryFn: fetchAdminRegistryPolicies, retry: false });
-  const [draft, setDraft] = useState<AdminRegistryPolicyPayload["effective"] | null>(null);
+  const [draft, setDraft] = useState<PolicyEffective | null>(null);
   const [reason, setReason] = useState("");
+  const [serverPreview, setServerPreview] = useState<AdminRegistryPolicyPayload | null>(null);
 
   useEffect(() => {
     if (query.data?.effective) {
       setDraft(clonePolicies(query.data.effective));
+      setServerPreview(null);
     }
   }, [query.data]);
 
-  const mutation = useMutation({
+  const localPreview = useMemo(() => {
+    if (!draft || !query.data) return null;
+    return {
+      changed_from_defaults: buildChangedFromDefaults(draft, query.data.defaults),
+      warnings: buildWarnings(draft),
+      requires_restart: false,
+      restart_required_fields: [] as string[],
+    };
+  }, [draft, query.data]);
+
+  const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!draft) return;
-      await updateAdminRegistryPolicies({ policies: draft, reason });
+      if (!draft) return null;
+      return updateAdminRegistryPolicies({ policies: draft, reason });
     },
     onSuccess: async () => {
       setReason("");
+      setServerPreview(null);
       await queryClient.invalidateQueries({ queryKey: ["admin-registry-policies"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
     },
   });
 
-  if (query.isLoading || !draft) {
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft) return null;
+      return previewAdminRegistryPolicies(draft);
+    },
+    onSuccess: (result) => result && setServerPreview(result),
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async () => resetAdminRegistryPolicies(reason),
+    onSuccess: async () => {
+      setReason("");
+      setServerPreview(null);
+      await queryClient.invalidateQueries({ queryKey: ["admin-registry-policies"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
+    },
+  });
+
+  if (query.isLoading || !draft || !query.data || !localPreview) {
     return <p className="text-sm text-slate-500">Загружаем политики...</p>;
   }
 
   const setRegistration = (key: keyof typeof draft.registration, value: boolean | number) => {
     setDraft({ ...draft, registration: { ...draft.registration, [key]: value } });
+    setServerPreview(null);
   };
   const setAccount = (key: keyof typeof draft.account_sessions, value: boolean | number | null) => {
     setDraft({ ...draft, account_sessions: { ...draft.account_sessions, [key]: value } });
+    setServerPreview(null);
   };
   const setTicket = (key: keyof typeof draft.ticket_visibility, value: boolean) => {
     setDraft({ ...draft, ticket_visibility: { ...draft.ticket_visibility, [key]: value } });
+    setServerPreview(null);
   };
+
+  const warnings = serverPreview?.warnings ?? localPreview.warnings;
+  const changed = serverPreview?.changed_from_defaults ?? localPreview.changed_from_defaults;
+  const requiresRestart = serverPreview?.requires_restart ?? localPreview.requires_restart;
+  const restartFields = serverPreview?.restart_required_fields ?? localPreview.restart_required_fields;
+  const validation = query.data.validation;
+  const error = saveMutation.error ?? resetMutation.error ?? previewMutation.error;
 
   return (
     <div className="space-y-4">
-      {mutation.error ? <p className="text-sm text-rose-600">{mutation.error instanceof Error ? mutation.error.message : "Не удалось сохранить политики"}</p> : null}
-      {draft.warnings ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {Object.values(draft.warnings).join(". ")}
+      {error ? <p className="text-sm text-rose-600">{error instanceof Error ? error.message : "Не удалось выполнить действие с политиками"}</p> : null}
+      {warnings.length ? (
+        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {warnings.map((warning) => (
+            <p className="flex gap-2" key={warning.field}>
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span><strong>{FIELD_LABELS[warning.field] ?? warning.field}:</strong> {warning.message}</span>
+            </p>
+          ))}
         </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-3">
         <PolicyCard title="Registration">
-          <CheckRow label="Require user confirmation" value={draft.registration.require_user_confirmation} onChange={(value) => setRegistration("require_user_confirmation", value)} />
-          <CheckRow label="Require admin confirmation" value={draft.registration.require_admin_confirmation} onChange={(value) => setRegistration("require_admin_confirmation", value)} />
-          <CheckRow label="Auto approve first binding" value={draft.registration.auto_approve_first_binding} onChange={(value) => setRegistration("auto_approve_first_binding", value)} warning />
-          <CheckRow label="Allow shared devices" value={draft.registration.allow_shared_devices} onChange={(value) => setRegistration("allow_shared_devices", value)} />
-          <CheckRow label="Allow responsible binding" value={draft.registration.allow_responsible_binding} onChange={(value) => setRegistration("allow_responsible_binding", value)} />
-          <NumberRow label="Max primary devices" value={draft.registration.max_primary_devices_per_person} onChange={(value) => setRegistration("max_primary_devices_per_person", value)} />
-          <NumberRow label="Stale after days" value={draft.registration.stale_after_days} onChange={(value) => setRegistration("stale_after_days", value)} />
+          <CheckRow defaultValue={query.data.defaults.registration.require_user_confirmation} label={FIELD_LABELS["registration.require_user_confirmation"]} value={draft.registration.require_user_confirmation} onChange={(value) => setRegistration("require_user_confirmation", value)} />
+          <CheckRow defaultValue={query.data.defaults.registration.require_admin_confirmation} label={FIELD_LABELS["registration.require_admin_confirmation"]} value={draft.registration.require_admin_confirmation} onChange={(value) => setRegistration("require_admin_confirmation", value)} />
+          <CheckRow defaultValue={query.data.defaults.registration.auto_approve_first_binding} label={FIELD_LABELS["registration.auto_approve_first_binding"]} value={draft.registration.auto_approve_first_binding} onChange={(value) => setRegistration("auto_approve_first_binding", value)} warning />
+          <CheckRow defaultValue={query.data.defaults.registration.allow_shared_devices} label={FIELD_LABELS["registration.allow_shared_devices"]} value={draft.registration.allow_shared_devices} onChange={(value) => setRegistration("allow_shared_devices", value)} />
+          <CheckRow defaultValue={query.data.defaults.registration.allow_responsible_binding} label={FIELD_LABELS["registration.allow_responsible_binding"]} value={draft.registration.allow_responsible_binding} onChange={(value) => setRegistration("allow_responsible_binding", value)} />
+          <NumberRow defaultValue={query.data.defaults.registration.max_primary_devices_per_person} label={FIELD_LABELS["registration.max_primary_devices_per_person"]} rules={validation["registration.max_primary_devices_per_person"]} value={draft.registration.max_primary_devices_per_person} onChange={(value) => setRegistration("max_primary_devices_per_person", value)} />
+          <NumberRow defaultValue={query.data.defaults.registration.stale_after_days} label={FIELD_LABELS["registration.stale_after_days"]} rules={validation["registration.stale_after_days"]} value={draft.registration.stale_after_days} onChange={(value) => setRegistration("stale_after_days", value)} />
         </PolicyCard>
         <PolicyCard title="Account Sessions">
-          <NullableNumberRow label="Confirmed binding TTL hours" value={draft.account_sessions.confirmed_binding_ttl_hours} onChange={(value) => setAccount("confirmed_binding_ttl_hours", value)} />
-          <NumberRow label="Other account TTL hours" value={draft.account_sessions.verified_other_account_ttl_hours} onChange={(value) => setAccount("verified_other_account_ttl_hours", value)} />
-          <NumberRow label="Pending registration TTL hours" value={draft.account_sessions.registration_pending_ttl_hours} onChange={(value) => setAccount("registration_pending_ttl_hours", value)} />
-          <CheckRow label="Allow other account login" value={draft.account_sessions.allow_other_account_login} onChange={(value) => setAccount("allow_other_account_login", value)} />
-          <CheckRow label="Other account requires reason" value={draft.account_sessions.other_account_requires_reason} onChange={(value) => setAccount("other_account_requires_reason", value)} />
-          <CheckRow label="Other account requires admin approval" value={draft.account_sessions.other_account_requires_admin_approval} onChange={(value) => setAccount("other_account_requires_admin_approval", value)} />
-          <CheckRow label="Allow on shared/responsible" value={draft.account_sessions.allow_other_account_on_shared_or_responsible} onChange={(value) => setAccount("allow_other_account_on_shared_or_responsible", value)} />
+          <NullableNumberRow defaultValue={query.data.defaults.account_sessions.confirmed_binding_ttl_hours} label={FIELD_LABELS["account_sessions.confirmed_binding_ttl_hours"]} rules={validation["account_sessions.confirmed_binding_ttl_hours"]} value={draft.account_sessions.confirmed_binding_ttl_hours} onChange={(value) => setAccount("confirmed_binding_ttl_hours", value)} />
+          <NumberRow defaultValue={query.data.defaults.account_sessions.verified_other_account_ttl_hours} label={FIELD_LABELS["account_sessions.verified_other_account_ttl_hours"]} rules={validation["account_sessions.verified_other_account_ttl_hours"]} value={draft.account_sessions.verified_other_account_ttl_hours} onChange={(value) => setAccount("verified_other_account_ttl_hours", value)} />
+          <NumberRow defaultValue={query.data.defaults.account_sessions.registration_pending_ttl_hours} label={FIELD_LABELS["account_sessions.registration_pending_ttl_hours"]} rules={validation["account_sessions.registration_pending_ttl_hours"]} value={draft.account_sessions.registration_pending_ttl_hours} onChange={(value) => setAccount("registration_pending_ttl_hours", value)} />
+          <CheckRow defaultValue={query.data.defaults.account_sessions.allow_other_account_login} label={FIELD_LABELS["account_sessions.allow_other_account_login"]} value={draft.account_sessions.allow_other_account_login} onChange={(value) => setAccount("allow_other_account_login", value)} />
+          <CheckRow defaultValue={query.data.defaults.account_sessions.other_account_requires_reason} label={FIELD_LABELS["account_sessions.other_account_requires_reason"]} value={draft.account_sessions.other_account_requires_reason} onChange={(value) => setAccount("other_account_requires_reason", value)} />
+          <CheckRow defaultValue={query.data.defaults.account_sessions.other_account_requires_admin_approval} label={FIELD_LABELS["account_sessions.other_account_requires_admin_approval"]} value={draft.account_sessions.other_account_requires_admin_approval} onChange={(value) => setAccount("other_account_requires_admin_approval", value)} />
+          <CheckRow defaultValue={query.data.defaults.account_sessions.allow_other_account_on_shared_or_responsible} label={FIELD_LABELS["account_sessions.allow_other_account_on_shared_or_responsible"]} value={draft.account_sessions.allow_other_account_on_shared_or_responsible} onChange={(value) => setAccount("allow_other_account_on_shared_or_responsible", value)} />
         </PolicyCard>
         <PolicyCard title="Ticket Visibility">
-          <CheckRow label="Owner can see historical tickets" value={draft.ticket_visibility.owner_can_see_historical_tickets} onChange={(value) => setTicket("owner_can_see_historical_tickets", value)} />
-          <CheckRow label="Other account only own session tickets" value={draft.ticket_visibility.other_account_only_own_session_tickets} onChange={(value) => setTicket("other_account_only_own_session_tickets", value)} />
+          <CheckRow defaultValue={query.data.defaults.ticket_visibility.owner_can_see_historical_tickets} label={FIELD_LABELS["ticket_visibility.owner_can_see_historical_tickets"]} value={draft.ticket_visibility.owner_can_see_historical_tickets} onChange={(value) => setTicket("owner_can_see_historical_tickets", value)} />
+          <CheckRow defaultValue={query.data.defaults.ticket_visibility.other_account_only_own_session_tickets} label={FIELD_LABELS["ticket_visibility.other_account_only_own_session_tickets"]} value={draft.ticket_visibility.other_account_only_own_session_tickets} onChange={(value) => setTicket("other_account_only_own_session_tickets", value)} />
         </PolicyCard>
       </div>
       <Card>
+        <CardHeader><CardTitle>Effective preview</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge tone={requiresRestart ? "warning" : "success"}>{requiresRestart ? "Requires restart" : "No restart required"}</Badge>
+            {serverPreview?.dry_run ? <Badge tone="neutral">Server dry-run</Badge> : <Badge tone="neutral">Local preview</Badge>}
+            {restartFields.length ? <span className="text-slate-600">{restartFields.join(", ")}</span> : null}
+          </div>
+          {Object.keys(changed).length ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {Object.entries(changed).map(([path, change]) => (
+                <div className="rounded-md border border-border px-3 py-2 text-sm" key={path}>
+                  <p className="font-semibold text-slate-900">{FIELD_LABELS[path] ?? path}</p>
+                  <p className="mt-1 text-slate-600">default: {formatValue(change.default)}</p>
+                  <p className="text-slate-600">effective: {formatValue(change.effective)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Текущий draft совпадает с default values.</p>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <Input placeholder="Причина изменения политики" value={reason} onChange={(event) => setReason(event.target.value)} />
-          <div className="flex gap-2">
-            <Button leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => query.data && setDraft(clonePolicies(query.data.effective))} variant="outline">Сбросить</Button>
-            <Button disabled={!reason.trim() || mutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => mutation.mutate()}>Сохранить</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} variant="outline">Preview</Button>
+            <Button leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => query.data && setDraft(clonePolicies(query.data.effective))} variant="outline">Отменить</Button>
+            <Button disabled={!reason.trim() || resetMutation.isPending} leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => resetMutation.mutate()} variant="outline">Default values</Button>
+            <Button disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
           </div>
         </CardContent>
       </Card>
@@ -105,29 +234,38 @@ function PolicyCard({ children, title }: { children: ReactNode; title: string })
   );
 }
 
-function CheckRow({ label, onChange, value, warning }: { label: string; value: boolean; onChange: (value: boolean) => void; warning?: boolean }) {
+function DefaultHint({ value }: { value: unknown }) {
+  return <span className="text-xs font-normal text-slate-500">default: {formatValue(value)}</span>;
+}
+
+function CheckRow({ defaultValue, label, onChange, value, warning }: { defaultValue: unknown; label: string; value: boolean; onChange: (value: boolean) => void; warning?: boolean }) {
   return (
     <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
-      <span className="flex items-center gap-2">{label}{warning ? <Badge tone="warning">warning</Badge> : null}</span>
+      <span className="flex flex-col gap-1">
+        <span className="flex items-center gap-2">{label}{warning ? <Badge tone="warning">warning</Badge> : null}</span>
+        <DefaultHint value={defaultValue} />
+      </span>
       <input checked={value} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
   );
 }
 
-function NumberRow({ label, onChange, value }: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberRow({ defaultValue, label, onChange, rules, value }: { defaultValue: unknown; label: string; rules?: { minimum?: number; maximum?: number }; value: number; onChange: (value: number) => void }) {
   return (
     <label className="block text-sm font-medium">
-      {label}
-      <Input className="mt-2" min={1} onChange={(event) => onChange(Number(event.target.value || 1))} type="number" value={value} />
+      <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
+      <Input className="mt-2" max={rules?.maximum} min={rules?.minimum ?? 1} onChange={(event) => onChange(Number(event.target.value || rules?.minimum || 1))} type="number" value={value} />
+      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">range: {rules.minimum}...{rules.maximum}</span> : null}
     </label>
   );
 }
 
-function NullableNumberRow({ label, onChange, value }: { label: string; value: number | null; onChange: (value: number | null) => void }) {
+function NullableNumberRow({ defaultValue, label, onChange, rules, value }: { defaultValue: unknown; label: string; rules?: { minimum?: number; maximum?: number }; value: number | null; onChange: (value: number | null) => void }) {
   return (
     <label className="block text-sm font-medium">
-      {label}
-      <Input className="mt-2" onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="null = no expiry" type="number" value={value ?? ""} />
+      <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
+      <Input className="mt-2" max={rules?.maximum} min={rules?.minimum} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="null = no expiry" type="number" value={value ?? ""} />
+      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">range: {rules.minimum}...{rules.maximum}, nullable</span> : null}
     </label>
   );
 }

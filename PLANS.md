@@ -75,6 +75,11 @@ Stage 5 bulk polish:
 - Bulk apply responses now include `bulk_operation_id`, `summary.selected/success/failed` and normalized per-selected-object `items`, while keeping legacy `results` for compatibility.
 - Devices, People and Account Sessions tabs expose checkbox selection and a shared bulk result panel with failed-row review, copy errors and CSV result export.
 
+Stage 6 cautious policy editor:
+
+- Registry policy responses now include defaults, effective values, changed-from-defaults, validation ranges, dangerous-setting warnings, `requires_restart` metadata, dry-run preview and reset-to-defaults.
+- Enabling `registration.auto_approve_first_binding` shows the explicit test-stand warning before save, and policy patch/reset require a reason and write `policy_changed` audit events.
+
 ## Active Work: Device Account Session Hardening
 
 Status: in progress.

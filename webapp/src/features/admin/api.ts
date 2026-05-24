@@ -703,8 +703,13 @@ export type AdminRegistryPolicyPayload = {
       owner_can_see_historical_tickets: boolean;
       other_account_only_own_session_tickets: boolean;
     };
-    warnings?: Record<string, string>;
   };
+  changed_from_defaults: Record<string, { default: unknown; effective: unknown }>;
+  warnings: Array<{ field: string; severity: "warning" | "error" | string; message: string }>;
+  validation: Record<string, { type: string; minimum?: number; maximum?: number; nullable?: boolean }>;
+  requires_restart: boolean;
+  restart_required_fields: string[];
+  dry_run?: boolean;
 };
 
 export type AdminRegistryTimelineItem = {
@@ -1220,6 +1225,26 @@ export async function updateAdminRegistryPolicies(payload: {
     body: JSON.stringify(payload),
   });
   return readSuccessResponse(response, "Не удалось сохранить политики реестра");
+}
+
+export async function previewAdminRegistryPolicies(policies: AdminRegistryPolicyPayload["effective"]): Promise<AdminRegistryPolicyPayload> {
+  const response = await fetch("/api/web/admin/registry/policies/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ policies }),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр политик реестра");
+}
+
+export async function resetAdminRegistryPolicies(reason: string): Promise<AdminRegistryPolicyPayload> {
+  const response = await fetch("/api/web/admin/registry/policies/reset", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  return readSuccessResponse(response, "Не удалось сбросить политики реестра");
 }
 
 export async function mergeAdminRegistryPeople(payload: {

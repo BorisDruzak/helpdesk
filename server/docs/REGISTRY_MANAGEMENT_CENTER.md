@@ -43,6 +43,8 @@
   - `POST /api/web/admin/registry/departments/merge`
 - Policies:
   - `GET|PATCH /api/web/admin/registry/policies`
+  - `POST /api/web/admin/registry/policies/preview`
+  - `POST /api/web/admin/registry/policies/reset`
 - Bulk/export/timeline:
   - `POST /api/web/admin/registry/bulk/preview`
   - `POST /api/web/admin/registry/bulk/devices/assign-location`
@@ -94,6 +96,20 @@ Implemented preview operations:
 - `people_merge`: shows field winners, identity moves/conflicts, bindings, sessions, claims, tickets, asset owner and inventory rows that will move to the master person.
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
 - `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
+
+## Policy Safety Contract
+
+`GET /api/web/admin/registry/policies`, `POST /api/web/admin/registry/policies/preview`, `PATCH /api/web/admin/registry/policies` and `POST /api/web/admin/registry/policies/reset` return the same cautious policy envelope:
+
+- `defaults`: server defaults for every registration, account-session and ticket-visibility policy.
+- `effective`: validated effective policy after applying defaults.
+- `changed_from_defaults`: field-level default/effective drift.
+- `warnings`: dangerous-setting warnings. Enabling `registration.auto_approve_first_binding` returns: `Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.`
+- `validation`: numeric ranges and nullable flags for bounded policy fields.
+- `requires_restart` and `restart_required_fields`: currently `false` / empty for registry policies because the services read effective values at runtime.
+- `dry_run`: `true` only for preview.
+
+Patch/reset require `reason` and write `registry_admin_events.event_type=policy_changed`. Preview validates and returns the effective envelope without mutating state, committing or writing audit events.
 
 ## Bulk Apply Contract
 

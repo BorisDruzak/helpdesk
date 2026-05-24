@@ -1198,6 +1198,31 @@ async def handle_web_admin_registry_policies(request: web.Request) -> web.Respon
 
 
 @require_auth("admin")
+async def handle_web_admin_registry_policies_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).preview_policies(data, actor_id=auth_context.actor_id)
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_policies_reset(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).reset_policies(data, actor_id=auth_context.actor_id)
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
 async def handle_web_admin_registry_people_merge_preview(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     data = await request.json() if request.can_read_body else {}
