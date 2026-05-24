@@ -126,8 +126,8 @@ export const appNavigationDomains: AppNavigationDomain[] = [
 
 export const appNavigation: AppNavItem[] = [
   {
-    label: "Рабочий центр",
-    description: "Что требует внимания сейчас",
+    label: "Центр действий",
+    description: "Что сделать дальше",
     icon: ClipboardCheck,
     section: "support",
     workspace: "support",
