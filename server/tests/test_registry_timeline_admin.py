@@ -187,3 +187,64 @@ async def test_unified_timeline_covers_device_binding_session_and_claim(test_eng
     assert any(item["related"]["session_id"] == session_id for item in session_items)
     assert any(item["related"]["claim_id"] == claim_id for item in claim_items)
     assert any(item["reason"] == "timeline bind reason" for item in binding_items)
+
+
+@pytest.mark.asyncio
+async def test_transfer_timeline_explains_actor_reason_changes_and_related_entities(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id, hostname="timeline-transfer-pc"))
+        registration = RegistrationService(session)
+        old_person_id = await _person_from_claim(
+            registration,
+            device_id=device_id,
+            requester_id="timeline-transfer-old",
+            display_name="Timeline Transfer Old",
+        )
+        new_person_id = await _person_from_claim(
+            registration,
+            device_id=device_id,
+            requester_id="timeline-transfer-new",
+            display_name="Timeline Transfer New",
+        )
+        initial = await registration.bind_person_to_device(
+            device_id=device_id,
+            person_id=old_person_id,
+            relationship_type="primary_user",
+            replace_existing=False,
+            reviewed_by="admin-test",
+            reason="initial transfer owner",
+        )
+        old_binding_id = initial["binding"]["binding_id"]
+        account = await AccountSessionService(session).create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=old_binding_id,
+        )
+        transfer = await registration.transfer_owner(
+            device_id=device_id,
+            new_person_id=new_person_id,
+            old_binding_action="transferred",
+            reviewed_by="admin-test",
+            reason="owner left department",
+        )
+        new_binding_id = transfer["binding"]["binding_id"]
+        session_id = account["session"]["session_id"]
+        await session.commit()
+
+    async with session_maker() as session:
+        items = await RegistryAdminOperationsService(session).list_timeline(object_type="device", object_id=device_id)
+
+    transfer_items = [item for item in items if item["event_type"] == "binding_transferred"]
+    assert transfer_items
+    transfer_item = next(item for item in transfer_items if item["related"].get("binding_id") == new_binding_id)
+    assert transfer_item["actor_id"] == "admin-test"
+    assert transfer_item["actor_role"] == "admin"
+    assert transfer_item["reason"] == "owner left department"
+    assert transfer_item["related"]["device_id"] == device_id
+    assert transfer_item["related"]["person_id"] == new_person_id
+    assert transfer_item["related"]["binding_id"] == new_binding_id
+    assert any(change["field"] == "primary_person_id" and change["before"] == old_person_id and change["after"] == new_person_id for change in transfer_item["changes"])
+    assert any(item["related"].get("binding_id") == old_binding_id for item in transfer_items)
+    assert any(item["related"].get("session_id") == session_id for item in items)

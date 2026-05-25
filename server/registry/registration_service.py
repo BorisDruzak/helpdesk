@@ -171,6 +171,35 @@ class RegistrationService:
         self.repo = RegistrationRepo(session)
         self.registry_repo = RegistryRepo(session)
 
+    @staticmethod
+    def _operation_status(items: list[dict[str, Any]]) -> str:
+        failed = sum(1 for item in items if item.get("status") == "error")
+        success = sum(1 for item in items if item.get("status") == "success")
+        if failed and success:
+            return "partial_success"
+        if failed:
+            return "error"
+        return "success"
+
+    @staticmethod
+    def _operation_result(*, operation: str, items: list[dict[str, Any]], events: list[str], summary_extra: dict[str, int] | None = None) -> dict[str, Any]:
+        summary = {
+            "success": sum(1 for item in items if item.get("status") == "success"),
+            "failed": sum(1 for item in items if item.get("status") == "error"),
+            "warnings": 0,
+        }
+        if summary_extra:
+            summary.update(summary_extra)
+        return {
+            "operation_id": _new_id(),
+            "operation": operation,
+            "status": RegistrationService._operation_status(items),
+            "summary": summary,
+            "items": items,
+            "events": events,
+            "report_url": None,
+        }
+
     async def _registration_policy(self) -> dict[str, Any]:
         try:
             policies = await RegistryPolicyService(self.session).get_policies()
@@ -436,10 +465,17 @@ class RegistrationService:
         active_primary = await self.repo.get_active_primary_binding(device.device_id)
         if active_primary and active_primary.person_id == person.person_id:
             return {
+                **self._operation_result(
+                    operation="transfer_owner",
+                    items=[{"id": active_primary.binding_id, "entity_type": "binding", "status": "success", "message": "already_active_primary"}],
+                    events=[],
+                    summary_extra={"reused": 1},
+                ),
                 "binding": self._binding_payload(active_primary),
                 "asset": _asset_payload(asset),
-                "events": {"reused_existing_binding": True, "revoked_sessions": []},
+                "legacy_events": {"reused_existing_binding": True, "revoked_sessions": []},
             }
+        previous_primary_status = active_primary.status if active_primary else None
         if active_primary:
             if old_binding_action == "keep_as_shared":
                 active_primary.relationship_type = "shared_user"
@@ -493,17 +529,62 @@ class RegistrationService:
             payload={
                 "old_binding_id": active_primary.binding_id if active_primary else None,
                 "old_binding_action": old_binding_action,
+                "reason": reason,
                 "revoked_session_ids": [row["session_id"] for row in revoked_sessions],
+                "changes": [
+                    {
+                        "field": "primary_person_id",
+                        "before": active_primary.person_id if active_primary else None,
+                        "after": person.person_id,
+                    },
+                    {
+                        "field": "old_binding_status",
+                        "before": previous_primary_status,
+                        "after": old_binding_action if active_primary and old_binding_action != "keep_as_shared" else None,
+                    },
+                    {
+                        "field": "revoked_session_count",
+                        "before": len(revoked_sessions),
+                        "after": 0,
+                    },
+                ],
             },
         )
         await self.session.flush()
+        operation_items = []
+        if active_primary:
+            operation_items.append(
+                {
+                    "id": active_primary.binding_id,
+                    "entity_type": "binding",
+                    "status": "success",
+                    "message": old_binding_action,
+                }
+            )
+        operation_items.extend(
+            [
+                {"id": binding.binding_id, "entity_type": "binding", "status": "success", "message": "new_primary"},
+                {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"},
+                {"id": device.device_id, "entity_type": "inventory_binding", "status": "success"},
+            ]
+        )
+        operation_items.extend(
+            {"id": row["session_id"], "entity_type": "account_session", "status": "success", "message": "revoked"}
+            for row in revoked_sessions
+        )
         return {
+            **self._operation_result(
+                operation="transfer_owner",
+                items=operation_items,
+                events=["binding_transferred"],
+                summary_extra={"revoked_sessions": len(revoked_sessions)},
+            ),
             "binding": self._binding_payload(binding),
             "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
             "inventory_binding": self._inventory_registration_dict(
                 await self.session.get(DeviceInventoryBinding, device.device_id)
             ),
-            "events": {"revoked_sessions": revoked_sessions},
+            "legacy_events": {"revoked_sessions": revoked_sessions},
         }
 
     async def preview_transfer_owner(

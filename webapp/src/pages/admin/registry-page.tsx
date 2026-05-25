@@ -159,6 +159,15 @@ export function AdminRegistryPage() {
     },
   });
 
+  const importMutation = useMutation({
+    mutationFn: applyAdminRegistryImport,
+    onError: (error) => setActionError(error instanceof Error ? error.message : "Import apply failed"),
+    onSuccess: async () => {
+      setActionError(null);
+      await invalidateRegistry();
+    },
+  });
+
   const registry = registryQuery.data ?? null;
   const visibleRegistry = useMemo(
     () => (registry ? filterRegistryPayload(registry, query) : null),
@@ -511,11 +520,11 @@ export function AdminRegistryPage() {
         onSubmit={(payload) => mutation.mutate(() => mergeAdminRegistryPeople(payload))}
       />
       <RegistryImportDialog
-        busy={mutation.isPending}
+        busy={mutation.isPending || importMutation.isPending}
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onPreview={(payload) => previewAdminRegistryImport(payload)}
-        onApply={(payload) => mutation.mutate(() => applyAdminRegistryImport(payload).then(() => undefined))}
+        onApply={(payload) => importMutation.mutateAsync(payload)}
       />
       <RegistryBindPersonDialog
         busy={mutation.isPending}

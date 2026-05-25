@@ -10,7 +10,8 @@
 - Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
 - Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
-- Dangerous admin operations expose read-only preview/dry-run endpoints before apply. Preview endpoints must not mutate state, write events or commit; the web UI requires preview before transfer/merge apply.
+- Dangerous admin operations expose read-only preview/dry-run endpoints before apply. Preview endpoints must not mutate state, write events or commit; the web UI requires preview before transfer/merge/import apply.
+- Dangerous apply operations return a normalized `operation_id`/`status`/`summary`/`items`/`events` report in addition to legacy domain fields where callers still rely on them.
 - Generated data-quality issues have stable `issue_key` values. Ignore, snooze and resolve are persisted in `registry_quality_issue_overrides` and audited through `registry_admin_events`.
 
 ## Main API Surface
@@ -102,6 +103,27 @@ Implemented preview operations:
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
 - `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
 
+## Dangerous Apply Result Contract
+
+Transfer owner, people merge, location merge, department merge, bulk actions and import apply return the same report envelope:
+
+```json
+{
+  "operation_id": "uuid",
+  "operation": "transfer_owner",
+  "status": "success",
+  "summary": {"success": 4, "failed": 0, "warnings": 0},
+  "items": [
+    {"id": "binding-old", "entity_type": "binding", "status": "success", "message": "transferred"},
+    {"id": "session-1", "entity_type": "account_session", "status": "success", "message": "revoked"}
+  ],
+  "events": ["binding_transferred"],
+  "report_url": null
+}
+```
+
+`status` is `success`, `partial_success` or `error`. `items` is the operational audit/report surface: transfer reports old/new bindings, derived asset/inventory sync and revoked sessions; merge reports moved/skipped entities; bulk and import report one row per selected object or CSV row. Domain-specific fields such as `binding`, `asset`, `master`, `duplicate`, `moved`, `bulk_operation_id` and legacy `results` are preserved for compatibility.
+
 ## Policy Safety Contract
 
 `GET /api/web/admin/registry/policies`, `POST /api/web/admin/registry/policies/preview`, `PATCH /api/web/admin/registry/policies` and `POST /api/web/admin/registry/policies/reset` return the same cautious policy envelope:
@@ -122,18 +144,22 @@ Bulk apply endpoints return both the legacy `results` list and a normalized oper
 
 ```json
 {
+  "operation_id": "uuid",
   "bulk_operation_id": "uuid",
   "operation": "devices.revoke_account_sessions",
+  "status": "partial_success",
   "summary": {"selected": 47, "success": 42, "failed": 5},
   "items": [
     {"id": "device-1", "status": "success", "affected_sessions": 2},
     {"id": "device-2", "status": "error", "error_code": "NOT_FOUND"}
   ],
-  "results": []
+  "results": [],
+  "events": ["bulk_action_applied"],
+  "report_url": null
 }
 ```
 
-`items` is one row per selected object, not one row per affected child record. Device-level session revoke therefore reports selected devices and includes `affected_sessions`. The registry UI shows selected count, success/failed totals, failed rows, copyable errors and CSV export of the report.
+`items` is one row per selected object, not one row per affected child record. Device-level session revoke therefore reports selected devices and includes `affected_sessions`. The registry UI shows selected count, success/failed totals, failed rows, copyable errors and CSV export of the report. CSV report generation escapes formula-leading values (`=`, `+`, `-`, `@`) before download.
 
 ## Import Contract
 
@@ -154,7 +180,7 @@ Both endpoints accept JSON:
 }
 ```
 
-Preview parses and validates the file without mutating state. It returns `preview_id`, row-level errors, duplicate keys, affected counts and a bounded change list. Apply requires the matching `preview_id`, reruns preview first and refuses to mutate if there are any row errors or duplicate keys, then applies all accepted rows in the request transaction and writes one `registry_import_applied` audit event with the import type, operation id, counts, reason and sample changes. Apply responses include `operation_id`, `summary` and per-row `items` so the UI can show or export the result. Supported imports:
+Preview parses and validates the file without mutating state. It returns `preview_id`, row-level errors, duplicate keys, affected counts and a bounded change list. Apply requires the matching `preview_id`, reruns preview first and refuses to mutate if there are any row errors or duplicate keys, then applies all accepted rows in the request transaction and writes one `registry_import_applied` audit event with the import type, operation id, counts, reason and sample changes. Apply responses include `operation_id`, `status`, `summary` and per-row `items` so the UI can show the result, copy failed rows and download all-row or failed-only CSV reports. Supported imports:
 
 - `people`: create/update people by `person_id`, validate required display name, duplicate emails and location/department ids.
 - `locations`: create/update locations and block exact duplicate building/floor/room keys.
@@ -170,6 +196,8 @@ Preview parses and validates the file without mutating state. It returns `previe
 - `resolve` records an admin resolution for issues fixed outside the UI flow.
 
 Every state change requires `reason`, stores actor/time in `registry_quality_issue_overrides`, and writes one of `quality_issue_ignored`, `quality_issue_snoozed` or `quality_issue_resolved` to the registry timeline.
+
+Issues caused by current state disappear from the active list when the root cause is fixed and the registry snapshot is recomputed. For example, binding a primary user resolves `asset_missing_confirmed_user` without requiring a manual `resolve`; adding the missing identity removes `missing_identity`; approving/replacing the conflict removes `registration_conflict`. Overrides remain for explicit admin ignore/snooze/resolve decisions.
 
 ## Smoke Checklist
 

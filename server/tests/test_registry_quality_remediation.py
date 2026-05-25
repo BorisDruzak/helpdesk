@@ -7,7 +7,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, RegistryAdminEvent, RegistryAsset, RegistryQualityIssueOverride
+from app.db.models import Device, RegistryAdminEvent, RegistryAsset, RegistryPerson, RegistryQualityIssueOverride
+from registry.registration_service import RegistrationService
 
 
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
@@ -128,5 +129,52 @@ async def test_registry_quality_issue_snooze_hides_until_future_date(test_client
     assert snooze_payload["data"]["override"]["snoozed_until"]
 
     after_response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    after_payload = await after_response.json()
+    assert not any(item.get("issue_key") == issue["issue_key"] for item in after_payload["data"]["data_quality"])
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_issue_resolves_when_binding_fix_removes_root_cause(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(_device(device_id, hostname="quality-fix-pc"))
+        session.add(
+            RegistryAsset(
+                asset_id=asset_id,
+                asset_type="pc",
+                name="quality-fix-pc",
+                hostname="quality-fix-pc",
+                device_id=device_id,
+                source="manual",
+                status="active",
+                discovery_payload={},
+            )
+        )
+        session.add(RegistryPerson(person_id=person_id, display_name="Quality Fix Owner", source="manual", status="active"))
+        await session.commit()
+
+    before_response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert before_response.status == 200
+    issue = next(
+        item for item in (await before_response.json())["data"]["data_quality"]
+        if item["kind"] == "asset_missing_confirmed_user" and item["object_id"] == asset_id
+    )
+
+    async with session_maker() as session:
+        await RegistrationService(session).bind_person_to_device(
+            device_id=device_id,
+            person_id=person_id,
+            relationship_type="primary_user",
+            replace_existing=False,
+            reviewed_by="admin-test",
+            reason="fix quality issue",
+        )
+        await session.commit()
+
+    after_response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert after_response.status == 200
     after_payload = await after_response.json()
     assert not any(item.get("issue_key") == issue["issue_key"] for item in after_payload["data"]["data_quality"])

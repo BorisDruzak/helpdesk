@@ -575,6 +575,17 @@ export type AdminRegistryOperationPreview = {
   [key: string]: unknown;
 };
 
+export type AdminRegistryOperationResultItem = {
+  id?: string | number | null;
+  row?: number;
+  entity_type?: string;
+  status: "success" | "error" | "skipped";
+  error_code?: string | null;
+  message?: string | null;
+  before?: unknown;
+  after?: unknown;
+};
+
 export type AdminRegistryBulkItem = {
   id: string;
   status: "success" | "error";
@@ -600,6 +611,11 @@ export type AdminRegistryImportType = "people" | "locations" | "departments" | "
 export type AdminRegistryImportPreview = AdminRegistryOperationPreview & {
   import_type: AdminRegistryImportType;
   preview_id: string;
+  operation_id?: string;
+  status?: "success" | "partial_success" | "error";
+  summary?: Record<string, number>;
+  items?: AdminRegistryOperationResultItem[];
+  events?: string[];
   rows_total: number;
   row_errors: Array<{
     row: number;

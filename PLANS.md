@@ -89,6 +89,14 @@ Stage 8 P2 safety hardening:
 - Registry import apply now requires the exact `preview_id` returned by import preview, reruns validation before mutation, writes `registry_import_applied` with an operation id and returns per-row apply `items`.
 - Data-quality issues now carry stable `issue_key` values. Admin ignore/snooze/resolve actions persist in `registry_quality_issue_overrides`, hide active overrides from the generated issue list and write `quality_issue_*` audit events.
 
+Stage 9 P2 operation consistency:
+
+- Extend the same preview -> apply -> audit -> result-report contract from import to transfer owner, people/location/department merge and bulk actions while preserving existing response fields for UI compatibility.
+- Add regression tests that preview endpoints exist for every dangerous operation and that apply responses include `operation_id`, `status`, `summary`, `items` and `events`.
+- Keep quality remediation action-first: issues fixed by the underlying operation must disappear from the generated active quality list without requiring a manual override.
+- Add import result CSV export in the dialog so large imports can review all rows or failed rows after apply.
+- Strengthen timeline coverage around ownership transfer so an admin can see actor, reason, before/after changes and related binding/session/device ids.
+
 ## Active Work: Device Account Session Hardening
 
 Status: in progress.

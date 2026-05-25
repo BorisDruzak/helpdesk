@@ -21,7 +21,8 @@ type Props = {
 
 function csvSafe(value: unknown): string {
   const text = String(value ?? "");
-  const escaped = text.replaceAll('"', '""');
+  const formulaSafe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const escaped = formulaSafe.replaceAll('"', '""');
   return `"${escaped}"`;
 }
 

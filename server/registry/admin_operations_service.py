@@ -132,6 +132,46 @@ class RegistryAdminOperationsService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @staticmethod
+    def _operation_status(items: list[dict[str, Any]]) -> str:
+        failed = sum(1 for item in items if item.get("status") == "error")
+        success = sum(1 for item in items if item.get("status") == "success")
+        if failed and success:
+            return "partial_success"
+        if failed:
+            return "error"
+        return "success"
+
+    @staticmethod
+    def _operation_summary(items: list[dict[str, Any]], *, warnings: int = 0) -> dict[str, int]:
+        return {
+            "success": sum(1 for item in items if item.get("status") == "success"),
+            "failed": sum(1 for item in items if item.get("status") == "error"),
+            "warnings": warnings,
+        }
+
+    def _operation_result(
+        self,
+        *,
+        operation: str,
+        items: list[dict[str, Any]],
+        events: list[str],
+        operation_id: str | None = None,
+        summary_extra: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        summary = self._operation_summary(items)
+        if summary_extra:
+            summary.update(summary_extra)
+        return {
+            "operation_id": operation_id or _new_id(),
+            "operation": operation,
+            "status": self._operation_status(items),
+            "summary": summary,
+            "items": items,
+            "events": events,
+            "report_url": None,
+        }
+
     async def append_event(
         self,
         *,
@@ -462,6 +502,7 @@ class RegistryAdminOperationsService:
             raise LookupError("location not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.location_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.location_id == duplicate_id))).scalars().all()
+        updated_inventory_ids: list[str] = []
         for person in people:
             person.location_id = master_id
             person.updated_at = _now()
@@ -476,9 +517,10 @@ class RegistryAdminOperationsService:
                     binding.room = master.room
                     binding.updated_by = actor_id
                     binding.updated_at = _now()
+                    updated_inventory_ids.append(binding.device_id)
         duplicate.status = "merged"
         duplicate.metadata_json = {**(duplicate.metadata_json or {}), "merged_into": master_id, "merged_at": _now().isoformat(), "merge_reason": reason}
-        await self.append_event(
+        event = await self.append_event(
             object_type="location",
             object_id=master_id,
             event_type="location_merged",
@@ -487,7 +529,32 @@ class RegistryAdminOperationsService:
             payload={"duplicate_location_id": duplicate_id, "people_moved": len(people), "assets_moved": len(assets)},
         )
         await self.session.flush()
-        return {"master": self._location_payload(master), "duplicate": self._location_payload(duplicate), "moved": {"people": len(people), "assets": len(assets)}}
+        items = [
+            *[
+                {"id": person.person_id, "entity_type": "person", "status": "success"}
+                for person in people
+            ],
+            *[
+                {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"}
+                for asset in assets
+            ],
+            *[
+                {"id": device_id, "entity_type": "inventory_binding", "status": "success"}
+                for device_id in updated_inventory_ids
+            ],
+            {"id": duplicate_id, "entity_type": "location", "status": "success"},
+        ]
+        return {
+            **self._operation_result(
+                operation="location_merge",
+                items=items,
+                events=[event.event_type],
+                summary_extra={"people": len(people), "assets": len(assets)},
+            ),
+            "master": self._location_payload(master),
+            "duplicate": self._location_payload(duplicate),
+            "moved": {"people": len(people), "assets": len(assets)},
+        }
 
     async def preview_merge_locations(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         master_id = str(data.get("master_location_id") or "").strip()
@@ -664,6 +731,7 @@ class RegistryAdminOperationsService:
             raise LookupError("department not found")
         people = (await self.session.execute(select(RegistryPerson).where(RegistryPerson.department_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.department_id == duplicate_id))).scalars().all()
+        updated_inventory_ids: list[str] = []
         for person in people:
             person.department_id = master_id
             person.updated_at = _now()
@@ -676,9 +744,10 @@ class RegistryAdminOperationsService:
                     binding.department = master.name
                     binding.updated_by = actor_id
                     binding.updated_at = _now()
+                    updated_inventory_ids.append(binding.device_id)
         duplicate.status = "merged"
         duplicate.metadata_json = {**(duplicate.metadata_json or {}), "merged_into": master_id, "merged_at": _now().isoformat(), "merge_reason": reason}
-        await self.append_event(
+        event = await self.append_event(
             object_type="department",
             object_id=master_id,
             event_type="department_merged",
@@ -687,7 +756,32 @@ class RegistryAdminOperationsService:
             payload={"duplicate_department_id": duplicate_id, "people_moved": len(people), "assets_moved": len(assets)},
         )
         await self.session.flush()
-        return {"master": self._department_payload(master), "duplicate": self._department_payload(duplicate), "moved": {"people": len(people), "assets": len(assets)}}
+        items = [
+            *[
+                {"id": person.person_id, "entity_type": "person", "status": "success"}
+                for person in people
+            ],
+            *[
+                {"id": asset.asset_id, "entity_type": "registry_asset", "status": "success"}
+                for asset in assets
+            ],
+            *[
+                {"id": device_id, "entity_type": "inventory_binding", "status": "success"}
+                for device_id in updated_inventory_ids
+            ],
+            {"id": duplicate_id, "entity_type": "department", "status": "success"},
+        ]
+        return {
+            **self._operation_result(
+                operation="department_merge",
+                items=items,
+                events=[event.event_type],
+                summary_extra={"people": len(people), "assets": len(assets)},
+            ),
+            "master": self._department_payload(master),
+            "duplicate": self._department_payload(duplicate),
+            "moved": {"people": len(people), "assets": len(assets)},
+        }
 
     async def preview_merge_departments(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         master_id = str(data.get("master_department_id") or "").strip()
@@ -979,7 +1073,7 @@ class RegistryAdminOperationsService:
             "merge_reason": reason,
         }
         master.updated_at = _now()
-        await self.append_event(
+        event = await self.append_event(
             object_type="person",
             object_id=master_id,
             event_type="person_merged",
@@ -1000,7 +1094,64 @@ class RegistryAdminOperationsService:
             },
         )
         await self.session.flush()
+        items = [
+            *[
+                {"id": row.identity_id, "entity_type": "identity", "status": "success"}
+                for row in duplicate_identities
+                if row.person_id == master_id
+            ],
+            *[
+                {"id": row.identity_id, "entity_type": "identity", "status": "skipped", "error_code": "IDENTITY_CONFLICT"}
+                for row in duplicate_identities
+                if row.person_id == duplicate_id
+            ],
+            *[
+                {"id": row.binding_id, "entity_type": "binding", "status": "success"}
+                for row in bindings
+            ],
+            *[
+                {"id": row.session_id, "entity_type": "account_session", "status": "success"}
+                for row in sessions
+            ],
+            *[
+                {"id": row.request_id, "entity_type": "account_login_request", "status": "success"}
+                for row in login_requests
+            ],
+            *[
+                {"id": row.claim_id, "entity_type": "registration_claim", "status": "success"}
+                for row in claims
+            ],
+            *[
+                {"id": row.ticket_id, "entity_type": "ticket", "status": "success"}
+                for row in tickets
+            ],
+            *[
+                {"id": row.asset_id, "entity_type": "registry_asset", "status": "success"}
+                for row in assets
+            ],
+            *[
+                {"id": row.device_id, "entity_type": "inventory_binding", "status": "success"}
+                for row in inventory_bindings
+            ],
+            {"id": duplicate_id, "entity_type": "person", "status": "success"},
+        ]
         return {
+            **self._operation_result(
+                operation="people_merge",
+                items=items,
+                events=[event.event_type],
+                summary_extra={
+                    "identities": moved_identities,
+                    "identity_conflicts": conflicted_identities,
+                    "bindings": len(bindings),
+                    "sessions": len(sessions),
+                    "login_requests": len(login_requests),
+                    "claims": len(claims),
+                    "tickets": len(tickets),
+                    "assets": len(assets),
+                    "inventory_bindings": len(inventory_bindings),
+                },
+            ),
             "master_person_id": master_id,
             "duplicate_person_id": duplicate_id,
             "moved": {
@@ -1174,7 +1325,9 @@ class RegistryAdminOperationsService:
             "id": result.get("id"),
             "status": "success" if result.get("success") else "error",
         }
-        for key in ("error_code", "error", "affected_sessions"):
+        if result.get("entity_type"):
+            item["entity_type"] = result.get("entity_type")
+        for key in ("error_code", "error", "message", "affected_sessions"):
             if key in result:
                 item[key] = result.get(key)
         return item
@@ -1183,12 +1336,17 @@ class RegistryAdminOperationsService:
         items = [self._bulk_item(result) for result in results]
         success_count = sum(1 for item in items if item["status"] == "success")
         failed_count = sum(1 for item in items if item["status"] == "error")
+        operation_id = _new_id()
         return {
-            "bulk_operation_id": _new_id(),
+            "operation_id": operation_id,
+            "bulk_operation_id": operation_id,
             "operation": operation,
+            "status": self._operation_status(items),
             "summary": {"selected": len(selected_ids), "success": success_count, "failed": failed_count},
             "items": items,
             "results": results,
+            "events": ["bulk_action_applied"] if success_count else [],
+            "report_url": None,
         }
 
     async def bulk_assign_location(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
