@@ -49,6 +49,7 @@ def _str_config(name: str, default: str = "") -> str:
 
 def collect_config_values() -> dict[str, Any]:
     return {
+        "APP_ENV": _str_config("APP_ENV", "dev"),
         "ENABLE_DB_PERSISTENCE": _bool_config("ENABLE_DB_PERSISTENCE", True),
         "PILOT_STAND_MODE": _bool_config("PILOT_STAND_MODE", False),
         "REQUIRE_HTTPS": _bool_config("REQUIRE_HTTPS", False),
@@ -65,6 +66,7 @@ def collect_config_values() -> dict[str, Any]:
         "TECH_RESTORE_DRILL_STATUS_PATH": _str_config("TECH_RESTORE_DRILL_STATUS_PATH"),
         "TECH_RELEASE_STATUS_PATH": _str_config("TECH_RELEASE_STATUS_PATH"),
         "TECH_BUSINESS_SMOKE_STATUS_PATH": _str_config("TECH_BUSINESS_SMOKE_STATUS_PATH"),
+        "REQUIRE_BACKUP_RESTORE_EVIDENCE": _bool_config("REQUIRE_BACKUP_RESTORE_EVIDENCE", False),
     }
 
 
@@ -127,7 +129,9 @@ def aggregate_readiness(gates: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _pilot_block_or_warn(config_values: dict[str, Any]) -> Status:
-    return "blocked" if bool(config_values.get("PILOT_STAND_MODE")) else "warning"
+    app_env = str(config_values.get("APP_ENV") or "").strip().lower()
+    strict_profile = app_env in {"pilot", "prod"} or bool(config_values.get("PILOT_STAND_MODE"))
+    return "blocked" if strict_profile else "warning"
 
 
 def build_readiness_gates(
@@ -248,15 +252,17 @@ def build_readiness_gates(
     )
 
     restore = database.get("last_restore_drill") if isinstance(database.get("last_restore_drill"), dict) else None
+    restore_required = bool(config_values.get("REQUIRE_BACKUP_RESTORE_EVIDENCE"))
     restore_ok = str((restore or {}).get("status") or "").lower() == "success"
+    restore_status = "ok" if restore_ok or not restore_required else pilot_status
     gates.append(
         _gate(
             "backup_restore_drill",
             "Restore drill подтверждён",
-            "ok" if restore_ok else pilot_status,
-            "critical" if pilot_status == "blocked" and not restore_ok else ("warning" if not restore_ok else "info"),
+            restore_status,
+            "critical" if restore_status == "blocked" else ("warning" if restore_required and not restore_ok else "info"),
             "Панель читает marker restore drill; restore из браузера не запускается.",
-            evidence=f"status={str((restore or {}).get('status') or 'missing')}",
+            evidence=f"required={str(restore_required).lower()}, status={str((restore or {}).get('status') or 'missing')}",
         )
     )
 
@@ -270,7 +276,7 @@ def build_readiness_gates(
     duplicate_detected = bool(inventory_details.get("duplicate_task_detected"))
     active_task_count = _safe_int(inventory_details.get("active_task_count"))
     if duplicate_detected:
-        inventory_gate_status = "blocked" if bool(config_values.get("PILOT_STAND_MODE")) else "warning"
+        inventory_gate_status = pilot_status
     else:
         inventory_gate_status = "ok" if inventory_scheduler in {"running", "disabled"} else ("warning" if inventory_scheduler else "unknown")
     gates.append(

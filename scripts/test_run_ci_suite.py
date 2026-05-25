@@ -242,6 +242,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert [step_name for step_name, _command, _log_path, _idle_timeout, _env, _timeout in steps_seen] == [
         "verify_workspace",
         "webapp_bundle",
+        "webapp_unit_tests",
+        "webapp_fixture_e2e",
         "server_pytest_no_db",
         "server_pytest_db_knowledge",
         "server_pytest_db_tickets",
@@ -265,6 +267,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert idle_by_step["verify_workspace"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_knowledge"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -275,6 +279,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         step_name: command
         for step_name, command, _log_path, _idle_timeout, _env, _timeout in steps_seen
     }
+    assert command_by_step["webapp_unit_tests"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test")
+    assert command_by_step["webapp_fixture_e2e"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test:e2e")
     assert command_by_step["server_pytest_no_db"][-6:] == [
         "-m",
         "not manual and no_db",
@@ -311,6 +317,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         step_name: env
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
     }
+    assert env_by_step["webapp_unit_tests"] == {"CI": "1"}
+    assert env_by_step["webapp_fixture_e2e"] == {"CI": "1"}
     assert env_by_step["server_pytest_no_db"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
     assert env_by_step["server_pytest_db_knowledge"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
@@ -331,6 +339,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         step_name: timeout
         for step_name, _command, _log_path, _idle_timeout, _env, timeout in steps_seen
     }
+    assert timeout_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
+    assert timeout_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
     assert timeout_by_step["server_pytest_no_db"] == 45 * 60
     assert timeout_by_step["server_pytest_db_knowledge"] == 45 * 60
     assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60

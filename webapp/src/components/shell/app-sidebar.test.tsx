@@ -57,7 +57,7 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("link", { name: /Рабочий центр/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Центр действий/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Тикеты/ })).toBeInTheDocument();
     expect(screen.queryByText("Устройства и агенты")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();

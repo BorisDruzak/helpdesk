@@ -37,6 +37,7 @@ from config import (
     LOG_FORMAT,
     DATABASE_URL,
     ENABLE_DB_PERSISTENCE,
+    is_strict_runtime_mode,
     validate_security_config,
 )
 # Этап 7.2: очистка истёкших артефактов
@@ -149,13 +150,6 @@ async def housekeeping_cleanup_task(app: web.Application):
             except Exception as outbox_err:
                 logger.warning(f"[HOUSEKEEPING] device_outbox repair skipped: {outbox_err}")
         
-            from inventory.scheduler import InventoryRefreshRuntime
-
-            inventory_refresh_runtime = InventoryRefreshRuntime(state=app["state"])
-            await inventory_refresh_runtime.start()
-            app["inventory_refresh_runtime"] = inventory_refresh_runtime
-            logger.success("Inventory refresh runtime initialized")
-
         except Exception as e:
             logger.error(f"[HOUSEKEEPING] Cleanup error: {e}", exc_info=True)
 
@@ -194,6 +188,20 @@ async def artifacts_expired_cleanup_task(app: web.Application):
             break
         except Exception as e:
             logger.error(f"[ARTIFACTS_CLEANUP] Error: {e}", exc_info=True)
+
+
+async def start_inventory_refresh_runtime(app: web.Application) -> None:
+    """Start the inventory scheduler once per aiohttp application lifecycle."""
+    if app.get("inventory_refresh_runtime") is not None:
+        logger.warning("Inventory refresh runtime already initialized; skipping duplicate start")
+        return
+
+    from inventory.scheduler import InventoryRefreshRuntime
+
+    inventory_refresh_runtime = InventoryRefreshRuntime(state=app["state"])
+    await inventory_refresh_runtime.start()
+    app["inventory_refresh_runtime"] = inventory_refresh_runtime
+    logger.success("Inventory refresh runtime initialized")
 
 
 async def on_startup(app: web.Application):
@@ -277,10 +285,13 @@ async def on_startup(app: web.Application):
                 legacy_name="observer_refresh_runtime",
                 value=observer_refresh_runtime,
             )
+            await start_inventory_refresh_runtime(app)
             logger.success("✅ Observer refresh runtime started")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
+            if is_strict_runtime_mode():
+                raise
             logger.warning("⚠️  Server will run WITHOUT database persistence (in-memory only)")
             # Don't crash the server - continue without DB
     else:

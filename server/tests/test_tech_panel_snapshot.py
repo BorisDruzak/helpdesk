@@ -177,6 +177,66 @@ def test_pilot_auth_policy_gates_block_for_unsafe_fallbacks(config_key, expected
 
 
 @pytest.mark.no_db
+def test_app_env_pilot_blocks_readiness_without_legacy_pilot_flag():
+    from tech.snapshot import build_readiness_gates
+
+    gates = build_readiness_gates(
+        config_values={
+            "APP_ENV": "pilot",
+            "ENABLE_DB_PERSISTENCE": True,
+            "PILOT_STAND_MODE": False,
+            "AUTH_UI_CONFIG_FALLBACK_ENABLED": False,
+            "AUTH_ALLOW_QUERY_TOKEN": False,
+            "REQUIRE_HTTPS": False,
+            "REQUIRE_WSS": False,
+            "WEB_SESSION_COOKIE_SECURE": False,
+            "WEB_SESSION_COOKIE_HTTPONLY": True,
+            "WEB_SESSION_COOKIE_SAMESITE": "lax",
+            "PILOT_MIN_AGENT_VERSION": "2.0.0",
+        },
+        database={"reachable": True, "migrations_status": "ok", "last_restore_drill": {"status": "success"}},
+        security={"agent_connection_policy": {"mode": "manual", "status": "ok"}},
+        runtime={"schedulers": {"inventory_scheduler": "disabled"}},
+        agents={"below_baseline": 0},
+        smoke={"status": "ok", "last_business_smoke": {"status": "success"}},
+    )
+
+    assert next(item for item in gates if item["key"] == "https_wss_required")["status"] == "blocked"
+    assert next(item for item in gates if item["key"] == "session_cookie_flags")["status"] == "blocked"
+
+
+@pytest.mark.no_db
+def test_restore_drill_is_not_blocking_until_required():
+    from tech.snapshot import build_readiness_gates
+
+    gates = build_readiness_gates(
+        config_values={
+            "APP_ENV": "pilot",
+            "ENABLE_DB_PERSISTENCE": True,
+            "PILOT_STAND_MODE": False,
+            "AUTH_UI_CONFIG_FALLBACK_ENABLED": False,
+            "AUTH_ALLOW_QUERY_TOKEN": False,
+            "REQUIRE_HTTPS": True,
+            "REQUIRE_WSS": True,
+            "WEB_SESSION_COOKIE_SECURE": True,
+            "WEB_SESSION_COOKIE_HTTPONLY": True,
+            "WEB_SESSION_COOKIE_SAMESITE": "lax",
+            "PILOT_MIN_AGENT_VERSION": "2.0.0",
+            "REQUIRE_BACKUP_RESTORE_EVIDENCE": False,
+        },
+        database={"reachable": True, "migrations_status": "ok", "last_restore_drill": None},
+        security={"agent_connection_policy": {"mode": "manual", "status": "ok"}},
+        runtime={"schedulers": {"inventory_scheduler": "disabled"}},
+        agents={"below_baseline": 0},
+        smoke={"status": "ok", "last_business_smoke": {"status": "success"}},
+    )
+
+    gate = next(item for item in gates if item["key"] == "backup_restore_drill")
+    assert gate["status"] == "ok"
+    assert "required=false" in gate["evidence"]
+
+
+@pytest.mark.no_db
 def test_postgres_unreachable_becomes_controlled_blocker():
     from tech.snapshot import build_database_snapshot_from_overview, build_readiness_gates
 

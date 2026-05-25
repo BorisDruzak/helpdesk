@@ -6,6 +6,7 @@ aiohttp
 alembic
 asyncpg
 python-dateutil
+python-dotenv
 SQLAlchemy>=2.0
 
 pytest

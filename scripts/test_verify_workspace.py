@@ -83,3 +83,16 @@ def test_run_docs_links_calls_docs_inventory_check(monkeypatch, tmp_path: Path) 
     verify.run_docs_links(tmp_path)
 
     assert calls == [[sys.executable, str(tmp_path / "scripts" / "docs_inventory.py"), "--check-links"]]
+
+
+def test_forbidden_tracked_files_reports_local_config(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(cmd, **kwargs):
+        assert cmd == ["git", "ls-files", "--", "server/.env", "db_config.json"]
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"server/.env\ndb_config.json\n", stderr=b"")
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+
+    assert verify.check_forbidden_tracked_files(tmp_path) == [
+        "forbidden local config is tracked by git: server/.env",
+        "forbidden local config is tracked by git: db_config.json",
+    ]

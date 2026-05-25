@@ -130,6 +130,7 @@ async def test_query_token_rejected_when_disabled(monkeypatch):
 
 @pytest.mark.no_db
 def test_security_config_rejects_pilot_defaults(monkeypatch):
+    monkeypatch.setattr(config, "APP_ENV", "dev", raising=False)
     monkeypatch.setattr(config, "PILOT_STAND_MODE", True)
     monkeypatch.setattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", False)
     monkeypatch.setattr(config, "REQUIRE_HTTPS", False)
@@ -140,6 +141,25 @@ def test_security_config_rejects_pilot_defaults(monkeypatch):
 
     with pytest.raises(RuntimeError):
         config.validate_security_config()
+
+
+@pytest.mark.no_db
+def test_security_config_rejects_app_env_pilot_defaults_without_legacy_flag(monkeypatch):
+    monkeypatch.setattr(config, "APP_ENV", "pilot", raising=False)
+    monkeypatch.setattr(config, "PILOT_STAND_MODE", False)
+    monkeypatch.setattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", False)
+    monkeypatch.setattr(config, "REQUIRE_HTTPS", False)
+    monkeypatch.setattr(config, "REQUIRE_WSS", False)
+    monkeypatch.setattr(config, "WEB_SESSION_COOKIE_SECURE", False)
+    monkeypatch.setattr(config, "AUTH_UI_CONFIG_FALLBACK_ENABLED", True)
+    monkeypatch.setattr(config, "USERS", {"admin": "admin123", "user": "12345"})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        config.validate_security_config()
+
+    message = str(exc_info.value)
+    assert "REQUIRE_HTTPS" in message
+    assert "default UI users/passwords" in message
 
 
 @pytest.mark.no_db

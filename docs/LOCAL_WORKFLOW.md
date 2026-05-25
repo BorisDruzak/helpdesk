@@ -64,7 +64,8 @@ python scripts/check_webapp_cutover.py --json
 python scripts/verify_workspace.py
 ```
 
-`verify_workspace.py` включает UTF-8/compile checks, module observer guard, `docs_drift_check.py` и active-doc broken-link check через `docs_inventory.py --check-links`.
+`verify_workspace.py` включает UTF-8/compile checks, module observer guard, запрет на tracked local config/secret-файлы (`server/.env`, `db_config.json`), `docs_drift_check.py` и active-doc broken-link check через `docs_inventory.py --check-links`.
+Для мини-прода strict-профиль задаётся `APP_ENV=pilot|prod` (legacy `PILOT_STAND_MODE=true` остаётся совместимым): в этом режиме insecure dev defaults, in-memory DB fallback и небезопасные HTTP/WSS/cookie/default-password настройки должны падать на старте, а не превращаться в warning.
 
 6. После локальной проверки сделать локальный commit и сразу отправить его в GitHub `origin`.
 

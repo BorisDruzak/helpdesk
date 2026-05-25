@@ -34,6 +34,35 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## Active Work: Pilot Hardening / Mini-prod Readiness
+
+Status: in progress on branch `codex/helpdesk-process-model`.
+
+Goal:
+
+- Close the immediate pilot-readiness gaps without requiring public `/help` or `/ticket` cutover in this pass; requester creation through the PC agent remains the accepted mini-prod path.
+
+Scope:
+
+- Move `InventoryRefreshRuntime` lifecycle out of housekeeping so only one scheduler starts and cleanup stops that single runtime.
+- Add explicit `APP_ENV=dev|test|pilot|prod` security profile handling; keep `PILOT_STAND_MODE` as a compatibility strict-mode trigger.
+- Make pilot/prod fail closed for default UI passwords, HTTPS/WSS/session-cookie policy, query-token auth, dev fallback and DB initialization failure.
+- Remove committed local env/config files from git tracking while leaving local files available for the test stand.
+- Align server dependency declarations and webapp CI gates, including Vitest and Playwright fixture checks in the canonical CI suite.
+- Add a controlled DB cleanup plan/script for test data later in this block; backup automation is explicitly out of scope for now.
+
+Non-goals:
+
+- No `/help` or `/ticket` requester cutover in this pass.
+- No backup/restore automation in this pass.
+- No full release gate unless explicitly requested after a frozen candidate.
+
+Verification target:
+
+- Focused server tests for scheduler lifecycle, security config and DB fail-closed startup.
+- Focused CI-script tests or dry-run evidence for added webapp CI layers.
+- `python scripts/verify_workspace.py`, relevant pytest, `pnpm --dir webapp run test`, `pnpm --dir webapp run test:e2e`, `git diff --check`.
+
 ## Active Work: Registry Management Center P1/P2
 
 Status: in progress / P1 feature layer implemented; P2 reliability smoke now focuses on end-to-end workflow invariants, preview-protected dangerous operations and safe registry import.

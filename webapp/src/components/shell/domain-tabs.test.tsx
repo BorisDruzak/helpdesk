@@ -22,7 +22,7 @@ describe("DomainTabs", () => {
     renderTabs("/app/admin/device-operations");
 
     const links = screen.getAllByRole("link").map((link) => link.textContent?.trim());
-    expect(links).toEqual(["Инвентарь", "Карточка устройства", "Обновления агента", "Observer"]);
+    expect(links).toEqual(["Инвентарь", "Карточка устройства", "Обновления агента", "Observer", "Техпанель"]);
 
     const operationsTab = screen.getByText("Операции устройства");
     expect(operationsTab).toHaveAttribute("aria-disabled", "true");

@@ -40,13 +40,16 @@ DATABASE_URL = os.getenv(
 ENABLE_DB_PERSISTENCE = os.getenv("ENABLE_DB_PERSISTENCE", "true").lower() == "true"
 
 # Pilot/readiness policy flags. Insecure local defaults require an explicit opt-in.
+APP_ENV = (os.getenv("APP_ENV", "dev") or "dev").strip().lower()
+VALID_APP_ENVS = {"dev", "test", "pilot", "prod"}
 ALLOW_INSECURE_DEV_DEFAULTS = os.getenv("ALLOW_INSECURE_DEV_DEFAULTS", "false").lower() == "true"
 PILOT_STAND_MODE = os.getenv("PILOT_STAND_MODE", "false").lower() == "true"
 REQUIRE_HTTPS = os.getenv("REQUIRE_HTTPS", "false").lower() == "true"
 REQUIRE_WSS = os.getenv("REQUIRE_WSS", "false").lower() == "true"
 AUTH_ALLOW_QUERY_TOKEN = os.getenv("AUTH_ALLOW_QUERY_TOKEN", "false").lower() == "true"
 PILOT_MIN_AGENT_VERSION = os.getenv("PILOT_MIN_AGENT_VERSION", "").strip()
-_default_secure_cookie = "true" if PILOT_STAND_MODE else ("false" if ALLOW_INSECURE_DEV_DEFAULTS else "true")
+_strict_profile = APP_ENV in {"pilot", "prod"} or PILOT_STAND_MODE
+_default_secure_cookie = "true" if _strict_profile else ("false" if ALLOW_INSECURE_DEV_DEFAULTS else "true")
 WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", _default_secure_cookie).lower() == "true"
 WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
 WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
@@ -59,6 +62,7 @@ TECH_BACKUP_STATUS_PATH = os.getenv("TECH_BACKUP_STATUS_PATH", "").strip()
 TECH_RESTORE_DRILL_STATUS_PATH = os.getenv("TECH_RESTORE_DRILL_STATUS_PATH", "").strip()
 TECH_RELEASE_STATUS_PATH = os.getenv("TECH_RELEASE_STATUS_PATH", "").strip()
 TECH_BUSINESS_SMOKE_STATUS_PATH = os.getenv("TECH_BUSINESS_SMOKE_STATUS_PATH", "").strip()
+REQUIRE_BACKUP_RESTORE_EVIDENCE = os.getenv("REQUIRE_BACKUP_RESTORE_EVIDENCE", "false").lower() == "true"
 
 # ============================================================================
 # File Paths
@@ -152,7 +156,7 @@ ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
 # Default uses 127.0.0.1 so at least the URL is valid; for same-host agents it works.
 SERVER_PUBLIC_BASE_URL = os.getenv(
     "SERVER_PUBLIC_BASE_URL",
-    f"http://192.168.100.17:{SERVER_PORT}"
+    f"http://127.0.0.1:{SERVER_PORT}"
 )
 
 AGENT_BUILTIN_MODULES = {
@@ -362,7 +366,7 @@ CAPABILITY_GATE_STRICT = os.getenv("CAPABILITY_GATE_STRICT", "true").lower() == 
 
 # Inventory refresh scheduler: disabled by default until an admin enables policy
 # rows. The runtime only dispatches the existing inventory.collect tool.
-INVENTORY_REFRESH_SCHEDULER_ENABLED = os.getenv("INVENTORY_REFRESH_SCHEDULER_ENABLED", "true").lower() == "true"
+INVENTORY_REFRESH_SCHEDULER_ENABLED = os.getenv("INVENTORY_REFRESH_SCHEDULER_ENABLED", "false").lower() == "true"
 INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC = int(os.getenv("INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC", "60"))
 
 # Agent Recipe Runner runtime dependency policy.
@@ -471,25 +475,36 @@ def _uses_default_ui_passwords() -> bool:
     return USERS.get("admin") == "admin123" or USERS.get("user") == "12345"
 
 
+def is_strict_runtime_mode() -> bool:
+    """Return true for pilot/production profiles that must fail closed."""
+    return APP_ENV in {"pilot", "prod"} or PILOT_STAND_MODE
+
+
 def validate_security_config() -> None:
     """Fail fast for pilot/production configs that would expose auth surfaces."""
     errors: list[str] = []
-    strict_mode = PILOT_STAND_MODE and not ALLOW_INSECURE_DEV_DEFAULTS
+    strict_mode = is_strict_runtime_mode()
+    if APP_ENV not in VALID_APP_ENVS:
+        errors.append(f"APP_ENV must be one of {sorted(VALID_APP_ENVS)}, got {APP_ENV!r}")
     if AUTH_ALLOW_QUERY_TOKEN:
         errors.append("AUTH_ALLOW_QUERY_TOKEN must be false")
-    if AUTH_UI_CONFIG_FALLBACK_ENABLED and not ALLOW_INSECURE_DEV_DEFAULTS:
+    if AUTH_UI_CONFIG_FALLBACK_ENABLED and (strict_mode or not ALLOW_INSECURE_DEV_DEFAULTS):
         errors.append("AUTH_UI_CONFIG_FALLBACK_ENABLED requires ALLOW_INSECURE_DEV_DEFAULTS=true")
     if strict_mode:
+        if ALLOW_INSECURE_DEV_DEFAULTS:
+            errors.append("ALLOW_INSECURE_DEV_DEFAULTS must be false in pilot/prod mode")
+        if not ENABLE_DB_PERSISTENCE:
+            errors.append("ENABLE_DB_PERSISTENCE must be true in pilot/prod mode")
         if not WEB_SESSION_COOKIE_SECURE:
-            errors.append("WEB_SESSION_COOKIE_SECURE must be true in pilot mode")
+            errors.append("WEB_SESSION_COOKIE_SECURE must be true in pilot/prod mode")
         if not REQUIRE_HTTPS:
-            errors.append("REQUIRE_HTTPS must be true in pilot mode")
+            errors.append("REQUIRE_HTTPS must be true in pilot/prod mode")
         if not REQUIRE_WSS:
-            errors.append("REQUIRE_WSS must be true in pilot mode")
+            errors.append("REQUIRE_WSS must be true in pilot/prod mode")
         if _uses_default_ui_passwords():
-            errors.append("default UI users/passwords are forbidden in pilot mode")
+            errors.append("default UI users/passwords are forbidden in pilot/prod mode")
         if LEGACY_UI_TOKEN_LOGIN_ENABLED:
-            errors.append("LEGACY_UI_TOKEN_LOGIN_ENABLED must be false in pilot mode")
+            errors.append("LEGACY_UI_TOKEN_LOGIN_ENABLED must be false in pilot/prod mode")
     if errors:
         raise RuntimeError("Insecure security configuration: " + "; ".join(errors))
 

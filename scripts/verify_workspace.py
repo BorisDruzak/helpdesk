@@ -50,6 +50,7 @@ SKIP_DIRS = {
     "reports",
     "temp",
 }
+FORBIDDEN_TRACKED_FILES = ("server/.env", "db_config.json")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -224,6 +225,20 @@ def run_docs_links(workspace: Path) -> list[str]:
     return [line for line in output.splitlines() if line.strip()]
 
 
+def check_forbidden_tracked_files(workspace: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "--", *FORBIDDEN_TRACKED_FILES],
+        cwd=workspace,
+        capture_output=True,
+        text=False,
+    )
+    if result.returncode != 0:
+        output = _combined_output(result)
+        return [f"git ls-files failed while checking local config hygiene: {output}"]
+    tracked = [line.strip() for line in _decode_output(result.stdout).splitlines() if line.strip()]
+    return [f"forbidden local config is tracked by git: {path}" for path in tracked]
+
+
 def run_module_observer_guard(workspace: Path) -> list[str]:
     server_root = workspace / "server"
     if not (server_root / "utils" / "module_observer_contract.py").exists():
@@ -248,6 +263,7 @@ def main() -> None:
     node_results = run_node_syntax(args.workspace, files)
     failures.extend([item for item in node_results if "skipped" not in item])
     failures.extend(run_module_observer_guard(args.workspace))
+    failures.extend(check_forbidden_tracked_files(args.workspace))
     if not args.skip_docs_drift:
         failures.extend(run_docs_drift(args.workspace))
     if not args.skip_docs_links:

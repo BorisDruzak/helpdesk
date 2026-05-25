@@ -5,15 +5,17 @@ This is the operator checklist for moving a pilot stand from Tech Panel `READY` 
 ## Required Evidence
 
 - `ENABLE_DB_PERSISTENCE=true`.
-- `PILOT_STAND_MODE=true`.
+- `APP_ENV=pilot` or `APP_ENV=prod`; legacy `PILOT_STAND_MODE=true` remains a strict-mode compatibility trigger.
+- `ALLOW_INSECURE_DEV_DEFAULTS=false`.
 - `AUTH_ALLOW_QUERY_TOKEN=false`.
 - `AUTH_UI_CONFIG_FALLBACK_ENABLED=false`.
 - `WEB_SESSION_COOKIE_SECURE=true`.
 - `REQUIRE_HTTPS=true`.
 - `REQUIRE_WSS=true`.
 - `PILOT_MIN_AGENT_VERSION` set to the current approved agent baseline.
-- `TECH_RELEASE_STATUS_PATH`, `TECH_BUSINESS_SMOKE_STATUS_PATH`, `TECH_RESTORE_DRILL_STATUS_PATH` and `TECH_BACKUP_STATUS_PATH` readable by the running server.
-- Latest release, backup, restore drill and business smoke markers show `status=success`.
+- `TECH_RELEASE_STATUS_PATH` and `TECH_BUSINESS_SMOKE_STATUS_PATH` readable by the running server.
+- Latest release and business smoke markers show `status=success`.
+- Backup/restore markers are optional for the current mini-prod stage; when backup policy is enabled later, `TECH_RESTORE_DRILL_STATUS_PATH` and `TECH_BACKUP_STATUS_PATH` must also be readable and successful.
 
 ## Business Smoke
 

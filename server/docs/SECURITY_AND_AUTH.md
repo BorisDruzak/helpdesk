@@ -12,6 +12,12 @@ Security update 2026-05-23:
 - UI roles fail closed: unknown `actor_role` values do not become `admin`; new users without a role default to `user`.
 - Account-session validation uses POST/header/body by default. Query-string session tokens are disabled unless explicitly enabled for legacy compatibility.
 
+Security update 2026-05-25:
+- `APP_ENV=dev|test|pilot|prod` is the primary environment profile. `APP_ENV=pilot` and `APP_ENV=prod` fail closed; legacy `PILOT_STAND_MODE=true` remains a compatibility strict-mode trigger.
+- Pilot/prod startup rejects insecure dev defaults, disabled DB persistence, default UI passwords, query-token auth, UI config fallback, insecure web-session cookies, and disabled HTTPS/WSS policy.
+- If database initialization fails in a strict runtime profile, server startup raises the original DB error instead of continuing as an in-memory server.
+- Real `server/.env` and `db_config.json` are local files only and must not be tracked by git; `scripts/verify_workspace.py` checks this hygiene rule.
+
 ---
 
 ## Обзор

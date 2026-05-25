@@ -37,6 +37,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_WEB_BUILD_TIMEOUT_SECONDS = 20 * 60
+DEFAULT_WEB_TEST_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 45 * 60
 DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
@@ -477,6 +478,10 @@ def _filter_steps_by_layer(
     return [step for step in steps if step[0] in requested]
 
 
+def _pnpm_webapp_command(workspace: Path, *args: str) -> list[str]:
+    return ["pnpm", "--dir", str(workspace / "webapp"), *args]
+
+
 def main() -> None:
     args = parse_args()
     commit = detect_commit(args.workspace, args.commit)
@@ -517,6 +522,22 @@ def main() -> None:
             float(args.web_build_timeout),
             float(args.idle_timeout),
             None,
+        ),
+        (
+            "webapp_unit_tests",
+            _pnpm_webapp_command(args.workspace, "run", "test"),
+            logs_dir / "webapp_unit_tests.log",
+            float(DEFAULT_WEB_TEST_TIMEOUT_SECONDS),
+            float(args.idle_timeout),
+            {"CI": "1"},
+        ),
+        (
+            "webapp_fixture_e2e",
+            _pnpm_webapp_command(args.workspace, "run", "test:e2e"),
+            logs_dir / "webapp_fixture_e2e.log",
+            float(DEFAULT_WEB_TEST_TIMEOUT_SECONDS),
+            float(args.idle_timeout),
+            {"CI": "1"},
         ),
         (
             "server_pytest_no_db",

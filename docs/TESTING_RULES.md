@@ -41,6 +41,8 @@ To run a single canonical layer:
 
 ```powershell
 python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+python scripts/run_ci_suite.py --layer webapp_unit_tests
+python scripts/run_ci_suite.py --layer webapp_fixture_e2e
 python scripts/run_ci_suite.py --layer pc_agent_pytest
 ```
 
@@ -69,8 +71,9 @@ python scripts/bootstrap_web_toolchain.py
 For React/admin/support changes:
 
 ```powershell
+pnpm --dir webapp run test
 pnpm --dir webapp run build
-pnpm --dir webapp test:e2e -- admin-workspace.spec.ts
+pnpm --dir webapp run test:e2e -- admin-workspace.spec.ts
 ```
 
 Use the in-app browser for live UI checks on the canonical URL:
@@ -87,6 +90,7 @@ https://192.168.100.17:9443/admin
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
+- `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
 
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
 

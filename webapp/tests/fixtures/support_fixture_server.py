@@ -43,6 +43,31 @@ STATUS_LABELS = {
     "waiting_on_user": "Ждём пользователя",
     "resolved": "Решено",
 }
+SUPPORT_PERMISSIONS = [
+    "workspace.support.view",
+    "ticket.queue.view",
+    "ticket.detail.view",
+    "ticket.comment.public",
+    "ticket.comment.internal",
+    "ticket.status.change",
+    "ticket.playbook.run",
+    "ticket.tool.run",
+    "module.tool.run.low_risk",
+    "module.tool.run.high_risk",
+    "ticket.passport.manage",
+    "settings.view",
+]
+ADMIN_PERMISSIONS = [
+    "workspace.admin.view",
+    *SUPPORT_PERMISSIONS,
+    "admin.inventory.view",
+    "admin.registry.view",
+    "admin.modules.view",
+    "admin.forms.view",
+    "admin.playbooks.view",
+    "admin.observer.view",
+    "admin.access.view",
+]
 
 
 def now_iso(*, minutes: int = 0) -> str:
@@ -1741,6 +1766,7 @@ async def handle_session_login(request: web.Request) -> web.Response:
             "auth_type": "ui_token",
             "default_workspace": "support",
             "available_workspaces": ["support"],
+            "permissions": SUPPORT_PERMISSIONS,
         }
     elif payload.get("login") == ADMIN_LOGIN and payload.get("password") == ADMIN_PASSWORD:
         session_user = {
@@ -1749,6 +1775,7 @@ async def handle_session_login(request: web.Request) -> web.Response:
             "auth_type": "ui_token",
             "default_workspace": "admin",
             "available_workspaces": ["admin", "support"],
+            "permissions": ADMIN_PERMISSIONS,
         }
     else:
         return json_error("Неверный логин или пароль.", status=401, error_code="INVALID_CREDENTIALS")
@@ -1970,6 +1997,127 @@ async def handle_support_bootstrap(request: web.Request) -> web.Response:
                 "ticket_summary_endpoint": "/api/tickets/{ticket_id}/observer",
                 "drawer_tab": "trace",
             },
+        }
+    )
+
+
+async def handle_support_workspace_summary(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    tickets = list(state["tickets"].values())
+    return json_success(
+        {
+            "views": {
+                "needs_action": sum(1 for ticket in tickets if ticket["requires_operator_action"]),
+                "sla_risk": 0,
+                "unassigned": sum(1 for ticket in tickets if not ticket.get("assignee_id")),
+                "requester_replied": sum(1 for ticket in tickets if ticket.get("unread_user_messages", 0) > 0),
+            },
+            "queues": [
+                {
+                    "id": "queue-l1",
+                    "code": "l1",
+                    "name": "Линия поддержки L1",
+                    "count": len(tickets),
+                }
+            ],
+            "smart_view_counts": [],
+            "smart_view_options": [],
+        }
+    )
+
+
+def command_center_item(ticket: dict) -> dict:
+    return {
+        "id": f"operator-action:{ticket['id']}",
+        "ticket_id": ticket["id"],
+        "ticket_number": ticket["code"],
+        "title": ticket["title"],
+        "status": ticket["status"],
+        "priority": ticket["priority"],
+        "queue": "Линия поддержки L1",
+        "assignee": ticket.get("assignee_id"),
+        "requester_name": ticket.get("requester_name"),
+        "service_code": "profile-sync",
+        "offering_code": "support",
+        "created_at": ticket.get("created_at"),
+        "updated_at": ticket.get("updated_at"),
+        "next_action_owner": "support",
+        "next_action_due_at": None,
+        "requires_operator_action": ticket.get("requires_operator_action", False),
+        "unread_user_messages": ticket.get("unread_user_messages", 0),
+        "sla": {"state": "unknown", "due_at": None, "remaining_seconds": None},
+        "ola": {"state": "unknown", "due_at": None, "remaining_seconds": None},
+        "operation": None,
+        "agent": {
+            "device_id": ticket.get("device_id"),
+            "connection_state": "online" if ticket.get("device_id") else "unknown",
+            "last_seen_at": now_iso(minutes=12) if ticket.get("device_id") else None,
+        },
+        "diagnostics": {"recommended": True, "profile_code": "profile_sync", "reason": "Проверить sync job."},
+        "closure": {"blocked": True, "missing_count": 1, "primary_blocker": "Нужна причина решения."},
+        "similar_group": None,
+        "reason": "Требуется действие оператора по следующему шагу.",
+        "href": f"/app/tickets/{ticket['id']}",
+    }
+
+
+async def handle_support_command_center(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    items = [
+        command_center_item(ticket)
+        for ticket in state["tickets"].values()
+        if ticket.get("requires_operator_action")
+    ]
+    return json_success(
+        {
+            "generated_at": now_iso(minutes=35),
+            "scope": request.query.get("scope", "team"),
+            "filters": {
+                "queue": request.query.get("queue"),
+                "assignee": request.query.get("assignee"),
+                "query": request.query.get("query"),
+                "window_hours": int(request.query.get("window_hours", "24")),
+                "limit_per_section": int(request.query.get("limit_per_section", "8")),
+            },
+            "summary": {
+                "total_attention_items": len(items),
+                "critical_count": 0,
+                "warning_count": len(items),
+                "info_count": 0,
+                "new_unassigned_count": 0,
+                "operator_action_count": len(items),
+                "unread_user_messages_count": 0,
+                "sla_risk_count": 0,
+                "ola_risk_count": 0,
+                "pending_approval_count": 0,
+                "pending_consent_count": 0,
+                "failed_operation_count": 0,
+                "agent_offline_active_count": 0,
+                "diagnostics_recommended_count": len(items),
+                "closure_blocked_count": len(items),
+                "similar_spikes_count": 0,
+            },
+            "sections": [
+                {
+                    "key": "operator_action",
+                    "title": "Действия оператора",
+                    "description": "Тикеты, где следующий шаг принадлежит поддержке.",
+                    "severity": "warning",
+                    "count": len(items),
+                    "updated_at": now_iso(minutes=35),
+                    "items": items,
+                    "action": {"label": "Открыть очередь", "href": "/app/tickets"},
+                }
+            ]
+            if items
+            else [],
+            "metadata": {"fixture": True},
         }
     )
 
@@ -2436,6 +2584,110 @@ async def handle_web_settings(request: web.Request) -> web.Response:
                 "audit_records_count": 0,
             },
             "routing_builder": {"operators": [], "fields": [], "forms": []},
+            "ticket_settings": {
+                "internal_statuses": [
+                    {
+                        "value": "new",
+                        "label": "Новая",
+                        "requester_status": "open",
+                        "requester_label": "Открыто",
+                        "next_action_owner": "support",
+                        "stage": "intake",
+                        "waits": False,
+                        "terminal": False,
+                    }
+                ],
+                "requester_statuses": [{"value": "open", "label": "Открыто", "internal_statuses": ["new"]}],
+                "next_action_owners": [{"value": "support", "label": "Поддержка", "internal_statuses": ["new"]}],
+                "workflow_profiles": [
+                    {
+                        "ticket_type": "incident",
+                        "label": "Инцидент",
+                        "purpose": "Fixture workflow for Playwright.",
+                        "suggested_path": ["new", "resolved"],
+                        "allowed_statuses": ["new", "resolved"],
+                        "required_create_fields": [],
+                        "required_resolve_fields": ["resolution_code"],
+                        "requires_approval": False,
+                        "requires_change_plan": False,
+                        "requires_action_log": True,
+                        "evidence_required_for_priorities": ["P1"],
+                        "transitions": {"new": ["resolved"]},
+                    }
+                ],
+                "ticket_types": [
+                    {
+                        "code": "incident",
+                        "version": "1.0",
+                        "title": "Инцидент",
+                        "description": "Fixture ticket type.",
+                        "default_workflow_profile_id": "incident",
+                        "default_priority_policy_code": None,
+                        "default_routing_policy_code": None,
+                        "default_sla_policy_id": None,
+                        "default_sla_policy_code": None,
+                        "default_ola_policy_code": None,
+                        "default_approval_policy_code": None,
+                        "default_diagnostic_policy_code": None,
+                        "default_closure_policy_code": None,
+                        "default_visibility_policy_code": None,
+                        "default_notification_policy_code": None,
+                        "default_reporting_policy_code": None,
+                        "feature_flags": {},
+                    }
+                ],
+                "request_templates": [],
+                "process_schema": [
+                    {
+                        "key": "intake",
+                        "label": "Приём",
+                        "meaning": "Первичная обработка обращения.",
+                        "source": "fixture",
+                        "ui_surface": "settings",
+                        "status": "active",
+                    }
+                ],
+                "support_lines": [
+                    {
+                        "code": "l1",
+                        "label": "Линия поддержки L1",
+                        "competence_depth": "basic",
+                        "routing_role": "owner",
+                        "status": "active",
+                    }
+                ],
+                "priority_model": {
+                    "direct_user_priority_choice": False,
+                    "impact_levels": ["low"],
+                    "urgency_levels": ["normal"],
+                    "importance_sources": ["service"],
+                    "modifiers": [],
+                },
+                "governance": {
+                    "fsm_mode": "strict",
+                    "legacy_role_fields": False,
+                    "auto_close_hours": 72,
+                    "resolution_validation_mode": "required",
+                    "require_root_cause_priorities": ["P1"],
+                    "evidence_gate_enabled": True,
+                    "passport_enabled": True,
+                    "requester_confirmation_required": False,
+                },
+                "operational_flags": {
+                    "admin_config_api_enabled": True,
+                    "admin_config_write_enabled": True,
+                    "auditor_role_enabled": True,
+                    "sla_calendar_enabled": True,
+                    "ola_enabled": True,
+                    "retention_enabled": False,
+                    "retention_dry_run": True,
+                    "events_hot_retention_days": 30,
+                    "admin_audit_hot_retention_days": 30,
+                    "take_queue_mode": "common",
+                    "take_queue_common_code": "l1",
+                    "take_queue_test_code": "l1-test",
+                },
+            },
             "queues": [],
             "routing_rules": [],
             "sla_policies": [],
@@ -2697,6 +2949,8 @@ def build_app() -> web.Application:
             web.post("/api/web/session/logout", handle_session_logout),
             web.get("/api/web/realtime/bootstrap", handle_realtime_bootstrap),
             web.get("/api/web/support/bootstrap", handle_support_bootstrap),
+            web.get("/api/web/support/workspace/summary", handle_support_workspace_summary),
+            web.get("/api/web/support/command-center", handle_support_command_center),
             web.get("/api/web/support/queue", handle_support_queue),
             web.get("/api/web/support/queue/saved-views", handle_support_queue_saved_views),
             web.post("/api/web/support/queue/saved-views", handle_support_queue_saved_view_create),
@@ -2730,6 +2984,10 @@ def build_app() -> web.Application:
             web.post("/api/notifications/preferences", handle_notification_preferences),
             web.get("/api/notifications", handle_notifications),
             web.get("/api/admin/tech/alerts", handle_admin_tech_alerts),
+            web.get("/api/web/notifications/preferences", handle_notification_preferences),
+            web.post("/api/web/notifications/preferences", handle_notification_preferences),
+            web.get("/api/web/notifications", handle_notifications),
+            web.get("/api/web/admin/tech/alerts", handle_admin_tech_alerts),
             web.get("/assets/{asset_path:.*}", handle_webapp_asset),
             web.get("/favicon.svg", handle_webapp_public_asset),
             web.get("/ws_ui", handle_ws_ui),

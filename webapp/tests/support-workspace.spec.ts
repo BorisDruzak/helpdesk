@@ -14,18 +14,20 @@ async function loginSupport(page: Page) {
 test("оператор открывает tickets workspace через новый shell", async ({ page }) => {
   await loginSupport(page);
 
+  await expect(page).toHaveURL(/\/app\/support$/);
+  await page.getByRole("link", { name: "Тикеты" }).click();
   await expect(page).toHaveURL(/\/app\/tickets$/);
   await expect(page.getByRole("heading", { name: "Тикеты" })).toBeVisible();
   await expect(page.getByText("Service Desk")).toBeVisible();
-  await expect(page.getByText("РАБОЧИЕ СРЕЗЫ")).toBeVisible();
-  await expect(page.getByText("ТИКЕТЫ В ОЧЕРЕДИ")).toBeVisible();
+  await expect(page.getByText("Мой рабочий список")).toBeVisible();
+  await expect(page.getByRole("button", { name: /T-200001 Ошибка синхронизации/ })).toBeVisible();
 
   await page.getByRole("button", { name: /T-200001/ }).click();
 
   await expect(page).toHaveURL(/\/app\/tickets\/ticket-1$/);
   await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
   await expect(page.getByText("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ответить" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Инструменты" })).toBeVisible();
 
   await page.getByRole("button", { name: "Инструменты" }).click();
@@ -48,8 +50,7 @@ for (const width of [1366, 1440, 1920]) {
 
     await page.getByRole("button", { name: "Светлая тема" }).click();
     await expect(root).toHaveAttribute("data-theme", "light");
-    await expect(page.getByText("РАБОЧИЕ СРЕЗЫ")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Ответить" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Выполнить действие" })).toBeVisible();
 
     const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(horizontalOverflow).toBeLessThanOrEqual(2);
