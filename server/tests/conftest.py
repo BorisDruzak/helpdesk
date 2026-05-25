@@ -33,6 +33,10 @@ from sqlalchemy.pool import NullPool
 server_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(server_dir))
 
+# The runtime default for admin config writes is fail-closed. Pytest enables the
+# write surface explicitly so handler/RBAC/validation tests exercise it.
+os.environ.setdefault("TICKET_ADMIN_CONFIG_WRITE_ENABLED", "true")
+
 from server import create_app
 from app_keys import OUTBOX_SENDER_APP_KEY, bind_app_value
 from app.db import engine as db_engine_module
