@@ -12,7 +12,7 @@ This document fixes the current production boundary for device registration and 
 
 - `confirmed_binding`: server-issued, verified by an active `device_user_bindings` row for the same device.
 - `verified_other_account`: server-issued after admin approval of `device_account_login_requests`. It never creates a registration claim and never changes the active device binding.
-- `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states.
+- `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states. The Qt agent GUI uses it to show and poll the pending registration gate; it must not open the normal ticket workspace before the device has a confirmed binding or an approved other-account session.
 
 Agent GUI ticket actions must send the server-issued `session_id` and `session_token`. Client-supplied person, binding or account mode fields are not trusted without server validation.
 
@@ -20,7 +20,7 @@ Agent GUI ticket actions must send the server-issued `session_id` and `session_t
 
 - `confirmed_binding` can see tickets for the same device when one of these matches: `requester_account_session_id`, `requester_binding_id`, or `requester_person_id`. This preserves historical owner tickets created before account sessions existed.
 - `verified_other_account` can see only tickets created with that exact `requester_account_session_id`. It cannot see the registered owner's historical tickets.
-- `registration_pending` can see tickets created with that exact `requester_account_session_id`, plus pending-status tickets for the same pending person when a person id exists.
+- `registration_pending` visibility is retained server-side for historical/scoped pending tickets created by older clients. The current Qt GUI does not treat it as a ticket login and keeps the user in the account gate until approval.
 - Staff/admin/support visibility remains controlled by staff routes and is not restricted by requester account sessions.
 
 Agent requester actions requiring a valid account session include ticket create, preview, list, detail, snapshot, message, read cursor, upload, artifact download, close/resolution actions and requester-side attachments.
@@ -92,9 +92,8 @@ Planned transfer flow:
 1. Device has no active binding.
 2. Submit registration form.
 3. Server creates a `registration_pending` account session.
-4. Create ticket C with pending session.
-5. Ticket C has `requester_account_mode=registration_pending`.
-6. Approve/reject the claim and verify the pending session invalidates or the agent switches to confirmed login.
+4. Agent remains on the account gate, hides the repeat registration button, and polls account-state.
+5. Approve/reject the claim and verify the pending session invalidates or the agent shows the confirmed registered account login.
 
 ### Revoke
 

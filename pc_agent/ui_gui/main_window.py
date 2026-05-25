@@ -940,7 +940,7 @@ class MainWindow(QMainWindow):
         self.dashboard_status_value.setText(status_text)
 
     def _active_account_session_for_tickets(self) -> Optional[dict]:
-        if self._account_session.get("account_mode") in {"confirmed_binding", "registration_pending", "verified_other_account"}:
+        if self._account_session.get("account_mode") in {"confirmed_binding", "verified_other_account"}:
             return self._account_session
         return None
 
@@ -1492,7 +1492,7 @@ class MainWindow(QMainWindow):
             self._account_state = refreshed
         if hasattr(self, "account_gate_page"):
             self.account_gate_page.render(self._account_state, local_session=self._account_session)
-        self._set_account_entry_mode(False)
+        self._set_account_entry_mode(True)
         self._render_profile_status()
 
     def _set_account_entry_mode(self, enabled: bool) -> None:
@@ -2409,7 +2409,7 @@ class MainWindow(QMainWindow):
         await self._save_registration_pending_account_session(saved, registration)
         self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_registration_entry_status("Профиль регистрации отправлен.", error=False)
-        self._select_sidebar_view("tickets", expand=True)
+        self._select_sidebar_view("account_gate", expand=True)
 
     def _on_confirm_registration_claim_clicked(self) -> None:
         self._spawn_gui_task(self._async_confirm_registration_claim(), name="registration.confirm_claim")
@@ -2432,7 +2432,7 @@ class MainWindow(QMainWindow):
                 await self._save_registration_pending_account_session(saved, registration)
                 self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
                 self._set_registration_entry_status("Данные регистрации отправлены и подтверждены.", error=False)
-                self._select_sidebar_view("tickets", expand=True)
+                self._select_sidebar_view("account_gate", expand=True)
             else:
                 self._set_registration_entry_status("Некорректный ответ регистрации.", error=True)
             return
@@ -2444,7 +2444,7 @@ class MainWindow(QMainWindow):
             await self._save_registration_pending_account_session(saved, registration)
             self.registration_status_label.setText(str(saved.get("registration_status") or "unknown"))
         self._set_registration_entry_status("Данные регистрации подтверждены.", error=False)
-        self._select_sidebar_view("tickets", expand=True)
+        self._select_sidebar_view("account_gate", expand=True)
 
     async def _async_load_settings(self) -> None:
         self._set_settings_buttons_enabled(False)

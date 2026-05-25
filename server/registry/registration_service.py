@@ -14,6 +14,7 @@ from app.db.models import (
     DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceInventoryBindingHistory,
+    DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     RegistryAsset,
     RegistryPerson,
@@ -103,6 +104,8 @@ def _sanitize_profile(profile: dict[str, Any] | None) -> dict[str, Any]:
         "hostname",
         "os",
         "agent_version",
+        "department_id",
+        "location_id",
     }
     result: dict[str, Any] = {}
     for key in allowed:
@@ -228,6 +231,96 @@ class RegistrationService:
             agent_version=device.agent_version,
             metadata={"source": "admin_registry_action"},
         )
+
+    async def _resolve_registration_department(self, profile: dict[str, Any], policy: dict[str, Any]) -> str | None:
+        mode = str(policy.get("department_mode") or "allow_pending_request").strip().lower()
+        department_id = _clean(profile.get("department_id"), max_length=36)
+        if department_id:
+            department = await self.registry_repo.get_department(department_id)
+            if department is None or str(department.status or "").lower() in {"archived", "merged", "inactive"}:
+                raise RegistrationValidationError("department_id not found")
+            return department.department_id
+        if mode == "required_existing":
+            raise RegistrationValidationError("department_id is required")
+        if mode == "allow_pending_request":
+            department = await self.registry_repo.get_or_create_department(
+                name=profile.get("department"),
+                source="agent_profile",
+                status="pending",
+            )
+            return department.department_id if department else None
+        return None
+
+    async def _resolve_registration_location(self, profile: dict[str, Any], policy: dict[str, Any]) -> str | None:
+        mode = str(policy.get("location_mode") or "allow_pending_request").strip().lower()
+        location_id = _clean(profile.get("location_id"), max_length=36)
+        if location_id:
+            location = await self.registry_repo.get_location(location_id)
+            if location is None or str(location.status or "").lower() in {"archived", "merged", "inactive"}:
+                raise RegistrationValidationError("location_id not found")
+            return location.location_id
+        if mode == "required_existing":
+            raise RegistrationValidationError("location_id is required")
+        if mode == "allow_pending_request":
+            location = await self.registry_repo.get_or_create_location(
+                building=profile.get("building"),
+                floor=profile.get("floor"),
+                room=profile.get("room"),
+                source="agent_profile",
+                status="pending",
+            )
+            return location.location_id if location else None
+        return None
+
+    async def _mark_claim_resolved_by_admin_binding(
+        self,
+        claim: DeviceRegistrationClaim,
+        binding: Any,
+        *,
+        reviewed_by: str | None,
+        reason: str | None,
+        matched: bool,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        if claim.claim_id == binding.source_claim_id:
+            return
+        claim.status = "approved" if matched else "superseded"
+        claim.reviewed_by = reviewed_by
+        claim.reviewed_at = now
+        claim.updated_at = now
+        if not matched:
+            claim.conflict_reason = "resolved_by_admin_binding"
+        await self.repo.append_event(
+            event_type="claim_satisfied_by_admin_binding" if matched else "claim_superseded_by_admin_binding",
+            claim_id=claim.claim_id,
+            binding_id=binding.binding_id,
+            device_id=claim.device_id,
+            person_id=claim.person_id,
+            actor_id=reviewed_by,
+            actor_role="admin",
+            payload={"reason": reason, "matched": matched, "binding_person_id": binding.person_id},
+        )
+
+    async def _reconcile_open_agent_claims_for_binding(
+        self,
+        *,
+        device_id: str,
+        binding: Any,
+        reviewed_by: str | None,
+        reason: str | None,
+    ) -> None:
+        claims = await self.repo.list_claims(device_id=device_id, limit=100)
+        for claim in claims:
+            if claim.status not in PENDING_CLAIM_STATUSES or claim.source != "agent_profile":
+                continue
+            matched = claim.person_id == binding.person_id and claim.relationship_type == binding.relationship_type
+            await self._mark_claim_resolved_by_admin_binding(
+                claim,
+                binding,
+                reviewed_by=reviewed_by,
+                reason=reason,
+                matched=matched,
+            )
 
     async def _revoke_account_sessions_for_binding(
         self,
@@ -389,6 +482,13 @@ class RegistrationService:
         active_bindings = await self.repo.list_active_bindings_for_device(device.device_id)
         for existing in active_bindings:
             if existing.person_id == person.person_id and existing.relationship_type == relationship_type:
+                await self._reconcile_open_agent_claims_for_binding(
+                    device_id=device.device_id,
+                    binding=existing,
+                    reviewed_by=reviewed_by,
+                    reason=reason,
+                )
+                await self.session.flush()
                 return {
                     "binding": self._binding_payload(existing),
                     "asset": _asset_payload(asset),
@@ -421,6 +521,27 @@ class RegistrationService:
                 event_type="binding_transferred",
             )
 
+        pending_claim = await self.repo.find_pending_claim(
+            device_id=device.device_id,
+            person_id=person.person_id,
+            source="agent_profile",
+        )
+        if pending_claim is not None and pending_claim.relationship_type == relationship_type:
+            approved = await self.approve_claim(
+                pending_claim.claim_id,
+                reviewed_by=reviewed_by,
+                replace_existing=replace_existing,
+                admin_override_user_confirmation=True,
+                override_reason=reason or "admin manual binding satisfied pending registration",
+            )
+            return {
+                **approved,
+                "inventory_binding": self._inventory_registration_dict(
+                    await self.session.get(DeviceInventoryBinding, device.device_id)
+                ),
+                "events": {"reused_existing_binding": False, "satisfied_pending_claim": pending_claim.claim_id},
+            }
+
         _claim, binding = await self._create_admin_binding(
             device=device,
             asset=asset,
@@ -436,6 +557,12 @@ class RegistrationService:
                 profile={"login": None, "department": None, "building": None, "floor": None, "room": None},
                 reason="admin_binding_created",
             )
+        await self._reconcile_open_agent_claims_for_binding(
+            device_id=device.device_id,
+            binding=binding,
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
         await self.session.flush()
         return {
             "binding": self._binding_payload(binding),
@@ -878,25 +1005,16 @@ class RegistrationService:
             relationship_type = "shared_user"
         if relationship_type not in ALLOWED_RELATIONSHIP_TYPES:
             raise ValueError("invalid relationship_type")
+        policy = await self._registration_policy()
 
-        department = await self.registry_repo.get_or_create_department(
-            name=profile_snapshot.get("department"),
-            source="agent_profile",
-            status="pending",
-        )
-        location = await self.registry_repo.get_or_create_location(
-            building=profile_snapshot.get("building"),
-            floor=profile_snapshot.get("floor"),
-            room=profile_snapshot.get("room"),
-            source="agent_profile",
-            status="pending",
-        )
+        department_id = await self._resolve_registration_department(profile_snapshot, policy)
+        location_id = await self._resolve_registration_location(profile_snapshot, policy)
         person = await self._find_or_create_person(
             requester_id=requester_id,
             display_name=display_name,
             profile=profile_snapshot,
-            department_id=department.department_id if department else None,
-            location_id=location.location_id if location else None,
+            department_id=department_id,
+            location_id=location_id,
         )
         await self._upsert_identities(person, requester_id=requester_id, profile=profile_snapshot)
 
@@ -909,13 +1027,54 @@ class RegistrationService:
                 agent_version=profile_snapshot.get("agent_version"),
                 metadata={"source": "registration_claim"},
             )
+        active_bindings = await self.repo.list_active_bindings_for_device(device_id)
+        existing_binding = next(
+            (
+                row
+                for row in active_bindings
+                if row.person_id == person.person_id and row.relationship_type == relationship_type
+            ),
+            None,
+        )
+        if existing_binding is not None:
+            await self._reconcile_open_agent_claims_for_binding(
+                device_id=device_id,
+                binding=existing_binding,
+                reviewed_by=actor_id or requester_id,
+                reason="agent profile matched existing binding",
+            )
+            source_claim = await self.repo.get_claim(existing_binding.source_claim_id) if existing_binding.source_claim_id else None
+            if source_claim is None:
+                source_claim = await self.repo.create_claim(
+                    device_id=device_id,
+                    asset_id=asset.asset_id,
+                    person_id=person.person_id,
+                    claim_type="self_reported",
+                    status="approved",
+                    relationship_type=relationship_type,
+                    profile_snapshot=profile_snapshot,
+                    device_snapshot={
+                        "hostname": getattr(device, "hostname", None) if device else asset.hostname,
+                        "os": getattr(device, "os", None) if device else profile_snapshot.get("os"),
+                        "agent_version": getattr(device, "agent_version", None) if device else profile_snapshot.get("agent_version"),
+                    },
+                    confidence=Decimal("1.00"),
+                    source="agent_profile",
+                    source_ref=requester_id,
+                    submitted_at=datetime.now(timezone.utc),
+                    user_confirmed_at=datetime.now(timezone.utc),
+                    reviewed_by=actor_id or requester_id,
+                    reviewed_at=datetime.now(timezone.utc),
+                    metadata_json={"reason": "matched_existing_binding"},
+                )
+            await self.session.flush()
+            return await self._build_approved_payload(source_claim, existing_binding)
         confidence = _compute_confidence(profile_snapshot, requester_id)
         conflict_reason = await self.detect_conflicts(device_id, person.person_id, relationship_type)
         if device is not None and getattr(device, "deleted_at", None) is not None:
             conflict_reason = "device_archived"
 
         user_confirmed = bool(profile_snapshot.get("user_confirmed") or (profile or {}).get("user_confirmed"))
-        policy = await self._registration_policy()
         if conflict_reason:
             status = "conflict"
         elif user_confirmed:
@@ -923,8 +1082,11 @@ class RegistrationService:
         else:
             status = "pending_user_confirmation" if policy["require_user_confirmation"] else "pending_admin_review"
 
-        claim = await self.repo.find_pending_claim(device_id=device_id, person_id=person.person_id, source="agent_profile")
+        claim = await self.repo.find_pending_claim(device_id=device_id, person_id=None, source="agent_profile")
         now = datetime.now(timezone.utc)
+        if claim is not None and claim.person_id != person.person_id and not conflict_reason:
+            conflict_reason = "open_claim_exists_for_device"
+            status = "conflict"
         if claim is None:
             claim = await self.repo.create_claim(
                 device_id=device_id,
@@ -965,6 +1127,7 @@ class RegistrationService:
             claim.confidence = confidence
             claim.user_confirmed_at = claim.user_confirmed_at or (now if user_confirmed else None)
             claim.conflict_reason = conflict_reason
+            claim.source_ref = requester_id
             claim.updated_at = now
             await self.repo.append_event(
                 event_type="claim_updated",

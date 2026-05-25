@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pc_agent.ui_gui.account_gate import account_gate_view_state
+from pc_agent.ui_gui.main_window import MainWindow
 
 
 def test_account_gate_registered_state_hides_registration():
@@ -110,9 +111,16 @@ def test_account_gate_pending_state_shows_continue_registration():
     )
 
     assert state["mode"] == "pending"
-    assert state["show_register"] is True
+    assert state["show_register"] is False
     assert state["show_confirm"] is True
     assert state["show_login_other"] is False
+
+
+def test_main_window_does_not_treat_registration_pending_as_ticket_login():
+    window = MainWindow.__new__(MainWindow)
+    window._account_session = {"account_mode": "registration_pending", "account_session_id": "pending-session"}
+
+    assert window._active_account_session_for_tickets() is None
 
 
 def test_account_gate_other_account_warning():

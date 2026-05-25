@@ -100,8 +100,10 @@ def account_gate_view_state(
         warning = "other_account"
     has_known_account_state = bool(account_state) and isinstance(account_state.get("registration"), dict)
     can_register = bool(account_state.get("can_register"))
-    if has_known_account_state and confirmed is None and mode in {"unregistered", "pending"}:
+    if has_known_account_state and confirmed is None and mode == "unregistered":
         can_register = True
+    if mode == "pending":
+        can_register = False
     can_login_other = (
         confirmed is not None
         and bool(account_state.get("can_request_other_account_login") or account_state.get("can_login_other_account"))
@@ -232,6 +234,8 @@ class AccountGateWidget(QFrame):
     def _on_check_pending_request(self) -> None:
         if self._pending_request_id:
             self.checkOtherLoginRequestRequested.emit(self._pending_request_id)
+        else:
+            self.refreshRequested.emit()
 
     def render(
         self,
@@ -287,11 +291,11 @@ class AccountGateWidget(QFrame):
         elif not self._showing_other_form:
             self.other_button.setText("Войти в другой аккаунт")
         self.register_button.setVisible(bool(state["show_register"]))
-        self.register_button.setText("Продолжить регистрацию" if state.get("mode") == "pending" else "Регистрация")
+        self.register_button.setText("Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))
         self.check_request_button.setVisible(bool(state.get("show_check_pending_request") and self._pending_request_id))
         self.other_form.setVisible(self._showing_other_form)
-        if self._pending_request_id:
+        if self._pending_request_id or state.get("mode") == "pending":
             if not self._pending_poll_timer.isActive():
                 self._pending_poll_timer.start()
         else:

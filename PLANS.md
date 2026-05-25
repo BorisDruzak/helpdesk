@@ -869,3 +869,15 @@ Verification target:
   - [x] Add minimal admin registry UI/API client support for reviewing other-account login requests if feasible in this pass.
   - [x] Update CODEMAP/quick lookup docs for new account-session contract.
   - [ ] Run focused server/agent tests, compileall, webapp build, workspace verify and diff checks; commit and push.
+
+2026-05-25 registration claim reconciliation follow-up:
+
+- Goal: close the live-smoke gap where an agent can submit duplicate registration claims while pending, manual admin binding can create an active binding while the user claim remains open, and the Qt GUI can enter the main ticket workspace while registration is still pending.
+- Classification: cross-cutting Registry / account-session / Qt GUI contract change. Contract surfaces: `RegistrationService.submit_agent_profile_claim()`, admin bind helpers, `/api/registry/agent/account-state`, registration form payload, `AccountGateWidget`, `MainWindow` ticket gating and registry docs/CODEMAP.
+- Plan:
+  - [x] Add RED tests for device-level open-claim dedupe, admin-bind claim reconciliation and pending GUI gate behavior.
+  - [x] Reuse an existing open device claim instead of creating parallel pending claims for the same agent device/source.
+  - [x] Make manual admin bind satisfy or supersede pending agent claims for the same device and invalidate pending-session login via terminal claim state.
+  - [x] Keep `registration_pending` visible in account gate but block the normal app workspace until a confirmed binding or verified other-account session is selected.
+  - [x] Add registration form policy hooks for strict existing department/location picker fields while preserving configurable fallback to pending free-text requests.
+  - [x] Update docs/CODEMAP and run focused server/agent checks.

@@ -18,6 +18,9 @@ from app.db.models import (
     RegistryAsset,
 )
 from registry.registration_service import RegistrationConflictError, RegistrationService
+from registry.account_state_service import build_agent_account_state
+from registry.policy_service import RegistryPolicyService
+from registry.registration_form_service import build_registration_form_payload
 from registry.service import RegistryIngestionService
 
 
@@ -349,6 +352,164 @@ async def test_approving_second_claim_same_person_device_reuses_active_binding(t
     assert second_approved["binding"]["binding_id"] == first_approved["binding"]["binding_id"]
     assert len(bindings) == 1
     assert claim.status in {"approved", "superseded"}
+
+
+@pytest.mark.asyncio
+async def test_resubmitting_open_agent_claim_for_device_reuses_existing_claim(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        first = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-a",
+            display_name="Pending A",
+            profile={"full_name": "Pending A", "email": "pending-a@example.test"},
+        )
+        second = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-b",
+            display_name="Pending B",
+            profile={"full_name": "Pending B", "email": "pending-b@example.test"},
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        open_claims = (
+            await session.execute(
+                select(DeviceRegistrationClaim).where(
+                    DeviceRegistrationClaim.device_id == device_id,
+                    DeviceRegistrationClaim.source == "agent_profile",
+                    DeviceRegistrationClaim.status.in_(
+                        [
+                            "self_reported",
+                            "pending_user_confirmation",
+                            "user_confirmed",
+                            "pending_admin_review",
+                            "conflict",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        claim = await session.get(DeviceRegistrationClaim, first["registration"]["claim_id"])
+
+    assert second["registration"]["claim_id"] == first["registration"]["claim_id"]
+    assert len(open_claims) == 1
+    assert claim.person_id == second["person"]["person_id"]
+    assert claim.profile_snapshot["email"] == "pending-b@example.test"
+
+
+@pytest.mark.asyncio
+async def test_admin_bind_satisfies_matching_pending_agent_claim(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        submitted = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="manual-match",
+            display_name="Manual Match",
+            profile={"full_name": "Manual Match", "email": "manual-match@example.test"},
+        )
+        bound = await service.bind_person_to_device(
+            device_id=device_id,
+            person_id=submitted["person"]["person_id"],
+            relationship_type="primary_user",
+            reviewed_by="admin",
+            reason="admin verified pending registration",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        claim = await session.get(DeviceRegistrationClaim, submitted["registration"]["claim_id"])
+        binding = await session.get(DeviceUserBinding, bound["binding"]["binding_id"])
+        open_claims = (
+            await session.execute(
+                select(DeviceRegistrationClaim).where(
+                    DeviceRegistrationClaim.device_id == device_id,
+                    DeviceRegistrationClaim.status.in_(
+                        [
+                            "self_reported",
+                            "pending_user_confirmation",
+                            "user_confirmed",
+                            "pending_admin_review",
+                            "conflict",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        account_state = await build_agent_account_state(session, device_id)
+
+    assert claim.status == "approved"
+    assert binding.source_claim_id == claim.claim_id
+    assert open_claims == []
+    assert account_state["can_register"] is False
+    assert any(item.get("account_mode") == "confirmed_binding" for item in account_state["accounts"])
+
+
+@pytest.mark.asyncio
+async def test_strict_registration_policy_uses_existing_department_location_pickers(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        department = await RegistrationService(session).registry_repo.get_or_create_department(
+            name="Strict Department",
+            source="manual",
+            status="active",
+        )
+        location = await RegistrationService(session).registry_repo.get_or_create_location(
+            building="HQ",
+            floor="3",
+            room="301",
+            source="manual",
+            status="active",
+        )
+        await RegistryPolicyService(session).update_policies(
+            {
+                "registration": {
+                    "department_mode": "required_existing",
+                    "location_mode": "required_existing",
+                }
+            },
+            actor_id="admin",
+        )
+        form_payload = await build_registration_form_payload(session, device_id)
+        with pytest.raises(ValueError, match="department_id is required"):
+            await RegistrationService(session).submit_agent_profile_claim(
+                device_id=device_id,
+                requester_id="strict-user",
+                display_name="Strict User",
+                profile={"full_name": "Strict User", "department": "Free text", "building": "Free"},
+            )
+        result = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="strict-user",
+            display_name="Strict User",
+            profile={
+                "full_name": "Strict User",
+                "department_id": department.department_id,
+                "location_id": location.location_id,
+            },
+        )
+        await session.commit()
+
+    fields = {field["key"]: field for field in form_payload["form"]["fields"]}
+    assert fields["department_id"]["type"] == "department_picker"
+    assert fields["department_id"]["required"] is True
+    assert fields["location_id"]["type"] == "location_picker"
+    assert fields["location_id"]["required"] is True
+    assert "department" not in fields
+    assert "building" not in fields
+    assert result["person"]["department_id"] == department.department_id
+    assert result["person"]["location_id"] == location.location_id
 
 
 @pytest.mark.asyncio

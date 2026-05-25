@@ -20,6 +20,8 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
         "allow_responsible_binding": True,
         "max_primary_devices_per_person": 3,
         "stale_after_days": 90,
+        "department_mode": "allow_pending_request",
+        "location_mode": "allow_pending_request",
     },
     "account_sessions": {
         "confirmed_binding_ttl_hours": None,
@@ -39,12 +41,15 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
 REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
     "registration.max_primary_devices_per_person": {"type": "integer", "minimum": 1, "maximum": 50, "nullable": False},
     "registration.stale_after_days": {"type": "integer", "minimum": 1, "maximum": 3650, "nullable": False},
+    "registration.department_mode": {"type": "enum", "values": ["allow_pending_request", "optional", "required_existing"]},
+    "registration.location_mode": {"type": "enum", "values": ["allow_pending_request", "optional", "required_existing"]},
     "account_sessions.confirmed_binding_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 87600, "nullable": True},
     "account_sessions.verified_other_account_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
     "account_sessions.registration_pending_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
 }
 
 REGISTRY_POLICY_REQUIRES_RESTART_FIELDS: set[str] = set()
+REGISTRATION_ENTITY_MODES = {"optional", "required_existing", "allow_pending_request"}
 
 DANGEROUS_POLICY_WARNINGS: dict[str, dict[str, str]] = {
     "registration.auto_approve_first_binding": {
@@ -82,6 +87,13 @@ def _validate_int(value: Any, *, field: str, minimum: int, maximum: int, nullabl
     return number
 
 
+def _validate_mode(value: Any, *, field: str) -> str:
+    text = str(value or "").strip().lower()
+    if text not in REGISTRATION_ENTITY_MODES:
+        raise ValueError(f"{field} must be one of {', '.join(sorted(REGISTRATION_ENTITY_MODES))}")
+    return text
+
+
 def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
     merged = _deep_merge_defaults(value)
     registration = merged["registration"]
@@ -107,6 +119,14 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
         field="registration.stale_after_days",
         minimum=1,
         maximum=3650,
+    )
+    registration["department_mode"] = _validate_mode(
+        registration.get("department_mode"),
+        field="registration.department_mode",
+    )
+    registration["location_mode"] = _validate_mode(
+        registration.get("location_mode"),
+        field="registration.location_mode",
     )
 
     account_sessions["confirmed_binding_ttl_hours"] = _validate_int(
