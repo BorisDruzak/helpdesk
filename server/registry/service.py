@@ -424,6 +424,7 @@ class RegistrySnapshotService:
                 "relationship_type": claim.relationship_type,
                 "confidence": float(claim.confidence) if claim.confidence is not None else None,
                 "submitted_at": claim.submitted_at.isoformat() if claim.submitted_at else None,
+                "user_confirmed_at": claim.user_confirmed_at.isoformat() if claim.user_confirmed_at else None,
                 "conflict_reason": claim.conflict_reason,
                 "profile_snapshot": claim.profile_snapshot or {},
             }

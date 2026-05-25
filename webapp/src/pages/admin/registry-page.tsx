@@ -99,6 +99,14 @@ function PlaceholderTab({ title }: { title: string }) {
   );
 }
 
+function registryActionErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : fallback;
+  if (message.includes("user confirmation required before approval")) {
+    return "Нужно подтверждение пользователя на агенте. Для ручного обхода используйте «Админское подтверждение» с причиной.";
+  }
+  return message;
+}
+
 export function AdminRegistryPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
@@ -136,7 +144,7 @@ export function AdminRegistryPage() {
 
   const mutation = useMutation({
     mutationFn: async (operation: () => Promise<void>) => operation(),
-    onError: (error) => setActionError(error instanceof Error ? error.message : "Не удалось выполнить действие"),
+    onError: (error) => setActionError(registryActionErrorMessage(error, "Не удалось выполнить действие")),
     onSuccess: async () => {
       setActionError(null);
       setBindDialog(null);
@@ -151,7 +159,7 @@ export function AdminRegistryPage() {
 
   const bulkMutation = useMutation({
     mutationFn: async (operation: () => Promise<AdminRegistryBulkResponse>) => operation(),
-    onError: (error) => setActionError(error instanceof Error ? error.message : "Bulk action failed"),
+    onError: (error) => setActionError(registryActionErrorMessage(error, "Bulk action failed")),
     onSuccess: async (result) => {
       setActionError(null);
       setBulkResult(result);
@@ -161,7 +169,7 @@ export function AdminRegistryPage() {
 
   const importMutation = useMutation({
     mutationFn: applyAdminRegistryImport,
-    onError: (error) => setActionError(error instanceof Error ? error.message : "Import apply failed"),
+    onError: (error) => setActionError(registryActionErrorMessage(error, "Import apply failed")),
     onSuccess: async () => {
       setActionError(null);
       await invalidateRegistry();

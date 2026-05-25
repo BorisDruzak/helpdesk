@@ -529,6 +529,7 @@ export type AdminRegistrationClaim = {
   relationship_type: string;
   confidence: number | null;
   submitted_at: string | null;
+  user_confirmed_at?: string | null;
   conflict_reason: string | null;
   profile_snapshot: Record<string, unknown>;
 };
