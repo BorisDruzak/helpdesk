@@ -347,36 +347,48 @@ class RegistrationService:
         reviewed_by: str | None,
         reason: str | None,
         source: str = "admin_manual",
+        source_claim: DeviceRegistrationClaim | None = None,
     ) -> tuple[Any, Any]:
         now = datetime.now(timezone.utc)
-        claim = await self.repo.create_claim(
-            device_id=device.device_id,
-            asset_id=asset.asset_id,
-            person_id=person.person_id,
-            claim_type="admin_created",
-            status="approved",
-            relationship_type=relationship_type,
-            profile_snapshot={
-                "display_name": person.display_name,
-                "full_name": person.full_name,
-                "email": person.email,
-                "phone": person.phone,
-                "reason": _clean(reason, max_length=1000),
-            },
-            device_snapshot={
-                "hostname": device.hostname or asset.hostname,
-                "os": device.os,
-                "agent_version": device.agent_version,
-            },
-            confidence=Decimal("1.00"),
-            source=source,
-            source_ref=reviewed_by,
-            submitted_at=now,
-            user_confirmed_at=None,
-            reviewed_by=reviewed_by,
-            reviewed_at=now,
-            metadata_json={"reason": _clean(reason, max_length=1000)},
-        )
+        if source_claim is None:
+            claim = await self.repo.create_claim(
+                device_id=device.device_id,
+                asset_id=asset.asset_id,
+                person_id=person.person_id,
+                claim_type="admin_created",
+                status="approved",
+                relationship_type=relationship_type,
+                profile_snapshot={
+                    "display_name": person.display_name,
+                    "full_name": person.full_name,
+                    "email": person.email,
+                    "phone": person.phone,
+                    "reason": _clean(reason, max_length=1000),
+                },
+                device_snapshot={
+                    "hostname": device.hostname or asset.hostname,
+                    "os": device.os,
+                    "agent_version": device.agent_version,
+                },
+                confidence=Decimal("1.00"),
+                source=source,
+                source_ref=reviewed_by,
+                submitted_at=now,
+                user_confirmed_at=None,
+                reviewed_by=reviewed_by,
+                reviewed_at=now,
+                metadata_json={"reason": _clean(reason, max_length=1000)},
+            )
+        else:
+            claim = source_claim
+            claim.status = "approved"
+            claim.reviewed_by = reviewed_by
+            claim.reviewed_at = now
+            claim.updated_at = now
+            claim.conflict_reason = None
+            metadata = dict(claim.metadata_json or {})
+            metadata["admin_binding_reason"] = _clean(reason, max_length=1000)
+            claim.metadata_json = metadata
         binding = await self.repo.create_binding(
             device_id=device.device_id,
             asset_id=asset.asset_id,
@@ -526,21 +538,7 @@ class RegistrationService:
             person_id=person.person_id,
             source="agent_profile",
         )
-        if pending_claim is not None and pending_claim.relationship_type == relationship_type:
-            approved = await self.approve_claim(
-                pending_claim.claim_id,
-                reviewed_by=reviewed_by,
-                replace_existing=replace_existing,
-                admin_override_user_confirmation=True,
-                override_reason=reason or "admin manual binding satisfied pending registration",
-            )
-            return {
-                **approved,
-                "inventory_binding": self._inventory_registration_dict(
-                    await self.session.get(DeviceInventoryBinding, device.device_id)
-                ),
-                "events": {"reused_existing_binding": False, "satisfied_pending_claim": pending_claim.claim_id},
-            }
+        source_claim = pending_claim if pending_claim is not None and pending_claim.relationship_type == relationship_type else None
 
         _claim, binding = await self._create_admin_binding(
             device=device,
@@ -549,6 +547,7 @@ class RegistrationService:
             relationship_type=relationship_type,
             reviewed_by=reviewed_by,
             reason=reason,
+            source_claim=source_claim,
         )
         if relationship_type == "primary_user":
             await self.sync_asset_from_active_binding(binding)
@@ -570,7 +569,10 @@ class RegistrationService:
             "inventory_binding": self._inventory_registration_dict(
                 await self.session.get(DeviceInventoryBinding, device.device_id)
             ),
-            "events": {"reused_existing_binding": False},
+            "events": {
+                "reused_existing_binding": False,
+                **({"satisfied_pending_claim": source_claim.claim_id} if source_claim is not None else {}),
+            },
         }
 
     async def transfer_owner(
