@@ -244,6 +244,7 @@ async def test_people_merge_preview_counts_related_records_without_mutation(test
         "identity_conflicts": 0,
         "bindings_to_move": 1,
         "sessions_to_move": 1,
+        "login_requests_to_move": 0,
         "claims_to_move": 1,
         "tickets_to_move": 1,
         "assets_to_move": 1,

@@ -40,6 +40,7 @@ import {
   revokeAdminDeviceAccountSession,
   revokeAdminDeviceUserBinding,
   transferAdminRegistryDeviceOwner,
+  updateAdminRegistryQualityIssue,
   updateAdminRegistryDepartment,
   updateAdminRegistryLocation,
   updateAdminRegistryPerson,
@@ -461,7 +462,14 @@ export function AdminRegistryPage() {
             />
           ) : null}
           {visibleRegistry && tab === "quality" ? (
-            <RegistryQualityTab issues={visibleRegistry.data_quality} onFix={handleFixIssue} onSelect={setSelection} suggestions={visibleRegistry.suggestions} />
+            <RegistryQualityTab
+              issues={visibleRegistry.data_quality}
+              onFix={handleFixIssue}
+              onIgnore={(issue, reason) => mutation.mutate(() => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "ignore", reason }).then(() => undefined))}
+              onSelect={setSelection}
+              onSnooze={(issue, reason, days) => mutation.mutate(() => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "snooze", reason, days }).then(() => undefined))}
+              suggestions={visibleRegistry.suggestions}
+            />
           ) : null}
           {visibleRegistry && tab === "locations" ? (
             <RegistryLocationsTab

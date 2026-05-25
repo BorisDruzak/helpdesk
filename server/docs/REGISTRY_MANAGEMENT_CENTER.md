@@ -11,6 +11,7 @@
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
 - Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
 - Dangerous admin operations expose read-only preview/dry-run endpoints before apply. Preview endpoints must not mutate state, write events or commit; the web UI requires preview before transfer/merge apply.
+- Generated data-quality issues have stable `issue_key` values. Ignore, snooze and resolve are persisted in `registry_quality_issue_overrides` and audited through `registry_admin_events`.
 
 ## Main API Surface
 
@@ -56,6 +57,10 @@
   - `POST /api/web/admin/registry/import/preview`
   - `POST /api/web/admin/registry/import/apply`
   - `GET /api/web/admin/registry/timeline/{object_type}/{object_id}`
+- Data quality:
+  - `POST /api/web/admin/registry/quality/{issue_key}/ignore`
+  - `POST /api/web/admin/registry/quality/{issue_key}/snooze`
+  - `POST /api/web/admin/registry/quality/{issue_key}/resolve`
 
 Registry import is CSV-only and intentionally excludes direct binding import. Supported import types are `people`, `locations`, `departments` and `device_inventory_mapping`.
 
@@ -144,16 +149,27 @@ Both endpoints accept JSON:
   "type": "people",
   "format": "csv",
   "csv_text": "display_name,email\nIvan Ivanov,ivan@example.test\n",
+  "preview_id": "required only for apply",
   "reason": "required only for apply"
 }
 ```
 
-Preview parses and validates the file without mutating state. It returns row-level errors, duplicate keys, affected counts and a bounded change list. Apply reruns preview first and refuses to mutate if there are any row errors or duplicate keys, then applies all accepted rows in the request transaction and writes one `registry_import_applied` audit event with the import type, counts, reason and sample changes. Supported imports:
+Preview parses and validates the file without mutating state. It returns `preview_id`, row-level errors, duplicate keys, affected counts and a bounded change list. Apply requires the matching `preview_id`, reruns preview first and refuses to mutate if there are any row errors or duplicate keys, then applies all accepted rows in the request transaction and writes one `registry_import_applied` audit event with the import type, operation id, counts, reason and sample changes. Apply responses include `operation_id`, `summary` and per-row `items` so the UI can show or export the result. Supported imports:
 
 - `people`: create/update people by `person_id`, validate required display name, duplicate emails and location/department ids.
 - `locations`: create/update locations and block exact duplicate building/floor/room keys.
 - `departments`: create/update departments and block duplicate department codes.
 - `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id`, `source_binding_id` or account-session state.
+
+## Quality Remediation Contract
+
+`GET /api/web/admin/registry` returns generated `data_quality` items with a stable `issue_key` built from `kind`, `object_type`, `object_id` and optional related id. Active ignored, snoozed and resolved issues are hidden from the main list:
+
+- `ignore` hides an accepted exception until the underlying issue key changes.
+- `snooze` hides an issue for 1-365 days.
+- `resolve` records an admin resolution for issues fixed outside the UI flow.
+
+Every state change requires `reason`, stores actor/time in `registry_quality_issue_overrides`, and writes one of `quality_issue_ignored`, `quality_issue_snoozed` or `quality_issue_resolved` to the registry timeline.
 
 ## Smoke Checklist
 

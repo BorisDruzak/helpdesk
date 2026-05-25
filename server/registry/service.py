@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity
+from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity, RegistryQualityIssueOverride
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.account_session_service import AccountSessionService
@@ -71,6 +72,21 @@ def _asset_registration_status(
     if pending_claims:
         return "pending"
     return "unregistered"
+
+
+def _quality_issue_key(issue: dict[str, Any]) -> str:
+    object_type = str(issue.get("object_type") or "object").strip() or "object"
+    object_id = str(issue.get("object_id") or "").strip()
+    related = (
+        issue.get("binding_id")
+        or issue.get("claim_id")
+        or ",".join(str(item) for item in issue.get("duplicate_person_ids") or [])
+        or None
+    )
+    parts = [str(issue.get("kind") or "issue").strip(), object_type, object_id]
+    if related and str(related) != object_id:
+        parts.append(str(related))
+    return ":".join(part.replace(":", "_") for part in parts if part)
 
 
 @dataclass(frozen=True)
@@ -375,6 +391,8 @@ class RegistrySnapshotService:
                     "description": f"{provider}: {normalized}",
                     "details": f"{provider}: {normalized}",
                 })
+
+        data_quality = await self._apply_quality_issue_overrides(data_quality)
 
         suggestions = []
         for asset in assets:
@@ -701,3 +719,31 @@ class RegistrySnapshotService:
             "data_quality": data_quality,
             "suggestions": suggestions,
         }
+
+    async def _apply_quality_issue_overrides(self, issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not issues:
+            return issues
+        for issue in issues:
+            issue["issue_key"] = _quality_issue_key(issue)
+        issue_keys = [issue["issue_key"] for issue in issues]
+        rows = (
+            await self.session.execute(
+                select(RegistryQualityIssueOverride).where(RegistryQualityIssueOverride.issue_key.in_(issue_keys))
+            )
+        ).scalars().all()
+        overrides = {row.issue_key: row for row in rows}
+        now = datetime.now(timezone.utc)
+        active_issues: list[dict[str, Any]] = []
+        for issue in issues:
+            override = overrides.get(issue["issue_key"])
+            if override is None:
+                active_issues.append(issue)
+                continue
+            issue["issue_state"] = override.status
+            issue["issue_state_reason"] = override.reason
+            if override.status in {"ignored", "resolved"}:
+                continue
+            if override.status == "snoozed" and override.snoozed_until and override.snoozed_until > now:
+                continue
+            active_issues.append(issue)
+        return active_issues

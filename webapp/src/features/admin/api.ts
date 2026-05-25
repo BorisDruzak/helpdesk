@@ -477,6 +477,9 @@ export type AdminRegistryPayload = {
     updated_at: string | null;
   }>;
   data_quality: Array<{
+    issue_key: string;
+    issue_state?: string | null;
+    issue_state_reason?: string | null;
     kind: string;
     severity: "danger" | "info" | "neutral" | "success" | "warning";
     title: string;
@@ -596,6 +599,7 @@ export type AdminRegistryImportType = "people" | "locations" | "departments" | "
 
 export type AdminRegistryImportPreview = AdminRegistryOperationPreview & {
   import_type: AdminRegistryImportType;
+  preview_id: string;
   rows_total: number;
   row_errors: Array<{
     row: number;
@@ -1375,15 +1379,37 @@ export async function previewAdminRegistryImport(payload: {
 export async function applyAdminRegistryImport(payload: {
   type: AdminRegistryImportType;
   csv_text: string;
+  preview_id: string;
   reason: string;
 }): Promise<AdminRegistryImportPreview> {
   const response = await fetch("/api/web/admin/registry/import/apply", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type: payload.type, format: "csv", csv_text: payload.csv_text, reason: payload.reason }),
+    body: JSON.stringify({
+      type: payload.type,
+      format: "csv",
+      csv_text: payload.csv_text,
+      preview_id: payload.preview_id,
+      reason: payload.reason,
+    }),
   });
   return readSuccessResponse(response, "Не удалось применить импорт реестра");
+}
+
+export async function updateAdminRegistryQualityIssue(payload: {
+  issue_key: string;
+  action: "ignore" | "snooze" | "resolve";
+  reason: string;
+  days?: number;
+}): Promise<{ override: Record<string, unknown> }> {
+  const response = await fetch(`/api/web/admin/registry/quality/${encodeURIComponent(payload.issue_key)}/${payload.action}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: payload.reason, days: payload.days }),
+  });
+  return readSuccessResponse(response, "Не удалось обновить статус проблемы качества");
 }
 
 export function adminRegistryExportUrl(type: "devices" | "people" | "bindings" | "sessions" | "locations" | "departments" | "quality", format = "csv"): string {

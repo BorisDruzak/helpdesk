@@ -103,13 +103,29 @@ async def test_registry_people_import_preview_detects_errors_duplicates_and_appl
         assert preview["row_errors"][0]["row"] == 3
         assert preview["duplicate_keys"]
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="preview_id is required"):
             await service.apply_import_csv("people", duplicate_csv, actor_id="admin", reason="bad import")
+
+        with pytest.raises(ValueError, match="import has validation errors or duplicates"):
+            await service.apply_import_csv(
+                "people",
+                duplicate_csv,
+                preview_id=preview["preview_id"],
+                actor_id="admin",
+                reason="bad import",
+            )
 
         people_count = await session.scalar(select(func.count()).select_from(RegistryPerson))
         assert people_count == 1
 
-        applied = await service.apply_import_csv("people", clean_csv, actor_id="admin", reason="people import")
+        clean_preview = await service.preview_import_csv("people", clean_csv)
+        applied = await service.apply_import_csv(
+            "people",
+            clean_csv,
+            preview_id=clean_preview["preview_id"],
+            actor_id="admin",
+            reason="people import",
+        )
         await session.commit()
 
     async with session_maker() as session:
@@ -120,6 +136,13 @@ async def test_registry_people_import_preview_detects_errors_duplicates_and_appl
     assert applied["dry_run"] is False
     assert applied["counts"]["creates"] == 1
     assert applied["counts"]["updates"] == 1
+    assert applied["operation_id"]
+    assert applied["status"] == "success"
+    assert applied["summary"]["success"] == 2
+    assert applied["items"] == [
+        {"row": 2, "id": existing_id, "entity_type": "person", "status": "success", "error_code": None, "message": None},
+        {"row": 3, "id": None, "entity_type": "person", "status": "success", "error_code": None, "message": None},
+    ]
     assert updated.display_name == "Existing Updated"
     assert updated.phone == "+70000000999"
     assert imported.display_name == "Clean Import"
@@ -149,8 +172,22 @@ async def test_registry_locations_departments_import_preview_and_apply(test_engi
         assert preview["counts"]["duplicates"] == 1
         assert preview["counts"]["errors"] == 1
 
-        locations = await service.apply_import_csv("locations", clean_locations, actor_id="admin", reason="locations import")
-        departments = await service.apply_import_csv("departments", clean_departments, actor_id="admin", reason="departments import")
+        locations_preview = await service.preview_import_csv("locations", clean_locations)
+        departments_preview = await service.preview_import_csv("departments", clean_departments)
+        locations = await service.apply_import_csv(
+            "locations",
+            clean_locations,
+            preview_id=locations_preview["preview_id"],
+            actor_id="admin",
+            reason="locations import",
+        )
+        departments = await service.apply_import_csv(
+            "departments",
+            clean_departments,
+            preview_id=departments_preview["preview_id"],
+            actor_id="admin",
+            reason="departments import",
+        )
         await session.commit()
 
     async with session_maker() as session:
@@ -198,11 +235,25 @@ async def test_registry_device_inventory_mapping_import_updates_asset_inventory_
         assert preview["counts"]["updates"] == 1
         assert preview["counts"]["errors"] == 1
 
+        bad_preview = await service.preview_import_csv("device_inventory_mapping", csv_text)
         with pytest.raises(ValueError):
-            await service.apply_import_csv("device_inventory_mapping", csv_text, actor_id="admin", reason="bad mapping")
+            await service.apply_import_csv(
+                "device_inventory_mapping",
+                csv_text,
+                preview_id=bad_preview["preview_id"],
+                actor_id="admin",
+                reason="bad mapping",
+            )
 
         clean_csv = "\n".join(csv_text.splitlines()[:2]) + "\n"
-        applied = await service.apply_import_csv("device_inventory_mapping", clean_csv, actor_id="admin", reason="mapping import")
+        clean_preview = await service.preview_import_csv("device_inventory_mapping", clean_csv)
+        applied = await service.apply_import_csv(
+            "device_inventory_mapping",
+            clean_csv,
+            preview_id=clean_preview["preview_id"],
+            actor_id="admin",
+            reason="mapping import",
+        )
         await session.commit()
 
     async with session_maker() as session:
@@ -237,3 +288,56 @@ async def test_registry_import_api_rejects_binding_import_without_preview(test_c
     assert response.status == 400
     payload = await response.json()
     assert payload["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_registry_import_api_requires_matching_preview_id(test_client):
+    csv_text = "display_name,email\nPreview Required,preview-required@example.test\n"
+    preview_response = await test_client.post(
+        "/api/web/admin/registry/import/preview",
+        json={"type": "people", "format": "csv", "csv_text": csv_text},
+        headers=ADMIN_HEADERS,
+    )
+    assert preview_response.status == 200
+    preview_payload = await preview_response.json()
+    preview_id = preview_payload["data"]["preview_id"]
+
+    missing_response = await test_client.post(
+        "/api/web/admin/registry/import/apply",
+        json={"type": "people", "format": "csv", "csv_text": csv_text, "reason": "people import"},
+        headers=ADMIN_HEADERS,
+    )
+    assert missing_response.status == 400
+    missing_payload = await missing_response.json()
+    assert missing_payload["error_code"] == "VALIDATION_ERROR"
+
+    wrong_response = await test_client.post(
+        "/api/web/admin/registry/import/apply",
+        json={
+            "type": "people",
+            "format": "csv",
+            "csv_text": csv_text,
+            "preview_id": "wrong-preview",
+            "reason": "people import",
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert wrong_response.status == 400
+    wrong_payload = await wrong_response.json()
+    assert wrong_payload["error_code"] == "VALIDATION_ERROR"
+
+    apply_response = await test_client.post(
+        "/api/web/admin/registry/import/apply",
+        json={
+            "type": "people",
+            "format": "csv",
+            "csv_text": csv_text,
+            "preview_id": preview_id,
+            "reason": "people import",
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert apply_response.status == 200
+    apply_payload = await apply_response.json()
+    assert apply_payload["data"]["operation_id"]
+    assert apply_payload["data"]["items"][0]["status"] == "success"

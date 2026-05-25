@@ -9,7 +9,7 @@ import { RegistryOperationPreview } from "./registry-operation-preview";
 type Props = {
   busy: boolean;
   open: boolean;
-  onApply: (payload: { type: AdminRegistryImportType; csv_text: string; reason: string }) => void;
+  onApply: (payload: { type: AdminRegistryImportType; csv_text: string; preview_id: string; reason: string }) => void;
   onClose: () => void;
   onPreview: (payload: { type: AdminRegistryImportType; csv_text: string }) => Promise<AdminRegistryImportPreview>;
 };
@@ -115,7 +115,7 @@ export function RegistryImportDialog({ busy, onApply, onClose, onPreview, open }
             >
               {previewBusy ? "Validating..." : "Preview"}
             </Button>
-            <Button disabled={!canApply} onClick={() => onApply({ type, csv_text: csvText, reason })}>
+            <Button disabled={!canApply} onClick={() => preview && onApply({ type, csv_text: csvText, preview_id: preview.preview_id, reason })}>
               {busy ? "Applying..." : "Apply import"}
             </Button>
           </div>

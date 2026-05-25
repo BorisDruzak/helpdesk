@@ -76,6 +76,7 @@ const registryPayload: AdminRegistryPayload = {
   vendors: [],
   data_quality: [
     {
+      issue_key: "binding_stale:binding:binding-primary-1",
       kind: "binding_stale",
       severity: "warning",
       title: "Привязка устарела",

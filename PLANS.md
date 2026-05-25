@@ -50,7 +50,7 @@ Scope:
 - Bulk operations for common registry administration: assign locations/departments and revoke account sessions with per-item results.
 - CSV export for devices, people, bindings, sessions, locations, departments and quality issues.
 - Safe CSV import for people, locations, departments and device inventory mapping through parse -> validate -> preview -> apply with row-level errors, duplicate detection, rollback-safe apply and audit events.
-- More actionable quality remediation and richer timeline/detail drawer data.
+- More actionable quality remediation with persisted ignore/snooze/resolve state and richer timeline/detail drawer data.
 - Unified Registry Timeline in the drawer for device/person/binding/session/claim: admin, registration and account events must show actor, time, reason, changes and affected entity ids.
 - Operator docs and live smoke checklist for Registry Management Center.
 - Repeatable A-F live workflow smoke for people/identities, bind, shared/responsible, transfer owner, people merge and locations/departments with API actions plus DB invariant checks.
@@ -83,6 +83,11 @@ Stage 6 cautious policy editor:
 Stage 7 operation invariants:
 
 - Add focused DB-backed invariants for primary binding uniqueness, transfer/revoke derived state, shared/responsible non-ownership changes, merge dangling-reference cleanup, policy audit and bulk partial-success semantics.
+
+Stage 8 P2 safety hardening:
+
+- Registry import apply now requires the exact `preview_id` returned by import preview, reruns validation before mutation, writes `registry_import_applied` with an operation id and returns per-row apply `items`.
+- Data-quality issues now carry stable `issue_key` values. Admin ignore/snooze/resolve actions persist in `registry_quality_issue_overrides`, hide active overrides from the generated issue list and write `quality_issue_*` audit events.
 
 ## Active Work: Device Account Session Hardening
 

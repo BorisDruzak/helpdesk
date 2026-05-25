@@ -2475,6 +2475,37 @@ class RegistryAdminEvent(Base):
     )
 
 
+class RegistryQualityIssueOverride(Base):
+    """Admin state for generated registry data-quality issues."""
+    __tablename__ = "registry_quality_issue_overrides"
+
+    issue_key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    issue_kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    object_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    related_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_registry_quality_overrides_status_until", "status", "snoozed_until"),
+        Index("ix_registry_quality_overrides_object", "object_type", "object_id"),
+    )
+
+
 class RegistryVendor(Base):
     """External vendor/contractor registry."""
     __tablename__ = "registry_vendors"

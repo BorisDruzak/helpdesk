@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import csv
+import hashlib
 import io
 import re
 import uuid
@@ -26,6 +27,7 @@ from app.db.models import (
     RegistryLocation,
     RegistryPerson,
     RegistryPersonIdentity,
+    RegistryQualityIssueOverride,
     Ticket,
 )
 from app.repos.registration_repo import normalize_identifier
@@ -89,6 +91,26 @@ def _csv_safe(value: Any) -> Any:
     if text.startswith(("=", "+", "-", "@")):
         return "'" + text
     return text
+
+
+def _import_preview_id(import_type: str, csv_text: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(str(import_type or "").strip().lower().replace("-", "_").encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(csv_text.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _parse_quality_issue_key(issue_key: str) -> dict[str, str | None]:
+    parts = [part.strip() for part in str(issue_key or "").split(":")]
+    if len(parts) < 3 or not all(parts[:3]):
+        raise ValueError("invalid quality issue key")
+    return {
+        "issue_kind": parts[0],
+        "object_type": parts[1],
+        "object_id": parts[2],
+        "related_id": ":".join(parts[3:]) if len(parts) > 3 else None,
+    }
 
 
 TIMELINE_CANONICAL_EVENT_TYPES = {
@@ -271,6 +293,9 @@ class RegistryAdminOperationsService:
             "people_merged": "People merged",
             "bulk_action_applied": "Bulk action applied",
             "policy_changed": "Policy changed",
+            "quality_issue_ignored": "Quality issue ignored",
+            "quality_issue_snoozed": "Quality issue snoozed",
+            "quality_issue_resolved": "Quality issue resolved",
         }
         label = labels.get(canonical_event_type) or labels.get(event_type) or event_type.replace("_", " ")
         target = related.get("object_id") or related.get("device_id") or related.get("person_id") or related.get("binding_id") or related.get("session_id")
@@ -785,6 +810,74 @@ class RegistryAdminOperationsService:
             payload={"effective": effective, "reset_to_defaults": True},
         )
         return response
+
+    def _quality_override_payload(self, row: RegistryQualityIssueOverride) -> dict[str, Any]:
+        return {
+            "issue_key": row.issue_key,
+            "issue_kind": row.issue_kind,
+            "object_type": row.object_type,
+            "object_id": row.object_id,
+            "related_id": row.related_id,
+            "status": row.status,
+            "snoozed_until": _iso(row.snoozed_until),
+            "reason": row.reason,
+            "actor_id": row.actor_id,
+            "updated_at": _iso(row.updated_at),
+        }
+
+    async def set_quality_issue_state(
+        self,
+        issue_key: str,
+        *,
+        status: str,
+        reason: str,
+        actor_id: str | None = None,
+        days: int | None = None,
+    ) -> dict[str, Any]:
+        if status not in {"ignored", "snoozed", "resolved"}:
+            raise ValueError("invalid quality issue status")
+        reason = _require_reason(reason)
+        info = _parse_quality_issue_key(issue_key)
+        now = _now()
+        snoozed_until = None
+        if status == "snoozed":
+            days = int(days or 7)
+            if days < 1 or days > 365:
+                raise ValueError("snooze days must be between 1 and 365")
+            snoozed_until = now + timedelta(days=days)
+        row = await self.session.get(RegistryQualityIssueOverride, issue_key)
+        if row is None:
+            row = RegistryQualityIssueOverride(
+                issue_key=issue_key,
+                issue_kind=str(info["issue_kind"]),
+                object_type=str(info["object_type"]),
+                object_id=str(info["object_id"]),
+                related_id=info["related_id"],
+                status=status,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(row)
+        row.status = status
+        row.reason = reason
+        row.actor_id = actor_id
+        row.snoozed_until = snoozed_until
+        row.updated_at = now
+        event_type = {
+            "ignored": "quality_issue_ignored",
+            "snoozed": "quality_issue_snoozed",
+            "resolved": "quality_issue_resolved",
+        }[status]
+        await self.append_event(
+            object_type="quality_issue",
+            object_id=issue_key,
+            event_type=event_type,
+            actor_id=actor_id,
+            reason=reason,
+            payload={**info, "status": status, "snoozed_until": _iso(snoozed_until)},
+        )
+        await self.session.flush()
+        return {"override": self._quality_override_payload(row)}
 
     async def merge_people(self, data: dict[str, Any], *, actor_id: str | None = None) -> dict[str, Any]:
         reason = _require_reason(data.get("reason"))
@@ -1424,21 +1517,43 @@ class RegistryAdminOperationsService:
         import_type = self._normalize_import_type(import_type)
         rows = self._parse_import_csv(csv_text)
         if import_type == "people":
-            return await self._preview_import_people(rows)
-        if import_type == "locations":
-            return await self._preview_import_locations(rows)
-        if import_type == "departments":
-            return await self._preview_import_departments(rows)
-        if import_type == "device_inventory_mapping":
-            return await self._preview_import_device_inventory_mapping(rows)
-        raise ValueError("unsupported registry import type")
+            payload = await self._preview_import_people(rows)
+        elif import_type == "locations":
+            payload = await self._preview_import_locations(rows)
+        elif import_type == "departments":
+            payload = await self._preview_import_departments(rows)
+        elif import_type == "device_inventory_mapping":
+            payload = await self._preview_import_device_inventory_mapping(rows)
+        else:
+            raise ValueError("unsupported registry import type")
+        blockers = payload["row_errors"] + payload["duplicate_keys"]
+        payload["preview_id"] = _import_preview_id(import_type, csv_text)
+        payload["can_apply"] = not blockers
+        payload["blocking_errors"] = blockers
+        payload["warnings"] = []
+        return payload
 
-    async def apply_import_csv(self, import_type: str, csv_text: str, *, actor_id: str | None = None, reason: str | None = None) -> dict[str, Any]:
+    async def apply_import_csv(
+        self,
+        import_type: str,
+        csv_text: str,
+        *,
+        preview_id: str | None = None,
+        actor_id: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
         reason = _require_reason(reason)
+        normalized_import_type = self._normalize_import_type(import_type)
+        expected_preview_id = _import_preview_id(normalized_import_type, csv_text)
+        if not preview_id:
+            raise ValueError("preview_id is required before import apply")
+        if str(preview_id) != expected_preview_id:
+            raise ValueError("preview_id does not match import payload")
         preview = await self.preview_import_csv(import_type, csv_text)
         if preview["row_errors"] or preview["duplicate_keys"]:
             raise ValueError("import has validation errors or duplicates")
         import_type = preview["import_type"]
+        operation_id = _new_id()
         if import_type == "people":
             await self._apply_import_people(preview["changes"])
         elif import_type == "locations":
@@ -1451,11 +1566,12 @@ class RegistryAdminOperationsService:
             raise ValueError("unsupported registry import type")
         await self.append_event(
             object_type="registry_import",
-            object_id=_new_id(),
+            object_id=operation_id,
             event_type="registry_import_applied",
             actor_id=actor_id,
             reason=reason,
             payload={
+                "operation_id": operation_id,
                 "import_type": import_type,
                 "counts": preview["counts"],
                 "changes": preview["changes"][:50],
@@ -1463,7 +1579,27 @@ class RegistryAdminOperationsService:
             },
         )
         await self.session.flush()
-        return {**preview, "dry_run": False, "applied": True}
+        items = [
+            {
+                "row": change.get("row"),
+                "id": change.get("object_id"),
+                "entity_type": change.get("kind"),
+                "status": "success",
+                "error_code": None,
+                "message": None,
+            }
+            for change in preview["changes"]
+        ]
+        return {
+            **preview,
+            "operation_id": operation_id,
+            "status": "success",
+            "summary": {"success": len(items), "failed": 0, "warnings": 0},
+            "items": items,
+            "events": ["registry_import_applied"],
+            "dry_run": False,
+            "applied": True,
+        }
 
     def _normalize_import_type(self, import_type: str) -> str:
         value = str(import_type or "").strip().lower().replace("-", "_")

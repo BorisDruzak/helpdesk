@@ -1373,8 +1373,67 @@ async def handle_web_admin_registry_import_apply(request: web.Request) -> web.Re
             payload = await RegistryAdminOperationsService(session).apply_import_csv(
                 str(data.get("type") or ""),
                 str(data.get("csv_text") or ""),
+                preview_id=str(data.get("preview_id") or ""),
                 actor_id=auth_context.actor_id,
                 reason=str(data.get("reason") or ""),
+            )
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_quality_ignore(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    issue_key = str(request.match_info.get("issue_key") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).set_quality_issue_state(
+                issue_key,
+                status="ignored",
+                reason=str(data.get("reason") or ""),
+                actor_id=auth_context.actor_id,
+            )
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_quality_snooze(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    issue_key = str(request.match_info.get("issue_key") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).set_quality_issue_state(
+                issue_key,
+                status="snoozed",
+                reason=str(data.get("reason") or ""),
+                actor_id=auth_context.actor_id,
+                days=int(data.get("days") or 7),
+            )
+            await session.commit()
+    except ValueError as exc:
+        return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_quality_resolve(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    issue_key = str(request.match_info.get("issue_key") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    try:
+        async with get_session() as session:
+            payload = await RegistryAdminOperationsService(session).set_quality_issue_state(
+                issue_key,
+                status="resolved",
+                reason=str(data.get("reason") or ""),
+                actor_id=auth_context.actor_id,
             )
             await session.commit()
     except ValueError as exc:
