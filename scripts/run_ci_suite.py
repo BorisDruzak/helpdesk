@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -478,8 +479,19 @@ def _filter_steps_by_layer(
     return [step for step in steps if step[0] in requested]
 
 
+def _resolve_command(name: str) -> str:
+    candidates = [name]
+    if os.name == "nt":
+        candidates = [f"{name}.cmd", f"{name}.exe", name]
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return name
+
+
 def _pnpm_webapp_command(workspace: Path, *args: str) -> list[str]:
-    return ["pnpm", "--dir", str(workspace / "webapp"), *args]
+    return [_resolve_command("pnpm"), "--dir", str(workspace / "webapp"), *args]
 
 
 def main() -> None:

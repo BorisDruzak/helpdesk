@@ -458,3 +458,20 @@ def test_main_rejects_unknown_layer(tmp_path, monkeypatch):
         run_ci_suite.main()
 
     assert "Unknown CI layer" in str(exc_info.value)
+
+
+def test_pnpm_webapp_command_resolves_windows_cmd_shim(monkeypatch, tmp_path):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.setattr(
+        run_ci_suite.shutil,
+        "which",
+        lambda name: str(tmp_path / "pnpm.cmd") if name == "pnpm.cmd" else None,
+    )
+
+    assert run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test") == [
+        str(tmp_path / "pnpm.cmd"),
+        "--dir",
+        str(tmp_path / "webapp"),
+        "run",
+        "test",
+    ]
