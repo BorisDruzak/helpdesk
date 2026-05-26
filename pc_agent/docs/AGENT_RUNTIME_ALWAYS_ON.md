@@ -121,4 +121,5 @@ is `allow_submit`.
 - `CloseMainWindow()` для главного окна при включённом tray не считается shutdown-сигналом.
 - Runtime-диагностика должна быть доступна даже когда окно скрыто.
 - Полный выход агента должен быть явным и воспроизводимым через локальный control path.
+- Распространяемый GUI-агент не должен переходить в `--no-gui` как fallback при ошибке загрузки Qt/PySide6. Если GUI runtime не стартует, агент завершает процесс с кодом ошибки; launcher либо откатывает новую версию на `previous`, либо после лимита ранних падений останавливается и пишет `data/updates/last_failed_launch.json`.
 - Изменения в `pc_agent/ws_agent.py`, `pc_agent/ui_gui/*`, `pc_agent/ui_bridge/*`, `pc_agent/core/runtime_logging.py` синхронно отражаются в `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` и skill/правилах.

@@ -67,6 +67,7 @@ def _write_failed_launch_marker(
     exit_code: int,
     elapsed_sec: float,
     attempts: int,
+    message: str | None = None,
 ) -> None:
     payload = {
         "failed_at": datetime.now(timezone.utc).isoformat(),
@@ -77,6 +78,8 @@ def _write_failed_launch_marker(
         "elapsed_sec": round(elapsed_sec, 3),
         "attempts": attempts,
     }
+    if message:
+        payload["message"] = message
     updates_dir.mkdir(parents=True, exist_ok=True)
     (updates_dir / "last_failed_launch.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -167,7 +170,7 @@ def main() -> None:
             _log("Agent exited normally (code 0); stopping launcher")
             raise SystemExit(0)
 
-        if elapsed_sec <= IMMEDIATE_CRASH_WINDOW_SEC and previous_version and previous_version != version:
+        if elapsed_sec <= IMMEDIATE_CRASH_WINDOW_SEC:
             if immediate_crash_version != version:
                 immediate_crash_version = version
                 immediate_crash_attempts = 0
@@ -176,7 +179,7 @@ def main() -> None:
                 f"Agent {version} crashed after {elapsed_sec:.1f}s with code {ret} "
                 f"(attempt {immediate_crash_attempts}/{IMMEDIATE_CRASH_RETRY_LIMIT})"
             )
-            if immediate_crash_attempts >= IMMEDIATE_CRASH_RETRY_LIMIT:
+            if immediate_crash_attempts >= IMMEDIATE_CRASH_RETRY_LIMIT and previous_version and previous_version != version:
                 _log(
                     f"Terminal startup crash detected for {version}; "
                     f"rolling back to previous version {previous_version}"
@@ -217,17 +220,35 @@ def main() -> None:
                 immediate_crash_attempts = 0
                 immediate_crash_version = None
                 continue
-        else:
-            if elapsed_sec <= IMMEDIATE_CRASH_WINDOW_SEC:
-                _log(f"Agent exited quickly with code {ret}, but rollback is unavailable for version {version}")
+            if immediate_crash_attempts >= IMMEDIATE_CRASH_RETRY_LIMIT:
+                message = (
+                    f"Agent {version} failed to start {immediate_crash_attempts} times "
+                    f"within {IMMEDIATE_CRASH_WINDOW_SEC:.0f}s; rollback is unavailable. "
+                    "Stopping launcher. Check last_failed_launch.json and agent logs."
+                )
+                _log(message)
+                _append_update_history(
+                    updates_dir,
+                    {
+                        "version": version,
+                        "success": False,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        "reason": "startup_crash",
+                        "message": message,
+                        "previous_version": previous_version,
+                    },
+                )
                 _write_failed_launch_marker(
                     updates_dir,
                     crashed_version=version,
                     rollback_version=None,
                     exit_code=ret,
                     elapsed_sec=elapsed_sec,
-                    attempts=1,
+                    attempts=immediate_crash_attempts,
+                    message=message,
                 )
+                raise SystemExit(ret or 1)
+        else:
             immediate_crash_attempts = 0
             immediate_crash_version = None
         _log(f"Agent exited with code {ret}; restart in {backoff:.0f}s")

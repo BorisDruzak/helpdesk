@@ -64,6 +64,7 @@
 - `3.1.58` supersedes `3.1.57` for requester ticket creation auth-token refresh and core inventory packaging: GUI requester API calls refresh the active local token from `storage.db` after reprovision/token rotation, and Windows PyInstaller release specs package core built-ins through `pc_agent.modules.impl.*` so `inventory.collect` and `presence.collect` are present in the runtime registry. Publish Windows and Linux builds as new upload/rollout targets; do not overwrite `3.1.57` artifacts.
 - `3.1.59` supersedes `3.1.58` for endpoint inventory: `inventory.collect` now returns bounded real running processes under `processes.items`, keeps `software.key_apps` for compatibility, and the default presentation block shown in device inventory is renamed to "Процессы" and points at the real process list. Publish Windows and Linux builds as new upload/rollout targets; do not overwrite `3.1.58` artifacts.
 - `3.1.60` supersedes `3.1.59` as the compiled registration/account-session release: it includes the requester account gate, dynamic registration entry form, pending registration sessions, other-account session handling, refreshed account-session ticket API calls, and the latest server registration-claim reconciliation contracts. Publish Windows and Linux builds as new upload/rollout targets; do not overwrite `3.1.59` artifacts.
+- `3.1.61` supersedes `3.1.60` for GUI startup failure handling: non-GUI API imports no longer load Qt, the normal agent startup does not fall back to `--no-gui` when Qt/PySide6 cannot load, and both launcher entrypoints stop after repeated immediate crashes when rollback is unavailable while writing `last_failed_launch.json` with a clear message. Publish Windows and Linux builds as new upload/rollout targets; do not overwrite `3.1.60` artifacts.
 
 ### 2.1 2026-04-22 hardening notes
 
@@ -73,6 +74,7 @@
 - Launcher publish must keep the current version recoverable until staging is fully promoted. Safe publish means backup/restore around the final move, not delete-then-move.
 - Installer hardening also includes path-traversal-safe extraction, rejecting archive links, restoring POSIX execute bits for `tar.gz`, and surfacing verify stdout/stderr in failure diagnostics.
 - Crash-loop rollback is required for both launcher entrypoints: `launcher_main.py` and `launcher_portable_main.py` must revert `current.json` to `previous` after repeated immediate startup failures of the newly switched version.
+- When rollback is unavailable, both launcher entrypoints must stop after the immediate-crash retry limit instead of keeping a background restart loop. Distributed GUI startup must fail fast with a clear Qt/PySide6 error; do not use `--no-gui` as a product fallback for a broken GUI runtime.
 - GUI update UX should expose the request lifecycle explicitly: `requesting`, `requested`, `pending_restart`, then handshake-confirmed terminal success/failure.
 
 ---

@@ -63,3 +63,57 @@ def test_launcher_rolls_back_after_repeated_immediate_crash(monkeypatch, tmp_pat
     assert failed_launch["reason"] == "startup_crash_rollback"
     assert failed_launch["crashed_version"] == "3.1.20"
     assert failed_launch["rollback_version"] == "3.1.19"
+
+
+def test_launcher_stops_after_repeated_immediate_crash_without_rollback(monkeypatch, tmp_path):
+    install_root = tmp_path / "install"
+    versions_dir = install_root / "versions"
+    version_dir = versions_dir / "3.1.61"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    current_path = install_root / "current.json"
+    current_path.write_text(
+        json.dumps({"version": "3.1.61", "previous": None}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    data_root = tmp_path / "data"
+
+    launches = []
+    exit_codes = iter([101, 101, 101])
+    monotonic_values = iter([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+
+    class _FakeProc:
+        def __init__(self, code):
+            self._code = code
+
+        def wait(self):
+            return self._code
+
+    def _fake_find_agent_binary(version_dir):
+        return version_dir / "pc_agent"
+
+    def _fake_popen(argv, **kwargs):
+        launches.append(Path(argv[0]).parent.name)
+        if len(launches) > launcher_main.IMMEDIATE_CRASH_RETRY_LIMIT:
+            raise AssertionError("launcher restarted after terminal startup crash")
+        return _FakeProc(next(exit_codes))
+
+    monkeypatch.setattr(launcher_main, "resolve_data_root", lambda cli_value=None: data_root)
+    monkeypatch.setattr(launcher_main, "resolve_install_root", lambda cli_value=None: install_root)
+    monkeypatch.setattr(launcher_main, "_find_agent_binary", _fake_find_agent_binary)
+    monkeypatch.setattr(launcher_main.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(launcher_main.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(launcher_main.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(sys, "argv", ["launcher.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        launcher_main.main()
+
+    assert exc_info.value.code == 101
+    assert launches == ["3.1.61", "3.1.61", "3.1.61"]
+
+    failed_launch = json.loads((data_root / "updates" / "last_failed_launch.json").read_text(encoding="utf-8"))
+    assert failed_launch["reason"] == "startup_crash"
+    assert failed_launch["crashed_version"] == "3.1.61"
+    assert failed_launch["rollback_version"] is None
+    assert failed_launch["attempts"] == launcher_main.IMMEDIATE_CRASH_RETRY_LIMIT
+    assert "rollback is unavailable" in failed_launch["message"]

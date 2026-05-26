@@ -3710,15 +3710,18 @@ def main():
                 except asyncio.TimeoutError:
                     pass
             raise SystemExit(exit_code)
-        except ImportError:
-            logger.error("❌ qasync или PySide6 не установлены. Установите: pip install qasync PySide6")
-            logger.info("💡 Запускаю без GUI...")
-            raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
+        except ImportError as e:
+            logger.error(
+                "❌ Не удалось запустить GUI: Qt/PySide6 не загрузились. "
+                "Сборка агента требует GUI; автоматический fallback в --no-gui отключён."
+            )
+            logger.exception(e)
+            raise SystemExit(1)
         except Exception as e:
             logger.error(f"❌ Ошибка запуска GUI: {e}")
             logger.exception(e)
-            logger.info("💡 Запускаю без GUI...")
-            raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
+            logger.error("❌ GUI обязателен для штатного запуска; автоматический fallback в --no-gui отключён.")
+            raise SystemExit(1)
     else:
         try:
             raise SystemExit(asyncio.run(main_async(enable_gui=False, data_root=data_root, install_root=install_root)))
