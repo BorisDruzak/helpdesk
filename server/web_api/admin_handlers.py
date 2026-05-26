@@ -26,7 +26,7 @@ from agents.agent_builds_handlers import (
     handle_upload_agent_build as _handle_legacy_upload_agent_build,
 )
 from app.db import get_session
-from app.db.models import Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
+from app.db.models import AgentToken, Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
 from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
@@ -75,6 +75,8 @@ from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
     AdminBuildIdentity,
     AdminBootstrapPayload,
+    AdminAgentTokenItem,
+    AdminAgentTokensPayload,
     AdminObserverDangerousFlowItem,
     AdminObserverDegradationItem,
     AdminObserverQuickLinks,
@@ -3764,6 +3766,75 @@ def _device_token_item(row) -> AdminDeviceTokenItem:
         last_used_at=_iso(getattr(row, "last_used_at", None)),
         is_active=revoked_at is None and not is_expired,
     )
+
+
+def _agent_token_item(row, *, device_id: str, hostname: str | None, online: bool) -> AdminAgentTokenItem:
+    base = _device_token_item(row)
+    return AdminAgentTokenItem(
+        **base.model_dump(),
+        device_id=device_id,
+        hostname=hostname,
+        online=online,
+    )
+
+
+@require_auth("admin")
+async def handle_web_admin_device_tokens_list(request: web.Request):
+    query = str(request.query.get("query", "") or "").strip()
+    status_filter = _normalize_status_filter(request.query.get("status"))
+    state = request.app.get("state")
+
+    async with get_session() as session:
+        devices = await DevicesRepo(session).list_all()
+        token_rows = (
+            await session.execute(
+                select(AgentToken)
+                .where(AgentToken.device_id.in_([str(getattr(device, "device_id", "") or "") for device in devices]))
+                .order_by(AgentToken.created_at.desc())
+            )
+        ).scalars().all()
+
+    tokens_by_device: dict[str, list[AgentToken]] = {}
+    for row in token_rows:
+        tokens_by_device.setdefault(str(row.device_id), []).append(row)
+
+    duplicate_index = _build_duplicate_index(devices, state=state)
+    tokens: list[AdminAgentTokenItem] = []
+    for device in devices:
+        device_id = str(getattr(device, "device_id", "") or "")
+        if not device_id:
+            continue
+        is_online = bool(
+            state is not None
+            and hasattr(state, "is_agent_online")
+            and state.is_agent_online(device_id)
+        )
+        if not _matches_status_filter(online=is_online, status_filter=status_filter):
+            continue
+        item = _build_device_item(device, online=is_online, duplicate_index=duplicate_index)
+        if not _matches_query(item, query):
+            continue
+        for token in tokens_by_device.get(device_id, []):
+            tokens.append(
+                _agent_token_item(
+                    token,
+                    device_id=device_id,
+                    hostname=item.hostname,
+                    online=is_online,
+                )
+            )
+
+    payload = AdminAgentTokensPayload(
+        query=query,
+        status_filter=status_filter,
+        summary=AdminDeviceTokensSummary(
+            total_count=len(tokens),
+            active_count=sum(1 for item in tokens if item.is_active),
+            revoked_count=sum(1 for item in tokens if not item.is_active),
+        ),
+        tokens=tokens,
+    )
+    return json_model_response(SuccessResponse[AdminAgentTokensPayload](data=payload))
 
 
 @require_auth("admin")

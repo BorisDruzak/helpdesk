@@ -98,11 +98,24 @@ export type AdminDeviceTokensPayload = {
   tokens: Array<{
     token_hash: string;
     token_prefix: string | null;
+    device_id?: string;
+    hostname?: string | null;
+    online?: boolean;
     created_at: string | null;
     expires_at: string | null;
     revoked_at: string | null;
     last_used_at: string | null;
     is_active: boolean;
+  }>;
+};
+
+export type AdminAgentTokensPayload = Omit<AdminDeviceTokensPayload, "device_id"> & {
+  query: string;
+  status_filter: AdminStatusFilter;
+  tokens: Array<AdminDeviceTokensPayload["tokens"][number] & {
+    device_id: string;
+    hostname: string | null;
+    online: boolean;
   }>;
 };
 
@@ -1537,6 +1550,21 @@ export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDev
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить токены устройства");
+}
+
+export async function fetchAdminAgentTokens(params: AdminDevicesParams): Promise<AdminAgentTokensPayload> {
+  const searchParams = new URLSearchParams();
+  if (params.statusFilter && params.statusFilter !== "all") {
+    searchParams.set("status", params.statusFilter);
+  }
+  if (params.query.trim()) {
+    searchParams.set("query", params.query.trim());
+  }
+  const queryString = searchParams.toString();
+  const response = await fetch(queryString ? `/api/web/admin/device-tokens?${queryString}` : "/api/web/admin/device-tokens", {
+    credentials: "same-origin"
+  });
+  return readSuccessResponse(response, "Не удалось загрузить токены агентов");
 }
 
 export async function fetchAdminDeviceInventory(deviceId: string): Promise<AdminDeviceInventoryPayload> {

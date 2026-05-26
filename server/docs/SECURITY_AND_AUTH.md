@@ -65,8 +65,8 @@ Security update 2026-05-25:
 
 ### 1.3 Отзыв токенов
 
-- **Agent token revoke:** `POST /api/devices/{device_id}/tokens/revoke` is admin-only. The handler accepts `{"token_hash": "..."}` and revokes only when the hash belongs to the same path `device_id`; audit/log output may include only a short hash prefix, never the full hash or raw token.
-- **Device token list:** `GET /api/devices/{device_id}/tokens` is admin-only. It returns stored token records with `token_hash`, `token_prefix`, timestamps and `is_active`; raw tokens are never returned.
+- **Agent token revoke:** `POST /api/devices/{device_id}/tokens/revoke` and web-session alias `POST /api/web/admin/devices/{device_id}/tokens/revoke` are admin-only. The handler accepts `{"token_hash": "..."}` and revokes only when the hash belongs to the same path `device_id`; audit/log output may include only a short hash prefix, never the full hash or raw token.
+- **Device token list:** `GET /api/devices/{device_id}/tokens`, web-session alias `GET /api/web/admin/devices/{device_id}/tokens`, and fleet list `GET /api/web/admin/device-tokens` are admin-only. They return stored token records with `token_hash`, `token_prefix`, timestamps and `is_active`; raw tokens are never returned. The fleet list also includes `device_id`, hostname and online state so the inventory UI does not collapse multiple connected agents into the currently selected device.
 - **Архивирование устройства:** `DELETE /api/devices/{device_id}` доступен только роли `admin`. Сервер best-effort закрывает live WebSocket-сессию агента, очищает runtime-кэши, отзывает активные agent token, гасит pending connection request / outbox / активные operations и помечает устройство как архивное через `devices.deleted_at/deleted_by/delete_reason`. История аудита, событий, снапшотов и тикетов сохраняется.
 
 ---

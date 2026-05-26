@@ -1764,6 +1764,14 @@ class AdminDeviceTokenItem(BaseModel):
     is_active: bool
 
 
+class AdminAgentTokenItem(AdminDeviceTokenItem):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    hostname: str | None = None
+    online: bool
+
+
 class AdminDeviceTokensSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1778,6 +1786,15 @@ class AdminDeviceTokensPayload(BaseModel):
     device_id: str
     summary: AdminDeviceTokensSummary
     tokens: list[AdminDeviceTokenItem]
+
+
+class AdminAgentTokensPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    status_filter: str
+    summary: AdminDeviceTokensSummary
+    tokens: list[AdminAgentTokenItem]
 
 
 class AdminModulesSummary(BaseModel):

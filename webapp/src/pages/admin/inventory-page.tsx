@@ -36,6 +36,7 @@ import {
   cleanupAdminEnvUuidDuplicates,
   fetchAdminConnectionPolicy,
   fetchAdminConnectionRequests,
+  fetchAdminAgentTokens,
   fetchAdminDeviceTokens,
   fetchAdminDevices,
   rejectAdminConnectionRequest,
@@ -197,6 +198,13 @@ export function AdminInventoryPage() {
     retry: false,
   });
 
+  const agentTokensQuery = useQuery({
+    queryKey: ["admin-agent-tokens", deferredQuery, statusFilter],
+    queryFn: () => fetchAdminAgentTokens({ query: deferredQuery, statusFilter }),
+    enabled: activePanel === "tokens",
+    retry: false,
+  });
+
   const rolloutAssignments = selectedDevice
     ? (devicesQuery.data?.rollout ?? []).filter((item) => item.target === selectedDevice.target)
     : devicesQuery.data?.rollout ?? [];
@@ -255,14 +263,15 @@ export function AdminInventoryPage() {
   });
 
   const revokeTokenMutation = useMutation({
-    mutationFn: async (tokenHash: string) => {
-      if (!selectedDevice?.device_id) {
+    mutationFn: async ({ deviceId, tokenHash }: { deviceId: string; tokenHash: string }) => {
+      if (!deviceId) {
         throw new Error("Не выбрано устройство.");
       }
-      await revokeAdminDeviceToken(selectedDevice.device_id, tokenHash);
+      await revokeAdminDeviceToken(deviceId, tokenHash);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-device-tokens", selectedDevice?.device_id] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-agent-tokens"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-devices-page"] });
     },
   });
@@ -543,11 +552,11 @@ export function AdminInventoryPage() {
 
             {activePanel === "tokens" ? (
               <TokensPanel
-                isLoading={deviceTokensQuery.isLoading}
-                onRevoke={(tokenHash) => revokeTokenMutation.mutate(tokenHash)}
+                isLoading={agentTokensQuery.isLoading}
+                onRevoke={(deviceId, tokenHash) => revokeTokenMutation.mutate({ deviceId, tokenHash })}
                 revokeBusy={revokeTokenMutation.isPending}
                 selectedDevice={selectedDevice}
-                tokens={deviceTokensQuery.data?.tokens ?? []}
+                tokens={agentTokensQuery.data?.tokens ?? []}
               />
             ) : null}
 
@@ -834,12 +843,15 @@ function TokensPanel({
   tokens,
 }: {
   isLoading: boolean;
-  onRevoke: (tokenHash: string) => void;
+  onRevoke: (deviceId: string, tokenHash: string) => void;
   revokeBusy: boolean;
   selectedDevice: DeviceItem | null;
   tokens: Array<{
     token_hash: string;
     token_prefix: string | null;
+    device_id?: string;
+    hostname?: string | null;
+    online?: boolean;
     created_at: string | null;
     expires_at: string | null;
     revoked_at: string | null;
@@ -854,7 +866,7 @@ function TokensPanel({
     return <EmptyState icon={Activity} title="Загружаем токены" description="Проверяем активные и отозванные токены." />;
   }
   if (tokens.length === 0) {
-    return <EmptyState icon={KeyRound} title="Токенов нет" description="Для устройства не найдено записей токенов." />;
+    return <EmptyState icon={KeyRound} title="Токенов нет" description="Для видимых агентов не найдено записей токенов." />;
   }
 
   return (
@@ -865,6 +877,9 @@ function TokensPanel({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-mono text-sm font-semibold text-slate-950">{token.token_prefix || compactId(token.token_hash)}</p>
               <Badge tone={token.is_active ? "success" : "neutral"}>{token.is_active ? "Активен" : "Неактивен"}</Badge>
+              {token.device_id ? (
+                <Badge tone={token.online ? "success" : "neutral"}>{token.hostname || compactId(token.device_id)}</Badge>
+              ) : null}
             </div>
             <p className="mt-1 text-xs text-slate-500">
               Создан: {formatDateTime(token.created_at)} / Последнее использование: {formatDateTime(token.last_used_at)}
@@ -874,7 +889,7 @@ function TokensPanel({
             className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
             disabled={!token.is_active || revokeBusy}
             leadingIcon={<Trash2 className="h-4 w-4" />}
-            onClick={() => onRevoke(token.token_hash)}
+            onClick={() => onRevoke(token.device_id ?? selectedDevice?.device_id ?? "", token.token_hash)}
             size="sm"
             variant="outline"
           >

@@ -181,6 +181,47 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
       });
     }
 
+    if (url.startsWith("/api/web/admin/device-tokens")) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          query: "",
+          status_filter: "all",
+          summary: {
+            total_count: 2,
+            active_count: 2,
+            revoked_count: 0,
+          },
+          tokens: [
+            {
+              token_hash: "hash-1",
+              token_prefix: "pc_123",
+              device_id: "11111111-1111-4111-8111-111111111111",
+              hostname: "web-server-01",
+              online: true,
+              created_at: "2026-04-27T10:00:00Z",
+              expires_at: null,
+              revoked_at: null,
+              last_used_at: "2026-04-27T10:00:00Z",
+              is_active: true,
+            },
+            {
+              token_hash: "hash-2",
+              token_prefix: "pc_222",
+              device_id: "22222222-2222-4222-8222-222222222222",
+              hostname: "win-workstation-12",
+              online: false,
+              created_at: "2026-04-27T10:00:00Z",
+              expires_at: null,
+              revoked_at: null,
+              last_used_at: "2026-04-27T10:00:00Z",
+              is_active: true,
+            },
+          ],
+        },
+      });
+    }
+
     if (url === "/api/web/admin/inventory/bindings/import" && method === "POST") {
       return jsonResponse({
         status: "success",
@@ -212,10 +253,12 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
     }
 
     if (url.includes("/api/web/admin/devices/") && url.endsWith("/tokens")) {
+      const deviceId = decodeURIComponent(url.split("/api/web/admin/devices/")[1]?.split("/tokens")[0] ?? "");
+      const isSecondDevice = deviceId === "22222222-2222-4222-8222-222222222222";
       return jsonResponse({
         status: "success",
         data: {
-          device_id: "11111111-1111-4111-8111-111111111111",
+          device_id: deviceId || "11111111-1111-4111-8111-111111111111",
           summary: {
             total_count: 1,
             active_count: 1,
@@ -223,8 +266,8 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
           },
           tokens: [
             {
-              token_hash: "hash-1",
-              token_prefix: "pc_123",
+              token_hash: isSecondDevice ? "hash-2" : "hash-1",
+              token_prefix: isSecondDevice ? "pc_222" : "pc_123",
               created_at: "2026-04-27T10:00:00Z",
               expires_at: null,
               revoked_at: null,
@@ -291,6 +334,15 @@ describe("AdminInventoryPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Rollout/i }));
     expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("1.2.3").length).toBeGreaterThan(0);
+  });
+
+  it("shows tokens for every visible agent instead of only the selected agent", async () => {
+    installFetchMock();
+
+    renderInventory("/app/admin/inventory?panel=tokens");
+
+    expect(await screen.findByText("pc_123")).toBeInTheDocument();
+    expect(await screen.findByText("pc_222")).toBeInTheDocument();
   });
 
   it("renders when the devices payload has no summary block", async () => {
