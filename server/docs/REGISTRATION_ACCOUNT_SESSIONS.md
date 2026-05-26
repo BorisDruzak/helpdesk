@@ -12,7 +12,7 @@ This document fixes the current production boundary for device registration and 
 
 - `confirmed_binding`: server-issued, verified by an active `device_user_bindings` row for the same device.
 - `verified_other_account`: server-issued after admin approval of `device_account_login_requests`. It never creates a registration claim and never changes the active device binding.
-- `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states. The Qt agent GUI uses it to show and poll the pending registration gate; it must not open the normal ticket workspace before the device has a confirmed binding or an approved other-account session.
+- `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states. Claim approval also revokes the pending server session so admin session lists do not show an active pending registration next to the new confirmed binding session. The Qt agent GUI uses it to show and poll the pending registration gate; it must not open the normal ticket workspace before the device has a confirmed binding or an approved other-account session.
 
 Agent GUI ticket actions must send the server-issued `session_id` and `session_token`. Client-supplied person, binding or account mode fields are not trusted without server validation.
 
@@ -48,7 +48,7 @@ Current implementation:
 
 - `confirmed_binding` sessions live until logout, admin revoke, binding revoke, or `expires_at` if a deployment policy sets it. The default TTL is currently disabled.
 - `verified_other_account` sessions live until logout, admin revoke, base binding revoke, or `expires_at`. The default TTL is 24 hours.
-- `registration_pending` sessions are invalidated by terminal claim state and also receive `expires_at`. The default TTL is 72 hours.
+- `registration_pending` sessions are invalidated by terminal claim state and also receive `expires_at`. Approved claims actively revoke matching pending sessions; rejected/expired/superseded claims remain invalid through validation even before cleanup. The default TTL is 72 hours.
 
 Follow-up: add a cleanup job for expired/revoked sessions and old account events.
 

@@ -351,6 +351,37 @@ async def test_registration_pending_session_creation_validation_and_claim_invali
 
 
 @pytest.mark.asyncio
+async def test_registration_pending_session_is_revoked_when_claim_is_approved(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        registration = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-approved@example.test",
+            display_name="Pending Approved",
+            profile={"full_name": "Pending Approved", "email": "pending-approved@example.test"},
+        )
+        claim_id = registration["registration"]["claim_id"]
+        service = AccountSessionService(session)
+        pending = await service.create_registration_pending_session(device_id=device_id, claim_id=claim_id)
+
+        await RegistrationService(session).approve_claim(
+            claim_id,
+            reviewed_by="admin",
+            admin_override_user_confirmation=True,
+            override_reason="verified by admin",
+        )
+        row = await service.repo.get_session(pending["session"]["session_id"])
+        await session.commit()
+
+    assert row is not None
+    assert row.account_mode == "registration_pending"
+    assert row.verification_status == "revoked"
+    assert row.revoked_at is not None
+
+
+@pytest.mark.asyncio
 async def test_account_session_ttl_defaults(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

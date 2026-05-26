@@ -337,6 +337,21 @@ class RegistrationService:
             reason=reason,
         )
 
+    async def _revoke_registration_pending_sessions_for_claim(
+        self,
+        claim_id: str,
+        *,
+        revoked_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        from registry.account_session_service import AccountSessionService
+
+        return await AccountSessionService(self.session).revoke_registration_pending_sessions_for_claim(
+            claim_id=claim_id,
+            revoked_by=revoked_by,
+            reason=reason,
+        )
+
     async def _create_admin_binding(
         self,
         *,
@@ -1299,6 +1314,11 @@ class RegistrationService:
             rows = await self.repo.list_active_bindings_for_device(claim.device_id)
             existing_for_claim = next((row for row in rows if row.source_claim_id == claim.claim_id), None)
             if existing_for_claim:
+                await self._revoke_registration_pending_sessions_for_claim(
+                    claim.claim_id,
+                    revoked_by=reviewed_by,
+                    reason="registration claim approved",
+                )
                 return await self._build_approved_payload(claim, existing_for_claim)
         if claim.status in {"rejected", "superseded", "expired"}:
             raise ValueError("claim cannot be approved")
@@ -1329,6 +1349,11 @@ class RegistrationService:
                 actor_id=reviewed_by,
                 actor_role=actor_role,
                 payload={"reason": "active primary binding already exists for same person"},
+            )
+            await self._revoke_registration_pending_sessions_for_claim(
+                claim.claim_id,
+                revoked_by=reviewed_by,
+                reason="registration claim approved",
             )
             await self.session.flush()
             return await self._build_approved_payload(claim, active_primary)
@@ -1420,6 +1445,11 @@ class RegistrationService:
             actor_id=reviewed_by,
             actor_role=actor_role,
             payload={"relationship_type": binding.relationship_type},
+        )
+        await self._revoke_registration_pending_sessions_for_claim(
+            claim.claim_id,
+            revoked_by=reviewed_by,
+            reason="registration claim approved",
         )
         await self.session.flush()
         return await self._build_approved_payload(claim, binding)

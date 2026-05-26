@@ -47,8 +47,10 @@ class AccountSessionRepo:
         *,
         device_id: str | None = None,
         person_id: str | None = None,
+        claim_id: str | None = None,
         binding_id: str | None = None,
         base_binding_id: str | None = None,
+        account_mode: str | None = None,
         verification_status: str | None = None,
         limit: int = 200,
     ) -> list[DeviceAccountSession]:
@@ -57,10 +59,14 @@ class AccountSessionRepo:
             stmt = stmt.where(DeviceAccountSession.device_id == str(device_id))
         if person_id:
             stmt = stmt.where(DeviceAccountSession.person_id == str(person_id))
+        if claim_id:
+            stmt = stmt.where(DeviceAccountSession.claim_id == str(claim_id))
         if binding_id:
             stmt = stmt.where(DeviceAccountSession.binding_id == str(binding_id))
         if base_binding_id:
             stmt = stmt.where(DeviceAccountSession.base_binding_id == str(base_binding_id))
+        if account_mode:
+            stmt = stmt.where(DeviceAccountSession.account_mode == str(account_mode))
         if verification_status:
             stmt = stmt.where(DeviceAccountSession.verification_status == str(verification_status))
         result = await self.session.execute(

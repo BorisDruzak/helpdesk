@@ -426,6 +426,33 @@ class AccountSessionService:
             revoked.append(await self.serialize_session(updated))
         return revoked
 
+    async def revoke_registration_pending_sessions_for_claim(
+        self,
+        *,
+        claim_id: str,
+        revoked_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        rows = await self.repo.list_sessions(
+            claim_id=claim_id,
+            account_mode="registration_pending",
+            verification_status="pending_verification",
+            limit=500,
+        )
+        revoked: list[dict[str, Any]] = []
+        for row in rows:
+            updated = await self.repo.revoke_session(row.session_id, revoked_by=revoked_by, reason=reason)
+            await self.repo.append_event(
+                device_id=updated.device_id,
+                session_id=updated.session_id,
+                event_type="registration_pending_session_revoked_due_to_claim_resolution",
+                actor_id=revoked_by,
+                actor_role="admin",
+                payload={"claim_id": claim_id, "reason": reason},
+            )
+            revoked.append(await self.serialize_session(updated))
+        return revoked
+
     async def touch_session(self, *, session_id: str) -> None:
         row = await self.repo.get_session(session_id)
         if row is None:
