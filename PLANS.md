@@ -1117,7 +1117,7 @@ Evidence:
 ### BUG-20260527-02 — Protocol V3 close codes are not observed by raw WS clients
 
 Severity: P1
-Status: verified-fixed
+Status: open
 Area: protocol
 
 Scenario:
@@ -1207,7 +1207,7 @@ Evidence:
 ### BUG-20260527-03 — UIA create wizard cannot complete required fields reliably
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: UI
 
 Scenario:
@@ -1283,25 +1283,34 @@ Evidence:
 - Server DB: no ticket row for the automation request.
 - Agent SQLite: no outbox/history side effects.
 - WS/API payload: `action_trace.jsonl` `ticket_api ticket.create` request payload lacks `requester_account`.
+- Fix evidence, 2026-05-27 11:56-12:05 +05:
+  - Changed files: `pc_agent/ui_gui/automation_controller.py`, `pc_agent/tests/test_gui_automation_controller.py`.
+  - Targeted tests: `python -m py_compile pc_agent\ui_gui\automation_controller.py pc_agent\tests\test_gui_automation_controller.py` exit 0; `python -m pytest pc_agent\tests\test_gui_automation_controller.py pc_agent\tests\test_registration_status.py::test_create_ticket_sends_only_requester_account_session_when_passed -q` -> `3 passed in 0.76s`.
+  - Live GUI precondition: source-mode local agent restarted with `python scripts\manage_local_agent.py start live-v3-deep --gui --ws-url wss://192.168.100.17:9443/ws --api-url https://192.168.100.17:9443/api`; `/ui/automation/status` showed `connection_state=connected`, then pywinauto `0.6.9` UIA invoked account-gate PrimaryButton `Войти как admin-2`, moving `sidebar_view` to `tickets`.
+  - Live command: `python scripts\agent_test_driver.py create-ticket live-v3-deep --title "Live V3 Fix6 automation account session bd33bce2" --description "Live regression for BUG-20260527-04: automation create should include active confirmed account session."`.
+  - Local automation response: HTTP success, `ticket_id=3df55d98-0f34-472f-b19b-72b990388025`, `ticket_code=T-000605`, `requester_account_session_id=6196fe8b-d836-44c5-9760-88a2f5d31f7a`, `requester_account_mode=confirmed_binding`, `requester_registration_status=admin_confirmed`.
+  - Server DB: `tickets.T-000605` persisted with `requester_person_id=bb00a942-fe2c-461c-b982-9da17d3fd1ff`, `requester_binding_id=0618eb74-9fa6-4dbe-9634-d9b56825f3ad`, `requester_account_session_id=6196fe8b-d836-44c5-9760-88a2f5d31f7a`, `requester_account_mode=confirmed_binding`; initial `chat_message` event payload contains the same requester account/session fields.
+  - Agent SQLite: no recent failed outbox rows after the automation create.
+  - Browser/UI: real browser URL `https://192.168.100.17:9443/app/tickets/3df55d98-0f34-472f-b19b-72b990388025`; DOM shows `T-000605`, title, requester `Тестовый тест 12`, status `В очереди`, initial user message. Screenshot: `live-v3-fix6-ticket.png`.
 
 Impact:
 Blocks using the local automation bridge as a reliable substitute for manual GUI submission in account-boundary tests.
 
-Root cause hypothesis:
-`pc_agent/ui_gui/automation_controller.py::_create_ticket()` passes requester profile/display name but does not pass `chat_panel._current_account_session()` to `TicketApiClient.create_ticket()`. The real GUI path in `pc_agent/ui_gui/chat_panel.py::_async_create_ticket()` does pass `requester_account=account_session`.
+Root cause:
+`pc_agent/ui_gui/automation_controller.py::_create_ticket()` passed requester profile/display name but omitted `chat_panel._current_account_session()` when calling `TicketApiClient.create_ticket()`. The real GUI path in `pc_agent/ui_gui/chat_panel.py::_async_create_ticket()` already passed `requester_account=account_session`.
 
 Fix policy:
 - Blocking further tests: no, because direct HTTP/API and browser verification can continue; yes for bridge-driven create.
-- Fixed now: no
+- Fixed now: yes
 
 Fix summary, if fixed:
-N/A.
+Automation ticket creation now reads `chat_panel._current_account_session()` and passes it as `requester_account` to `TicketApiClient.create_ticket()`. No-account automation still does not synthesize credentials; it propagates the server denial.
 
 Verification after fix:
-Pending future run of `agent_test_driver.py create-ticket` showing HTTP `200`, ticket_id, requester_account fields in DB, and browser ticket detail.
+Verified by unit tests and live `agent_test_driver.py create-ticket`: `T-000605` was created through `/ui/automation/run`, DB requester account fields match the active confirmed binding session, initial ticket event carries requester account context, browser ticket detail shows the new ticket, and local outbox has no new failed rows.
 
 Regression check:
-Repeat no-account create denial and valid confirmed-session create success after the automation fix.
+Unit regression covers no-account server denial and valid confirmed-session create success. Live regression covered confirmed-session create success through the local automation bridge and browser detail confirmation.
 
 Remaining risk:
 Other automation actions may also omit account-session headers/payloads where the real GUI path already includes them.
@@ -1913,6 +1922,7 @@ Post-P0 fix status:
 - 2026-05-27 10:43 +05: `BUG-20260527-07` verified-fixed by commits `1fb8c9fa7874629d8e9ec898562b4362f43bb6d2` and `f7e350e08e4a3faef4728133e1464d7509759b8f`, targeted server/agent pytest, live `screen.record` cancel regression, server `device_outbox` delivered check, agent `seen_commands.status='canceled'`, and browser ticket timeline confirmation.
 - 2026-05-27 11:23 +05: `BUG-20260527-06` verified-fixed by commit `91f7529aa2e864298ae025ac4e20123688d1e368`, targeted server/webapp tests, quick release with rebuilt web bundle, live browser web-session `screen.record` cancel through `/api/web/support/operations/{operation_id}/cancel`, DB/device_outbox verification, and browser timeline confirmation.
 - 2026-05-27 11:45 +05: `BUG-20260527-08` verified-fixed in local/source agent by passing canonical device id into `AgentOrchestrator` and stripping compatibility `ticket_id` from device-event wire envelopes; targeted agent pytest passed, live remove/install `network_ping` regression persisted `module_state_changed`/`tools_changed`, local outbox had no pending lifecycle rows, and browser device modules tab confirmed `network_ping` active.
+- 2026-05-27 12:05 +05: `BUG-20260527-04` verified-fixed in local/source agent by passing the active account session through GUI automation create; targeted agent tests passed, pywinauto/UIA selected the confirmed account, `agent_test_driver.py create-ticket` created `T-000605`, DB requester account fields were correct, local outbox had no recent failed rows, and browser ticket detail showed the new ticket.
 
 Current live state:
 - Local agent `live-v3-deep` is running again after P0.10.

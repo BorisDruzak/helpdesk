@@ -206,6 +206,7 @@ class GuiAutomationController:
         await chat_panel._async_refresh_ticket_form_pack(force=bool(payload.get("refresh_form_pack", True)))
 
         requester_profile, display_name = chat_panel._current_requester_payload()
+        account_session = chat_panel._current_account_session()
         result = await chat_panel.ticket_client.create_ticket(
             description=description,
             title=str(payload.get("title") or "Support Request"),
@@ -221,6 +222,7 @@ class GuiAutomationController:
             form_pack_version=payload.get("form_pack_version"),
             form_payload=form_payload,
             ticket_type=payload.get("ticket_type"),
+            requester_account=account_session,
             trace_parent_action_id=trace_parent_action_id,
         )
         if result.get("status") != "ok":
