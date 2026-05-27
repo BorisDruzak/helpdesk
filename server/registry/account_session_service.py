@@ -33,6 +33,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    return str(value)
+
+
 def _expires_after(hours: int | None) -> datetime | None:
     if not hours:
         return None

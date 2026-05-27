@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QProgressBar, QPushButton, QTextEdit, QToolButton, QVBoxLayout, QWidget
 
 from . import theme
+from .accessibility import set_uia_metadata
 from .ticket_view_models import NextActionViewModel, TicketHeaderViewModel, TicketInfoPanelViewModel, TimelineItem
 
 
@@ -106,6 +107,7 @@ class TicketHeaderWidget(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("TicketHeaderWidget")
+        set_uia_metadata(self, name="agent.ticket.active", description="id=agent.ticket.active")
         self._access_code = ""
         self._public_url = ""
 
@@ -121,9 +123,11 @@ class TicketHeaderWidget(QFrame):
         title_row.setSpacing(10)
         self.title_label = QLabel("#— · Обращение не выбрано")
         self.title_label.setObjectName("TicketHeaderTitle")
+        set_uia_metadata(self.title_label, name="agent.ticket.active.title", description="id=agent.ticket.active.title")
         self.title_label.setWordWrap(True)
         self.status_badge = QLabel("—")
         self.status_badge.setObjectName("StatusBadge")
+        set_uia_metadata(self.status_badge, name="agent.ticket.active.status", description="id=agent.ticket.active.status")
         self.status_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_row.addWidget(self.title_label, 1)
         title_row.addWidget(self.status_badge, 0, Qt.AlignmentFlag.AlignTop)
@@ -159,6 +163,21 @@ class TicketHeaderWidget(QFrame):
         self._public_url = model.public_url
         self.title_label.setText(f"{model.number_text} · {model.title}")
         self.status_badge.setText(model.status_label)
+        description = (
+            f"id=agent.ticket.active; ticket_code={model.number_text.lstrip('#')}; "
+            f"status={model.status_label}; title={model.title}"
+        )
+        set_uia_metadata(self, name="agent.ticket.active", description=description)
+        set_uia_metadata(
+            self.title_label,
+            name="agent.ticket.active.title",
+            description=f"id=agent.ticket.active.title; title={model.title}; ticket_code={model.number_text.lstrip('#')}",
+        )
+        set_uia_metadata(
+            self.status_badge,
+            name="agent.ticket.active.status",
+            description=f"id=agent.ticket.active.status; status={model.status_label}",
+        )
         self.copy_code_action.setEnabled(bool(self._access_code))
         self.open_url_action.setEnabled(bool(self._public_url))
         self.resolution_separator.setVisible(model.show_resolution_actions)

@@ -2596,7 +2596,7 @@ Remaining risk:
 ### BUG-20260527-P1-10 — Auto-install negative failures bypass operation/timeline and SHA mismatch leaves desired installed
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: module-runtime / operation lifecycle / server-db / UI projection
 
 P1 scenario: P1.4 Module auto-install before run_tool, negative cases SHA mismatch, platform mismatch, min_agent_version mismatch.
@@ -2875,7 +2875,7 @@ P1.6 Browser/UI projection consistency:
 ### BUG-20260527-P1-15 — Agent GUI main window exposes no semantic UIA text after GUI restart
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: UIA / local GUI / UI projection
 
 P1 scenario: P1.6.D Agent GUI projection.
@@ -2896,22 +2896,108 @@ Evidence:
 - Agent SQLite: active clean ticket exists from prior scenarios; no local outbox pending.
 - Browser/UI: not applicable to local GUI window evidence.
 - UIA: `pywinauto 0.6.9`; top window `Maria Agent v3.1.61`, pid `22052`, class `MainWindow`, control type `Window`; control tree excerpt only has `QApplication.MainWindow` and `QApplication.MainWindow.AgentRoot` / `FramelessResizeHandler` groups; `texts=[]`.
+- UIA: `2026-05-27T23:45:03+05`, run marker `p1-close-20260527-2333-ebcd4c0b`; after adding first-pass semantic metadata, initial `scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --output artifacts\p1-close-20260527-2333-ebcd4c0b-uia-state-initial.json --max-depth 7 --max-nodes 700` hung and produced no JSON/screenshot. This is test-tool evidence that the probe itself needed hard bounded UIA collection before it could be used as pass/fail evidence.
+- Transport/API: local automation bridge create-ticket for clean marker `p1-close-20260527-2333-ebcd4c0b` returned `status=ok`, ticket `T-000612`, ticket_id `15f87a9a-726e-488d-9868-2d4b78cfac9c`, requester_account_mode `confirmed_binding`, requester_account_session_id `6b691e62-73f2-4343-9a90-f245a4b6e983`; no raw session token recorded.
+- Agent log: restarted source GUI instance `live-v3-p1-clean2`; logs show technical token loaded from local DB and verified on server, handshake_ack received, and list_tools command succeeded after reconnect.
+- Agent SQLite: `.local-agent\instances\live-v3-p1-clean2\data\storage.db` after clean ticket/UIA run: `outbox=0`, `pending_consents=0`, `outbox_sent_history=35`, `seen_commands=37`; no failed/pending outbox rows from marker `p1-close-20260527-2333-ebcd4c0b`.
+- Browser/UI: real browser route `https://192.168.100.17:9443/app/tickets/15f87a9a-726e-488d-9868-2d4b78cfac9c`; visible ticket list count `4`, selected `T-000612`, title `P1 close UIA projection p1-close-20260527-2333-ebcd4c0b`, status `В очереди`, requester `P1 Clean User 20260527`, initial message contains `run_id=p1-close-20260527-2333-ebcd4c0b`; screenshot `p1-close-20260527-2333-ebcd4c0b-browser-ticket-T-000612.png`.
+- UIA: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --expect-account-confirmed --expect-ticket-id 15f87a9a-726e-488d-9868-2d4b78cfac9c --expect-ticket-code T-000612 --output artifacts\p1-close-20260527-2333-ebcd4c0b-uia-state-ticket-T-000612.json --screenshot artifacts\p1-close-20260527-2333-ebcd4c0b-uia-state-ticket-T-000612.png --screenshot-timeout-sec 3 --max-depth 7 --max-nodes 900 --max-seconds 8` returned success. Evidence: `pywinauto_version=0.6.9`, `backend=uia`, window title `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`, process_id `17044`, `connection_state=connected`, `account_exists=true`, `account_mode=confirmed_binding`, `ticket_count=4`, target ticket match via `agent.tickets.list` and `agent.ticket.card.T-000612`; screenshot capture timed out and is not used as pass criterion. Secret scan of JSON found no `token`, `session_token`, `authorization`, or `cookie`.
 - Test artifact: screenshot `artifacts\p1-20260527-1527-c4f03651-p1-6-uia-agent-window.png`.
 - Run marker: `p1-20260527-1527-c4f03651`.
 
 Impact: P1 cannot claim real local GUI projection green; automation bridge/HTTP status is not a substitute for UIA evidence under the Live Testing rules.
 Root cause hypothesis: Qt/PySide accessibility names/texts are not assigned or not propagated for the post-restart account-gate/main shell widgets, or the window is rendered in a custom widget tree that UIA only exposes as generic groups.
+Root cause confirmed: Main shell, connection footer, account/profile summary, ticket list and active ticket header did not set stable UIA-readable semantic metadata. Qt UIA exposes `accessibleName` reliably but did not surface `accessibleDescription` as HelpText in the live tree, so semantic values must be included in the accessible name itself. The first diagnostic probe also used the stored manager PID, while the visible GUI window belonged to another process for this live instance, and lacked a process-level guard around screenshot capture; this could block evidence collection.
 Blocking further P1: yes for P1.6.D green; no for server/browser DB checks.
-Fix now: no; record and fix in P1 fix phase with other UIA/projection bugs.
-Fix summary:
-Changed files:
-Tests:
-Live regression:
-Remaining risk: Existing P0 UIA create script may still cover a specific wizard path, but the main connected/ticket projection cannot be confirmed through stable UIA selectors in the current GUI state.
+Fix now: yes; P1.6.D is a P1 close blocker and the diagnostic script hang blocks valid UIA evidence.
+Fix summary: Added shared UIA metadata helpers, exposed stable semantic names for main window/root, connection state/detail, account summary/mode/person, ticket list/count/cards and active ticket header, and added a bounded pywinauto UIA state probe that finds the real Maria Agent window by instance data_dir rather than relying only on the manager PID.
+Changed files: `pc_agent/ui_gui/accessibility.py`, `pc_agent/ui_gui/main_window.py`, `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/ticket_detail_widgets.py`, `pc_agent/ui_gui/tickets_list_model.py`, `scripts/live_agent_uia_state_probe.py`, `pc_agent/tests/test_gui_accessibility.py`, `pc_agent/tests/test_chat_panel_helpers.py`, `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `PLANS.md`.
+Tests: `python -m py_compile scripts\live_agent_uia_state_probe.py pc_agent\ui_gui\accessibility.py pc_agent\ui_gui\main_window.py pc_agent\ui_gui\chat_panel.py pc_agent\ui_gui\ticket_detail_widgets.py pc_agent\ui_gui\tickets_list_model.py`; `python -m pytest pc_agent\tests\test_gui_accessibility.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_header_widget_renders_actions_without_raw_public_url pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_exposes_stable_uia_ids pc_agent\tests\test_main_window_runtime_windows.py::test_main_window_syncs_sidebar_connection_status_with_requester_labels -q` -> `7 passed, 2 warnings`.
+Live regression: P1.6.D clean rerun on `live-v3-p1-clean2` passed through real pywinauto/UIA and real browser support UI for ticket `T-000612` / run_id `p1-close-20260527-2333-ebcd4c0b`; `/ui/automation/status` used only as auxiliary bridge evidence.
+Remaining risk: pywinauto screenshot capture can fail or time out on this Windows desktop, so screenshots are browser-provided and UIA pass criteria rely on semantic tree JSON. A separate runtime-control finding was observed where one local start left two matching `pc_agent.ws_agent` processes for the same instance; recorded below as `BUG-20260527-P1-16` and not treated as part of this UIA accessibility root cause.
+
+### BUG-20260527-P1-16 - Local agent manager start leaves two matching ws_agent processes for one instance
+
+Severity: P1
+Status: verified-non-product / guardrails-added
+Area: deployment/systemd/runtime-control / local GUI-runtime / test-tool
+
+P1 scenario: P1.6.D local GUI projection live setup for `live-v3-p1-clean2`.
+Run id: `p1-close-20260527-2333-ebcd4c0b`
+Expected: One `scripts\manage_local_agent.py start live-v3-p1-clean2 --gui ...` should leave one authoritative local agent runtime process for the instance, and the manager PID should match the visible GUI process used by UIA evidence or otherwise expose the child GUI PID explicitly.
+Actual: After a single clean start, Windows process listing showed two `python.exe -m pc_agent.ws_agent --data-dir ...\.local-agent\instances\live-v3-p1-clean2\data --install-root ... --gui` processes created within milliseconds of each other. `manage_local_agent.py status` reported parent PID `33480`/`31212`, while the visible `Maria Agent v3.1.61` UIA window belonged to child PID `17044`/`12592`. The UI bridge remained reachable and connected, but PID ownership was ambiguous for live evidence and cleanup until isolated.
+Repro steps:
+1. Stop the instance with `python scripts\manage_local_agent.py stop live-v3-p1-clean2`.
+2. Recovery cleanup used for evidence only: stop remaining `python*.exe` processes whose command line contains `pc_agent.ws_agent` and the instance data dir.
+3. Start once: `python scripts\manage_local_agent.py start live-v3-p1-clean2 --gui --ws-url wss://192.168.100.17:9443/ws --api-url https://192.168.100.17:9443/api`.
+4. Query Windows processes for the same data dir and find Maria Agent UIA window process id.
+
+Evidence:
+- Transport/API: `/ui/automation/status` returned `status=ok`, `bridge_connected=true`, `connection_state=connected`, `ticket_count=4`; after P1-17 restart it returned `window_visible=true`, `sidebar_view=tickets`, `ticket_count=4`.
+- Server log: not yet collected for this finding.
+- Agent log: same instance logs show GUI startup and handshake success; further root-cause log split between the two PIDs not yet isolated.
+- Server DB: not applicable yet.
+- Agent SQLite: no failed local outbox rows after the P1-15 UIA run (`outbox=0`, `pending_consents=0`).
+- Browser/UI: browser ticket checks passed despite the process ambiguity.
+- UIA: visible Maria Agent window title `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`, PID `17044`/`12592`; manager status reported parent PID `33480`/`31212`. Post-guardrail `scripts\live_agent_uia_state_probe.py --pid 31212 ...` failed fast with `Maria Agent window not found for pid=31212`; `--pid 12592 ...` passed with `failures=[]`.
+- Test artifact: process query showed parent PID `31212` executable path `.venvs\agent-win\Scripts\python.exe` and child PID `12592` executable path `AppData\Local\Programs\Python\Python314\python.exe` with the same command line. `Get-NetTCPConnection` showed no sockets owned by parent PID `31212`; child PID `12592` owned UI bridge `127.0.0.1:8765` and WSS connections to `192.168.100.17:9443`.
+- Run marker: `p1-close-20260527-2333-ebcd4c0b`.
+
+Impact: Test tooling could attach to the launcher shim PID and hang or miss the real GUI, making UIA evidence unreliable. Runtime data integrity is not affected because only the child process owns UI bridge/WSS sockets; `taskkill /T` stop path terminates the child tree.
+Root cause hypothesis: `manage_local_agent.py` records the PID returned by `subprocess.Popen()` for the Windows venv launcher shim; that shim starts the real interpreter as a child process.
+Root cause confirmed: Parent PID executable is `.venvs\agent-win\Scripts\python.exe`, child PID executable is `Python314\python.exe`; only the child owns the Maria Agent UIA window and TCP sockets. This is a Windows venv launcher/runtime-control observation, not a duplicate product agent runtime.
+Blocking further P1: no after guardrail; final clean rerun should use instance/window discovery or child PID, not the stored parent PID.
+Fix now: test-tool guardrail only.
+Fix summary: Updated `scripts/live_agent_uia_state_probe.py` so `--instance` resolves the visible Maria Agent window by instance `data_dir`, and explicit `--pid` fails fast when that PID has no Maria Agent window instead of connecting to a shim and hanging.
+Changed files: `scripts/live_agent_uia_state_probe.py`, `PLANS.md`.
+Tests: `python -m py_compile scripts\live_agent_uia_state_probe.py`; negative UIA probe `--pid 31212` -> `Maria Agent window not found for pid=31212`; positive UIA probe `--pid 12592 --expect-connected --expect-account --expect-account-confirmed --expect-ticket-id 15f87a9a-726e-488d-9868-2d4b78cfac9c --expect-ticket-code T-000612` -> `failures=[]`.
+Live regression: `manage_local_agent.py stop live-v3-p1-clean2` earlier terminated child PID `29060` and parent PID `3008` via taskkill tree; restarted instance produced parent PID `31212`/child PID `12592`, with child owning UI bridge/WSS and passing UIA semantic probe.
+Remaining risk: `manage_local_agent.py status` still prints the launcher shim PID; this is acceptable for process tree stop/start but should not be used as GUI PID evidence. Future enhancement: show `effective_gui_pid`/child runtime PID in status.
+
+### BUG-20260527-P1-17 - UIA ticket list metadata triggers GUI CPU/RSS spike after probe
+
+Severity: P1
+Status: reproduced
+Area: UIA / local GUI / performance / test-tool
+
+P1 scenario: P1.6.D local GUI UIA projection after `BUG-20260527-P1-15` first fix.
+Run id: `p1-close-20260527-2333-ebcd4c0b`
+Expected: UIA semantic metadata and bounded pywinauto probes must not leave the real GUI in a high-CPU/high-RSS state; GUI projection evidence should be lightweight and safe to repeat.
+Actual: After the UIA ticket-list probe, GUI profiler samples showed the visible GUI process active at ~93-98% CPU with RSS rising from ~351 MB to >800 MB, hot receivers dominated by `QListView` / `TicketsSidebarWidget#MainPanel` / `QLineEdit#SearchInput`, and event rates around 24k-27k events/sec.
+Repro steps:
+1. Apply first-pass P1-15 metadata with ticket-list card data exposed through `QListView` accessible roles/list accessible name.
+2. Start `live-v3-p1-clean2 --gui`, login confirmed account, create clean ticket `T-000612`.
+3. Run bounded UIA state probe over the tickets view.
+4. Tail local agent logs and inspect `[gui-profiler]` samples.
+
+Evidence:
+- Transport/API: local automation and browser remained functional, so this is not an API outage.
+- Server log: not applicable.
+- Agent log: `2026-05-27 23:56:05..23:58:55+05` `[gui-profiler]` samples show `cpu_percent=93..98`, `events_per_sec=24500..27930`, `active_window=MainWindow#agent.main_window`, hot widgets include `TicketsSidebarWidget#MainPanel`, `QLineEdit#SearchInput`, and `QListView`/stack painting. During the first mitigation live restart at `2026-05-28 00:01:17..00:01:18+05`, GUI startup failed with `AttributeError: 'ChatPanel' object has no attribute 'tickets_semantic_label'`, then the agent continued headless and `/ui/automation/status` returned HTTP 501 `automation status provider not configured`.
+- Server DB: not applicable.
+- Agent SQLite: not yet affected; outbox remained empty in preceding check.
+- Browser/UI: browser support UI still displayed `T-000612`.
+- UIA: trigger path was `scripts\live_agent_uia_state_probe.py` against ticket list semantic state.
+- Test artifact: local logs from `.local-agent\instances\live-v3-p1-clean2\data\logs\agent.log`; run marker `p1-close-20260527-2333-ebcd4c0b`.
+- Run marker: `p1-close-20260527-2333-ebcd4c0b`.
+
+Impact: Blocks P1 close because GUI/UIA evidence collection must be safe and repeatable; a probe-induced CPU/RSS spike can contaminate reconnect/live timings and operator usability.
+Root cause hypothesis: Exposing ticket-card semantics directly through `QListView` item accessible roles and/or a large dynamic list accessible name causes Qt UIA to traverse the virtualized list/delegate path heavily after pywinauto inspection.
+Root cause confirmed: The high-CPU path was caused by putting dynamic ticket-card UIA semantics on the virtualized `QListView`/model accessibility surface. The first mitigation moved those semantics to a lightweight semantic `QLabel`, but `ChatPanel.set_tickets_sidebar()` did not copy `sidebar.tickets_semantic_label` onto `ChatPanel` before `_update_tickets_list_ui()`, causing the startup AttributeError captured above.
+Blocking further P1: no after verification below.
+Fix now: yes; this was introduced while fixing P1-15 and blocked clean P1.6.D.
+Fix summary: Moved detailed ticket-card semantics off the virtualized `QListView`/model accessibility surface and onto a lightweight semantic `QLabel`; kept the list widget metadata bounded to list identity/count only. Fixed the first mitigation startup regression by wiring `sidebar.tickets_semantic_label` into `ChatPanel.set_tickets_sidebar()` before the first ticket-list render.
+Changed files: `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/tickets_list_model.py`, `pc_agent/tests/test_gui_accessibility.py`, `PLANS.md`.
+Tests: `python -m py_compile pc_agent\ui_gui\chat_panel.py pc_agent\ui_gui\accessibility.py scripts\live_agent_uia_state_probe.py`; `python -m pytest pc_agent\tests\test_gui_accessibility.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_header_widget_renders_actions_without_raw_public_url pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_exposes_stable_uia_ids pc_agent\tests\test_main_window_runtime_windows.py::test_main_window_syncs_sidebar_connection_status_with_requester_labels -q` -> 6 passed, 2 warnings.
+Live regression: Restarted `live-v3-p1-clean2`, confirmed `/ui/automation/status` recovered with `window_visible=true`, `bridge_connected=true`, `connection_state=connected`, `sidebar_view=tickets`, `ticket_count=4`. Ran `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --expect-account-confirmed --expect-ticket-id 15f87a9a-726e-488d-9868-2d4b78cfac9c --expect-ticket-code T-000612 --output artifacts\p1-close-20260527-2333-ebcd4c0b-uia-state-ticket-T-000612-post-p1-17.json --screenshot artifacts\p1-close-20260527-2333-ebcd4c0b-uia-state-ticket-T-000612-post-p1-17.png --screenshot-timeout-sec 3 --max-depth 7 --max-nodes 900 --max-seconds 8`; output had `failures=[]`, `connection_state=connected`, `account_mode=confirmed_binding`, `ticket_count=4`; secret scan of JSON for token/session/cookie/authorization terms returned no matches.
+Regression check: Post-probe performance samples stayed low and stable: PowerShell process sampling from `2026-05-28T00:06:20+05` to `00:06:45+05` showed child GUI CPU cumulative increasing only `6.359s -> 6.922s` and RSS `216.8MB -> 217.2MB`; local `[gui-profiler]` samples after restart/probe showed `cpu_percent=1.3..4.4`, `rss_mb=206.0..207.2`, `events_per_sec=86.8..255.0`, no 24k+ event storm and no RSS climb toward the pre-fix 800MB range.
+Remaining risk: Screenshot capture via pywinauto still times out on this desktop and is recorded as `capture_timeout`; UIA pass criteria remain semantic control evidence, not screenshot. P1 clean rerun still needed after all P1 close bug triage.
 
 P1 Findings Summary:
 - P1-blocking/data-integrity/reconnect: none currently open after `BUG-20260527-P1-13` verification.
-- P1-blocking/UIA projection: `BUG-20260527-P1-15`.
+- P1-blocking/UIA projection: none after `BUG-20260527-P1-15` verification.
+- P1-blocking/local runtime-control: none after `BUG-20260527-P1-16` classification/guardrail.
+- P1-blocking/UIA performance: none after `BUG-20260527-P1-17` verification.
 - Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
 - Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`.
 - Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` historical P1-12 contamination now recovered terminal `error/AGENT_RESTARTED`; ticket timeline started-only events for original P1.5.B/P1.5.C markers.
@@ -3225,7 +3311,8 @@ Fix order and current intent:
 - [x] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions. Verified fixed in `16000f1d52bff549ed57fb61492c83345f1cf2f7`.
 - [x] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands. Verified fixed in `325236301dde6944201076b082d21ab5589fc6d6` with clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`.
 - [x] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout. Verified fixed in `96dc0706fc28c9e3b5e0c72bc509e017287f742f` + `5e5af5d8da58505e4d7f3415bd94f2696c54d83c` with clean operation `a921bec8-e71d-428a-afa3-287fa0083f21`.
-- [ ] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state.
+- [x] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state. Verified fixed with clean ticket `T-000612` / marker `p1-close-20260527-2333-ebcd4c0b`.
+- [ ] `BUG-20260527-P1-16`: local runtime-control duplicate process ownership; triage before final P1 close.
 
 Verification gates after each fix:
 - Targeted unit/integration tests for the changed layer.
@@ -3234,3 +3321,36 @@ Verification gates after each fix:
 - Browser confirmation for UI-visible operation/ticket/device projections.
 - Agent SQLite confirmation for agent runtime/idempotency paths.
 - `PLANS.md` status consistency audit before marking a bug `verified-fixed`.
+
+## P1 close audit - 2026-05-27 - run_id=p1-close-20260527-2333-ebcd4c0b
+
+Audit path: `PLANS.md` bug blocks and P1 findings summary only. No code fixes started before this audit. Old evidence is preserved. Current head before close work: `ebcd4c0b`, branch `codex/helpdesk-process-model`.
+
+| Bug | Current status | Area | Blocking P1 close | Required action |
+|---|---|---|---|---|
+| BUG-20260527-P1-01 | verified-fixed | test-tool / local GUI / account-session | no | Keep as fixed baseline; filter only old clean-agent contamination if referenced. |
+| BUG-20260527-P1-02 | verified-fixed | account-session / local GUI / automation / test-tool | no | Keep as fixed baseline; account-session validation must remain in POST/body or headers. |
+| BUG-20260527-P1-03 | reproduced | browser / UI projection / server-db | yes for P1.6/admin projection close | Root-cause the admin device `account-events` 500, then fix or formally classify with browser/network/server evidence. |
+| BUG-20260527-P1-04 | verified-fixed | test-tool / protocol / server-db | no | Keep as fixed; old `device_outbox.id=83` is pre-fix contamination; raw probe rerun must use diagnostic isolation. |
+| BUG-20260527-P1-05 | reproduced | automation / auth-account-session / operation lifecycle | yes for automation-bridge close classification | Decide product policy for local automation `ticket.tool.run`; fix to deterministic GUI-equivalent behavior or classify as known limitation with evidence. |
+| BUG-20260527-P1-06 | reproduced | artifact-upload / auth-account-session / operation lifecycle / UI projection | yes for P1 close workflow/API projection classification | Root-cause upload 403 and partial-result projection; fix or defer as non-P1 artifact limitation with explicit browser/DB/agent SQLite evidence. |
+| BUG-20260527-P1-07 | root-cause-confirmed | consent / browser / auth-account-session / UI projection | yes for P1.3/browser consent close | Add typed web-session approve/deny path and UI projection, or formally classify current consent center as known limitation with product decision. |
+| BUG-20260527-P1-08 | root-cause-confirmed | consent / agent-sqlite / local GUI-UIA / documentation drift | yes for P1.3 local GUI consent close | Resolve product contract drift: either implement agent-side consent prompt path or document server-side consent as canonical and update P1 expectations. |
+| BUG-20260527-P1-09 | verified-fixed in bug block, but summary still lists as not closed | module-runtime / outbox / server-db / protocol | yes until status consistency and clean P1.4 rerun are recorded | Audit post-fix evidence/status consistency; if post-fix evidence is insufficient, change to `needs-clean-rerun` and rerun module lifecycle. |
+| BUG-20260527-P1-10 | reproduced | module-runtime / operation lifecycle / server-db / UI projection | yes for P1.4 negative workflow close | Fix or classify negative module auto-install failure contract: terminal operation/timeline and no stale desired state. |
+| BUG-20260527-P1-11 | verified-fixed | reconnect / agent-sqlite / deployment / local GUI-runtime | no, but clean rerun required | Keep fixed; rerun reconnect smoke in final P1 close gate. |
+| BUG-20260527-P1-12 | verified-fixed | reconnect / idempotency / operation lifecycle / agent-sqlite / server-db / browser | no, but clean rerun required | Keep fixed; rerun agent-restart non-resumable command gate with new close run marker. |
+| BUG-20260527-P1-13 | verified-fixed | reconnect / outbox / operation lifecycle / server-db / agent-sqlite / browser | no, but clean rerun required | Keep fixed; rerun server-drop/late-result gate with new close run marker. |
+| BUG-20260527-P1-14 | verified-fixed | reconnect / module-runtime / test-tool / server-db / protocol | no, but clean rerun required | Keep fixed; rerun diagnostic probe isolation and ensure no live command consumption. |
+| BUG-20260527-P1-15 | verified-fixed | UIA / local GUI / UI projection | no | Keep fixed; include `T-000612` UIA/browser evidence in P1.6 clean rerun summary. |
+| BUG-20260527-P1-16 | verified-non-product / guardrails-added | deployment/runtime-control / local GUI-runtime / test-tool | no | Windows venv launcher shim classified; UIA probe now resolves real GUI child by instance and fails fast on shim PID. |
+| BUG-20260527-P1-17 | verified-fixed | UIA / local GUI / performance / test-tool | no | Keep post-fix low CPU/RSS evidence; include UIA semantic probe artifact in P1.6 clean rerun summary. |
+
+Status consistency audit result:
+- P1 is not closed.
+- `BUG-20260527-P1-15` is now verified-fixed with real UIA and browser evidence.
+- `BUG-20260527-P1-16` is classified as `verified-non-product / guardrails-added`: stored PID is a Windows venv launcher shim, child PID owns GUI/UI bridge/WSS; UIA probe guardrail prevents shim PID evidence.
+- `BUG-20260527-P1-17` is verified-fixed: ticket-list semantics moved off `QListView`/model accessibility surface and post-probe CPU/RSS remained stable.
+- `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, and `BUG-20260527-P1-10` still require fix/classification before P1 close.
+- `BUG-20260527-P1-09` has inconsistent status surfaces: bug block says `verified-fixed`, while the P1 findings summary still lists it in the must-fix set. This must be resolved before the final close summary.
+- `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, and `BUG-20260527-P1-14` remain `verified-fixed`, but P1.5/P1.6 still need clean rerun after all fixes.

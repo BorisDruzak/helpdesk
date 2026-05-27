@@ -24,6 +24,7 @@ from loguru import logger
 from .consent_dialog import ConsentDialog
 from .remote_assist_dialog import RemoteAssistConsentDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
+from .accessibility import account_description, connection_description, normalize_connection_state, set_uia_metadata
 from .account_gate import AccountGateWidget
 from .dynamic_form_widget import DynamicFormWidget
 from . import theme
@@ -192,8 +193,19 @@ class MainWindow(QMainWindow):
     
     def _setup_ui(self):
         """Настройка UI главного окна."""
+        set_uia_metadata(
+            self,
+            object_name="agent.main_window",
+            name=f"Maria Agent v{AGENT_VERSION}",
+            description=f"id=agent.main_window; agent_version={AGENT_VERSION}",
+        )
         central_widget = QWidget()
         central_widget.setObjectName("AgentRoot")
+        set_uia_metadata(
+            central_widget,
+            name="agent.root",
+            description=f"id=agent.root; agent_version={AGENT_VERSION}",
+        )
         self.setCentralWidget(central_widget)
         central_widget.setStyleSheet(theme.main_window_stylesheet())
 
@@ -332,6 +344,11 @@ class MainWindow(QMainWindow):
 
         self.sidebar_profile_card = QFrame()
         self.sidebar_profile_card.setObjectName("ProfileCard")
+        set_uia_metadata(
+            self.sidebar_profile_card,
+            name="agent.account.summary",
+            description=account_description(None),
+        )
         self.sidebar_profile_card.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_profile_card.mousePressEvent = lambda _event: self._select_sidebar_view("profile", expand=True)
         profile_card_layout = QHBoxLayout(self.sidebar_profile_card)
@@ -349,8 +366,10 @@ class MainWindow(QMainWindow):
         self.sidebar_profile_kicker.setObjectName("CardKicker")
         self.sidebar_profile_name_label = QLabel("Без профиля")
         self.sidebar_profile_name_label.setObjectName("CardTitle")
+        set_uia_metadata(self.sidebar_profile_name_label, name="agent.account.person", description="id=agent.account.person")
         self.sidebar_profile_meta_label = QLabel(self.chat_panel.user_display_name)
         self.sidebar_profile_meta_label.setObjectName("CardMeta")
+        set_uia_metadata(self.sidebar_profile_meta_label, name="agent.account.mode", description="id=agent.account.mode")
         profile_text_layout.addWidget(self.sidebar_profile_kicker)
         profile_text_layout.addWidget(self.sidebar_profile_name_label)
         profile_text_layout.addWidget(self.sidebar_profile_meta_label)
@@ -761,6 +780,15 @@ class MainWindow(QMainWindow):
         self.connection_status_dot.setObjectName("StatusDot")
         footer_layout.addWidget(self.connection_status_dot, 0, Qt.AlignmentFlag.AlignVCenter)
         self.connection_status_btn = QPushButton("Офлайн")
+        set_uia_metadata(
+            self.connection_status_btn,
+            name="agent.connection.state",
+            description=connection_description(
+                bridge_connected=self._bridge_connected,
+                server_state=self._server_connection_state,
+                detail=self._server_connection_detail,
+            ),
+        )
         self.connection_status_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.connection_status_btn.clicked.connect(self._show_settings_dialog)
         self.connection_status_btn.hide()
@@ -769,6 +797,11 @@ class MainWindow(QMainWindow):
             f"color: {theme.current_palette().footer_label}; font-weight: 700; background: transparent;"
         )
         self.agent_footer_meta = QLabel("Подключение и версия")
+        set_uia_metadata(
+            self.agent_footer_meta,
+            name="agent.connection.detail",
+            description="id=agent.connection.detail; connection_state=disconnected",
+        )
         self.agent_footer_meta.setStyleSheet(
             f"color: {theme.current_palette().footer_label_muted}; background: transparent;"
         )
@@ -1520,7 +1553,28 @@ class MainWindow(QMainWindow):
     def _show_account_gate_entry(self) -> None:
         self._select_sidebar_view("account_gate", expand=True)
 
+    def _update_account_uia_metadata(self) -> None:
+        session = self._active_account_session_for_tickets()
+        description = account_description(session)
+        display_name = ""
+        mode = "none"
+        if session:
+            display_name = str(session.get("display_name") or session.get("full_name") or session.get("login") or "")
+            mode = str(session.get("account_mode") or "unknown")
+        set_uia_metadata(self.sidebar_profile_card, name="agent.account.summary", description=description)
+        set_uia_metadata(
+            self.sidebar_profile_name_label,
+            name="agent.account.person",
+            description=f"id=agent.account.person; display_name={display_name or 'none'}",
+        )
+        set_uia_metadata(
+            self.sidebar_profile_meta_label,
+            name="agent.account.mode",
+            description=f"id=agent.account.mode; account_mode={mode}; account_exists={str(bool(session)).lower()}",
+        )
+
     def _refresh_sidebar_labels(self) -> None:
+        self._update_account_uia_metadata()
         if not self._sidebar_expanded:
             self.sidebar_dashboard_btn.setText("")
             self.sidebar_create_ticket_btn.setText("")
@@ -2671,7 +2725,18 @@ class MainWindow(QMainWindow):
         if self._server_connection_detail:
             meta = f"{meta}: {self._server_connection_detail}"
 
+        normalized_state = normalize_connection_state(self._bridge_connected, self._server_connection_state)
+        accessible_detail = connection_description(
+            bridge_connected=self._bridge_connected,
+            server_state=self._server_connection_state,
+            detail=self._server_connection_detail or meta,
+        )
         self.connection_status_btn.setText(self._repair_text(text))
+        set_uia_metadata(
+            self.connection_status_btn,
+            name=f"agent.connection.state {normalized_state}",
+            description=accessible_detail,
+        )
         self.connection_status_btn.setStyleSheet(
             f"padding: 6px 14px; border-radius: 999px; background: {bg}; color: {fg}; "
             f"font-weight: 800; border: 1px solid {bg};"
@@ -2685,6 +2750,11 @@ class MainWindow(QMainWindow):
             )
         if not self.update_agent_btn.isVisible():
             self.agent_footer_meta.setText(self._repair_text(meta))
+        set_uia_metadata(
+            self.agent_footer_meta,
+            name="agent.connection.detail",
+            description=f"id=agent.connection.detail; {accessible_detail}",
+        )
         self._refresh_dashboard()
 
     def set_bridge_connected(self, connected: bool) -> None:

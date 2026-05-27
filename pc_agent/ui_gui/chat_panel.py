@@ -51,6 +51,7 @@ from pc_agent.core.runtime_paths import resolve_data_root
 
 from .server_api import TicketApiClient
 from . import theme
+from .accessibility import set_uia_metadata, ticket_description, ticket_list_description
 from .dynamic_form_widget import (
     DynamicFileFieldWidget,
     DynamicFormWidget,
@@ -3761,6 +3762,7 @@ class TicketsSidebarWidget(QFrame):
         super().__init__(parent)
         self._panel = panel
         self.setObjectName("MainPanel")
+        set_uia_metadata(self, name="agent.tickets.panel", description="id=agent.tickets.panel")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
         self.setMinimumWidth(720)
 
@@ -3833,14 +3835,35 @@ class TicketsSidebarWidget(QFrame):
 
         self.tickets_empty_label = QLabel("Ничего не найдено")
         self.tickets_empty_label.setObjectName("ProfileHint")
+        set_uia_metadata(
+            self.tickets_empty_label,
+            name="agent.tickets.empty",
+            description="id=agent.tickets.empty; ticket_count=0",
+        )
         self.tickets_empty_label.setStyleSheet(
             f"color: {theme.TEXT_MUTED}; font-weight: 600; padding: 8px 4px; background: transparent;"
         )
         self.tickets_empty_label.setVisible(False)
         outer.addWidget(self.tickets_empty_label)
 
+        self.tickets_semantic_label = QLabel("")
+        self.tickets_semantic_label.setObjectName("AgentTicketsSemanticState")
+        self.tickets_semantic_label.setFixedHeight(1)
+        self.tickets_semantic_label.setStyleSheet("background: transparent; color: transparent; padding: 0; margin: 0;")
+        set_uia_metadata(
+            self.tickets_semantic_label,
+            name="agent.tickets.semantic; id=agent.tickets.list; ticket_count=0",
+            description="id=agent.tickets.list; ticket_count=0",
+        )
+        outer.addWidget(self.tickets_semantic_label)
+
         self.tickets_list = QListView()
         self.tickets_list.setObjectName("TicketsListView")
+        set_uia_metadata(
+            self.tickets_list,
+            name="agent.tickets.list",
+            description="id=agent.tickets.list; ticket_count=0",
+        )
         self.tickets_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tickets_list.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tickets_list.setUniformItemSizes(True)
@@ -3859,6 +3882,7 @@ class TicketsSidebarWidget(QFrame):
         open_row.addStretch(1)
         self.open_ticket_btn = QPushButton("Открыть чат")
         self.open_ticket_btn.setObjectName("PrimaryButton")
+        set_uia_metadata(self.open_ticket_btn, name="agent.ticket.open", description="id=agent.ticket.open")
         self.open_ticket_btn.setIcon(QIcon(theme.icon_path("message")))
         self.open_ticket_btn.setIconSize(QSize(20, 20))
         self.open_ticket_btn.setMinimumHeight(56)
@@ -3921,6 +3945,24 @@ class TicketsSidebarWidget(QFrame):
         self.filter_all_button.setText(f"Все  {total}")
         self.filter_open_checkbox.setText(f"Открытые  {open_count}")
         self.filter_closed_checkbox.setText(f"Закрытые  {closed_count}")
+        set_uia_metadata(
+            self.filter_all_button,
+            name="agent.tickets.count",
+            description=(
+                f"id=agent.tickets.count; ticket_count={int(total)}; "
+                f"open_count={int(open_count)}; closed_count={int(closed_count)}"
+            ),
+        )
+        set_uia_metadata(
+            self.filter_open_checkbox,
+            name="agent.tickets.open_count",
+            description=f"id=agent.tickets.open_count; open_count={int(open_count)}",
+        )
+        set_uia_metadata(
+            self.filter_closed_checkbox,
+            name="agent.tickets.closed_count",
+            description=f"id=agent.tickets.closed_count; closed_count={int(closed_count)}",
+        )
         all_active = self.filter_open_checkbox.isChecked() and self.filter_closed_checkbox.isChecked()
         self.filter_all_button.setChecked(all_active)
         self.filter_all_button.setObjectName("TicketFilterChipActive" if all_active else "TicketFilterChip")
@@ -4497,6 +4539,7 @@ class ChatPanel(QWidget):
         self.filter_open_checkbox = sidebar.filter_open_checkbox
         self.filter_closed_checkbox = sidebar.filter_closed_checkbox
         self.tickets_empty_label = sidebar.tickets_empty_label
+        self.tickets_semantic_label = sidebar.tickets_semantic_label
         self.tickets_list = sidebar.tickets_list
         self.open_ticket_btn = sidebar.open_ticket_btn
         self._tickets_model = sidebar.tickets_model
@@ -4935,6 +4978,26 @@ class ChatPanel(QWidget):
             assert self._tickets_model is not None
             self._tickets_model.set_rows(filtered_tickets)
             self.tickets_empty_label.setVisible(len(filtered_tickets) == 0)
+            description = ticket_list_description(filtered_tickets, active_ticket_id=current_id)
+            set_uia_metadata(
+                self.tickets_semantic_label,
+                name=f"agent.tickets.semantic; {description}",
+                description=description,
+            )
+            set_uia_metadata(
+                self.tickets_list,
+                name="agent.tickets.list",
+                description=f"id=agent.tickets.list; ticket_count={len(filtered_tickets)}",
+            )
+            set_uia_metadata(
+                self.tickets_empty_label,
+                name="agent.tickets.empty",
+                description=(
+                    "id=agent.tickets.empty; "
+                    f"ticket_count={len(filtered_tickets)}; "
+                    f"visible={str(len(filtered_tickets) == 0).lower()}"
+                ),
+            )
             if not filtered_tickets:
                 sm.clear()
                 QTimer.singleShot(0, lambda: scroll_bar.setValue(0))
@@ -5286,7 +5349,17 @@ class ChatPanel(QWidget):
         access_code = self._extract_public_access_code(ticket, messages)
         meta_html = self._build_ticket_meta_html(ticket, events)
         self.ticket_info_label.setText(info_html)
+        set_uia_metadata(
+            self.ticket_info_label,
+            name="agent.ticket.active.code",
+            description=ticket_description(ticket, prefix_id="agent.ticket.active.code"),
+        )
         self.ticket_header.set_view_model(build_ticket_header_view_model(ticket, access_code=access_code))
+        set_uia_metadata(
+            self.ticket_header,
+            name="agent.ticket.active",
+            description=ticket_description(ticket, prefix_id="agent.ticket.active"),
+        )
         self.ticket_meta_label.setText(meta_html)
         self.next_action_card.set_view_model(build_next_action_view_model(ticket))
         self.ticket_info_panel.set_view_model(

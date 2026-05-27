@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -111,6 +112,27 @@ async def test_shared_binding_can_create_confirmed_binding_session(test_engine):
     assert created["session"]["account_mode"] == "confirmed_binding"
     assert created["session"]["binding_id"] == approved["binding"]["binding_id"]
     assert validated["valid"] is True
+
+
+def test_serialize_event_formats_event_at_without_route_500():
+    row = SimpleNamespace(
+        event_id="evt-1",
+        device_id="device-1",
+        session_id="session-1",
+        request_id=None,
+        ticket_id=None,
+        event_type="p1_account_events_route_regression",
+        actor_id="test-admin",
+        actor_role="admin",
+        event_at=datetime(2026, 5, 27, 19, 11, tzinfo=timezone.utc),
+        payload={"marker": "account-events-route"},
+    )
+
+    item = AccountSessionService.serialize_event(row)
+
+    assert item["event_type"] == "p1_account_events_route_regression"
+    assert item["event_at"] == "2026-05-27T19:11:00+00:00"
+    assert item["payload"] == {"marker": "account-events-route"}
 
 
 @pytest.mark.asyncio

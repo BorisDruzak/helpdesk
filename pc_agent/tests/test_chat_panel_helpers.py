@@ -2273,6 +2273,10 @@ def test_ticket_header_widget_renders_actions_without_raw_public_url():
 
     assert app is not None
     assert widget.objectName() == "TicketHeaderWidget"
+    assert widget.accessibleName().startswith("agent.ticket.active")
+    assert "ticket_code=T-000520" in widget.accessibleDescription()
+    assert widget.title_label.accessibleName().startswith("agent.ticket.active.title")
+    assert widget.status_badge.accessibleName().startswith("agent.ticket.active.status")
     assert widget.title_label.text() == "#T-000520 · Поломка"
     assert widget.status_badge.text() == "Заявка принята"
     assert widget.actions_button.text() == "Действия"
