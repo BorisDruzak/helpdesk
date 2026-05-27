@@ -199,3 +199,93 @@ async def test_command_ack_updates_operation_without_runtime_agent_entry(test_cl
     assert operation is not None
     assert operation.status == "accepted"
     assert operation.accepted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_cancel_operation_success_reconciles_target_outbox(test_client, monkeypatch):
+    monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
+    monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)
+    device_id = "device-lifecycle-cancel"
+    target_operation_id = "55555555-5555-4555-8555-555555555555"
+    cancel_operation_id = "66666666-6666-4666-8666-666666666666"
+
+    async with get_session() as session:
+        target_outbox_id = await _create_sent_operation(
+            session,
+            operation_id=target_operation_id,
+            device_id=device_id,
+            command="run_tool",
+        )
+        op_service = OperationService(session)
+        await op_service.mark_accepted(target_operation_id, expected_statuses=["sent"])
+        await op_service.mark_running(target_operation_id, expected_statuses=["accepted"])
+        await op_service.mark_cancel_requested(
+            target_operation_id,
+            expected_statuses=["running"],
+        )
+        outbox_repo = DeviceOutboxRepo(session)
+        cancel_outbox_id = await outbox_repo.enqueue_command(
+            device_id=device_id,
+            command_id=cancel_operation_id,
+            command="cancel_operation",
+            params={"target_operation_id": target_operation_id},
+            request_id=cancel_operation_id,
+            trace_id="trace-lifecycle-cancel",
+            actor_role="support",
+            operation_id=cancel_operation_id,
+        )
+        cancel_op = await op_service.enqueue_operation(
+            operation_id=cancel_operation_id,
+            device_id=device_id,
+            kind="cancel_operation",
+            command_name="cancel_operation",
+            actor_role="support",
+            trace_id="trace-lifecycle-cancel",
+        )
+        cancel_op.cancel_target_operation_id = target_operation_id
+        await outbox_repo.mark_as_sent(cancel_outbox_id)
+        await op_service.mark_sent(cancel_operation_id, expected_statuses=["queued"])
+        await session.commit()
+
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id=device_id,
+    )
+
+    await CommandResultService().handle(
+        {
+            "type": "command_result",
+            "request_id": cancel_operation_id,
+            "payload": {
+                "status": "success",
+                "data": {
+                    "observations": {
+                        "cancel_status": "canceled",
+                        "target_operation_id": target_operation_id,
+                    }
+                },
+                "error": {},
+                "meta": {"request_id": cancel_operation_id},
+            },
+        },
+        ctx,
+    )
+
+    async with get_session() as session:
+        target_operation = await session.get(Operation, target_operation_id)
+        cancel_operation = await session.get(Operation, cancel_operation_id)
+        target_outbox = await session.get(DeviceOutbox, target_outbox_id)
+        cancel_outbox = (
+            await session.execute(select(DeviceOutbox).where(DeviceOutbox.operation_id == cancel_operation_id))
+        ).scalar_one()
+
+    assert target_operation is not None
+    assert target_operation.status == "canceled"
+    assert cancel_operation is not None
+    assert cancel_operation.status == "succeeded"
+    assert target_outbox is not None
+    assert target_outbox.status == "delivered"
+    assert target_outbox.delivered_at is not None
+    assert cancel_outbox.status == "delivered"

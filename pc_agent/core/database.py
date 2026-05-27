@@ -2012,7 +2012,7 @@ class DatabaseManager:
     async def mark_command_seen(
         self,
         command_id: str,
-        status: str,  # 'success' | 'error'
+        status: str,  # 'success' | 'error' | 'canceled'
         result_json: Optional[str] = None
     ) -> bool:
         """
@@ -2025,7 +2025,7 @@ class DatabaseManager:
         
         Args:
             command_id: UUID команды (request_id)
-            status: 'success' или 'error'
+            status: 'success', 'error' или 'canceled'
             result_json: JSON payload (status + data), не весь tool_response
             
         Returns:

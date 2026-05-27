@@ -281,6 +281,7 @@ class OperationLifecycleService:
                                 operation_id=target_operation_id,
                                 expected_statuses=["cancel_requested", "running", "accepted", "waiting_consent"],
                             )
+                            await outbox_repo.mark_as_delivered(target_operation_id)
                             if operation.ticket_id:
                                 from app.repos.ticket_events_repo import TicketEventsRepo
 

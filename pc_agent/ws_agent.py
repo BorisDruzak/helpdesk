@@ -1718,6 +1718,35 @@ class WSAgent:
                     logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status={status})")
                 else:
                     logger.debug(f"⚠️  Команда {command_id} уже была success, не перезаписали")
+        except asyncio.CancelledError:
+            command_result_payload = {
+                "status": "canceled",
+                "data": {
+                    "observations": {
+                        "cancel_status": "canceled",
+                        "target_operation_id": request_id,
+                    }
+                },
+                "error": {
+                    "code": "OPERATION_CANCELED",
+                    "message": "Command was canceled",
+                },
+                "meta": {
+                    "request_id": request_id,
+                    "command": command,
+                },
+            }
+            if self.db_manager:
+                result_json = jsonlib.dumps(command_result_payload, ensure_ascii=False)
+                was_updated = await self.db_manager.mark_command_seen(
+                    command_id=command_id,
+                    status="canceled",
+                    result_json=result_json,
+                )
+                if was_updated:
+                    logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status=canceled)")
+                else:
+                    logger.debug(f"⚠️  Команда {command_id} уже была terminal, не перезаписали")
         except Exception as e:
             logger.exception(e)
             command_result_payload = {
@@ -2029,7 +2058,7 @@ class WSAgent:
                     cached_result = await self.db_manager.get_command_result(command_id)
                     
                     if cached_result:
-                        if cached_result["status"] == "success":
+                        if cached_result["status"] in {"success", "canceled"}:
                             logger.info(f"♻️  Команда {command_id} уже выполнена (cached), возвращаем кэшированный результат")
                             
                             # Возвращаем кэшированный payload (в точности тот же формат)
@@ -2037,7 +2066,7 @@ class WSAgent:
                                 import json
                                 cached_payload = jsonlib.loads(cached_result["result_json"]) if cached_result["result_json"] else {}
                             except Exception:
-                                cached_payload = {"status": "success", "data": {}}
+                                cached_payload = {"status": cached_result["status"], "data": {}}
                             
                             # Добавляем cached: true в meta
                             if "meta" not in cached_payload:
