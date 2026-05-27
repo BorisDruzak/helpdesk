@@ -78,6 +78,18 @@ INTERNAL_PROCESS_FIELD_KEYS = {
 }
 
 
+def _automation_safe_key(value: Any) -> str:
+    result = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in str(value or "").strip())
+    return result.strip("_") or "field"
+
+
+def _set_accessible(widget: QWidget, *, object_name: str, name: str, description: str = "") -> None:
+    widget.setObjectName(object_name)
+    widget.setAccessibleName(name)
+    if description:
+        widget.setAccessibleDescription(description)
+
+
 def _field_audience_values(raw_value: Any) -> set[str]:
     if isinstance(raw_value, str):
         values = [raw_value]
@@ -256,6 +268,13 @@ class DynamicFormWidget(QWidget):
         if not field_key:
             return
         container = QWidget(self)
+        safe_key = _automation_safe_key(field_key)
+        _set_accessible(
+            container,
+            object_name=f"DynamicField_{safe_key}",
+            name=f"dynamic-field:{field_key}",
+            description=str(field_def.get("label") or field_key),
+        )
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(4)
@@ -264,10 +283,22 @@ class DynamicFormWidget(QWidget):
         if field_def.get("required"):
             field_label_text = f"{field_label_text} *"
         field_label = QLabel(field_label_text)
+        _set_accessible(
+            field_label,
+            object_name=f"DynamicFieldLabel_{safe_key}",
+            name=f"dynamic-field-label:{field_key}",
+            description=str(field_def.get("label") or field_key),
+        )
         field_label.setStyleSheet(f"font-size: {theme.UI_FONT_PT + 1}pt; font-weight: 700; color: {theme.TEXT_PRIMARY};")
         container_layout.addWidget(field_label)
 
         widget = self._build_input_widget(field_def, values)
+        _set_accessible(
+            widget,
+            object_name=f"DynamicFieldInput_{safe_key}",
+            name=f"dynamic-field-input:{field_key}",
+            description=str(field_def.get("label") or field_key),
+        )
         container_layout.addWidget(widget)
         help_text = str(field_def.get("help_text") or "").strip()
         if help_text:
@@ -450,6 +481,32 @@ class DynamicFormWidget(QWidget):
         widget = self._widgets.get(str(field_key or "").strip())
         if isinstance(widget, DynamicFileFieldWidget):
             widget.clear_file_path()
+
+    def select_first_options_for_required_choice_fields(self) -> dict[str, str]:
+        selected: dict[str, str] = {}
+        current_values = {field_def.get("key"): self._field_value(str(field_def.get("key") or "")) for field_def in self._field_defs}
+        for field_def in self._field_defs:
+            field_key = str(field_def.get("key") or "").strip()
+            if not field_key or not field_def.get("required"):
+                continue
+            if not dynamic_form_field_visible(field_def, current_values):
+                continue
+            widget = self._widgets.get(field_key)
+            if not isinstance(widget, QComboBox) or str(widget.currentData() or "").strip():
+                continue
+            for index in range(1, widget.count()):
+                value = str(widget.itemData(index) or "").strip()
+                if value:
+                    widget.setCurrentIndex(index)
+                    selected[field_key] = value
+                    current_values[field_key] = value
+                    break
+        if selected:
+            self._apply_visibility()
+            if self._show_validation_feedback:
+                self.validate_required_fields(show_feedback=True)
+            self.changed.emit()
+        return selected
 
     def file_attachment_paths(self, *, visible_only: bool = True) -> list[str]:
         paths: list[str] = []

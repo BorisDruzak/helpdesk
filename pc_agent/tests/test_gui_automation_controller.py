@@ -28,6 +28,9 @@ class _TicketClient:
         self.response = response
         self.calls: list[dict] = []
         self.run_tool_calls: list[dict] = []
+        self.send_message_calls: list[dict] = []
+        self.close_ticket_calls: list[dict] = []
+        self.get_ticket_calls: list[dict] = []
 
     async def create_ticket(self, **kwargs):
         self.calls.append(kwargs)
@@ -36,6 +39,18 @@ class _TicketClient:
     async def run_tool(self, **kwargs):
         self.run_tool_calls.append(kwargs)
         return {"status": "accepted", "operation_id": "op-1"}
+
+    async def send_message(self, *args, **kwargs):
+        self.send_message_calls.append({"args": args, **kwargs})
+        return {"status": "ok", "message_id": "message-1"}
+
+    async def close_ticket(self, *args, **kwargs):
+        self.close_ticket_calls.append({"args": args, **kwargs})
+        return {"status": "ok"}
+
+    async def get_ticket(self, *args, **kwargs):
+        self.get_ticket_calls.append({"args": args, **kwargs})
+        return {"ticket": {"ticket_id": args[0] if args else "ticket-1"}, "messages": [], "events": []}
 
 
 class _ChatPanel:
@@ -58,6 +73,8 @@ class _ChatPanel:
         self._last_timeline_html = None
         self._last_detail_header_sig = None
         self._pending_ticket_snapshot = None
+        self.attach_calls: list[dict] = []
+        self.detail_refresh_account_sessions: list[dict | None] = []
 
     def has_active_profile(self) -> bool:
         return True
@@ -80,6 +97,15 @@ class _ChatPanel:
     async def _async_send_created_ticket_attachments(self, *_args, **_kwargs) -> None:
         pass
 
+    async def _async_attach_files(self, *_args, **_kwargs) -> None:
+        self.attach_calls.append(
+            {
+                "args": _args,
+                "kwargs": _kwargs,
+                "account_session": self._current_account_session(),
+            }
+        )
+
     def _reset_active_ticket_cache(self) -> None:
         pass
 
@@ -87,7 +113,7 @@ class _ChatPanel:
         pass
 
     async def _async_refresh_ticket_detail(self) -> None:
-        pass
+        self.detail_refresh_account_sessions.append(self._current_account_session())
 
     def _show_chat_screen(self) -> None:
         pass
@@ -96,6 +122,9 @@ class _ChatPanel:
         pass
 
     def _refresh_ticket_detail_async(self) -> None:
+        pass
+
+    def _refresh_ticket_list_async(self) -> None:
         pass
 
 
@@ -203,3 +232,124 @@ async def test_automation_capture_video_sends_active_account_session():
     assert call["tool_name"] == "screen.record"
     assert call["params"] == {"duration_sec": 5}
     assert call["account_session"] == account_session
+
+
+@pytest.mark.asyncio
+async def test_automation_capture_screenshot_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller.run_action(
+        {
+            "action": "ticket.capture_screenshot",
+            "ticket_id": "ticket-1",
+        }
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.run_tool_calls[0]
+    assert call["tool_name"] == "screen.collect"
+    assert call["account_session"] == account_session
+
+
+@pytest.mark.asyncio
+async def test_automation_send_message_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._send_message(
+        {"ticket_id": "ticket-1", "text": "hello"},
+        trace_parent_action_id="action-message",
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.send_message_calls[0]
+    assert call["args"][:2] == ("ticket-1", "hello")
+    assert call["account_session"] == account_session
+    assert call["trace_parent_action_id"] == "action-message"
+
+
+@pytest.mark.asyncio
+async def test_automation_confirm_resolution_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._confirm_resolution(
+        {"ticket_id": "ticket-1", "reason": "requester_confirmed_resolution"},
+        trace_parent_action_id="action-close",
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.close_ticket_calls[0]
+    assert call["args"][0] == "ticket-1"
+    assert call["account_session"] == account_session
+    assert call["trace_parent_action_id"] == "action-close"
+
+
+@pytest.mark.asyncio
+async def test_automation_snapshot_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._ticket_snapshot(
+        {"ticket_id": "ticket-1", "limit": 10},
+        trace_parent_action_id="action-snapshot",
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.get_ticket_calls[0]
+    assert call["args"][0] == "ticket-1"
+    assert call["limit"] == 10
+    assert call["account_session"] == account_session
+    assert call["trace_parent_action_id"] == "action-snapshot"
+
+
+@pytest.mark.asyncio
+async def test_automation_open_ticket_refreshes_detail_with_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._open_ticket({"ticket_id": "ticket-1"})
+
+    assert result["status"] == "ok"
+    assert chat_panel.detail_refresh_account_sessions[-1] == account_session
+
+
+@pytest.mark.asyncio
+async def test_automation_attach_files_uses_gui_account_session_helper(tmp_path):
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+    attachment = tmp_path / "note.txt"
+    attachment.write_text("hello", encoding="utf-8")
+
+    result = await controller._attach_files(
+        {"ticket_id": "ticket-1", "file_paths": [str(attachment)]},
+        trace_parent_action_id="action-attach",
+    )
+
+    assert result["status"] == "ok"
+    assert chat_panel.attach_calls[0]["account_session"] == account_session
+    assert chat_panel.attach_calls[0]["kwargs"]["trace_parent_action_id"] == "action-attach"
+
+
+@pytest.mark.asyncio
+async def test_automation_run_tool_without_account_keeps_deterministic_server_denial_path():
+    chat_panel = _ChatPanel(account_session=None)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    await controller._run_ticket_tool(
+        {
+            "ticket_id": "ticket-1",
+            "tool_name": "screen.collect",
+        },
+        trace_parent_action_id="action-no-account",
+    )
+
+    call = chat_panel.ticket_client.run_tool_calls[0]
+    assert call["account_session"] is None

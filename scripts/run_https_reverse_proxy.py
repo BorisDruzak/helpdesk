@@ -66,6 +66,10 @@ async def _bridge_ws_to_target(
         elif msg.type == WSMsgType.PONG:
             await target.pong()
         elif msg.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED, WSMsgType.ERROR}:
+            close_code = msg.data or source.close_code
+            close_reason = msg.extra or ""
+            if close_code:
+                await target.close(code=close_code, message=str(close_reason).encode("utf-8"))
             break
 
 
@@ -88,6 +92,10 @@ async def _bridge_ws_to_client(
             aiohttp.WSMsgType.CLOSED,
             aiohttp.WSMsgType.ERROR,
         }:
+            close_code = msg.data or target.close_code
+            close_reason = msg.extra or ""
+            if close_code:
+                await source.close(code=close_code, message=str(close_reason).encode("utf-8"))
             break
 
 
@@ -123,8 +131,13 @@ async def handle_websocket(request: web.Request) -> web.StreamResponse:
                 exc = task.exception()
                 if exc:
                     raise exc
-            with suppress(Exception):
-                await client_ws.close()
+            if not client_ws.closed:
+                close_code = upstream_ws.close_code
+                with suppress(Exception):
+                    if close_code:
+                        await client_ws.close(code=close_code)
+                    else:
+                        await client_ws.close()
             return client_ws
     except aiohttp.WSServerHandshakeError as exc:
         LOG.info(

@@ -291,6 +291,7 @@ class GuiAutomationController:
             from_role=str(payload.get("from_role") or "user"),
             metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None,
             reply_to=payload.get("reply_to") if isinstance(payload.get("reply_to"), dict) else None,
+            account_session=chat_panel._current_account_session(),
             trace_parent_action_id=trace_parent_action_id,
         )
         chat_panel.active_ticket_id = ticket_id
@@ -349,6 +350,7 @@ class GuiAutomationController:
             ticket_id,
             reason=str(payload.get("reason") or "requester_confirmed_resolution"),
             closed_by_role=str(payload.get("closed_by_role") or "user"),
+            account_session=chat_panel._current_account_session(),
             trace_parent_action_id=trace_parent_action_id,
         )
         chat_panel._refresh_ticket_detail_async()
@@ -363,6 +365,7 @@ class GuiAutomationController:
         snapshot = await chat_panel.ticket_client.get_ticket(
             ticket_id,
             limit=int(payload.get("limit") or 120),
+            account_session=chat_panel._current_account_session(),
             trace_parent_action_id=trace_parent_action_id,
         )
         ticket = snapshot.get("ticket") if isinstance(snapshot.get("ticket"), dict) else {}

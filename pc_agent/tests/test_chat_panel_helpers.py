@@ -817,6 +817,61 @@ async def test_ticket_create_wizard_submit_click_calls_create_when_ready():
     assert wizard._current_step == 3
 
 
+def test_ticket_create_wizard_exposes_stable_uia_ids():
+    class _FakeClient:
+        async def preview_ticket_create(self, **_kwargs):
+            return {}
+
+    class _FakePanel:
+        user_display_name = "Tester"
+
+        def __init__(self):
+            self._ticket_form_pack = build_default_ticket_form_pack()
+            self.ticket_client = _FakeClient()
+            self._profiles_data = {
+                "active_profile_id": "profile-1",
+                "profiles": [{"id": "profile-1", "display_name": "Tester"}],
+            }
+
+        def ticket_form_pack(self):
+            return self._ticket_form_pack
+
+        def registry_options(self):
+            return {}
+
+        def _profiles(self):
+            return self._profiles_data["profiles"]
+
+        def has_active_profile(self):
+            return True
+
+        def current_requester_profile_summary(self):
+            return "Tester"
+
+        def _save_profiles(self):
+            return None
+
+    app = QApplication.instance() or QApplication([])
+    panel = _FakePanel()
+    wizard = chat_panel_module.TicketCreateWizardWidget(panel)
+    assert app is not None
+
+    assert wizard.objectName() == "TicketCreateWizardRoot"
+    assert wizard.accessibleName() == "ticket-create-wizard"
+    assert wizard.description_input.objectName() == "TicketCreateDescriptionInput"
+    assert wizard.description_input.accessibleName() == "ticket-create-description"
+    assert wizard.paste_description_btn.objectName() == "TicketCreatePasteDescriptionButton"
+    assert wizard.paste_description_btn.accessibleName() == "ticket-create-paste-description"
+    assert wizard.impact_scope_select.objectName() == "TicketCreateImpactScopeSelect"
+    assert wizard.work_continuity_select.accessibleName() == "ticket-create-work-continuity"
+    assert wizard._submit_btn.objectName() == "TicketCreateSubmitButton"
+    assert wizard._submit_btn.accessibleName() == "ticket-create-submit"
+    assert wizard.priority_autofill_btn.objectName() == "TicketCreatePriorityAutofillButton"
+    assert wizard.priority_autofill_btn.accessibleName() == "ticket-create-priority-autofill"
+    assert wizard._submit_shortcut.objectName() == "TicketCreateSubmitShortcut"
+    assert wizard._priority_autofill_shortcut.objectName() == "TicketCreatePriorityAutofillShortcut"
+
+
 async def test_ticket_create_wizard_submit_confirmation_can_cancel_create():
     class _FakeClient:
         async def preview_ticket_create(self, **_kwargs):

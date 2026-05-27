@@ -66,6 +66,59 @@ def test_dynamic_form_widget_collects_text_select_and_checkbox_values():
     assert widget.missing_required_labels() == []
 
 
+def test_dynamic_form_widget_assigns_stable_accessibility_ids():
+    _app()
+    widget = DynamicFormWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {"key": "full_name", "label": "ФИО", "type": "text", "required": True},
+                {
+                    "key": "relationship_type",
+                    "label": "Тип ПК",
+                    "type": "select",
+                    "options": [{"value": "primary_user", "label": "Мой основной ПК"}],
+                },
+            ]
+        }
+    )
+
+    assert widget._widgets["full_name"].objectName() == "DynamicFieldInput_full_name"
+    assert widget._widgets["full_name"].accessibleName() == "dynamic-field-input:full_name"
+    assert widget._widgets["relationship_type"].objectName() == "DynamicFieldInput_relationship_type"
+    assert widget._containers["relationship_type"].accessibleName() == "dynamic-field:relationship_type"
+
+
+def test_dynamic_form_widget_selects_required_combo_defaults_for_automation():
+    _app()
+    widget = DynamicFormWidget()
+    widget.set_form(
+        {
+            "fields": [
+                {
+                    "key": "impact_scope",
+                    "label": "Impact",
+                    "type": "select",
+                    "required": True,
+                    "options": [{"value": "self", "label": "Only me"}],
+                },
+                {
+                    "key": "optional_scope",
+                    "label": "Optional",
+                    "type": "select",
+                    "options": [{"value": "team", "label": "Team"}],
+                },
+            ]
+        }
+    )
+
+    selected = widget.select_first_options_for_required_choice_fields()
+
+    assert selected == {"impact_scope": "self"}
+    assert widget.values(visible_only=False)["impact_scope"] == "self"
+    assert widget.values(visible_only=False)["optional_scope"] == ""
+
+
 def test_dynamic_form_widget_returns_only_visible_fields_and_validates_required():
     _app()
     widget = DynamicFormWidget()

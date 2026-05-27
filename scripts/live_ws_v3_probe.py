@@ -303,7 +303,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
     return cases[case]()
 
 
-async def run_invalid(args: argparse.Namespace) -> int:
+async def _run_invalid_case(args: argparse.Namespace, case: str) -> dict[str, Any]:
     real_token = _token_from_env_or_prompt(required=False)
     cases = {
         "wrong_protocol": {"protocol_version": "ws_ticket_v2"},
@@ -313,11 +313,11 @@ async def run_invalid(args: argparse.Namespace) -> int:
         "missing_token": {"token": ""},
         "invalid_token": {"token": "invalid-token-for-live-probe"},
     }
-    kwargs = cases[args.case]
+    kwargs = dict(cases[case])
     token = kwargs.pop("token", real_token)
     msg = _handshake(token=token, **kwargs)
     evidence = {
-        "case": args.case,
+        "case": case,
         "ws_url": args.ws_url,
         "request_id": msg.get("request_id"),
         "trace_id": msg.get("trace_id"),
@@ -332,9 +332,32 @@ async def run_invalid(args: argparse.Namespace) -> int:
             evidence["result"] = result
             if ws.close_code and "close_code" not in result:
                 evidence["close_code"] = ws.close_code
-    print(json.dumps(evidence, ensure_ascii=False, indent=2))
-    close_code = evidence.get("result", {}).get("close_code") or evidence.get("result", {}).get("next", {}).get("close_code")
-    return 0 if close_code == 4003 else 2
+    return evidence
+
+
+def _observed_close_code(evidence: dict[str, Any]) -> int | None:
+    result = evidence.get("result", {})
+    return result.get("close_code") or result.get("next", {}).get("close_code") or evidence.get("close_code")
+
+
+async def run_invalid(args: argparse.Namespace) -> int:
+    cases = [
+        "wrong_protocol",
+        "missing_protocol_v3",
+        "missing_envelope_v3",
+        "missing_outbox_ack_v3",
+        "missing_token",
+        "invalid_token",
+    ] if args.case == "all" else [args.case]
+    items = [await _run_invalid_case(args, case) for case in cases]
+    evidence: dict[str, Any] = {
+        "command": "invalid-handshake",
+        "ws_url": args.ws_url,
+        "expected_close_code": args.expect_close_code,
+        "items": items,
+    }
+    print(json.dumps(evidence if args.case == "all" else items[0], ensure_ascii=False, indent=2))
+    return 0 if all(_observed_close_code(item) == args.expect_close_code for item in items) else 2
 
 
 async def run_double(args: argparse.Namespace) -> int:
@@ -349,6 +372,7 @@ async def run_double(args: argparse.Namespace) -> int:
         "first_trace_id": first_msg["trace_id"],
         "second_request_id": second_msg["request_id"],
         "second_trace_id": second_msg["trace_id"],
+        "expected_supersede_close_code": args.expect_supersede_close_code,
     }
     async with aiohttp.ClientSession() as session:
         async with session.ws_connect(args.ws_url, ssl=False, heartbeat=10) as first:
@@ -365,7 +389,7 @@ async def run_double(args: argparse.Namespace) -> int:
     ok = (
         evidence.get("first_result", {}).get("payload", {}).get("type") == "handshake_ack"
         and evidence.get("second_result", {}).get("payload", {}).get("type") == "handshake_ack"
-        and first_close == 4002
+        and first_close == args.expect_supersede_close_code
     )
     return 0 if ok else 2
 
@@ -431,6 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--case",
         required=True,
         choices=[
+            "all",
             "wrong_protocol",
             "missing_protocol_v3",
             "missing_envelope_v3",
@@ -439,8 +464,10 @@ def build_parser() -> argparse.ArgumentParser:
             "invalid_token",
         ],
     )
+    invalid.add_argument("--expect-close-code", type=int, default=4003)
 
-    sub.add_parser("double-connect")
+    double = sub.add_parser("double-connect")
+    double.add_argument("--expect-supersede-close-code", type=int, default=4002)
     malformed = sub.add_parser("malformed-outbox")
     malformed.add_argument(
         "--case",

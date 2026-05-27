@@ -84,6 +84,8 @@ class CreateTicketTypeGrid(QFrame):
             button = QPushButton(f"{title}\n{description}")
             button.setCheckable(True)
             button.setObjectName("TicketTypeCard")
+            button.setAccessibleName(f"ticket-type-card:{key}")
+            button.setAccessibleDescription(title)
             button.setMinimumHeight(104)
             button.setToolTip(description)
             button.clicked.connect(lambda _checked=False, value=key: self.typeSelected.emit(value))

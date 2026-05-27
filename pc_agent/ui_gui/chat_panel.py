@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import QDate, QDateTime, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -2219,7 +2220,8 @@ class TicketCreateWizardWidget(QFrame):
         self._knowledge_api_unavailable = False
         self._knowledge_skipped = False
         self._knowledge_request_seq = 0
-        self.setObjectName("ProfileSidebar")
+        self.setObjectName("TicketCreateWizardRoot")
+        self.setAccessibleName("ticket-create-wizard")
         self.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
 
         outer = QVBoxLayout(self)
@@ -2228,6 +2230,7 @@ class TicketCreateWizardWidget(QFrame):
 
         title = QLabel("Создание обращения")
         title.setObjectName("ProfileSidebarTitle")
+        title.setAccessibleName("ticket-create-title")
         outer.addWidget(title)
 
         self._subtitle = QLabel(
@@ -2243,6 +2246,7 @@ class TicketCreateWizardWidget(QFrame):
 
         self._step_caption = QLabel("")
         self._step_caption.setObjectName("ProfileHint")
+        self._step_caption.setAccessibleName("ticket-create-step-caption")
         outer.addWidget(self._step_caption)
 
         self._stack = QStackedWidget()
@@ -2257,26 +2261,40 @@ class TicketCreateWizardWidget(QFrame):
         footer = QHBoxLayout()
         footer.setSpacing(8)
         self._cancel_btn = QPushButton("Отмена")
-        self._cancel_btn.setObjectName("SecondaryButton")
+        self._cancel_btn.setObjectName("TicketCreateCancelButton")
+        self._cancel_btn.setAccessibleName("ticket-create-cancel")
         self._cancel_btn.clicked.connect(self._on_cancel_clicked)
         self._back_btn = QPushButton("Назад")
-        self._back_btn.setObjectName("SecondaryButton")
+        self._back_btn.setObjectName("TicketCreateBackButton")
+        self._back_btn.setAccessibleName("ticket-create-back")
         self._back_btn.clicked.connect(self._on_back_clicked)
         self._next_btn = QPushButton("Далее")
-        self._next_btn.setObjectName("PrimaryButton")
+        self._next_btn.setObjectName("TicketCreateNextButton")
+        self._next_btn.setAccessibleName("ticket-create-next")
         self._next_btn.clicked.connect(self._on_next_clicked)
         self._submit_btn = QPushButton("Создать обращение")
-        self._submit_btn.setObjectName("PrimaryButton")
+        self._submit_btn.setObjectName("TicketCreateSubmitButton")
+        self._submit_btn.setAccessibleName("ticket-create-submit")
+        self._submit_btn.setAccessibleDescription("ticket-create-submit shortcut Ctrl+Enter")
         self._submit_btn.clicked.connect(self._on_submit_clicked)
         footer.addWidget(self._cancel_btn)
         footer.addStretch(1)
         footer.addWidget(self._back_btn)
         footer.addWidget(self._next_btn)
         footer.addWidget(self._submit_btn)
+        self._submit_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
+        self._submit_shortcut.setObjectName("TicketCreateSubmitShortcut")
+        self._submit_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self._submit_shortcut.activated.connect(self._on_submit_clicked)
+        self._priority_autofill_shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        self._priority_autofill_shortcut.setObjectName("TicketCreatePriorityAutofillShortcut")
+        self._priority_autofill_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self._priority_autofill_shortcut.activated.connect(self._automation_fill_required_choice_defaults)
         outer.addLayout(footer)
 
         self._status_label = QLabel("")
         self._status_label.setObjectName("ProfileHint")
+        self._status_label.setAccessibleName("ticket-create-status")
         self._status_label.setWordWrap(True)
         outer.addWidget(self._status_label)
 
@@ -2300,6 +2318,8 @@ class TicketCreateWizardWidget(QFrame):
         profile_title.setObjectName("ProfileFieldLabel")
         profile_layout.addWidget(profile_title)
         self.profile_selector = QComboBox()
+        self.profile_selector.setObjectName("TicketCreateAccountSelector")
+        self.profile_selector.setAccessibleName("ticket-create-account-selector")
         self.profile_selector.currentIndexChanged.connect(self._on_profile_changed)
         profile_layout.addWidget(self.profile_selector)
         self.profile_summary = QLabel("")
@@ -2307,7 +2327,8 @@ class TicketCreateWizardWidget(QFrame):
         self.profile_summary.setObjectName("ProfileHint")
         profile_layout.addWidget(self.profile_summary)
         self.manage_profiles_btn = QPushButton("Изменить / создать аккаунт")
-        self.manage_profiles_btn.setObjectName("SecondaryButton")
+        self.manage_profiles_btn.setObjectName("TicketCreateManageAccountButton")
+        self.manage_profiles_btn.setAccessibleName("ticket-create-manage-account")
         self.manage_profiles_btn.clicked.connect(self._on_manage_profiles)
         profile_layout.addWidget(self.manage_profiles_btn, 0, Qt.AlignmentFlag.AlignLeft)
         group_layout.addWidget(profile_card)
@@ -2316,6 +2337,7 @@ class TicketCreateWizardWidget(QFrame):
         self.service_grid_label.setObjectName("ProfileFieldLabel")
         group_layout.addWidget(self.service_grid_label)
         self.service_grid = CreateTicketTypeGrid()
+        self.service_grid.setAccessibleName("ticket-create-service-grid")
         self.service_grid.typeSelected.connect(self._on_service_card_selected)
         group_layout.addWidget(self.service_grid)
 
@@ -2323,15 +2345,20 @@ class TicketCreateWizardWidget(QFrame):
         self.type_grid_label.setObjectName("ProfileFieldLabel")
         group_layout.addWidget(self.type_grid_label)
         self.type_grid = CreateTicketTypeGrid()
+        self.type_grid.setAccessibleName("ticket-create-type-grid")
         self.type_grid.typeSelected.connect(self._on_type_card_selected)
         group_layout.addWidget(self.type_grid)
 
         self.template_search_input = QLineEdit()
+        self.template_search_input.setObjectName("TicketCreateTemplateSearch")
+        self.template_search_input.setAccessibleName("ticket-create-template-search")
         self.template_search_input.setPlaceholderText("Поиск по шаблонам")
         self.template_search_input.textChanged.connect(self._refresh_template_list)
         self.template_search_input.hide()
 
         self.template_list = QListWidget()
+        self.template_list.setObjectName("TicketCreateTemplateList")
+        self.template_list.setAccessibleName("ticket-create-template-list")
         self.template_list.setMinimumHeight(132)
         self.template_list.currentItemChanged.connect(self._on_template_item_changed)
         self.template_list.hide()
@@ -2370,6 +2397,8 @@ class TicketCreateWizardWidget(QFrame):
         group_layout.addWidget(self.knowledge_group)
 
         self.form_selector = QComboBox()
+        self.form_selector.setObjectName("TicketCreateFormSelector")
+        self.form_selector.setAccessibleName("ticket-create-form-selector")
         self.form_selector.currentIndexChanged.connect(self._on_form_changed)
         self.form_selector.setVisible(False)
         self.form_selector.hide()
@@ -2378,6 +2407,8 @@ class TicketCreateWizardWidget(QFrame):
         self.form_summary.setObjectName("ProfileHint")
         self.form_summary.setVisible(False)
         self.dynamic_fields_widget = TicketDynamicFieldsWidget(self)
+        self.dynamic_fields_widget.setObjectName("TicketCreateDynamicFields")
+        self.dynamic_fields_widget.setAccessibleName("ticket-create-dynamic-fields")
         self.dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
         layout.addWidget(group)
         layout.addStretch(1)
@@ -2392,10 +2423,18 @@ class TicketCreateWizardWidget(QFrame):
         description_group = QGroupBox("Шаг 3. Описание и материалы")
         description_layout = QVBoxLayout(description_group)
         self.description_input = QTextEdit()
+        self.description_input.setObjectName("TicketCreateDescriptionInput")
+        self.description_input.setAccessibleName("ticket-create-description")
         self.description_input.setPlaceholderText("Опишите проблему для службы поддержки")
         self.description_input.setMinimumHeight(180)
         self.description_input.textChanged.connect(self._update_navigation_state)
         description_layout.addWidget(self.description_input)
+
+        self.paste_description_btn = QPushButton("Вставить описание")
+        self.paste_description_btn.setObjectName("TicketCreatePasteDescriptionButton")
+        self.paste_description_btn.setAccessibleName("ticket-create-paste-description")
+        self.paste_description_btn.clicked.connect(self._paste_description_from_clipboard)
+        description_layout.addWidget(self.paste_description_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         attachments_hint = QLabel(
             "При необходимости сразу приложите скриншот или видео. После создания обращения они уйдут первым сообщением."
@@ -2409,16 +2448,20 @@ class TicketCreateWizardWidget(QFrame):
 
         attachments_actions = QHBoxLayout()
         self.add_screenshot_btn = QPushButton("Сделать скриншот")
-        self.add_screenshot_btn.setObjectName("SecondaryButton")
+        self.add_screenshot_btn.setObjectName("TicketCreateAddScreenshotButton")
+        self.add_screenshot_btn.setAccessibleName("ticket-create-add-screenshot")
         self.add_screenshot_btn.clicked.connect(self._on_add_screenshot)
         self.add_video_btn = QPushButton("Записать видео")
-        self.add_video_btn.setObjectName("SecondaryButton")
+        self.add_video_btn.setObjectName("TicketCreateAddVideoButton")
+        self.add_video_btn.setAccessibleName("ticket-create-add-video")
         self.add_video_btn.clicked.connect(self._on_add_video)
         self.add_file_btn = QPushButton("Добавить файл")
-        self.add_file_btn.setObjectName("SecondaryButton")
+        self.add_file_btn.setObjectName("TicketCreateAddFileButton")
+        self.add_file_btn.setAccessibleName("ticket-create-add-file")
         self.add_file_btn.clicked.connect(self._on_add_file)
         self.remove_attachment_btn = QPushButton("Удалить выбранное")
-        self.remove_attachment_btn.setObjectName("SecondaryButton")
+        self.remove_attachment_btn.setObjectName("TicketCreateRemoveAttachmentButton")
+        self.remove_attachment_btn.setAccessibleName("ticket-create-remove-attachment")
         self.remove_attachment_btn.clicked.connect(self._on_remove_selected_attachment)
         attachments_actions.addWidget(self.add_screenshot_btn)
         attachments_actions.addWidget(self.add_video_btn)
@@ -2458,25 +2501,35 @@ class TicketCreateWizardWidget(QFrame):
         form = QFormLayout(group)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         self.impact_scope_select = QComboBox()
+        self.impact_scope_select.setObjectName("TicketCreateImpactScopeSelect")
+        self.impact_scope_select.setAccessibleName("ticket-create-impact-scope")
         self.impact_scope_select.addItem("Только я", "single_user")
         self.impact_scope_select.addItem("Несколько человек", "group")
         self.impact_scope_select.addItem("Весь отдел", "department")
         self.impact_scope_select.addItem("Здание / организация / критичная система", "building_or_org")
         self.impact_scope_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.work_continuity_select = QComboBox()
+        self.work_continuity_select.setObjectName("TicketCreateWorkContinuitySelect")
+        self.work_continuity_select.setAccessibleName("ticket-create-work-continuity")
         self.work_continuity_select.addItem("Есть обходной путь", "workaround_available")
         self.work_continuity_select.addItem("Можно работать частично", "partial_work")
         self.work_continuity_select.addItem("Работа остановлена, обходного пути нет", "work_stopped_no_workaround")
         self.work_continuity_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.business_importance_select = QComboBox()
+        self.business_importance_select.setObjectName("TicketCreateBusinessImportanceSelect")
+        self.business_importance_select.setAccessibleName("ticket-create-business-importance")
         self.business_importance_select.addItem("Обычная рабочая ситуация", "normal")
         self.business_importance_select.addItem("Есть важный срок", "deadline")
         self.business_importance_select.addItem("Сегодня / завтра крайний срок", "deadline_today")
         self.business_importance_select.addItem("ИБ / публичная услуга / критичный процесс", "security")
         self.business_importance_select.currentIndexChanged.connect(self._on_form_fields_changed)
         self.urgency_reason_input = QLineEdit()
+        self.urgency_reason_input.setObjectName("TicketCreateUrgencyReasonInput")
+        self.urgency_reason_input.setAccessibleName("ticket-create-urgency-reason")
         self.urgency_reason_input.setPlaceholderText("Что именно остановлено или затруднено")
         self.importance_reason_input = QLineEdit()
+        self.importance_reason_input.setObjectName("TicketCreateImportanceReasonInput")
+        self.importance_reason_input.setAccessibleName("ticket-create-importance-reason")
         self.importance_reason_input.setPlaceholderText("Срок, критичный процесс или регламент")
         form.addRow("Кого затронуло", self.impact_scope_select)
         form.addRow("Можно ли работать", self.work_continuity_select)
@@ -2486,11 +2539,20 @@ class TicketCreateWizardWidget(QFrame):
         layout.addWidget(group)
         self.priority_fallback_group = group
         self.priority_dynamic_fields_widget = TicketDynamicFieldsWidget(self)
+        self.priority_dynamic_fields_widget.setObjectName("TicketCreatePriorityDynamicFields")
+        self.priority_dynamic_fields_widget.setAccessibleName("ticket-create-priority-dynamic-fields")
         self.priority_dynamic_fields_widget.changed.connect(self._on_form_fields_changed)
+        self.priority_autofill_btn = QPushButton("Рекомендованные значения")
+        self.priority_autofill_btn.setObjectName("TicketCreatePriorityAutofillButton")
+        self.priority_autofill_btn.setAccessibleName("ticket-create-priority-autofill")
+        self.priority_autofill_btn.clicked.connect(self._automation_fill_required_choice_defaults)
+        layout.addWidget(self.priority_autofill_btn)
         layout.addWidget(self.priority_dynamic_fields_widget)
         self.diagnostic_consent_checkbox = QCheckBox(
             "Обязательно: разрешаю автодиагностику моего устройства"
         )
+        self.diagnostic_consent_checkbox.setObjectName("TicketCreateDiagnosticConsentCheckbox")
+        self.diagnostic_consent_checkbox.setAccessibleName("ticket-create-diagnostic-consent")
         self.diagnostic_consent_checkbox.stateChanged.connect(self._update_navigation_state)
         layout.addWidget(self.diagnostic_consent_checkbox)
         self.diagnostic_consent_hint_label = QLabel("")
@@ -2517,10 +2579,12 @@ class TicketCreateWizardWidget(QFrame):
         self.preview_label = QLabel("")
         self.preview_label.setWordWrap(True)
         self.preview_label.setObjectName("ProfileHint")
+        self.preview_label.setAccessibleName("ticket-create-preview")
         process_preview_layout.addWidget(self.preview_label)
         self.preview_warning_label = QLabel("")
         self.preview_warning_label.setWordWrap(True)
         self.preview_warning_label.setObjectName("ProfileHint")
+        self.preview_warning_label.setAccessibleName("ticket-create-preview-warning")
         self.preview_warning_label.setStyleSheet("color: #a16207; background: transparent;")
         self.preview_warning_label.setVisible(False)
         process_preview_layout.addWidget(self.preview_warning_label)
@@ -3217,6 +3281,12 @@ class TicketCreateWizardWidget(QFrame):
             return
         self._spawn_gui_task(self._async_capture_screenshot(), name="ticket_create.screenshot")
 
+    def _paste_description_from_clipboard(self) -> None:
+        text = QApplication.clipboard().text()
+        if text:
+            self.description_input.setPlainText(text)
+            self._update_navigation_state()
+
     def _on_add_video(self) -> None:
         if self._capture_in_progress:
             return
@@ -3481,6 +3551,12 @@ class TicketCreateWizardWidget(QFrame):
             self._set_status("Отправка отменена. Вы можете проверить данные и нажать «Создать обращение» снова.", error=False)
             return
         self._spawn_gui_task(self._async_submit(), name="ticket_create.submit")
+
+    def _automation_fill_required_choice_defaults(self) -> None:
+        selected = self.priority_dynamic_fields_widget.select_first_options_for_required_choice_fields()
+        if selected:
+            self._set_status("Обязательные поля выбора заполнены.", error=False)
+            self._update_navigation_state()
 
     def _confirm_submit_after_click(self) -> bool:
         dialog = QMessageBox(self)
