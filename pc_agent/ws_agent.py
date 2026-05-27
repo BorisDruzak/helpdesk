@@ -1286,6 +1286,8 @@ class WSAgent:
                 result = await self.chat_raise(title=title, reason=reason, severity=severity, context=context)
                 if not result:
                     return {"ok": False, "error": "chat_raise failed"}
+                if result.get("ok") is False:
+                    return result
                 return {"ok": True, **result}
 
             self.ui_api_server.on_request_support = on_request_support
@@ -2626,7 +2628,7 @@ class WSAgent:
     async def _request_token_from_console(self) -> bool:
         return await helper_request_token_from_console(self)
     
-    async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> dict[str, str] | None:
+    async def chat_raise(self, title: str = "Support needed", reason: str = "agent_report", severity: str = "warning", context: dict | None = None) -> dict[str, Any] | None:
         """
         Инициирует чат через WebSocket команду к серверу.
         
@@ -2674,6 +2676,12 @@ class WSAgent:
             
             # Извлекаем job_id и ticket_id из ответа
             payload = response.get("payload", {})
+            if payload.get("status") == "error":
+                error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+                error_code = str(error.get("code") or "CHAT_RAISE_FAILED")
+                error_message = str(error.get("message") or "chat_raise failed")
+                logger.warning(f"[chat_raise] server error code={error_code} message={error_message}")
+                return {"ok": False, "error_code": error_code, "error": error_message}
             data = payload.get("data", {})
             observations = data.get("observations", {})
             job_id = observations.get("job_id")
