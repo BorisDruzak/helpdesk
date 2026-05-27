@@ -961,6 +961,7 @@ class WSAgent:
             self.orchestrator = AgentOrchestrator(
                 db_manager=self.db_manager,
                 enabled_modules=cfg.enabled_modules,
+                agent_uuid=self.device_id,
                 identity_manager=self.identity_manager,
                 data_root=data_root,
                 schedule_update_exit=self.schedule_update_shutdown,

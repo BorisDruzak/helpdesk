@@ -80,7 +80,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="protocol_v3",
         title="Protocol V3 / handshake",
-        summary="WS handshake, reconnect-safe runtime ownership, state-level command waiters registered before dispatch wakeup, envelope V3, terminal-only outbox dedupe for retryable NACK safety, ACK/NACK, optional outbox batching, command_result semantics including module install inventory sync, command lifecycle DB import isolation and graceful sender/teardown behavior in server and agent runtimes.",
+        summary="WS handshake, reconnect-safe runtime ownership, state-level command waiters registered before dispatch wakeup, envelope V3, terminal-only outbox dedupe for retryable NACK safety, ACK/NACK, optional outbox batching, device-event envelopes sourced from device_seq without leaking SQLite compatibility ticket_id, command_result semantics including module install inventory sync, command lifecycle DB import isolation and graceful sender/teardown behavior in server and agent runtimes.",
         aliases=(
             "protocol",
             "protocol v3",

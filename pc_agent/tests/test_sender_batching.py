@@ -16,13 +16,13 @@ from pc_agent.ws_agent import WSAgent
 pytestmark = pytest.mark.no_db
 
 
-def _make_outbox_item(*, outbox_id: int, device_seq: int) -> dict:
+def _make_outbox_item(*, outbox_id: int, device_seq: int, ticket_id: str | None = None) -> dict:
     return {
         "id": outbox_id,
-        "payload": {"event": "tools_changed", "tool_count": outbox_id},
+        "payload": {"event": "tools_changed", "tool_count": outbox_id, "ticket_id": ticket_id},
         "device_seq": device_seq,
         "agent_seq": None,
-        "ticket_id": None,
+        "ticket_id": ticket_id,
         "job_id": None,
         "event_id": None,
         "attempts": 0,
@@ -80,10 +80,53 @@ async def test_sender_uses_batch_envelope_when_server_supports_it():
 
 
 @pytest.mark.asyncio
+async def test_sender_omits_ticket_context_for_device_events_with_compat_ticket_id():
+    db = _DbManagerStub(
+        [
+            _make_outbox_item(
+                outbox_id=111,
+                device_seq=3,
+                ticket_id="device-compat-ticket-id",
+            ),
+            _make_outbox_item(
+                outbox_id=112,
+                device_seq=4,
+                ticket_id="device-compat-ticket-id",
+            ),
+        ]
+    )
+    flusher = WSOutboxFlusher(db_manager=db, device_id="device-compat-ticket-id")
+    flusher.supports_outbox_batch = True
+    sent: list[dict] = []
+
+    async def _send(msg_type, request_id, payload, ticket_id=None, job_id=None, trace_id=None):
+        sent.append(
+            {
+                "msg_type": msg_type,
+                "request_id": request_id,
+                "payload": payload,
+                "ticket_id": ticket_id,
+                "job_id": job_id,
+                "trace_id": trace_id,
+            }
+        )
+
+    result = await flusher._send_pending_batch(_send)
+
+    assert result is True
+    assert len(sent[0]["payload"]["items"]) == 2
+    for envelope in sent[0]["payload"]["items"]:
+        assert "ticket_id" not in envelope
+        assert envelope["payload"]["device_seq"] in {3, 4}
+        assert "agent_seq" not in envelope["payload"]
+        assert "ticket_id" not in envelope["payload"]["event"]
+
+
+@pytest.mark.asyncio
 async def test_sender_falls_back_to_single_outbox_items_without_batch_capability():
     db = _DbManagerStub(
         [
-            _make_outbox_item(outbox_id=201, device_seq=11),
+            _make_outbox_item(outbox_id=201, device_seq=11, ticket_id="device-1"),
             _make_outbox_item(outbox_id=202, device_seq=12),
         ]
     )
@@ -107,6 +150,8 @@ async def test_sender_falls_back_to_single_outbox_items_without_batch_capability
 
     assert result is True
     assert [item["msg_type"] for item in sent] == ["outbox_item", "outbox_item"]
+    assert sent[0]["ticket_id"] is None
+    assert "ticket_id" not in sent[0]["payload"]["event"]
     assert set(flusher.inflight_deadlines) == {201, 202}
 
 

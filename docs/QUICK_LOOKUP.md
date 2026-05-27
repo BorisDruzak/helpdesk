@@ -328,6 +328,7 @@ Windows note:
 - `server/websocket/protocol.py` registers sync `send_ws_command(..., wait_for_result=True)` waiters before waking device dispatch, and copies caller params before consuming internal `_operation_id`.
 - `server/tools/service.py` also copies caller params before building `run_tool` command params, so retries/logging/audit code can safely reuse the original dict.
 - `pc_agent/ws_agent.py` handshake diagnostics must log the current `PROTOCOL_VERSION` (`ws_ticket_v3`), not legacy `ws_mcp_v1`.
+- Agent device lifecycle events: `pc_agent/ws_agent.py` must pass the canonical `device_id` into `AgentOrchestrator`; `pc_agent/core/orchestrator.py` emits `module_state_changed` and hash-gated `tools_changed`; `pc_agent/core/sender.py` must not serialize the local SQLite compatibility `ticket_id=device_id` as ticket context for Protocol V3 device events.
 
 ## Fast map
 

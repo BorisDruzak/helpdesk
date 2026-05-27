@@ -270,9 +270,6 @@ class WSOutboxFlusher:
                     continue
                 
                 try:
-                    # Формируем event согласно Protocol V3
-                    event = self._format_event(item)
-                    
                     # Определяем: ticket event или device event
                     # КРИТИЧНО: тип события определяется ТОЛЬКО через device_seq/agent_seq
                     # НЕ используем ticket_id == device_id как признак (это хрупкое допущение)
@@ -313,6 +310,11 @@ class WSOutboxFlusher:
                     
                     # Определяем тип события
                     is_device_event = (device_seq is not None and agent_seq is None)
+
+                    # Формируем event согласно Protocol V3. Device events may have a
+                    # compatibility ticket_id in SQLite, but that context must not leak
+                    # onto the wire because device_seq is the source of truth.
+                    event = self._format_event(item, include_ticket_id=not is_device_event)
                     
                     # Формируем envelope payload
                     envelope_payload = {
@@ -359,8 +361,9 @@ class WSOutboxFlusher:
                         },
                         "trace_id": trace_id,
                     }
-                    if ticket_id:
-                        envelope["ticket_id"] = ticket_id
+                    wire_ticket_id = None if is_device_event else ticket_id
+                    if wire_ticket_id:
+                        envelope["ticket_id"] = wire_ticket_id
                     if item.get('job_id'):
                         envelope["job_id"] = item.get('job_id')
 
@@ -370,7 +373,7 @@ class WSOutboxFlusher:
                             "request_id": request_id,
                             "trace_id": trace_id,
                             "payload": envelope_payload,
-                            "ticket_id": ticket_id,
+                            "ticket_id": wire_ticket_id,
                             "job_id": item.get('job_id'),
                             "attempts": int(item.get('attempts', 0) or 0),
                             "event_id": item.get('event_id'),
@@ -440,7 +443,7 @@ class WSOutboxFlusher:
             self.log.exception(e)
             return False
     
-    def _format_event(self, item: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_event(self, item: Dict[str, Any], *, include_ticket_id: bool = True) -> Dict[str, Any]:
         """
         Форматирует событие для Protocol V3 server.
         
@@ -460,11 +463,14 @@ class WSOutboxFlusher:
         event_type = payload.get("event") or payload.get('"event"') or item.get('kind')
         
         # Protocol V3: event вместо kind, все поля в одном уровне; исключаем ключ '"event"'
-        rest = {k: v for k, v in payload.items() if k not in ("event", '"event"')}
+        excluded_keys = {"event", '"event"'}
+        if not include_ticket_id:
+            excluded_keys.add("ticket_id")
+        rest = {k: v for k, v in payload.items() if k not in excluded_keys}
         event = {"event": event_type, **rest}
         
         # Обеспечиваем наличие обязательных полей
-        if 'ticket_id' not in event and item.get('ticket_id'):
+        if include_ticket_id and 'ticket_id' not in event and item.get('ticket_id'):
             event['ticket_id'] = item.get('ticket_id')
         if 'job_id' not in event and item.get('job_id'):
             event['job_id'] = item.get('job_id')

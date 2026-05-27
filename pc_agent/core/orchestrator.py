@@ -118,8 +118,10 @@ class AgentOrchestrator:
         self._data_root = data_root
         self.schedule_update_exit = schedule_update_exit
 
-        # Для tools_changed event (Этап B, C)
-        self.device_id = agent_uuid  # device_id совпадает с agent_uuid
+        # Device events must use the canonical machine/device id.  Older
+        # call-sites passed only identity_manager, so keep that as a safe
+        # fallback instead of silently disabling lifecycle events.
+        self.device_id = agent_uuid or getattr(identity_manager, "device_id", None)
         self._last_toolset_hash: Optional[str] = None
 
         # Загрузчик пакетных модулей (только load_module_from_path для modules_store)
