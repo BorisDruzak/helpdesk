@@ -1,0 +1,254 @@
+- generic [ref=e5]:
+  - banner [ref=e6]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - combobox "Рабочая зона" [ref=e11]:
+          - option "Поддержка"
+          - option "Администрирование" [selected]
+        - img
+      - generic [ref=e12]:
+        - generic [ref=e14]:
+          - img
+          - searchbox "Поиск по устройствам, агентам и трассам" [ref=e15]
+          - generic: Ctrl K
+        - button "Уведомления" [ref=e17]:
+          - img [ref=e18]
+        - button "Выйти" [ref=e21]:
+          - img [ref=e22]
+          - text: Выйти
+  - main [ref=e25]:
+    - 'navigation "Раздел: Устройства и агенты" [ref=e26]':
+      - generic [ref=e27]:
+        - link "Инвентарь" [ref=e28] [cursor=pointer]:
+          - /url: /app/admin/inventory
+        - link "Карточка устройства" [ref=e29] [cursor=pointer]:
+          - /url: /app/admin/device
+        - link "Обновления агента" [ref=e30] [cursor=pointer]:
+          - /url: /app/admin/agent-updates
+        - link "Observer" [ref=e31] [cursor=pointer]:
+          - /url: /app/admin/observer
+        - link "Техпанель" [ref=e32] [cursor=pointer]:
+          - /url: /app/admin/tech
+        - generic "Откройте операции из инвентаря или карточки устройства" [ref=e33]: Операции устройства
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - paragraph [ref=e42]: Admin workspace
+          - heading "Агенты" [level=1] [ref=e43]
+          - paragraph [ref=e44]: Управление подключенными агентами, pending-запросами, токенами и rollout-состоянием.
+        - generic [ref=e45]:
+          - button "Обновить" [ref=e46]:
+            - img [ref=e47]
+            - text: Обновить
+          - button "Карточка" [ref=e52]:
+            - img [ref=e53]
+            - text: Карточка
+          - button "Операции устройства" [ref=e56]:
+            - img [ref=e57]
+            - text: Операции устройства
+      - generic [ref=e68]:
+        - generic [ref=e71]:
+          - paragraph [ref=e72]: Всего агентов
+          - paragraph [ref=e73]: "5"
+          - paragraph [ref=e74]: Все найденные устройства
+        - generic [ref=e77]:
+          - paragraph [ref=e78]: Онлайн
+          - paragraph [ref=e79]: "1"
+          - paragraph [ref=e80]: По активному heartbeat
+        - generic [ref=e83]:
+          - paragraph [ref=e84]: С предупреждениями
+          - paragraph [ref=e85]: "3"
+          - paragraph [ref=e86]: Ошибки, дубли и риски
+        - generic [ref=e89]:
+          - paragraph [ref=e90]: Офлайн
+          - paragraph [ref=e91]: "4"
+          - paragraph [ref=e92]: Нет активной сессии
+        - generic [ref=e95]:
+          - paragraph [ref=e96]: Новые подключения
+          - paragraph [ref=e97]: "0"
+          - paragraph [ref=e98]: Ждут решения администратора
+      - generic [ref=e99]:
+        - generic [ref=e100]:
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - button "Агенты" [ref=e104]:
+                - img [ref=e105]
+                - text: Агенты
+              - button "Подключения" [ref=e107]:
+                - img [ref=e108]
+                - text: Подключения
+              - button "Токены" [ref=e113]:
+                - img [ref=e114]
+                - text: Токены
+              - button "Rollout" [ref=e117]:
+                - img [ref=e118]
+                - text: Rollout
+              - button "Fleet" [ref=e123]:
+                - img [ref=e124]
+                - text: Fleet
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - img
+                - searchbox "Поиск по имени, IP, ОС, версии" [ref=e129]
+                - generic: Ctrl K
+              - combobox [ref=e130]:
+                - option "Все устройства" [selected]
+                - option "Только онлайн"
+                - option "Только офлайн"
+          - table [ref=e133]:
+            - rowgroup [ref=e134]:
+              - row "Агент Статус ОС Версия Активность Состояние Действия" [ref=e135]:
+                - columnheader "Агент" [ref=e136]
+                - columnheader "Статус" [ref=e137]
+                - columnheader "ОС" [ref=e138]
+                - columnheader "Версия" [ref=e139]
+                - columnheader "Активность" [ref=e140]
+                - columnheader "Состояние" [ref=e141]
+                - columnheader "Действия" [ref=e142]
+            - rowgroup [ref=e143]:
+              - row "ADMIN-2 2447d396...56da Онлайн Windows 3.1.61 27 мая 2026 г., 15:16 Готово к действиям Действия агента" [ref=e144] [cursor=pointer]:
+                - cell "ADMIN-2 2447d396...56da" [ref=e145]:
+                  - generic [ref=e146]:
+                    - img [ref=e148]
+                    - generic [ref=e150]:
+                      - paragraph [ref=e151]: ADMIN-2
+                      - paragraph [ref=e152]: 2447d396...56da
+                - cell "Онлайн" [ref=e153]:
+                  - generic [ref=e154]: Онлайн
+                - cell "Windows" [ref=e156]
+                - cell "3.1.61" [ref=e157]
+                - cell "27 мая 2026 г., 15:16" [ref=e158]
+                - cell "Готово к действиям" [ref=e159]:
+                  - generic [ref=e160]: Готово к действиям
+                - cell "Действия агента" [ref=e161]:
+                  - button "Действия агента" [ref=e162]:
+                    - img [ref=e163]
+              - row "ADMIN-2 a7085e14...2bc8 Оффлайн Windows 3.1.61 27 мая 2026 г., 14:57 Ждёт связи Действия агента" [ref=e167] [cursor=pointer]:
+                - cell "ADMIN-2 a7085e14...2bc8" [ref=e168]:
+                  - generic [ref=e169]:
+                    - img [ref=e171]
+                    - generic [ref=e173]:
+                      - paragraph [ref=e174]: ADMIN-2
+                      - paragraph [ref=e175]: a7085e14...2bc8
+                - cell "Оффлайн" [ref=e176]:
+                  - generic [ref=e177]: Оффлайн
+                - cell "Windows" [ref=e179]
+                - cell "3.1.61" [ref=e180]
+                - cell "27 мая 2026 г., 14:57" [ref=e181]
+                - cell "Ждёт связи" [ref=e182]:
+                  - generic [ref=e183]: Ждёт связи
+                - cell "Действия агента" [ref=e184]:
+                  - button "Действия агента" [ref=e185]:
+                    - img [ref=e186]
+              - row "ADMIN-2 7a3429ec...e965 Оффлайн Windows 3.1.61 27 мая 2026 г., 14:46 Ждёт связи Действия агента" [ref=e190] [cursor=pointer]:
+                - cell "ADMIN-2 7a3429ec...e965" [ref=e191]:
+                  - generic [ref=e192]:
+                    - img [ref=e194]
+                    - generic [ref=e196]:
+                      - paragraph [ref=e197]: ADMIN-2
+                      - paragraph [ref=e198]: 7a3429ec...e965
+                - cell "Оффлайн" [ref=e199]:
+                  - generic [ref=e200]: Оффлайн
+                - cell "Windows" [ref=e202]
+                - cell "3.1.61" [ref=e203]
+                - cell "27 мая 2026 г., 14:46" [ref=e204]
+                - cell "Ждёт связи" [ref=e205]:
+                  - generic [ref=e206]: Ждёт связи
+                - cell "Действия агента" [ref=e207]:
+                  - button "Действия агента" [ref=e208]:
+                    - img [ref=e209]
+              - row "AD-MAIN 15c8f029...48ab Оффлайн Windows 3.1.60 27 мая 2026 г., 13:45 Ждёт связи Действия агента" [ref=e213] [cursor=pointer]:
+                - cell "AD-MAIN 15c8f029...48ab" [ref=e214]:
+                  - generic [ref=e215]:
+                    - img [ref=e217]
+                    - generic [ref=e219]:
+                      - paragraph [ref=e220]: AD-MAIN
+                      - paragraph [ref=e221]: 15c8f029...48ab
+                - cell "Оффлайн" [ref=e222]:
+                  - generic [ref=e223]: Оффлайн
+                - cell "Windows" [ref=e225]
+                - cell "3.1.60" [ref=e226]
+                - cell "27 мая 2026 г., 13:45" [ref=e227]
+                - cell "Ждёт связи" [ref=e228]:
+                  - generic [ref=e229]: Ждёт связи
+                - cell "Действия агента" [ref=e230]:
+                  - button "Действия агента" [ref=e231]:
+                    - img [ref=e232]
+              - row "sosn.alt.adm bb4caf72...eac2 Оффлайн Linux 3.1.60 27 мая 2026 г., 13:45 Ждёт связи Действия агента" [ref=e236] [cursor=pointer]:
+                - cell "sosn.alt.adm bb4caf72...eac2" [ref=e237]:
+                  - generic [ref=e238]:
+                    - img [ref=e240]
+                    - generic [ref=e242]:
+                      - paragraph [ref=e243]: sosn.alt.adm
+                      - paragraph [ref=e244]: bb4caf72...eac2
+                - cell "Оффлайн" [ref=e245]:
+                  - generic [ref=e246]: Оффлайн
+                - cell "Linux" [ref=e248]
+                - cell "3.1.60" [ref=e249]
+                - cell "27 мая 2026 г., 13:45" [ref=e250]
+                - cell "Ждёт связи" [ref=e251]:
+                  - generic [ref=e252]: Ждёт связи
+                - cell "Действия агента" [ref=e253]:
+                  - button "Действия агента" [ref=e254]:
+                    - img [ref=e255]
+        - generic [ref=e259]:
+          - generic [ref=e261]:
+            - generic [ref=e262]:
+              - heading "Свойства агента" [level=2] [ref=e263]
+              - paragraph [ref=e264]: ADMIN-2
+            - generic [ref=e265]: Онлайн
+          - generic [ref=e267]:
+            - generic [ref=e268]:
+              - generic [ref=e269]:
+                - paragraph [ref=e270]: Device ID
+                - paragraph [ref=e271]: 2447d396...56da
+              - generic [ref=e272]:
+                - paragraph [ref=e273]: ОС
+                - paragraph [ref=e274]: Windows
+              - generic [ref=e275]:
+                - paragraph [ref=e276]: Версия агента
+                - paragraph [ref=e277]: 3.1.61
+              - generic [ref=e278]:
+                - paragraph [ref=e279]: Target
+                - paragraph [ref=e280]: windows_amd64
+              - generic [ref=e281]:
+                - paragraph [ref=e282]: Последняя активность
+                - paragraph [ref=e283]: 27 мая 2026 г., 15:16
+              - generic [ref=e284]:
+                - paragraph [ref=e285]: Идентификатор
+                - paragraph [ref=e286]: Тестовый ENV UUID
+            - generic [ref=e287]:
+              - generic [ref=e288]:
+                - paragraph [ref=e289]: Токенов
+                - paragraph [ref=e290]: "1"
+              - generic [ref=e291]:
+                - paragraph [ref=e292]: Активных
+                - paragraph [ref=e293]: "1"
+              - generic [ref=e294]:
+                - paragraph [ref=e295]: Rollout
+                - paragraph [ref=e296]: "1"
+            - generic [ref=e297]:
+              - generic [ref=e298]:
+                - img [ref=e299]
+                - generic [ref=e301]:
+                  - paragraph [ref=e302]: Тестовый дубль hostname
+                  - paragraph [ref=e303]: Hostname ADMIN-2 встречается 3 раз. Эта запись создана через env_uuid; её можно безопасно архивировать, если агент оффлайн.
+              - generic [ref=e304]:
+                - button "Проверить" [ref=e305]
+                - button "Очистить" [ref=e306]
+            - generic [ref=e307]:
+              - button "Обновления агента" [ref=e308]:
+                - img [ref=e309]
+                - text: Обновления агента
+              - button "Открыть карточку" [ref=e313]:
+                - img [ref=e314]
+                - text: Открыть карточку
+              - button "Операции устройства" [ref=e317]:
+                - img [ref=e318]
+                - text: Операции устройства
+              - button "Запустить плейбук" [ref=e329]:
+                - img [ref=e330]
+                - text: Запустить плейбук
+              - button "Архивировать агента" [ref=e333]:
+                - img [ref=e334]
+                - text: Архивировать агента

@@ -303,6 +303,126 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
     return cases[case]()
 
 
+def _build_mixed_batch_items(
+    *,
+    run_id: str,
+    ticket_id: str,
+    valid_agent_seq: int,
+    duplicate_agent_seq: int,
+    valid_device_seq: int,
+    invalid_seq_base: int,
+    valid_device_event: str = "probe_device_event",
+) -> list[dict[str, Any]]:
+    unknown_ticket = str(uuid.uuid4())
+    valid_ticket = _outbox_item(
+        case="p1_1_e_valid_ticket",
+        outbox_id=f"p1e-{run_id}-valid-ticket",
+        run_id=run_id,
+        ticket_id=ticket_id,
+        event_ticket_id=ticket_id,
+        agent_seq=valid_agent_seq,
+        trace_id=str(uuid.uuid4()),
+        event_name="chat_message",
+    )
+    valid_ticket["payload"]["event"]["text"] = f"P1.1.E valid batch ticket marker {run_id}"
+
+    duplicate_ticket = _outbox_item(
+        case="p1_1_e_duplicate_ticket",
+        outbox_id=f"p1e-{run_id}-duplicate-ticket",
+        run_id=run_id,
+        ticket_id=ticket_id,
+        event_ticket_id=ticket_id,
+        agent_seq=duplicate_agent_seq,
+        trace_id=str(uuid.uuid4()),
+        event_name="chat_message",
+    )
+    duplicate_ticket["payload"]["event"]["text"] = f"P1.1.E duplicate batch ticket marker {run_id}"
+
+    both_seq = _outbox_item(
+        case="p1_1_e_invalid_both_seq",
+        outbox_id=f"p1e-{run_id}-both-seq",
+        run_id=run_id,
+        ticket_id=ticket_id,
+        event_ticket_id=ticket_id,
+        agent_seq=invalid_seq_base + 1,
+        device_seq=invalid_seq_base + 1,
+        trace_id=str(uuid.uuid4()),
+        event_name="chat_message",
+    )
+
+    unknown_ticket_item = _outbox_item(
+        case="p1_1_e_unknown_ticket",
+        outbox_id=f"p1e-{run_id}-unknown-ticket",
+        run_id=run_id,
+        ticket_id=unknown_ticket,
+        event_ticket_id=unknown_ticket,
+        agent_seq=invalid_seq_base + 2,
+        trace_id=str(uuid.uuid4()),
+        event_name="chat_message",
+    )
+
+    valid_device = _outbox_item(
+        case="p1_1_e_valid_device",
+        outbox_id=f"p1e-{run_id}-valid-device",
+        run_id=run_id,
+        ticket_id=None,
+        event_ticket_id=None,
+        device_seq=valid_device_seq,
+        trace_id=str(uuid.uuid4()),
+        event_name=valid_device_event,
+    )
+    valid_device["payload"]["event"].update(
+        {
+            "text": f"P1.1.E valid batch device marker {run_id}",
+            "reason": "p1_1_e_valid_device_batch",
+            "p1_case": "P1.1.E.valid_device",
+        }
+    )
+
+    device_with_ticket = _outbox_item(
+        case="p1_1_e_invalid_device_ticket_context",
+        outbox_id=f"p1e-{run_id}-device-with-ticket",
+        run_id=run_id,
+        ticket_id=ticket_id,
+        event_ticket_id=None,
+        device_seq=invalid_seq_base + 3,
+        trace_id=str(uuid.uuid4()),
+        event_name=valid_device_event,
+    )
+
+    return [
+        valid_ticket,
+        duplicate_ticket,
+        both_seq,
+        unknown_ticket_item,
+        valid_device,
+        device_with_ticket,
+    ]
+
+
+def _batch_item_summary(item: dict[str, Any]) -> dict[str, Any]:
+    payload = item.get("payload") or {}
+    return {
+        "outbox_id": payload.get("outbox_id"),
+        "agent_seq": payload.get("agent_seq"),
+        "device_seq": payload.get("device_seq"),
+        "ticket_id": item.get("ticket_id"),
+        "trace_id": item.get("trace_id"),
+        "event": payload.get("event"),
+    }
+
+
+def _received_outbox_ids(messages: list[dict[str, Any]], message_type: str) -> set[str]:
+    ids: set[str] = set()
+    for item in messages:
+        payload = item.get("payload") if item.get("event") == "text" else None
+        if not isinstance(payload, dict) or payload.get("type") != message_type:
+            continue
+        outbox_ids = (payload.get("payload") or {}).get("outbox_ids") or []
+        ids.update(str(outbox_id) for outbox_id in outbox_ids)
+    return ids
+
+
 async def _run_invalid_case(args: argparse.Namespace, case: str) -> dict[str, Any]:
     real_token = _token_from_env_or_prompt(required=False)
     cases = {
@@ -462,6 +582,95 @@ async def run_malformed_outbox(args: argparse.Namespace) -> int:
     return 0
 
 
+async def run_mixed_batch(args: argparse.Namespace) -> int:
+    token = _token_from_env_or_prompt(required=True)
+    run_id = (args.run_id or uuid.uuid4().hex[:8]).strip()
+    invalid_seq_base = args.invalid_seq_base or (900000 + (int(uuid.uuid4().hex[:5], 16) % 90000))
+    items = _build_mixed_batch_items(
+        run_id=run_id,
+        ticket_id=args.ticket_id,
+        valid_agent_seq=args.valid_agent_seq,
+        duplicate_agent_seq=args.duplicate_agent_seq,
+        valid_device_seq=args.valid_device_seq,
+        invalid_seq_base=invalid_seq_base,
+        valid_device_event=args.valid_device_event,
+    )
+    handshake = _handshake(token=token)
+    batch_message = {
+        "type": "outbox_items_batch",
+        "request_id": str(uuid.uuid4()),
+        "device_id": DEFAULT_DEVICE_ID,
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": str(uuid.uuid4()),
+        "payload": {"items": items},
+        "meta": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "actor_role": "agent",
+        },
+    }
+    expected_ack_ids = {
+        f"p1e-{run_id}-valid-ticket",
+        f"p1e-{run_id}-duplicate-ticket",
+        f"p1e-{run_id}-valid-device",
+    }
+    expected_nack_ids = {
+        f"p1e-{run_id}-both-seq",
+        f"p1e-{run_id}-unknown-ticket",
+        f"p1e-{run_id}-device-with-ticket",
+    }
+    evidence: dict[str, Any] = {
+        "case": "p1_1_e_mixed_batch",
+        "run_id": run_id,
+        "ws_url": args.ws_url,
+        "ticket_id": args.ticket_id,
+        "valid_device_event": args.valid_device_event,
+        "token": _token_evidence(token),
+        "handshake_request_id": handshake["request_id"],
+        "handshake_trace_id": handshake["trace_id"],
+        "batch_request_id": batch_message["request_id"],
+        "batch_trace_id": batch_message["trace_id"],
+        "expected_ack_ids": sorted(expected_ack_ids),
+        "expected_nack_ids": sorted(expected_nack_ids),
+        "sent_items": [_batch_item_summary(item) for item in items],
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.ws_connect(args.ws_url, ssl=False, heartbeat=10) as ws:
+            await ws.send_json(handshake)
+            evidence["handshake_result"] = await _recv_until_terminal(ws, timeout=args.timeout)
+            await ws.send_json(batch_message)
+            received = await _recv_many(ws, timeout=args.timeout, max_messages=args.max_messages)
+            evidence["received"] = received
+            await ws.close()
+
+    acked = _received_outbox_ids(evidence["received"], "outbox_ack")
+    nacked = _received_outbox_ids(evidence["received"], "outbox_nack")
+    unexpected_commands = [
+        item.get("payload")
+        for item in evidence["received"]
+        if item.get("event") == "text" and (item.get("payload") or {}).get("type") == "command"
+    ]
+    evidence["observed_ack_ids"] = sorted(acked)
+    evidence["observed_nack_ids"] = sorted(nacked)
+    evidence["unexpected_command_count"] = len(unexpected_commands)
+    if unexpected_commands:
+        evidence["unexpected_commands"] = [
+            {
+                "request_id": command.get("request_id"),
+                "trace_id": command.get("trace_id"),
+                "command": (command.get("payload") or {}).get("command"),
+            }
+            for command in unexpected_commands
+            if isinstance(command, dict)
+        ]
+    print(json.dumps(evidence, ensure_ascii=False, indent=2))
+    ok = (
+        expected_ack_ids.issubset(acked)
+        and expected_nack_ids.issubset(nacked)
+        and not unexpected_commands
+    )
+    return 0 if ok else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Live Protocol V3 WS probe")
     parser.add_argument("--ws-url", default=DEFAULT_WS_URL)
@@ -504,6 +713,22 @@ def build_parser() -> argparse.ArgumentParser:
     malformed.add_argument("--ticket-id", default=DEFAULT_LIVE_TICKET_ID)
     malformed.add_argument("--run-id", default=None)
     malformed.add_argument("--seq-base", type=int, default=None)
+    mixed = sub.add_parser("mixed-batch")
+    mixed.add_argument("--ticket-id", required=True)
+    mixed.add_argument("--run-id", default=None)
+    mixed.add_argument("--valid-agent-seq", type=int, required=True)
+    mixed.add_argument("--duplicate-agent-seq", type=int, required=True)
+    mixed.add_argument("--valid-device-seq", type=int, required=True)
+    mixed.add_argument("--invalid-seq-base", type=int, default=None)
+    mixed.add_argument(
+        "--valid-device-event",
+        default="probe_device_event",
+        help=(
+            "Neutral device event used for the valid device item. Avoid tools_changed "
+            "for raw probes against a real device because it triggers list_tools."
+        ),
+    )
+    mixed.add_argument("--max-messages", type=int, default=10)
     return parser
 
 
@@ -516,6 +741,8 @@ def main() -> int:
         return asyncio.run(run_double(args))
     if args.command == "malformed-outbox":
         return asyncio.run(run_malformed_outbox(args))
+    if args.command == "mixed-batch":
+        return asyncio.run(run_mixed_batch(args))
     raise SystemExit(f"unknown command {args.command}")
 
 

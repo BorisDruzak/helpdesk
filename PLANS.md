@@ -2280,3 +2280,227 @@ Recreated confirmed-binding session `c24c7842-8284-4964-a92f-7f608eaf52d2` for b
 
 Remaining risk:
 `/ui/automation/status` still reports `sidebar_view=account_gate` after restart even with a retained confirmed session; treat this as UI projection state to watch during P1. It is not blocking because account session is valid and persisted, but P1.6 should verify whether the GUI should automatically leave the gate or requires explicit user click.
+
+## P1 Live validation — 2026-05-27 — run_id=p1-20260527-1527-c4f03651
+
+Status: started after clean-agent recovery checkpoint `c4f03651`; P1.1 not yet green.
+
+Run metadata:
+- Branch: `codex/helpdesk-process-model`.
+- Commit SHA before P1 continuation: `c4f03651`.
+- P0/P1 cleanup checkpoint: `c4f03651` (`fix: isolate live agent account sessions`), pushed to GitHub origin.
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da`.
+- Local agent instance: `live-v3-p1-clean2`.
+- Device id / machine id: `2447d396-79cd-53da-b3a9-028c5a4d56da` / `p1-clean2-20260527-150200`.
+- Agent version: `3.1.61`.
+- pywinauto: `0.6.9` from `.venvs\agent-win`, backend `uia`.
+- Server health: `python scripts\manage_remote_stack.py smoke server` -> `/api/health` 200.
+- Agent connection state: `/ui/automation/status` -> `connection_state=connected`, `bridge_connected=true`, `window_visible=true`, `sidebar_view=account_gate`, `has_active_profile=true`, `profile_count=0`, `ticket_count=0`.
+- Account-session state: `.local-agent\instances\live-v3-p1-clean2\data\account_session.json` present, `account_mode=confirmed_binding`, `account_session_id=c24c7842-8284-4964-a92f-7f608eaf52d2`, `registration_status=admin_confirmed`, `verification_status=verified`, display `P1 Clean User`; token omitted.
+- Agent SQLite baseline: `outbox=0`, `outbox_sent_history=3`, `seen_commands=3`, `pending_consents=0`.
+- Browser evidence: real browser admin inventory shows `ADMIN-2`, device id prefix `2447d396...56da`, status online, Windows, agent version `3.1.61`; screenshot `artifacts\p1-20260527-1527-c4f03651-admin-inventory.png`, snapshot `artifacts\p1-20260527-1527-c4f03651-admin-inventory-snapshot-2.md`.
+- UIA evidence: connected by window handle to PID `25168`, title `Maria Agent v3.1.61`; screenshot `artifacts\p1-20260527-1527-c4f03651-agent-main.png`. Unbounded descendants search hung and was killed; bounded/no-descendant UIA capture works.
+
+Known pre-fix/test contamination ignored for this run:
+- All P0 phantom/stale rows documented above remain pre-fix contamination and must not be used as P1 evidence.
+- `live-v3-p1-clean` device `a7085e14-47eb-546f-809d-ab6ec42c2bc8` was a failed clean-agent attempt before `PC_AGENT_DATA_DIR` isolation fix; ignore it for P1 run-id queries.
+- Old agent local SQLite `UNKNOWN_TICKET` rows and old `device_outbox.status=sent` rows from P0 are not P1 regressions unless they carry `run_id=p1-20260527-1527-c4f03651` or a later P1 marker.
+
+P1 checklist:
+- [x] Baseline server health via direct HTTP/smoke.
+- [x] Baseline clean local agent connected after DB cleanup and registration from zero.
+- [x] Browser admin inventory confirmation for the clean device.
+- [x] UIA baseline window confirmation.
+- [ ] P1.1 Outbox ACK/NACK/dedup.
+- [ ] P1.2 Command idempotency.
+- [ ] P1.3 Consent flow.
+- [ ] P1.4 Module auto-install before run_tool.
+- [ ] P1.5 Restart/reconnect with pending state.
+- [ ] P1.6 Browser/UI projection consistency.
+
+P1.1 working notes:
+- Do not mark P1.1 green until each tested path records transport/API, server DB, agent SQLite, browser/admin or ticket UI, logs/action trace, and root-cause classification for mismatches.
+- Real agent GUI initially stayed on account gate despite a persisted confirmed-binding session, but moved to `sidebar_view=tickets` / `content_view=tickets` after clean automation create on the same confirmed-binding account. This remains separate from later real GUI/UIA P1 checks.
+
+P1.1.A valid ticket event happy path:
+- Path tested: local GUI automation bridge `/ui/automation/run` for clean ticket setup, then controlled agent SQLite enqueue through `DatabaseManager.enqueue_event()`, real running agent sender over Protocol V3 WS, server DB query, real browser support ticket UI.
+- Run marker: `p1-20260527-1527-c4f03651`, ticket `T-000609` / `f2918f87-cca3-42a9-b28f-f0a5e09d72b9`.
+- Setup: `python scripts\agent_test_driver.py create-ticket live-v3-p1-clean2 --title "P1.1 p1-20260527-1527-c4f03651 outbox ticket" --description "P1.1.A clean ticket marker p1-20260527-1527-c4f03651. Создано после чистой регистрации агента."` -> `status=ok`, requester account session `c24c7842-8284-4964-a92f-7f608eaf52d2`, requester account mode `confirmed_binding`, GUI state moved to `sidebar_view=tickets`.
+- Agent local enqueue: outbox `outbox_id=4`, `kind=chat_message`, `agent_seq=1`, `device_seq=NULL`, trace generated by local enqueue, payload text `P1.1.A agent outbox chat marker p1-20260527-1527-c4f03651`.
+- Agent SQLite after ACK: `outbox=[]`; `outbox_sent_history` contains `outbox_id=4`, event id `2447d396-79cd-53da-b3a9-028c5a4d56da:f2918f87-cca3-42a9-b28f-f0a5e09d72b9:4:0`, payload preview includes marker.
+- Server DB: `ticket_events` contains event id `2447d396-79cd-53da-b3a9-028c5a4d56da:f2918f87-cca3-42a9-b28f-f0a5e09d72b9:4:0`, `event_type=chat_message`, `device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`, `agent_seq=1`, trace `065a08aa-8f2c-494b-960d-c36c0226669e`, text marker.
+- Browser/UI: real browser `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` shows `T-000609`, status `В очереди`, requester `P1 Clean User 20260527`, and timeline text `P1.1.A agent outbox chat marker p1-20260527-1527-c4f03651`; evidence `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-snapshot.md`, screenshots `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609.png` and `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-full.png`.
+- Result: passed for this path; this does not cover duplicate/retryable NACK/mixed batch yet.
+
+P1.1.B valid device event happy path:
+- Path tested: controlled agent SQLite enqueue through `DatabaseManager.enqueue_event(ticket_id=None)`, real running agent sender over Protocol V3 WS, server DB query, real browser admin device page.
+- Agent local enqueue: outbox `outbox_id=5`, `kind=tools_changed`, `device_seq=4`, `agent_seq=NULL`, payload `reason=p1_1_b_valid_device_event`, marker `p1-20260527-1527-c4f03651`.
+- Agent SQLite after ACK: `outbox=[]`; `outbox_sent_history` contains `outbox_id=5`, event id `2447d396-79cd-53da-b3a9-028c5a4d56da:2447d396-79cd-53da-b3a9-028c5a4d56da:5:0`, payload preview includes marker.
+- Server DB: `device_events` contains event id `2447d396-79cd-53da-b3a9-028c5a4d56da:2447d396-79cd-53da-b3a9-028c5a4d56da:5:0`, `event_type=tools_changed`, `device_seq=4`, trace `3d28c1ec-3142-42c5-be11-49836702719a`, payload marker.
+- Agent local command side effect: `seen_commands` has a new terminal `success` row `b65d50f4-f718-4f78-be00-97d4ca7fa775` from server follow-up after `tools_changed`.
+- Browser/UI: real browser admin device page `https://192.168.100.17:9443/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da` shows device `ADMIN-2`, online, agent `3.1.61`, observer/runtime data. Browser also produced a new 500 on account-events; recorded as `BUG-20260527-P1-03`.
+- Result: device event ACK/persistence/local cleanup passed; browser projection has separate non-blocking bug.
+
+P1.1.C duplicate ticket event by `agent_seq`:
+- Path tested: controlled local agent SQLite duplicate injection, real running agent sender over Protocol V3 WS, server DB query, real browser ticket UI after refresh.
+- Duplicate injected: local `outbox_id=6`, same ticket `f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, same `agent_seq=1` as P1.1.A, payload text `P1.1.C duplicate agent_seq marker p1-20260527-1527-c4f03651`, event id `p1-duplicate-ticket-event-id-c4f03651`.
+- Agent SQLite after ACK: `outbox=[]`; `outbox_sent_history` contains `outbox_id=6`, payload preview with duplicate marker. This proves the server ACKed the duplicate and the agent deleted the local row.
+- Server DB: `ticket_events` count for `(ticket_id=f2918f87-cca3-42a9-b28f-f0a5e09d72b9, device_id=2447d396-79cd-53da-b3a9-028c5a4d56da, agent_seq=1)` remains `1`. No `P1.1.C duplicate` chat message persisted.
+- Browser/UI: refreshed real browser ticket snapshot `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-duplicates-snapshot.md` contains `P1.1.A agent outbox` exactly once and `P1.1.C duplicate` zero times.
+- Result: passed for duplicate by `agent_seq`.
+
+P1.1.D duplicate device event by `device_seq`:
+- Path tested: controlled local agent SQLite duplicate injection, real running agent sender over Protocol V3 WS, server DB query, admin browser context.
+- Duplicate injected: local `outbox_id=7`, same device `2447d396-79cd-53da-b3a9-028c5a4d56da`, same `device_seq=4` as P1.1.B, payload reason `p1_1_d_duplicate_device_seq`, event id `p1-duplicate-device-event-id-c4f03651`.
+- Agent SQLite after ACK: `outbox=[]`; `outbox_sent_history` contains `outbox_id=7`, payload preview with duplicate marker. This proves the server ACKed the duplicate and the agent deleted the local row.
+- Server DB: `device_events` count for `(device_id=2447d396-79cd-53da-b3a9-028c5a4d56da, device_seq=4)` remains `1`. No `P1.1.D` device event persisted.
+- Browser/UI: no separate duplicate tools_changed projection observed; admin device page still has separate account-events 500 recorded as `BUG-20260527-P1-03`.
+- Result: passed for duplicate by `device_seq`.
+
+P1.1.E mixed batch ACK/NACK:
+- Path tested: raw WebSocket probe using the clean agent token from local SQLite against canonical WSS `wss://192.168.100.17:9443/ws`, server DB query, real browser ticket UI after refresh. This is a raw WS probe path, not the full local agent runtime.
+- Probe artifact: `artifacts\p1-20260527-1527-c4f03651-mixed-batch.json`; token evidence is redacted to prefix `47fca88b`, sha256 prefix `11245df33169`, length `64`.
+- Batch sent: valid ticket event with `agent_seq=2` and text `P1.1.E valid batch ticket marker p1-20260527-1527-c4f03651`; duplicate ticket event with `agent_seq=1`; invalid `both_seq`; unknown ticket `cd76ad86-b526-4d3b-93f8-e3c7e2f8cea3`; valid device `tools_changed` with `device_seq=5`; invalid device event with top-level `ticket_id`.
+- Transport/API: server returned per-item ACK for the valid ticket, duplicate ticket, and valid device items; NACK `VALIDATION_ERROR` for `both_seq`; NACK `UNKNOWN_TICKET` for the unknown ticket; NACK `VALIDATION_ERROR` for device event with ticket context. The raw probe then received a live `list_tools` command generated by the valid `tools_changed` item and was superseded by the real agent with close code `4002`.
+- Server DB: `ticket_events` persisted the valid batch ticket event with `agent_seq=2` and marker text; duplicate `agent_seq=1` did not create a second row. `device_events` persisted the valid batch device event with `device_seq=5` and marker `p1_1_e_valid_device_batch`; invalid items did not persist.
+- Browser/UI: real browser ticket URL `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` shows `P1.1.E valid batch ticket marker p1-20260527-1527-c4f03651` once and does not show the duplicate marker; evidence `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-mixed-batch-snapshot.md` and screenshot `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-mixed-batch.png`.
+- Agent/runtime side effect: because this was a raw WS probe for the real device, the server routed a follow-up `list_tools` command to the probe, not the real agent. The probe did not answer it, and server `device_outbox` row `83` reached `failed/TIMEOUT`. This is recorded as `BUG-20260527-P1-04` and means P1.1.E needs a clean rerun after the probe is made command-aware or after the valid device item is tested through the real agent path.
+- Result: per-item ACK/NACK and persistence semantics passed for the tested batch contents, but the scenario is not green because the test tool created new runtime contamination.
+
+P1.1.E clean rerun after test-tool fix:
+- Path tested: `scripts\live_ws_v3_probe.py mixed-batch` against canonical WSS, using the same clean device token evidence only as prefix/hash/length; valid device item uses neutral `probe_device_event` to validate device-event persistence without triggering `list_tools`.
+- Command: `python scripts\live_ws_v3_probe.py --ws-url wss://192.168.100.17:9443/ws --timeout 5 mixed-batch --ticket-id f2918f87-cca3-42a9-b28f-f0a5e09d72b9 --run-id p1-20260527-1527-c4f03651-cleanmix --valid-agent-seq 3 --duplicate-agent-seq 2 --valid-device-seq 6 --invalid-seq-base 920000`.
+- Test-tool verification before live rerun: `python -m pytest scripts\test_live_ws_v3_probe.py -q` -> `2 passed`.
+- Transport/API: artifact `artifacts\p1-20260527-1527-c4f03651-cleanmix-mixed-batch.json`; ACK ids: `valid-ticket`, `duplicate-ticket`, `valid-device`; NACK ids: `both-seq` with `VALIDATION_ERROR`, `unknown-ticket` with `UNKNOWN_TICKET`, `device-with-ticket` with `VALIDATION_ERROR`; `unexpected_command_count=0`; raw probe was later superseded by real agent with close `4002`.
+- Server DB: `ticket_events` persisted cleanmix valid ticket event with `agent_seq=3`, trace `49b6487c-5456-4fa2-b2b1-33cbdfa7e82b`, text `P1.1.E valid batch ticket marker p1-20260527-1527-c4f03651-cleanmix`; duplicate `agent_seq=2` did not create a second event. `device_events` persisted cleanmix valid device event `event_type=probe_device_event`, `device_seq=6`, trace `7283b676-17dd-4b35-9a6d-84532571acd7`, marker `p1-20260527-1527-c4f03651-cleanmix`.
+- Server DB contamination check: no new `device_outbox` rows after id `83`; id `83` remains labeled as pre-fix P1-04 test contamination (`list_tools`, `failed/TIMEOUT`) and is not counted as cleanmix regression.
+- Browser/UI: real browser ticket URL `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`; snapshot `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-cleanmix-snapshot.md` shows both the original P1.1.E valid marker and the cleanmix valid marker, and does not show the cleanmix duplicate marker. Screenshot `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-cleanmix.png`.
+- Result: clean mixed-batch ACK/NACK/dedup path passed for raw WS probe with explicit test-tool limitation fixed; P1.1.F retryable NACK/backoff still pending.
+
+P1.1.F retryable NACK / backoff:
+- Path assessed: code/docs search and existing server/agent tests only; no live retryable NACK was triggered yet.
+- Run marker: `p1-20260527-1527-c4f03651`.
+- Findings: server has retryable message-level NACK only through `RATE_LIMITED` in `server\websocket\agent_services.py`, and retryable persistence failures through internal exceptions. Agent retry/backoff behavior exists in `pc_agent\core\sender.py` and is covered by existing focused tests, but there is no safe live stand hook for one-shot transient storage/rate-limit simulation.
+- Safety decision: did not overload live server to trigger `RATE_LIMITED`; this is explicitly forbidden by the P1 plan. Did not force DB/transient storage failures because that would turn a diagnostic into infrastructure disruption.
+- Required follow-up before P1.1 can be fully green: add a controlled test-only diagnostic hook, gated off by default, that can NACK one marked outbox item with `retryable=true` and then allow retry persistence after a short marker-controlled window. It must be documented as diagnostic-only, not production protocol behavior, and must be removed/disabled after live validation.
+- Result: P1.1.F is attempted but blocked by missing safe live retryable-NACK hook. P1.1 is not fully green; P1.2 may proceed with this limitation explicitly recorded, but P1 close cannot claim retryable backoff coverage until the hook/live regression exists.
+
+### BUG-20260527-P1-04 — Raw mixed-batch probe consumes follow-up command and leaves failed device_outbox
+
+Severity: P1
+Status: verified-fixed
+Area: test-tool / protocol / server-db
+
+P1 scenario:
+P1.1.E mixed batch ACK/NACK using raw WebSocket probe against the live clean device.
+
+Run id:
+`p1-20260527-1527-c4f03651`
+
+Expected:
+The raw probe validates per-item ACK/NACK without leaving new failed server-side commands for the real device. If the probe triggers a valid device event that causes a follow-up server command, the probe must either handle that command or the scenario must use the real agent path for that item.
+
+Actual:
+The valid `tools_changed` item in the raw mixed batch persisted and triggered a server `list_tools` command. The raw probe received the command but did not send a `command_result`; the real agent reconnected and superseded the raw socket with close code `4002`; server `device_outbox` row `83` later reached `status=failed`, `error_code=TIMEOUT`, `command=list_tools`.
+
+Repro steps:
+1. Run `scripts\live_ws_v3_probe.py` mixed-batch/raw WS equivalent against `wss://192.168.100.17:9443/ws` using clean device `2447d396-79cd-53da-b3a9-028c5a4d56da`.
+2. Include a valid `tools_changed` device event with `device_seq=5`.
+3. Observe the probe receive a live `list_tools` command after the ACK/NACK responses.
+4. Let the probe exit/supersede without answering the command.
+5. Query server `device_outbox` for the clean device.
+
+Evidence:
+- Transport/API: probe artifact `artifacts\p1-20260527-1527-c4f03651-mixed-batch.json` shows ACK/NACK responses, then a `command` frame for `list_tools`, then close `4002`.
+- Server log: not queried yet for this specific command timeout.
+- Agent log: real agent reconnected after supersede; focused log excerpt not collected yet.
+- Server DB: `device_outbox` id `83`, `command=list_tools`, `request_id=7de6bc1a-a072-4aa2-85ff-c980c8e41705`, `trace_id=2d1f01b8-0978-4619-bf97-9b71d0b89605`, `status=failed`, `sent_at=2026-05-27T10:44:19.748493+00:00`, `delivered_at=NULL`, `failed_at=2026-05-27T10:45:49.128118+00:00`, `error_code=TIMEOUT`.
+- Agent SQLite: not applicable for the raw probe command; real clean agent local SQLite did not own that command because the command was delivered to the raw probe socket.
+- Browser/UI: ticket browser projection still correctly shows the valid batch ticket event once and no duplicate marker; screenshot `artifacts\p1-20260527-1527-c4f03651-ticket-T-000609-after-mixed-batch.png`.
+- UIA: not applicable.
+- Test artifact: `artifacts\p1-20260527-1527-c4f03651-mixed-batch.json`.
+- Run marker: `p1-20260527-1527-c4f03651`.
+
+Impact:
+This creates new post-fix contamination in `device_outbox` and makes the P1 clean-run outbox gate unreliable unless it is labeled and excluded. It also means raw WS probes for the real live device must not emit valid device lifecycle events without handling follow-up commands.
+
+Root cause hypothesis:
+The test probe currently validates outbox ingest but is not a full agent command runtime. A valid `tools_changed` event is not passive: the server responds by enqueuing and dispatching `list_tools` to the currently connected socket for the device. The raw socket became the active device session and could not complete the command lifecycle.
+
+Root cause confirmed:
+Confirmed. The first raw mixed batch used `event=tools_changed`, and server outbox publish side effects enqueue `list_tools` after `tools_changed` / `module_state_changed`. The raw socket was the active session and received the command but had no command runtime.
+
+Blocking further P1: yes for a clean P1.1.E pass; no for documenting the already observed ACK/NACK semantics.
+Fix now: yes.
+Fix summary:
+Added a dedicated `mixed-batch` diagnostic subcommand to `scripts\live_ws_v3_probe.py`. Its default valid device event is neutral `probe_device_event`, so raw probe can validate device-event ACK/persistence without triggering server `list_tools` side effects. `tools_changed` remains covered by real-agent P1.1.B.
+
+Changed files:
+`scripts\live_ws_v3_probe.py`; `scripts\test_live_ws_v3_probe.py`; `PLANS.md`.
+
+Tests:
+`python -m pytest scripts\test_live_ws_v3_probe.py -q` -> `2 passed`.
+
+Live regression:
+Clean rerun artifact `artifacts\p1-20260527-1527-c4f03651-cleanmix-mixed-batch.json`: expected three ACKs, expected three non-retryable NACKs, `unexpected_command_count=0`; server DB persisted only the valid ticket/device rows and no new `device_outbox` row after contaminated id `83`; browser ticket snapshot shows cleanmix valid marker and no cleanmix duplicate marker.
+
+Remaining risk:
+Existing `device_outbox` id `83` remains as labeled pre-fix P1-04 contamination. Future raw probe scenarios must avoid lifecycle events with server follow-up side effects unless the probe explicitly implements command handling.
+
+### BUG-20260527-P1-03 — Admin device account-events route returns 500 in browser
+
+Severity: P1
+Status: reproduced
+Area: browser / UI projection / server-db
+
+P1 scenario:
+P1.1.B browser/admin confirmation for clean device after a valid `tools_changed` device event.
+
+Run id:
+`p1-20260527-1527-c4f03651`
+
+Expected:
+Admin device page loads all visible device/account projections without browser console/network errors for the clean device.
+
+Actual:
+The page rendered the device card, online status, agent version and observer panel, but browser console reported HTTP 500 for `GET /api/web/admin/registry/devices/2447d396-79cd-53da-b3a9-028c5a4d56da/account-events?limit=20`.
+
+Repro steps:
+1. Navigate real browser to `https://192.168.100.17:9443/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da`.
+2. Wait for admin device page to load.
+3. Observe Playwright/browser console event.
+
+Evidence:
+- Transport/API: browser console captured `Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ https://192.168.100.17:9443/api/web/admin/registry/devices/2447d396-79cd-53da-b3a9-028c5a4d56da/account-events?limit=20:0`.
+- Server log: `manage_remote_stack.py logs --contains account-events` did not surface a focused traceback in the recent tail; deeper root-cause analysis not started yet.
+- Agent log: not applicable to the browser route failure.
+- Server DB: device id `2447d396-79cd-53da-b3a9-028c5a4d56da`; valid account session `c24c7842-8284-4964-a92f-7f608eaf52d2`; exact failing query not analyzed yet.
+- Agent SQLite: not applicable.
+- Browser/UI: admin device page snapshot `artifacts\p1-20260527-1527-c4f03651-admin-device-snapshot.md` shows device content loaded while account-events request failed.
+- UIA: not applicable.
+- Test artifact: `C:\Temp\playwright-mcp-output\1779820608110\console-2026-05-27T10-38-13-382Z.log`.
+- Run marker: `p1-20260527-1527-c4f03651`.
+
+Impact:
+P1.1.B can still validate outbox ACK/persistence, but P1.6 UI projection consistency cannot be green until this route is root-caused or explicitly deferred.
+
+Root cause hypothesis:
+Unknown. Likely typed web registry/account-events handler error or DB projection issue for the newly cleaned registration/session state.
+
+Blocking further P1: no
+Fix now: no
+Fix summary:
+Not fixed.
+
+Changed files:
+None.
+
+Tests:
+Not run for this bug yet.
+
+Live regression:
+Not run.
+
+Remaining risk:
+Admin device account/session timeline may be partially broken even while the rest of the device card renders.

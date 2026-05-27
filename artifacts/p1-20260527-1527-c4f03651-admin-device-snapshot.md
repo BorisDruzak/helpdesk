@@ -1,0 +1,329 @@
+- generic [ref=e10]:
+  - banner [ref=e11]:
+    - generic [ref=e13]:
+      - generic [ref=e15]:
+        - combobox "Рабочая зона" [ref=e16]:
+          - option "Поддержка"
+          - option "Администрирование" [selected]
+        - img
+      - generic [ref=e17]:
+        - generic [ref=e19]:
+          - img
+          - searchbox "Поиск по устройствам, агентам и трассам" [ref=e20]
+          - generic: Ctrl K
+        - button "Уведомления" [ref=e22]:
+          - img [ref=e23]
+        - button "Выйти" [ref=e26]:
+          - img [ref=e27]
+          - text: Выйти
+  - main [ref=e30]:
+    - 'navigation "Раздел: Устройства и агенты" [ref=e31]':
+      - generic [ref=e32]:
+        - link "Инвентарь" [ref=e33] [cursor=pointer]:
+          - /url: /app/admin/inventory
+        - link "Карточка устройства" [ref=e34] [cursor=pointer]:
+          - /url: /app/admin/device
+        - link "Обновления агента" [ref=e35] [cursor=pointer]:
+          - /url: /app/admin/agent-updates
+        - link "Observer" [ref=e36] [cursor=pointer]:
+          - /url: /app/admin/observer
+        - link "Техпанель" [ref=e37] [cursor=pointer]:
+          - /url: /app/admin/tech
+        - generic "Откройте операции из инвентаря или карточки устройства" [ref=e38]: Операции устройства
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - paragraph [ref=e42]: Admin detail
+          - heading "Карточка устройства" [level=1] [ref=e43]
+          - paragraph [ref=e44]: Выделенная карточка устройства с живым update workflow и observer quick panel. Здесь остаётся новый SaaS-слой, но действия и состояние уже идут из реального backend.
+        - generic [ref=e45]:
+          - button "К инвентарю" [ref=e46]:
+            - img [ref=e47]
+            - text: К инвентарю
+          - button "Операции устройства" [ref=e49]:
+            - img [ref=e50]
+            - text: Операции устройства
+          - combobox [ref=e53]:
+            - option "ADMIN-2" [selected]
+            - option "ADMIN-2"
+            - option "ADMIN-2"
+            - option "AD-MAIN"
+            - option "sosn.alt.adm"
+          - button "Обновить" [ref=e54]:
+            - img [ref=e55]
+            - text: Обновить
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - generic [ref=e64]:
+              - generic [ref=e65]:
+                - heading "ADMIN-2" [level=2] [ref=e66]
+                - paragraph [ref=e67]: Windows • windows_amd64
+              - generic [ref=e68]: Готово к действиям
+            - generic [ref=e70]:
+              - generic [ref=e71]:
+                - paragraph [ref=e72]: 2447d396-79cd-53da-b3a9-028c5a4d56da
+                - paragraph [ref=e73]: ADMIN-2
+                - paragraph [ref=e74]: Агент 3.1.61 • Онлайн
+                - paragraph [ref=e75]: "Последний контакт: 27 мая 2026 г., 15:16"
+              - generic [ref=e76]:
+                - generic [ref=e77]:
+                  - paragraph [ref=e78]: Последний update status
+                  - paragraph [ref=e79]: Готово к действиям
+                  - paragraph [ref=e80]: Устройство сейчас доступно для rollout и диагностики.
+                - generic [ref=e81]:
+                  - paragraph [ref=e82]: Целевой target
+                  - paragraph [ref=e83]: windows_amd64
+                  - paragraph [ref=e84]: Для rollout и observer drilldown используем этот же идентификатор устройства.
+              - generic [ref=e85]:
+                - generic [ref=e86]:
+                  - paragraph [ref=e87]: Статус связи
+                  - paragraph [ref=e88]: Онлайн
+                - generic [ref=e89]:
+                  - paragraph [ref=e90]: Операционная система
+                  - paragraph [ref=e91]: Windows
+          - generic [ref=e92]:
+            - generic [ref=e93]:
+              - generic [ref=e94]:
+                - paragraph [ref=e95]: Observability
+                - heading "Observer для ADMIN-2" [level=2] [ref=e96]
+                - paragraph [ref=e97]: Переносим быстрый observer-срез, поиск трасс, signatures, degradations и runtime settings в единый SaaS workbench без legacy-техпанели.
+              - generic [ref=e98]:
+                - generic [ref=e99]:
+                  - img [ref=e100]
+                  - generic [ref=e102]: "Runtime: ok"
+                - button "Пересобрать traces" [ref=e103]:
+                  - img [ref=e104]
+                  - text: Пересобрать traces
+                - button "Обновить" [ref=e108]:
+                  - img [ref=e109]
+                  - text: Обновить
+            - generic [ref=e114]:
+              - generic [ref=e115]:
+                - paragraph [ref=e116]: Горячие traces
+                - paragraph [ref=e117]: "5"
+                - paragraph [ref=e118]: "Всего recent traces: 19"
+              - generic [ref=e119]:
+                - paragraph [ref=e120]: Signatures
+                - paragraph [ref=e121]: "0"
+                - paragraph [ref=e122]: "Degradation groups: 1"
+              - generic [ref=e123]:
+                - paragraph [ref=e124]: Dangerous flows
+                - paragraph [ref=e125]: "4"
+                - paragraph [ref=e126]: "Pending traces: 105"
+              - generic [ref=e127]:
+                - paragraph [ref=e128]: Runtime health
+                - generic [ref=e130]: Норма
+                - paragraph [ref=e132]: "Last projection: 27 мая 2026 г., 15:38"
+            - generic [ref=e133]:
+              - button "6 часов" [ref=e134]
+              - button "24 часа" [ref=e135]
+              - button "72 часа" [ref=e136]
+            - generic [ref=e137]:
+              - generic [ref=e138]:
+                - button "Обзор" [ref=e139]:
+                  - generic [ref=e140]: Обзор
+                - button "Трассы 19" [ref=e141]:
+                  - generic [ref=e142]: Трассы
+                  - generic [ref=e143]: "19"
+                - button "Сигнатуры" [ref=e144]:
+                  - generic [ref=e145]: Сигнатуры
+                - button "Деградации 1" [ref=e146]:
+                  - generic [ref=e147]: Деградации
+                  - generic [ref=e148]: "1"
+                - button "Runtime" [ref=e149]:
+                  - generic [ref=e150]: Runtime
+              - generic [ref=e151]:
+                - generic [ref=e152]:
+                  - img
+                  - searchbox "Поиск по trace id, ticket или operation" [ref=e153]
+                  - generic: Ctrl K
+                - generic [ref=e154]:
+                  - combobox [ref=e155]:
+                    - option "Все потоки" [selected]
+                    - option "Тикет"
+                    - option "Инструмент"
+                    - option "Обновление агента"
+                    - option "Установка модуля"
+                    - option "Удаление модуля"
+                    - option "Запрос согласия"
+                    - option "Module reconcile"
+                    - option "Playbook run"
+                    - option "Web auth"
+                    - option "Observer runtime"
+                  - combobox [disabled] [ref=e156]:
+                    - option "Все статусы" [selected]
+                    - option "В работе"
+                    - option "С ошибкой"
+                    - option "Успешно"
+                    - option "Таймаут"
+            - generic [ref=e157]:
+              - generic [ref=e158]:
+                - generic [ref=e159]:
+                  - heading "Горячие traces" [level=2] [ref=e160]
+                  - paragraph [ref=e161]: Берём реальные hot traces из observer quick и даём быстрый вход в trace drilldown.
+                - generic [ref=e162]:
+                  - article [ref=e163]:
+                    - generic [ref=e164]:
+                      - generic [ref=e165]:
+                        - paragraph [ref=e166]: agent_runtime
+                        - paragraph [ref=e167]: Статус неизвестен · ADMIN-2
+                        - paragraph [ref=e168]: "trace: 12b00793-cbb0-5e95-9696-b513757e0f55"
+                      - generic [ref=e169]: ok
+                    - paragraph [ref=e170]: "Ошибок: 0 • spans: 1 • Нет данных"
+                    - paragraph [ref=e171]: Без тикета · Статус неизвестен · ADMIN-2 · agent_runtime
+                    - button "Открыть trace" [ref=e173]
+                  - article [ref=e174]:
+                    - generic [ref=e175]:
+                      - generic [ref=e176]:
+                        - paragraph [ref=e177]: agent_runtime
+                        - paragraph [ref=e178]: Статус неизвестен · ADMIN-2
+                        - paragraph [ref=e179]: "trace: 77c7dd88-cd3a-5005-924d-1f09d9bf4b0a"
+                      - generic [ref=e180]: ok
+                    - paragraph [ref=e181]: "Ошибок: 0 • spans: 1 • Нет данных"
+                    - paragraph [ref=e182]: Без тикета · Статус неизвестен · ADMIN-2 · agent_runtime
+                    - button "Открыть trace" [ref=e184]
+                  - article [ref=e185]:
+                    - generic [ref=e186]:
+                      - generic [ref=e187]:
+                        - paragraph [ref=e188]: agent_runtime
+                        - paragraph [ref=e189]: Статус неизвестен · ADMIN-2
+                        - paragraph [ref=e190]: "trace: 00000000-a075-4a75-8000-000000000e76"
+                      - generic [ref=e191]: ok
+                    - paragraph [ref=e192]: "Ошибок: 0 • spans: 2 • 149.4 с"
+                    - paragraph [ref=e193]: Без тикета · Статус неизвестен · ADMIN-2 · agent_runtime
+                    - button "Открыть trace" [ref=e195]
+                  - article [ref=e196]:
+                    - generic [ref=e197]:
+                      - generic [ref=e198]:
+                        - paragraph [ref=e199]: agent_runtime
+                        - paragraph [ref=e200]: Статус неизвестен · ADMIN-2
+                        - paragraph [ref=e201]: "trace: 00000000-a075-4a75-8000-000000000e6a"
+                      - generic [ref=e202]: ok
+                    - paragraph [ref=e203]: "Ошибок: 0 • spans: 2 • 149.4 с"
+                    - paragraph [ref=e204]: Без тикета · Статус неизвестен · ADMIN-2 · agent_runtime
+                    - button "Открыть trace" [ref=e206]
+                  - article [ref=e207]:
+                    - generic [ref=e208]:
+                      - generic [ref=e209]:
+                        - paragraph [ref=e210]: agent_runtime
+                        - paragraph [ref=e211]: Статус неизвестен · ADMIN-2
+                        - paragraph [ref=e212]: "trace: 6091b9b5-6246-5f60-89a0-59fb29ac2c9d"
+                      - generic [ref=e213]: ok
+                    - paragraph [ref=e214]: "Ошибок: 0 • spans: 1 • Нет данных"
+                    - paragraph [ref=e215]: Без тикета · Статус неизвестен · ADMIN-2 · agent_runtime
+                    - button "Открыть trace" [ref=e217]
+              - generic [ref=e218]:
+                - generic [ref=e219]:
+                  - heading "Mass signatures и dangerous flows" [level=2] [ref=e220]
+                  - paragraph [ref=e221]: Держим массовые сбои, деградации и опасные потоки в одном обзорном слое.
+                - generic [ref=e223]:
+                  - generic [ref=e224]:
+                    - paragraph [ref=e225]: command
+                    - paragraph [ref=e226]: error 0 • timeout 0 • retry 0
+                    - paragraph [ref=e227]: "Active now: 0 • 27 мая 2026 г., 15:37"
+                  - generic [ref=e228]:
+                    - paragraph [ref=e229]: device provisioning
+                    - paragraph [ref=e230]: error 0 • timeout 0 • retry 0
+                    - paragraph [ref=e231]: "Active now: 0 • 27 мая 2026 г., 15:07"
+                  - generic [ref=e232]:
+                    - paragraph [ref=e233]: agent auth
+                    - paragraph [ref=e234]: error 0 • timeout 0 • retry 0
+                    - paragraph [ref=e235]: "Active now: 0 • 27 мая 2026 г., 15:16"
+                  - generic [ref=e236]:
+                    - paragraph [ref=e237]: agent runtime
+                    - paragraph [ref=e238]: error 0 • timeout 0 • retry 0
+                    - paragraph [ref=e239]: "Active now: 0 • 27 мая 2026 г., 15:16"
+          - generic [ref=e240]:
+            - generic [ref=e242]:
+              - generic [ref=e243]:
+                - heading "Паспорт устройства" [level=2] [ref=e244]
+                - paragraph [ref=e245]: ADMIN-2 · latest inventory.collect snapshot
+              - generic [ref=e246]:
+                - generic [ref=e247]: refresh disabled
+                - button "Обновить инвентарь" [ref=e248]:
+                  - img [ref=e249]
+                  - text: Обновить инвентарь
+            - generic [ref=e254]:
+              - generic [ref=e255]: Snapshot ещё не собран. Запустите inventory.collect или дождитесь следующего результата агента.
+              - generic [ref=e256]:
+                - button "Обзор" [ref=e257]:
+                  - generic [ref=e258]: Обзор
+                - button "Железо" [ref=e259]:
+                  - generic [ref=e260]: Железо
+                - button "Сеть" [ref=e261]:
+                  - generic [ref=e262]: Сеть
+                - button "Принтеры" [ref=e263]:
+                  - generic [ref=e264]: Принтеры
+                - button "Процессы" [ref=e265]:
+                  - generic [ref=e266]: Процессы
+                - button "Привязка" [ref=e267]:
+                  - generic [ref=e268]: Привязка
+                - button "История" [ref=e269]:
+                  - generic [ref=e270]: История
+                - button "Регистрация" [ref=e271]:
+                  - generic [ref=e272]: Регистрация
+                - button "Присутствие" [ref=e273]:
+                  - generic [ref=e274]: Присутствие
+                - button "Raw" [ref=e275]:
+                  - generic [ref=e276]: Raw
+        - generic [ref=e277]:
+          - generic [ref=e278]:
+            - heading "Контекст устройства" [level=2] [ref=e280]
+            - generic [ref=e281]:
+              - generic [ref=e282]:
+                - generic [ref=e283]: Device ID
+                - generic [ref=e284]: 2447d396-79cd-53da-b3a9-028c5a4d56da
+              - generic [ref=e285]:
+                - generic [ref=e286]: Hostname
+                - generic [ref=e287]: ADMIN-2
+              - generic [ref=e288]:
+                - generic [ref=e289]: Версия агента
+                - generic [ref=e290]: 3.1.61
+              - generic [ref=e291]:
+                - generic [ref=e292]: Target
+                - generic [ref=e293]: windows_amd64
+          - generic [ref=e294]:
+            - generic [ref=e295]:
+              - heading "Обновление агента" [level=3] [ref=e296]
+              - text: Актуальная версия
+            - generic [ref=e297]:
+              - article [ref=e298]:
+                - text: Текущая версия
+                - strong [ref=e299]: 3.1.61
+                - paragraph [ref=e300]: Устройство уже синхронизировано с рекомендацией серверный rollout stable/3.1.61.
+              - article [ref=e301]:
+                - text: Target агента
+                - strong [ref=e302]: windows_amd64
+                - paragraph [ref=e303]: Платформа определена из профиля устройства.
+              - article [ref=e304]:
+                - text: Рекомендуемая сборка
+                - strong [ref=e305]: Доступна
+                - paragraph [ref=e306]: "Устройство уже на рекомендованной версии: stable / 3.1.61"
+              - article [ref=e307]:
+                - text: Назначенный rollout
+                - strong [ref=e308]: stable/3.1.61
+                - paragraph [ref=e309]: Обновлено 27 мая 2026 г., 00:15
+            - generic [ref=e310]:
+              - generic [ref=e311]: "Источник рекомендации: Серверный rollout"
+              - generic [ref=e312]: "Платформа: windows_amd64"
+              - generic [ref=e313]: "Канал текущей версии: stable"
+            - paragraph [ref=e314]: Серверный rollout уже назначен для этого target.
+            - generic [ref=e315]:
+              - generic [ref=e316]:
+                - text: Причина запуска
+                - textbox "Причина запуска" [ref=e317]:
+                  - /placeholder: "Например: canary после smoke, перед массовой раскаткой."
+              - button "Повторить rollout" [disabled] [ref=e318]
+          - generic [ref=e319]:
+            - heading "Быстрые переходы" [level=2] [ref=e321]
+            - generic [ref=e322]:
+              - button "Обновления агента и rollout" [ref=e323]:
+                - generic [ref=e324]: Обновления агента и rollout
+                - img [ref=e325]
+              - button "Модули и preferred versions" [ref=e328]:
+                - generic [ref=e329]: Модули и preferred versions
+                - img [ref=e330]
+              - button "Конструктор форм" [ref=e333]:
+                - generic [ref=e334]: Конструктор форм
+                - img [ref=e335]
