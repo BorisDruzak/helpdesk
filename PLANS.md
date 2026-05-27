@@ -2743,8 +2743,8 @@ P1.5.D raw same-device probe while real agent active:
 ### BUG-20260527-P1-14 — Raw same-device probe receives live install commands and leaves module outbox sent
 
 Severity: P1
-Status: reproduced
-Area: reconnect / module-runtime / test-tool / server-db
+Status: verified-fixed
+Area: reconnect / module-runtime / test-tool / server-db / protocol
 
 P1 scenario: P1.5.D Raw same-device probe while real agent active.
 Run id: `p1-20260527-1527-c4f03651`
@@ -2772,11 +2772,11 @@ Root cause confirmed: yes. `handle_handshake()` always called `state.register_ag
 Blocking further P1: no for browser/UI projection checks if rows `105`/`106`/`107` are labeled contamination; yes for marking P1.5.D fully green.
 Fix now: yes; this is a test-isolation/data-integrity blocker for further raw-probe reconnect checks.
 Fix summary:
-In progress in fix run `p1-fix-20260527-2123-4f42ec7c`: introduce `client_kind=diagnostic_probe` handshake isolation. Diagnostic probes authenticate and receive `handshake_ack`, but are stored outside `connected_agents`, do not supersede the runtime agent, do not trigger `on_agent_online`, and are not visible to command dispatch. Runtime `agent_runtime` behavior remains unchanged.
+Verified in fix run `p1-fix-20260527-2123-4f42ec7c`: introduced `client_kind=diagnostic_probe` handshake isolation. Diagnostic probes authenticate and receive `handshake_ack`, but are stored outside `connected_agents`, do not supersede the runtime agent, do not trigger `on_agent_online`, and are not visible to command dispatch. Runtime `agent_runtime` behavior remains unchanged. A residual context bug was fixed after the first live rerun: `HandshakeService` now prefers the current websocket session metadata over `state.get_agent(device_id)` fallback, so a diagnostic probe using a live token cannot inherit the real runtime connection metadata.
 Changed files:
 `server/state_manager.py`, `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `server/websocket/agent_handler.py`, `scripts/live_ws_v3_probe.py`, `server/tests/test_state_manager_agent_registry.py`, `server/tests/test_probe_session_isolation.py`, `server/tests/test_live_ws_v3_probe_contract.py`, `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md`, `PLANS.md`.
 Tests:
-RED first: diagnostic-probe isolation tests failed because probes replaced runtime connections and the probe script omitted `client_kind`. After code changes, `python -m pytest server\tests\test_state_manager_agent_registry.py server\tests\test_probe_session_isolation.py server\tests\test_live_ws_v3_probe_contract.py server\tests\test_agent_disconnect_runtime_audit.py -q` -> `11 passed`; `python -m compileall -q server\state_manager.py server\websocket\agent_handshake.py server\websocket\agent_services.py server\websocket\agent_handler.py scripts\live_ws_v3_probe.py` -> passed. A broader DB-backed adjacent pytest command was stopped after hanging without output on the harness; rerun targeted DB tests separately before final gate.
+RED first: diagnostic-probe isolation tests failed because probes replaced runtime connections and the probe script omitted `client_kind`. After the first code changes, `python -m pytest server\tests\test_state_manager_agent_registry.py server\tests\test_probe_session_isolation.py server\tests\test_live_ws_v3_probe_contract.py server\tests\test_agent_disconnect_runtime_audit.py -q` -> `11 passed`; `python -m compileall -q server\state_manager.py server\websocket\agent_handshake.py server\websocket\agent_services.py server\websocket\agent_handler.py scripts\live_ws_v3_probe.py` -> passed. After the residual live context bug, added RED test `server\tests\test_probe_session_isolation.py::test_handshake_service_prefers_probe_ws_metadata_over_runtime_agent_entry`; it failed before the patch with `ctx.connection_id == runtime-conn`. After the patch, `python -m pytest server\tests\test_probe_session_isolation.py server\tests\test_state_manager_agent_registry.py server\tests\test_live_ws_v3_probe_contract.py server\tests\test_agent_disconnect_runtime_audit.py -q` -> `12 passed`; `python -m compileall -q server\websocket\agent_services.py server\tests\test_probe_session_isolation.py` -> passed; `git diff --check` -> passed with repository CRLF warnings only. A broader DB-backed adjacent pytest command was stopped after hanging without output on the harness; rerun targeted DB tests separately before final gate.
 Live regression:
 Initial live regression after commit `f0f8c737` with marker `p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe` found the first half fixed but exposed residual isolation drift before verification:
 - Recovery/setup path: remote server deployed and running; HTTPS proxy was manually recovered via user systemd unit after release smoke found `9443` closed. Local agent `live-v3-p1-clean2` was restarted as environment recovery only, then server log showed real runtime `handshake_ack`, `DeviceOutboxRepo Retrieved 0 pending commands`, real runtime `list_tools` command `c58fd678-0184-4fbe-a746-df0a0364d3af`, `command_result status=succeeded`, and `DeviceOutboxRepo Marked as delivered`.
@@ -2784,7 +2784,14 @@ Initial live regression after commit `f0f8c737` with marker `p1-fix-20260527-212
 - Server log: `Diagnostic probe accepted without runtime registration: device_id=2447d396-79cd-53da-b3a9-028c5a4d56da connection_id=73f6...`; however, immediately after probe close the handler logged `Ignoring disconnect from superseded connection ... connection_id=4ca001...`, the real runtime connection id. This shows `HandshakeService` copied metadata from `state.get_agent(device_id)` instead of the diagnostic websocket metadata.
 - Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; newest clean command `c58fd678-0184-4fbe-a746-df0a0364d3af` is `seen_commands.status=success`. Old pre-fix `a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains labeled as `BUG-20260527-P1-12` contamination.
 - Residual root cause confirmed: `HandshakeService.handle()` looked up `state.get_agent(ctx.agent_id)` before reading `_pc_client_session_metadata` from the current websocket. For a diagnostic probe using a live device token, `state.get_agent()` returns the real runtime agent, so the diagnostic context is misclassified as `agent_runtime`, can trigger `dispatch_service.on_agent_online()`, and cleanup logs/acts against the wrong connection metadata. This does not reproduce the original command-consumption symptom in the first rerun, but it still violates the diagnostic-probe isolation contract and cannot be marked verified.
-Remaining risk: These sent rows may later time out and must be excluded from clean-run stale checks as P1.5.D contamination.
+Verified live regression after commit `16000f1d52bff549ed57fb61492c83345f1cf2f7` with marker `p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe-rerun2`:
+- Deployment/runtime path tested: `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; smoke recovered on attempt 2 with `/api/health -> 200`. Remote server SHA was deployed to `16000f1d`.
+- Transport/API: artifact `artifacts\p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe-rerun2.json` shows raw WSS `client_kind=diagnostic_probe`, token evidence only prefix/hash/length, `message_types=["handshake_ack"]`, and `command_count=0`.
+- Server log: `Diagnostic probe accepted without runtime registration: device_id=2447d396-79cd-53da-b3a9-028c5a4d56da connection_id=99620e5e0c7040979a9f68f50873b460`, then `Diagnostic probe disconnected without changing runtime agent state` for the same connection id. No post-fix `Ignoring disconnect from superseded connection` appeared for the diagnostic probe.
+- Server DB: latest device row remains real agent `ADMIN-2`, version `3.1.61`, `last_handshake_at=2026-05-27 21:52:15+05`. Latest post-fix `device_outbox.id=109` is `list_tools status=delivered`; no new pending/sent command was created or consumed by the diagnostic probe. Old `device_outbox.id=102/105/106/107` remain pre-fix contamination and are excluded by timestamp/run marker.
+- Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; latest command `c58fd678-0184-4fbe-a746-df0a0364d3af` remains terminal `success`. Old `a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains P1-12 contamination.
+- Browser/UI: real browser `/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da` shows `ADMIN-2`, device `2447d396...56da`, `Online`, Windows, agent `3.1.61`, last activity `27 May 2026 21:52`. Screenshot copied to `artifacts\p1-fix-20260527-2123-p1-14-admin-inventory.png`.
+Remaining risk: Old sent rows `102/105/106/107` are terminal timeout/failed contamination and must stay excluded from clean-run stale checks. P1-12 still owns the local stale `seen_commands.in_progress` row.
 
 P1.5.E stale device_outbox cleanup check:
 - Path tested: server DB query, agent SQLite query.
@@ -2838,12 +2845,12 @@ Live regression:
 Remaining risk: Existing P0 UIA create script may still cover a specific wizard path, but the main connected/ticket projection cannot be confirmed through stable UIA selectors in the current GUI state.
 
 P1 Findings Summary:
-- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`.
+- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-12`, `BUG-20260527-P1-13`.
 - P1-blocking/UIA projection: `BUG-20260527-P1-15`.
 - Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
-- Verified-fixed during this P1 pass: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`.
+- Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-14`.
 - Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress`; ticket timeline started-only events for P1.5.B/P1.5.C markers.
-- P1 is not complete and P2 must not start. Fix phase should start with reconnect/idempotency/data-loss root cause for `BUG-20260527-P1-12` and `BUG-20260527-P1-13`, then raw-probe/module command isolation for `BUG-20260527-P1-14`, then UIA projection `BUG-20260527-P1-15`.
+- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14`; continue with reconnect/idempotency/data-loss root cause for `BUG-20260527-P1-12` and `BUG-20260527-P1-13`, then UIA projection `BUG-20260527-P1-15`.
 
 ### BUG-20260527-P1-11 — Agent exits on transient WSS 502 due bytes/string check in handshake-error handler
 
@@ -3150,7 +3157,7 @@ P1 operation lifecycle contract:
 8. Diagnostic raw probes are not production agent runtime sessions and must not consume live commands, supersede live runtime sessions by default, or mutate online state as if they were the real agent.
 
 Fix order and current intent:
-- [ ] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions.
+- [x] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions. Verified fixed in `16000f1d52bff549ed57fb61492c83345f1cf2f7`.
 - [ ] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands.
 - [ ] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout.
 - [ ] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state.
