@@ -1386,16 +1386,78 @@ class AgentOrchestrator:
                 meta=meta
             )
         else:
-            # Операция не найдена или уже завершена
+            finalized_local = await self._finalize_local_canceled_command(target_operation_id, meta)
+            cancel_status = "canceled" if finalized_local else "already_finished"
+
+            event_ticket_id = ticket_id
+            event_device_id = device_id or self.device_id
+            if cancel_status == "canceled" and event_ticket_id and self.db_manager:
+                try:
+                    await self.db_manager.enqueue_job_event(
+                        job_id=None,
+                        request_id=target_operation_id,
+                        device_id=event_device_id,
+                        event_payload={
+                            "event": "tool_call_result",
+                            "ticket_id": event_ticket_id,
+                            "operation_id": target_operation_id,
+                            "status": "canceled",
+                            "cancel_status": cancel_status,
+                        },
+                    )
+                except Exception as e:
+                    logger.error(f"[cancel_operation] Failed to publish queued canceled event: {e}")
+
+            # Операция не найдена, уже завершена, или была отменена до регистрации running_tasks.
             return ok(
                 data=ToolData(
                     observations={
-                        "cancel_status": "already_finished",
+                        "cancel_status": cancel_status,
                         "target_operation_id": target_operation_id,
                     }
                 ),
                 meta=meta
             )
+
+    async def _finalize_local_canceled_command(self, target_operation_id: str, meta: ToolMeta) -> bool:
+        if not self.db_manager:
+            return False
+        try:
+            cached = await self.db_manager.get_command_result(target_operation_id)
+        except Exception as exc:
+            logger.debug(f"[cancel_operation] Failed to inspect seen_commands for {target_operation_id}: {exc}")
+            return False
+        if not cached or cached.get("status") != "in_progress":
+            return False
+
+        payload = {
+            "status": "canceled",
+            "data": {
+                "observations": {
+                    "cancel_status": "canceled",
+                    "target_operation_id": target_operation_id,
+                }
+            },
+            "error": {
+                "code": "OPERATION_CANCELED",
+                "message": "Command was canceled before execution started",
+            },
+            "meta": {
+                "request_id": target_operation_id,
+                "command": "run_tool",
+                "canceled_by_request_id": meta.request_id,
+            },
+        }
+        await self.db_manager.mark_command_seen(
+            command_id=target_operation_id,
+            status="canceled",
+            result_json=json.dumps(payload, ensure_ascii=False),
+        )
+        logger.info(
+            f"[cancel_operation] Finalized pre-running command as canceled: "
+            f"target_operation_id={target_operation_id}"
+        )
+        return True
     
     async def _handle_update(self, command: Dict[str, Any], meta: ToolMeta) -> ToolResponse:
         """

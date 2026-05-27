@@ -1693,20 +1693,37 @@ class WSAgent:
         """Executes a command, persists idempotency, and sends command_result."""
         command_result_payload: Optional[Dict[str, Any]] = None
         try:
-            tool_response = await self.execute_command(
-                command,
-                params,
-                request_id=request_id,
-                device_id=device_id,
-                actor_role=actor_role,
-            )
-            command_result_payload = {
-                "status": tool_response.get("status", "error"),
-                "data": tool_response.get("data", {}),
-                "error": tool_response.get("error"),
-                "meta": tool_response.get("meta", {}),
-            }
+            cached_canceled: Optional[dict] = None
             if self.db_manager:
+                cached_result = await self.db_manager.get_command_result(command_id)
+                if cached_result and cached_result.get("status") == "canceled":
+                    try:
+                        cached_canceled = (
+                            jsonlib.loads(cached_result.get("result_json") or "{}")
+                            if cached_result.get("result_json")
+                            else None
+                        )
+                    except Exception:
+                        cached_canceled = None
+            if cached_canceled:
+                command_result_payload = cached_canceled
+                command_result_payload.setdefault("meta", {})
+                command_result_payload["meta"]["cached"] = True
+            else:
+                tool_response = await self.execute_command(
+                    command,
+                    params,
+                    request_id=request_id,
+                    device_id=device_id,
+                    actor_role=actor_role,
+                )
+                command_result_payload = {
+                    "status": tool_response.get("status", "error"),
+                    "data": tool_response.get("data", {}),
+                    "error": tool_response.get("error"),
+                    "meta": tool_response.get("meta", {}),
+                }
+            if self.db_manager and not cached_canceled:
                 status = "success" if command_result_payload["status"] == "success" else "error"
                 result_json = jsonlib.dumps(command_result_payload, ensure_ascii=False)
                 was_updated = await self.db_manager.mark_command_seen(
