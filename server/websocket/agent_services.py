@@ -306,6 +306,7 @@ class OperationLifecycleService:
                                 timestamp_field="finished_at",
                                 result_summary=result_summary,
                                 clear_deadline=True,
+                                clear_error=True,
                             )
                         await outbox_repo.mark_timeout_as_delivered(operation_id)
                     elif operation and operation.kind == "agent_update":

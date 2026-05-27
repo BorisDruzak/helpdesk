@@ -82,7 +82,9 @@ Terminal состояния операций (`succeeded`, `failed`, `timed_out`
 `expected_statuses=["timed_out"]`. В таком случае операция может быть reconciled
 в `succeeded`/`failed`, `device_outbox` timeout failure переводится в delivered,
 а ticket timeline получает `tool_call_result` с `late_result=true` и
-`previous_status="timed_out"`.
+`previous_status="timed_out"`. При reconciliation в `succeeded` текущие
+`operations.error_code/error_message` очищаются; исходный timeout остаётся в
+late-result event payload.
 
 Если retry/replacement operation уже есть, поздний результат исходной операции
 не перезаписывает timeout. Сервер сохраняет linked evidence event с

@@ -199,6 +199,7 @@ class OperationsRepo:
         result_event_id: Optional[int] = None,
         retry_count: Optional[int] = None,
         clear_deadline: bool = False,
+        clear_error: bool = False,
         # Cancel fields
         status_before_cancel: Optional[str] = None,
         cancel_target_operation_id: Optional[str] = None,
@@ -268,6 +269,9 @@ class OperationsRepo:
             values["error_code"] = error_code
         if error_message is not None:
             values["error_message"] = error_message
+        if clear_error:
+            values["error_code"] = None
+            values["error_message"] = None
         
         # Update result fields if specified
         if result_summary is not None:

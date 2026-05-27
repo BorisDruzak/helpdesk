@@ -166,6 +166,7 @@ async def test_operation_lifecycle_reconciles_late_success_after_timeout(monkeyp
                 "timestamp_field": "finished_at",
                 "result_summary": "{'probe_run_id': 'unit-late'}",
                 "clear_deadline": True,
+                "clear_error": True,
             },
         )
     ]
