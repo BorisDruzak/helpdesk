@@ -2560,7 +2560,7 @@ P1.4.C/P1.4.D negative module install guards:
 ### BUG-20260527-P1-09 — Auto-install module lifecycle device events are ACKed locally but not persisted on server
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: module-runtime / outbox / server-db / protocol
 
 P1 scenario: P1.4 Module auto-install before run_tool.
@@ -2719,7 +2719,7 @@ Live regression:
 - Server DB: `operations.status=failed`, `error_code=AGENT_RESTARTED`, `finished_at=2026-05-27 17:24:53.024374+00:00`, `result_event_id=191`; `device_outbox.id=111 status=delivered delivered_at=2026-05-27 17:24:53.026397+00:00`; `ticket_events.id=191 event_type=tool_call_result` contains `observations.interrupted=true` and `target_operation_id=a0764846-3ab7-42f5-8e79-93d8c310ba6b`.
 - Browser/UI: real browser ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` DOM contains operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`, `screen.record`, status `error`, and result text `Tool screen.record failed: Command was interrupted because the agent process restarted`; screenshots captured by Playwright as `p1-fix-20260527-2123-p1-12-browser-interrupted-visible.png` and `p1-fix-20260527-2123-p1-12-browser-interrupted-full.png`.
 - Adjacent regression: browser support route ran `system.collect` with marker `p1-fix-20260527-2123-4f42ec7c-p1-12-adjacent-system-collect`; operation `ca0691da-2f2d-44e4-9ff2-0d191671f264` reached `operations.status=succeeded`, `device_outbox.id=113 status=delivered`, local `seen_commands.status=success`, and `pending_command_results` remained empty.
-Remaining risk: This fix covers agent-process restart/interrupted non-resumable commands. BUG-20260527-P1-13 still owns the distinct server-drop/late-result reconciliation case.
+Remaining risk: This fix covers agent-process restart/interrupted non-resumable commands. The distinct server-drop/late-result reconciliation case is now separately verified fixed under `BUG-20260527-P1-13`.
 
 P1.5.C WebSocket/server drop during run_tool:
 - Path tested: real browser support route for `screen.record`, project remote-control server stop/start, live local agent runtime/SQLite/logs, server DB, browser ticket UI.
@@ -2731,7 +2731,7 @@ P1.5.C WebSocket/server drop during run_tool:
 ### BUG-20260527-P1-13 — WS drop during running tool loses agent result after server timeout
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: reconnect / outbox / operation lifecycle / server-db / agent-sqlite / browser
 
 P1 scenario: P1.5.C WebSocket drop during run_tool.
@@ -2765,10 +2765,39 @@ Product contract: a terminal `command_result` for the original operation must be
 Blocking further P1: yes for marking reconnect delivery green and for final P1 close.
 Fix now: yes; data-integrity/reconnect blocker with no safe evidence-quality workaround.
 Fix summary:
+Implemented product-level late terminal `command_result` reconciliation.
+- Agent side: commit `325236301dde6944201076b082d21ab5589fc6d6` already made terminal `command_result` durable in `pending_command_results` until `command_result_ack` and replays it on reconnect.
+- Server side: commits `96dc0706fc28c9e3b5e0c72bc509e017287f742f` and `5e5af5d8da58505e4d7f3415bd94f2696c54d83c` add explicit late-result handling for `tool_call` operations that are already `timed_out`. If no retry/replacement exists, the original operation is guarded-updated from `timed_out` to `succeeded`/`failed`, timeout error fields are cleared for successful reconciliation, timeout-failed `device_outbox` is reconciled to `delivered`, and the ticket result event records `late_result=true`, `previous_status=timed_out`, `reconciled_from=timed_out`. If a retry exists, the original timeout is preserved and linked late evidence is written with `late_result_ignored=true`.
 Changed files:
+- `pc_agent/ws_agent.py`, `pc_agent/core/database.py` from the durable replay prerequisite in `325236301dde6944201076b082d21ab5589fc6d6`.
+- `server/websocket/agent_services.py`
+- `server/websocket/command_result_components.py`
+- `server/app/repos/device_outbox_repo.py`
+- `server/app/repos/operations_repo.py`
+- `server/tests/test_agent_services_pipeline.py`
+- `server/docs/COMMAND_RESULT_LIFECYCLE.md`
+- `server/docs/PROTOCOL_V3.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
 Tests:
+- RED evidence: `python -m pytest server\tests\test_agent_services_pipeline.py::test_tool_call_result_payload_marks_late_timeout_reconciliation -q` failed before the server-side patch with `TypeError: CommandResultLifecycleOutcome.__init__() got an unexpected keyword argument 'late_result'`.
+- Targeted green: `python -m pytest server\tests\test_agent_services_pipeline.py -q` -> `28 passed`.
+- Compile: `python -m compileall -q server pc_agent scripts` -> exit 0.
+- Workspace gate: `python scripts\verify_workspace.py` -> passed.
+- `git diff --check` -> exit 0.
+- DB-backed local test harness note: `server\tests\test_command_result_lifecycle_db.py::test_late_success_reconciles_timed_out_tool_operation` was attempted during TDD but the existing Windows DB fixture hung before assertions. It was not used as pass evidence; the DB layer was verified through live server DB queries below.
 Live regression:
-Remaining risk: This is adjacent to `BUG-20260527-P1-12`, but the agent-restart stale-command path is now verified fixed in commit `325236301dde6944201076b082d21ab5589fc6d6`. `BUG-20260527-P1-13` still needs its own clean server-drop/late-result reconciliation fix and Live regression before P1 can close.
+- Clean run id/marker: `p1-fix-20260527-2123-4f42ec7c-p1-13-clean2-late`; ticket `T-000611`, `ticket_id=7e90b809-e993-4227-86f4-defb50223e48`.
+- Path tested: real browser support route `POST /api/web/support/tickets/7e90b809-e993-4227-86f4-defb50223e48/tools/run`, controlled remote server stop/start, real local agent runtime, agent SQLite, server DB, real browser ticket UI.
+- Browser/API start: HTTP `202`, `dispatch_status=accepted`, `operation_id=a921bec8-e71d-428a-afa3-287fa0083f21`, `trace_id=30d9fb63-a405-453b-8e99-91d5687c49c2`, tool `screen.record`.
+- Server was stopped during execution. Agent SQLite before replay: `pending_command_results.command_id=a921bec8-e71d-428a-afa3-287fa0083f21`, `attempts=1`, `last_error=Cannot write to closing transport`; `seen_commands.status=error` with `status=partial` result; no sent history yet for the marker.
+- Agent was stopped after the tool finished and before server restart to force server-side timeout before replay. Server DB pre-replay: operation `status=timed_out`, `error_code=timeout`; `device_outbox.id=116 status=failed error_code=TIMEOUT delivered_at=NULL`; ticket events only `tool_call_started` id `213`.
+- Agent restart replay: local `pending_command_results` emptied after `command_result_ack`; `seen_commands` remained terminal `error` with the original partial result; no failed local outbox rows for the marker.
+- Server DB after replay: operation `status=succeeded`, `error_code=NULL`, `error_message=NULL`, `result_event_id=215`, `result_summary` includes `frames_captured=90`; `device_outbox.id=116 status=delivered error_code=TIMEOUT_RECONCILED delivered_at=2026-05-27T18:06:23.164338+00:00`; ticket events include `tool_call_started` id `213` and `tool_call_result` id `215` with `late_result=true`, `previous_status=timed_out`, `reconciled_from=timed_out`.
+- Browser/UI: real ticket page `https://192.168.100.17:9443/app/tickets/7e90b809-e993-4227-86f4-defb50223e48` shows `screen.record` accepted and then `Успешно` result with `frames_captured=90`, `duration_sec=25.4`, `file_size_bytes=35889`; DOM check contained `screen.record`, `Успешно`, and result fields. Screenshot artifacts from Playwright MCP: `p1-fix-20260527-p1-13-late-result-clean2.png`, `p1-fix-20260527-p1-13-clean2-final-timeline.png`; console/network captures: `p1-fix-20260527-p1-13-console.json`, `p1-fix-20260527-p1-13-network.json`.
+- Adjacent regression: real browser support route `system.collect` on the same clean ticket returned HTTP `202`, operation `02e6f30e-0023-456b-b4a3-12aaf830cbde`; server DB `status=succeeded`, `error_code=NULL`, `device_outbox.status=delivered`, ticket events `tool_call_started` id `217` and `tool_call_result` id `218`; agent SQLite `seen_commands.status=success`, no pending command result; browser timeline shows `system.collect` `Успешно`.
+Remaining risk: Operation row stores the current terminal result; the historical timeout is intentionally carried in the late-result ticket event and reconciled outbox marker, not in `operations.error_code`. Retry/replacement late-result branch is unit-covered but still needs a separate live retry scenario if P1.2 retry UX is expanded.
 
 P1.5.D raw same-device probe while real agent active:
 - Path tested: raw WebSocket probe `scripts\live_ws_v3_probe.py double-connect` using token from local agent SQLite passed only through env to subprocess, real local agent process/status, server DB.
@@ -2834,10 +2863,10 @@ P1.5.E stale device_outbox cleanup check:
 - Server DB: after the recovery window, `open_device_outbox=[]`. Known P1 contamination rows are now terminal failed/TIMEOUT: `device_outbox.id=102` from P1.5.B and `id=105/106/107` from P1.5.D. No new open `pending/sent/accepted/running` server outbox rows remained.
 - Server operations: no new open operation rows for the P1 run except the earlier P1.3 recovery-denied consent operation, which is terminal in product semantics but was not excluded by the initial SQL status list.
 - Agent SQLite: local `outbox=[]`, `pending_consents=0`; pre-fix `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` was later recovered to terminal `error/AGENT_RESTARTED` by `BUG-20260527-P1-12` fix commit `32523630`.
-- Result: server stale-outbox cleanup is not currently blocked. P1.5 still needs a clean rerun because `BUG-20260527-P1-13` remains open and `BUG-20260527-P1-14`/`BUG-20260527-P1-12` were fixed after the original P1.5 pass.
+- Result: server stale-outbox cleanup is not currently blocked. P1.5 still needs a clean rerun because `BUG-20260527-P1-14`/`BUG-20260527-P1-12`/`BUG-20260527-P1-13` were fixed after the original P1.5 pass.
 
 P1.6 Browser/UI projection consistency:
-- P1.6.A Ticket timeline replay path tested: real browser support ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, DOM text, browser console capture. Browser shows clean P1 ticket `T-000609`, P1.1 markers once in visible timeline, and P1.5.A marker. The original P1.5.B pre-fix timeline showed a started/accepted `screen.record` without terminal result; after `BUG-20260527-P1-12` fix, clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b` shows terminal `error/AGENT_RESTARTED`. P1.5.C still shows the server-drop/late-result gap matching `BUG-20260527-P1-13`.
+- P1.6.A Ticket timeline replay path tested: real browser support ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, DOM text, browser console capture. Browser shows clean P1 ticket `T-000609`, P1.1 markers once in visible timeline, and P1.5.A marker. The original P1.5.B pre-fix timeline showed a started/accepted `screen.record` without terminal result; after `BUG-20260527-P1-12` fix, clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b` shows terminal `error/AGENT_RESTARTED`. After `BUG-20260527-P1-13` fix, clean ticket `T-000611` shows late-reconciled `screen.record` result and adjacent `system.collect` result in browser; P1.6 should still be rerun end-to-end after `BUG-20260527-P1-15`.
 - P1.6.B Operation card consistency path tested: support action center and ticket page in real browser. Support action center surfaces the P1.5.C timeout as `Ошибки операций` with text `Operation timed out in status 'accepted'...`; ticket timeline does not show the lost late tool result, matching DB state but not agent local result state.
 - P1.6.C Device/module admin projection path tested: real browser admin login and `/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da`, `/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da`. Inventory shows `ADMIN-2`, device id `2447d396...56da`, Windows, agent version `3.1.61`, Online, last activity `27 мая 2026 г., 17:31`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-inventory.png`. Device card shows observer hot traces for P1.5.D raw-probe command timeouts and still logs console 500 for `/api/web/admin/registry/devices/{device_id}/account-events?limit=20`, confirming `BUG-20260527-P1-03`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-device.png`.
 - P1.6.D Agent GUI projection path tested: local GUI restarted with `--gui`, pywinauto `0.6.9`, `Application/Desktop(backend="uia")`, bounded control tree, bridge status. UI bridge reports connected, account gate, active ticket list contains `f2918f87-cca3-42a9-b28f-f0a5e09d72b9`; UIA sees top window `Maria Agent v3.1.61` with `AutomationId=QApplication.MainWindow` and root group, but exposes no semantic text controls for active account/ticket/connected state. Screenshot `artifacts\p1-20260527-1527-c4f03651-p1-6-uia-agent-window.png`. Recorded as `BUG-20260527-P1-15`.
@@ -2881,12 +2910,12 @@ Live regression:
 Remaining risk: Existing P0 UIA create script may still cover a specific wizard path, but the main connected/ticket projection cannot be confirmed through stable UIA selectors in the current GUI state.
 
 P1 Findings Summary:
-- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-13`.
+- P1-blocking/data-integrity/reconnect: none currently open after `BUG-20260527-P1-13` verification.
 - P1-blocking/UIA projection: `BUG-20260527-P1-15`.
 - Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
-- Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-14`.
+- Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`.
 - Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` historical P1-12 contamination now recovered terminal `error/AGENT_RESTARTED`; ticket timeline started-only events for original P1.5.B/P1.5.C markers.
-- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14` and agent-restart recovery for `BUG-20260527-P1-12`; continue with server-drop late-result/data-loss root cause for `BUG-20260527-P1-13`, then UIA projection `BUG-20260527-P1-15`.
+- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14`, agent-restart recovery for `BUG-20260527-P1-12`, and server-drop late-result reconciliation for `BUG-20260527-P1-13`; continue with UIA projection `BUG-20260527-P1-15`.
 
 ### BUG-20260527-P1-11 — Agent exits on transient WSS 502 due bytes/string check in handshake-error handler
 
@@ -3195,7 +3224,7 @@ P1 operation lifecycle contract:
 Fix order and current intent:
 - [x] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions. Verified fixed in `16000f1d52bff549ed57fb61492c83345f1cf2f7`.
 - [x] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands. Verified fixed in `325236301dde6944201076b082d21ab5589fc6d6` with clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`.
-- [ ] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout.
+- [x] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout. Verified fixed in `96dc0706fc28c9e3b5e0c72bc509e017287f742f` + `5e5af5d8da58505e4d7f3415bd94f2696c54d83c` with clean operation `a921bec8-e71d-428a-afa3-287fa0083f21`.
 - [ ] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state.
 
 Verification gates after each fix:
