@@ -379,6 +379,7 @@ def start_target(target: str) -> subprocess.CompletedProcess[str]:
             "--property=RestartSec=2s",
             "--property=StartLimitBurst=3",
             "--property=StartLimitIntervalSec=60s",
+            "--property=TimeoutStopSec=5s",
             "/bin/bash",
             "-lc",
             runtime_command(target),

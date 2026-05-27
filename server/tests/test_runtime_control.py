@@ -67,6 +67,7 @@ def test_start_target_cleans_workspace_server_before_systemd_run(monkeypatch):
     assert "--property=RestartSec=2s" in run_args
     assert "--property=StartLimitBurst=3" in run_args
     assert "--property=StartLimitIntervalSec=60s" in run_args
+    assert "--property=TimeoutStopSec=5s" in run_args
 
 
 def test_get_unit_status_marks_external_listener(monkeypatch):
