@@ -97,6 +97,7 @@ def _handshake(
     machine_id: str = DEFAULT_MACHINE_ID,
     install_id: str = DEFAULT_INSTALL_ID,
     toolset_hash: str | None = DEFAULT_TOOLSET_HASH,
+    client_kind: str = "diagnostic_probe",
 ) -> dict[str, Any]:
     request_id = str(uuid.uuid4())
     trace_id = str(uuid.uuid4())
@@ -116,6 +117,7 @@ def _handshake(
         "tools_count": 6,
         "modules": ["system", "screen", "diag_logs", "inventory", "presence"],
         "modules_inventory": [],
+        "client_kind": client_kind,
     }
     msg: dict[str, Any] = {
         "type": "handshake",
@@ -126,6 +128,7 @@ def _handshake(
         "meta": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "actor_role": "agent",
+            "client_kind": client_kind,
             "capabilities": list(FULL_CAPABILITIES if capabilities is None else capabilities),
             "supported_message_types": [
                 "handshake",
@@ -146,6 +149,16 @@ def _handshake(
     if protocol_version is not None:
         msg["protocol_version"] = protocol_version
     return msg
+
+
+def _guard_live_runtime_probe(*, client_kind: str, allow_live_agent_session: bool) -> None:
+    if client_kind != "agent_runtime" or allow_live_agent_session:
+        return
+    raise SystemExit(
+        "Refusing to open an agent_runtime raw probe without --allow-live-agent-session. "
+        "Use the default diagnostic_probe mode for live diagnostics, or use a dedicated "
+        "diagnostic runtime token/device with the explicit override."
+    )
 
 
 async def _recv_until_terminal(ws: aiohttp.ClientWebSocketResponse, timeout: float) -> dict[str, Any]:
@@ -435,7 +448,7 @@ async def _run_invalid_case(args: argparse.Namespace, case: str) -> dict[str, An
     }
     kwargs = dict(cases[case])
     token = kwargs.pop("token", real_token)
-    msg = _handshake(token=token, **kwargs)
+    msg = _handshake(token=token, client_kind=args.client_kind, **kwargs)
     evidence = {
         "case": case,
         "ws_url": args.ws_url,
@@ -473,6 +486,10 @@ def _first_close_code(messages: list[dict[str, Any]]) -> int | None:
 
 
 async def run_invalid(args: argparse.Namespace) -> int:
+    _guard_live_runtime_probe(
+        client_kind=args.client_kind,
+        allow_live_agent_session=args.allow_live_agent_session,
+    )
     cases = [
         "wrong_protocol",
         "missing_protocol_v3",
@@ -493,9 +510,18 @@ async def run_invalid(args: argparse.Namespace) -> int:
 
 
 async def run_double(args: argparse.Namespace) -> int:
+    if args.client_kind != "agent_runtime":
+        raise SystemExit(
+            "double-connect supersede verification requires --client-kind agent_runtime "
+            "and a dedicated diagnostic runtime token/device."
+        )
+    _guard_live_runtime_probe(
+        client_kind=args.client_kind,
+        allow_live_agent_session=args.allow_live_agent_session,
+    )
     token = _token_from_env_or_prompt(required=True)
-    first_msg = _handshake(token=token)
-    second_msg = _handshake(token=token)
+    first_msg = _handshake(token=token, client_kind=args.client_kind)
+    second_msg = _handshake(token=token, client_kind=args.client_kind)
     evidence: dict[str, Any] = {
         "case": "double_connect",
         "ws_url": args.ws_url,
@@ -533,6 +559,10 @@ async def run_double(args: argparse.Namespace) -> int:
 
 
 async def run_malformed_outbox(args: argparse.Namespace) -> int:
+    _guard_live_runtime_probe(
+        client_kind=args.client_kind,
+        allow_live_agent_session=args.allow_live_agent_session,
+    )
     token = _token_from_env_or_prompt(required=True)
     cases = [
         "both_seq",
@@ -545,7 +575,7 @@ async def run_malformed_outbox(args: argparse.Namespace) -> int:
     ] if args.case == "all" else [args.case]
     run_id = (args.run_id or uuid.uuid4().hex[:8]).strip()
     seq_base = args.seq_base or (100000 + (int(uuid.uuid4().hex[:6], 16) % 800000))
-    handshake = _handshake(token=token)
+    handshake = _handshake(token=token, client_kind=args.client_kind)
     evidence: dict[str, Any] = {
         "case": "malformed_outbox",
         "run_id": run_id,
@@ -583,6 +613,10 @@ async def run_malformed_outbox(args: argparse.Namespace) -> int:
 
 
 async def run_mixed_batch(args: argparse.Namespace) -> int:
+    _guard_live_runtime_probe(
+        client_kind=args.client_kind,
+        allow_live_agent_session=args.allow_live_agent_session,
+    )
     token = _token_from_env_or_prompt(required=True)
     run_id = (args.run_id or uuid.uuid4().hex[:8]).strip()
     invalid_seq_base = args.invalid_seq_base or (900000 + (int(uuid.uuid4().hex[:5], 16) % 90000))
@@ -595,7 +629,7 @@ async def run_mixed_batch(args: argparse.Namespace) -> int:
         invalid_seq_base=invalid_seq_base,
         valid_device_event=args.valid_device_event,
     )
-    handshake = _handshake(token=token)
+    handshake = _handshake(token=token, client_kind=args.client_kind)
     batch_message = {
         "type": "outbox_items_batch",
         "request_id": str(uuid.uuid4()),
@@ -675,6 +709,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Live Protocol V3 WS probe")
     parser.add_argument("--ws-url", default=DEFAULT_WS_URL)
     parser.add_argument("--timeout", type=float, default=5.0)
+    parser.add_argument(
+        "--client-kind",
+        choices=["diagnostic_probe", "agent_runtime"],
+        default="diagnostic_probe",
+        help="diagnostic_probe is isolated from live command dispatch; agent_runtime requires explicit override.",
+    )
+    parser.add_argument(
+        "--allow-live-agent-session",
+        action="store_true",
+        help="Allow raw probe to register as agent_runtime. Use only with a dedicated diagnostic runtime token/device.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     invalid = sub.add_parser("invalid-handshake")

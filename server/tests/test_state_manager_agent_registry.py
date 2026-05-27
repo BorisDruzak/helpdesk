@@ -36,6 +36,40 @@ def test_register_agent_replaces_connection_but_preserves_current_runtime_entry(
     assert state.get_agent("device-1") is None
 
 
+def test_diagnostic_probe_does_not_replace_runtime_agent_or_look_online():
+    state = StateManager()
+    runtime_ws = _WsStub()
+    probe_ws = _WsStub()
+
+    state.register_agent(
+        "device-1",
+        runtime_ws,
+        {
+            "status": "online",
+            "connected_at": 1.0,
+            "connection_id": "runtime-1",
+            "client_kind": "agent_runtime",
+        },
+    )
+
+    previous = state.register_agent(
+        "device-1",
+        probe_ws,
+        {
+            "status": "online",
+            "connected_at": 2.0,
+            "connection_id": "probe-1",
+            "client_kind": "diagnostic_probe",
+        },
+    )
+
+    assert previous is None
+    assert state.get_agent("device-1")["ws"] is runtime_ws
+    assert state.get_agent("device-1")["metadata"]["connection_id"] == "runtime-1"
+    assert state.is_current_agent_connection("device-1", expected_connection_id="probe-1") is False
+    assert state.is_agent_online("device-1") is True
+
+
 @pytest.mark.asyncio
 async def test_pending_command_future_survives_runtime_reconnect():
     state = StateManager()

@@ -65,6 +65,8 @@
 - Для одного `device_id` source of truth для live session — последний успешный handshake; предыдущий websocket помечается как superseded и закрывается сервером кодом **4002** (`Superseded by newer connection`).
 - Offline/unregister path compare-safe: disconnect старого websocket не должен переводить в offline и не должен снимать более новое runtime-подключение того же `device_id`.
 
+Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` updates runtime online state, supersedes an older runtime websocket, and receives `device_outbox` commands. `diagnostic_probe` authenticates for raw protocol diagnostics but is isolated from runtime dispatch and does not replace the real agent.
+
 ### 4. Device binding
 
 - Каждый тикет привязан к одному `device_id`. События от другого устройства для этого тикета отклоняются с **outbox_nack** и кодом `DEVICE_MISMATCH` (non-retryable).

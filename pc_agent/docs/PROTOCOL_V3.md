@@ -161,6 +161,7 @@ Reconnect/runtime note:
 - The server treats the latest successful handshake for one `device_id` as the current live session.
 - If overlapping reconnects create two `/ws` sessions for the same `device_id`, the older websocket may be closed by the server with code **4002** and message `Superseded by newer connection`.
 - This is a transport/runtime ownership rule, not a wire-format change.
+- Handshake `client_kind` defaults to `agent_runtime`. Real agents omit it or send `agent_runtime`; raw diagnostics may send `diagnostic_probe`, which authenticates for protocol checks but is isolated from runtime dispatch and must not replace the real agent.
 
 Если launcher успешно применил self-update, агент добавляет в следующий `handshake`:
 - `payload.applied_update_version` — версия, которую launcher реально активировал;

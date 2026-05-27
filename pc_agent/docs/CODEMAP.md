@@ -153,7 +153,7 @@ P2 Knowledge Platform agent integration is HTTP-only and does not change Protoco
 
 Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir pc_agent`. Ниже — куда смотреть в первую очередь.
 
-- **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`
+- **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`; raw diagnostic probes use `client_kind=diagnostic_probe`, while the real agent remains `agent_runtime`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
 - **run_recipe, agent recipe** — `core/orchestrator.py` handles the Protocol V3 `run_recipe` command and delegates to `core/recipe_runner_bridge.py`; bridge results must be normalized to `ToolResponse` before common command-result post-processing.

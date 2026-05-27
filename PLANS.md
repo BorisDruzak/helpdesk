@@ -2768,12 +2768,17 @@ Evidence:
 
 Impact: Raw same-device probes against a live device can steal server-dispatched module commands and create post-fix `device_outbox.sent` contamination. The desired/actual module reconcile state also keeps emitting install attempts even though the module is already active locally.
 Root cause hypothesis: The server dispatches desired-module reconcile commands to whichever same-device websocket is latest, including raw diagnostic sessions, and the probe lacks command-result handling. Underlying desired/actual module state may be stale because module lifecycle device events were not persisted (`BUG-20260527-P1-09`).
+Root cause confirmed: yes. `handle_handshake()` always called `state.register_agent()` for authenticated raw probes; `StateManager.connected_agents` had no session role separation; `HandshakeService` always called `dispatch_service.on_agent_online()` after handshake; `DeviceOutboxSender` then used `state.get_agent(device_id)` and sent pending `device_outbox` commands to the probe websocket. `scripts/live_ws_v3_probe.py` also built production-style handshakes with no `client_kind`.
 Blocking further P1: no for browser/UI projection checks if rows `105`/`106`/`107` are labeled contamination; yes for marking P1.5.D fully green.
-Fix now: no; treat as P1 finding and avoid additional raw same-device probes until command handling or isolation is implemented.
+Fix now: yes; this is a test-isolation/data-integrity blocker for further raw-probe reconnect checks.
 Fix summary:
+In progress in fix run `p1-fix-20260527-2123-4f42ec7c`: introduce `client_kind=diagnostic_probe` handshake isolation. Diagnostic probes authenticate and receive `handshake_ack`, but are stored outside `connected_agents`, do not supersede the runtime agent, do not trigger `on_agent_online`, and are not visible to command dispatch. Runtime `agent_runtime` behavior remains unchanged.
 Changed files:
+`server/state_manager.py`, `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `server/websocket/agent_handler.py`, `scripts/live_ws_v3_probe.py`, `server/tests/test_state_manager_agent_registry.py`, `server/tests/test_probe_session_isolation.py`, `server/tests/test_live_ws_v3_probe_contract.py`, `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md`, `PLANS.md`.
 Tests:
+RED first: diagnostic-probe isolation tests failed because probes replaced runtime connections and the probe script omitted `client_kind`. After code changes, `python -m pytest server\tests\test_state_manager_agent_registry.py server\tests\test_probe_session_isolation.py server\tests\test_live_ws_v3_probe_contract.py server\tests\test_agent_disconnect_runtime_audit.py -q` -> `11 passed`; `python -m compileall -q server\state_manager.py server\websocket\agent_handshake.py server\websocket\agent_services.py server\websocket\agent_handler.py scripts\live_ws_v3_probe.py` -> passed. A broader DB-backed adjacent pytest command was stopped after hanging without output on the harness; rerun targeted DB tests separately before final gate.
 Live regression:
+Pending deployment to live server and WSS/browser/admin verification.
 Remaining risk: These sent rows may later time out and must be excluded from clean-run stale checks as P1.5.D contamination.
 
 P1.5.E stale device_outbox cleanup check:
@@ -3106,3 +3111,49 @@ Not run.
 
 Remaining risk:
 P1.2.C may also use `screen.record`; if artifact upload noise obscures cancel/idempotency evidence, switch that specific scenario to a safe long-running non-artifact diagnostic tool or record the artifact failure as known contamination for this run.
+
+## P1 fix phase — 2026-05-27 — run_id=p1-fix-20260527-2123-4f42ec7c
+
+Status: started. P2 remains blocked. This phase fixes P1-blocking product contracts found during `p1-20260527-1527-c4f03651`; old contamination remains recorded above and must not be treated as new evidence.
+
+Run metadata:
+- Branch: `codex/helpdesk-process-model`.
+- Commit SHA before fix phase: `4f42ec7c456f0a845083631532beb2216376d6fb`.
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/admin`.
+- Local agent instance intended for live regressions: `live-v3-p1-clean2`.
+- Current known clean P1 device id: `2447d396-79cd-53da-b3a9-028c5a4d56da`.
+- Agent version from P1 baseline: `3.1.61`.
+- pywinauto requirement for GUI evidence: `0.6.9`, backend `uia`.
+- Evidence rules: no raw tokens/cookies/session tokens; each live rerun must use marker prefix `p1-fix-20260527-2123-4f42ec7c`.
+
+Known pre-fix contamination ignored for this fix phase:
+- Server `device_outbox.id=83` from pre-fix mixed-batch raw probe.
+- Server `device_outbox.id=102` from P1.5.B agent-restart contamination.
+- Server `device_outbox.id=105/106/107` from P1.5.D raw probe consuming live module install commands.
+- Local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` from `BUG-20260527-P1-12`.
+- Ticket timeline started-only events for P1.5.B/P1.5.C markers in ticket `T-000609`.
+
+P1 operation lifecycle contract:
+1. An operation must not remain indefinitely in `queued`, `sent`, `accepted`, `running`, `waiting_consent`, or `cancel_requested` after agent restart, server restart, or websocket drop.
+2. Every command/operation must end in one terminal outcome: `succeeded`, `failed`, `timed_out`, or `canceled`. If an explicit `interrupted` status is not added to the DB/API/UI model, agent restart interruption must be represented as `failed` with `error_code=AGENT_RESTARTED` or `COMMAND_INTERRUPTED_BY_AGENT_RESTART`.
+3. Late terminal agent results must never disappear without audit trail. A late result after timeout/restart must either reconcile the original operation or be persisted as linked late-result evidence.
+4. `device_outbox` and local `seen_commands` must agree with the operation lifecycle: terminal operations cannot leave matching server outbox rows stale in `sent`, and terminal commands cannot leave local idempotency rows stale in `in_progress`.
+5. Duplicate command delivery after a terminal state must not run the tool again; it must return/replay the terminal cached result or deterministic terminal error.
+6. Non-resumable tools are not magically continued after agent process restart. Unless a tool declares a resumable recovery contract, restart interruption must be reported as terminal failed/interrupted.
+7. Browser/UI projection must show terminal or late/reconciled state, not stale active operation cards.
+8. Diagnostic raw probes are not production agent runtime sessions and must not consume live commands, supersede live runtime sessions by default, or mutate online state as if they were the real agent.
+
+Fix order and current intent:
+- [ ] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions.
+- [ ] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands.
+- [ ] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout.
+- [ ] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state.
+
+Verification gates after each fix:
+- Targeted unit/integration tests for the changed layer.
+- `python -m compileall -q` for touched packages/scripts.
+- Live regression with marker `p1-fix-20260527-2123-4f42ec7c-*`.
+- Browser confirmation for UI-visible operation/ticket/device projections.
+- Agent SQLite confirmation for agent runtime/idempotency paths.
+- `PLANS.md` status consistency audit before marking a bug `verified-fixed`.

@@ -30,6 +30,19 @@ async def _handle_agent_disconnect(state, connection_ctx: AgentConnectionContext
     device_id = connection_ctx.agent_id
     expected_ws = getattr(connection_ctx, "ws", None)
     expected_connection_id = getattr(connection_ctx, "connection_id", None)
+    metadata = getattr(connection_ctx, "session_metadata", {}) or {}
+    if metadata.get("client_kind") == "diagnostic_probe":
+        if hasattr(state, "unregister_diagnostic_probe"):
+            state.unregister_diagnostic_probe(
+                device_id,
+                expected_ws=expected_ws,
+                expected_connection_id=expected_connection_id,
+            )
+        logger.info(
+            "[WS handler] Diagnostic probe disconnected without changing runtime agent state: "
+            f"device_id={device_id} connection_id={expected_connection_id}"
+        )
+        return
 
     is_current = True
     if hasattr(state, "is_current_agent_connection"):

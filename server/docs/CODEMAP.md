@@ -217,7 +217,7 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
 
 Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir server`. Ниже — куда смотреть в первую очередь.
 
-- **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md` (включая migration rebind legacy install-based token -> canonical `machine_id`)
+- **handshake** — `websocket/agent_handshake.py`, `websocket/agent_services.py`, `websocket/validator.py`, `docs/PROTOCOL_V3.md` (включая migration rebind legacy install-based token -> canonical `machine_id`; `client_kind=diagnostic_probe` is isolated from runtime online state and device_outbox dispatch)
 - **outbox_ack, outbox_nack** — `websocket/agent_services.py`, `websocket/outbox_ingest_components.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
 - **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`); retry exhaustion теперь коррелируется обратно в `operations` и `agent_runtime_audit`

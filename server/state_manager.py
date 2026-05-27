@@ -44,6 +44,8 @@ class StateManager:
         # Реестр подключённых агентов (device_id -> {ws, metadata})
         # RUNTIME: Эпемерные данные, очищаются при отключении агента
         self.connected_agents: Dict[str, dict] = {}
+        # Diagnostic probes are not runtime agents and must not receive device_outbox commands.
+        self.diagnostic_agent_connections: Dict[str, dict] = {}
         self.pending_command_futures: Dict[str, dict] = {}
         # Реестр административных клиентов
         self.admin_clients: Set[Any] = set()
@@ -152,6 +154,17 @@ class StateManager:
     def register_agent(self, device_id: str, ws: Any, metadata: dict) -> Optional[dict]:
         """Регистрирует подключённого агента (RUNTIME)."""
         metadata.setdefault("connection_id", uuid4().hex)
+        client_kind = str(metadata.get("client_kind") or "agent_runtime").strip() or "agent_runtime"
+        metadata["client_kind"] = client_kind
+        if client_kind == "diagnostic_probe":
+            connection_id = metadata["connection_id"]
+            self.diagnostic_agent_connections[connection_id] = {
+                "device_id": device_id,
+                "ws": ws,
+                "metadata": metadata,
+                "connected_at": metadata.get("connected_at"),
+            }
+            return None
         previous = self.connected_agents.get(device_id)
         self.connected_agents[device_id] = {
             "ws": ws,
@@ -159,6 +172,23 @@ class StateManager:
             "connected_at": metadata.get("connected_at")
         }
         return previous
+
+    def unregister_diagnostic_probe(
+        self,
+        device_id: str,
+        *,
+        expected_ws: Optional[Any] = None,
+        expected_connection_id: Optional[str] = None,
+    ) -> bool:
+        entry = self.diagnostic_agent_connections.get(expected_connection_id) if expected_connection_id else None
+        if not entry:
+            return False
+        if entry.get("device_id") != device_id:
+            return False
+        if expected_ws is not None and entry.get("ws") is not expected_ws:
+            return False
+        del self.diagnostic_agent_connections[expected_connection_id]
+        return True
     
     def unregister_agent(
         self,

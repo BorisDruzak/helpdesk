@@ -77,8 +77,18 @@ class HandshakeService:
                 metadata = agent_info.get("metadata", {}) or {}
                 ctx.connection_id = metadata.get("connection_id")
                 ctx.session_metadata = metadata
+        if not ctx.session_metadata:
+            metadata = getattr(ctx.ws, "_pc_client_session_metadata", None)
+            if isinstance(metadata, dict):
+                ctx.session_metadata = metadata
+                ctx.connection_id = metadata.get("connection_id") or getattr(
+                    ctx.ws,
+                    "_pc_client_connection_id",
+                    None,
+                )
+        client_kind = str(ctx.session_metadata.get("client_kind") or "agent_runtime")
 
-        if ctx.device_id and self._dispatch_service is not None:
+        if ctx.device_id and self._dispatch_service is not None and client_kind == "agent_runtime":
             try:
                 await self._dispatch_service.on_agent_online(ctx.device_id)
             except Exception as exc:

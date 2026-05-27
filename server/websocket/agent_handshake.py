@@ -52,6 +52,16 @@ except ImportError:
     DB_AVAILABLE = False
 
 
+VALID_CLIENT_KINDS = {"agent_runtime", "diagnostic_probe"}
+
+
+def _handshake_client_kind(data: dict[str, Any]) -> str:
+    payload = data.get("payload", {}) if isinstance(data.get("payload"), dict) else {}
+    meta = data.get("meta", {}) if isinstance(data.get("meta"), dict) else {}
+    raw = payload.get("client_kind") or meta.get("client_kind") or data.get("client_kind") or "agent_runtime"
+    return str(raw).strip() or "agent_runtime"
+
+
 def _default_registration_payload() -> dict[str, Any]:
     return {
         "status": "unknown",
@@ -409,6 +419,11 @@ async def handle_handshake(
     # Phase E: Проверяем обязательные capabilities
     meta = data.get("meta", {})
     capabilities = meta.get("capabilities", [])
+    client_kind = _handshake_client_kind(data)
+    if client_kind not in VALID_CLIENT_KINDS:
+        logger.warning(f"[handshake] Invalid client_kind={client_kind!r}")
+        await ws.close(code=4003, message=b"Invalid client_kind")
+        return (ws, agent_id, device_id, authenticated)
     required_capabilities = {
         "protocol_v3",
         "envelope_v3",
@@ -550,6 +565,7 @@ async def handle_handshake(
         "modules": data.get("modules", []),
         "protocol_version": protocol_version,  # Phase E: сохраняем
         "capabilities": capabilities,  # Phase E: сохраняем
+        "client_kind": client_kind,
         "connected_at": time.time(),
         "last_seen": time.time(),
         "status": "online",
@@ -580,8 +596,16 @@ async def handle_handshake(
         metadata["last_failed_update_at"] = payload_pre["failed_update_at"]
     if payload_pre.get("failed_update_message") is not None:
         metadata["last_failed_update_message"] = payload_pre["failed_update_message"]
+    setattr(ws, "_pc_client_connection_id", connection_id)
+    setattr(ws, "_pc_client_client_kind", client_kind)
+    setattr(ws, "_pc_client_session_metadata", metadata)
     previous_agent_info = state.register_agent(agent_id, ws, metadata)
-    if previous_agent_info and previous_agent_info.get("ws") is not ws:
+    if client_kind == "diagnostic_probe":
+        logger.info(
+            "[handshake] Diagnostic probe accepted without runtime registration: "
+            f"device_id={device_id} connection_id={connection_id}"
+        )
+    elif previous_agent_info and previous_agent_info.get("ws") is not ws:
         previous_connection_id = (previous_agent_info.get("metadata", {}) or {}).get("connection_id")
         logger.warning(
             "[handshake] Superseding existing agent websocket: "
@@ -599,14 +623,15 @@ async def handle_handshake(
                 )
     
     logger.success(f"✅ Агент зарегистрирован: {device_id}")
-    await write_agent_runtime_audit(
-        device_id=device_id,
-        event_type="handshake_ok",
-        severity="info",
-        source="handshake",
-        actor_id=device_id,
-        actor_role="agent",
-    )
+    if client_kind == "agent_runtime":
+        await write_agent_runtime_audit(
+            device_id=device_id,
+            event_type="handshake_ok",
+            severity="info",
+            source="handshake",
+            actor_id=device_id,
+            actor_role="agent",
+        )
     logger.info(f"   Protocol: {protocol_version}")
     logger.info(f"   Capabilities: {capabilities}")
     logger.info(f"   Модули: {data.get('modules', [])}")
@@ -616,7 +641,7 @@ async def handle_handshake(
     should_request_toolset = False
     
     should_reconcile_modules = False
-    if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+    if client_kind == "agent_runtime" and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             async with get_session() as session:
                 from app.repos import DevicesRepo, DeviceConfigRepo
@@ -774,7 +799,7 @@ async def handle_handshake(
                 "[handshake] Failed to upsert device: {}",
                 e,
             )
-    if should_reconcile_modules:
+    if client_kind == "agent_runtime" and should_reconcile_modules:
         try:
             from modules.reconcile import reconcile_device
 
@@ -790,7 +815,7 @@ async def handle_handshake(
     # ticket ids/details in handshake; requester-visible ticket access is
     # account-session gated over HTTP after the GUI account gate.
     open_tickets_count = 0
-    if DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+    if client_kind == "agent_runtime" and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             async with get_session() as session:
                 # КРИТИЧНО: локальный импорт — в этой же функции есть другие импорты TicketEventsRepo,
@@ -814,7 +839,11 @@ async def handle_handshake(
             )
     
     # Phase E: Отправляем handshake_ack с server_capabilities и desired_revision
-    registration_payload = await build_registration_payload_for_handshake(device_id)
+    registration_payload = (
+        _default_registration_payload()
+        if client_kind == "diagnostic_probe"
+        else await build_registration_payload_for_handshake(device_id)
+    )
 
     from config import SERVER_CAPABILITIES
     
@@ -832,6 +861,7 @@ async def handle_handshake(
             "desired_revision": desired_revision,  # Device config revision
             "server_capabilities": SERVER_CAPABILITIES,  # Из config.py
             "registration": registration_payload,
+            "client_kind": client_kind,
         },
         "meta": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -846,7 +876,7 @@ async def handle_handshake(
         )
     
     # Enqueue list_tools if needed (с debounce: не ставим, если уже есть pending list_tools)
-    if should_request_toolset and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+    if client_kind == "agent_runtime" and should_request_toolset and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             from websocket.protocol import enqueue_command_async
             from app.repos import DevicesRepo, OperationsRepo
