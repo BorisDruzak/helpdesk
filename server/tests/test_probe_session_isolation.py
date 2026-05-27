@@ -68,6 +68,50 @@ async def test_handshake_service_does_not_dispatch_diagnostic_probe_online():
 
 
 @pytest.mark.asyncio
+async def test_handshake_service_prefers_probe_ws_metadata_over_runtime_agent_entry():
+    ws = _WsStub()
+    dispatch = _DispatchStub()
+    runtime_agent_info = {
+        "ws": _WsStub(),
+        "metadata": {
+            "device_id": "device-1",
+            "connection_id": "runtime-conn",
+            "client_kind": "agent_runtime",
+        },
+    }
+
+    async def legacy_handler(**_kwargs):
+        setattr(ws, "_pc_client_connection_id", "probe-conn")
+        setattr(ws, "_pc_client_client_kind", "diagnostic_probe")
+        setattr(
+            ws,
+            "_pc_client_session_metadata",
+            {
+                "device_id": "device-1",
+                "connection_id": "probe-conn",
+                "client_kind": "diagnostic_probe",
+            },
+        )
+        return None, "device-1", "device-1", True
+
+    state = SimpleNamespace(get_agent=lambda _device_id: runtime_agent_info)
+    ctx = AgentConnectionContext(ws=ws, request=SimpleNamespace(), state=state)
+    service = HandshakeService(legacy_handler, dispatch_service=dispatch)
+
+    await service.handle(
+        {
+            "type": "handshake",
+            "meta": {"capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
+        },
+        ctx,
+    )
+
+    assert ctx.connection_id == "probe-conn"
+    assert ctx.session_metadata["client_kind"] == "diagnostic_probe"
+    dispatch.on_agent_online.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_handshake_service_dispatches_runtime_agent_online():
     ws = _WsStub()
     dispatch = _DispatchStub()

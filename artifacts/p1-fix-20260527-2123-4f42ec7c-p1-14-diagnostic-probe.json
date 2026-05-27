@@ -1,0 +1,42 @@
+{
+  "run_id": "p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe",
+  "path": "raw WebSocket diagnostic_probe over canonical WSS",
+  "ws_url": "wss://192.168.100.17:9443/ws",
+  "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+  "install_id": "5b365c85-86d8-41e0-8cdd-b26594d3e581",
+  "client_kind": "diagnostic_probe",
+  "token": {
+    "present": true,
+    "prefix": "47fca88b",
+    "sha256_12": "11245df33169",
+    "length": 64
+  },
+  "duration_sec": 1.032,
+  "messages": [
+    {
+      "event": "1",
+      "ws_close_code": null,
+      "type": "handshake_ack",
+      "request_id": "c944d1d3-41a3-4811-842a-58ab77804b1f",
+      "trace_id": "1d8ff9a2-9ca5-4d74-8caa-117bf00390ea",
+      "payload_keys": [
+        "client_kind",
+        "desired_revision",
+        "message",
+        "open_tickets_count",
+        "registration",
+        "server_capabilities",
+        "server_version",
+        "status"
+      ]
+    },
+    {
+      "event": "timeout"
+    }
+  ],
+  "message_types": [
+    "handshake_ack"
+  ],
+  "command_count": 0,
+  "command_messages": []
+}

@@ -71,12 +71,6 @@ class HandshakeService:
         capabilities = meta.get("capabilities", [])
         if isinstance(capabilities, list):
             ctx.capabilities = capabilities
-        if ctx.agent_id and hasattr(ctx.state, "get_agent"):
-            agent_info = ctx.state.get_agent(ctx.agent_id)
-            if agent_info:
-                metadata = agent_info.get("metadata", {}) or {}
-                ctx.connection_id = metadata.get("connection_id")
-                ctx.session_metadata = metadata
         if not ctx.session_metadata:
             metadata = getattr(ctx.ws, "_pc_client_session_metadata", None)
             if isinstance(metadata, dict):
@@ -86,6 +80,12 @@ class HandshakeService:
                     "_pc_client_connection_id",
                     None,
                 )
+        if not ctx.session_metadata and ctx.agent_id and hasattr(ctx.state, "get_agent"):
+            agent_info = ctx.state.get_agent(ctx.agent_id)
+            if agent_info:
+                metadata = agent_info.get("metadata", {}) or {}
+                ctx.connection_id = metadata.get("connection_id")
+                ctx.session_metadata = metadata
         client_kind = str(ctx.session_metadata.get("client_kind") or "agent_runtime")
 
         if ctx.device_id and self._dispatch_service is not None and client_kind == "agent_runtime":
