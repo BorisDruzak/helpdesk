@@ -62,6 +62,11 @@ def test_start_target_cleans_workspace_server_before_systemd_run(monkeypatch):
         ("reset", "pc-client-server"),
         ("stop", "pc-client-server"),
     ]
+    run_args = calls[3][1]
+    assert "--property=Restart=on-failure" in run_args
+    assert "--property=RestartSec=2s" in run_args
+    assert "--property=StartLimitBurst=3" in run_args
+    assert "--property=StartLimitIntervalSec=60s" in run_args
 
 
 def test_get_unit_status_marks_external_listener(monkeypatch):

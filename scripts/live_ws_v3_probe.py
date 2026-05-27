@@ -340,6 +340,18 @@ def _observed_close_code(evidence: dict[str, Any]) -> int | None:
     return result.get("close_code") or result.get("next", {}).get("close_code") or evidence.get("close_code")
 
 
+def _has_text_payload_type(messages: list[dict[str, Any]], message_type: str) -> bool:
+    return any(item.get("payload", {}).get("type") == message_type for item in messages if item.get("event") == "text")
+
+
+def _first_close_code(messages: list[dict[str, Any]]) -> int | None:
+    for item in messages:
+        code = item.get("close_code")
+        if code:
+            return code
+    return None
+
+
 async def run_invalid(args: argparse.Namespace) -> int:
     cases = [
         "wrong_protocol",
@@ -377,18 +389,24 @@ async def run_double(args: argparse.Namespace) -> int:
     async with aiohttp.ClientSession() as session:
         async with session.ws_connect(args.ws_url, ssl=False, heartbeat=10) as first:
             await first.send_json(first_msg)
-            evidence["first_result"] = await _recv_until_terminal(first, timeout=args.timeout)
+            first_messages = await _recv_many(first, timeout=args.timeout, max_messages=6)
+            evidence["first_messages"] = first_messages
+            evidence["first_result"] = first_messages[0] if first_messages else {}
             async with session.ws_connect(args.ws_url, ssl=False, heartbeat=10) as second:
                 await second.send_json(second_msg)
-                evidence["second_result"] = await _recv_until_terminal(second, timeout=args.timeout)
-                evidence["first_after_second"] = await _recv_until_terminal(first, timeout=args.timeout)
+                second_messages = await _recv_many(second, timeout=args.timeout, max_messages=6)
+                evidence["second_messages"] = second_messages
+                evidence["second_result"] = second_messages[0] if second_messages else {}
+                first_after_second = await _recv_many(first, timeout=args.timeout, max_messages=6)
+                evidence["first_after_second_messages"] = first_after_second
+                evidence["first_after_second"] = first_after_second[-1] if first_after_second else {}
                 await second.close()
             evidence["first_close_code_final"] = first.close_code
     print(json.dumps(evidence, ensure_ascii=False, indent=2))
-    first_close = evidence.get("first_after_second", {}).get("close_code") or evidence.get("first_close_code_final")
+    first_close = _first_close_code(evidence.get("first_after_second_messages", [])) or evidence.get("first_close_code_final")
     ok = (
-        evidence.get("first_result", {}).get("payload", {}).get("type") == "handshake_ack"
-        and evidence.get("second_result", {}).get("payload", {}).get("type") == "handshake_ack"
+        _has_text_payload_type(evidence.get("first_messages", []), "handshake_ack")
+        and _has_text_payload_type(evidence.get("second_messages", []), "handshake_ack")
         and first_close == args.expect_supersede_close_code
     )
     return 0 if ok else 2

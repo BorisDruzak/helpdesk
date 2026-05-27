@@ -250,6 +250,7 @@ def main() -> None:
         host=args.listen_host,
         port=args.listen_port,
         ssl_context=ssl_context,
+        access_log=None,
     )
 
 
