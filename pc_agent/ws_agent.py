@@ -127,6 +127,7 @@ ALLOWED_MESSAGE_TYPES = {
     "outbox_ack",
     "outbox_nack",
     "agent_observer_batch_ack",
+    "command_result_ack",
     # Legacy support (будут удалены)
     "command",
     "command_result",
@@ -1748,6 +1749,14 @@ class WSAgent:
                     status=status,
                     result_json=result_json,
                 )
+                await self.db_manager.enqueue_pending_command_result(
+                    command_id=command_id,
+                    payload=command_result_payload,
+                    trace_id=trace_id,
+                    ticket_id=ticket_id_ctx,
+                    job_id=job_id_ctx,
+                    actor_role=actor_role_meta,
+                )
                 if was_updated:
                     logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status={status})")
                 else:
@@ -1777,6 +1786,14 @@ class WSAgent:
                     status="canceled",
                     result_json=result_json,
                 )
+                await self.db_manager.enqueue_pending_command_result(
+                    command_id=command_id,
+                    payload=command_result_payload,
+                    trace_id=trace_id,
+                    ticket_id=ticket_id_ctx,
+                    job_id=job_id_ctx,
+                    actor_role=actor_role_meta,
+                )
                 if was_updated:
                     logger.debug(f"✅ Команда {command_id} сохранена в seen_commands (status=canceled)")
                 else:
@@ -1802,21 +1819,72 @@ class WSAgent:
                 )
 
         logger.debug(f"📤 Отправка ответа: {command_result_payload}")
-        await self.send_envelope(
-            ws,
-            "command_result",
-            request_id,
-            command_result_payload,
-            trace_id=trace_id,
-            ticket_id=ticket_id_ctx,
-            job_id=job_id_ctx,
-            actor_role=actor_role_meta,
-        )
+        try:
+            await self.send_envelope(
+                ws,
+                "command_result",
+                request_id,
+                command_result_payload,
+                trace_id=trace_id,
+                ticket_id=ticket_id_ctx,
+                job_id=job_id_ctx,
+                actor_role=actor_role_meta,
+            )
+        except Exception as exc:
+            if self.db_manager:
+                await self.db_manager.mark_pending_command_result_attempt(command_id, str(exc))
+            raise
         logger.success(
             f"✅ [V3] Команда {command} выполнена "
             f"(request_id={request_id}, trace_id={trace_id}, command_id={command_id})"
         )
     
+    async def replay_pending_command_results(self, ws: ClientWebSocketResponse) -> int:
+        if not self.db_manager:
+            return 0
+        pending = await self.db_manager.list_pending_command_results()
+        replayed = 0
+        for item in pending:
+            command_id = item["command_id"]
+            try:
+                payload = jsonlib.loads(item["payload_json"])
+            except Exception as exc:
+                await self.db_manager.mark_pending_command_result_attempt(command_id, str(exc))
+                continue
+            try:
+                await self.send_envelope(
+                    ws,
+                    "command_result",
+                    command_id,
+                    payload,
+                    trace_id=item.get("trace_id"),
+                    ticket_id=item.get("ticket_id"),
+                    job_id=item.get("job_id"),
+                    actor_role=item.get("actor_role") or "agent",
+                )
+                replayed += 1
+            except Exception as exc:
+                await self.db_manager.mark_pending_command_result_attempt(command_id, str(exc))
+                logger.warning(f"[command_result_replay] failed command_id={command_id}: {exc}")
+        if replayed:
+            logger.info(f"[command_result_replay] replayed pending command results: count={replayed}")
+        return replayed
+
+    async def recover_in_progress_commands_on_startup(self, ws: ClientWebSocketResponse) -> List[Dict[str, Any]]:
+        if not self.db_manager:
+            return []
+        recovered = await self.db_manager.recover_in_progress_commands_on_startup(
+            current_owner_instance_id=self._session_id,
+            reason_code="AGENT_RESTARTED",
+        )
+        if recovered:
+            logger.warning(
+                "[command_restart_recovery] finalized stale in_progress commands: "
+                f"count={len(recovered)}"
+            )
+        await self.replay_pending_command_results(ws)
+        return recovered
+
     async def handle_message(self, ws: ClientWebSocketResponse, message: str) -> None:
         """
         Обрабатывает входящее сообщение от сервера.
@@ -1850,6 +1918,17 @@ class WSAgent:
             
             logger.debug(f"📦 Нормализованный envelope: type={msg_type}, request_id={request_id}")
             
+            if msg_type == "command_result_ack":
+                if self.db_manager and request_id and payload.get("status") == "accepted":
+                    await self.db_manager.mark_pending_command_result_acknowledged(request_id)
+                    logger.debug(f"[command_result_ack] acknowledged command_id={request_id}")
+                elif self.db_manager and request_id:
+                    await self.db_manager.mark_pending_command_result_attempt(
+                        request_id,
+                        str(payload.get("error") or payload),
+                    )
+                return
+
             # Ping/Pong
             if msg_type == "ping":
                 trace_id = envelope.get("trace_id")
@@ -2122,6 +2201,40 @@ class WSAgent:
                             )
                             return  # Не выполняем команду повторно
                         
+                        elif cached_result["status"] == "error":
+                            try:
+                                cached_payload = jsonlib.loads(cached_result["result_json"]) if cached_result["result_json"] else {}
+                            except Exception:
+                                cached_payload = {"status": "error", "data": {}, "error": {}}
+
+                            error_code = (cached_payload.get("error") or {}).get("code")
+                            is_restart_recovery = (
+                                error_code in {"AGENT_RESTARTED", "COMMAND_INTERRUPTED_BY_AGENT_RESTART"}
+                                or (cached_payload.get("meta") or {}).get("recovery") is True
+                            )
+                            if is_restart_recovery:
+                                logger.info(
+                                    f"♻️  Команда {command_id} уже завершена recovery error (cached), "
+                                    "возвращаем terminal результат"
+                                )
+                                cached_payload.setdefault("meta", {})
+                                cached_payload["meta"]["cached"] = True
+                                cached_payload["meta"]["completed_at"] = cached_result["completed_at"]
+
+                                trace_id = envelope.get("trace_id")
+                                ticket_id_ctx = envelope.get("ticket_id")
+                                job_id_ctx = envelope.get("job_id")
+                                actor_role_meta = envelope.get("meta", {}).get("actor_role", "agent")
+
+                                await self.send_envelope(
+                                    ws, "command_result", request_id, cached_payload,
+                                    trace_id=trace_id,
+                                    ticket_id=ticket_id_ctx,
+                                    job_id=job_id_ctx,
+                                    actor_role=actor_role_meta
+                                )
+                                return
+
                         elif cached_result["status"] == "in_progress":
                             # Команда в процессе: либо ждём тот же execution, либо разрешаем повтор по TTL
                             started_at = cached_result.get("started_at") or 0
@@ -3072,6 +3185,11 @@ class WSAgent:
                                     logger.error(f"❌ Ошибка восстановления jobs: {e}")
                             
                             # Цикл чтения сообщений
+                            try:
+                                await self.recover_in_progress_commands_on_startup(ws)
+                            except Exception as e:
+                                logger.error(f"[command_restart_recovery] failed: {e}")
+
                             connection_closed_auth_error = False
                             first_msg_processed = False
                             try:

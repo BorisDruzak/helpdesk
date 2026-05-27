@@ -155,6 +155,11 @@ P2 Knowledge Platform agent integration is HTTP-only and does not change Protoco
 
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`; raw diagnostic probes use `client_kind=diagnostic_probe`, while the real agent remains `agent_runtime`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`
+- **command_result replay / restart recovery** — `ws_agent.py`,
+  `core/database.py`, `docs/PROTOCOL_V3.md`, `docs/DATABASE.md`;
+  terminal command results are kept in `pending_command_results` until
+  `command_result_ack`, and previous-runtime `seen_commands.in_progress`
+  rows become terminal `AGENT_RESTARTED` recovery results on startup.
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
 - **run_recipe, agent recipe** — `core/orchestrator.py` handles the Protocol V3 `run_recipe` command and delegates to `core/recipe_runner_bridge.py`; bridge results must be normalized to `ToolResponse` before common command-result post-processing.
 - **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
@@ -185,7 +190,7 @@ P2 Knowledge Platform agent integration is HTTP-only and does not change Protoco
 
 ## 5. Хранилище и миграции
 
-- SQLite: `pc_agent/data/storage.db`. Версия схемы: `core/database.py` (DB_SCHEMA_VERSION). Таблицы: outbox, seq_ticket, seq_device, seen_commands, pending_consents, auth_tokens, scheduled_tasks. См. `docs/DATABASE.md`, `docs/SENDER.md`.
+- SQLite: `pc_agent/data/storage.db`. Версия схемы: `core/database.py` (DB_SCHEMA_VERSION). Таблицы: outbox, seq_ticket, seq_device, seen_commands, pending_command_results, pending_consents, auth_tokens, scheduled_tasks. См. `docs/DATABASE.md`, `docs/SENDER.md`.
 
 ---
 

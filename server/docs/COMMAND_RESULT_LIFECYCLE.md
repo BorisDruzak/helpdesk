@@ -11,6 +11,16 @@
 
 > Обновление цикла 2026-03-18: обработка `command_result` вынесена из transport-loop в `CommandResultService`, а `command_ack` — в `CommandAckService`. Wire-семантика не меняется: те же типы сообщений, те же transition guards и тот же invariant `tool_call_started`.
 
+> 2026-05-27 P1 reconnect update: after the server persists/reconciles a
+> `command_result`, it sends `command_result_ack` with the same `request_id`.
+> Agents keep terminal command results durable locally until this ACK is
+> received. On agent process restart, stale previous-runtime
+> `seen_commands.status='in_progress'` rows for non-resumable commands are
+> converted to terminal `error` payloads with `error.code=AGENT_RESTARTED` and
+> replayed as `command_result`; the server must mark the operation terminal
+> failed and reconcile the matching `device_outbox` row instead of leaving it
+> `sent`.
+
 ## Инварианты
 
 ### Инвариант 0: terminal `tool_call` публикует `tool_call_result` в ticket_events

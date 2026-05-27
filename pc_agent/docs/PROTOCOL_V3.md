@@ -363,6 +363,16 @@ Reconnect/runtime note:
 
 ### Command Result (command_result)
 
+Terminal `command_result` payloads are durable on the agent until the server
+responds with `command_result_ack` carrying the same `request_id`. If the WS is
+down or the server restarts after a tool finishes, the agent replays pending
+terminal results after reconnect. If the agent process restarts while a
+non-resumable command is `in_progress`, startup recovery records a terminal
+`status="error"` result with `error.code="AGENT_RESTARTED"` and
+`meta.recovery=true`, then sends it through the normal `command_result` path.
+Duplicates of that recovered command return the cached terminal error and must
+not execute the tool again.
+
 Результат выполнения команды от агента к серверу.
 
 **Формат:**

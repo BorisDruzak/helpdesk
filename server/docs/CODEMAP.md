@@ -261,6 +261,10 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
   - sync wait future resolve (`CommandResultFutureResolver`)
   - artifact/result post-processing (`CommandResultArtifactHandler`)
   - side effects publish (`CommandResultEventPublisher`)
+  - terminal result ACK back to the agent (`command_result_ack`) so the agent
+    can remove durable `pending_command_results`; recovery results with
+    `error.code=AGENT_RESTARTED` use this same path and must reconcile the
+    operation plus target `device_outbox`.
 - **`outbox_item` pipeline (`AgentMessageRouter` → `OutboxIngestService`)**
   - envelope validate (`OutboxEnvelopeValidator`)
   - post-handshake guard (`OutboxGuardService`)

@@ -80,6 +80,14 @@ Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` update
 
 ### 6. Server-side device outbox
 
+- 2026-05-27 P1 reconnect contract: after the server processes a terminal
+  `command_result`, it sends `command_result_ack` with the same `request_id`.
+  The agent keeps terminal command results durable until this ACK is received
+  and may replay them after reconnect. Agent-restart recovery uses the normal
+  `command_result` path with `status="error"`, `error.code="AGENT_RESTARTED"`
+  and `meta.recovery=true`; the server must mark the operation terminal and
+  reconcile the matching `device_outbox` row instead of leaving it `sent`.
+
 - Команды к агенту доставляются через таблицу **device_outbox** (pending → sent → delivered/failed).
 - `request_id` в команде используется как **command_id** (единый идентификатор команды).
 - DeviceOutboxSender периодически опрашивает pending команды и отправляет их подключённым агентам; при получении `command_result` команда помечается как delivered (или failed при ошибке).

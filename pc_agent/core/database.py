@@ -24,7 +24,7 @@ from loguru import logger
 # ВЕРСИОНИРОВАНИЕ (замечание 1.1)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DB_SCHEMA_VERSION = 9  # v9: controlled retry metadata for seen_commands
+DB_SCHEMA_VERSION = 10  # v10: durable pending command_result replay
 PROTOCOL_VERSION = "ws_ticket_v3"  # Версия протокола WebSocket
 
 # Лимиты (замечание 8.2)
@@ -243,6 +243,22 @@ class DatabaseManager:
         """)
         
         await db.execute("CREATE INDEX idx_seen_commands_completed_at ON seen_commands(completed_at)")
+
+        await db.execute("""
+            CREATE TABLE pending_command_results (
+                command_id TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                trace_id TEXT,
+                ticket_id TEXT,
+                job_id TEXT,
+                actor_role TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+        """)
+        await db.execute("CREATE INDEX idx_pending_command_results_updated_at ON pending_command_results(updated_at)")
         
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # ТАБЛИЦА pending_consents (Protocol V3) - Persistent consent tracking
@@ -650,6 +666,31 @@ class DatabaseManager:
 
         logger.success("Миграция v8 → v9 завершена")
     
+    async def _migrate_v9_to_v10(self, db: aiosqlite.Connection) -> None:
+        """Migration v9 -> v10: durable pending command_result replay."""
+        logger.info("Starting migration v9 -> v10: pending_command_results")
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_command_results (
+                command_id TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                trace_id TEXT,
+                ticket_id TEXT,
+                job_id TEXT,
+                actor_role TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_command_results_updated_at "
+            "ON pending_command_results(updated_at)"
+        )
+        logger.success("Migration v9 -> v10 completed")
+
     async def _migrate_schema(
         self, 
         db: aiosqlite.Connection, 
@@ -682,6 +723,9 @@ class DatabaseManager:
         # V8 → V9: controlled retry metadata в seen_commands
         if from_version < 9 and to_version >= 9:
             await self._migrate_v8_to_v9(db)
+
+        if from_version < 10 and to_version >= 10:
+            await self._migrate_v9_to_v10(db)
         
         logger.success(f"Миграция на v{to_version} завершена")
     
@@ -2102,7 +2146,174 @@ class DatabaseManager:
                     "owner_instance_id": row[5],
                 }
             return None
-    
+
+    async def enqueue_pending_command_result(
+        self,
+        *,
+        command_id: str,
+        payload: Dict[str, Any],
+        trace_id: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        actor_role: Optional[str] = "agent",
+    ) -> None:
+        now = int(time.time())
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.execute(
+                """
+                INSERT INTO pending_command_results
+                (command_id, payload_json, trace_id, ticket_id, job_id, actor_role,
+                 created_at, updated_at, attempts, last_error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
+                ON CONFLICT(command_id) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    trace_id=excluded.trace_id,
+                    ticket_id=excluded.ticket_id,
+                    job_id=excluded.job_id,
+                    actor_role=excluded.actor_role,
+                    updated_at=excluded.updated_at,
+                    last_error=NULL
+                """,
+                (command_id, payload_json, trace_id, ticket_id, job_id, actor_role, now, now),
+            )
+            await db.commit()
+
+    async def list_pending_command_results(self, limit: int = 100) -> List[Dict[str, Any]]:
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            cursor = await db.execute(
+                """
+                SELECT command_id, payload_json, trace_id, ticket_id, job_id, actor_role,
+                       created_at, updated_at, attempts, last_error
+                FROM pending_command_results
+                ORDER BY updated_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "command_id": row[0],
+                "payload_json": row[1],
+                "trace_id": row[2],
+                "ticket_id": row[3],
+                "job_id": row[4],
+                "actor_role": row[5],
+                "created_at": row[6],
+                "updated_at": row[7],
+                "attempts": row[8],
+                "last_error": row[9],
+            }
+            for row in rows
+        ]
+
+    async def mark_pending_command_result_attempt(self, command_id: str, error: str) -> None:
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.execute(
+                """
+                UPDATE pending_command_results
+                SET attempts=attempts + 1, updated_at=?, last_error=?
+                WHERE command_id=?
+                """,
+                (int(time.time()), error[:500], command_id),
+            )
+            await db.commit()
+
+    async def mark_pending_command_result_acknowledged(self, command_id: str) -> None:
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.execute("DELETE FROM pending_command_results WHERE command_id=?", (command_id,))
+            await db.commit()
+
+    async def recover_in_progress_commands_on_startup(
+        self,
+        *,
+        current_owner_instance_id: str,
+        reason_code: str = "AGENT_RESTARTED",
+    ) -> List[Dict[str, Any]]:
+        now = int(time.time())
+        recovered: List[Dict[str, Any]] = []
+        async with aiosqlite.connect(self._db_path, timeout=5.0) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await db.execute(
+                    """
+                    SELECT command_id, owner_instance_id
+                    FROM seen_commands
+                    WHERE status='in_progress'
+                      AND (owner_instance_id IS NULL OR owner_instance_id != ?)
+                    ORDER BY started_at ASC
+                    """,
+                    (current_owner_instance_id,),
+                )
+                rows = await cursor.fetchall()
+                for command_id, previous_owner in rows:
+                    payload = {
+                        "status": "error",
+                        "data": {
+                            "observations": {
+                                "interrupted": True,
+                                "reason": reason_code,
+                                "target_operation_id": command_id,
+                            }
+                        },
+                        "error": {
+                            "code": reason_code,
+                            "message": "Command was interrupted because the agent process restarted",
+                            "retryable": True,
+                        },
+                        "meta": {
+                            "request_id": command_id,
+                            "command_id": command_id,
+                            "recovery": True,
+                            "previous_owner_instance_id": previous_owner,
+                            "current_owner_instance_id": current_owner_instance_id,
+                        },
+                    }
+                    payload_json = json.dumps(payload, ensure_ascii=False)
+                    await db.execute(
+                        """
+                        UPDATE seen_commands
+                        SET status='error',
+                            result_json=?,
+                            completed_at=?,
+                            stale_retry_count=0,
+                            owner_instance_id=NULL
+                        WHERE command_id=?
+                        """,
+                        (payload_json, now, command_id),
+                    )
+                    await db.execute(
+                        """
+                        INSERT INTO pending_command_results
+                        (command_id, payload_json, trace_id, ticket_id, job_id, actor_role,
+                         created_at, updated_at, attempts, last_error)
+                        VALUES (?, ?, NULL, NULL, NULL, 'agent', ?, ?, 0, NULL)
+                        ON CONFLICT(command_id) DO UPDATE SET
+                            payload_json=excluded.payload_json,
+                            updated_at=excluded.updated_at,
+                            last_error=NULL
+                        """,
+                        (command_id, payload_json, now, now),
+                    )
+                    recovered.append(
+                        {
+                            "command_id": command_id,
+                            "payload": payload,
+                            "previous_owner_instance_id": previous_owner,
+                        }
+                    )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return recovered
+
     async def cleanup_seen_commands(self, max_age_days: int = 14, max_records: int = 50000) -> int:
         """
         Очищает старые записи из seen_commands (housekeeping).

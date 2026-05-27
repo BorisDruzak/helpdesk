@@ -6,7 +6,11 @@
 
 **Файл:** `pc_agent/core/database.py`
 
-**Версия схемы:** `8` (v8: auth_tokens)
+Current schema note: `DB_SCHEMA_VERSION = 10`. Version 10 adds
+`pending_command_results` for durable terminal `command_result` replay after
+server/WS outage and for agent-restart recovery reports.
+
+**Версия схемы:** `10` (v10: durable pending command_result replay)
 
 **Протокол:** `ws_ticket_v3`
 
@@ -114,6 +118,13 @@ CREATE TABLE seq_device (
 
 ### Таблица: seen_commands
 
+`seen_commands` includes runtime ownership metadata (`owner_instance_id`) and
+controlled retry counters. On agent startup/reconnect, stale `in_progress` rows
+owned by a previous runtime session are finalized as terminal `error` results
+with `error.code="AGENT_RESTARTED"` for non-resumable commands. The terminal
+result is queued in `pending_command_results` for server replay instead of
+silently clearing the row.
+
 Идемпотентность команд (кэш результатов).
 
 **Схема:**
@@ -133,6 +144,29 @@ CREATE TABLE seen_commands (
 - TTL 14 дней (cleanup)
 
 ### Таблица: jobs
+
+### Таблица: pending_command_results
+
+Durable replay queue for terminal server-command results. Rows are written
+before sending `command_result` and removed only after `command_result_ack`.
+This keeps tool results and agent-restart recovery reports durable across WS
+disconnects, server restarts and agent reconnects.
+
+**Schema:**
+```sql
+CREATE TABLE pending_command_results (
+    command_id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    trace_id TEXT,
+    ticket_id TEXT,
+    job_id TEXT,
+    actor_role TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT
+)
+```
 
 Управление фоновыми задачами.
 
@@ -355,7 +389,7 @@ deleted_count = await db_manager.cleanup_seen_commands(
 
 ### Версия схемы
 
-Текущая версия: `8`
+Текущая версия: `10`
 
 **История миграций:**
 - v1 → v2: Добавлен outbox pattern
@@ -363,6 +397,8 @@ deleted_count = await db_manager.cleanup_seen_commands(
 - v3 → v4: Добавлен seq_device для device_seq
 - v4 → v5: Добавлена таблица seen_commands для идемпотентности
 - v5 → v8: Дополнительные таблицы (ticket_state, scheduled_tasks, seen_messages, auth_tokens)
+- v8 → v9: `seen_commands` gains controlled retry metadata
+- v9 → v10: `pending_command_results` durable terminal result replay
 
 ### Автоматические миграции
 
@@ -453,5 +489,3 @@ await db_manager.mark_command_seen(
 - [AUTHENTICATION.md](AUTHENTICATION.md) — аутентификация и таблица auth_tokens
 - [WSOutboxFlusher документация](SENDER.md) — отправка событий
 - [AgentOrchestrator документация](ORCHESTRATOR.md) — обработка команд
-
-

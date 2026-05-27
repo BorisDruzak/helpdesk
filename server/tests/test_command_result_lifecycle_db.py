@@ -103,6 +103,85 @@ async def test_command_result_succeeds_sent_command_and_delivers_outbox(test_cli
 
 
 @pytest.mark.asyncio
+async def test_command_result_error_acknowledges_recovery_result(test_client, monkeypatch):
+    monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
+    monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)
+    operation_id = "77777777-7777-4777-8777-777777777777"
+
+    async with get_session() as session:
+        await _create_sent_operation(
+            session,
+            operation_id=operation_id,
+            device_id="device-restart-recovery",
+            command="run_tool",
+            kind="tool_call",
+        )
+        op_service = OperationService(session)
+        await op_service.mark_accepted(operation_id, expected_statuses=["sent"])
+        await session.commit()
+
+    sent = []
+
+    class _Ws:
+        async def send_json(self, payload):
+            sent.append(payload)
+
+    ctx = AgentConnectionContext(
+        ws=_Ws(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id="device-restart-recovery",
+    )
+
+    await CommandResultService().handle(
+        {
+            "type": "command_result",
+            "request_id": operation_id,
+            "payload": {
+                "status": "error",
+                "data": {
+                    "observations": {
+                        "interrupted": True,
+                        "reason": "AGENT_RESTARTED",
+                        "target_operation_id": operation_id,
+                    }
+                },
+                "error": {
+                    "code": "AGENT_RESTARTED",
+                    "message": "Command was interrupted because the agent process restarted",
+                    "retryable": True,
+                },
+                "meta": {"request_id": operation_id, "recovery": True},
+            },
+        },
+        ctx,
+    )
+
+    async with get_session() as session:
+        operation = await session.get(Operation, operation_id)
+        outbox = (
+            await session.execute(select(DeviceOutbox).where(DeviceOutbox.operation_id == operation_id))
+        ).scalar_one()
+
+    assert operation is not None
+    assert operation.status == "failed"
+    assert operation.error_code == "AGENT_RESTARTED"
+    assert outbox.status == "delivered"
+    assert sent == [
+        {
+            "type": "command_result_ack",
+            "request_id": operation_id,
+            "device_id": "device-restart-recovery",
+            "payload": {
+                "status": "accepted",
+                "operation_id": operation_id,
+                "processed": True,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_install_module_package_result_syncs_device_module_inventory(test_client, monkeypatch):
     monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
     monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)

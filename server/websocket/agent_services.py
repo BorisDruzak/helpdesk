@@ -183,6 +183,35 @@ class CommandResultService:
         await self._artifact_handler.post_process(normalized, ctx, lifecycle_outcome)
         # 5) publish side effects
         await self._event_publisher.publish_after_lifecycle(normalized, ctx, lifecycle_outcome)
+        await self._send_command_result_ack(normalized, ctx, lifecycle_outcome)
+
+    async def _send_command_result_ack(
+        self,
+        normalized: Any,
+        ctx: AgentConnectionContext,
+        lifecycle_outcome: CommandResultLifecycleOutcome,
+    ) -> None:
+        if not normalized.command_id or not hasattr(ctx.ws, "send_json"):
+            return
+        status = "accepted" if lifecycle_outcome.processed else "error"
+        payload: dict[str, Any] = {
+            "status": status,
+            "operation_id": lifecycle_outcome.operation_id or normalized.command_id,
+            "processed": lifecycle_outcome.processed,
+        }
+        if not lifecycle_outcome.processed:
+            payload["error"] = {"code": "COMMAND_RESULT_NOT_PROCESSED"}
+        try:
+            await ctx.ws.send_json(
+                {
+                    "type": "command_result_ack",
+                    "request_id": normalized.command_id,
+                    "device_id": ctx.agent_id,
+                    "payload": payload,
+                }
+            )
+        except Exception as exc:
+            logger.debug(f"[command_result_ack] failed to send ack: {exc}")
 
 
 class OperationLifecycleService:

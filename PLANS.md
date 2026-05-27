@@ -2444,7 +2444,7 @@ P1.3.A consent required:
 ### BUG-20260527-P1-07 — Web-session consent approve/deny is not available from support UI
 
 Severity: P1
-Status: reproduced
+Status: root-cause-confirmed
 Area: consent / browser / auth-account-session / UI projection
 
 P1 scenario: P1.3 Consent flow.
@@ -2655,7 +2655,7 @@ P1.5.B agent restart while command in progress:
 ### BUG-20260527-P1-12 — Agent restart during running command leaves accepted operation and sent outbox stuck
 
 Severity: P1
-Status: reproduced
+Status: fix-in-progress
 Area: reconnect / idempotency / operation lifecycle / agent-sqlite / server-db / browser
 
 P1 scenario: P1.5.B Agent restart while command in progress.
@@ -2671,7 +2671,7 @@ Repro steps:
 
 Evidence:
 - Transport/API: browser support route returned `202`, `dispatch_status=accepted`, `operation_id=a7734524-d1b6-461e-8f37-7d759e624b78`; no raw cookies/tokens recorded.
-- Server log: not root-caused yet; server DB and browser projection show the stuck lifecycle.
+- Server log: server DB and browser projection show the stuck lifecycle; root cause isolated in agent restart recovery path before patching.
 - Agent log: at 2026-05-27 17:22:04 received `run_tool`, sent `command_ack accepted`, created job `834af9cc-5fde-4f89-9499-d219314b549f`, and acquired execution lane for `screen.record`; after restart at 17:22:42, `recover_jobs_on_startup` reported no jobs to recover.
 - Server DB: `operations.status=accepted`, `error_code=NULL`, `finished_at=NULL`; `device_outbox.id=102`, `command=run_tool`, `status=sent`, `sent_at=2026-05-27 12:22:31.941331+00:00`, `delivered_at=NULL`; ticket event `185` is only `tool_call_started` for the marker.
 - Agent SQLite: `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78`, `status=in_progress`, `result_json=NULL`, `stale_retry_count=0`; `outbox` empty and no `tool_response` sent history for this operation.
@@ -2682,12 +2682,36 @@ Evidence:
 
 Impact: Rebooting/restarting the agent during a running tool can strand the operation and command idempotency state indefinitely, polluting P1 stale-outbox checks and misleading support UI.
 Root cause hypothesis: Running jobs are not durably persisted/recovered across agent restart for this command path, and the server lacks a watchdog/reconciliation path that marks an already-sent command terminal when the active agent process dies before `command_result`.
-Blocking further P1: no, if this marker and `device_outbox.id=102` are treated as P1.5.B contamination; yes for marking P1.5.B green.
-Fix now: no; continue remaining P1 reconnect/UI projection checks first unless the stale command prevents new operations.
+Root cause confirmed: yes. Code audit in fix run `p1-fix-20260527-2123-4f42ec7c` found `pc_agent.core.database.seen_commands.owner_instance_id` is written by `mark_command_started()`, but `pc_agent.ws_agent` only calls `orchestrator.job_manager.recover_jobs_on_startup()` after handshake. There is no startup/reconnect path that queries stale `seen_commands.status='in_progress'` from a previous `owner_instance_id`, no local terminal `AGENT_RESTARTED` result is written, and no recovery `command_result` is sent to the server. As a result, duplicate delivery later sees `COMMAND_IN_PROGRESS`, the server operation stays active until generic timeout, and the original `device_outbox` row is not reconciled by a product-level restart outcome.
+Blocking further P1: yes for P1.5.B restart recovery and P1.2 duplicate-after-restart idempotency.
+Fix now: yes in P1 fix phase; this is an operation lifecycle/idempotency blocker.
 Fix summary:
+Local implementation checkpoint complete; Live regression still pending. Product contract: on startup/reconnect, non-resumable commands left `in_progress` by a previous runtime session become local terminal `error` with `error.code=AGENT_RESTARTED`, are queued in durable `pending_command_results`, replayed to the server as recovery `command_result`, and duplicates of the same command return cached terminal error without re-running. Server sends `command_result_ack` after processing so the agent can clear the pending result; the server lifecycle path must mark the operation failed/interrupted and reconcile matching `device_outbox`.
 Changed files:
+- `pc_agent/core/database.py`
+- `pc_agent/ws_agent.py`
+- `server/websocket/agent_services.py`
+- `pc_agent/tests/test_command_restart_recovery.py`
+- `server/tests/test_agent_services_pipeline.py`
+- `server/tests/test_command_result_lifecycle_db.py`
+- `pc_agent/docs/PROTOCOL_V3.md`
+- `pc_agent/docs/DATABASE.md`
+- `pc_agent/docs/CODEMAP.md`
+- `server/docs/PROTOCOL_V3.md`
+- `server/docs/COMMAND_RESULT_LIFECYCLE.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
 Tests:
+- RED before implementation: `python -m pytest pc_agent\tests\test_command_restart_recovery.py -q` failed on missing startup recovery, replay and ACK-clearing APIs.
+- GREEN targeted: `python -m pytest pc_agent\tests\test_command_restart_recovery.py pc_agent\tests\test_seen_commands_retry_policy.py pc_agent\tests\test_ws_agent_canceled_command_idempotency.py pc_agent\tests\test_cancel_operation_runtime.py server\tests\test_agent_services_pipeline.py::test_command_result_service_sends_command_result_ack -q` -> 12 passed.
+- Adjacent server no-db pipeline: `python -m pytest server\tests\test_agent_services_pipeline.py -q` -> 25 passed.
+- Compile: `python -m compileall -q server pc_agent scripts` -> exit 0.
+- Workspace: `python scripts\verify_workspace.py` -> passed for `C:\Users\admin-2\CodexProjects\pc_client`.
+- Diff hygiene: `git diff --check` -> exit 0.
+- Verification gap: DB-backed `python -m pytest server\tests\test_command_result_lifecycle_db.py::test_command_result_error_acknowledges_recovery_result -q` hung in the Windows isolated DB fixture twice and was stopped as a test-harness issue; real server DB reconciliation must be proven in Live regression before this bug can become `verified-fixed`.
 Live regression:
+- Pending. Required with clean marker `p1-fix-20260527-2123-4f42ec7c-p1-12-*`: create/start `screen.record`, kill/restart local agent, confirm server operation terminal failed/interrupted with `AGENT_RESTARTED`, target `device_outbox` not stale sent, local `seen_commands` terminal error, `pending_command_results` cleared after `command_result_ack`, and browser ticket timeline shows the interrupted result.
 Remaining risk: New operations may coexist with this stale command, but P1.5.E must explicitly report `device_outbox.id=102` as new P1 contamination until fixed.
 
 P1.5.C WebSocket/server drop during run_tool:

@@ -155,6 +155,46 @@ async def test_command_result_service_resolves_state_level_pending_future_withou
 
 
 @pytest.mark.asyncio
+async def test_command_result_service_sends_command_result_ack():
+    sent = []
+
+    class _WsStub:
+        async def send_json(self, payload):
+            sent.append(payload)
+
+    service = CommandResultService(legacy_handler=None)
+    normalized = SimpleNamespace(command_id="op-recovery-1")
+    ctx = AgentConnectionContext(
+        ws=_WsStub(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    outcome = CommandResultLifecycleOutcome(
+        processed=True,
+        command_id="op-recovery-1",
+        status="failed",
+        operation_id="op-recovery-1",
+        ticket_id="ticket-1",
+    )
+
+    await service._send_command_result_ack(normalized, ctx, outcome)
+
+    assert sent == [
+        {
+            "type": "command_result_ack",
+            "request_id": "op-recovery-1",
+            "device_id": "dev-1",
+            "payload": {
+                "status": "accepted",
+                "operation_id": "op-recovery-1",
+                "processed": True,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_outbox_ingest_duplicate_is_acked_without_persistence_repeat():
     batch = _BatchAckManagerStub()
     service = OutboxIngestService(
