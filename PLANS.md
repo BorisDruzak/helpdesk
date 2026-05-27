@@ -2313,7 +2313,7 @@ P1 checklist:
 - [x] Browser admin inventory confirmation for the clean device.
 - [x] UIA baseline window confirmation.
 - [ ] P1.1 Outbox ACK/NACK/dedup.
-- [ ] P1.2 Command idempotency.
+- [x] P1.2 Command idempotency.
 - [ ] P1.3 Consent flow.
 - [ ] P1.4 Module auto-install before run_tool.
 - [ ] P1.5 Restart/reconnect with pending state.
@@ -2385,6 +2385,493 @@ P1.1.F retryable NACK / backoff:
 - Safety decision: did not overload live server to trigger `RATE_LIMITED`; this is explicitly forbidden by the P1 plan. Did not force DB/transient storage failures because that would turn a diagnostic into infrastructure disruption.
 - Required follow-up before P1.1 can be fully green: add a controlled test-only diagnostic hook, gated off by default, that can NACK one marked outbox item with `retryable=true` and then allow retry persistence after a short marker-controlled window. It must be documented as diagnostic-only, not production protocol behavior, and must be removed/disabled after live validation.
 - Result: P1.1.F is attempted but blocked by missing safe live retryable-NACK hook. P1.1 is not fully green; P1.2 may proceed with this limitation explicitly recorded, but P1 close cannot claim retryable backoff coverage until the hook/live regression exists.
+
+P1.2.A duplicate successful command:
+- Path tested: real browser authenticated support session `fetch` to typed web route `POST /api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` for initial `system.collect`, then diagnostic server DB enqueue of a duplicate `device_outbox` row with the same `command_id/request_id/operation_id`. Browser timeline, server DB, and agent SQLite were checked after duplicate delivery.
+- Run marker: `p1-20260527-1527-c4f03651`, ticket `T-000609`, operation `4605cb0d-bf44-4461-90e1-97509b392b4f`.
+- Browser/API start: real browser page context returned HTTP `202`, `dispatch_status=accepted`, `tool_name=system.collect`, `operation_id=4605cb0d-bf44-4461-90e1-97509b392b4f`, `trace_id=6f3455cb-e94c-4928-8e81-1caccbf7e8cc`.
+- Server DB before duplicate: `operations.status=succeeded`, `actor_role=admin`, `device_outbox` id `84` `status=delivered`, `ticket_events` ids `149 tool_call_started` and `151 tool_call_result`.
+- Agent SQLite before duplicate: `seen_commands` has one row for command `4605cb0d-bf44-4461-90e1-97509b392b4f`, `status=success`; local `outbox=[]`; `outbox_sent_history` has one `tool_response` outbox id `8`.
+- Duplicate injection: server diagnostic enqueue through `DeviceOutboxRepo.enqueue_command()` created `device_outbox` id `85` with same `command_id=request_id=operation_id=4605cb0d-bf44-4461-90e1-97509b392b4f`, same `trace_id=6f3455cb-e94c-4928-8e81-1caccbf7e8cc`, command `run_tool`. This is a server DB diagnostic path, not a product UI route.
+- Server DB after duplicate: `device_outbox` ids `84` and `85` are both `delivered`; `operations.status` remains `succeeded`; `ticket_events` for the operation remain exactly ids `149 tool_call_started` and `151 tool_call_result` (no second terminal event).
+- Agent SQLite after duplicate: `seen_commands` still has one terminal `success` row for the command; `completed_at/started_at` unchanged from original execution; local `outbox=[]`; `outbox_sent_history` did not add a second `tool_response`.
+- Browser/UI: real browser ticket snapshot `artifacts\p1-20260527-1527-c4f03651-p1-2a-after-duplicate-snapshot.md` shows one `system.collect` diagnostic result with CPU/RAM/Disk values and no duplicate visible result; screenshot `artifacts\p1-20260527-1527-c4f03651-p1-2a-after-duplicate.png`.
+- Result: passed for duplicate-after-success idempotency. Tool execution happened once; duplicate command was delivered and resolved from agent idempotency without duplicate local/server/browser terminal result.
+
+P1.2.B duplicate while in progress:
+- Path tested: real browser authenticated support session to typed web route `POST /api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` for initial long-running `screen.record`, then diagnostic server DB enqueue of duplicate `device_outbox` row with the same `command_id/request_id/operation_id` while the original command was still non-terminal. Browser timeline, server DB, agent SQLite and action trace were checked after completion.
+- Run marker: `p1-20260527-1527-c4f03651`, ticket `T-000609`, operation `755c2996-27e1-43b0-8d94-7d5ba7595b5b`.
+- Browser/API start: real browser page context returned HTTP `202`, `dispatch_status=accepted`, `tool_name=screen.record`, `operation_id=755c2996-27e1-43b0-8d94-7d5ba7595b5b`, `trace_id=6f3455cb-e94c-4928-8e81-1caccbf7e8cc`. Tool params were `duration_sec=20`, `fps=5`, `max_width=640`, `quality_crf=40`.
+- Duplicate injection timing: before duplicate enqueue, server DB showed `operations.status=accepted`, original `device_outbox` id `86` `status=sent`, `delivered_at=NULL`. Diagnostic server DB enqueue through `DeviceOutboxRepo.enqueue_command()` created duplicate `device_outbox` id `87` with same `command_id=request_id=operation_id=755c2996-27e1-43b0-8d94-7d5ba7595b5b`, same `trace_id=6f3455cb-e94c-4928-8e81-1caccbf7e8cc`, command `run_tool`, actor_role `admin`. This is a server DB diagnostic path, not a product UI route.
+- Agent action trace: one `orchestrator tool.run` for operation `755c2996-27e1-43b0-8d94-7d5ba7595b5b`; execution lane acquired once; module `screen.record` capture ran once; `frames_captured=100`, output path `temp\recording_1779880603.mp4`; module finished `partial` with `upload_error_count=1`.
+- Server DB after duplicate: original outbox id `86` and duplicate id `87` are both `delivered`; `operations.status=succeeded`; `ticket_events` for the operation are exactly `153 tool_call_started` and `155 tool_call_result` (one start, one terminal result).
+- Agent SQLite after duplicate: `seen_commands` has one row for command `755c2996-27e1-43b0-8d94-7d5ba7595b5b`, terminal `status=error` with ToolResponse `status=partial`; local `outbox=[]`; `outbox_sent_history` has exactly one new `tool_response` row, outbox id `9`.
+- Browser/UI: real browser ticket snapshot `artifacts\p1-20260527-1527-c4f03651-p1-2b-after-duplicate-running-snapshot.md` shows one `screen.record` start and one `screen.record` diagnostic result with `status=partial`, `request_id=755c2996-27e1-43b0-8d94-7d5ba7595b5b`; screenshot `artifacts\p1-20260527-1527-c4f03651-p1-2b-after-duplicate-running.png`.
+- Result: idempotency part passed for duplicate while in progress: the duplicate did not create a second execution, second terminal event, second local `seen_commands` row, or second local `tool_response`. Separate artifact upload failure during `screen.record` is recorded as `BUG-20260527-P1-06` and is not treated as idempotency failure.
+
+P1.2.C duplicate after cancel:
+- Path tested: real browser authenticated support route started `screen.record`; real browser web-session cancel route `POST /api/web/support/operations/87c17283-32f8-4202-bef2-3b9db48fbccf/cancel` requested cancellation; after terminal cancel, diagnostic server DB enqueue created a duplicate target `run_tool` command with the same `command_id/request_id/operation_id`. Server DB, agent SQLite and browser timeline were checked after duplicate delivery.
+- Run marker: `p1-20260527-1527-c4f03651`, ticket `T-000609`, target operation `87c17283-32f8-4202-bef2-3b9db48fbccf`, cancel operation `95d08db8-a058-49b0-b05c-7104fefb6739`.
+- Browser/API start: real browser page context returned HTTP `202`, `dispatch_status=accepted`, `tool_name=screen.record`, target operation `87c17283-32f8-4202-bef2-3b9db48fbccf`. Browser cancel route returned HTTP `200`, `target_operation_id=87c17283-32f8-4202-bef2-3b9db48fbccf`, `cancel_operation_id=95d08db8-a058-49b0-b05c-7104fefb6739`.
+- Agent SQLite before duplicate-after-cancel: target `seen_commands.status=canceled` with result `error.code=OPERATION_CANCELED`; cancel command `seen_commands.status=success`; local `outbox=[]`; `outbox_sent_history` contains target cancel `tool_call_result` outbox id `10` and cancel operation `tool_response` outbox id `11`.
+- Server DB before duplicate-after-cancel: target operation `status=canceled`, `canceled_at=2026-05-27T11:23:52.975499+00:00`; cancel operation `status=succeeded`; target `device_outbox` id `88` delivered; cancel `device_outbox` id `89` delivered.
+- Duplicate injection: diagnostic server DB enqueue created duplicate target `device_outbox` id `90` with same `command_id=request_id=operation_id=87c17283-32f8-4202-bef2-3b9db48fbccf`, command `run_tool`, actor_role `admin`. This is a server DB diagnostic path, not a product UI route.
+- Server DB after duplicate: duplicate id `90` delivered; target operation remained `canceled`; cancel operation remained `succeeded`; ticket events for target operation are exactly one each of `tool_call_started`, `op_cancel_requested`, `tool_call_result`, `op_canceled`; no second terminal result after duplicate.
+- Agent SQLite after duplicate: target command still has one terminal `canceled` row, no rerun; local `outbox=[]`; `outbox_sent_history` did not add a second target tool response after duplicate delivery.
+- Browser/UI: real browser ticket snapshot `artifacts\p1-20260527-1527-c4f03651-p1-2c-after-duplicate-cancel-snapshot.md` shows `screen.record` result `Статус Отменена`, result text `Tool screen.record canceled`, and cancel action disabled as already terminal; screenshot `artifacts\p1-20260527-1527-c4f03651-p1-2c-after-duplicate-cancel.png`.
+- Result: passed for duplicate-after-cancel idempotency. Target command did not rerun, local idempotency stayed terminal `canceled`, and server/browser did not create duplicate terminal output.
+
+P1.2.D stale in_progress:
+- Path tested: unit/integration test only with isolated temporary agent SQLite DB. Live corruption of the clean agent database was intentionally not performed because the P1 plan says to use test-only setup for stale in-progress.
+- Run marker: `p1-20260527-1527-c4f03651`.
+- Test command: `python -m pytest pc_agent\tests\test_seen_commands_retry_policy.py pc_agent\tests\test_ws_agent_canceled_command_idempotency.py -q`.
+- Evidence: `5 passed in 1.19s`. The tests cover stale retry metadata (`stale_retry_count`, owner instance transfer, terminal reset), canceled background command terminal reporting, duplicate canceled command cached response, and pre-canceled background dispatch not executing the tool.
+- Live applicability: browser/UI and server DB are not applicable to this isolated stale-state test because no live operation was intentionally corrupted. Adjacent live evidence is P1.2.C, where duplicate-after-cancel on the real agent returned cached terminal canceled behavior and did not rerun.
+- Result: passed as test-only stale in-progress/idempotency coverage with explicit scope limitation.
+
+P1.3.A consent required:
+- Path tested: real browser support session, server DB, agent SQLite, approval center browser UI, UIA attempted against local GUI. Test user setup: temporary support user `p1support_20260527_1527` created via server `UiUsersRepo`, added to queue `servicedesk_l1` (`queue_id=1`) so ticket access would not mask consent behavior. This is setup evidence, not product pass evidence.
+- Run marker: `p1-20260527-1527-c4f03651`, ticket `T-000609`, operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`, tool `diag.logs.collect`.
+- Browser/API: as `admin`, `diag.logs.collect` ran immediately with `dispatch_status=accepted`, `actor_role=admin`, and no consent. This matches admin-bypass policy and is not counted as P1.3 consent pass. As `support`, after queue membership setup, real browser `POST /api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` returned HTTP `202` with `dispatch_status=waiting_consent`.
+- Server DB: operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029` is `status=waiting_consent`, `actor_role=support`, no `device_outbox` row, no `consent_decisions` row, and no `ticket_events` rows for that operation.
+- Agent SQLite: `pending_consents` count stayed `0`; no `seen_commands` row for operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`; local `outbox` stayed empty. This means the current support route implements server-side consent hold and does not produce an agent-local consent prompt.
+- Browser/UI: ticket detail page did not contain `diag.logs.collect`, `waiting_consent`, `Ожидает`, or `соглас` for operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`; evidence snapshots `artifacts\p1-20260527-1527-c4f03651-p1-3a-support-waiting-consent-snapshot.md` and `artifacts\p1-20260527-1527-c4f03651-p1-3a-support-waiting-consent-snapshot2.md`. Approval center `/app/support/approvals?kind=pending_consent&status=pending` shows one risky tool consent for `diag.logs.collect`, ticket `T-000609`, operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`; screenshot `artifacts\p1-20260527-1527-c4f03651-p1-3a-approval-center.png`.
+- UIA: `.venvs\agent-win\Scripts\python.exe -c "import pywinauto; print(pywinauto.__version__)"` returned `0.6.9`. Attempts to inspect the local GUI window for a consent prompt via `Application(backend="uia")` / `Desktop(backend="uia")` hung in UIA discovery and were force-stopped. Combined with agent SQLite `pending_consents=0`, there is no evidence of a real local GUI consent prompt for this server-side waiting operation.
+- Approve/deny attempt: real browser support cookie `POST /api/operations/0b5da7ba-fa46-48e4-8e7d-d0ac38eef029/approve` returned HTTP `401 AUTH_REQUIRED`. Approval center explicitly shows only view actions: "Первый срез работает только для просмотра: действия подтверждения и отклонения показываются только если сервер отдаёт безопасное типизированное действие."
+- Recovery cleanup: after recording evidence, operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029` was denied through server `OperationService.deny_consent()` with actor `p1-live-validation-cleanup` to avoid polluting P1.4/P1.5. This is recovery only, not a fix. Post-cleanup DB state: `operations.status=denied`, `error_code=CONSENT_DENIED`, one `consent_decisions.decision=denied`.
+- Result: P1.3 is blocked/incomplete. Consent-required creation reaches server `waiting_consent` and approval-center projection, but ticket timeline, browser approve/deny, and agent GUI/pending-consent layers are missing.
+
+### BUG-20260527-P1-07 — Web-session consent approve/deny is not available from support UI
+
+Severity: P1
+Status: reproduced
+Area: consent / browser / auth-account-session / UI projection
+
+P1 scenario: P1.3 Consent flow.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: A support browser session that can create a `waiting_consent` operation should be able to approve or deny it through a typed web-session route or visible approval-center action. Ticket detail should expose the pending consent state where operators work the ticket.
+Actual: Support browser creates operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029` with `dispatch_status=waiting_consent`, but approval center is read-only and `POST /api/operations/{operation_id}/approve` with the same web session returns `401 AUTH_REQUIRED`. Ticket detail does not show the pending consent operation.
+Repro steps:
+1. Log in through real browser as support user `p1support_20260527_1527`.
+2. Open ticket `T-000609` after adding the user to queue `servicedesk_l1`.
+3. Run `diag.logs.collect` through `/api/web/support/tickets/{ticket_id}/tools/run`.
+4. Open `/app/support/approvals?kind=pending_consent&status=pending`.
+5. Try browser fetch `POST /api/operations/0b5da7ba-fa46-48e4-8e7d-d0ac38eef029/approve`.
+
+Evidence:
+- Transport/API: support `/tools/run` returned HTTP `202`, `dispatch_status=waiting_consent`; approve endpoint returned HTTP `401`, `error_code=AUTH_REQUIRED`.
+- Server log: not yet collected for this specific operation.
+- Agent log: not applicable before approve because no command was dispatched.
+- Server DB: `operations.status=waiting_consent`, `actor_role=support`; `device_outbox` count `0`; `consent_decisions` count `0`; `ticket_events` count `0` for the operation.
+- Agent SQLite: `pending_consents=0`, no `seen_commands` row for the operation.
+- Browser/UI: approval center shows the pending risky tool consent but states the first slice is view-only; ticket detail does not show the pending consent. Screenshot `artifacts\p1-20260527-1527-c4f03651-p1-3a-approval-center.png`.
+- UIA: pywinauto `0.6.9`, `backend="uia"` attempted; no local prompt evidence because no local pending consent exists.
+- Test artifact: `artifacts\p1-20260527-1527-c4f03651-p1-3a-support-waiting-consent-snapshot*.md`.
+- Run marker: `p1-20260527-1527-c4f03651-p1-3a-support-2`.
+
+Impact: P1.3 approve/deny/duplicate-decision scenarios cannot be validated through the required browser UI path. Operators can create a waiting consent but cannot complete it from the web-session UI.
+Root cause hypothesis: consent approve/deny handlers exist only as legacy/token-auth `/api/operations/{id}/approve|deny` routes and there is no typed `/api/web/support/operations/{id}/approve|deny` alias or approval-center action DTO. Ticket detail projection also lacks the waiting-consent operation because no ticket event is written.
+Blocking further P1: yes for P1.3.B-E canonical browser path; no for P1.4/P1.5 if the waiting operation is cleaned up as recovery and labeled.
+Fix now: no, per P1 rule continue collecting P1 findings unless this blocks the next scenario set.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk:
+
+### BUG-20260527-P1-08 — Server-side risky tool consent does not create agent GUI consent prompt
+
+Severity: P1
+Status: reproduced
+Area: consent / agent-sqlite / local GUI-UIA / documentation drift
+
+P1 scenario: P1.3 Consent flow.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: For the P1 plan's local-agent consent flow, a consent-required tool should create local agent `pending_consents`, show a real agent GUI prompt accessible by pywinauto/UIA, and only execute after approve.
+Actual: Browser support route holds the operation server-side in `waiting_consent` and does not send a command to the agent. Agent SQLite has no `pending_consents` row and no `seen_commands` row for operation `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`; no local GUI prompt is observable.
+Repro steps:
+1. As support, run `diag.logs.collect` on ticket `T-000609`.
+2. Query agent SQLite `pending_consents`, `seen_commands`, `outbox`.
+3. Attempt UIA inspection of local agent GUI.
+
+Evidence:
+- Transport/API: `/api/web/support/tickets/{ticket_id}/tools/run` returns `dispatch_status=waiting_consent`.
+- Server log: not yet collected.
+- Agent log: no dispatched command evidence collected yet.
+- Server DB: no `device_outbox` row for the waiting operation.
+- Agent SQLite: `pending_consents=0`, `seen_commands=0` for the operation, `outbox=0`.
+- Browser/UI: approval center says the request waits for user consent, but the agent has no local pending consent.
+- UIA: pywinauto `0.6.9`; UIA discovery attempts hung and were stopped; absence of local pending state is confirmed by SQLite.
+- Test artifact:
+- Run marker: `p1-20260527-1527-c4f03651-p1-3a-support-2`.
+
+Impact: The P1 plan's real local GUI consent scenario cannot be marked green. This may be a product contract drift: current implementation appears to model risky-tool consent as server-side approval-center state, while the P1 requirement expects requester/agent-side confirmation.
+Root cause hypothesis: server policy short-circuits consent-required support operations into `operations.status=waiting_consent` before command dispatch; agent-side `ConsentService.create_pending()` only runs when the agent receives a command and its local policy denies with `requires_consent`.
+Blocking further P1: yes for agent-GUI consent subcases; no for module/reconnect scenarios.
+Fix now: no.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk:
+
+P1.4.A module auto-install happy path:
+- Path tested: real browser support route, server DB, agent SQLite, agent logs/action trace, browser ticket detail.
+- Run marker: `p1-20260527-1527-c4f03651-p1-4a`, ticket `T-000609`, operation `87e0df39-c107-436c-bab2-1c024cc069eb`, module `network_basic`, tool `network.ping`.
+- Pre-state: server `device_modules` count for clean device was `0`; `device_desired_modules` count `0`; latest toolset snapshot `29`; no `network_basic` device events.
+- Browser/API: support `/api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` returned HTTP `202`, `dispatch_status=accepted`, operation `87e0df39-c107-436c-bab2-1c024cc069eb`.
+- Server DB: install command `device_outbox.id=92` (`install_module_package`) delivered; target run command `device_outbox.id=95` delivered; `device_modules.network_basic` persisted as `installed=true`, `active=true`, version `1.0.0`; `device_desired_modules.network_basic` state `installed`; new `device_toolset_snapshots.snapshot_id=34`; target operation terminal `succeeded`; ticket events `167 tool_call_started` and `169 tool_call_result` persisted for `network.ping`.
+- Agent local state: `seen_commands` has operation `87e0df39-c107-436c-bab2-1c024cc069eb` terminal `success`; local `outbox=[]`; `outbox_sent_history` has `13 tools_changed`, `14 module_state_changed`, and `15 tool_response`.
+- Agent logs/action trace: logs show download/install/activation of `network_basic@1.0.0`, `tools_changed event enqueued: toolset_hash=afa6647205d24098, tools_count=11`, and `[module_state_changed] Event enqueued: reason=install:network_basic@1.0.0 modules=1`; action trace shows `network.ping` resolved through module `network_basic` and completed `ok`.
+- Browser/UI: real ticket page shows `network.ping` accepted and succeeded with `127.0.0.1`, `count=2`, `Minimum = 0ms`; snapshot `artifacts\p1-20260527-1527-c4f03651-p1-4a-network-ping-ticket-snapshot.md`, screenshot `artifacts\p1-20260527-1527-c4f03651-p1-4a-network-ping-ticket.png`.
+- Mismatch: server `device_events` did not persist the agent-sent `tools_changed` or `module_state_changed` for `network_basic`; latest server `device_events` still stop at previous P1.1 probe rows (`device_seq=6`), while local sent history says outbox ids `13/14` were sent. Recorded as `BUG-20260527-P1-09`.
+- Result: functional auto-install and tool execution passed, but P1.4.A is not green because durable module lifecycle device events are missing on the server.
+
+P1.4.B module not on server:
+- Path tested: real browser support route and server DB.
+- Run marker: `p1-20260527-1527-c4f03651-p1-4b`, ticket `T-000609`, tool `p1.missing_tool_20260527`, operation `deecaa73-aa6c-4be5-83f2-a7779f3d9355`.
+- Browser/API: `/api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` returned HTTP `503`, `error_code=MODULE_NOT_ON_SERVER`, with a controlled message that module `p1` must be uploaded or installed manually.
+- Server DB: operation `deecaa73-aa6c-4be5-83f2-a7779f3d9355` persisted terminal `failed`, `error_code=MODULE_NOT_ON_SERVER`; no `device_outbox` rows; no `device_desired_modules` row for module `p1`; one ticket event `171 tool_call_result` records the controlled error.
+- Agent local state: not applicable because no command should be dispatched for unknown module/tool.
+- Browser/UI: the immediate browser route response is the canonical negative UI/API evidence; ticket timeline projection for the error exists through event `171` and should be included in P1.6 replay check.
+- Result: passed for controlled unknown module failure with no stale desired state or outbox.
+
+P1.4.E no-op reinstall / duplicate lifecycle noise:
+- Path tested: real browser support route, server DB, agent SQLite, browser ticket detail.
+- Run marker: `p1-20260527-1527-c4f03651-p1-4e`, ticket `T-000609`, operation `86afe8f8-8faf-416e-b456-38562d0314ad`, module `network_basic`, tool `network.ping`.
+- Browser/API: support `/api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` returned HTTP `202`; browser ticket detail shows `network.ping` accepted and then `Успешно` with `target=127.0.0.1`, `count=1`, `summary=Minimum = 0ms, Maximum = 0ms, Average = 0ms`. Evidence: `artifacts\p1-20260527-1527-c4f03651-p1-4e-network-ping-ticket-snapshot.md`, `artifacts\p1-20260527-1527-c4f03651-p1-4e-network-ping-ticket.png`.
+- Server DB: operation `86afe8f8-8faf-416e-b456-38562d0314ad` terminal `succeeded`; only one `device_outbox` row `id=96`, `command=run_tool`, `status=delivered`; ticket events `172 tool_call_started` and `174 tool_call_result`; no new `install_module_package` command after original install command `id=92`; latest toolset snapshots remain `34` and `29`, so no duplicate snapshot was created by the no-op run.
+- Agent local state: `seen_commands.command_id=86afe8f8-8faf-416e-b456-38562d0314ad` terminal `success`; local `outbox` count `0`; `pending_consents` count `0`; `outbox_sent_history` added only `outbox_id=16`, `kind=tool_response`; no new local `tools_changed` or `module_state_changed` for the no-op run.
+- Device event note: server `device_events` still has no new lifecycle event after `device_seq=6`, which is expected for a no-op reinstall, but the original P1.4.A missing persistence remains tracked as `BUG-20260527-P1-09`.
+- Result: passed for no duplicate install/snapshot/toolset churn on already-installed module; P1.4 overall remains not green because P1.4.A durable lifecycle events are missing and P1.4.C/D are not yet attempted.
+
+P1.4.C/P1.4.D negative module install guards:
+- Diagnostic setup path: direct server-side test setup only, not a product UI path. Created three disposable server module rows/packages for run id `p1-20260527-1527-c4f03651`: `p1_sha_bad_1527.run` with stored SHA prefix `000000000000` and real package SHA prefix `e4bd999d2042`; `p1_linux_only_1527.run` with `platforms=["linux"]`; `p1_future_agent_1527.run` with `min_agent_version=99.0.0`. The modules are safe/read-only and exist only to exercise auto-install negative gates.
+- Canonical tested path: real browser support route `POST /api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run`.
+- P1.4.C SHA mismatch marker `p1-20260527-1527-c4f03651-p1-4c-sha`: browser route returned HTTP `503`, `error_code=MODULE_INSTALL_FAILED`; agent received `install_module_package` command `bafaf9d5-6786-44c6-8ebb-8c2304c180d6` and local `seen_commands.status=error`, `MODULE_DOWNLOAD_FAILED`, SHA mismatch expected stored zero hash vs real prefix `e4bd999d2042`.
+- P1.4.D platform mismatch marker `p1-20260527-1527-c4f03651-p1-4d-platform`: browser route returned HTTP `503`, `error_code=MODULE_PLATFORM_MISMATCH`, device OS `Windows`, module allowed `["linux"]`.
+- P1.4.D min agent version marker `p1-20260527-1527-c4f03651-p1-4d-min-agent`: browser route returned HTTP `503`, `error_code=AGENT_VERSION_TOO_OLD`, required `99.0.0`, device reports `3.1.61`.
+- Server DB mismatch: all three negative markers have no ticket `operations` or `ticket_events`; SHA mismatch nevertheless created install `device_outbox.id=97`, `status=delivered`, `operation_id=bafaf9d5-6786-44c6-8ebb-8c2304c180d6`, and then stale desired state caused an additional reconcile install command `device_outbox.id=98`, `operation_id=63b2c67e-c070-4ea4-ba75-2c281d5871a2`. SHA mismatch wrote `device_desired_modules` row `id=3`, `module_name=p1_sha_bad_1527`, `state=installed`, `desired_sha256=000000...`, even though installation failed and no `device_modules` row exists.
+- Agent local state: local `outbox` count `0`; `pending_consents` count `0`; no `outbox_sent_history` rows for these negative module runs; only the SHA mismatch install command is visible in `seen_commands` because platform/version gates failed server-side before dispatch.
+- Browser/UI: real browser route returned the three controlled 503 JSON errors; current ticket page does not show corresponding failed operation cards/timeline entries because no server operation/events were persisted. Evidence: `artifacts\p1-20260527-1527-c4f03651-p1-4cd-negative-module-ticket-snapshot.md`, `artifacts\p1-20260527-1527-c4f03651-p1-4cd-negative-module-ticket.png`.
+- Result: negative guard error codes are controlled, but P1.4.C/D are not green because expected terminal failed operation/timeline evidence is missing and SHA mismatch leaves stale desired state. Recorded as `BUG-20260527-P1-10`.
+- Recovery cleanup after evidence: updated only disposable `device_desired_modules.id=3` for `p1_sha_bad_1527` to `state=absent`, `desired_version=null`, `desired_sha256=null`, `reason=p1-live-cleanup`, `updated_by=p1-live-validation` at `2026-05-27 12:04:14+00`. This is recovery only, not a fix; the bug remains `reproduced`.
+
+### BUG-20260527-P1-09 — Auto-install module lifecycle device events are ACKed locally but not persisted on server
+
+Severity: P1
+Status: reproduced
+Area: module-runtime / outbox / server-db / protocol
+
+P1 scenario: P1.4 Module auto-install before run_tool.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: After module install/activation and toolset hash change, agent emits `module_state_changed` and `tools_changed` with `device_seq`; server ACKs only after persistence and `device_events` contains both rows; browser/admin module/device view reflects durable event history.
+Actual: Agent local sent history has outbox `13 tools_changed` and `14 module_state_changed`, and local outbox is empty, but server `device_events` has no rows for the `network_basic` install/toolset change. Functional module state and snapshot updated, so the missing layer is durable device event persistence.
+Repro steps:
+1. Start from clean agent `live-v3-p1-clean2` with no installed modules in server `device_modules`.
+2. As support, run `network.ping` with marker `p1-20260527-1527-c4f03651-p1-4a`.
+3. Query agent SQLite `outbox_sent_history` and server DB `device_events`.
+
+Evidence:
+- Transport/API: browser support route accepted operation `87e0df39-c107-436c-bab2-1c024cc069eb`; install command `device_outbox.id=92` and run command `id=95` delivered.
+- Server log: `manage_remote_stack logs --contains network_basic|tools_changed|module_state_changed` returned no matching recent server lines; targeted journal grep did not show persistence evidence.
+- Agent log: `network_basic@1.0.0` downloaded/installed/activated; `tools_changed` and `[module_state_changed]` events enqueued.
+- Server DB: `device_modules.network_basic` active, `device_desired_modules.network_basic` installed, snapshot `34` created, operation succeeded, but `device_events` contains no `network_basic` module lifecycle rows after previous P1.1 rows.
+- Agent SQLite: `outbox_sent_history` rows `13 tools_changed`, `14 module_state_changed`, `15 tool_response`; `outbox=[]`.
+- Browser/UI: ticket detail shows `network.ping` success; admin module/device event projection not yet rechecked because DB event layer already failed.
+- UIA: not applicable to module auto-install.
+- Test artifact: `artifacts\p1-20260527-1527-c4f03651-p1-4a-network-ping-ticket-snapshot.md`, `artifacts\p1-20260527-1527-c4f03651-p1-4a-network-ping-ticket.png`.
+- Run marker: `p1-20260527-1527-c4f03651-p1-4a`.
+
+Impact: P1.4 module lifecycle cannot be trusted; server state converges through command_result side effects and snapshot, but durable lifecycle event history is missing. This resembles a data-integrity risk because local outbox considers events sent while server does not show persistence.
+Root cause hypothesis: either server outbox ingest ACKs these device events without persistence, or persistence rejects/deduplicates device_seq/event context while still ACKing. Needs transport ACK/log correlation before patching.
+Blocking further P1: yes for P1.4 lifecycle correctness; no for P1.5 reconnect if this contamination is labeled and filtered.
+Fix now: no, continue P1 finding pass unless later P1 scenarios depend on module lifecycle event persistence.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk:
+
+### BUG-20260527-P1-10 — Auto-install negative failures bypass operation/timeline and SHA mismatch leaves desired installed
+
+Severity: P1
+Status: reproduced
+Area: module-runtime / operation lifecycle / server-db / UI projection
+
+P1 scenario: P1.4 Module auto-install before run_tool, negative cases SHA mismatch, platform mismatch, min_agent_version mismatch.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: Negative module auto-install checks should create a terminal failed operation/ticket event visible in browser for support workflows; SHA mismatch must not leave desired state as `installed` after failed install; no bad module should become active.
+Actual: Browser support route returned controlled HTTP `503` errors, but no ticket `operations` or `ticket_events` were persisted for any of the three markers. SHA mismatch dispatched agent `install_module_package` command `device_outbox.id=97` and failed locally, then the stale desired state caused another reconcile install command `device_outbox.id=98`; server left `device_desired_modules.p1_sha_bad_1527` as `state=installed` with the bad SHA and no actual `device_modules` row until recovery cleanup.
+Repro steps:
+1. Create disposable safe test modules `p1_sha_bad_1527`, `p1_linux_only_1527`, `p1_future_agent_1527`.
+2. Corrupt only the stored SHA for `p1_sha_bad_1527`.
+3. From real support browser session, call `/api/web/support/tickets/{ticket_id}/tools/run` for all three tools with P1 markers.
+4. Query `operations`, `ticket_events`, `device_outbox`, `device_desired_modules`, `device_modules`, and agent SQLite.
+
+Evidence:
+- Transport/API: browser route returned `MODULE_INSTALL_FAILED` for SHA mismatch, `MODULE_PLATFORM_MISMATCH` for linux-only module on Windows device, and `AGENT_VERSION_TOO_OLD` for min agent `99.0.0`.
+- Server log: not yet root-caused; server DB confirms missing operation/timeline persistence.
+- Agent log: `agent.log` lines around 2026-05-27 17:00:06 show `Module download failed: SHA256 mismatch...`; local command id `bafaf9d5-6786-44c6-8ebb-8c2304c180d6`.
+- Server DB: no ticket operation/ticket event rows for markers `p1-4c-sha`, `p1-4d-platform`, `p1-4d-min-agent`; SHA mismatch install `device_outbox.id=97` delivered and reconcile retry `device_outbox.id=98` delivered; `device_desired_modules.id=3`, module `p1_sha_bad_1527`, `state=installed`, desired SHA zero hash before cleanup; `device_modules` empty for all three diagnostic modules.
+- Agent SQLite: `seen_commands.command_id=bafaf9d5-6786-44c6-8ebb-8c2304c180d6`, `status=error`, `MODULE_DOWNLOAD_FAILED`; reconcile retry `seen_commands.command_id=63b2c67e-c070-4ea4-ba75-2c281d5871a2`, `status=error`, same SHA mismatch; local `outbox=0`, `pending_consents=0`.
+- Browser/UI: support route JSON errors were visible in real browser execution; ticket page does not project failed operation cards/timeline entries for these negative attempts. Evidence files: `artifacts\p1-20260527-1527-c4f03651-p1-4cd-negative-module-ticket-snapshot.md`, `artifacts\p1-20260527-1527-c4f03651-p1-4cd-negative-module-ticket.png`.
+- UIA: not applicable; this is support browser module-auto-install path, not local agent GUI workflow.
+- Test artifact: disposable modules `p1_sha_bad_1527`, `p1_linux_only_1527`, `p1_future_agent_1527`; no raw tokens printed.
+- Run marker: `p1-20260527-1527-c4f03651-p1-4c-sha`, `p1-20260527-1527-c4f03651-p1-4d-platform`, `p1-20260527-1527-c4f03651-p1-4d-min-agent`.
+
+Impact: Support cannot audit negative auto-install failures in ticket timeline/operation history, and stale desired state may cause later reconcile/install noise for a known-bad package.
+Root cause hypothesis: `ToolExecutionService.run_tool` performs module resolution/precheck/install before creating the ticket operation, and `set_desired_installed()` is committed before install result is known without rollback/failed-state reconciliation.
+Blocking further P1: no, after recovery cleanup of the disposable desired-state row; P1.5 can continue with run_id filters.
+Fix now: no, unless stale desired state causes reconnect/reconcile pollution.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk: If reconcile workers act on stale desired state before cleanup, they may enqueue additional install attempts for the SHA-bad diagnostic module; future queries must filter module `p1_sha_bad_1527` as P1.4.C pre-fix/test contamination.
+Recovery after evidence: desired-state row `id=3` was changed to `absent` with null desired version/SHA to prevent P1.5 reconnect/reconcile pollution; status remains `reproduced`.
+
+P1.5.A server restart with agent outbox pending:
+- Path tested: project remote-control scripts for server stop/start, controlled local agent SQLite outbox test-hook, agent runtime logs/SQLite, server DB, server smoke.
+- Run marker: `p1-20260527-1527-c4f03651-p1-5a-server-restart-pending`, ticket `T-000609`, local outbox `17`, `agent_seq=9`, event id `2447d396-79cd-53da-b3a9-028c5a4d56da:f2918f87-cca3-42a9-b28f-f0a5e09d72b9:17:0`.
+- Server control: `python scripts\manage_remote_stack.py stop server` returned `stopped`; inserted one valid pending `chat_message` row into agent SQLite while server was stopped; `python scripts\manage_remote_stack.py start server` returned running. Immediate `smoke server` failed during startup readiness, but repeat after 5 seconds passed `/api/health -> 200`.
+- Expected: agent remains running, reconnects after server returns, local pending outbox is flushed once, server persists one `ticket_events.chat_message`, browser timeline shows marker.
+- Actual: local agent process stopped before reconnect. `python scripts\manage_local_agent.py status live-v3-p1-clean2` reported stopped; local `outbox.id=17` remained `pending`, `attempts=0`; no `outbox_sent_history`; server DB has no ticket event for marker.
+- Agent log evidence: at `2026-05-27 17:07:12`, WS connect saw HTTP/WSS `502`; `pc_agent/ws_agent.py:3230` raised `TypeError: 'in <string>' requires string as left operand, not bytes` inside `aiohttp.WSServerHandshakeError` handling; cleanup then stopped UI API server/orchestrator/database and agent exited.
+- Browser/UI: not applicable as pass evidence because the event never reached the server; the browser was available again after server restart, but no marker event exists.
+- Result: P1.5.A failed and P1.5 is blocked until the agent reconnect error handler is fixed or the agent is restarted as recovery. Recorded as `BUG-20260527-P1-11`.
+- Blocking fix/live regression: after adding the handshake error classifier, restarted `live-v3-p1-clean2` from source. The pending outbox row `17` flushed, `outbox_sent_history` recorded it at `1779883942.230623`, server persisted `ticket_events.id=179` with `agent_seq=9`, and browser ticket timeline showed the marker. A second controlled server stop/start while the fixed agent was running produced transient WSS `502` log lines at `17:14:12` and `17:14:17`, but the agent process stayed running and reconnected with `handshake_ack` at `17:14:22`; `/api/health` smoke passed and local `outbox_count=0`. Browser evidence: `artifacts\p1-20260527-1527-c4f03651-p1-5a-pending-outbox-browser-snapshot.md`, `artifacts\p1-20260527-1527-c4f03651-p1-5a-pending-outbox-browser.png`.
+
+P1.5.B agent restart while command in progress:
+- Invalid test attempt, not product evidence: marker `p1-20260527-1527-c4f03651-p1-5b-agent-restart-inflight`, operation `e96eb23a-1a19-421e-9b36-d0d2701e3647`, path tested real browser support route plus agent restart scripts/SQLite/server DB. The tool params used `screen.record` with `fps=2`, but `screen.record` validates `fps >= 5`; the command returned terminal `INVALID_PARAMS` before the restart could exercise in-progress recovery.
+- Transport/API: browser support route returned `202` for the command dispatch, then server marked operation `failed`, `error_code=INVALID_PARAMS`; `device_outbox.id=100` was delivered.
+- Server DB: `operations.operation_id=e96eb23a-1a19-421e-9b36-d0d2701e3647`, `status=failed`, `queued_at=2026-05-27 12:16:24.561418+00:00`, `finished_at=2026-05-27 12:16:24.793139+00:00`; ticket events `182`/`183` contain `tool_call_started` and `tool_call_result` with Pydantic validation details for `fps`.
+- Agent SQLite/log: `seen_commands` and agent log show terminal `error`, not a running command; after restart the agent reported connected. This attempt is excluded from P1.5.B pass/fail and must be repeated with valid long-running params.
+- Browser/UI: not used as pass evidence for in-progress restart because the operation was invalid before restart.
+- Valid retry marker `p1-20260527-1527-c4f03651-p1-5b-agent-restart-inflight-valid`, operation `a7734524-d1b6-461e-8f37-7d759e624b78`, path tested real browser support route, local agent restart scripts, server DB, agent SQLite/logs, browser ticket UI. Browser support route returned `202` and `dispatch_status=accepted`; agent log shows `command_ack accepted`, job creation, and `execution lane acquired` for `screen.record` at 2026-05-27 17:22:04-17:22:06. The agent was stopped/restarted during recording and reconnected with `handshake_ack` at 17:22:42.
+- Expected: the interrupted operation becomes terminal failed/canceled/timed_out/recovered according to contract; no indefinite `accepted` operation, no `device_outbox.status=sent` beyond recovery window, no local `seen_commands.status=in_progress` after restart; browser shows terminal or retriable state.
+- Actual: server remained `operations.status=accepted`, `device_outbox.id=102 status=sent delivered_at=NULL`, with only `ticket_events.id=185 tool_call_started`; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress`, `result_json=NULL`, `completed_at` equal to start timestamp, and `recover_jobs_on_startup` reported `Нет jobs для восстановления`. Browser ticket UI shows the `screen.record` started/accepted event without the valid marker or terminal result. Recorded as `BUG-20260527-P1-12`.
+
+### BUG-20260527-P1-12 — Agent restart during running command leaves accepted operation and sent outbox stuck
+
+Severity: P1
+Status: reproduced
+Area: reconnect / idempotency / operation lifecycle / agent-sqlite / server-db / browser
+
+P1 scenario: P1.5.B Agent restart while command in progress.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: Restarting the local agent while `screen.record` is running should not leave the command active forever. The server operation should become terminal failed/canceled/timed_out/recovered according to contract, target `device_outbox` should be reconciled out of `sent`, local `seen_commands` should not remain `in_progress`, and browser timeline/operation card should show the terminal or retriable state.
+Actual: Operation `a7734524-d1b6-461e-8f37-7d759e624b78` remained `accepted`; server `device_outbox.id=102` remained `sent` with `delivered_at=NULL`; local `seen_commands` remained `in_progress`; browser ticket UI showed only the started/accepted diagnostic event and no terminal result for marker `p1-20260527-1527-c4f03651-p1-5b-agent-restart-inflight-valid`.
+Repro steps:
+1. From real browser support ticket page `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, call typed support route `POST /api/web/support/tickets/{ticket_id}/tools/run` with `screen.record`, params `{duration_sec:45, fps:5, probe_run_id:<marker>}`.
+2. Observe HTTP `202` response with operation `a7734524-d1b6-461e-8f37-7d759e624b78`.
+3. Stop local agent `live-v3-p1-clean2` while the agent log shows the command accepted and running.
+4. Start local agent again and wait for `handshake_ack`.
+5. Query server DB, agent SQLite/logs, and browser ticket UI.
+
+Evidence:
+- Transport/API: browser support route returned `202`, `dispatch_status=accepted`, `operation_id=a7734524-d1b6-461e-8f37-7d759e624b78`; no raw cookies/tokens recorded.
+- Server log: not root-caused yet; server DB and browser projection show the stuck lifecycle.
+- Agent log: at 2026-05-27 17:22:04 received `run_tool`, sent `command_ack accepted`, created job `834af9cc-5fde-4f89-9499-d219314b549f`, and acquired execution lane for `screen.record`; after restart at 17:22:42, `recover_jobs_on_startup` reported no jobs to recover.
+- Server DB: `operations.status=accepted`, `error_code=NULL`, `finished_at=NULL`; `device_outbox.id=102`, `command=run_tool`, `status=sent`, `sent_at=2026-05-27 12:22:31.941331+00:00`, `delivered_at=NULL`; ticket event `185` is only `tool_call_started` for the marker.
+- Agent SQLite: `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78`, `status=in_progress`, `result_json=NULL`, `stale_retry_count=0`; `outbox` empty and no `tool_response` sent history for this operation.
+- Browser/UI: real browser ticket page `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` shows a `screen.record` started/accepted diagnostic with no terminal result; screenshot captured as `p1-20260527-1527-c4f03651-p1-5b-stuck-accepted.png`.
+- UIA: not applicable for this support-browser restart scenario; local GUI status after restart is covered separately in P1.6.
+- Test artifact: DB/SQLite query outputs in this PLANS entry; browser screenshot from Playwright MCP.
+- Run marker: `p1-20260527-1527-c4f03651-p1-5b-agent-restart-inflight-valid`.
+
+Impact: Rebooting/restarting the agent during a running tool can strand the operation and command idempotency state indefinitely, polluting P1 stale-outbox checks and misleading support UI.
+Root cause hypothesis: Running jobs are not durably persisted/recovered across agent restart for this command path, and the server lacks a watchdog/reconciliation path that marks an already-sent command terminal when the active agent process dies before `command_result`.
+Blocking further P1: no, if this marker and `device_outbox.id=102` are treated as P1.5.B contamination; yes for marking P1.5.B green.
+Fix now: no; continue remaining P1 reconnect/UI projection checks first unless the stale command prevents new operations.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk: New operations may coexist with this stale command, but P1.5.E must explicitly report `device_outbox.id=102` as new P1 contamination until fixed.
+
+P1.5.C WebSocket/server drop during run_tool:
+- Path tested: real browser support route for `screen.record`, project remote-control server stop/start, live local agent runtime/SQLite/logs, server DB, browser ticket UI.
+- Run marker: `p1-20260527-1527-c4f03651-p1-5c-ws-drop-during-run`, operation `e7cf0b9d-beee-46d2-82fc-9981bf17c80b`.
+- Transport/API: browser support route returned `202`, `dispatch_status=accepted`; server was stopped for a controlled 10 second window during execution and then started. Remote smoke recovered `/api/health -> 200`; local agent process stayed running and connected after server return.
+- Expected: result is delivered after reconnect or the operation reaches a consistent terminal failed/timed_out state without ACKing lost result data; browser shows the terminal result/error consistently with DB and agent state.
+- Actual: agent completed the recording locally and `outbox_sent_history.outbox_id=22` shows a `tool_response` sent after reconnect, but server operation timed out in `accepted`, `device_outbox.id=104` became `failed/TIMEOUT`, and server `ticket_events` contains only `tool_call_started` id `186` with no final result. Browser shows only the `screen.record` started/accepted event at 17:26 and no terminal result/error. Recorded as `BUG-20260527-P1-13`.
+
+### BUG-20260527-P1-13 — WS drop during running tool loses agent result after server timeout
+
+Severity: P1
+Status: reproduced
+Area: reconnect / outbox / operation lifecycle / server-db / agent-sqlite / browser
+
+P1 scenario: P1.5.C WebSocket drop during run_tool.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: If the server/proxy drops while a tool is running, the live agent should reconnect and deliver the final `command_result`/outbox result exactly once, or the server should reject it with a durable, visible terminal state. The agent must not record a sent/ACKed result that is absent from server DB/browser timeline.
+Actual: Agent completed `screen.record` and recorded local sent history for outbox `22`, but server timed out operation `e7cf0b9d-beee-46d2-82fc-9981bf17c80b` in `accepted`, marked `device_outbox.id=104` failed/TIMEOUT, and did not persist a final `tool_call_result`. Browser ticket UI shows only the started/accepted diagnostic event.
+Repro steps:
+1. From real browser support route, run `screen.record` with params `{duration_sec:25, fps:5, probe_run_id:"p1-20260527-1527-c4f03651-p1-5c-ws-drop-during-run"}`.
+2. Stop server with `python scripts\manage_remote_stack.py stop server` while the command is executing.
+3. Start server with `python scripts\manage_remote_stack.py start server`; verify `/api/health`.
+4. Query operation/device_outbox/ticket_events, agent SQLite sent history, and browser ticket UI.
+
+Evidence:
+- Transport/API: browser route returned `202` with operation `e7cf0b9d-beee-46d2-82fc-9981bf17c80b`; remote stop/start was controlled and `/api/health` recovered.
+- Server log: focused `manage_remote_stack.py logs server --contains e7cf0b9d-beee-46d2-82fc-9981bf17c80b` returned no high-signal lines.
+- Agent log: local agent accepted/running flow completed; result JSON contains `frames_captured=125`, `duration_sec=32.5`, artifact upload warning caused by server `502`, and a `tool_response` was queued/sent after reconnect.
+- Server DB: `operations.status=timed_out`, `error_code=timeout`, `finished_at=2026-05-27 12:27:57.514453+00:00`; `device_outbox.id=104 status=failed`, `error_code=TIMEOUT`, `delivered_at=NULL`; only `ticket_events.id=186 tool_call_started` exists for the marker.
+- Agent SQLite: `seen_commands.status=error` with result payload status `partial`; `outbox_sent_history.outbox_id=22`, kind `tool_response`, sent_at `1779884822.7157173`; local `outbox` empty.
+- Browser/UI: real browser ticket page `https://192.168.100.17:9443/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` shows the `screen.record` started/accepted event at 17:26 and no terminal result; screenshot `p1-20260527-1527-c4f03651-p1-5c-ws-drop-started-only.png`.
+- UIA: not applicable; this is support browser/server-drop path.
+- Test artifact: DB/SQLite query outputs in this PLANS entry; browser screenshot from Playwright MCP.
+- Run marker: `p1-20260527-1527-c4f03651-p1-5c-ws-drop-during-run`.
+
+Impact: A transient server/proxy outage during tool execution can lose the agent's final result from the server timeline while the agent believes its local outbox result was sent, creating data-loss/observability gaps.
+Root cause hypothesis: The server operation watchdog times out `accepted` before late result ingestion, and outbox ingest or command-result handling may ACK/drop late tool responses for timed-out operations instead of persisting a terminal late-result/rejected event. Artifact upload failure during outage also contributes to partial/error status but should not hide the final lifecycle.
+Blocking further P1: no for continuing P1.5.D/E with markers, yes for marking reconnect delivery green.
+Fix now: no; continue collecting P1 reconnect/UI projection evidence first unless new operations are blocked.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk: This may share root cause with `BUG-20260527-P1-12`; both must be root-caused together before P1 can be closed.
+
+P1.5.D raw same-device probe while real agent active:
+- Path tested: raw WebSocket probe `scripts\live_ws_v3_probe.py double-connect` using token from local agent SQLite passed only through env to subprocess, real local agent process/status, server DB.
+- Run artifact: `artifacts\p1-20260527-1527-c4f03651-p1-5d-double-connect.json`.
+- Expected: raw probe observes supersede close code `4002`, real agent reconnects, and no pending commands are lost or left stuck.
+- Actual: close-code assertion passed (`first_close_code_final=4002`) and real agent reconnected, but the raw probe received live `install_module_package network_basic` commands (`664b8454-9c3b-46b8-88fa-b38de1c00c53`, `9f1ebc07-c777-47db-bf92-8d9c93333e18`, `b503ead2-956f-4041-a8d2-60d4110ed931`) before/around handshake ACK. Because the raw probe is not a full agent runtime, server `device_outbox` rows `105`/`106`/`107` remained `sent` with `delivered_at=NULL` at evidence time. Recorded as `BUG-20260527-P1-14`.
+
+### BUG-20260527-P1-14 — Raw same-device probe receives live install commands and leaves module outbox sent
+
+Severity: P1
+Status: reproduced
+Area: reconnect / module-runtime / test-tool / server-db
+
+P1 scenario: P1.5.D Raw same-device probe while real agent active.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: Same-device supersede probe should verify close code `4002` and real-agent reconnect without causing live pending commands to be lost. If commands are pending, the test tool must handle them or the server must avoid dispatching module lifecycle commands to a diagnostic raw probe that cannot execute them.
+Actual: The raw probe observed close code `4002`, but also received live `install_module_package network_basic` commands and exited without command results. Server `device_outbox` rows `105`, `106`, `107` remained `sent`, `delivered_at=NULL` immediately after the probe.
+Repro steps:
+1. Load active clean-agent token from local SQLite and pass it only as `PC_CLIENT_AGENT_TOKEN` env to `scripts\live_ws_v3_probe.py double-connect`.
+2. Run `python scripts\live_ws_v3_probe.py --timeout 6 double-connect --expect-supersede-close-code 4002`.
+3. Observe probe messages and query `device_outbox` for command request ids from the artifact.
+
+Evidence:
+- Transport/API: `artifacts\p1-20260527-1527-c4f03651-p1-5d-double-connect.json` shows `first_close_code_final=4002`, but also `command=install_module_package` frames for request ids `664b8454-9c3b-46b8-88fa-b38de1c00c53`, `9f1ebc07-c777-47db-bf92-8d9c93333e18`, `b503ead2-956f-4041-a8d2-60d4110ed931`.
+- Server log: not root-caused yet.
+- Agent log: real agent reconnected after probe; focused command ownership not yet collected.
+- Server DB: `device_outbox.id=105/106/107`, command `install_module_package`, status `sent`, `delivered_at=NULL` at 2026-05-27 17:32 local query; `device_desired_modules.network_basic` still had `state=installed`, `desired_version=1.0.0`, reason `run_tool`.
+- Agent SQLite: not applicable for the raw-probe-owned commands; real agent did not execute those request ids.
+- Browser/UI: not applicable; this is raw transport/module lifecycle side effect.
+- UIA: not applicable.
+- Test artifact: `artifacts\p1-20260527-1527-c4f03651-p1-5d-double-connect.json`.
+- Run marker: `p1-20260527-1527-c4f03651`.
+
+Impact: Raw same-device probes against a live device can steal server-dispatched module commands and create post-fix `device_outbox.sent` contamination. The desired/actual module reconcile state also keeps emitting install attempts even though the module is already active locally.
+Root cause hypothesis: The server dispatches desired-module reconcile commands to whichever same-device websocket is latest, including raw diagnostic sessions, and the probe lacks command-result handling. Underlying desired/actual module state may be stale because module lifecycle device events were not persisted (`BUG-20260527-P1-09`).
+Blocking further P1: no for browser/UI projection checks if rows `105`/`106`/`107` are labeled contamination; yes for marking P1.5.D fully green.
+Fix now: no; treat as P1 finding and avoid additional raw same-device probes until command handling or isolation is implemented.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk: These sent rows may later time out and must be excluded from clean-run stale checks as P1.5.D contamination.
+
+P1.5.E stale device_outbox cleanup check:
+- Path tested: server DB query, agent SQLite query.
+- Server DB: after the recovery window, `open_device_outbox=[]`. Known P1 contamination rows are now terminal failed/TIMEOUT: `device_outbox.id=102` from P1.5.B and `id=105/106/107` from P1.5.D. No new open `pending/sent/accepted/running` server outbox rows remained.
+- Server operations: no new open operation rows for the P1 run except the earlier P1.3 recovery-denied consent operation, which is terminal in product semantics but was not excluded by the initial SQL status list.
+- Agent SQLite: local `outbox=[]`, `pending_consents=0`, but `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains from `BUG-20260527-P1-12`.
+- Result: server stale-outbox cleanup is not currently blocked, but P1.5 cannot be green because local agent idempotency has new stale `in_progress` state and reconnect scenarios found `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, and `BUG-20260527-P1-14`.
+
+P1.6 Browser/UI projection consistency:
+- P1.6.A Ticket timeline replay path tested: real browser support ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, DOM text, browser console capture. Browser shows clean P1 ticket `T-000609`, P1.1 markers once in visible timeline, and P1.5.A marker. It also exposes the P1.5 failures: P1.5.B and P1.5.C show started/accepted `screen.record` events without terminal results in the ticket timeline, matching `BUG-20260527-P1-12` / `BUG-20260527-P1-13`.
+- P1.6.B Operation card consistency path tested: support action center and ticket page in real browser. Support action center surfaces the P1.5.C timeout as `Ошибки операций` with text `Operation timed out in status 'accepted'...`; ticket timeline does not show the lost late tool result, matching DB state but not agent local result state.
+- P1.6.C Device/module admin projection path tested: real browser admin login and `/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da`, `/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da`. Inventory shows `ADMIN-2`, device id `2447d396...56da`, Windows, agent version `3.1.61`, Online, last activity `27 мая 2026 г., 17:31`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-inventory.png`. Device card shows observer hot traces for P1.5.D raw-probe command timeouts and still logs console 500 for `/api/web/admin/registry/devices/{device_id}/account-events?limit=20`, confirming `BUG-20260527-P1-03`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-device.png`.
+- P1.6.D Agent GUI projection path tested: local GUI restarted with `--gui`, pywinauto `0.6.9`, `Application/Desktop(backend="uia")`, bounded control tree, bridge status. UI bridge reports connected, account gate, active ticket list contains `f2918f87-cca3-42a9-b28f-f0a5e09d72b9`; UIA sees top window `Maria Agent v3.1.61` with `AutomationId=QApplication.MainWindow` and root group, but exposes no semantic text controls for active account/ticket/connected state. Screenshot `artifacts\p1-20260527-1527-c4f03651-p1-6-uia-agent-window.png`. Recorded as `BUG-20260527-P1-15`.
+- P1.6.E Browser console/network: support ticket console captured to `p1-20260527-1527-c4f03651-p1-6-ticket-console.log`; admin device page has known 500 account-events error from `BUG-20260527-P1-03`. No raw cookies/tokens recorded in PLANS.
+
+### BUG-20260527-P1-15 — Agent GUI main window exposes no semantic UIA text after GUI restart
+
+Severity: P1
+Status: reproduced
+Area: UIA / local GUI / UI projection
+
+P1 scenario: P1.6.D Agent GUI projection.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: With local agent GUI running, `pywinauto==0.6.9` and `backend="uia"` should expose enough stable controls/texts to confirm connected state, active account/account gate, and visible ticket list for P1 evidence.
+Actual: After restarting `live-v3-p1-clean2` with `--gui`, UI bridge reports connected and one ticket, but UIA enumeration finds only top window `Maria Agent v3.1.61` and root groups; bounded child traversal exposes no semantic text controls. This prevents canonical pywinauto/UIA confirmation of account/ticket projection beyond window existence.
+Repro steps:
+1. Restart clean local agent with `python scripts\manage_local_agent.py start live-v3-p1-clean2 --gui`.
+2. Verify bridge status with `scripts\agent_test_driver.py status live-v3-p1-clean2`.
+3. Run pywinauto `Desktop(backend="uia").windows()` and connect to the agent top window.
+4. Dump bounded children/control identifiers.
+
+Evidence:
+- Transport/API: not applicable.
+- Server log: not applicable.
+- Agent log: GUI process running after restart; bridge reports `connection_state=connected`.
+- Server DB: not applicable.
+- Agent SQLite: active clean ticket exists from prior scenarios; no local outbox pending.
+- Browser/UI: not applicable to local GUI window evidence.
+- UIA: `pywinauto 0.6.9`; top window `Maria Agent v3.1.61`, pid `22052`, class `MainWindow`, control type `Window`; control tree excerpt only has `QApplication.MainWindow` and `QApplication.MainWindow.AgentRoot` / `FramelessResizeHandler` groups; `texts=[]`.
+- Test artifact: screenshot `artifacts\p1-20260527-1527-c4f03651-p1-6-uia-agent-window.png`.
+- Run marker: `p1-20260527-1527-c4f03651`.
+
+Impact: P1 cannot claim real local GUI projection green; automation bridge/HTTP status is not a substitute for UIA evidence under the Live Testing rules.
+Root cause hypothesis: Qt/PySide accessibility names/texts are not assigned or not propagated for the post-restart account-gate/main shell widgets, or the window is rendered in a custom widget tree that UIA only exposes as generic groups.
+Blocking further P1: yes for P1.6.D green; no for server/browser DB checks.
+Fix now: no; record and fix in P1 fix phase with other UIA/projection bugs.
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Remaining risk: Existing P0 UIA create script may still cover a specific wizard path, but the main connected/ticket projection cannot be confirmed through stable UIA selectors in the current GUI state.
+
+P1 Findings Summary:
+- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`.
+- P1-blocking/UIA projection: `BUG-20260527-P1-15`.
+- Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
+- Verified-fixed during this P1 pass: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`.
+- Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress`; ticket timeline started-only events for P1.5.B/P1.5.C markers.
+- P1 is not complete and P2 must not start. Fix phase should start with reconnect/idempotency/data-loss root cause for `BUG-20260527-P1-12` and `BUG-20260527-P1-13`, then raw-probe/module command isolation for `BUG-20260527-P1-14`, then UIA projection `BUG-20260527-P1-15`.
+
+### BUG-20260527-P1-11 — Agent exits on transient WSS 502 due bytes/string check in handshake-error handler
+
+Severity: P0
+Status: verified-fixed
+Area: reconnect / agent-sqlite / deployment / local GUI-runtime
+
+P1 scenario: P1.5.A Server restart with agent outbox pending.
+Run id: `p1-20260527-1527-c4f03651`
+Expected: During server/proxy downtime, WSS HTTP 502 should be treated as transient disconnect; agent process and GUI should stay alive, publish disconnected state, back off, reconnect after server returns, and flush pending outbox once.
+Actual: A transient WSS 502 raised `aiohttp.WSServerHandshakeError`; the exception handler attempted `b"Token required" in message` when `message` was a string, raised `TypeError`, and `main_async` treated it as critical, shutting down the agent. Pending outbox row `17` remained `pending`; no server ticket event was persisted.
+Repro steps:
+1. Stop server with `python scripts\manage_remote_stack.py stop server`.
+2. Insert controlled local outbox `chat_message` marker `p1-20260527-1527-c4f03651-p1-5a-server-restart-pending`.
+3. Start server with `python scripts\manage_remote_stack.py start server`.
+4. Observe local agent process status and logs.
+
+Evidence:
+- Transport/API: WSS connect returned HTTP 502 while proxy/server was unavailable; repeat `/api/health` smoke passed after server startup.
+- Server log: server was intentionally stopped and then started; no ticket event exists for the marker.
+- Agent log: `pc_agent/ws_agent.py:3230` raised `TypeError: 'in <string>' requires string as left operand, not bytes` after `aiohttp.client_exceptions.WSServerHandshakeError: 502`.
+- Server DB: no `ticket_events` rows for marker `p1-20260527-1527-c4f03651-p1-5a-server-restart-pending`.
+- Agent SQLite: `outbox_id=17`, `status=pending`, `attempts=0`, `agent_seq=9`, no sent history.
+- Browser/UI: not applicable for successful marker evidence because delivery did not occur; browser route recovered after server startup.
+- UIA: not yet run after crash; agent process stopped.
+- Test artifact: local outbox test-hook payload includes only marker/ticket id; no raw tokens.
+- Run marker: `p1-20260527-1527-c4f03651-p1-5a-server-restart-pending`.
+
+Impact: Any transient WSS handshake/proxy 502 can terminate the local agent and strand pending outbox events until manual restart, invalidating reconnect/retry P1 scenarios.
+Root cause hypothesis: Operator precedence and mixed bytes/string handling in `pc_agent/ws_agent.py` WSServerHandshakeError branch: `(isinstance(message, bytes) and b"Invalid token" in message or b"Token required" in message)` evaluates the second bytes containment test even when `message` is `str`.
+Root cause confirmed: yes. `aiohttp.WSServerHandshakeError.message` was `str` (`Invalid response status`) for HTTP 502, and the unparenthesized bytes containment test raised `TypeError`, which escaped the reconnect loop and triggered full agent cleanup.
+Blocking further P1: yes; P1.5 reconnect scenarios cannot be trusted while transient server restart kills the agent.
+Fix now: yes; this is a reconnect/data-delivery blocker with a localized root cause.
+Fix summary: Added `_is_auth_rejection_handshake_error()` to normalize `message` safely and classify only 4003/invalid-token/token-required cases as auth rejections; WSS 502 now stays in the transient handshake error path and reconnects.
+Changed files: `pc_agent/ws_agent.py`, `pc_agent/tests/test_ws_agent_handshake_error_classification.py`, `PLANS.md`.
+Tests: `python -m pytest pc_agent\tests\test_ws_agent_handshake_error_classification.py pc_agent\tests\test_seen_commands_retry_policy.py pc_agent\tests\test_ws_agent_canceled_command_idempotency.py -q` -> `7 passed in 0.96s`.
+Live regression: Restarted fixed local agent; pending outbox `17` flushed and server persisted `ticket_events.id=179`. Then stopped server for a transient WSS 502 window and restarted it; fixed agent remained running (`pid=26644`), logged handshake 502 as retryable, reconnected with `handshake_ack`, `/api/health` smoke passed, local `outbox_count=0`, browser ticket timeline showed the P1.5.A marker.
+Remaining risk: The fixed live regression used local source-mode agent and controlled server stop/start; packaged agent should receive the same code before release.
 
 ### BUG-20260527-P1-04 — Raw mixed-batch probe consumes follow-up command and leaves failed device_outbox
 
@@ -2504,3 +2991,118 @@ Not run.
 
 Remaining risk:
 Admin device account/session timeline may be partially broken even while the rest of the device card renders.
+
+### BUG-20260527-P1-05 — Local automation run-tool carries requester session but uses disallowed agent actor role
+
+Severity: P1
+Status: reproduced
+Area: automation / auth/account-session / operation lifecycle
+
+P1 scenario:
+P1.2 setup for `system.collect` via local GUI automation bridge before command-idempotency duplicate injection.
+
+Run id:
+`p1-20260527-1527-c4f03651`
+
+Expected:
+`/ui/automation/run` action `ticket.tool.run` should either behave like the intended local GUI tool action with valid confirmed account session and allowed actor context, or return a deterministic preflight error before making a server request. It should not create an operation when denied.
+
+Actual:
+`python scripts\agent_test_driver.py run-tool live-v3-p1-clean2 --ticket-id f2918f87-cca3-42a9-b28f-f0a5e09d72b9 --tool-name system.collect --params-json "{}"` returned HTTP 500 from the local automation bridge, embedding server HTTP 403 `ROLE_NOT_ALLOWED`: required role `llm, support или admin`, actor_role `agent`.
+
+Repro steps:
+1. Ensure clean agent `live-v3-p1-clean2` is connected and has confirmed account session `c24c7842-8284-4964-a92f-7f608eaf52d2`.
+2. Run the command above against ticket `T-000609`.
+3. Observe local bridge HTTP 500 with embedded server 403 `ROLE_NOT_ALLOWED`.
+
+Evidence:
+- Transport/API: local bridge response `HTTP 500 for http://127.0.0.1:8767/ui/automation/run: {"status": "error", "error": "HTTP 403: {\"status\": \"error\", \"error\": \"Policy violation\", \"error_code\": \"ROLE_NOT_ALLOWED\", \"required_role\": \"llm, support \\u0438\\u043b\\u0438 admin\", \"actor_role\": \"agent\"}"}`.
+- Server log: not queried yet.
+- Agent log: action trace collection after repro shows ticket polling with account session redacted; focused `ticket.tool.run` trace entry not collected yet.
+- Server DB: `operations` query for ticket `f2918f87-cca3-42a9-b28f-f0a5e09d72b9` returned `[]`, so the denied automation request did not create an operation.
+- Agent SQLite: local `outbox=[]`; latest `seen_commands` rows unchanged from earlier `list_tools` successes, no new `system.collect` command row.
+- Browser/UI: not applicable to the denied bridge request; browser support route will be tested separately as workaround/canonical support surface.
+- UIA: not applicable; this is automation bridge, not real GUI.
+- Test artifact: command output in this PLANS entry.
+- Run marker: `p1-20260527-1527-c4f03651`.
+
+Impact:
+Local automation bridge is still not a full GUI-equivalent for tool actions after the P0 account-session fixes. This blocks using the bridge as a P1 command-idempotency setup path, but does not block P1.2 because browser/support route and direct diagnostic device_outbox injection can be used with explicit surface labeling.
+
+Root cause hypothesis:
+The bridge now propagates account session but still sends/derives `actor_role=agent` for a tool policy that only allows `llm`, `support`, or `admin`. The correct behavior may require a typed requester-safe tool policy path, support actor context, or a deterministic local preflight denial depending on product policy.
+
+Blocking further P1: no
+Fix now: no
+Fix summary:
+Not fixed.
+
+Changed files:
+None.
+
+Tests:
+Not run for this bug yet.
+
+Live regression:
+Not run.
+
+Remaining risk:
+Any P1 scenario using `/ui/automation/run` for ticket tool/capture actions can still fail independently of real browser/support workflows and must not be treated as GUI failure without separate UIA evidence.
+
+### BUG-20260527-P1-06 — screen.record artifact upload is denied and operation is projected as success
+
+Severity: P1
+Status: reproduced
+Area: artifact-upload / auth-account-session / operation lifecycle / UI projection
+
+P1 scenario:
+P1.2.B duplicate while in-progress used `screen.record` as a safe long-running tool.
+
+Run id:
+`p1-20260527-1527-c4f03651`
+
+Expected:
+If `screen.record` produces a recording artifact, the agent should upload it through the supported artifact endpoint with valid auth/context, the server should persist artifact metadata, the operation/ticket event should preserve the partial/failure state accurately, and browser timeline should not label an artifact-upload partial result as fully successful.
+
+Actual:
+The recording itself completed (`frames_captured=100`, `duration_sec=26.8`, `file_size_bytes=18188`), but artifact upload failed with HTTP 403 `AuthorizationError`. Agent SQLite stored one terminal `seen_commands` row with local `status=error` and ToolResponse `status=partial`; the server operation became `status=succeeded`; browser timeline showed `screen.record` result as `Успешно` while raw JSON contained `"status": "partial"` and `artifacts=[]`.
+
+Repro steps:
+1. In a real browser support session, POST `screen.record` through `/api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` with `duration_sec=20`, `fps=5`, `max_width=640`, `quality_crf=40`.
+2. Let the clean agent `live-v3-p1-clean2` execute the command.
+3. Query agent SQLite `seen_commands` for operation `755c2996-27e1-43b0-8d94-7d5ba7595b5b`.
+4. Query server `operations`, `ticket_events` and browser ticket timeline.
+
+Evidence:
+- Transport/API: browser support route returned HTTP `202`, `dispatch_status=accepted`, operation `755c2996-27e1-43b0-8d94-7d5ba7595b5b`.
+- Server log: not collected yet for the upload 403; remote recent server tail did not show a focused `755c2996` line in the first pass.
+- Agent log: action trace shows one `screen.record` execution and module finish `status=partial`, `upload_error_count=1`, `artifact_count=0`.
+- Server DB: `operations.status=succeeded`, `result_summary={'frames_captured': 100, 'duration_sec': 26.8, 'file_size_bytes': 18188}`; `ticket_events` ids `153 tool_call_started` and `155 tool_call_result`, result payload contains `"status": "partial"` and `artifacts=[]`.
+- Agent SQLite: `seen_commands.command_id=755c2996-27e1-43b0-8d94-7d5ba7595b5b`, local `status=error`; parsed result has `status=partial`, `errors[0].code=ARTIFACT_UPLOAD_FAILED`, `errors[0].details.exc_type=AuthorizationError`, `errors[0].details.exc_message` includes HTTP `403`; local `outbox=[]`; `outbox_sent_history` outbox id `9` persisted one `tool_response`.
+- Browser/UI: ticket snapshot `artifacts\p1-20260527-1527-c4f03651-p1-2b-after-duplicate-running-snapshot.md` shows `screen.record` result with UI status `Успешно`, raw JSON `"status": "partial"`, `artifacts=[]`; screenshot `artifacts\p1-20260527-1527-c4f03651-p1-2b-after-duplicate-running.png`.
+- UIA: not applicable; this was browser support route plus agent runtime.
+- Test artifact: local DB/result excerpts in this PLANS entry.
+- Run marker: `p1-20260527-1527-c4f03651`, operation `755c2996-27e1-43b0-8d94-7d5ba7595b5b`.
+
+Impact:
+Artifact-producing tools can lose their artifact while the operator UI still reads as successful. This threatens P2.2 artifact validation and makes operation lifecycle/status projection inconsistent for partial ToolResponse results.
+
+Root cause hypothesis:
+Likely artifact upload auth/context mismatch from the agent runtime path after account-session hardening, or server command-result lifecycle mapping that treats `payload.status=success` as operation success while nested ToolResponse `result.status=partial` indicates artifact upload failure.
+
+Blocking further P1: no for P1.2 idempotency because duplicate command behavior was still deterministically verified; yes for any artifact-focused scenario.
+Fix now: no
+Fix summary:
+Not fixed.
+
+Changed files:
+None.
+
+Tests:
+Not run for this bug yet.
+
+Live regression:
+Not run.
+
+Remaining risk:
+P1.2.C may also use `screen.record`; if artifact upload noise obscures cancel/idempotency evidence, switch that specific scenario to a safe long-running non-artifact diagnostic tool or record the artifact failure as known contamination for this run.

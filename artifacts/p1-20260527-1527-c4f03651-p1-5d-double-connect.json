@@ -1,0 +1,285 @@
+{
+  "case": "double_connect",
+  "ws_url": "wss://192.168.100.17:9443/ws",
+  "token": {
+    "present": true,
+    "prefix": "47fca88b",
+    "sha256_12": "11245df33169",
+    "length": 64
+  },
+  "first_request_id": "7765a122-d3e9-4aab-9427-bed2bd40c193",
+  "first_trace_id": "999f4cb2-6cfc-4481-9ef8-2b7debc095f5",
+  "second_request_id": "6c42dc3b-9119-4a20-8ee9-14b1125cf6cb",
+  "second_trace_id": "32df5b6f-10fc-4608-affa-d8fc810d1eae",
+  "expected_supersede_close_code": 4002,
+  "first_messages": [
+    {
+      "event": "text",
+      "payload": {
+        "type": "command",
+        "request_id": "664b8454-9c3b-46b8-88fa-b38de1c00c53",
+        "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": "6e454ae9-5390-4fd8-9ac2-55d09b132580",
+        "payload": {
+          "command": "install_module_package",
+          "command_id": "664b8454-9c3b-46b8-88fa-b38de1c00c53",
+          "params": {
+            "size": 4470,
+            "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
+            "module_name": "network_basic",
+            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "module_version": "1.0.0",
+            "replace_if_different_sha": true
+          },
+          "actor_role": "system"
+        },
+        "meta": {
+          "timestamp": "2026-05-27T12:31:46.166239+00:00",
+          "actor_role": "server"
+        }
+      }
+    },
+    {
+      "event": "text",
+      "payload": {
+        "type": "handshake_ack",
+        "request_id": "7765a122-d3e9-4aab-9427-bed2bd40c193",
+        "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": "999f4cb2-6cfc-4481-9ef8-2b7debc095f5",
+        "payload": {
+          "status": "success",
+          "message": "Handshake accepted",
+          "server_version": "3.0.0",
+          "open_tickets_count": 1,
+          "desired_revision": 0,
+          "server_capabilities": [
+            "protocol_v3",
+            "envelope_v3",
+            "outbox_ack_v3",
+            "outbox_nack",
+            "trace_correlation",
+            "ticket_context",
+            "job_context",
+            "device_outbox",
+            "event_replay",
+            "batch_ack",
+            "outbox_batch_v1",
+            "device_binding_validation",
+            "device_registry",
+            "toolset_snapshots",
+            "config_management"
+          ],
+          "registration": {
+            "status": "admin_confirmed",
+            "person": {
+              "person_id": "f0e074a5-7c1b-4e38-bb4a-abfb2be3612f",
+              "display_name": "P1 Clean User"
+            },
+            "binding": {
+              "binding_id": "1b87f35b-b826-4768-a7fd-9f0e2b276526",
+              "relationship_type": "primary_user",
+              "confirmed_at": "2026-05-27T10:12:20.874007+00:00"
+            },
+            "pending_claim_id": null,
+            "requires_user_action": false,
+            "requires_admin_action": false,
+            "conflict_reason": null
+          }
+        },
+        "meta": {
+          "timestamp": "2026-05-27T12:31:46.171198+00:00",
+          "actor_role": "server"
+        }
+      }
+    },
+    {
+      "event": "close",
+      "close_code": 4002,
+      "close_reason": "",
+      "ws_close_code": 4002
+    }
+  ],
+  "first_result": {
+    "event": "text",
+    "payload": {
+      "type": "command",
+      "request_id": "664b8454-9c3b-46b8-88fa-b38de1c00c53",
+      "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+      "protocol_version": "ws_ticket_v3",
+      "trace_id": "6e454ae9-5390-4fd8-9ac2-55d09b132580",
+      "payload": {
+        "command": "install_module_package",
+        "command_id": "664b8454-9c3b-46b8-88fa-b38de1c00c53",
+        "params": {
+          "size": 4470,
+          "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
+          "module_name": "network_basic",
+          "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+          "module_version": "1.0.0",
+          "replace_if_different_sha": true
+        },
+        "actor_role": "system"
+      },
+      "meta": {
+        "timestamp": "2026-05-27T12:31:46.166239+00:00",
+        "actor_role": "server"
+      }
+    }
+  },
+  "second_messages": [
+    {
+      "event": "text",
+      "payload": {
+        "type": "command",
+        "request_id": "9f1ebc07-c777-47db-bf92-8d9c93333e18",
+        "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": "acc46860-e37d-40fe-b9ba-23f13fd6bd82",
+        "payload": {
+          "command": "install_module_package",
+          "command_id": "9f1ebc07-c777-47db-bf92-8d9c93333e18",
+          "params": {
+            "size": 4470,
+            "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
+            "module_name": "network_basic",
+            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "module_version": "1.0.0",
+            "replace_if_different_sha": true
+          },
+          "actor_role": "system"
+        },
+        "meta": {
+          "timestamp": "2026-05-27T12:31:51.323648+00:00",
+          "actor_role": "server"
+        }
+      }
+    },
+    {
+      "event": "text",
+      "payload": {
+        "type": "handshake_ack",
+        "request_id": "6c42dc3b-9119-4a20-8ee9-14b1125cf6cb",
+        "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": "32df5b6f-10fc-4608-affa-d8fc810d1eae",
+        "payload": {
+          "status": "success",
+          "message": "Handshake accepted",
+          "server_version": "3.0.0",
+          "open_tickets_count": 1,
+          "desired_revision": 0,
+          "server_capabilities": [
+            "protocol_v3",
+            "envelope_v3",
+            "outbox_ack_v3",
+            "outbox_nack",
+            "trace_correlation",
+            "ticket_context",
+            "job_context",
+            "device_outbox",
+            "event_replay",
+            "batch_ack",
+            "outbox_batch_v1",
+            "device_binding_validation",
+            "device_registry",
+            "toolset_snapshots",
+            "config_management"
+          ],
+          "registration": {
+            "status": "admin_confirmed",
+            "person": {
+              "person_id": "f0e074a5-7c1b-4e38-bb4a-abfb2be3612f",
+              "display_name": "P1 Clean User"
+            },
+            "binding": {
+              "binding_id": "1b87f35b-b826-4768-a7fd-9f0e2b276526",
+              "relationship_type": "primary_user",
+              "confirmed_at": "2026-05-27T10:12:20.874007+00:00"
+            },
+            "pending_claim_id": null,
+            "requires_user_action": false,
+            "requires_admin_action": false,
+            "conflict_reason": null
+          }
+        },
+        "meta": {
+          "timestamp": "2026-05-27T12:31:51.327692+00:00",
+          "actor_role": "server"
+        }
+      }
+    },
+    {
+      "event": "text",
+      "payload": {
+        "type": "command",
+        "request_id": "b503ead2-956f-4041-a8d2-60d4110ed931",
+        "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+        "protocol_version": "ws_ticket_v3",
+        "trace_id": "7e4ec88b-c8a4-47d4-a8be-0acda1abc36f",
+        "payload": {
+          "command": "install_module_package",
+          "command_id": "b503ead2-956f-4041-a8d2-60d4110ed931",
+          "params": {
+            "size": 4470,
+            "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
+            "module_name": "network_basic",
+            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "module_version": "1.0.0",
+            "replace_if_different_sha": true
+          },
+          "actor_role": "system"
+        },
+        "meta": {
+          "timestamp": "2026-05-27T12:31:51.333873+00:00",
+          "actor_role": "server"
+        }
+      }
+    },
+    {
+      "event": "close",
+      "close_code": 4002,
+      "close_reason": "",
+      "ws_close_code": 4002
+    }
+  ],
+  "second_result": {
+    "event": "text",
+    "payload": {
+      "type": "command",
+      "request_id": "9f1ebc07-c777-47db-bf92-8d9c93333e18",
+      "device_id": "2447d396-79cd-53da-b3a9-028c5a4d56da",
+      "protocol_version": "ws_ticket_v3",
+      "trace_id": "acc46860-e37d-40fe-b9ba-23f13fd6bd82",
+      "payload": {
+        "command": "install_module_package",
+        "command_id": "9f1ebc07-c777-47db-bf92-8d9c93333e18",
+        "params": {
+          "size": 4470,
+          "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
+          "module_name": "network_basic",
+          "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+          "module_version": "1.0.0",
+          "replace_if_different_sha": true
+        },
+        "actor_role": "system"
+      },
+      "meta": {
+        "timestamp": "2026-05-27T12:31:51.323648+00:00",
+        "actor_role": "server"
+      }
+    }
+  },
+  "first_after_second_messages": [
+    {
+      "event": "closed",
+      "close_code": 4002
+    }
+  ],
+  "first_after_second": {
+    "event": "closed",
+    "close_code": 4002
+  },
+  "first_close_code_final": 4002
+}

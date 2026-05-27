@@ -102,6 +102,22 @@ def _configure_utf8_stdio() -> None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # Разрешенные типы сообщений (Фаза 2.1)
+def _is_auth_rejection_handshake_error(
+    *,
+    status: int | None,
+    error_msg: str,
+    message: object,
+) -> bool:
+    """Classify auth rejections without crashing on aiohttp string messages."""
+    if status == 4003 or "4003" in str(error_msg or ""):
+        return True
+    if isinstance(message, bytes):
+        message_text = message.decode("utf-8", errors="ignore")
+    else:
+        message_text = str(message or "")
+    return "Invalid token" in message_text or "Token required" in message_text
+
+
 ALLOWED_MESSAGE_TYPES = {
     "handshake_ack",
     "ping",
@@ -3227,7 +3243,11 @@ class WSAgent:
                         status = getattr(e, 'status', None)
                         message = getattr(e, 'message', b'')
                         
-                        if status == 4003 or "4003" in error_msg or (isinstance(message, bytes) and b"Invalid token" in message or b"Token required" in message):
+                        if _is_auth_rejection_handshake_error(
+                            status=status,
+                            error_msg=error_msg,
+                            message=message,
+                        ):
                             logger.error("🔴 Сервер отклонил подключение: невалидный токен")
                             logger.warning("🔑 Требуется ввести новый токен.")
                             await self._publish_connection_state("auth_required", "невалидный токен")
