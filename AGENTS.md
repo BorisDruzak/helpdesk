@@ -43,6 +43,7 @@
 - Машиночитаемый каталог навигации и drift-правил: `scripts/navigation_catalog.py`
 - Long-horizon артефакт: `PLANS.md`
 - Repo-local defaults для Codex: `.codex/config.toml`
+- Live/debug процесс: `docs/LIVE_TESTING_DEBUG_RULES.md`
 
 Если меняется структура кода, маршруты, ключевые entrypoints или cross-cutting flow, синхронно обновлять:
 
@@ -94,6 +95,23 @@ Observer docs поддерживаются в актуальном состоя�
   - `pc_agent/docs/CODEMAP.md`
   - `docs/QUICK_LOOKUP.md`
 - Для release/deploy/server-control сценариев ориентироваться на `docs/LOCAL_WORKFLOW.md`, `docs/QUICK_LOOKUP.md` и профильные scripts в `scripts/`.
+
+## Live testing and debugging
+
+Для любых Live validation, debug, Protocol V3, local agent GUI, browser UI, account-session, operation lifecycle, module runtime, deployment/runtime-control или production-like bugfix задач сначала читать и выполнять:
+
+- `docs/LIVE_TESTING_DEBUG_RULES.md`
+
+Эти правила обязательны и запрещают ad-hoc shortcuts. В частности:
+
+- сначала evidence и запись бага, потом root cause и fix;
+- validation modes не смешивать: browser, pywinauto/UIA, `/ui/automation/run`, direct API, raw WS, DB и SQLite являются разными test surfaces;
+- browser-visible flows требуют real browser evidence;
+- local GUI flows требуют `pywinauto==0.6.9` и `Application(backend="uia")`;
+- `/ui/automation/run` не считается GUI-equivalent без отдельной проверки account/session/context поведения;
+- Live scenario не может быть green по одному сигналу;
+- pre-fix contamination должна быть явно помечена и фильтроваться clean-run markers;
+- статусы в bug block, checklist, milestone summary и recommended next steps должны быть согласованы.
 
 ## Protocol V3: инварианты
 

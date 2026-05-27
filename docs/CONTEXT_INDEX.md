@@ -8,6 +8,7 @@ It is not a source of truth. The source of truth remains:
 - `docs/CODEX_WORKFLOW.md`
 - `docs/ARCHITECTURE_BOUNDARIES.md`
 - `docs/QUICK_LOOKUP.md`
+- `docs/LIVE_TESTING_DEBUG_RULES.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
 - profile docs next to the affected code
@@ -55,6 +56,7 @@ The index includes:
 
 - canonical markdown docs from `docs/`, `server/docs/`, `pc_agent/docs/`;
 - `AGENTS.md` and `PLANS.md`;
+- `docs/LIVE_TESTING_DEBUG_RULES.md` as the canonical Live/debug evidence and final-gate process contract;
 - CODEMAP sections as markdown chunks;
 - `scripts/navigation_catalog.py` topics and their aliases/files/checks;
 - aiohttp routes from `server/routes.py`, including handler metadata where the route line exposes it;
@@ -112,6 +114,7 @@ This is the standard retrieval step in `docs/CODEX_WORKFLOW.md` and `docs/QUICK_
 For debugging, prefer:
 
 ```powershell
+python scripts/search_context_index.py "live testing debug rules evidence UIA browser account-session" --profile debug
 python scripts/search_context_index.py "<error symbol event>" --profile debug
 python scripts/search_context_index.py "<feature behavior>" --profile test --kind test
 ```

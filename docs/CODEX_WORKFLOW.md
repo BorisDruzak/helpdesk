@@ -35,6 +35,8 @@ git status --short
 - `docs/CONTEXT_INDEX.md`
 - соответствующий `server/docs/CODEMAP.md` или `pc_agent/docs/CODEMAP.md`
 
+Если задача является Live validation, debugging, Protocol V3, browser/admin UI, local agent GUI, account-session, operation lifecycle, module runtime или deployment/runtime-control bugfix, также открыть `docs/LIVE_TESTING_DEBUG_RULES.md` до сбора evidence и фиксов.
+
 `build_context_pack.py` является стандартным компактным intake-результатом: он собирает routing metadata, open-first docs, команды и секцию `Context Index Results`.
 
 `search_context_index.py` является стандартным быстрым retrieval-шагом после `task_intake`: он ищет одновременно по canonical docs, CODEMAP chunks, navigation topics, server routes, route handlers, tests и symbols. Это не заменяет CODEMAP/boundary docs, а ускоряет выбор точных файлов и терминов.
@@ -99,6 +101,8 @@ python scripts/bootstrap_web_toolchain.py
 Для любого бага, падения теста или unexpected behavior начинать с `superpowers:systematic-debugging`.
 
 Правило: сначала воспроизведение и гипотеза, потом фикс.
+
+Для Live/debug задач дополнительно обязательно применять `docs/LIVE_TESTING_DEBUG_RULES.md`: сначала записать failure evidence в bug/plan entry, явно указать test surface, изолировать root cause layer, не считать restart фиксом, не смешивать browser/UIA/automation/API/WS/DB evidence и не переводить статус в `verified-fixed` без Live regression на каноничном пути.
 
 Минимальный локальный путь:
 
@@ -316,6 +320,8 @@ git push -u origin <current-branch>
 ## Verify / Completion Gate
 
 Перед любым claim "готово", "исправлено", "tests pass", commit, push, PR или deploy использовать `superpowers:verification-before-completion`.
+
+Для Live milestones перед переходом P0 -> P1 или P1 -> P2 выполнить final gate из `docs/LIVE_TESTING_DEBUG_RULES.md`: workspace/code gates, Live smoke, browser verification, local agent status, отсутствие новых failed outbox/stale operation rows для clean run id, обновлённый `PLANS.md`, список игнорируемой pre-fix contamination и status audit (`Status: open`, bug ids, checklist/summary consistency).
 
 Минимум:
 

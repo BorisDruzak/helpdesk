@@ -14,6 +14,7 @@ QUICK_LOOKUP_PATH = Path("docs/QUICK_LOOKUP.md")
 CODEX_WORKFLOW_PATH = Path("docs/CODEX_WORKFLOW.md")
 ARCHITECTURE_BOUNDARIES_PATH = Path("docs/ARCHITECTURE_BOUNDARIES.md")
 CONTEXT_INDEX_PATH = Path("docs/CONTEXT_INDEX.md")
+LIVE_TESTING_DEBUG_RULES_PATH = Path("docs/LIVE_TESTING_DEBUG_RULES.md")
 SERVER_CODEMAP_PATH = Path("server/docs/CODEMAP.md")
 AGENT_CODEMAP_PATH = Path("pc_agent/docs/CODEMAP.md")
 PLANS_PATH = Path("PLANS.md")
@@ -2432,6 +2433,74 @@ TOPICS: tuple[Topic, ...] = (
         exact_paths=("pc_agent/core/database.py",),
     ),
     Topic(
+        key="live_testing_debug",
+        title="Live testing / debugging rules",
+        summary="Mandatory Live validation and bugfix discipline: evidence before fix, explicit validation surfaces, root-cause layer isolation, no restart-as-fix, no single-signal pass, real browser evidence, pywinauto/UIA evidence for local GUI, automation bridge as a separate surface, account-session checks, ACK persistence, clean-run markers, contamination labels, blocking bug policy, deployment recovery proof and final milestone gates.",
+        aliases=(
+            "live testing",
+            "live validation",
+            "debug rules",
+            "bug evidence",
+            "evidence before fix",
+            "pywinauto",
+            "uia",
+            "browser evidence",
+            "automation bridge",
+            "account session boundary",
+            "clean run id",
+            "pre-fix contamination",
+            "ack persistence",
+            "final p0 gate",
+            "live debug",
+            "правила live",
+            "лайв тестирование",
+            "дебаг",
+            "доказательства",
+        ),
+        first_files=(
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
+            repo_path(PLANS_PATH),
+            repo_path(CODEX_WORKFLOW_PATH),
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(ARCHITECTURE_BOUNDARIES_PATH),
+            repo_path(SERVER_CODEMAP_PATH),
+            repo_path(AGENT_CODEMAP_PATH),
+        ),
+        related_docs=(
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
+            "docs/TESTING_RULES.md",
+            repo_path(CODEX_WORKFLOW_PATH),
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(ARCHITECTURE_BOUNDARIES_PATH),
+            repo_path(CONTEXT_INDEX_PATH),
+        ),
+        suggested_commands=(
+            'python scripts/task_intake.py --task "<live/debug task>"',
+            'python scripts/build_context_pack.py --topic "<live/debug task>"',
+            'python scripts/search_context_index.py "live testing debug rules evidence UIA browser account-session" --profile debug',
+            'python scripts/search_context_index.py "<error symbol event>" --profile debug',
+            "python scripts/verify_workspace.py",
+        ),
+        mode="Debug / Root Cause",
+        skills=(DOCS_SYNC_SKILL, PLANS_SKILL, TESTS_SKILL, BROWSER_CHECK_SKILL, AGENT_RUNTIME_SKILL),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "targeted pytest matching the bug layer",
+            "Live regression on the canonical path named in docs/LIVE_TESTING_DEBUG_RULES.md",
+            "real browser evidence for UI-visible flows",
+            "pywinauto==0.6.9 with Application(backend=\"uia\") for local GUI flows",
+        ),
+        plan_required=True,
+        docs_to_update=(
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
+            repo_path(QUICK_LOOKUP_PATH),
+            repo_path(CODEX_WORKFLOW_PATH),
+            repo_path(CONTEXT_INDEX_PATH),
+            "docs/README.md",
+            repo_path(PLANS_PATH),
+        ),
+    ),
+    Topic(
         key="context_index",
         title="Context index / retrieval",
         summary="Deterministic SQLite/FTS context retrieval over canonical docs, CODEMAP, navigation topics, routes, route handlers, tests and key source symbols. Use after task_intake as a faster context finder, not as a source-of-truth replacement.",
@@ -2496,6 +2565,7 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(CODEX_WORKFLOW_PATH),
             repo_path(QUICK_LOOKUP_PATH),
             "docs/README.md",
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
         ),
         exact_paths=(
             "scripts/context_index.py",
@@ -2955,6 +3025,22 @@ TOPICS: tuple[Topic, ...] = (
 
 
 DRIFT_RULES: tuple[DriftRule, ...] = (
+    DriftRule(
+        key="live_testing_debug_rules",
+        title="Live testing/debug rules changed",
+        reason="Live validation, debug and bugfix rules must stay aligned with workflow, quick lookup, context index and navigation routing.",
+        required_docs=(
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
+            "AGENTS.md",
+            repo_path(CODEX_WORKFLOW_PATH),
+            "docs/QUICK_LOOKUP.md",
+            repo_path(CONTEXT_INDEX_PATH),
+            "docs/README.md",
+        ),
+        exact_paths=(
+            repo_path(LIVE_TESTING_DEBUG_RULES_PATH),
+        ),
+    ),
     DriftRule(
         key="navigation_harness",
         title="Navigation harness changed",

@@ -236,6 +236,7 @@
    - `python scripts/agent_find.py "<pattern>" --dir server|pc_agent`
    - `python scripts/diff_context.py`
 8. Для длинной задачи синхронно ведите `PLANS.md`.
+9. Для Live validation, debug, Protocol V3, browser/UIA, account-session, operation lifecycle, module runtime или runtime-control bugfix задач дополнительно откройте `docs/LIVE_TESTING_DEBUG_RULES.md`.
 
 Routing-логика живёт в:
 
@@ -258,6 +259,7 @@ Routing-логика живёт в:
 - `docs/QUICK_LOOKUP.md`
 - `docs/ARCHITECTURE_BOUNDARIES.md`
 - `docs/CONTEXT_INDEX.md`
+- `docs/LIVE_TESTING_DEBUG_RULES.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
 - protocol/auth/runtime/update docs рядом с кодом
@@ -335,6 +337,7 @@ Windows note:
 | Topic | Open first | Then |
 |------|------------|------|
 | Codex workflow / dirty worktree / commit / deploy | `docs/CODEX_WORKFLOW.md`, `AGENTS.md`, `docs/ARCHITECTURE_BOUNDARIES.md` | Use before work to choose Explore, Debug, Plan, Execute, Feature, Contract, Verify, Commit or Deploy mode and follow script-first commands |
+| Live testing / debugging rules | `docs/LIVE_TESTING_DEBUG_RULES.md`, `docs/TESTING_RULES.md`, `PLANS.md` | Mandatory for Live validation and bugfix work: evidence before fix, no mixed validation modes, browser/UIA requirements, account-session checks, clean-run markers, contamination labels and status consistency |
 | Architecture boundaries / contract impact | `docs/ARCHITECTURE_BOUNDARIES.md`, `AGENTS.md`, `docs/QUICK_LOOKUP.md` | Use before edits to classify a change as local / boundary / cross-cutting / release-control and to choose neighboring docs/tests |
 | Context index / retrieval | `docs/CONTEXT_INDEX.md`, `scripts/build_context_index.py`, `scripts/search_context_index.py`, `scripts/build_context_pack.py` | Build with `python scripts/build_context_index.py --force`; search with `python scripts/search_context_index.py "<query>"`; use `--profile debug|contract|route|test|web` for targeted ranking; `build_context_pack.py` includes top context-index hits after `task_intake`; use as retrieval, not as a replacement for CODEMAP/boundaries |
 | Protocol V3 / handshake | `server/websocket/agent_handshake.py`, `server/websocket/agent_services.py`, `server/state_manager.py`, `server/app/repos/device_outbox_repo.py`, `pc_agent/ws_agent.py`, `pc_agent/core/sender.py`, `pc_agent/ws_agent_runtime_helpers.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
