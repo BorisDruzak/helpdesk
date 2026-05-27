@@ -41,13 +41,57 @@ class _BatchAckManagerStub:
         self.acks.append((device_id, outbox_id, trace_id))
 
     def add_nack(self, device_id, outbox_id, trace_id, nack_info):
-        self.nacks.append((device_id, outbox_id, trace_id, nack_info.error_code))
+        self.nacks.append(
+            (
+                device_id,
+                outbox_id,
+                trace_id,
+                nack_info.error_code,
+                nack_info.error_message,
+                nack_info.retryable,
+            )
+        )
 
     def has_pending(self, _device_id):
         return bool(self.acks or self.nacks)
 
     async def flush(self, _ws, _device_id):
         self.flushed += 1
+
+
+def _outbox_message(
+    *,
+    outbox_id: str = "ob-contract",
+    trace_id: str | None = "tr-contract",
+    ticket_id: str | None = None,
+    event_ticket_id: str | None = None,
+    agent_seq: int | None = None,
+    device_seq: int | None = None,
+    item_type: str = "job_event",
+    actor_role: str = "agent",
+    event_name: str = "tools_changed",
+):
+    event = {"event": event_name}
+    if event_ticket_id is not None:
+        event["ticket_id"] = event_ticket_id
+    message = {
+        "type": "outbox_item",
+        "payload": {
+            "outbox_id": outbox_id,
+            "item_type": item_type,
+            "event": event,
+        },
+        "meta": {"actor_role": actor_role},
+    }
+    if trace_id is not None:
+        message["trace_id"] = trace_id
+    if ticket_id is not None:
+        message["ticket_id"] = ticket_id
+    if agent_seq is not None:
+        message["payload"]["agent_seq"] = agent_seq
+    if device_seq is not None:
+        message["payload"]["device_seq"] = device_seq
+    return message
 
 
 @pytest.mark.asyncio
@@ -241,11 +285,153 @@ async def test_outbox_ingest_missing_trace_id_returns_validation_nack():
     assert await service.handle(msg, ctx) is True
 
     assert batch.nacks
-    device_id, outbox_id, trace_id, error_code = batch.nacks[0]
+    device_id, outbox_id, trace_id, error_code = batch.nacks[0][:4]
     assert device_id == "dev-1"
     assert outbox_id == "ob-missing-trace"
     assert trace_id
     assert error_code == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case_name", "message", "expected_text"),
+    [
+        (
+            "both_seq",
+            _outbox_message(
+                outbox_id="ob-both-seq",
+                ticket_id="ticket-1",
+                event_ticket_id="ticket-1",
+                agent_seq=1,
+                device_seq=1,
+            ),
+            "exactly one",
+        ),
+        (
+            "neither_seq",
+            _outbox_message(outbox_id="ob-neither-seq"),
+            "exactly one",
+        ),
+        (
+            "top_ticket_only_device_seq",
+            _outbox_message(
+                outbox_id="ob-top-ticket-device",
+                ticket_id="ticket-1",
+                device_seq=2,
+            ),
+            "ticket_id",
+        ),
+        (
+            "ticket_event_without_top_ticket_id",
+            _outbox_message(
+                outbox_id="ob-agent-no-ticket",
+                event_ticket_id="ticket-1",
+                agent_seq=3,
+            ),
+            "ticket_id",
+        ),
+        (
+            "event_ticket_mismatch",
+            _outbox_message(
+                outbox_id="ob-ticket-mismatch",
+                ticket_id="ticket-1",
+                event_ticket_id="ticket-2",
+                agent_seq=4,
+            ),
+            "mismatch",
+        ),
+        (
+            "unknown_item_type",
+            _outbox_message(
+                outbox_id="ob-unknown-type",
+                ticket_id="ticket-1",
+                event_ticket_id="ticket-1",
+                agent_seq=5,
+                item_type="unknown_live_probe_type",
+            ),
+            "item_type",
+        ),
+        (
+            "event_payload_not_object",
+            {
+                "type": "outbox_item",
+                "trace_id": "tr-event-not-object",
+                "ticket_id": "ticket-1",
+                "payload": {
+                    "outbox_id": "ob-event-not-object",
+                    "item_type": "job_event",
+                    "agent_seq": 6,
+                    "event": "not-an-object",
+                },
+                "meta": {"actor_role": "agent"},
+            },
+            "event",
+        ),
+    ],
+)
+async def test_outbox_ingest_rejects_malformed_contract_before_persistence(case_name, message, expected_text):
+    batch = _BatchAckManagerStub()
+    service = OutboxIngestService(
+        legacy_handler=None,
+        batch_ack_manager=batch,
+        event_validator=EventValidator(),
+    )
+
+    class _NoPersistence:
+        async def persist(self, *, message, ctx, event_validator, envelope):
+            raise AssertionError(f"{case_name} should be rejected before persistence")
+
+    service._persistence = _NoPersistence()
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+
+    assert await service.handle(message, ctx) is True
+
+    assert not batch.acks
+    assert batch.nacks
+    assert batch.nacks[0][1] == message["payload"]["outbox_id"]
+    assert batch.nacks[0][3] == "VALIDATION_ERROR"
+    assert batch.nacks[0][5] is False
+    assert expected_text in batch.nacks[0][4]
+
+
+@pytest.mark.asyncio
+async def test_outbox_ingest_wrong_actor_role_still_returns_unauthorized():
+    batch = _BatchAckManagerStub()
+    service = OutboxIngestService(
+        legacy_handler=None,
+        batch_ack_manager=batch,
+        event_validator=EventValidator(),
+    )
+
+    class _NoPersistence:
+        async def persist(self, *, message, ctx, event_validator, envelope):
+            raise AssertionError("unauthorized actor should be rejected before persistence")
+
+    service._persistence = _NoPersistence()
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = _outbox_message(
+        outbox_id="ob-wrong-actor",
+        ticket_id="ticket-1",
+        event_ticket_id="ticket-1",
+        agent_seq=7,
+        actor_role="user",
+    )
+
+    assert await service.handle(msg, ctx) is True
+
+    assert not batch.acks
+    assert batch.nacks
+    assert batch.nacks[0][3] == "UNAUTHORIZED"
 
 
 @pytest.mark.asyncio
@@ -397,6 +583,173 @@ async def test_outbox_persistence_rejects_device_event_without_device_seq():
     assert outcome.decision == "nack"
     assert outcome.error_code == "VALIDATION_ERROR"
     assert "device_seq" in (outcome.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_outbox_persistence_unknown_ticket_nacks_without_insert(monkeypatch):
+    service = OutboxPersistenceService()
+    inserted_ticket_events = []
+
+    class _FakeSession:
+        async def commit(self):
+            raise AssertionError("unknown ticket must not commit")
+
+        async def rollback(self):
+            pass
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _FakeSession()
+
+    class _TicketEventsRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def get_ticket(self, ticket_id):
+            return None
+
+        async def add_event(self, **kwargs):
+            inserted_ticket_events.append(kwargs)
+            raise AssertionError("unknown ticket must not insert")
+
+    monkeypatch.setattr("app.db.get_session", _fake_get_session)
+    monkeypatch.setattr("app.repos.TicketEventsRepo", _TicketEventsRepo)
+    monkeypatch.setattr("websocket.validator.TicketEventsRepo", _TicketEventsRepo)
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = _outbox_message(
+        outbox_id="ob-unknown-ticket",
+        trace_id="tr-unknown-ticket",
+        ticket_id="ticket-missing",
+        event_ticket_id="ticket-missing",
+        agent_seq=8,
+    )
+
+    outcome = await service.persist(
+        message=msg,
+        ctx=ctx,
+        event_validator=EventValidator(),
+        envelope=EnvelopeValidationResult(ok=True, outbox_id="ob-unknown-ticket", trace_id="tr-unknown-ticket"),
+    )
+
+    assert outcome.decision == "nack"
+    assert outcome.error_code == "UNKNOWN_TICKET"
+    assert inserted_ticket_events == []
+
+
+@pytest.mark.asyncio
+async def test_outbox_persistence_valid_ticket_event_uses_top_level_ticket_id(monkeypatch):
+    service = OutboxPersistenceService()
+    inserted_ticket_events = []
+
+    class _FakeSession:
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _FakeSession()
+
+    class _TicketEventsRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def get_ticket(self, ticket_id):
+            return SimpleNamespace(ticket_id=ticket_id, device_id="dev-1")
+
+        async def add_event(self, **kwargs):
+            inserted_ticket_events.append(kwargs)
+            return (321, "created-at")
+
+    monkeypatch.setattr("app.db.get_session", _fake_get_session)
+    monkeypatch.setattr("app.repos.TicketEventsRepo", _TicketEventsRepo)
+    monkeypatch.setattr("websocket.validator.TicketEventsRepo", _TicketEventsRepo)
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = _outbox_message(
+        outbox_id="ob-valid-ticket",
+        trace_id="tr-valid-ticket",
+        ticket_id="ticket-valid",
+        agent_seq=9,
+        event_name="tool_call_result",
+    )
+
+    outcome = await service.persist(
+        message=msg,
+        ctx=ctx,
+        event_validator=EventValidator(),
+        envelope=EnvelopeValidationResult(ok=True, outbox_id="ob-valid-ticket", trace_id="tr-valid-ticket"),
+    )
+
+    assert outcome.decision == "ack"
+    assert outcome.persisted is True
+    assert outcome.ticket_id == "ticket-valid"
+    assert inserted_ticket_events[0]["ticket_id"] == "ticket-valid"
+    assert inserted_ticket_events[0]["agent_seq"] == 9
+
+
+@pytest.mark.asyncio
+async def test_outbox_persistence_valid_device_event_uses_device_seq(monkeypatch):
+    service = OutboxPersistenceService()
+    inserted_device_events = []
+
+    class _FakeSession:
+        async def commit(self):
+            pass
+
+        async def rollback(self):
+            pass
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _FakeSession()
+
+    class _DeviceEventsRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def add_event(self, **kwargs):
+            inserted_device_events.append(kwargs)
+            return 654
+
+    monkeypatch.setattr("app.db.get_session", _fake_get_session)
+    monkeypatch.setattr("app.repos.DeviceEventsRepo", _DeviceEventsRepo)
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(),
+        agent_id="dev-1",
+    )
+    msg = _outbox_message(
+        outbox_id="ob-valid-device",
+        trace_id="tr-valid-device",
+        device_seq=10,
+        event_name="tools_changed",
+    )
+
+    outcome = await service.persist(
+        message=msg,
+        ctx=ctx,
+        event_validator=EventValidator(),
+        envelope=EnvelopeValidationResult(ok=True, outbox_id="ob-valid-device", trace_id="tr-valid-device"),
+    )
+
+    assert outcome.decision == "ack"
+    assert outcome.persisted is True
+    assert outcome.event_type == "tools_changed"
+    assert inserted_device_events[0]["device_id"] == "dev-1"
+    assert inserted_device_events[0]["device_seq"] == 10
 
 
 @pytest.mark.asyncio

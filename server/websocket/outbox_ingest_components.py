@@ -14,6 +14,51 @@ from websocket.batch_ack_manager import NackInfo
 from tickets.statuses import enrich_chat_payload_with_requester_name
 
 
+ALLOWED_OUTBOX_ITEM_TYPES = {"job_event"}
+
+
+def _clean_optional_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _validate_outbox_contract(message: dict[str, Any]) -> Optional[str]:
+    payload = message.get("payload")
+    if not isinstance(payload, dict):
+        return "Payload is not a dict"
+
+    item_type = payload.get("item_type")
+    if item_type not in ALLOWED_OUTBOX_ITEM_TYPES:
+        return f"Unsupported item_type: {item_type!r}"
+
+    event_raw = payload.get("event")
+    if not isinstance(event_raw, dict):
+        return "payload.event must be an object"
+
+    agent_seq = payload.get("agent_seq")
+    device_seq = payload.get("device_seq")
+    has_agent_seq = agent_seq is not None
+    has_device_seq = device_seq is not None
+    if has_agent_seq == has_device_seq:
+        return "Protocol V3 outbox item must set exactly one of agent_seq or device_seq"
+
+    top_level_ticket_id = _clean_optional_str(message.get("ticket_id"))
+    event_ticket_id = _clean_optional_str(event_raw.get("ticket_id"))
+
+    if has_agent_seq:
+        if not top_level_ticket_id:
+            return "Ticket event requires top-level ticket_id"
+        if event_ticket_id and event_ticket_id != top_level_ticket_id:
+            return "event.ticket_id mismatch with top-level ticket_id"
+        return None
+
+    if top_level_ticket_id or event_ticket_id:
+        return "Device event must not include ticket_id context"
+    return None
+
+
 @dataclass
 class EnvelopeValidationResult:
     ok: bool
@@ -48,6 +93,14 @@ class OutboxEnvelopeValidator:
                 outbox_id=str(outbox_id),
                 trace_id=str(uuid.uuid4()),
                 error_message="Missing trace_id in envelope",
+            )
+        contract_error = _validate_outbox_contract(message)
+        if contract_error:
+            return EnvelopeValidationResult(
+                ok=False,
+                outbox_id=str(outbox_id),
+                trace_id=trace_id,
+                error_message=contract_error,
             )
         return EnvelopeValidationResult(ok=True, outbox_id=str(outbox_id), trace_id=trace_id)
 
@@ -108,17 +161,8 @@ class OutboxPersistenceService:
         from config import ENABLE_DB_PERSISTENCE
 
         payload = message.get("payload", {})
-        item_type = payload.get("item_type", "unknown")
-        if item_type != "job_event":
-            return OutboxPersistenceOutcome(
-                should_continue=True,
-                decision="ack",
-                outbox_id=envelope.outbox_id,
-                trace_id=envelope.trace_id,
-                persisted=False,
-            )
-        event_raw = payload.get("event", {})
-        if not isinstance(event_raw, dict):
+        contract_error = _validate_outbox_contract(message)
+        if contract_error:
             return OutboxPersistenceOutcome(
                 should_continue=True,
                 decision="nack",
@@ -126,16 +170,18 @@ class OutboxPersistenceService:
                 trace_id=envelope.trace_id,
                 retryable=False,
                 error_code="VALIDATION_ERROR",
-                error_message="payload.event must be an object",
+                error_message=contract_error,
                 persisted=False,
             )
+        event_raw = payload.get("event", {})
         event = dict(event_raw)
-        ticket_id = event.get("ticket_id")
         event_type = event.get("event", "unknown")
         agent_seq = payload.get("agent_seq")
         device_seq = payload.get("device_seq")
+        is_ticket_event = agent_seq is not None and device_seq is None
+        ticket_id = _clean_optional_str(message.get("ticket_id")) if is_ticket_event else None
         event_id = payload.get("event_id")
-        if not ticket_id:
+        if not is_ticket_event:
             device_validation = await event_validator.validate_device_event(
                 device_id=ctx.agent_id,
                 device_seq=device_seq,
@@ -165,7 +211,7 @@ class OutboxPersistenceService:
             )
         try:
             async with get_session() as session:
-                if not ticket_id:
+                if not is_ticket_event:
                     device_events = DeviceEventsRepo(session)
                     inserted_id = await device_events.add_event(
                         device_id=ctx.agent_id,
