@@ -1207,7 +1207,7 @@ Evidence:
 ### BUG-20260527-03 — UIA create wizard cannot complete required fields reliably
 
 Severity: P1
-Status: verified-fixed
+Status: open
 Area: UI
 
 Scenario:
@@ -1259,7 +1259,7 @@ Other GUI flows with Qt combo boxes or Russian text may be similarly hard to aut
 ### BUG-20260527-04 — Local GUI automation ticket.create omits active account session
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: account-session
 
 Scenario:
@@ -1892,6 +1892,56 @@ Remaining risk:
 - Existing pre-fix phantom evidence remains in live data by design: ticket `T-000604` still contains old `live malformed probe both_seq`, and the old `device_events.chat_message` row remains. Treat only new `probe_run_id` markers as post-fix evidence.
 - During the raw probe the server again attempted to dispatch stale pending `install_module_package` command state to the probe connection before handshake ack was observed; this is test contamination from earlier P0 rows and should be revisited with BUG-20260527-07/reconnect cleanup, not as a new BUG-09 failure.
 
+### BUG-20260527-10 — Local GUI automation tool actions omit account-session context
+
+Severity: P1
+Status: open
+Area: account-session / UI
+
+Scenario:
+Post-fix P0.7/P0.8 regression attempted to run `ticket.tool.run` and `ticket.capture_video` through `scripts/agent_test_driver.py` while the local GUI had an active confirmed account session and ticket `T-000606` existed.
+
+Expected:
+Local automation tool actions should either mirror the real supported GUI/web support tool flow with the active server account session, or return a clear unsupported-action error before calling the server.
+
+Actual:
+Both local automation calls returned HTTP `500` from `/ui/automation/run` with embedded server HTTP `403`, `error=account_session_invalid`, `error_code=ACCOUNT_SESSION_REQUIRED`.
+
+Repro steps:
+1. Ensure `live-v3-deep` is connected and an account is selected.
+2. Run `python scripts\agent_test_driver.py run-tool live-v3-deep --ticket-id 92923cf9-3a68-4e1f-a130-e7397a306b2e --tool-name system.collect --params-json "{}"`.
+3. Run `python scripts\agent_test_driver.py capture-video live-v3-deep --ticket-id 92923cf9-3a68-4e1f-a130-e7397a306b2e --duration-sec 30`.
+
+Evidence:
+- Server log/API: server returned `ACCOUNT_SESSION_REQUIRED` to the automation-initiated requester API path.
+- Agent log: local automation returned HTTP `500` with embedded HTTP `403`.
+- Browser/UI: not created through local automation; browser support route was used as a workaround and succeeded.
+- Server DB: no operation rows were created by the failed local automation attempts.
+- Agent SQLite: no new operation idempotency rows from these failed local automation tool attempts.
+- WS/API payload: local error body `{"status":"error","error":"HTTP 403: ... ACCOUNT_SESSION_REQUIRED"}`.
+
+Impact:
+The automation bridge is now reliable for `ticket.create` after BUG-20260527-04, but it is still not a complete substitute for real GUI/support-browser tool action testing. P0.7/P0.8 had to use the browser web-session route instead.
+
+Root cause hypothesis:
+`pc_agent/ui_gui/automation_controller.py` / `pc_agent/ui_gui/server_api.py` tool-action paths do not pass the active requester account session where the server expects account-scoped requester authorization, unlike the fixed create-ticket path.
+
+Fix policy:
+- Blocking further tests: no, because browser support routes exercise the canonical support tool flow and were used for P0.7/P0.8.
+- Fixed now: no
+
+Fix summary, if fixed:
+N/A.
+
+Verification after fix:
+Pending.
+
+Regression check:
+After fixing, repeat `agent_test_driver.py run-tool` and `capture-video` with an active confirmed account session and confirm operation rows/timeline entries in browser.
+
+Remaining risk:
+Other `/ui/automation/run` actions may still diverge from real GUI account-session behavior.
+
 ### P0 milestone summary
 
 Recorded at: 2026-05-27 01:15 Asia/Yekaterinburg.
@@ -1923,12 +1973,51 @@ Post-P0 fix status:
 - 2026-05-27 11:23 +05: `BUG-20260527-06` verified-fixed by commit `91f7529aa2e864298ae025ac4e20123688d1e368`, targeted server/webapp tests, quick release with rebuilt web bundle, live browser web-session `screen.record` cancel through `/api/web/support/operations/{operation_id}/cancel`, DB/device_outbox verification, and browser timeline confirmation.
 - 2026-05-27 11:45 +05: `BUG-20260527-08` verified-fixed in local/source agent by passing canonical device id into `AgentOrchestrator` and stripping compatibility `ticket_id` from device-event wire envelopes; targeted agent pytest passed, live remove/install `network_ping` regression persisted `module_state_changed`/`tools_changed`, local outbox had no pending lifecycle rows, and browser device modules tab confirmed `network_ping` active.
 - 2026-05-27 12:05 +05: `BUG-20260527-04` verified-fixed in local/source agent by passing the active account session through GUI automation create; targeted agent tests passed, pywinauto/UIA selected the confirmed account, `agent_test_driver.py create-ticket` created `T-000605`, DB requester account fields were correct, local outbox had no recent failed rows, and browser ticket detail showed the new ticket.
+- 2026-05-27 12:20 +05: all requested Fix 1-6 code changes are committed and pushed through `bb6f77267509133bd8cb0a70901ec6a019161dca`; post-fix gates reran `verify_workspace.py`, targeted pytest, P0.4 automation create, P0.5 chat_raise, P0.7 `system.collect`, P0.8 browser cancel, P0.9 module projection, and P0.10 malformed outbox.
+
+Post-fix verification gate, 2026-05-27 12:05-12:20 +05:
+- Code/test gates:
+  - Fix 6 commit: `bb6f77267509133bd8cb0a70901ec6a019161dca` (`fix: pass account session through GUI automation`) pushed to `origin/codex/helpdesk-process-model`.
+  - Targeted pytest: `python -m pytest pc_agent\tests\test_gui_automation_controller.py pc_agent\tests\test_registration_status.py::test_create_ticket_sends_only_requester_account_session_when_passed -q` -> `3 passed in 0.69s`.
+  - Workspace gate: `python scripts\verify_workspace.py` -> passed.
+- P0.4 automation create:
+  - Command: `python scripts\agent_test_driver.py create-ticket live-v3-deep --title "Live V3 post-fix automation create bb6f7726" --description "Post-fix gate for P0.4 automation create with active confirmed account session."`.
+  - Result: `ticket_id=92923cf9-3a68-4e1f-a130-e7397a306b2e`, `ticket_code=T-000606`, status `queued`, requester account session `6196fe8b-d836-44c5-9760-88a2f5d31f7a`, mode `confirmed_binding`.
+  - Server DB: `tickets.T-000606` persisted with requester person `bb00a942-fe2c-461c-b982-9da17d3fd1ff`, binding `0618eb74-9fa6-4dbe-9634-d9b56825f3ad`, account session `6196fe8b-d836-44c5-9760-88a2f5d31f7a`.
+  - Browser/UI: `https://192.168.100.17:9443/app/tickets/92923cf9-3a68-4e1f-a130-e7397a306b2e` showed `T-000606`, requester `Тестовый тест 12`, status `В очереди`, and the initial user message.
+- P0.5 chat_raise:
+  - Command: `python scripts\agent_test_driver.py request-support live-v3-deep --title "Live V3 post-fix chat_raise bb6f7726" --reason "post_fix_gate" --severity "warning"`.
+  - Result: local bridge returned `status=ok`, `result.ok=false`, `error_code=TICKET_CREATE_UNAVAILABLE`, `error="Ticket creation is unavailable for chat_raise"`.
+  - No new phantom persisted ticket id was returned; no new local `UNKNOWN_TICKET` rows were created by this post-fix chat_raise attempt.
+- P0.7 system.collect:
+  - Browser web-session route: `POST /api/web/support/tickets/92923cf9-3a68-4e1f-a130-e7397a306b2e/tools/run` with `tool_name=system.collect`.
+  - Result: HTTP `202`, operation `8f223efd-4086-472c-8925-0453b7317280`, trace `8b9e2aff-db27-48da-8bd2-44dc407a106b`; DB `operations.status=succeeded`, `device_outbox.status=delivered`.
+  - Browser ticket timeline showed `system.collect` accepted and then successful diagnostic output with hostname `ADMIN-2`, CPU/RAM/Disk values.
+  - Agent SQLite `seen_commands`: target command `8f223efd-4086-472c-8925-0453b7317280` status `success`.
+- P0.8 browser cancel:
+  - Browser web-session run: `screen.record`, operation `a0512684-cc48-47ee-a20d-f206dc003a9a`; cancel route `POST /api/web/support/operations/a0512684-cc48-47ee-a20d-f206dc003a9a/cancel`.
+  - Result: HTTP `200`, cancel operation `c3ca2ceb-2059-40cb-96cb-3b09dc8b0538`.
+  - Server DB: target operation `canceled`, cancel operation `succeeded`; target and cancel `device_outbox` rows are `delivered`.
+  - Agent SQLite `seen_commands`: target status `canceled`, cancel status `success`.
+  - Browser ticket timeline showed `screen.record` accepted and then `Статус: Отменена`, result `Tool screen.record canceled`. Screenshot: `live-v3-postfix-ticket-tool-cancel.png`.
+- P0.9 module lifecycle/projection:
+  - Reused the verified Fix 5 live remove/install regression for durable lifecycle events, then rechecked browser projection after all fixes.
+  - Server DB recent `device_events` includes `module_state_changed` and `tools_changed` for device `7a3429ec-1c0b-5495-9aad-b284f08ae965`; latest post-restart `module_state_changed` had `device_seq=10`.
+  - Browser admin modules tab `https://192.168.100.17:9443/app/admin/device-operations/7a3429ec-1c0b-5495-9aad-b284f08ae965?tab=modules` showed `Модули ok`, `Missing: 0`, `Outdated: 0`, `network_ping`, `Установлено: 1.0.0`, `Desired: 1.0.0`, `active`. Screenshot: `live-v3-postfix-device-modules.png`.
+  - Note: the device operations overview still shows historical failed operation counts and an `install_module_package` timeout from raw-probe/test contamination; module reconcile state itself is ok.
+- P0.10 malformed outbox:
+  - First post-fix probe while the GUI agent was running was superseded by the real same-device agent reconnecting, so the clean run briefly stopped `live-v3-deep`, ran the raw probe, and restarted the source GUI agent.
+  - Command: `python scripts\live_ws_v3_probe.py malformed-outbox --case all --ticket-id 92923cf9-3a68-4e1f-a130-e7397a306b2e --run-id postfixbb6 --seq-base 930000`.
+  - Probe output: all malformed cases returned non-retryable NACK: `both_seq`/`neither_seq` `VALIDATION_ERROR`, `unknown_ticket` `UNKNOWN_TICKET`, `missing_trace_id` `VALIDATION_ERROR`, `wrong_actor_role` `UNAUTHORIZED`, `top_ticket_only` `VALIDATION_ERROR`, `unknown_item_type` `VALIDATION_ERROR`.
+  - Server DB: `malformed_count=0` for `payload::text like '%postfixbb6%'` on ticket `T-000606`; browser ticket timeline did not show `postfixbb6` or `live malformed probe`.
+  - Agent restarted after the probe and is running source GUI mode on `wss://192.168.100.17:9443/ws`.
+- New non-blocking defect recorded during this gate: `BUG-20260527-10` for local automation `ticket.tool.run`/`capture-video` account-session omission. Browser web-session routes were used for P0.7/P0.8, so P1 ACK/dedup/idempotency is not blocked by this bridge-only gap.
 
 Current live state:
-- Local agent `live-v3-deep` is running again after P0.10.
+- Local agent `live-v3-deep` is running again after P0.10, currently `pid=4528`, `mode=gui/source`, connected to `wss://192.168.100.17:9443/ws`.
 - Server remains running on `https://192.168.100.17:9443`.
 - Test ticket `T-000604` contains intentional P0.10 probe evidence (`live malformed probe both_seq`) and should not be treated as normal requester input.
-- Known residual stale rows from pre-fix testing: target cancel run_tool `device_outbox` row id `6` remains `sent`; raw probe `install_module_package` rows ids `12` and `13` remain `sent`. Post-fix cancel regression uses operation `1cb15ce7-9bb8-4393-8029-b477fe67b7ab`, whose target outbox is delivered and local idempotency is terminal canceled.
+- Known residual stale rows from pre-fix testing: target cancel run_tool `device_outbox` row id `6` remains `sent`; raw probe `install_module_package` rows ids `12` and `13` remain `sent`; local SQLite still contains old failed `UNKNOWN_TICKET` rows from pre-fix chat_raise `cc002181-f7d9-44da-8726-da46463c090f`. Post-fix cancel regression uses operation `a0512684-cc48-47ee-a20d-f206dc003a9a`, whose target outbox is delivered and local idempotency is terminal canceled.
 
 Recommended next test pass:
 - First fix or explicitly tolerate the P0 protocol/data-integrity defects before running P1.1/P1.2, because malformed ACKs and stale command idempotency can contaminate ACK/dedup and duplicate-command conclusions.
