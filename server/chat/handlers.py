@@ -175,10 +175,7 @@ async def handle_chat_raise(request):
         
         # Генерируем chat_job_id
         chat_job_id = str(uuid.uuid4())
-        ticket_id = str(uuid.uuid4())
-        
-        # Создаем chat_session
-        service.create_session(chat_job_id, device_id, created_by="agent")
+        ticket_id = ""
 
         async with get_session() as session:
             created = await create_ticket_with_side_effects(
@@ -197,8 +194,13 @@ async def handle_chat_raise(request):
                 include_public_access=False,
                 state=state,
             )
-            ticket_id = created["ticket_id"]
+            ticket_id = str((created or {}).get("ticket_id") or "").strip()
+            if not ticket_id:
+                raise RuntimeError("create_ticket_with_side_effects returned no ticket_id")
             await session.commit()
+
+        # Создаем chat_session only after DB ticket creation succeeded.
+        service.create_session(chat_job_id, device_id, created_by="agent")
         
         # Отправляем команду start_job с job_type="support_chat" и переданным job_id
         res = await send_ws_command(
@@ -581,4 +583,3 @@ async def handle_chat_events(request):
             "status": "error",
             "error": str(e)
         }, status=500)
-

@@ -756,6 +756,7 @@ async def test_outbox_persistence_valid_device_event_uses_device_seq(monkeypatch
 async def test_agent_chat_raise_returns_canonical_ticket_id(monkeypatch):
     sent_messages = []
     queued_commands = []
+    events = []
 
     class _WsStub:
         async def send_json(self, payload):
@@ -773,15 +774,18 @@ async def test_agent_chat_raise_returns_canonical_ticket_id(monkeypatch):
             return {"metadata": {"user": "user-1"}}
 
         def create_chat_session(self, job_id, data):
+            events.append(("create_chat_session", data["ticket_id"]))
             self.sessions[job_id] = data
 
     async def _fake_create_ticket(*args, **kwargs):
+        events.append(("create_ticket", kwargs.get("title")))
         return {"ticket_id": "ticket-canonical-1"}
 
     def _fake_description(**kwargs):
         return "fake description"
 
     async def _fake_send_ws_command(**kwargs):
+        events.append(("send_ws_command", kwargs.get("command")))
         queued_commands.append(kwargs)
         return {"status": "queued"}
 
@@ -833,3 +837,88 @@ async def test_agent_chat_raise_returns_canonical_ticket_id(monkeypatch):
     assert state.sessions[observations["job_id"]]["ticket_id"] == "ticket-canonical-1"
     assert queued_commands
     assert queued_commands[0]["params"]["params"]["ticket_id"] == "ticket-canonical-1"
+    assert events[0][0] == "create_ticket"
+    assert ("create_chat_session", "ticket-canonical-1") in events
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_raise_create_failure_returns_error_without_side_effects(monkeypatch):
+    sent_messages = []
+    queued_commands = []
+
+    class _WsStub:
+        async def send_json(self, payload):
+            sent_messages.append(payload)
+
+    class _StateStub(SimpleNamespace):
+        def __init__(self):
+            super().__init__()
+            self.sessions = {}
+            self.ui_connections = {}
+            self.subscription_registry = None
+            self.chat_sessions = self.sessions
+
+        def get_agent(self, _agent_id):
+            return {"metadata": {"user": "user-1"}}
+
+        def create_chat_session(self, job_id, data):
+            self.sessions[job_id] = data
+
+    async def _fake_create_ticket(*args, **kwargs):
+        raise RuntimeError("db create failed")
+
+    def _fake_description(**kwargs):
+        return "fake description"
+
+    async def _fake_send_ws_command(**kwargs):
+        queued_commands.append(kwargs)
+        return {"status": "queued"}
+
+    class _FakeDbSession:
+        async def commit(self):
+            raise AssertionError("failed create must not commit")
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _FakeDbSession()
+
+    monkeypatch.setattr("websocket.agent_services.create_ticket_with_side_effects", _fake_create_ticket)
+    monkeypatch.setattr("websocket.agent_services.build_agent_raise_description", _fake_description)
+    monkeypatch.setattr("websocket.agent_services.TICKET_CREATE_AVAILABLE", True)
+    monkeypatch.setattr("websocket.agent_services.send_ws_command", _fake_send_ws_command)
+    monkeypatch.setattr("websocket.agent_services.get_session", _fake_get_session)
+
+    service = AgentCommandService()
+    state = _StateStub()
+    ctx = AgentConnectionContext(
+        ws=_WsStub(),
+        request=SimpleNamespace(),
+        state=state,
+        agent_id="dev-1",
+    )
+
+    await service.handle(
+        {
+            "type": "command",
+            "request_id": "req-raise-fail",
+            "payload": {
+                "command": "chat_raise",
+                "params": {
+                    "title": "Need support",
+                    "reason": "agent_initiated",
+                    "severity": "warning",
+                    "context": {"screen": "main"},
+                },
+            },
+        },
+        ctx,
+    )
+    await asyncio.sleep(0)
+
+    assert sent_messages
+    payload = sent_messages[0]["payload"]
+    assert payload["status"] == "error"
+    assert payload["error"]["code"] == "TICKET_CREATE_FAILED"
+    assert "ticket_id" not in payload.get("data", {}).get("observations", {})
+    assert state.sessions == {}
+    assert queued_commands == []

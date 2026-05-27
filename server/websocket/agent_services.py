@@ -765,7 +765,57 @@ class AgentCommandService:
         severity = params.get("severity", "warning")
         context_payload = params.get("context", {})
         chat_job_id = str(uuid.uuid4())
-        ticket_id = str(uuid.uuid4())
+
+        async def _send_create_error(code: str, message_text: str) -> None:
+            await ctx.ws.send_json(
+                {
+                    "type": "command_result",
+                    "request_id": req_id,
+                    "device_id": ctx.agent_id,
+                    "payload": {
+                        "status": "error",
+                        "error": {"code": code, "message": message_text},
+                        "data": {"observations": {}},
+                    },
+                }
+            )
+
+        if not (TICKET_CREATE_AVAILABLE and ENABLE_DB_PERSISTENCE):
+            await _send_create_error(
+                "TICKET_CREATE_UNAVAILABLE",
+                "Ticket creation is unavailable for chat_raise",
+            )
+            return
+
+        try:
+            async with get_session() as db_session:
+                created = await create_ticket_with_side_effects(
+                    db_session,
+                    device_id=ctx.agent_id,
+                    requester_id=ctx.agent_id,
+                    title=title,
+                    description=build_agent_raise_description(
+                        reason=str(reason or "agent_initiated"),
+                        severity=str(severity or "warning"),
+                        context=context_payload if isinstance(context_payload, dict) else {},
+                    ),
+                    user_display_name=ctx.agent_id,
+                    initial_message_sender_role="agent",
+                    initial_message_from="agent",
+                    include_public_access=False,
+                    state=ctx.state,
+                )
+                ticket_id = str((created or {}).get("ticket_id") or "").strip()
+                if not ticket_id:
+                    raise RuntimeError("create_ticket_with_side_effects returned no ticket_id")
+                await db_session.commit()
+        except Exception as exc:
+            logger.opt(exception=True).error("❌ [V3] Failed to create ticket for chat_raise: {}", exc)
+            await _send_create_error(
+                "TICKET_CREATE_FAILED",
+                "Failed to create a persisted ticket for chat_raise",
+            )
+            return
 
         session_data = {
             "chat_job_id": chat_job_id,
@@ -779,31 +829,6 @@ class AgentCommandService:
             "events": [],
         }
         ctx.state.create_chat_session(chat_job_id, session_data)
-
-        if TICKET_CREATE_AVAILABLE and ENABLE_DB_PERSISTENCE:
-            try:
-                async with get_session() as db_session:
-                    created = await create_ticket_with_side_effects(
-                        db_session,
-                        device_id=ctx.agent_id,
-                        requester_id=ctx.agent_id,
-                        title=title,
-                        description=build_agent_raise_description(
-                            reason=str(reason or "agent_initiated"),
-                            severity=str(severity or "warning"),
-                            context=context_payload if isinstance(context_payload, dict) else {},
-                        ),
-                        user_display_name=ctx.agent_id,
-                        initial_message_sender_role="agent",
-                        initial_message_from="agent",
-                        include_public_access=False,
-                        state=ctx.state,
-                    )
-                    ticket_id = created["ticket_id"]
-                    session_data["ticket_id"] = ticket_id
-                    await db_session.commit()
-            except Exception as exc:
-                logger.opt(exception=True).error("❌ [V3] Failed to create ticket for chat_raise: {}", exc)
 
         await ctx.ws.send_json(
             {

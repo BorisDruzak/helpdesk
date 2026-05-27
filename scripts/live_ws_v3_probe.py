@@ -182,6 +182,7 @@ def _outbox_item(
     *,
     case: str,
     outbox_id: str,
+    run_id: str | None = None,
     ticket_id: str | None = DEFAULT_LIVE_TICKET_ID,
     event_ticket_id: str | None = DEFAULT_LIVE_TICKET_ID,
     agent_seq: int | None = None,
@@ -197,6 +198,8 @@ def _outbox_item(
         "from": "user",
         "probe_case": case,
     }
+    if run_id:
+        event["probe_run_id"] = run_id
     if event_ticket_id is not None:
         event["ticket_id"] = event_ticket_id
     message: dict[str, Any] = {
@@ -233,6 +236,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "both_seq": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=ticket_id,
             event_ticket_id=ticket_id,
             agent_seq=seq_base + outbox_num,
@@ -242,6 +246,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "neither_seq": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=None,
             event_ticket_id=None,
             trace_id=trace_id,
@@ -249,6 +254,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "unknown_ticket": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=unknown_ticket,
             event_ticket_id=unknown_ticket,
             agent_seq=seq_base + 100 + outbox_num,
@@ -257,6 +263,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "missing_trace_id": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=ticket_id,
             event_ticket_id=ticket_id,
             agent_seq=seq_base + 200 + outbox_num,
@@ -265,6 +272,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "wrong_actor_role": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=ticket_id,
             event_ticket_id=ticket_id,
             agent_seq=seq_base + 300 + outbox_num,
@@ -274,6 +282,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "top_ticket_only": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=ticket_id,
             event_ticket_id=None,
             device_seq=seq_base + 400 + outbox_num,
@@ -282,6 +291,7 @@ def _malformed_case(case: str, ticket_id: str, outbox_num: int, *, run_id: str, 
         "unknown_item_type": lambda: _outbox_item(
             case=case,
             outbox_id=outbox_id,
+            run_id=run_id,
             ticket_id=ticket_id,
             event_ticket_id=ticket_id,
             agent_seq=seq_base + 500 + outbox_num,
