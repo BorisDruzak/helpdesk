@@ -219,9 +219,20 @@ class StateManager:
         expected_ws: Optional[Any] = None,
         expected_connection_id: Optional[str] = None,
     ) -> bool:
-        """Проверяет, что runtime-entry по device_id совпадает с ожидаемым WS."""
-        return self._agent_entry_matches(
+        """Проверяет, что current runtime/diagnostic entry совпадает с ожидаемым WS."""
+        if self._agent_entry_matches(
             self.connected_agents.get(device_id),
+            expected_ws=expected_ws,
+            expected_connection_id=expected_connection_id,
+        ):
+            return True
+        if expected_connection_id is None:
+            return False
+        diagnostic_entry = self.diagnostic_agent_connections.get(expected_connection_id)
+        if not diagnostic_entry or diagnostic_entry.get("device_id") != device_id:
+            return False
+        return self._agent_entry_matches(
+            diagnostic_entry,
             expected_ws=expected_ws,
             expected_connection_id=expected_connection_id,
         )

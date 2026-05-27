@@ -2444,7 +2444,7 @@ P1.3.A consent required:
 ### BUG-20260527-P1-07 — Web-session consent approve/deny is not available from support UI
 
 Severity: P1
-Status: root-cause-confirmed
+Status: known-limitation
 Area: consent / browser / auth-account-session / UI projection
 
 P1 scenario: P1.3 Consent flow.
@@ -2482,7 +2482,7 @@ Remaining risk:
 ### BUG-20260527-P1-08 — Server-side risky tool consent does not create agent GUI consent prompt
 
 Severity: P1
-Status: root-cause-confirmed
+Status: known-limitation
 Area: consent / agent-sqlite / local GUI-UIA / documentation drift
 
 P1 scenario: P1.3 Consent flow.
@@ -2560,7 +2560,7 @@ P1.4.C/P1.4.D negative module install guards:
 ### BUG-20260527-P1-09 — Auto-install module lifecycle device events are ACKed locally but not persisted on server
 
 Severity: P1
-Status: verified-fixed
+Status: needs-clean-rerun
 Area: module-runtime / outbox / server-db / protocol
 
 P1 scenario: P1.4 Module auto-install before run_tool.
@@ -2596,7 +2596,7 @@ Remaining risk:
 ### BUG-20260527-P1-10 — Auto-install negative failures bypass operation/timeline and SHA mismatch leaves desired installed
 
 Severity: P1
-Status: verified-fixed
+Status: deferred
 Area: module-runtime / operation lifecycle / server-db / UI projection
 
 P1 scenario: P1.4 Module auto-install before run_tool, negative cases SHA mismatch, platform mismatch, min_agent_version mismatch.
@@ -2957,7 +2957,7 @@ Remaining risk: `manage_local_agent.py status` still prints the launcher shim PI
 ### BUG-20260527-P1-17 - UIA ticket list metadata triggers GUI CPU/RSS spike after probe
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: UIA / local GUI / performance / test-tool
 
 P1 scenario: P1.6.D local GUI UIA projection after `BUG-20260527-P1-15` first fix.
@@ -3106,7 +3106,7 @@ Existing `device_outbox` id `83` remains as labeled pre-fix P1-04 contamination.
 ### BUG-20260527-P1-03 — Admin device account-events route returns 500 in browser
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: browser / UI projection / server-db
 
 P1 scenario:
@@ -3141,29 +3141,42 @@ Impact:
 P1.1.B can still validate outbox ACK/persistence, but P1.6 UI projection consistency cannot be green until this route is root-caused or explicitly deferred.
 
 Root cause hypothesis:
-Unknown. Likely typed web registry/account-events handler error or DB projection issue for the newly cleaned registration/session state.
+Typed web registry/account-events handler error in account-event serialization for cleaned registration/session state.
 
-Blocking further P1: no
-Fix now: no
+Root cause confirmed:
+`AccountSessionService.serialize_event()` called `_iso(row.event_at)`, but `_iso` was not defined in `server/registry/account_session_service.py`. Live remote service reproduction through the same service path raised `NameError: name '_iso' is not defined`, matching the browser-visible 500.
+
+Blocking further P1: no after fix; browser/admin projection now has clean route evidence.
+Fix now: yes
 Fix summary:
-Not fixed.
+Added local `_iso()` helper in `server/registry/account_session_service.py` and covered event serialization with a focused regression test.
 
 Changed files:
-None.
+`server/registry/account_session_service.py`, `server/tests/test_account_session_service.py`, `scripts/navigation_catalog.py`, `PLANS.md`.
 
 Tests:
-Not run for this bug yet.
+`python -m py_compile server\registry\account_session_service.py server\tests\test_account_session_service.py`; `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=15 python -m pytest server\tests\test_account_session_service.py::test_serialize_event_formats_event_at_without_route_500 -vv -s` -> 1 passed in 333.98s after full test DB migrations.
 
 Live regression:
-Not run.
+Commit `dbe1d72f` deployed through `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; `/api/health` passed on smoke attempt 2. Real browser direct route `https://192.168.100.17:9443/api/web/admin/registry/devices/2447d396-79cd-53da-b3a9-028c5a4d56da/account-events?limit=20` returned `{"status":"success"}` with account event items and ISO `event_at` values. Real browser admin device page loaded with no new console error from account-events; screenshot `p1-close-20260527-2333-p1-03-admin-device-afterfix.png`, console artifact `p1-close-20260527-2333-p1-03-console-afterfix.log`.
 
 Remaining risk:
-Admin device account/session timeline may be partially broken even while the rest of the device card renders.
+None for the 500 route; broader admin projection still depends on final P1.6 clean rerun.
+
+### P1 close decision for BUG-20260527-P1-03
+
+Current evidence: browser-visible route 500 reproduced and root-caused to undefined `_iso`; post-fix browser/API route returns success.
+Product impact: admin account/session event timeline was partially broken.
+Blocks P1 close: no after verified fix.
+Correct product behavior: route returns 200 success with event list or empty list, not 500.
+Action: fixed now.
+Required regression: include account-events route in P1.6 browser/admin clean rerun.
+Status after action: verified-fixed.
 
 ### BUG-20260527-P1-05 — Local automation run-tool carries requester session but uses disallowed agent actor role
 
 Severity: P1
-Status: reproduced
+Status: known-limitation
 Area: automation / auth/account-session / operation lifecycle
 
 P1 scenario:
@@ -3217,10 +3230,20 @@ Not run.
 Remaining risk:
 Any P1 scenario using `/ui/automation/run` for ticket tool/capture actions can still fail independently of real browser/support workflows and must not be treated as GUI failure without separate UIA evidence.
 
+### P1 close decision for BUG-20260527-P1-05
+
+Current evidence: local automation bridge propagates requester account session but server rejects `ticket.tool.run` with `ROLE_NOT_ALLOWED` because the bridge uses `actor_role=agent`; no operation row is created and agent SQLite remains clean.
+Product impact: `/ui/automation/run` is not a complete GUI-equivalent for operator/support tool launch. It remains a test surface, not the canonical support browser workflow.
+Blocks P1 close: no, provided P1.2/P1.5 use the canonical browser/support route for tool operations and label automation-bridge evidence separately.
+Correct product behavior: either add a product-backed local GUI tool action with an allowed support/admin actor context, or make the automation bridge return deterministic preflight denial instead of embedded HTTP 500.
+Action: classify as known-limitation for P1 close; defer product policy/fix to the automation-bridge hardening backlog.
+Required regression: final P1 clean rerun must use browser support route for `system.collect`/long-running tool lifecycle; automation bridge must not be used as pass evidence for tool launch.
+Status after action: known-limitation.
+
 ### BUG-20260527-P1-06 — screen.record artifact upload is denied and operation is projected as success
 
 Severity: P1
-Status: reproduced
+Status: deferred
 Area: artifact-upload / auth-account-session / operation lifecycle / UI projection
 
 P1 scenario:
@@ -3274,6 +3297,16 @@ Not run.
 
 Remaining risk:
 P1.2.C may also use `screen.record`; if artifact upload noise obscures cancel/idempotency evidence, switch that specific scenario to a safe long-running non-artifact diagnostic tool or record the artifact failure as known contamination for this run.
+
+### P1 close decision for BUG-20260527-P1-06
+
+Current evidence: `screen.record` completes locally with ToolResponse `status=partial` after artifact upload HTTP 403; server operation/browser card project it as succeeded.
+Product impact: artifact-producing tool results can lose artifacts and mislead UI status. This is directly relevant to P2.2 artifact validation.
+Blocks P1 close: no for P1.2/P1.5 command idempotency/reconnect if clean rerun uses a non-artifact long-running diagnostic or explicitly treats screen-record artifact failure as excluded artifact contamination.
+Correct product behavior: artifact upload auth/context must be fixed and operation/UI status must reflect partial ToolResponse results.
+Action: defer to artifact/status-projection fix pass before P2.2; do not use artifact success as P1 evidence.
+Required regression: P2.2 must cover upload metadata, browser preview/download, and partial upload failure projection.
+Status after action: deferred.
 
 ## P1 fix phase — 2026-05-27 — run_id=p1-fix-20260527-2123-4f42ec7c
 
@@ -3330,14 +3363,14 @@ Audit path: `PLANS.md` bug blocks and P1 findings summary only. No code fixes st
 |---|---|---|---|---|
 | BUG-20260527-P1-01 | verified-fixed | test-tool / local GUI / account-session | no | Keep as fixed baseline; filter only old clean-agent contamination if referenced. |
 | BUG-20260527-P1-02 | verified-fixed | account-session / local GUI / automation / test-tool | no | Keep as fixed baseline; account-session validation must remain in POST/body or headers. |
-| BUG-20260527-P1-03 | reproduced | browser / UI projection / server-db | yes for P1.6/admin projection close | Root-cause the admin device `account-events` 500, then fix or formally classify with browser/network/server evidence. |
+| BUG-20260527-P1-03 | verified-fixed | browser / UI projection / server-db | no | Fixed undefined `_iso()` in account-event serialization; rerun admin device page in P1.6 clean gate. |
 | BUG-20260527-P1-04 | verified-fixed | test-tool / protocol / server-db | no | Keep as fixed; old `device_outbox.id=83` is pre-fix contamination; raw probe rerun must use diagnostic isolation. |
-| BUG-20260527-P1-05 | reproduced | automation / auth-account-session / operation lifecycle | yes for automation-bridge close classification | Decide product policy for local automation `ticket.tool.run`; fix to deterministic GUI-equivalent behavior or classify as known limitation with evidence. |
-| BUG-20260527-P1-06 | reproduced | artifact-upload / auth-account-session / operation lifecycle / UI projection | yes for P1 close workflow/API projection classification | Root-cause upload 403 and partial-result projection; fix or defer as non-P1 artifact limitation with explicit browser/DB/agent SQLite evidence. |
-| BUG-20260527-P1-07 | root-cause-confirmed | consent / browser / auth-account-session / UI projection | yes for P1.3/browser consent close | Add typed web-session approve/deny path and UI projection, or formally classify current consent center as known limitation with product decision. |
-| BUG-20260527-P1-08 | root-cause-confirmed | consent / agent-sqlite / local GUI-UIA / documentation drift | yes for P1.3 local GUI consent close | Resolve product contract drift: either implement agent-side consent prompt path or document server-side consent as canonical and update P1 expectations. |
-| BUG-20260527-P1-09 | verified-fixed in bug block, but summary still lists as not closed | module-runtime / outbox / server-db / protocol | yes until status consistency and clean P1.4 rerun are recorded | Audit post-fix evidence/status consistency; if post-fix evidence is insufficient, change to `needs-clean-rerun` and rerun module lifecycle. |
-| BUG-20260527-P1-10 | reproduced | module-runtime / operation lifecycle / server-db / UI projection | yes for P1.4 negative workflow close | Fix or classify negative module auto-install failure contract: terminal operation/timeline and no stale desired state. |
+| BUG-20260527-P1-05 | known-limitation | automation / auth-account-session / operation lifecycle | no | Do not use automation bridge as canonical tool-launch evidence; use browser support route in P1 clean rerun. |
+| BUG-20260527-P1-06 | deferred | artifact-upload / auth-account-session / operation lifecycle / UI projection | no for P1, yes before P2.2 | Exclude artifact success from P1 evidence; fix artifact auth/status projection before P2.2. |
+| BUG-20260527-P1-07 | known-limitation | consent / browser / auth-account-session / UI projection | no for P1 close, yes for P1.3 green | Consent center is read-only; future consent milestone needs typed browser approve/deny actions. |
+| BUG-20260527-P1-08 | known-limitation | consent / agent-sqlite / local GUI-UIA / documentation drift | no for P1 close, yes for agent-GUI consent claim | Current consent is server-side before dispatch; future pass must choose/document canonical consent boundary. |
+| BUG-20260527-P1-09 | verified-fixed | module-runtime / outbox / server-db / protocol | no | Clean rerun `p1-close-20260528-0040-dbe1d72f` verified durable `module_state_changed`/`tools_changed`, delivered outbox and browser admin projection. |
+| BUG-20260527-P1-10 | deferred | module-runtime / operation lifecycle / server-db / UI projection | no if clean stale checks pass | Negative auto-install operation/timeline UX deferred; final close must confirm no new stale desired/outbox rows for close run id. |
 | BUG-20260527-P1-11 | verified-fixed | reconnect / agent-sqlite / deployment / local GUI-runtime | no, but clean rerun required | Keep fixed; rerun reconnect smoke in final P1 close gate. |
 | BUG-20260527-P1-12 | verified-fixed | reconnect / idempotency / operation lifecycle / agent-sqlite / server-db / browser | no, but clean rerun required | Keep fixed; rerun agent-restart non-resumable command gate with new close run marker. |
 | BUG-20260527-P1-13 | verified-fixed | reconnect / outbox / operation lifecycle / server-db / agent-sqlite / browser | no, but clean rerun required | Keep fixed; rerun server-drop/late-result gate with new close run marker. |
@@ -3351,6 +3384,86 @@ Status consistency audit result:
 - `BUG-20260527-P1-15` is now verified-fixed with real UIA and browser evidence.
 - `BUG-20260527-P1-16` is classified as `verified-non-product / guardrails-added`: stored PID is a Windows venv launcher shim, child PID owns GUI/UI bridge/WSS; UIA probe guardrail prevents shim PID evidence.
 - `BUG-20260527-P1-17` is verified-fixed: ticket-list semantics moved off `QListView`/model accessibility surface and post-probe CPU/RSS remained stable.
-- `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, and `BUG-20260527-P1-10` still require fix/classification before P1 close.
-- `BUG-20260527-P1-09` has inconsistent status surfaces: bug block says `verified-fixed`, while the P1 findings summary still lists it in the must-fix set. This must be resolved before the final close summary.
+- `BUG-20260527-P1-03` is verified-fixed; `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, and `BUG-20260527-P1-10` are formally classified for P1 close.
+- `BUG-20260527-P1-09` is verified-fixed by clean module lifecycle rerun `p1-close-20260528-0040-dbe1d72f`.
 - `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, and `BUG-20260527-P1-14` remain `verified-fixed`, but P1.5/P1.6 still need clean rerun after all fixes.
+
+P1 close decisions recorded during run `p1-close-20260527-2333-ebcd4c0b`:
+- `BUG-20260527-P1-03`: fixed now. Root cause was undefined `_iso()` in `AccountSessionService.serialize_event()`. Commit `dbe1d72f` deployed to remote; real browser account-events route now returns `status=success` and admin device page has no new account-events console 500. Required regression: include account-events/admin device page in P1.6 clean rerun.
+- `BUG-20260527-P1-05`: classified as `known-limitation`. The local automation bridge is a test surface; it carries account session but uses `actor_role=agent`, so server correctly denies support/admin-only tool launch and no operation is created. P1 clean rerun must use the browser support route for tool lifecycle evidence.
+- `BUG-20260527-P1-06`: classified as `deferred` to the artifact/status-projection pass. It does not block P1 idempotency/reconnect if the clean rerun does not use artifact success as evidence. P2.2 must fix/verify artifact upload auth and partial-result UI status.
+- `BUG-20260527-P1-07`: classified as `known-limitation`. Current consent center is browser-visible but read-only; support web-session approve/deny routes/actions are missing. P1.3 cannot be marked green until consent browser actions exist.
+- `BUG-20260527-P1-08`: classified as `known-limitation / documentation drift`. Current product path holds risky-tool consent server-side before command dispatch, so the agent never receives a local `pending_consents` prompt. Future consent pass must choose and document browser-side vs agent-side canonical consent.
+- `BUG-20260527-P1-09`: verified-fixed by clean rerun `p1-close-20260528-0040-dbe1d72f`. Direct admin HTTP route triggered `network_basic` deactivate/activate, both operations succeeded, local agent emitted `tools_changed` and `module_state_changed`, server persisted device events, and browser admin modules/device pages showed current module/operation projection. Old P1.4.A contamination remains ignored.
+- `BUG-20260527-P1-10`: classified as `deferred` for negative module auto-install UX/lifecycle. The stale desired row was cleanup-recovered; P1 close may proceed only if final P1.4/P1.5 checks have no new stale desired/outbox rows for the close run id.
+
+### P1 close clean rerun log - 2026-05-28 - run_id=p1-close-20260528-0040-dbe1d72f
+
+Scope discipline:
+- Run id / marker: `p1-close-20260528-0040-dbe1d72f`.
+- Code head: `dbe1d72f` on `codex/helpdesk-process-model`.
+- Server URL: `https://192.168.100.17:9443`; browser/admin URL: `https://192.168.100.17:9443/admin`.
+- Local agent instance: `live-v3-p1-clean2`; device_id/machine_id: `2447d396-79cd-53da-b3a9-028c5a4d56da`; agent GUI version observed earlier in this close pass: `3.1.61`.
+- Canonical paths to be separated: module lifecycle action through admin HTTP route, browser admin/device confirmation, server DB query, agent SQLite query, UIA semantic state probe, and remote/server logs.
+- Pre-fix contamination to ignore: old `network_basic` no-op reinstall ambiguity from original P1.4.A, old raw-probe `device_outbox` rows from `BUG-20260527-P1-14`, old `screen.record` artifact/auth projection from `BUG-20260527-P1-06`, and historical `seen_commands` recovery rows from `BUG-20260527-P1-12`.
+
+P1-09 clean rerun plan:
+- Trigger a reversible `network_basic` lifecycle change on the live agent: deactivate, verify durable device event/outbox/DB/browser state, then reactivate and verify convergence.
+- Filter evidence by fresh operation ids, timestamps after this section, and new local outbox ids; old rows are not accepted as proof.
+- Pass criteria: `device_events.module_state_changed` persisted after the action, local `outbox_sent_history` has matching module lifecycle event(s), `device_modules` converges back to `network_basic@1.0.0 active`, browser admin module/device page shows the current module state, and no new stale `device_outbox` or failed local outbox rows remain for this run.
+
+P1-09 clean rerun evidence:
+- Path tested: direct HTTP/API admin module lifecycle route using a web-session token as `Authorization: Bearer` for legacy module action compatibility; browser admin confirmation is separate and does not replace the action-path evidence. Raw token/cookie not logged; evidence records only `sha256_prefix=58ee735fa1ce` and `len=64`.
+- Transport/API: `POST /api/devices/2447d396-79cd-53da-b3a9-028c5a4d56da/modules/deactivate` returned `202` with operation `ee61c7ef-7ec8-4d14-9b37-8efecc201f9f`; poll returned `status=succeeded`. `POST /api/devices/2447d396-79cd-53da-b3a9-028c5a4d56da/modules/activate` returned `202` with operation `f8d43b2c-3029-4da5-a509-06d699bef5d6`; poll returned `status=succeeded`.
+- Server DB: `operations` rows `ee61c7ef-7ec8-4d14-9b37-8efecc201f9f` (`kind=module_deactivate`) and `f8d43b2c-3029-4da5-a509-06d699bef5d6` (`kind=module_activate`) are `succeeded`; matching `device_outbox.id=124` and `id=130` are `delivered`. Follow-up `list_installed_modules` and `list_tools` outbox rows `125..133` are also `delivered`; `new_stale_outbox=[]`.
+- Server DB: `device_events.id=51 tools_changed` (`device_seq=21`, tools_count `6`, hash `464075d978b3230f`), `id=52 module_state_changed` (`reason=deactivate:network_basic`), `id=53 tools_changed` (`device_seq=23`, tools_count `11`, hash `afa6647205d24098`), `id=54 module_state_changed` (`reason=install:network_basic@1.0.0`), and `id=55 module_state_changed` (`reason=activate:network_basic@1.0.0`) persisted after the clean action.
+- Server DB: `device_modules` converged to `network_basic@1.0.0 state=active installed=true active=true source=event last_updated_at=2026-05-27 19:41:53+00`; desired state remains `network_basic installed 1.0.0`.
+- Agent SQLite: local `outbox=[]`; `outbox_sent_history` has `outbox_id=38 tools_changed`, `39 module_state_changed reason=deactivate:network_basic`, `40 tools_changed`, `41 module_state_changed reason=install:network_basic@1.0.0`, and `42 module_state_changed reason=activate:network_basic@1.0.0`. `seen_commands` target commands `ee61c7ef-7ec8-4d14-9b37-8efecc201f9f` and `f8d43b2c-3029-4da5-a509-06d699bef5d6` are `success`.
+- Agent log: local agent log shows `deactivate_module` and `activate_module` command lifecycle ACK/result plus `[module_state_changed] Event enqueued` for install/activate and `tools_changed event enqueued` for rebuilt registries.
+- Browser/UI: real browser `/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da` shows `ADMIN-2`, agent `3.1.61`, `Онлайн`, observer dangerous-flow rows for `module activate` and `module deactivate` at `28 мая 2026 г., 00:41` with `error 0 timeout 0 retry 0`; `/app/admin/modules` shows `network_basic latest 1.0.0 • preferred 1.0.0` and tools `dns.resolve, network.ping, tcp.connect`. Screenshot artifact: `p1-close-20260528-0040-modules-page-full.png`; browser console errors captured to `p1-close-20260528-0040-browser-console-errors.log`.
+- UIA: semantic state probe after rerun used `pywinauto==0.6.9`, backend `uia`, window `Maria Agent v3.1.61`, PID `12592`; `connection_state=connected`, `account_mode=confirmed_binding`, `ticket_count=4`, target clean ticket `T-000612` visible, `failures=[]`. Artifact: `artifacts/p1-close-20260528-0040-dbe1d72f-uia-state-noscreenshot.json`. Screenshot capture timed out and is not used as pass evidence; UIA semantic JSON is the pass signal.
+- Result: `BUG-20260527-P1-09` is verified-fixed for P1 close. Residual note: module action route still needed legacy bearer-style auth even though the source session was `/api/web/session/login`; this is not counted as P1-09 because action succeeded and browser projection was separately verified, but it should be considered in future web-session route cleanup.
+
+### BUG-20260527-P1-18 — diagnostic_probe handshakes but is closed as superseded before outbox probes
+
+Severity: P1
+Status: fix-in-progress
+Area: protocol / reconnect / test-tool / state-manager
+
+P1 scenario: P1.1 clean ACK/NACK/dedup rerun with raw WS probe isolation after `BUG-20260527-P1-14`.
+Run id: `p1-close-20260528-0040-dbe1d72f`
+Expected: A `client_kind=diagnostic_probe` WS session should be able to run protocol diagnostics without receiving live `device_outbox` commands, without superseding the real runtime agent, and without being closed as stale immediately after `handshake_ack`.
+Actual: The probe receives `handshake_ack`, then the next non-handshake frame is closed with code `4002` before ACK/NACK evidence can be collected. This happened both with the live agent token in diagnostic mode and with a dedicated diagnostic token/device (`d1a9f416-26de-49d5-96f8-000000000103`). Using a dedicated `agent_runtime` token/device avoids the close, but cannot validate ticket-event ACK on a ticket bound to the real live device and is not the safe canonical probe mode for the live device.
+Repro steps:
+1. Read live agent token only into process env; do not print raw token.
+2. Run `scripts/live_ws_v3_probe.py --client-kind diagnostic_probe mixed-batch --ticket-id 15f87a9a-726e-488d-9868-2d4b78cfac9c --run-id p1-close-20260528-0040-dbe1d72f ...`.
+3. Repeat with dedicated diagnostic device/token `d1a9f416-26de-49d5-96f8-000000000103`.
+4. Observe `handshake_ack` followed by close `4002` and no per-item ACK/NACK.
+
+Evidence:
+- Transport/API: artifact `artifacts/p1-close-20260528-0040-mixed-batch.json` shows live-token diagnostic probe `handshake_ack` for device `2447d396-79cd-53da-b3a9-028c5a4d56da`, then `close_code=4002`, `observed_ack_ids=[]`, `observed_nack_ids=[]`, `unexpected_command_count=0`.
+- Transport/API: artifact `artifacts/p1-close-20260528-0040-mixed-batch-diag3.json` shows dedicated diagnostic probe `handshake_ack` for `d1a9f416-26de-49d5-96f8-000000000103`, then `close_code=4002` before batch result collection.
+- Transport/API adjacent: artifact `artifacts/p1-close-20260528-0040-mixed-batch-diag4-runtime.json` shows dedicated `agent_runtime` token/device can process the batch; valid device event ACKs, invalid both-seq/unknown-ticket/device-ticket-context NACK, no unexpected commands. Ticket events correctly NACK `DEVICE_MISMATCH` because the test ticket is bound to the live device, not the diagnostic runtime device.
+- Server log: for dedicated runtime device `d1a9f416-26de-49d5-96f8-000000000104`, server logs show normal `outbox_items_batch` handling and `DeviceOutboxRepo Retrieved 0 pending commands`; this confirms the raw runtime fallback did not consume live commands, but it is not enough for live ticket-event ACK on the real device.
+- Agent log: real agent `live-v3-p1-clean2` remained connected after the diagnostic attempts (`/ui/automation/status connection_state=connected`).
+- Server DB: no new live-device command consumption was observed in the diagnostic attempts; P1.1 remains blocked because the safe diagnostic mode cannot ingest outbox probes.
+- Browser/UI: not applicable to this protocol-negative/test-tool isolation failure except that browser-visible P1 ticket `T-000612` remains the target for post-fix no-phantom confirmation.
+- UIA: not applicable.
+- Test artifact: `artifacts/p1-close-20260528-0040-mixed-batch.json`, `artifacts/p1-close-20260528-0040-mixed-batch-diag3.json`, `artifacts/p1-close-20260528-0040-mixed-batch-diag4-runtime.json`.
+- Run marker: `p1-close-20260528-0040-dbe1d72f`, `p1-close-20260528-0040-diag3`, `p1-close-20260528-0040-diag4`.
+
+Impact: Blocks P1.1 clean rerun with the safe canonical raw-probe path. Without this fix, the only way to test ticket-event ACK via raw WS is to masquerade as the live runtime agent, which risks superseding the real agent and contaminating command delivery.
+Root cause hypothesis: `state.register_agent()` stores diagnostic probes separately in `diagnostic_agent_connections`, but `agent_handler` checks all non-handshake frames with `state.is_current_agent_connection()`, which only checks `connected_agents`. Therefore a diagnostic probe is incorrectly classified as a superseded/stale runtime connection and closed with `4002`.
+Root cause confirmed: yes. `server/state_manager.py::register_agent()` records diagnostic probes in `diagnostic_agent_connections`, while `is_current_agent_connection()` only matched `connected_agents`. The shared stale-connection guard in `server/websocket/agent_handler.py` calls this method for every non-handshake frame, so the first `outbox_items_batch` from a diagnostic probe was closed as superseded.
+Blocking further P1: yes
+Fix now: yes
+Fix summary: Updated `StateManager.is_current_agent_connection()` to accept the current diagnostic probe entry by `connection_id`/WS without registering it as a runtime agent or changing command dispatch semantics. Runtime entries remain the only entries returned by `get_agent()` and used by `DeviceDispatchService`.
+Changed files:
+- `server/state_manager.py`
+- `server/tests/test_state_manager_agent_registry.py`
+- `PLANS.md`
+Tests:
+- `python -m py_compile server\state_manager.py server\tests\test_state_manager_agent_registry.py`
+- `python -m pytest server\tests\test_state_manager_agent_registry.py -q` -> `3 passed`.
+Live regression: pending deploy and clean `diagnostic_probe` mixed-batch rerun.
+Remaining risk: diagnostic probes still cannot validate a ticket event for a dedicated diagnostic device unless the ticket is bound to that device. Post-fix P1.1 rerun will use the live device token in `diagnostic_probe` mode and verify that the real runtime agent is not superseded and no pending live commands are consumed.
