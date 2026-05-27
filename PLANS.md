@@ -1928,19 +1928,31 @@ Root cause hypothesis:
 
 Fix policy:
 - Blocking further tests: no, because browser support routes exercise the canonical support tool flow and were used for P0.7/P0.8.
-- Fixed now: no
+- Fixed now: yes
 
 Fix summary, if fixed:
-N/A.
+- Root cause: `GuiAutomationController._run_ticket_tool()` called `chat_panel.ticket_client.run_tool()` without `account_session`, while the real GUI path `ChatPanel._async_run_tool()` already passed `account_session=self._current_account_session()`. `ticket.capture_screenshot` and `ticket.capture_video` both route through `_run_ticket_tool()`, so they inherited the same missing account-session context.
+- Changed files: `pc_agent/ui_gui/automation_controller.py`, `pc_agent/tests/test_gui_automation_controller.py`, `PLANS.md`.
+- Fix: `_run_ticket_tool()` now reads the active GUI account session via `chat_panel._current_account_session()` and passes it to `TicketApiClient.run_tool()`. The existing API client already serializes this into `requester_account` and account-session headers.
 
 Verification after fix:
-Pending.
+- Targeted pytest red/green: new regression tests initially failed with `KeyError: 'account_session'` for `ticket.tool.run` and `ticket.capture_video`; after the fix `python -m pytest pc_agent\tests\test_gui_automation_controller.py -q` -> `4 passed in 0.59s`.
+- Adjacent targeted pytest: `python -m pytest pc_agent\tests\test_gui_automation_controller.py pc_agent\tests\test_registration_status.py::test_run_tool_includes_account_session -q` -> `5 passed in 0.59s`.
+- Compile check: `python -m py_compile pc_agent\ui_gui\automation_controller.py pc_agent\tests\test_gui_automation_controller.py` -> passed.
+- Workspace gate after docs sync: `python scripts\verify_workspace.py` -> passed.
+- Live setup: restarted source GUI agent `live-v3-deep` against `wss://192.168.100.17:9443/ws` / `https://192.168.100.17:9443/api`; verified `pywinauto==0.6.9`; used `Application(backend="uia")` against window `Maria Agent v3.1.61`; invoked UIA `PrimaryButton` / visible text `Войти как admin-2`; automation status changed from `account_gate` to `tickets`, `ticket_count=5`.
+- Live negative-adjacent check: `python scripts\agent_test_driver.py run-tool live-v3-deep --ticket-id 92923cf9-3a68-4e1f-a130-e7397a306b2e --tool-name system.collect --params-json "{}"` no longer failed with `ACCOUNT_SESSION_REQUIRED`; local action trace `seq=59719` includes `requester_account.session_id=745d41ee-...` and redacted `session_token`. The server rejected this specific tool with `ROLE_NOT_ALLOWED` / `actor_role=agent`, which is a separate role-policy outcome, not the BUG-10 account-session omission.
+- Live successful regression: `python scripts\agent_test_driver.py capture-video live-v3-deep --ticket-id 92923cf9-3a68-4e1f-a130-e7397a306b2e --duration-sec 3` returned `status=ok`, `tool_name=screen.record`, `operation_id=18caaa4e-20b0-45fb-9b4c-dd4a59224504`, `trace_id=8b9e2aff-db27-48da-8bd2-44dc407a106b`.
+- Agent evidence: action trace `seq=59722` for `screen.record` includes `requester_account.session_id=745d41ee-...` and redacted `session_token`; response `seq=59723` is HTTP `202`, operation accepted; module trace captured 45 frames and finished with `status=partial` due artifact upload warning, not account-session failure.
+- Server DB evidence: operation `18caaa4e-20b0-45fb-9b4c-dd4a59224504` exists with `tool_name=screen.record`, `status=succeeded`; `device_outbox` request is `status=delivered`; ticket events include `tool_call_started` id `104` and `tool_call_result` id `106`.
+- Browser/UI evidence: real browser URL `https://192.168.100.17:9443/app/tickets/92923cf9-3a68-4e1f-a130-e7397a306b2e`; ticket `T-000606` timeline shows `screen.record` accepted at 12:37 and a successful diagnostic result with `frames_captured=45`, `duration_sec=5.7`, `file_size_bytes=113860`. Browser snapshot saved as `live-v3-bug10-ticket-snapshot.md`; screenshots saved as `live-v3-bug10-ticket-screen-record.png` and `live-v3-bug10-ticket-screen-record-full.png`.
 
 Regression check:
-After fixing, repeat `agent_test_driver.py run-tool` and `capture-video` with an active confirmed account session and confirm operation rows/timeline entries in browser.
+- Covered direct automation `ticket.tool.run` payload propagation in unit tests, `ticket.capture_video` wrapper propagation in unit tests, API client account-session serialization in adjacent tests, and live `capture-video` through the local GUI automation bridge with DB + browser confirmation.
+- `system.collect` through local requester automation is now account-session-correct but policy-denied as `ROLE_NOT_ALLOWED`; use an agent-allowed tool such as `screen.record` for requester-side automation live regression, or run support/admin tools through the browser support route.
 
 Remaining risk:
-Other `/ui/automation/run` actions may still diverge from real GUI account-session behavior.
+Other `/ui/automation/run` actions that do not route through `_run_ticket_tool()` may still need separate account-session parity checks. During setup, GUI account-session validation still uses a `session_token` query parameter that the server rejects as `SESSION_TOKEN_QUERY_DISABLED`; UIA login works around this by using the real confirmed-binding login path and should be tracked separately if it recurs as a product issue.
 
 ### P0 milestone summary
 
@@ -2011,7 +2023,7 @@ Post-fix verification gate, 2026-05-27 12:05-12:20 +05:
   - Probe output: all malformed cases returned non-retryable NACK: `both_seq`/`neither_seq` `VALIDATION_ERROR`, `unknown_ticket` `UNKNOWN_TICKET`, `missing_trace_id` `VALIDATION_ERROR`, `wrong_actor_role` `UNAUTHORIZED`, `top_ticket_only` `VALIDATION_ERROR`, `unknown_item_type` `VALIDATION_ERROR`.
   - Server DB: `malformed_count=0` for `payload::text like '%postfixbb6%'` on ticket `T-000606`; browser ticket timeline did not show `postfixbb6` or `live malformed probe`.
   - Agent restarted after the probe and is running source GUI mode on `wss://192.168.100.17:9443/ws`.
-- New non-blocking defect recorded during this gate: `BUG-20260527-10` for local automation `ticket.tool.run`/`capture-video` account-session omission. Browser web-session routes were used for P0.7/P0.8, so P1 ACK/dedup/idempotency is not blocked by this bridge-only gap.
+- Follow-up fix: `BUG-20260527-10` local automation `ticket.tool.run`/`capture-video` account-session omission is now `verified-fixed`; `capture-video` live regression created and completed `screen.record` operation `18caaa4e-20b0-45fb-9b4c-dd4a59224504` and browser timeline confirmed the result.
 
 Current live state:
 - Local agent `live-v3-deep` is running again after P0.10, currently `pid=4528`, `mode=gui/source`, connected to `wss://192.168.100.17:9443/ws`.

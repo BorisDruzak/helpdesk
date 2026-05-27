@@ -27,10 +27,15 @@ class _TicketClient:
     def __init__(self, response: dict):
         self.response = response
         self.calls: list[dict] = []
+        self.run_tool_calls: list[dict] = []
 
     async def create_ticket(self, **kwargs):
         self.calls.append(kwargs)
         return self.response
+
+    async def run_tool(self, **kwargs):
+        self.run_tool_calls.append(kwargs)
+        return {"status": "accepted", "operation_id": "op-1"}
 
 
 class _ChatPanel:
@@ -45,6 +50,7 @@ class _ChatPanel:
                 "public_access_url": "https://example.test/ticket-1",
             }
         )
+        self.device_id = "device-1"
         self.active_ticket_id = None
         self.tickets_cache = []
         self._profiles_data = {"active_profile_id": "profile-1", "profiles": [{"id": "profile-1"}]}
@@ -87,6 +93,9 @@ class _ChatPanel:
         pass
 
     def _ensure_timeline_bottom_follow(self) -> None:
+        pass
+
+    def _refresh_ticket_detail_async(self) -> None:
         pass
 
 
@@ -151,3 +160,46 @@ async def test_automation_create_ticket_without_account_still_returns_server_den
     payload = json.loads(str(exc_info.value))
     assert payload["error_code"] == "ACCOUNT_SESSION_REQUIRED"
     assert chat_panel.ticket_client.calls[0]["requester_account"] is None
+
+
+@pytest.mark.asyncio
+async def test_automation_run_tool_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._run_ticket_tool(
+        {
+            "ticket_id": "ticket-1",
+            "tool_name": "system.collect",
+            "params": {"preset": "basic"},
+        },
+        trace_parent_action_id="action-tool",
+    )
+
+    assert result["status"] == "ok"
+    assert result["ticket_id"] == "ticket-1"
+    call = chat_panel.ticket_client.run_tool_calls[0]
+    assert call["account_session"] == account_session
+    assert call["trace_parent_action_id"] == "action-tool"
+
+
+@pytest.mark.asyncio
+async def test_automation_capture_video_sends_active_account_session():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller.run_action(
+        {
+            "action": "ticket.capture_video",
+            "ticket_id": "ticket-1",
+            "duration_sec": 5,
+        }
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.run_tool_calls[0]
+    assert call["tool_name"] == "screen.record"
+    assert call["params"] == {"duration_sec": 5}
+    assert call["account_session"] == account_session

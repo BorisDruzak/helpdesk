@@ -311,11 +311,13 @@ class GuiAutomationController:
         if params is not None and not isinstance(params, dict):
             raise ValueError("ticket.tool.run params must be an object")
 
+        account_session = chat_panel._current_account_session()
         result = await chat_panel.ticket_client.run_tool(
             device_id=chat_panel.device_id,
             ticket_id=ticket_id,
             tool_name=tool_name,
             params=params or {},
+            account_session=account_session,
             trace_parent_action_id=trace_parent_action_id,
         )
         chat_panel.active_ticket_id = ticket_id
