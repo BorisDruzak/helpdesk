@@ -2655,7 +2655,7 @@ P1.5.B agent restart while command in progress:
 ### BUG-20260527-P1-12 — Agent restart during running command leaves accepted operation and sent outbox stuck
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: reconnect / idempotency / operation lifecycle / agent-sqlite / server-db / browser
 
 P1 scenario: P1.5.B Agent restart while command in progress.
@@ -2686,7 +2686,7 @@ Root cause confirmed: yes. Code audit in fix run `p1-fix-20260527-2123-4f42ec7c`
 Blocking further P1: yes for P1.5.B restart recovery and P1.2 duplicate-after-restart idempotency.
 Fix now: yes in P1 fix phase; this is an operation lifecycle/idempotency blocker.
 Fix summary:
-Local implementation checkpoint complete; Live regression still pending. Product contract: on startup/reconnect, non-resumable commands left `in_progress` by a previous runtime session become local terminal `error` with `error.code=AGENT_RESTARTED`, are queued in durable `pending_command_results`, replayed to the server as recovery `command_result`, and duplicates of the same command return cached terminal error without re-running. Server sends `command_result_ack` after processing so the agent can clear the pending result; the server lifecycle path must mark the operation failed/interrupted and reconcile matching `device_outbox`.
+Verified fixed. Product contract implemented: on startup/reconnect, non-resumable commands left `in_progress` by a previous runtime session become local terminal `error` with `error.code=AGENT_RESTARTED`, are queued in durable `pending_command_results`, replayed to the server as recovery `command_result`, and duplicates of the same command return cached terminal error without re-running. Server sends `command_result_ack` after processing so the agent can clear the pending result; the server lifecycle path marks the operation failed/interrupted and reconciles matching `device_outbox`.
 Changed files:
 - `pc_agent/core/database.py`
 - `pc_agent/ws_agent.py`
@@ -2711,8 +2711,15 @@ Tests:
 - Diff hygiene: `git diff --check` -> exit 0.
 - Verification gap: DB-backed `python -m pytest server\tests\test_command_result_lifecycle_db.py::test_command_result_error_acknowledges_recovery_result -q` hung in the Windows isolated DB fixture twice and was stopped as a test-harness issue; real server DB reconciliation must be proven in Live regression before this bug can become `verified-fixed`.
 Live regression:
-- Pending. Required with clean marker `p1-fix-20260527-2123-4f42ec7c-p1-12-*`: create/start `screen.record`, kill/restart local agent, confirm server operation terminal failed/interrupted with `AGENT_RESTARTED`, target `device_outbox` not stale sent, local `seen_commands` terminal error, `pending_command_results` cleared after `command_result_ack`, and browser ticket timeline shows the interrupted result.
-Remaining risk: New operations may coexist with this stale command, but P1.5.E must explicitly report `device_outbox.id=102` as new P1 contamination until fixed.
+- Deploy: commit `325236301dde6944201076b082d21ab5589fc6d6` released to `https://192.168.100.17:9443` with `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke `/api/health -> 200`.
+- Agent restart after deploy: `python scripts\manage_local_agent.py stop live-v3-p1-clean2; python scripts\manage_local_agent.py start live-v3-p1-clean2 --gui`; local SQLite migrated v9 -> v10 and the old pre-fix `a7734524-d1b6-461e-8f37-7d759e624b78` contamination was recovered into a visible browser `tool_call_result`. This old row is not counted as the clean pass.
+- Clean run marker: `p1-fix-20260527-2123-4f42ec7c-p1-12-clean-agent-restart`; browser support route `POST /api/web/support/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9/tools/run` from the real browser context returned HTTP 202 for operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`, tool `screen.record`, trace `6f3455cb-e94c-4928-8e81-1caccbf7e8cc`.
+- Agent log: command `a0764846-3ab7-42f5-8e79-93d8c310ba6b` received at 22:23:52, `command_ack accepted`, `screen.record` execution lane acquired; agent process then stopped and restarted; at 22:24:25 `[command_restart_recovery] finalized stale in_progress commands: count=1` and sent recovery `command_result status=error`.
+- Agent SQLite: `seen_commands.command_id=a0764846-3ab7-42f5-8e79-93d8c310ba6b status=error`, `result_json.error.code=AGENT_RESTARTED`, `meta.recovery=true`, `owner_instance_id=NULL`; `pending_command_results` count `0`; no failed local outbox rows for marker.
+- Server DB: `operations.status=failed`, `error_code=AGENT_RESTARTED`, `finished_at=2026-05-27 17:24:53.024374+00:00`, `result_event_id=191`; `device_outbox.id=111 status=delivered delivered_at=2026-05-27 17:24:53.026397+00:00`; `ticket_events.id=191 event_type=tool_call_result` contains `observations.interrupted=true` and `target_operation_id=a0764846-3ab7-42f5-8e79-93d8c310ba6b`.
+- Browser/UI: real browser ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9` DOM contains operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`, `screen.record`, status `error`, and result text `Tool screen.record failed: Command was interrupted because the agent process restarted`; screenshots captured by Playwright as `p1-fix-20260527-2123-p1-12-browser-interrupted-visible.png` and `p1-fix-20260527-2123-p1-12-browser-interrupted-full.png`.
+- Adjacent regression: browser support route ran `system.collect` with marker `p1-fix-20260527-2123-4f42ec7c-p1-12-adjacent-system-collect`; operation `ca0691da-2f2d-44e4-9ff2-0d191671f264` reached `operations.status=succeeded`, `device_outbox.id=113 status=delivered`, local `seen_commands.status=success`, and `pending_command_results` remained empty.
+Remaining risk: This fix covers agent-process restart/interrupted non-resumable commands. BUG-20260527-P1-13 still owns the distinct server-drop/late-result reconciliation case.
 
 P1.5.C WebSocket/server drop during run_tool:
 - Path tested: real browser support route for `screen.record`, project remote-control server stop/start, live local agent runtime/SQLite/logs, server DB, browser ticket UI.
@@ -2756,7 +2763,7 @@ Fix summary:
 Changed files:
 Tests:
 Live regression:
-Remaining risk: This may share root cause with `BUG-20260527-P1-12`; both must be root-caused together before P1 can be closed.
+Remaining risk: This is adjacent to `BUG-20260527-P1-12`, but the agent-restart stale-command path is now verified fixed in commit `325236301dde6944201076b082d21ab5589fc6d6`. `BUG-20260527-P1-13` still needs its own clean server-drop/late-result reconciliation fix and Live regression before P1 can close.
 
 P1.5.D raw same-device probe while real agent active:
 - Path tested: raw WebSocket probe `scripts\live_ws_v3_probe.py double-connect` using token from local agent SQLite passed only through env to subprocess, real local agent process/status, server DB.
@@ -2806,26 +2813,26 @@ Initial live regression after commit `f0f8c737` with marker `p1-fix-20260527-212
 - Recovery/setup path: remote server deployed and running; HTTPS proxy was manually recovered via user systemd unit after release smoke found `9443` closed. Local agent `live-v3-p1-clean2` was restarted as environment recovery only, then server log showed real runtime `handshake_ack`, `DeviceOutboxRepo Retrieved 0 pending commands`, real runtime `list_tools` command `c58fd678-0184-4fbe-a746-df0a0364d3af`, `command_result status=succeeded`, and `DeviceOutboxRepo Marked as delivered`.
 - Transport/API: raw WSS diagnostic probe artifact `artifacts\p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe.json` shows `client_kind=diagnostic_probe`, token evidence only prefix/hash/length, `message_types=["handshake_ack"]`, and `command_count=0`.
 - Server log: `Diagnostic probe accepted without runtime registration: device_id=2447d396-79cd-53da-b3a9-028c5a4d56da connection_id=73f6...`; however, immediately after probe close the handler logged `Ignoring disconnect from superseded connection ... connection_id=4ca001...`, the real runtime connection id. This shows `HandshakeService` copied metadata from `state.get_agent(device_id)` instead of the diagnostic websocket metadata.
-- Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; newest clean command `c58fd678-0184-4fbe-a746-df0a0364d3af` is `seen_commands.status=success`. Old pre-fix `a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains labeled as `BUG-20260527-P1-12` contamination.
+- Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; newest clean command `c58fd678-0184-4fbe-a746-df0a0364d3af` is `seen_commands.status=success`. Old pre-fix `a7734524-d1b6-461e-8f37-7d759e624b78` was originally `status=in_progress` contamination for `BUG-20260527-P1-12`; after commit `32523630` it was recovered to terminal `error/AGENT_RESTARTED` and remains historical contamination only.
 - Residual root cause confirmed: `HandshakeService.handle()` looked up `state.get_agent(ctx.agent_id)` before reading `_pc_client_session_metadata` from the current websocket. For a diagnostic probe using a live device token, `state.get_agent()` returns the real runtime agent, so the diagnostic context is misclassified as `agent_runtime`, can trigger `dispatch_service.on_agent_online()`, and cleanup logs/acts against the wrong connection metadata. This does not reproduce the original command-consumption symptom in the first rerun, but it still violates the diagnostic-probe isolation contract and cannot be marked verified.
 Verified live regression after commit `16000f1d52bff549ed57fb61492c83345f1cf2f7` with marker `p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe-rerun2`:
 - Deployment/runtime path tested: `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; smoke recovered on attempt 2 with `/api/health -> 200`. Remote server SHA was deployed to `16000f1d`.
 - Transport/API: artifact `artifacts\p1-fix-20260527-2123-4f42ec7c-p1-14-diagnostic-probe-rerun2.json` shows raw WSS `client_kind=diagnostic_probe`, token evidence only prefix/hash/length, `message_types=["handshake_ack"]`, and `command_count=0`.
 - Server log: `Diagnostic probe accepted without runtime registration: device_id=2447d396-79cd-53da-b3a9-028c5a4d56da connection_id=99620e5e0c7040979a9f68f50873b460`, then `Diagnostic probe disconnected without changing runtime agent state` for the same connection id. No post-fix `Ignoring disconnect from superseded connection` appeared for the diagnostic probe.
 - Server DB: latest device row remains real agent `ADMIN-2`, version `3.1.61`, `last_handshake_at=2026-05-27 21:52:15+05`. Latest post-fix `device_outbox.id=109` is `list_tools status=delivered`; no new pending/sent command was created or consumed by the diagnostic probe. Old `device_outbox.id=102/105/106/107` remain pre-fix contamination and are excluded by timestamp/run marker.
-- Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; latest command `c58fd678-0184-4fbe-a746-df0a0364d3af` remains terminal `success`. Old `a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains P1-12 contamination.
+- Agent SQLite: `outbox=[]`, `failed_outbox_count=0`; latest command `c58fd678-0184-4fbe-a746-df0a0364d3af` remains terminal `success`. Old `a7734524-d1b6-461e-8f37-7d759e624b78` P1-12 contamination was later recovered to terminal `error/AGENT_RESTARTED` by commit `32523630`.
 - Browser/UI: real browser `/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da` shows `ADMIN-2`, device `2447d396...56da`, `Online`, Windows, agent `3.1.61`, last activity `27 May 2026 21:52`. Screenshot copied to `artifacts\p1-fix-20260527-2123-p1-14-admin-inventory.png`.
-Remaining risk: Old sent rows `102/105/106/107` are terminal timeout/failed contamination and must stay excluded from clean-run stale checks. P1-12 still owns the local stale `seen_commands.in_progress` row.
+Remaining risk: Old sent rows `102/105/106/107` are terminal timeout/failed contamination and must stay excluded from clean-run stale checks. P1-12's local stale `seen_commands.in_progress` row was recovered by commit `32523630`; P1-13 remains the open late-result/server-drop lifecycle risk.
 
 P1.5.E stale device_outbox cleanup check:
 - Path tested: server DB query, agent SQLite query.
 - Server DB: after the recovery window, `open_device_outbox=[]`. Known P1 contamination rows are now terminal failed/TIMEOUT: `device_outbox.id=102` from P1.5.B and `id=105/106/107` from P1.5.D. No new open `pending/sent/accepted/running` server outbox rows remained.
 - Server operations: no new open operation rows for the P1 run except the earlier P1.3 recovery-denied consent operation, which is terminal in product semantics but was not excluded by the initial SQL status list.
-- Agent SQLite: local `outbox=[]`, `pending_consents=0`, but `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` remains from `BUG-20260527-P1-12`.
-- Result: server stale-outbox cleanup is not currently blocked, but P1.5 cannot be green because local agent idempotency has new stale `in_progress` state and reconnect scenarios found `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, and `BUG-20260527-P1-14`.
+- Agent SQLite: local `outbox=[]`, `pending_consents=0`; pre-fix `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` was later recovered to terminal `error/AGENT_RESTARTED` by `BUG-20260527-P1-12` fix commit `32523630`.
+- Result: server stale-outbox cleanup is not currently blocked. P1.5 still needs a clean rerun because `BUG-20260527-P1-13` remains open and `BUG-20260527-P1-14`/`BUG-20260527-P1-12` were fixed after the original P1.5 pass.
 
 P1.6 Browser/UI projection consistency:
-- P1.6.A Ticket timeline replay path tested: real browser support ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, DOM text, browser console capture. Browser shows clean P1 ticket `T-000609`, P1.1 markers once in visible timeline, and P1.5.A marker. It also exposes the P1.5 failures: P1.5.B and P1.5.C show started/accepted `screen.record` events without terminal results in the ticket timeline, matching `BUG-20260527-P1-12` / `BUG-20260527-P1-13`.
+- P1.6.A Ticket timeline replay path tested: real browser support ticket page `/app/tickets/f2918f87-cca3-42a9-b28f-f0a5e09d72b9`, DOM text, browser console capture. Browser shows clean P1 ticket `T-000609`, P1.1 markers once in visible timeline, and P1.5.A marker. The original P1.5.B pre-fix timeline showed a started/accepted `screen.record` without terminal result; after `BUG-20260527-P1-12` fix, clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b` shows terminal `error/AGENT_RESTARTED`. P1.5.C still shows the server-drop/late-result gap matching `BUG-20260527-P1-13`.
 - P1.6.B Operation card consistency path tested: support action center and ticket page in real browser. Support action center surfaces the P1.5.C timeout as `Ошибки операций` with text `Operation timed out in status 'accepted'...`; ticket timeline does not show the lost late tool result, matching DB state but not agent local result state.
 - P1.6.C Device/module admin projection path tested: real browser admin login and `/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da`, `/app/admin/device?device=2447d396-79cd-53da-b3a9-028c5a4d56da`. Inventory shows `ADMIN-2`, device id `2447d396...56da`, Windows, agent version `3.1.61`, Online, last activity `27 мая 2026 г., 17:31`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-inventory.png`. Device card shows observer hot traces for P1.5.D raw-probe command timeouts and still logs console 500 for `/api/web/admin/registry/devices/{device_id}/account-events?limit=20`, confirming `BUG-20260527-P1-03`; screenshot `p1-20260527-1527-c4f03651-p1-6-admin-device.png`.
 - P1.6.D Agent GUI projection path tested: local GUI restarted with `--gui`, pywinauto `0.6.9`, `Application/Desktop(backend="uia")`, bounded control tree, bridge status. UI bridge reports connected, account gate, active ticket list contains `f2918f87-cca3-42a9-b28f-f0a5e09d72b9`; UIA sees top window `Maria Agent v3.1.61` with `AutomationId=QApplication.MainWindow` and root group, but exposes no semantic text controls for active account/ticket/connected state. Screenshot `artifacts\p1-20260527-1527-c4f03651-p1-6-uia-agent-window.png`. Recorded as `BUG-20260527-P1-15`.
@@ -2869,12 +2876,12 @@ Live regression:
 Remaining risk: Existing P0 UIA create script may still cover a specific wizard path, but the main connected/ticket projection cannot be confirmed through stable UIA selectors in the current GUI state.
 
 P1 Findings Summary:
-- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-12`, `BUG-20260527-P1-13`.
+- P1-blocking/data-integrity/reconnect: `BUG-20260527-P1-13`.
 - P1-blocking/UIA projection: `BUG-20260527-P1-15`.
 - Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
-- Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-14`.
-- Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress`; ticket timeline started-only events for P1.5.B/P1.5.C markers.
-- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14`; continue with reconnect/idempotency/data-loss root cause for `BUG-20260527-P1-12` and `BUG-20260527-P1-13`, then UIA projection `BUG-20260527-P1-15`.
+- Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-14`.
+- Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` historical P1-12 contamination now recovered terminal `error/AGENT_RESTARTED`; ticket timeline started-only events for original P1.5.B/P1.5.C markers.
+- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14` and agent-restart recovery for `BUG-20260527-P1-12`; continue with server-drop late-result/data-loss root cause for `BUG-20260527-P1-13`, then UIA projection `BUG-20260527-P1-15`.
 
 ### BUG-20260527-P1-11 — Agent exits on transient WSS 502 due bytes/string check in handshake-error handler
 
@@ -3167,7 +3174,7 @@ Known pre-fix contamination ignored for this fix phase:
 - Server `device_outbox.id=83` from pre-fix mixed-batch raw probe.
 - Server `device_outbox.id=102` from P1.5.B agent-restart contamination.
 - Server `device_outbox.id=105/106/107` from P1.5.D raw probe consuming live module install commands.
-- Local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` from `BUG-20260527-P1-12`.
+- Local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78 status=in_progress` from `BUG-20260527-P1-12`; after commit `32523630` this was recovered to terminal `error/AGENT_RESTARTED` and remains labeled as old contamination, not clean-run evidence.
 - Ticket timeline started-only events for P1.5.B/P1.5.C markers in ticket `T-000609`.
 
 P1 operation lifecycle contract:
@@ -3182,7 +3189,7 @@ P1 operation lifecycle contract:
 
 Fix order and current intent:
 - [x] `BUG-20260527-P1-14` first: isolate raw diagnostic probes before additional probe/live reconnect regressions. Verified fixed in `16000f1d52bff549ed57fb61492c83345f1cf2f7`.
-- [ ] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands.
+- [x] `BUG-20260527-P1-12`: agent restart recovery for non-resumable running commands. Verified fixed in `325236301dde6944201076b082d21ab5589fc6d6` with clean operation `a0764846-3ab7-42f5-8e79-93d8c310ba6b`.
 - [ ] `BUG-20260527-P1-13`: durable late command result replay/reconciliation after server drop/timeout.
 - [ ] `BUG-20260527-P1-15`: semantic UIA accessibility for connected/account/ticket state.
 
