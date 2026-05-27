@@ -2560,7 +2560,7 @@ P1.4.C/P1.4.D negative module install guards:
 ### BUG-20260527-P1-09 — Auto-install module lifecycle device events are ACKed locally but not persisted on server
 
 Severity: P1
-Status: needs-clean-rerun
+Status: verified-fixed
 Area: module-runtime / outbox / server-db / protocol
 
 P1 scenario: P1.4 Module auto-install before run_tool.
@@ -3001,7 +3001,7 @@ P1 Findings Summary:
 - Non-blocking but must be fixed before P1 close if accepting support/admin workflows: `BUG-20260527-P1-03`, `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-09`, `BUG-20260527-P1-10`.
 - Verified-fixed during this P1 pass/fix phase: `BUG-20260527-P1-04`, `BUG-20260527-P1-11`, `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`.
 - Known P1 contamination to filter until fixes: server `device_outbox.id=83` from pre-fix mixed-batch raw probe; `device_outbox.id=102` from P1.5.B; `device_outbox.id=105/106/107` from P1.5.D raw probe; local `seen_commands.command_id=a7734524-d1b6-461e-8f37-7d759e624b78` historical P1-12 contamination now recovered terminal `error/AGENT_RESTARTED`; ticket timeline started-only events for original P1.5.B/P1.5.C markers.
-- P1 is not complete and P2 must not start. Fix phase has verified raw-probe/module command isolation for `BUG-20260527-P1-14`, agent-restart recovery for `BUG-20260527-P1-12`, and server-drop late-result reconciliation for `BUG-20260527-P1-13`; continue with UIA projection `BUG-20260527-P1-15`.
+- Historical note from mid-fix phase: P1 was not complete at that time. Superseded by `P1 close summary - 2026-05-28`, where P1 is closed and P2 is marked ready after clean rerun.
 
 ### BUG-20260527-P1-11 — Agent exits on transient WSS 502 due bytes/string check in handshake-error handler
 
@@ -3380,7 +3380,7 @@ Audit path: `PLANS.md` bug blocks and P1 findings summary only. No code fixes st
 | BUG-20260527-P1-17 | verified-fixed | UIA / local GUI / performance / test-tool | no | Keep post-fix low CPU/RSS evidence; include UIA semantic probe artifact in P1.6 clean rerun summary. |
 
 Status consistency audit result:
-- P1 is not closed.
+- Historical audit state: P1 was not closed at audit time. Superseded by `P1 close summary - 2026-05-28`, where P1 is closed after the required clean rerun.
 - `BUG-20260527-P1-15` is now verified-fixed with real UIA and browser evidence.
 - `BUG-20260527-P1-16` is classified as `verified-non-product / guardrails-added`: stored PID is a Windows venv launcher shim, child PID owns GUI/UI bridge/WSS; UIA probe guardrail prevents shim PID evidence.
 - `BUG-20260527-P1-17` is verified-fixed: ticket-list semantics moved off `QListView`/model accessibility surface and post-probe CPU/RSS remained stable.
@@ -3427,7 +3427,7 @@ P1-09 clean rerun evidence:
 ### BUG-20260527-P1-18 — diagnostic_probe handshakes but is closed as superseded before outbox probes
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: protocol / reconnect / test-tool / state-manager
 
 P1 scenario: P1.1 clean ACK/NACK/dedup rerun with raw WS probe isolation after `BUG-20260527-P1-14`.
@@ -3465,5 +3465,114 @@ Changed files:
 Tests:
 - `python -m py_compile server\state_manager.py server\tests\test_state_manager_agent_registry.py`
 - `python -m pytest server\tests\test_state_manager_agent_registry.py -q` -> `3 passed`.
-Live regression: pending deploy and clean `diagnostic_probe` mixed-batch rerun.
-Remaining risk: diagnostic probes still cannot validate a ticket event for a dedicated diagnostic device unless the ticket is bound to that device. Post-fix P1.1 rerun will use the live device token in `diagnostic_probe` mode and verify that the real runtime agent is not superseded and no pending live commands are consumed.
+Live regression:
+- Deployment/runtime path tested: commit `9a3e77e4` deployed with `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke recovered on attempt 2 with `/api/health -> 200`.
+- Transport/API: reran `scripts/live_ws_v3_probe.py --client-kind diagnostic_probe mixed-batch` against canonical WSS with marker `p1-close-20260528-0040-afterp118`; artifact `artifacts\p1-close-20260528-0040-mixed-batch-afterp118.json` shows `handshake_ack`, ACK ids `valid-ticket`, `duplicate-ticket`, `valid-device`, NACK ids `both-seq` (`VALIDATION_ERROR`), `unknown-ticket` (`UNKNOWN_TICKET`), and `device-with-ticket` (`VALIDATION_ERROR`), with `unexpected_command_count=0`.
+- Server DB: one `ticket_events.chat_message` row persisted for marker `p1-close-20260528-0040-afterp118` (`id=228`, `agent_seq=960001`, trace `9720fc5e-c86e-414c-bc35-44c22fe3fd77`); duplicate `agent_seq=960001` ACKed without a second row. One `device_events.probe_device_event` row persisted (`id=57`, `device_seq=960002`, trace `0a870207-b91e-4b14-8980-795780f26c0e`). Invalid ticket/device event counts for the marker are `0`; recent stale `device_outbox` for the verification window is `[]`.
+- Agent/local: `python scripts\agent_test_driver.py status live-v3-p1-clean2` returned `connection_state=connected`, `bridge_connected=true`, `ticket_count=4`; local SQLite had `outbox=[]`, `failed_outbox_count=0`, `pending_consents=0`.
+- Browser/UI: real browser URL `https://192.168.100.17:9443/app/tickets/15f87a9a-726e-488d-9868-2d4b78cfac9c` shows `P1.1.E valid batch ticket marker p1-close-20260528-0040-afterp118` exactly once and no duplicate/invalid marker. Evidence: browser DOM result reported `hasMarker=true`, `markerCount=1`; screenshot `p1-close-20260528-0040-ticket-T-000612-afterp118.png`; console errors saved to `p1-close-20260528-0040-ticket-T-000612-afterp118-console-errors.log`.
+Status after action: verified-fixed.
+Remaining risk: diagnostic probes still cannot validate a ticket event for a dedicated diagnostic device unless the ticket is bound to that device. The clean live-device diagnostic mode now covers the required no-command-consumption path.
+
+### BUG-20260527-P1-19 - P1.2 diagnostic duplicate enqueue double-serialized jsonb params
+
+Severity: P2
+Status: not-a-bug
+Area: test-tool / test-contamination
+
+P1 scenario: P1.2.A duplicate successful command clean rerun.
+Run id: `p1-close-20260528-0040-dbe1d72f`
+Expected: The diagnostic duplicate enqueue should recreate the original `device_outbox.params` as a JSON object so the real dispatcher can deliver the duplicate command to the agent and exercise command idempotency.
+Actual: The first duplicate diagnostic enqueue for operation `23dccf2d-fbd2-4e1f-b739-9f3eea279ce7` inserted `params` as a JSON string, not an object. Dispatcher failed before delivery with `SEND_ERROR` and server log error `'str' object has no attribute 'get'`.
+Repro steps:
+1. Start `system.collect` through real browser support route on ticket `T-000612`; operation `23dccf2d-fbd2-4e1f-b739-9f3eea279ce7` succeeded.
+2. Diagnostic remote DB script inserted duplicate `device_outbox` row `id=135` using `json.dumps(original['params'])` even though asyncpg had already returned `params` as a JSON string.
+3. Dispatch attempted to process row `135` and failed four times before marking it `failed/SEND_ERROR`.
+
+Evidence:
+- Transport/API: original browser support route returned HTTP `202`, operation `23dccf2d-fbd2-4e1f-b739-9f3eea279ce7`, then terminal success.
+- Server log: `[DeviceDispatchService] Failed to send command ... command_id=23dccf2d-fbd2-4e1f-b739-9f3eea279ce7 error='str' object has no attribute 'get'`, then `[DeviceOutboxRepo] Command marked as failed: outbox_id=135 error_code=SEND_ERROR`.
+- Server DB: original `device_outbox.id=134` delivered; diagnostic duplicate `id=135` failed with `error_message="'str' object has no attribute 'get'"`; its `params` value is a quoted JSON string. Operation remained `succeeded`; ticket events remained exactly one `tool_call_started` and one `tool_call_result`.
+- Agent SQLite: not applicable to the failed duplicate row because the malformed diagnostic row failed before WS delivery; agent stayed connected.
+- Browser/UI: operation success remains visible, but this row is not accepted as idempotency evidence.
+- Test artifact: remote diagnostic DB output in this session; no raw tokens logged.
+- Run marker: operation-specific contamination for `23dccf2d-fbd2-4e1f-b739-9f3eea279ce7`.
+
+Impact: Pollutes final stale-outbox checks with one new test-tool row (`device_outbox.id=135`) and invalidates this first P1.2.A duplicate-delivery attempt. It does not indicate product idempotency failure because the malformed duplicate never reached the agent.
+Root cause hypothesis: diagnostic script double-serialized `device_outbox.params` before inserting `jsonb`.
+Root cause confirmed: yes. Original row `134` stores `params` as a JSON object; row `135` stores a quoted JSON string. Dispatcher expects object-like params and calls `.get()`.
+Blocking further P1: no, if row `135` is labeled as test-tool contamination and P1.2 is rerun with a new clean operation/marker using the original JSON text directly.
+Fix now: no product code fix. Correct the ad hoc diagnostic command for the rerun by inserting `original['params']` directly into `$4::jsonb`, not `json.dumps(original['params'])`.
+Fix summary: Test-tool-only classification; no product code changed.
+Changed files:
+- `PLANS.md`
+Tests: not applicable; this is a one-off diagnostic command mistake.
+Live regression: clean P1.2 rerun completed after labeling this contamination:
+- P1.2.A duplicate-after-success used fresh operation `a6df2219-a983-4a0f-a634-9b91f1da0821`; original `device_outbox.id=136` and diagnostic duplicate `id=137` both delivered, operation stayed `succeeded`, and ticket events remained exactly one `tool_call_started` plus one `tool_call_result`.
+- P1.2.B duplicate-while-running used operation `faffc1b0-8680-4489-a9ff-4627d0cfe727`; duplicate `device_outbox.id=139` was inserted while operation status was `accepted`; rows `138/139` both delivered, operation terminal `succeeded`, one terminal ticket result, and local `seen_commands` had a single terminal row.
+- P1.2.C duplicate-after-cancel used target operation `5d85925d-2572-45c3-866b-adc0a4ef9f51`; browser web-session cancel returned `200` with cancel operation `7be4952c-b815-404d-ae94-b0e754242a0c`; duplicate target row `142` delivered after terminal cancel; target stayed `canceled`, local `seen_commands.status=canceled`, and ticket events remained one each of start/cancel-request/tool-result/op-canceled.
+Remaining risk: Final P1 stale-outbox checks must ignore only `device_outbox.id=135` as P1-19 contamination. Post-rerun server query confirmed `stale_outbox=[]`; the only recent failed row was the labeled test-tool contamination `id=135`.
+
+## P1 close summary - 2026-05-28 - run_id=p1-close-20260528-0040-dbe1d72f
+
+Status: P1 closed
+
+Code head:
+- Local/remote code head for product fixes: `9a3e77e4` (`fix: keep diagnostic probes current`), branch `codex/helpdesk-process-model`.
+- P0 close and earlier P1 fix commits remain recorded in the bug blocks above.
+
+Server URL:
+- `https://192.168.100.17:9443`; final `python scripts\manage_remote_stack.py smoke server --insecure-tls` returned `/api/health -> 200`.
+
+Agent instance:
+- `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da` / `ADMIN-2`, agent version `3.1.61`.
+- Final local automation status: `connection_state=connected`, `bridge_connected=true`, active ticket `15f87a9a-726e-488d-9868-2d4b78cfac9c`, `ticket_count=4`.
+
+Clean ticket:
+- `T-000612` / `15f87a9a-726e-488d-9868-2d4b78cfac9c`.
+
+Verified fixed / closed for P1:
+- `BUG-20260527-P1-03` -> verified-fixed.
+- `BUG-20260527-P1-09` -> verified-fixed by reversible `network_basic` deactivate/activate clean rerun.
+- `BUG-20260527-P1-11` -> verified-fixed.
+- `BUG-20260527-P1-12` -> verified-fixed; clean rerun operation `427e3b27-21c2-49be-880b-8c02b7e6a86e` ended `failed/AGENT_RESTARTED`, target outbox delivered, local `seen_commands.status=error`.
+- `BUG-20260527-P1-13` -> verified-fixed; clean server-drop operation `bffad8e1-73c9-4eac-8081-08915eeeb2e6` reconciled to `succeeded`, target outbox delivered, local outbox empty.
+- `BUG-20260527-P1-14` -> verified-fixed.
+- `BUG-20260527-P1-15` -> verified-fixed; semantic UIA projection evidence remains valid and was rechecked in final split-view probes.
+- `BUG-20260527-P1-16` -> verified-non-product / guardrails-added.
+- `BUG-20260527-P1-17` -> verified-fixed.
+- `BUG-20260527-P1-18` -> verified-fixed by post-deploy diagnostic-probe mixed-batch rerun.
+
+Deferred / known limitation / not blocking P1:
+- `BUG-20260527-P1-05` -> known-limitation: automation bridge is not support/admin tool-run authority; browser support route is the canonical P1 tool lifecycle path.
+- `BUG-20260527-P1-06` -> deferred to artifact/status-projection pass; P1 close does not use artifact upload success as evidence.
+- `BUG-20260527-P1-07` -> known-limitation: approval center is browser-visible but read-only; consent approve/deny actions remain outside P1 close.
+- `BUG-20260527-P1-08` -> deferred cleanup/UX issue; not a P1 data-integrity blocker.
+- `BUG-20260527-P1-10` -> deferred negative module auto-install UX/lifecycle issue; final checks found no new stale desired/outbox state for the close run.
+- `BUG-20260527-P1-19` -> not-a-bug/test-contamination; only `device_outbox.id=135` is ignored as the malformed diagnostic duplicate row.
+
+Old contamination ignored:
+- Original P1 raw-probe/device-outbox rows from `BUG-20260527-P1-14`.
+- Original restart/drop stale rows from pre-fix `BUG-20260527-P1-12` / `BUG-20260527-P1-13`.
+- Original `screen.record` artifact upload/auth projection from `BUG-20260527-P1-06`.
+- Test-tool contamination `device_outbox.id=135` from `BUG-20260527-P1-19`.
+
+Clean rerun results:
+- P1.1: passed minimum close smoke. `diagnostic_probe` mixed batch with marker `p1-close-20260528-0040-afterp118` had expected ACK/NACK, one persisted ticket event, one persisted device event, invalid persistence counts `0`, browser marker count `1`, and `unexpected_command_count=0`.
+- P1.2: passed duplicate success/running/canceled command idempotency smoke. Clean operations: `a6df2219-a983-4a0f-a634-9b91f1da0821`, `faffc1b0-8680-4489-a9ff-4627d0cfe727`, `5d85925d-2572-45c3-866b-adc0a4ef9f51`.
+- P1.5: passed reconnect/restart/drop smoke. Agent restart produced terminal `AGENT_RESTARTED`; server drop recovered `/api/health`, agent reconnected, and late result was persisted/reconciled.
+- P1.6: passed browser/admin and local GUI projection close check. Browser ticket timeline showed P1.1/P1.2/P1.5 results and admin device page showed `ADMIN-2`, agent `3.1.61`, `Онлайн`, last contact `2026-05-28 01:12`; screenshots `p1-close-20260528-0040-ticket-T-000612-afterp118.png`, `p1-close-20260528-0040-p1-2-idempotency-browser.png`, `p1-close-20260528-0040-admin-device-final.png`. UIA evidence used `pywinauto==0.6.9`, backend `uia`: `artifacts\p1-close-20260528-0040-uia-state-final.json` captured connected/account semantics after restart; `artifacts\p1-close-20260528-0040-uia-state-final-depth10.json` captured active ticket `T-000612` semantic controls after opening the ticket. Screenshot capture is still skipped/timeout-prone and not used as pass criteria.
+
+Final state checks:
+- Server DB: `stale_outbox=[]` for recent close window. Recent failed server outbox contains only labeled test contamination `device_outbox.id=135`.
+- Agent SQLite: local `outbox=[]`, failed local outbox count `0`, pending consent count `0`; clean operation `seen_commands` states are terminal (`success`, `error`, or `canceled` according to operation outcome).
+- Browser console/network: final ticket/admin console logs captured; no new P1-blocking 500/401/403 was observed in the final pages outside known/deferred areas.
+
+Code gates:
+- `python scripts\verify_workspace.py` -> passed.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `python -m pytest server\tests\test_state_manager_agent_registry.py pc_agent\tests\test_gui_accessibility.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_header_widget_renders_actions_without_raw_public_url pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_exposes_stable_uia_ids pc_agent\tests\test_main_window_runtime_windows.py::test_main_window_syncs_sidebar_connection_status_with_requester_labels -q` -> `9 passed`.
+- `git diff --check` -> passed with line-ending warnings only for `PLANS.md` and pre-existing `pc_agent/ui_gui/tickets_list_model.py` working-copy normalization.
+
+P2 readiness:
+- ready. P2 can start after this `PLANS.md` evidence update is committed and pushed.
