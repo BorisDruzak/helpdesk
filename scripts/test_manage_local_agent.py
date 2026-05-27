@@ -221,6 +221,8 @@ def test_build_env_includes_machine_id_and_auth_token():
         "secret-token",
         8878,
         "7a3429ec-1c0b-5495-9aad-b284f08ae965",
+        Path("C:/tmp/agent-data"),
+        Path("C:/tmp/agent-install"),
     )
 
     assert env["PC_AGENT_WS_URL"] == "ws://example/ws"
@@ -228,6 +230,8 @@ def test_build_env_includes_machine_id_and_auth_token():
     assert env["AUTH_TOKEN"] == "secret-token"
     assert env["PC_AGENT_UI_PORT"] == "8878"
     assert env["PC_AGENT_MACHINE_ID"] == "7a3429ec-1c0b-5495-9aad-b284f08ae965"
+    assert env["PC_AGENT_DATA_DIR"].endswith("agent-data")
+    assert env["PC_AGENT_INSTALL_ROOT"].endswith("agent-install")
 
 
 def test_issue_agent_token_returns_token_without_logging_raw_value(monkeypatch):

@@ -245,6 +245,8 @@ def _build_env(
     auth_token: str | None,
     ui_port: int | None = None,
     machine_id: str | None = None,
+    data_dir: str | Path | None = None,
+    install_root: str | Path | None = None,
 ) -> dict[str, str]:
     env = os.environ.copy()
     env["PC_AGENT_WS_URL"] = ws_url
@@ -255,6 +257,10 @@ def _build_env(
         env["PC_AGENT_UI_PORT"] = str(ui_port)
     if machine_id:
         env["PC_AGENT_MACHINE_ID"] = machine_id
+    if data_dir:
+        env["PC_AGENT_DATA_DIR"] = str(Path(data_dir).resolve())
+    if install_root:
+        env["PC_AGENT_INSTALL_ROOT"] = str(Path(install_root).resolve())
     return env
 
 
@@ -413,7 +419,15 @@ def _verify(
     if not _venv_exists():
         raise SystemExit("Local agent venv is missing. Run: python scripts/manage_local_agent.py bootstrap")
     layout = _ensure_instance_layout(name)
-    env = _build_env(ws_url, api_url, auth_token, ui_port, _normalize_machine_id(machine_id))
+    env = _build_env(
+        ws_url,
+        api_url,
+        auth_token,
+        ui_port,
+        _normalize_machine_id(machine_id),
+        layout["data_dir"],
+        layout["install_root"],
+    )
     cmd = [
         str(VENV_PYTHON),
         "-m",
@@ -457,7 +471,15 @@ def _start(
     if not resolved_auth_token and not resolved_machine_id:
         _sync_instance_token_from_primary_install(name, layout["data_dir"])
     resolved_ui_port = ui_port if ui_port is not None else _choose_ui_port()
-    env = _build_env(ws_url, api_url, resolved_auth_token, ui_port, resolved_machine_id)
+    env = _build_env(
+        ws_url,
+        api_url,
+        resolved_auth_token,
+        ui_port,
+        resolved_machine_id,
+        layout["data_dir"],
+        layout["install_root"],
+    )
     env["PC_AGENT_UI_PORT"] = str(resolved_ui_port)
     if not gui and not resolved_auth_token:
         print("[manage_local_agent] warning: headless start without --auth-token usually exits after token prompt")

@@ -693,9 +693,9 @@ class TicketApiClient:
         url = f"{self.base_url}/registry/agent/account-sessions/{session_id}/validate"
         session = await self._get_session()
         headers = self._get_headers()
-        params = {"session_token": session_token} if session_token else None
+        payload = {"session_token": session_token} if session_token else {}
         try:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(url, headers=headers, json=payload) as response:
                 response_text = await response.text()
                 if response.status != 200:
                     payload = self._decode_error_payload(response_text)

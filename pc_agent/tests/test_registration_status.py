@@ -196,8 +196,10 @@ async def test_registration_api_client_validates_account_session(monkeypatch):
     result = await client.validate_account_session("session-1", session_token="token-1")
 
     assert result["valid"] is True
+    assert fake_session.calls[0]["method"] == "POST"
     assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/account-sessions/session-1/validate"
-    assert fake_session.calls[0]["params"] == {"session_token": "token-1"}
+    assert fake_session.calls[0]["json"] == {"session_token": "token-1"}
+    assert "params" not in fake_session.calls[0]
 
 
 @pytest.mark.asyncio

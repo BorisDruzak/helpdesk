@@ -2103,3 +2103,180 @@ Recommended next test pass:
 - Start P1 with a clean marker/run id and a new ticket so old P0 contamination can be excluded deterministically.
 - Recommended order: P1.1 ACK/NACK/dedup, P1.2 command idempotency, P1.3 consent, P1.5 restart/reconnect, P1.6 UI projection, P1.4 auto-install negatives.
 - P2 can follow after P1.1/P1.2 confirm that ACK/dedup/idempotency remains stable on post-fix clean data.
+
+## P1 Live validation — 2026-05-27 — run_id=p1-20260527-1454-c15fe567
+
+Status: baseline recovered after two blocking fixes; clean agent `live-v3-p1-clean2` registered from zero and ready for a fresh P1 run id.
+
+Run metadata:
+- Branch: `codex/helpdesk-process-model`.
+- Current commit at first P1 attempt: `c15fe567c58bc31454d85dd8df4f6222cff5a644`.
+- P0 close code/deploy head: `47340c9bc435303c97b5ce3cb05631e815d41207`; P0 closure docs head before P1 docs alias: `e845fcfa`; live rules alias checkpoint: `c15fe567`.
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/admin`.
+- Original P0 agent instance `live-v3-deep` is not clean for P1 after DB cleanup; it retained local account/profile state after server registration data was cleaned.
+- Clean P1 attempt instance: `live-v3-p1-clean`, UI port `8766`, machine seed `p1-clean-20260527-145438`, device_id `a7085e14-47eb-546f-809d-ab6ec42c2bc8`, source GUI mode.
+- Agent version observed after clean technical provisioning: `3.1.61`.
+- pywinauto version: `0.6.9`.
+
+Known pre-fix contamination to ignore for P1:
+- P0 malformed phantom event in ticket `T-000604`.
+- Old `device_outbox.status=sent` rows: target cancel row id `6`, raw-probe install rows ids `12` and `13`.
+- Old local SQLite failed rows from pre-fix `chat_raise` ticket id `cc002181-f7d9-44da-8726-da46463c090f`.
+- Historical module/probe noise and duplicate/noise rows from BUG-20260527-08 pre-fix testing.
+
+Pre-P1 baseline evidence:
+- Server smoke: `python scripts\manage_remote_stack.py smoke server --base-url https://192.168.100.17:9443 --insecure-tls` returned `/api/health -> 200`.
+- First attempted `live-v3-deep` baseline was invalid after server DB cleanup: local automation status showed `has_active_profile=true`, `active_profile_id=registration-smoke-profile` even though server-side registration/profile rows had been cleaned.
+- `live-v3-deep` was stopped with `python scripts\manage_local_agent.py stop live-v3-deep`.
+- Clean instance `live-v3-p1-clean` was first started with `--api-url https://192.168.100.17:9443`; connection request failed with HTTP 404 because the connection-request code expects `/api` in the base URL. This is a test setup error; it was corrected by restarting with `--api-url https://192.168.100.17:9443/api`.
+- Clean technical provisioning path: `live-v3-p1-clean` created a pending connection request, admin approved it through `/api/web/admin/connection_requests/{device_id}/approve` using a short-lived generated admin token. Evidence printed only token prefix/length, not raw token.
+- Agent log after approval: token saved for prefix `a7085e14...`, WS connected, `handshake_ack` received, `list_tools` command executed successfully, two startup device-event outbox rows ACKed.
+- Agent automation status after technical provisioning: `connection_state=connected`, `bridge_connected=true`, `sidebar_view=account_gate`, `ticket_count=0`.
+- Blocking issue: the supposedly clean instance still reported `has_active_profile=true`, `active_profile_id=registration-smoke-profile`, `profile_count=5`. File inspection showed no `user_profile.json` under `.local-agent\instances\live-v3-p1-clean\data`, but `%LOCALAPPDATA%\PCClientAgent\data\user_profile.json` and `requester_profiles.json` existed and were updated/read during the clean instance run.
+
+P1 checklist:
+- [x] Baseline clean account/session state after isolation fix.
+- [x] Register clean agent/account from zero.
+- [x] Browser/admin confirms clean device online and registration/account state.
+- [x] UIA confirms clean GUI state and registered account state.
+- [ ] P1.1 Outbox ACK/NACK/dedup.
+- [ ] P1.2 Command idempotency.
+- [ ] P1.3 Consent flow.
+- [ ] P1.4 Module auto-install before run_tool.
+- [ ] P1.5 Restart/reconnect with pending state.
+- [ ] P1.6 Browser/UI projection consistency.
+
+### BUG-20260527-P1-01 — Isolated local agent reuses global requester profile cache
+
+Severity: P1
+Status: verified-fixed
+Area: test-tool / local GUI / account-session
+
+P1 scenario:
+Clean P1 baseline and registration-from-zero after server DB cleanup.
+
+Run id:
+`p1-20260527-1454-c15fe567`
+
+Expected:
+A new named local agent instance with a fresh `machine_id`, fresh data-dir and no user registration should start with no active requester/account profile. It should show account/registration gate only, then allow registration from zero. Local profile/cache files must be scoped to `.local-agent\instances\<name>\data`.
+
+Actual:
+`live-v3-p1-clean` used a new data-dir and new device id, but `/ui/automation/status` returned `has_active_profile=true`, `active_profile_id=registration-smoke-profile`, `profile_count=5`. The instance tried `list_tickets` with stale account-session context and received `ACCOUNT_SESSION_NOT_FOUND`. Inspection showed the clean instance data-dir had no `user_profile.json`, while `%LOCALAPPDATA%\PCClientAgent\data\user_profile.json` and `requester_profiles.json` existed and were used/updated.
+
+Repro steps:
+1. Stop old `live-v3-deep`.
+2. Start clean instance:
+   `python scripts\manage_local_agent.py start live-v3-p1-clean --gui --ws-url wss://192.168.100.17:9443/ws --api-url https://192.168.100.17:9443/api --ui-port 8766 --machine-id p1-clean-20260527-145438`.
+3. Approve the generated connection request through admin web API.
+4. Run `python scripts\agent_test_driver.py status live-v3-p1-clean`.
+5. Inspect `.local-agent\instances\live-v3-p1-clean\data` and `%LOCALAPPDATA%\PCClientAgent\data`.
+
+Evidence:
+- Transport/API: connection request pending -> approved; WS connected; `handshake_ack` received; `list_tools` succeeded; startup outbox ACKs received.
+- Server log: admin connection request approved for device `a7085e14-47eb-546f-809d-ab6ec42c2bc8`; raw token not logged.
+- Agent log: `ACCOUNT_SESSION_NOT_FOUND` on `list_tickets`; `handshake_ack` and `list_tools` success after provisioning.
+- Server DB: clean device id `a7085e14-47eb-546f-809d-ab6ec42c2bc8` created from connection-request token path; registration/account baseline not yet clean.
+- Agent SQLite: clean instance DB was newly created (`DB_SCHEMA_VERSION v9`), no registration profile file in instance data-dir.
+- Browser/UI: browser confirmation intentionally not yet marked green because baseline is blocked before P1 start.
+- UIA: not yet green; local automation status shows account gate but stale active profile.
+- Test artifact: `%LOCALAPPDATA%\PCClientAgent\data\user_profile.json`, `%LOCALAPPDATA%\PCClientAgent\data\requester_profiles.json`; clean instance `.local-agent\instances\live-v3-p1-clean\data` lacks `user_profile.json`.
+- Run marker: `p1-20260527-1454-c15fe567`.
+
+Impact:
+P1 account-session, GUI and requester tests would be polluted by stale local profile/account state. This makes P1.1/P1.2/P1.3 evidence unreliable because ticket ownership and account-session context would not come from the clean registration flow.
+
+Root cause hypothesis:
+`scripts/manage_local_agent.py` passes `--data-dir` and `--install-root` to `pc_agent.ws_agent`, but does not set `PC_AGENT_DATA_DIR` / `PC_AGENT_INSTALL_ROOT` in the process environment. GUI helpers that call `resolve_data_root()` without a CLI value, including `UserProfileManager` and cache-backed GUI paths, therefore resolve to `%LOCALAPPDATA%\PCClientAgent\data` instead of the named instance data-dir.
+
+Root cause confirmed:
+Yes. `live-v3-p1-clean2` started after the fix created/used `user_profile.json`, `registry_options.json`, `service_catalog.json` and `ticket_form_pack.json` under `.local-agent\instances\live-v3-p1-clean2\data`; `/ui/automation/status` reported `has_active_profile=false`, `profile_count=0` before registration and no longer showed `registration-smoke-profile`.
+
+Blocking further P1: yes
+Fix now: yes
+
+Fix summary:
+`scripts/manage_local_agent.py` now sets `PC_AGENT_DATA_DIR` and `PC_AGENT_INSTALL_ROOT` for named instances in both `start` and `verify`, so GUI helpers using `resolve_data_root()` resolve to the same instance-local data root as `ws_agent --data-dir`.
+
+Changed files:
+`scripts/manage_local_agent.py`; `scripts/test_manage_local_agent.py`.
+
+Tests:
+`python -m pytest scripts/test_manage_local_agent.py pc_agent/tests/test_registration_status.py -q` -> 26 passed.
+`python -m compileall -q scripts/manage_local_agent.py scripts/test_manage_local_agent.py pc_agent/ui_gui/server_api.py pc_agent/tests/test_registration_status.py` -> passed.
+`git diff --check` -> passed.
+
+Live regression:
+Started `live-v3-p1-clean2` with machine seed `p1-clean2-20260527-150200`, device_id `2447d396-79cd-53da-b3a9-028c5a4d56da`. Technical connection request approved, WS `handshake_ack` received, `list_tools` command succeeded, automation status before registration showed `connection_state=connected`, `has_active_profile=false`, `profile_count=0`. Browser admin inventory at `https://192.168.100.17:9443/app/admin/inventory?device=2447d396-79cd-53da-b3a9-028c5a4d56da` shows `ADMIN-2` online with agent version `3.1.61`. UIA evidence: pywinauto `0.6.9`, backend `uia`, window title `Maria Agent v3.1.61`, screenshot `artifacts\p1-clean2-agent-main.png`.
+
+Remaining risk:
+Unbounded UIA child traversal can still hang on the Qt tree; later P1 GUI evidence must use bounded/targeted selectors and screenshots.
+
+### BUG-20260527-P1-02 — GUI clears valid account session because validation uses query token
+
+Severity: P1
+Status: verified-fixed
+Area: account-session / local GUI / automation / test-tool
+
+P1 scenario:
+Clean P1 registration-from-zero baseline for `live-v3-p1-clean2`.
+
+Run id:
+`p1-20260527-1454-c15fe567`
+
+Expected:
+After a clean agent submits registration, confirms the claim, admin approves it, and the agent creates a confirmed-binding account session, the GUI must keep the local `account_session.json` and enter the ticket workspace with a valid `confirmed_binding` session. Session token must be sent in headers or POST body, not in a URL/query string.
+
+Actual:
+The confirmed-binding account session was created and validated successfully through `POST /api/registry/agent/account-sessions/{session_id}/validate` with `session_token` in JSON body. On GUI restart, `TicketApiClient.validate_account_session()` used `GET .../validate?session_token=...`; the server returned `SESSION_TOKEN_QUERY_DISABLED`, `MainWindow._validate_local_account_session_with_server()` treated it as invalid and cleared `.local-agent\instances\live-v3-p1-clean2\data\account_session.json`.
+
+Repro steps:
+1. Start `live-v3-p1-clean2` with isolated data root and no token.
+2. Approve its connection request.
+3. Submit registration without user confirmation through `/api/registry/agent/profile`.
+4. Confirm the claim through `/api/registry/agent/claims/{claim_id}/confirm`.
+5. Approve claim `a3b6dd0e-c912-4483-8967-6d58f7919411` through `/api/web/admin/registry/registrations/{claim_id}/approve`.
+6. Create confirmed-binding session through `/api/registry/agent/account-sessions/confirmed-binding`.
+7. Save local session and validate it through POST body: valid=true.
+8. Restart agent GUI; observe `account_session.json` removed and automation status still at `sidebar_view=account_gate`.
+
+Evidence:
+- Transport/API: `POST /api/registry/agent/account-sessions/confirmed-binding` -> 200, `session_id=ed6dc098-cba8-4b93-889c-d2fee5661c43`; `POST /api/registry/agent/account-sessions/{session_id}/validate` -> 200, `valid=True`; `GET .../validate?session_token=...` -> 400 `SESSION_TOKEN_QUERY_DISABLED`.
+- Server log: admin approval succeeded for claim `a3b6dd0e-c912-4483-8967-6d58f7919411`; agent token evidence only `sha256_prefix=11245df33169 length=64`, session token evidence only `sha256_prefix=71b1221ebff2 length=43`.
+- Agent log: clean restart loaded token, opened GUI, performed handshake/list_tools; account session file was cleared during account-state validation path.
+- Server DB: binding `1b87f35b-b826-4768-a7fd-9f0e2b276526`, person `f0e074a5-7c1b-4e38-bb4a-abfb2be3612f`, session `ed6dc098-cba8-4b93-889c-d2fee5661c43`.
+- Agent SQLite: `outbox=0`, `outbox_sent_history=2`, `seen_commands=2`, `pending_consents=0` after restart.
+- Browser/UI: browser/admin confirmation not yet green; baseline blocked before P1 start.
+- UIA: pywinauto `0.6.9` available in `.venvs\agent-win`; unbounded UIA child traversal hangs, so only bounded/targeted UIA evidence is allowed later.
+- Test artifact: `.local-agent\instances\live-v3-p1-clean2\data\user_profile.json` has `registration_status=admin_confirmed`; `account_session.json` missing after GUI restart.
+- Run marker: `p1-clean-registration-20260527-1508-c15fe567`.
+
+Impact:
+P1 cannot start because ticket/message/tool flows would run without a confirmed account-session even after successful clean registration. This also invalidates GUI/account-session evidence.
+
+Root cause hypothesis:
+`pc_agent/ui_gui/server_api.py::TicketApiClient.validate_account_session()` still sends `session_token` as a query parameter using GET, while the server intentionally disables query-token validation for secret hygiene and expects POST body or dedicated headers.
+
+Root cause confirmed:
+Yes. Manual live validation through `POST /api/registry/agent/account-sessions/{session_id}/validate` returned `valid=True`, while the GUI client path using `GET ?session_token=...` returned `SESSION_TOKEN_QUERY_DISABLED` and caused `MainWindow` to clear the local session.
+
+Blocking further P1: yes
+Fix now: yes
+
+Fix summary:
+`TicketApiClient.validate_account_session()` now sends `POST /validate` with `{"session_token": ...}` in the JSON body. The regression test asserts `POST`, JSON body, and no query params.
+
+Changed files:
+`pc_agent/ui_gui/server_api.py`; `pc_agent/tests/test_registration_status.py`.
+
+Tests:
+`python -m pytest scripts/test_manage_local_agent.py pc_agent/tests/test_registration_status.py -q` -> 26 passed.
+`python -m compileall -q scripts/manage_local_agent.py scripts/test_manage_local_agent.py pc_agent/ui_gui/server_api.py pc_agent/tests/test_registration_status.py` -> passed.
+`git diff --check` -> passed.
+
+Live regression:
+Recreated confirmed-binding session `c24c7842-8284-4964-a92f-7f608eaf52d2` for binding `1b87f35b-b826-4768-a7fd-9f0e2b276526`, saved it under `.local-agent\instances\live-v3-p1-clean2\data\account_session.json`, restarted `live-v3-p1-clean2` on patched code, and verified the file remains present with `account_mode=confirmed_binding`, `registration_status=admin_confirmed`. Agent local state after restart: `outbox=0`, `outbox_sent_history=3`, `seen_commands=3`, `pending_consents=0`. WS handshake/list_tools succeeded. Server DB shows claim `a3b6dd0e-c912-4483-8967-6d58f7919411` approved, active primary binding `1b87f35b-b826-4768-a7fd-9f0e2b276526`, and verified confirmed-binding sessions for device `2447d396-79cd-53da-b3a9-028c5a4d56da`.
+
+Remaining risk:
+`/ui/automation/status` still reports `sidebar_view=account_gate` after restart even with a retained confirmed session; treat this as UI projection state to watch during P1. It is not blocking because account session is valid and persisted, but P1.6 should verify whether the GUI should automatically leave the gate or requires explicit user click.
