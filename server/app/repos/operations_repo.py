@@ -155,6 +155,17 @@ class OperationsRepo:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_latest_retry_for_operation(self, operation_id: str) -> Optional[Operation]:
+        """Return the newest operation created as an explicit retry/replacement."""
+        stmt = (
+            select(Operation)
+            .where(Operation.retry_of_operation_id == operation_id)
+            .order_by(Operation.queued_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def increment_retry_count_if_available(self, operation_id: str) -> Optional[int]:
         """
         Atomically increments manual retry_count if the operation still has retry budget.

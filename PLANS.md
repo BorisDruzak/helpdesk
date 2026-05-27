@@ -2482,7 +2482,7 @@ Remaining risk:
 ### BUG-20260527-P1-08 — Server-side risky tool consent does not create agent GUI consent prompt
 
 Severity: P1
-Status: reproduced
+Status: root-cause-confirmed
 Area: consent / agent-sqlite / local GUI-UIA / documentation drift
 
 P1 scenario: P1.3 Consent flow.
@@ -2757,8 +2757,13 @@ Evidence:
 
 Impact: A transient server/proxy outage during tool execution can lose the agent's final result from the server timeline while the agent believes its local outbox result was sent, creating data-loss/observability gaps.
 Root cause hypothesis: The server operation watchdog times out `accepted` before late result ingestion, and outbox ingest or command-result handling may ACK/drop late tool responses for timed-out operations instead of persisting a terminal late-result/rejected event. Artifact upload failure during outage also contributes to partial/error status but should not hide the final lifecycle.
-Blocking further P1: no for continuing P1.5.D/E with markers, yes for marking reconnect delivery green.
-Fix now: no; continue collecting P1 reconnect/UI projection evidence first unless new operations are blocked.
+Root cause confirmed: yes. Layer isolation:
+- agent runtime / agent SQLite: pre-`325236301dde6944201076b082d21ab5589fc6d6`, `command_result` was transient; after server outage the agent only durably retained the legacy ticket `tool_response` outbox row. That row can be ACKed as a ticket event but does not drive `operations`/`device_outbox` lifecycle.
+- server operation lifecycle / DB: `CommandResultService` only transitions `succeeded`/`failed` from active statuses (`queued`, `sent`, `accepted`, `running`, `waiting_consent`). If a valid terminal `command_result` arrives after watchdog `timed_out`, the status update is rejected by optimistic expected-status guards, but the handler does not expose a product-level late-result reconciliation path. `DeviceOutboxRepo.mark_as_delivered()` also only updates `pending`/`sent`, so timeout-failed outbox rows remain `failed/TIMEOUT`.
+- browser/UI projection: without a persisted `tool_call_result`/late-result event tied to the original operation, support UI can show only the initial `tool_call_started` while agent local state already contains terminal evidence.
+Product contract: a terminal `command_result` for the original operation must be durable until server ACK and must be accepted after timeout. If no replacement/retry operation exists, reconcile the timed-out operation to the terminal result and persist `late_result=true`/`previous_status=timed_out` in the ticket result event. If a retry/replacement exists, keep the original timeout as-is but persist linked late-result evidence and reconcile the original device_outbox delivery state. Never silently drop or ACK-without-audit a late terminal result.
+Blocking further P1: yes for marking reconnect delivery green and for final P1 close.
+Fix now: yes; data-integrity/reconnect blocker with no safe evidence-quality workaround.
 Fix summary:
 Changed files:
 Tests:

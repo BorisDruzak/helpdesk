@@ -87,6 +87,13 @@ Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` update
   `command_result` path with `status="error"`, `error.code="AGENT_RESTARTED"`
   and `meta.recovery=true`; the server must mark the operation terminal and
   reconcile the matching `device_outbox` row instead of leaving it `sent`.
+  If replay arrives after the server watchdog already marked the original
+  operation `timed_out`, the server must not silently drop it. With no
+  retry/replacement operation, the late terminal result reconciles the original
+  operation to `succeeded`/`failed` and writes a result event with
+  `late_result=true`, `previous_status="timed_out"`. With a retry/replacement
+  operation, the original timeout is preserved and a linked late-result evidence
+  event is written with `late_result_ignored=true`.
 
 - Команды к агенту доставляются через таблицу **device_outbox** (pending → sent → delivered/failed).
 - `request_id` в команде используется как **command_id** (единый идентификатор команды).

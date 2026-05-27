@@ -99,6 +99,10 @@ class CommandResultLifecycleOutcome:
     trace_id: Optional[str] = None
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
+    late_result: bool = False
+    previous_status: Optional[str] = None
+    late_result_ignored: bool = False
+    retry_operation_id: Optional[str] = None
 
 
 class CommandResultArtifactHandler:
@@ -385,6 +389,20 @@ class CommandResultEventPublisher:
         else:
             payload["status"] = lifecycle_outcome.status
             payload["summary"] = operation.result_summary or f"Tool {tool_name} finished with status {lifecycle_outcome.status}"
+        if lifecycle_outcome.late_result:
+            payload["late_result"] = True
+            if lifecycle_outcome.previous_status:
+                payload["previous_status"] = lifecycle_outcome.previous_status
+            if lifecycle_outcome.late_result_ignored:
+                payload["late_result_ignored"] = True
+                payload["summary"] = (
+                    f"Late result for {tool_name} arrived after retry; "
+                    "the original timed-out operation was not overwritten"
+                )
+                if lifecycle_outcome.retry_operation_id:
+                    payload["retry_operation_id"] = lifecycle_outcome.retry_operation_id
+            elif lifecycle_outcome.previous_status:
+                payload["reconciled_from"] = lifecycle_outcome.previous_status
         return payload
 
     async def _get_existing_result_event(

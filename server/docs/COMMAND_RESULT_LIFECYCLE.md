@@ -69,17 +69,25 @@ error result ≠ outbox failed
 
 ### Инвариант 3: Terminal состояния защищены от перезаписи
 
-Terminal состояния операций (`succeeded`, `failed`, `timed_out`, `canceled`) **не могут** быть перезаписаны.
+Terminal состояния операций (`succeeded`, `failed`, `timed_out`, `canceled`) **не могут** быть перезаписаны обычными переходами.
 
 **Механизм защиты**:
 - `OperationsRepo.update_status()` с `expected_statuses=None` (forced update) проверяет текущий статус
 - Если текущий статус terminal → update блокируется и возвращается False
 - Guards защищают от race conditions между command_result handler и watchdog
 
-**Исключение**: Forced updates разрешены только для определенных error codes:
-- `MALFORMED_RESULT` — битый payload от агента
-- `SERVER_PROCESSING_ERROR` — внутренняя ошибка сервера
-- `EXCEPTION_RECOVERY` — recovery после exception в обработчике
+**Исключение**: поздний terminal `command_result` для исходной операции после `timed_out`.
+Это не forced update: handler обязан явно видеть текущий статус `timed_out`,
+проверить отсутствие retry/replacement operation и выполнить guarded update с
+`expected_statuses=["timed_out"]`. В таком случае операция может быть reconciled
+в `succeeded`/`failed`, `device_outbox` timeout failure переводится в delivered,
+а ticket timeline получает `tool_call_result` с `late_result=true` и
+`previous_status="timed_out"`.
+
+Если retry/replacement operation уже есть, поздний результат исходной операции
+не перезаписывает timeout. Сервер сохраняет linked evidence event с
+`late_result=true`, `late_result_ignored=true`, `retry_operation_id=<id>` и
+reconciles original `device_outbox` delivery state.
 
 ### Инвариант 4: Нормализация payload гарантирует структуру
 
@@ -162,6 +170,16 @@ Timeout операций обрабатывается watchdog'ом:
 - `outbox: failed` с `error_code="TIMEOUT"` и `should_retry=False`
 
 Это **не** transport failure, а execution timeout failure. Документируется отдельно как особый класс.
+
+Поздний terminal result после такого timeout не должен теряться:
+- если retry/replacement operation отсутствует, сервер принимает result как
+  authoritative terminal evidence и переводит original operation в `succeeded`
+  или `failed`;
+- если retry/replacement operation существует, original operation остается
+  `timed_out`, но late evidence сохраняется в timeline и связывается с retry;
+- в обоих случаях timeout-failed `device_outbox` переводится в delivered через
+  reconciliation marker, чтобы командный outbox не оставался stale failure после
+  фактической доставки terminal result.
 
 ### Malformed payload
 
@@ -291,6 +309,19 @@ HTTP endpoint `/api/tools/run` при `status=consent_required`:
 4. T1: Command_result приходит → operations: succeeded, outbox: delivered
 5. T2: Watchdog пытается mark_timed_out → BLOCKED by guard
    → операция остается succeeded
+```
+
+### Сценарий 5: Late result after watchdog timeout
+
+```
+1. Сервер отправляет команду → outbox: sent
+2. Server/WS недоступен, агент завершает tool и держит durable command_result
+3. Watchdog помечает operation=timed_out, outbox=failed/TIMEOUT
+4. Агент reconnect/replay присылает terminal command_result
+5. Если retry не создан → operation=succeeded/failed, outbox=delivered,
+   ticket event payload содержит late_result=true, previous_status=timed_out
+6. Если retry создан → original operation остается timed_out, outbox=delivered,
+   ticket event payload содержит late_result=true, late_result_ignored=true
 ```
 
 ## Конфигурация

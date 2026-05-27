@@ -267,6 +267,10 @@ class OperationLifecycleService:
 
                 expected_statuses = ["queued", "sent", "accepted", "running", "waiting_consent"]
                 processed = True
+                late_result = False
+                previous_status: Optional[str] = None
+                late_result_ignored = False
+                retry_operation_id: Optional[str] = None
 
                 if lifecycle_status == "queued":
                     await op_repo.update_status(operation_id, "queued", expected_statuses=["waiting_consent"])
@@ -287,7 +291,24 @@ class OperationLifecycleService:
                     observations = normalized.data_payload.get("observations")
                     if isinstance(observations, dict):
                         result_summary = str(observations)[:500]
-                    if operation and operation.kind == "agent_update":
+                    if operation and operation.kind == "tool_call" and operation.status == "timed_out":
+                        late_result = True
+                        previous_status = operation.status
+                        retry_operation = await op_repo.get_latest_retry_for_operation(operation_id)
+                        retry_operation_id = retry_operation.operation_id if retry_operation else None
+                        if retry_operation_id:
+                            late_result_ignored = True
+                        else:
+                            await op_repo.update_status(
+                                operation_id=operation_id,
+                                new_status="succeeded",
+                                expected_statuses=["timed_out"],
+                                timestamp_field="finished_at",
+                                result_summary=result_summary,
+                                clear_deadline=True,
+                            )
+                        await outbox_repo.mark_timeout_as_delivered(operation_id)
+                    elif operation and operation.kind == "agent_update":
                         # P0 contract: update operation becomes terminal only after
                         # reconnect-handshake confirmation of applied version.
                         await op_service.mark_running(
@@ -344,17 +365,37 @@ class OperationLifecycleService:
                             result_summary=result_summary,
                             expected_statuses=expected_statuses,
                         )
-                    await outbox_repo.mark_as_delivered(operation_id)
+                    if not late_result:
+                        await outbox_repo.mark_as_delivered(operation_id)
                 elif lifecycle_status == "failed":
                     error_code = normalized.error_info.get("code", "UNKNOWN_ERROR")
                     error_message = normalized.error_info.get("message", "Unknown error")
-                    await op_service.mark_failed(
-                        operation_id=operation_id,
-                        error_code=error_code,
-                        error_message=error_message,
-                        expected_statuses=expected_statuses,
-                    )
-                    await outbox_repo.mark_as_delivered(operation_id)
+                    if operation and operation.kind == "tool_call" and operation.status == "timed_out":
+                        late_result = True
+                        previous_status = operation.status
+                        retry_operation = await op_repo.get_latest_retry_for_operation(operation_id)
+                        retry_operation_id = retry_operation.operation_id if retry_operation else None
+                        if retry_operation_id:
+                            late_result_ignored = True
+                        else:
+                            await op_repo.update_status(
+                                operation_id=operation_id,
+                                new_status="failed",
+                                expected_statuses=["timed_out"],
+                                timestamp_field="finished_at",
+                                error_code=error_code,
+                                error_message=error_message,
+                                clear_deadline=True,
+                            )
+                        await outbox_repo.mark_timeout_as_delivered(operation_id)
+                    else:
+                        await op_service.mark_failed(
+                            operation_id=operation_id,
+                            error_code=error_code,
+                            error_message=error_message,
+                            expected_statuses=expected_statuses,
+                        )
+                        await outbox_repo.mark_as_delivered(operation_id)
                 elif lifecycle_status in {"canceled", "cancel_requested"}:
                     if lifecycle_status == "cancel_requested":
                         await op_service.mark_cancel_requested(operation_id, expected_statuses=["queued", "sent", "accepted", "running", "waiting_consent"])
@@ -415,6 +456,10 @@ class OperationLifecycleService:
                     trace_id=trace_id_out,
                     failure_code=normalized.error_info.get("code"),
                     failure_message=normalized.error_info.get("message"),
+                    late_result=late_result,
+                    previous_status=previous_status,
+                    late_result_ignored=late_result_ignored,
+                    retry_operation_id=retry_operation_id,
                 )
         except Exception as exc:
             logger.error(f"[command_result] lifecycle pipeline failed: {exc}", exc_info=True)

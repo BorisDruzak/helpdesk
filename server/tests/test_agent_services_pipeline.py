@@ -11,6 +11,7 @@ from websocket.agent_services import (
     AgentCommandService,
     OutboxBatchIngestService,
     CommandResultService,
+    OperationLifecycleService,
     OutboxAckDecisionService,
     OutboxIngestService,
 )
@@ -29,6 +30,231 @@ pytestmark = pytest.mark.no_db
 
 def test_agent_services_keeps_command_lifecycle_db_available():
     assert agent_services.DB_AVAILABLE is True
+
+
+def test_tool_call_result_payload_marks_late_timeout_reconciliation():
+    publisher = CommandResultEventPublisher()
+    normalized = CommandResultNormalizer().normalize(
+        {
+            "request_id": "op-late",
+            "payload": {
+                "status": "success",
+                "data": {"observations": {"probe_run_id": "unit-late"}},
+                "error": {},
+                "meta": {"request_id": "op-late", "tool_name": "screen.record"},
+            },
+        }
+    )
+    operation = SimpleNamespace(
+        operation_id="op-late",
+        tool_name="screen.record",
+        result_summary="late success",
+    )
+    outcome = CommandResultLifecycleOutcome(
+        processed=True,
+        command_id="op-late",
+        status="succeeded",
+        operation_id="op-late",
+        late_result=True,
+        previous_status="timed_out",
+        late_result_ignored=False,
+    )
+
+    payload = publisher._build_tool_call_result_payload(
+        normalized=normalized,
+        lifecycle_outcome=outcome,
+        operation=operation,
+        artifacts=[],
+    )
+
+    assert payload["status"] == "success"
+    assert payload["late_result"] is True
+    assert payload["previous_status"] == "timed_out"
+    assert payload["reconciled_from"] == "timed_out"
+    assert "late_result_ignored" not in payload
+
+
+@pytest.mark.asyncio
+async def test_operation_lifecycle_reconciles_late_success_after_timeout(monkeypatch):
+    import app.repos as repos_module
+    import app.services.operation_service as operation_service_module
+
+    operation = SimpleNamespace(
+        operation_id="op-late",
+        kind="tool_call",
+        status="timed_out",
+        ticket_id="ticket-late",
+        trace_id="trace-late",
+        playbook_run_id=None,
+    )
+    updates = []
+
+    class _OpRepo:
+        async def get_by_operation_id(self, operation_id):
+            assert operation_id == "op-late"
+            return operation
+
+        async def get_latest_retry_for_operation(self, operation_id):
+            assert operation_id == "op-late"
+            return None
+
+        async def update_status(self, operation_id, new_status, **kwargs):
+            updates.append((operation_id, new_status, kwargs))
+            operation.status = new_status
+            return True
+
+    class _OutboxRepo:
+        def __init__(self):
+            self.reconciled = []
+
+        async def mark_timeout_as_delivered(self, command_id):
+            self.reconciled.append(command_id)
+            return True
+
+    class _OperationService:
+        pass
+
+    op_repo = _OpRepo()
+    outbox_repo = _OutboxRepo()
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield SimpleNamespace()
+
+    monkeypatch.setattr(agent_services, "get_session", _fake_get_session)
+    monkeypatch.setattr(agent_services, "OperationsRepo", lambda _session: op_repo)
+    monkeypatch.setattr(repos_module, "DeviceOutboxRepo", lambda _session: outbox_repo)
+    monkeypatch.setattr(operation_service_module, "OperationService", lambda _session, publisher=None: _OperationService())
+
+    normalized = CommandResultNormalizer().normalize(
+        {
+            "request_id": "op-late",
+            "payload": {
+                "status": "success",
+                "data": {"observations": {"probe_run_id": "unit-late"}},
+                "error": {},
+                "meta": {"request_id": "op-late"},
+            },
+        }
+    )
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id="dev-late",
+    )
+
+    outcome = await OperationLifecycleService().handle(
+        legacy_handler=None,
+        message={"request_id": "op-late"},
+        ctx=ctx,
+        normalized=normalized,
+    )
+
+    assert outcome.processed is True
+    assert outcome.status == "succeeded"
+    assert outcome.late_result is True
+    assert outcome.previous_status == "timed_out"
+    assert outcome.late_result_ignored is False
+    assert outbox_repo.reconciled == ["op-late"]
+    assert updates == [
+        (
+            "op-late",
+            "succeeded",
+            {
+                "expected_statuses": ["timed_out"],
+                "timestamp_field": "finished_at",
+                "result_summary": "{'probe_run_id': 'unit-late'}",
+                "clear_deadline": True,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_operation_lifecycle_preserves_timeout_when_late_result_has_retry(monkeypatch):
+    import app.repos as repos_module
+    import app.services.operation_service as operation_service_module
+
+    operation = SimpleNamespace(
+        operation_id="op-late-retry",
+        kind="tool_call",
+        status="timed_out",
+        ticket_id="ticket-late",
+        trace_id="trace-late",
+        playbook_run_id=None,
+    )
+    retry_operation = SimpleNamespace(operation_id="op-retry")
+    updates = []
+
+    class _OpRepo:
+        async def get_by_operation_id(self, operation_id):
+            assert operation_id == "op-late-retry"
+            return operation
+
+        async def get_latest_retry_for_operation(self, operation_id):
+            assert operation_id == "op-late-retry"
+            return retry_operation
+
+        async def update_status(self, operation_id, new_status, **kwargs):
+            updates.append((operation_id, new_status, kwargs))
+            return True
+
+    class _OutboxRepo:
+        def __init__(self):
+            self.reconciled = []
+
+        async def mark_timeout_as_delivered(self, command_id):
+            self.reconciled.append(command_id)
+            return True
+
+    class _OperationService:
+        pass
+
+    op_repo = _OpRepo()
+    outbox_repo = _OutboxRepo()
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield SimpleNamespace()
+
+    monkeypatch.setattr(agent_services, "get_session", _fake_get_session)
+    monkeypatch.setattr(agent_services, "OperationsRepo", lambda _session: op_repo)
+    monkeypatch.setattr(repos_module, "DeviceOutboxRepo", lambda _session: outbox_repo)
+    monkeypatch.setattr(operation_service_module, "OperationService", lambda _session, publisher=None: _OperationService())
+
+    normalized = CommandResultNormalizer().normalize(
+        {
+            "request_id": "op-late-retry",
+            "payload": {
+                "status": "success",
+                "data": {"observations": {"probe_run_id": "unit-late-retry"}},
+                "error": {},
+                "meta": {"request_id": "op-late-retry"},
+            },
+        }
+    )
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id="dev-late",
+    )
+
+    outcome = await OperationLifecycleService().handle(
+        legacy_handler=None,
+        message={"request_id": "op-late-retry"},
+        ctx=ctx,
+        normalized=normalized,
+    )
+
+    assert outcome.processed is True
+    assert outcome.late_result is True
+    assert outcome.previous_status == "timed_out"
+    assert outcome.late_result_ignored is True
+    assert outcome.retry_operation_id == "op-retry"
+    assert outbox_repo.reconciled == ["op-late-retry"]
+    assert updates == []
 
 
 class _BatchAckManagerStub:

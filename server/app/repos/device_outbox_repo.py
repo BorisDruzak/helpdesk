@@ -435,6 +435,43 @@ class DeviceOutboxRepo:
         )
         
         return True
+
+    async def mark_timeout_as_delivered(
+        self,
+        command_id: str,
+    ) -> bool:
+        """
+        Reconcile a timeout-failed command when the agent later delivers a terminal result.
+
+        Only timeout failures are eligible: other failed outbox states keep their failure
+        classification because a late result does not prove delivery for unrelated errors.
+        """
+        stmt = (
+            update(DeviceOutbox)
+            .where(
+                and_(
+                    DeviceOutbox.command_id == command_id,
+                    DeviceOutbox.status == "failed",
+                    DeviceOutbox.error_code == "TIMEOUT",
+                )
+            )
+            .values(
+                status="delivered",
+                delivered_at=datetime.now(timezone.utc),
+                error_code="TIMEOUT_RECONCILED",
+                error_message="Late terminal command_result arrived after timeout and was reconciled.",
+            )
+        )
+
+        result = await self.session.execute(stmt)
+
+        if result.rowcount == 0:
+            return await self.mark_as_delivered(command_id)
+
+        logger.info(
+            f"[DeviceOutboxRepo] Reconciled timeout outbox as delivered: command_id={command_id}"
+        )
+        return True
     
     async def mark_as_failed(
         self,
