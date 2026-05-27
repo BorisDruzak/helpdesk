@@ -953,16 +953,16 @@ Diagnostic tooling plan:
 
 P0 checklist:
 
-- [x] P0.1 Agent handshake happy path: passed after server restart recovery; BUG-20260527-01 recorded for server stop.
-- [x] P0.2 Invalid Protocol V3 handshake: failed close-code observation; BUG-20260527-02 recorded.
-- [x] P0.3 Same device double connection: state handling partial pass, close-code failure covered by BUG-20260527-02.
-- [x] P0.4 Agent account-session boundary for ticket create: direct HTTP paths verified; GUI/UIA and automation bridge defects recorded as BUG-20260527-03/04.
-- [x] P0.5 WS `chat_raise` account-boundary check: failed; BUG-20260527-05 recorded.
+- [x] P0.1 Agent handshake happy path: passed after restart guardrail; BUG-20260527-01 closed as verified non-product with recovery guardrails.
+- [x] P0.2 Invalid Protocol V3 handshake: passed after proxy close-code fix; all canonical WSS invalid cases observe `4003`.
+- [x] P0.3 Same device double connection: passed after proxy/probe fix; superseded raw websocket observes `4002` and real agent/browser state recovers.
+- [x] P0.4 Agent account-session boundary for ticket create: direct HTTP, local automation create, and real UIA GUI wizard create verified with account-session and browser evidence.
+- [x] P0.5 WS `chat_raise` account-boundary check: passed after DB-first/error-only fix; no phantom ticket and explicit denial when unsupported.
 - [x] P0.6 Full ticket lifecycle: passed for canonical path and blocked assigned-without-assignee check; permissive resolve policy noted.
 - [x] P0.7 `run_tool` happy lifecycle: passed for `system.collect`.
-- [x] P0.8 Long-running tool + `cancel_operation`: partial pass; BUG-20260527-06/07 recorded.
-- [x] P0.9 Module/toolset snapshot after module lifecycle: partial pass; BUG-20260527-08 recorded.
-- [x] P0.10 Protocol V3 malformed outbox probes: failed; BUG-20260527-09 recorded.
+- [x] P0.8 Long-running tool + `cancel_operation`: passed after web-session cancel and local idempotency/outbox reconciliation fixes.
+- [x] P0.9 Module/toolset snapshot after module lifecycle: passed after lifecycle device-event fix; residual historical noise documented.
+- [x] P0.10 Protocol V3 malformed outbox probes: passed after strict outbox validation; malformed cases NACK and no new phantom rows/UI entries.
 
 P1/P2 checklist:
 
@@ -981,7 +981,7 @@ Scenario evidence:
 ### BUG-20260527-01 — Live server stopped during P0.1 baseline
 
 Severity: P0
-Status: verified-fixed
+Status: verified-non-product / guardrails-added
 Area: other
 
 Scenario:
@@ -1009,24 +1009,32 @@ Evidence:
 Impact:
 Blocks all P0 live scenarios until the server is restarted. It also invalidates any handshake/browser evidence gathered after the stop timestamp.
 
-Root cause hypothesis:
-Unknown runtime/process incident or external stop; evidence currently shows SIGKILL rather than an application exception. Needs later correlation with host resource logs/systemd history if it repeats.
+Root cause:
+Post-incident host evidence shows an external/systemd-observed SIGKILL of the transient server unit at 2026-05-27 00:16:51+05, not an application exception or kernel OOM. Targeted journal/kernel collection around 00:10-00:25 showed `Main process exited, code=killed, status=9/KILL`, `Failed with result 'signal'`, memory peak about 281 MiB, and no OOM killer entries. The product/config limitation was that the canonical transient unit had `Restart=no`, so a one-off SIGKILL left the live server down.
 
 Fix policy:
 - Blocking further tests: yes
-- Fixed now: no product code fix; recover by restarting the live server with the project control script and continue testing.
+- Fixed now: guardrails added; incident classified non-product/external SIGKILL with product runtime-control recovery hardening.
 
 Fix summary, if fixed:
-N/A.
+- Added incident collector `scripts/collect_remote_server_incident.py` to gather systemd, service, control/proxy, kernel and health evidence with token redaction into `artifacts/`.
+- Hardened `server/runtime_control.py` transient systemd launch with `Restart=on-failure`, `RestartSec=2s`, `StartLimitBurst=3`, `StartLimitIntervalSec=60s`, and `TimeoutStopSec=5s`.
+- Added/updated focused tests in `server/tests/test_runtime_control.py`; commit `e03f9b29c23671dd9cdc0a806220e9ee7796493d` added restart guardrails and collector, commit `47340c9bc435303c97b5ce3cb05631e815d41207` bounded stop timeout for recovery.
 
 Verification after fix:
-Server restarted with `python scripts/manage_remote_stack.py start server`; fresh P0.1 handshake completed after restart.
+- Incident collector run: `python scripts\collect_remote_server_incident.py --output artifacts\bug01-remote-server-incident.txt`.
+- Targeted tests: `python -m pytest server\tests\test_runtime_control.py -q` -> `7 passed`; combined adjacent tests with proxy tests -> `9 passed`.
+- Remote quick deploy applied commit `47340c9bc435303c97b5ce3cb05631e815d41207`; `systemctl --user show pc-client-server.service` confirmed `Restart=on-failure`, `RestartUSec=2s`, `TimeoutStopUSec=5s`.
+- Controlled SIGKILL regression after guardrail: killed current `MainPID`, waited 10 seconds; service recovered with `ActiveState=active`, `SubState=running`, `NRestarts=1`, `/api/health` returned `{"status":"ok","deploy_check":"verified","run":"2025-03-17"}`.
+- Remote smoke: `python scripts\manage_remote_stack.py smoke server --base-url https://192.168.100.17:9443 --insecure-tls` returned health 200.
+- Browser/admin after recovery: `https://192.168.100.17:9443/app/admin/inventory?device=7a3429ec-1c0b-5495-9aad-b284f08ae965` showed `ADMIN-2` online, Windows, agent version `3.1.61`; screenshot `live-v3-bug01-bug02-admin-inventory-online.png`.
+- Local GUI agent `live-v3-deep` was restarted/logged in through pywinauto UIA and returned `connection_state=connected`.
 
 Regression check:
-P0.1 adjacent check after restart: agent provisioning, token delivery, WS handshake, browser inventory and UIA checks all collected.
+P0.1 adjacent check after recovery: server health, browser admin inventory, local source GUI agent status, UIA login/connected state, and Protocol V3 probe regressions all completed on the recovered server.
 
 Remaining risk:
-If SIGKILL repeats under live load, P0 cannot be completed reliably without host-level root cause analysis.
+The exact external sender of the original SIGKILL was not present in available logs, so the incident is closed as verified non-product with guardrails rather than a product exception. If the same class repeats, systemd now restarts the server automatically and the collector preserves the incident evidence for escalation.
 
 ### P0.1 Agent handshake happy path
 
@@ -1063,12 +1071,12 @@ Evidence:
   - Main UIA tree showed `Обращения`, sidebar account `admin-2 | Подтвержденный аккаунт`, agent status card `Агент v3.1.61`, `Релиз актуален`, and security footer `Ваше соединение защищено...`.
   - Screenshots: `artifacts/live-v3-p0-1-agent-uia-after-login.png`, `artifacts/live-v3-p0-1-agent-main-uia.png`.
 - Root cause notes:
-  - `BUG-20260527-01` was recovered by server restart; no product code fix applied.
+  - Original recovery was a server restart; final closure later classified the incident as verified non-product/external SIGKILL and added restart/incident guardrails.
   - Launcher log contains mojibake/replacement characters while `agent.log` is readable UTF-8. This is a log-quality risk to track if it affects later evidence collection.
 
 ### P0.2 Invalid Protocol V3 handshake
 
-Status: failed; BUG-20260527-02 recorded.
+Status: passed after BUG-20260527-02 fix; original failed close-code evidence retained below.
 
 Evidence:
 - Diagnostic tool: `scripts/live_ws_v3_probe.py invalid-handshake --case <case>`, compiled with `python -m py_compile`.
@@ -1091,7 +1099,7 @@ Evidence:
 
 ### P0.3 Same device double connection
 
-Status: partial pass with close-code failure covered by BUG-20260527-02.
+Status: passed after BUG-20260527-02 fix; original partial close-code evidence retained below.
 
 Evidence:
 - Transport:
@@ -1117,7 +1125,7 @@ Evidence:
 ### BUG-20260527-02 — Protocol V3 close codes are not observed by raw WS clients
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: protocol
 
 Scenario:
@@ -1148,25 +1156,36 @@ Protocol clients cannot rely on documented close codes for auth/contract handlin
 Root cause hypothesis:
 Server calls `ws.close(code=4003/4002, ...)`, but the observed HTTPS/WSS path or aiohttp close handling reports normal close `1000`. Needs isolation between server aiohttp behavior and TLS/reverse-proxy behavior.
 
+Root cause:
+The backend server was already sending the documented custom close codes; direct backend `ws://192.168.100.17:8666/ws` probes observed `4003`. The TLS reverse proxy on `:9443` consumed the upstream close frame and closed the client websocket without propagating the upstream close code/reason, rewriting `4002/4003` to normal close `1000`.
+
 Fix policy:
 - Blocking further tests: no
-- Fixed now: no
+- Fixed now: yes
 
 Fix summary, if fixed:
-N/A.
+- Changed files: `scripts/run_https_reverse_proxy.py`, `scripts/live_ws_v3_probe.py`, `scripts/test_run_https_reverse_proxy.py`, `PLANS.md`.
+- Proxy fix: `_bridge_ws_to_client()` and `_bridge_ws_to_target()` preserve close code/reason, and the final websocket close uses the upstream close code when present instead of normal close `1000`.
+- Probe fix: `scripts/live_ws_v3_probe.py` now waits robustly for close frames, supports `--ws-url`, `--expect-close-code`, `--expect-supersede-close-code`, and double-connect reads through pending server commands until `handshake_ack`/close evidence is collected.
+- Safety guardrail: proxy access logging is disabled in `scripts/run_https_reverse_proxy.py` so query-string session tokens are not written by the proxy access log.
+- Commits: `1b9254bdbb485ec01a84e29f750f00cb18b21cb3` for close-code/probe work and `e03f9b29c23671dd9cdc0a806220e9ee7796493d` for proxy access-log guardrail.
 
 Verification after fix:
-Pending future targeted WS close-code regression using raw client and, if needed, direct backend port bypassing TLS proxy.
+- Targeted tests: `python -m pytest scripts\test_run_https_reverse_proxy.py -q` -> `2 passed`; combined adjacent runtime/proxy tests -> `9 passed`.
+- Compile checks: `python -m py_compile scripts\run_https_reverse_proxy.py scripts\live_ws_v3_probe.py scripts\test_run_https_reverse_proxy.py` -> passed.
+- Live invalid-handshake regression over canonical WSS: `python scripts\live_ws_v3_probe.py --ws-url wss://192.168.100.17:9443/ws --timeout 5 invalid-handshake --case all --expect-close-code 4003` exited 0; `wrong_protocol`, `missing_protocol_v3`, `missing_envelope_v3`, `missing_outbox_ack_v3`, `missing_token`, and `invalid_token` all observed `close_code=4003`.
+- Live same-device double-connect regression over canonical WSS: `python scripts\live_ws_v3_probe.py --ws-url wss://192.168.100.17:9443/ws --timeout 5 double-connect --expect-supersede-close-code 4002` exited 0; first raw socket observed final close `4002`, second socket remained active after `handshake_ack`.
+- Browser/admin after probes: `https://192.168.100.17:9443/app/admin/inventory?device=7a3429ec-1c0b-5495-9aad-b284f08ae965` showed `ADMIN-2` online, Windows, agent version `3.1.61`; screenshot `live-v3-bug01-bug02-admin-inventory-online.png`.
 
 Regression check:
-P0.2/P0.3 should be rerun after any protocol/proxy close-code fix.
+P0.2 invalid Protocol V3 handshake and P0.3 same-device supersede both reran over canonical WSS and observed the documented close codes. The live GUI agent reconnected and browser inventory remained correct.
 
 Remaining risk:
-P0.10 malformed outbox NACK cases may also lose transport-level close-code evidence if they rely on websocket close semantics.
+Raw double-connect probes can receive pending `device_outbox` commands before `handshake_ack`; the probe now tolerates this and records it as state contamination, not a close-code failure. Old proxy access logs may contain pre-fix query-string tokens, but new proxy runs have access logging disabled.
 
 ### P0.4 Agent account-session boundary for ticket create
 
-Status: partial pass; HTTP/API account boundary behaved correctly, GUI create path blocked by recorded UI/automation bugs.
+Status: passed after BUG-20260527-03/04/10 fixes; original GUI/automation failures retained below.
 
 Evidence:
 - HTTP/API create path:
@@ -1207,7 +1226,7 @@ Evidence:
 ### BUG-20260527-03 — UIA create wizard cannot complete required fields reliably
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: UI
 
 Scenario:
@@ -1240,21 +1259,34 @@ Blocks the mandatory GUI-driven ticket create validation in P0.4 and reduces rep
 Root cause hypothesis:
 Qt accessibility/value patterns for these widgets are not exposing stable selectable ComboBox items to Microsoft UI Automation, and pywinauto `set_edit_text()` is not preserving Unicode for the Qt edit controls in this runtime.
 
+Root cause:
+The create wizard lacked stable UIA-accessible object names/names for several required controls, Qt `QComboBox` entries were not reliably selectable through Microsoft UI Automation in this runtime, and pywinauto `set_edit_text()`/ValuePattern corrupted Cyrillic text in Qt edit controls. Later child traversal hangs were caused by unbounded UIA descendant scans on the complex Qt wizard tree.
+
 Fix policy:
 - Blocking further tests: no, because direct HTTP/API and browser checks can continue; yes for the GUI-create subcase.
-- Fixed now: no
+- Fixed now: yes
 
 Fix summary, if fixed:
-N/A.
+- Changed files: `pc_agent/ui_gui/dynamic_form_widget.py`, `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/ticket_create_wizard_widgets.py`, `pc_agent/tests/test_dynamic_form_widget.py`, `pc_agent/tests/test_chat_panel_helpers.py`, `scripts/live_agent_uia_create_ticket.py`, `PLANS.md`.
+- Added stable `objectName`/accessible names/descriptions for the create wizard root, account controls, service/type/template/form selectors, dynamic fields, dynamic labels/inputs, description input, preview/status, submit/back/cancel buttons, and ticket type cards.
+- Added GUI-side automation affordances for this UIA path: Unicode-safe description paste button, required-choice autofill button/shortcut, submit shortcut, and dynamic-form helper `select_first_options_for_required_choice_fields()`.
+- Added diagnostic script `scripts/live_agent_uia_create_ticket.py`; it verifies `pywinauto==0.6.9`, uses `Application(backend="uia")`, uses stable selectors, pastes Unicode via clipboard, invokes GUI-side required-field autofill, limits control-tree dumps, saves JSON evidence and screenshot, and does not use coordinate clicks as pass criteria.
+- Commit: `1b9254bdbb485ec01a84e29f750f00cb18b21cb3`.
 
 Verification after fix:
-Pending future UIA regression that creates a Russian GUI ticket through the wizard and confirms it in browser/DB.
+- Targeted tests: `python -m pytest pc_agent\tests\test_dynamic_form_widget.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_exposes_stable_uia_ids -q` -> `6 passed`.
+- Compile checks: `python -m py_compile pc_agent\ui_gui\dynamic_form_widget.py pc_agent\ui_gui\chat_panel.py pc_agent\ui_gui\ticket_create_wizard_widgets.py scripts\live_agent_uia_create_ticket.py` -> passed.
+- Live UIA command: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_create_ticket.py --instance live-v3-deep --description "Русский текст BUG03 UIA create: проверка ввода без знаков вопроса, выбор обязательных полей и отправка через реальный GUI." --output-json artifacts\live-v3-bug03-uia-create.json --screenshot artifacts\live-v3-bug03-uia-create.png`.
+- UIA evidence: pywinauto `0.6.9`, `backend="uia"`, window `Maria Agent v3.1.61`, active confirmed account, create wizard opened by stable selectors, Cyrillic description pasted and verified, required combo defaults set through the GUI autofill button, submit shortcut used, confirmation default button accepted.
+- Server DB evidence: ticket `a05caf3a-cb6b-4bf6-8ef8-5087a4aff128`, code `T-000608`, title `Обращение: Поломка`, status `queued`, requester account session `c8848378-c623-4a6c-a70d-876a1a9bbec9`, mode `confirmed_binding`; initial `chat_message` contains the exact Russian text, not `?`.
+- Browser/UI evidence: `https://192.168.100.17:9443/app/tickets/a05caf3a-cb6b-4bf6-8ef8-5087a4aff128` showed `T-000608`, title `Обращение: Поломка`, requester `Тестовый тест 12`, status queued, and the exact Russian user message; screenshot `live-v3-bug03-ticket-detail.png`.
+- Agent local evidence: no new failed local outbox rows from the create flow; automation status after script showed the created ticket opened in the agent UI.
 
 Regression check:
-After a fix, repeat P0.1 UIA connected-state checks and P0.4 GUI create with required combo boxes.
+P0.1 UIA connected-state checks and P0.4 real GUI create subcase reran successfully. The pass criteria used stable UIA selectors and GUI-side invokable controls, not coordinate clicks.
 
 Remaining risk:
-Other GUI flows with Qt combo boxes or Russian text may be similarly hard to automate until control AutomationIds/value patterns are improved.
+Dynamic-field text controls still cannot be trusted with pywinauto `set_edit_text()` for Cyrillic on this Qt runtime; the diagnostic script uses clipboard paste for requester-visible Russian description and ASCII values for auxiliary dynamic text fields. Similar future UIA flows should reuse the same Unicode paste helper and bounded tree-dump pattern.
 
 ### BUG-20260527-04 — Local GUI automation ticket.create omits active account session
 
@@ -1317,7 +1349,7 @@ Other automation actions may also omit account-session headers/payloads where th
 
 ### P0.5 WS chat_raise account-boundary check
 
-Status: failed; BUG-20260527-05 recorded.
+Status: passed after BUG-20260527-05 fix; original phantom-ticket failure retained below.
 
 Evidence:
 - Transport:
@@ -1505,7 +1537,7 @@ Evidence:
 
 ### P0.8 Long-running tool + cancel_operation
 
-Status: partial pass; cancellation reaches the agent and terminal server state is correct, but BUG-20260527-06 and BUG-20260527-07 were recorded.
+Status: passed after BUG-20260527-06/07 fixes; original cancel/auth/idempotency failures retained below.
 
 Evidence:
 - Diagnostic or existing tool:
@@ -1540,7 +1572,7 @@ Evidence:
 ### BUG-20260527-06 — Web-session operation cancel endpoint returns AUTH_REQUIRED
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: UI / protocol / account-session
 
 Scenario:
@@ -1706,7 +1738,7 @@ Browser cancellation no longer requires token-auth fallback after BUG-20260527-0
 
 ### P0.9 Module/toolset snapshot after module lifecycle
 
-Status: partial pass; auto-install, list_tools refresh, snapshot, and newly available tool execution worked, but module lifecycle device events are missing and legacy deactivate is not browser-authenticated.
+Status: passed after BUG-20260527-08 fix; original missing lifecycle-event evidence and residual historical noise retained below.
 
 Evidence:
 - Module/runtime state:
@@ -1736,7 +1768,7 @@ Evidence:
 ### BUG-20260527-08 — Module lifecycle changes do not persist module_state_changed/tools_changed device events
 
 Severity: P1
-Status: open
+Status: verified-fixed / residual-noise
 Area: module-runtime / protocol / DB
 
 Scenario:
@@ -1797,7 +1829,7 @@ The live remove/install path emitted duplicate `module_state_changed install:net
 
 ### P0.10 Protocol V3 malformed outbox probes
 
-Status: failed; BUG-20260527-09 recorded. Probe required briefly stopping the real local agent to avoid same-device websocket supersede races, then `live-v3-deep` was restarted and is running again.
+Status: passed after BUG-20260527-09 fix. Original malformed ACK/phantom evidence retained below; clean post-fix probe used new run ids and confirmed no new phantom rows.
 
 Evidence:
 - Diagnostic tool:
@@ -1895,7 +1927,7 @@ Remaining risk:
 ### BUG-20260527-10 — Local GUI automation tool actions omit account-session context
 
 Severity: P1
-Status: open
+Status: verified-fixed
 Area: account-session / UI
 
 Scenario:
@@ -1946,6 +1978,13 @@ Verification after fix:
 - Agent evidence: action trace `seq=59722` for `screen.record` includes `requester_account.session_id=745d41ee-...` and redacted `session_token`; response `seq=59723` is HTTP `202`, operation accepted; module trace captured 45 frames and finished with `status=partial` due artifact upload warning, not account-session failure.
 - Server DB evidence: operation `18caaa4e-20b0-45fb-9b4c-dd4a59224504` exists with `tool_name=screen.record`, `status=succeeded`; `device_outbox` request is `status=delivered`; ticket events include `tool_call_started` id `104` and `tool_call_result` id `106`.
 - Browser/UI evidence: real browser URL `https://192.168.100.17:9443/app/tickets/92923cf9-3a68-4e1f-a130-e7397a306b2e`; ticket `T-000606` timeline shows `screen.record` accepted at 12:37 and a successful diagnostic result with `frames_captured=45`, `duration_sec=5.7`, `file_size_bytes=113860`. Browser snapshot saved as `live-v3-bug10-ticket-snapshot.md`; screenshots saved as `live-v3-bug10-ticket-screen-record.png` and `live-v3-bug10-ticket-screen-record-full.png`.
+- Full parity audit/follow-up, 2026-05-27 13:10-13:40 +05:
+  - Root cause confirmed across ticket-bound automation actions: create was already fixed, but direct action helpers needed the active `chat_panel._current_account_session()` passed consistently to ticket-bound API calls. `_send_message()`, `_confirm_resolution()`, `_ticket_snapshot()`, `_open_ticket()`/GUI delegate checks, and `_run_ticket_tool()` wrappers were audited; `capture_screenshot` and `capture_video` inherit the fixed `_run_ticket_tool()` path.
+  - Focused tests cover `ticket.tool.run`, `ticket.capture_video` / `screen.record`, `ticket.capture_screenshot` / `screen.collect`, `ticket.message.send`, `ticket.snapshot`, `ticket.open`, `attach_files`, `confirm_resolution`, and no-active-account deterministic denial behavior in `pc_agent/tests/test_gui_automation_controller.py`.
+  - Additional live ticket: automation create produced `T-000607` / `037dbf08-76b8-449c-a856-c6d8b67f6f38` with requester account session `7b1efdb1-bce7-4b13-8793-6d93f3c03bde`, mode `confirmed_binding`.
+  - Additional local automation actions on `T-000607`: `send-message` ok, `snapshot-ticket` ok, `capture-screenshot` ok with `screen.collect` operation `98222923-b869-4512-a78b-02b9dd8733ac`, and `capture-video --duration-sec 3` ok with `screen.record` operation `af94873a-1af0-424e-956d-ac74404cbbea`. None returned `ACCOUNT_SESSION_REQUIRED`.
+  - Browser confirmation: `https://192.168.100.17:9443/app/tickets/037dbf08-76b8-449c-a856-c6d8b67f6f38` showed the BUG10 message plus successful `screen.collect` and `screen.record` timeline results; screenshots `live-v3-bug10-ticket-timeline.png` and `live-v3-bug10-ticket-detail-full.png`.
+  - Agent local state: no new failed outbox rows from these local automation actions; recent `seen_commands` were terminal for the screenshot/video tool commands.
 
 Regression check:
 - Covered direct automation `ticket.tool.run` payload propagation in unit tests, `ticket.capture_video` wrapper propagation in unit tests, API client account-session serialization in adjacent tests, and live `capture-video` through the local GUI automation bridge with DB + browser confirmation.
@@ -2025,13 +2064,42 @@ Post-fix verification gate, 2026-05-27 12:05-12:20 +05:
   - Agent restarted after the probe and is running source GUI mode on `wss://192.168.100.17:9443/ws`.
 - Follow-up fix: `BUG-20260527-10` local automation `ticket.tool.run`/`capture-video` account-session omission is now `verified-fixed`; `capture-video` live regression created and completed `screen.record` operation `18caaa4e-20b0-45fb-9b4c-dd4a59224504` and browser timeline confirmed the result.
 
+Final P0 blocker closure, 2026-05-27 13:45-14:05 +05:
+- Commit/deploy head: `47340c9bc435303c97b5ce3cb05631e815d41207` on `codex/helpdesk-process-model`, pushed to `origin` and deployed to `/var/chat_bot/pc_client` with quick gate.
+- `BUG-20260527-10`: `verified-fixed` by commit `1b9254bdbb485ec01a84e29f750f00cb18b21cb3`; local automation now passes active account session for ticket-bound tool/message/snapshot/open/close/attachment wrapper paths. Live ticket `T-000607` confirmed `send-message`, `screen.collect`, and `screen.record` through `/ui/automation/run` without `ACCOUNT_SESSION_REQUIRED`, with DB and browser timeline evidence.
+- `BUG-20260527-03`: `verified-fixed` by commit `1b9254bdbb485ec01a84e29f750f00cb18b21cb3`; real pywinauto UIA wizard create produced `T-000608` with exact Russian description preserved, required fields selected, server DB rows persisted, and browser detail confirmation.
+- `BUG-20260527-02`: `verified-fixed` by commits `1b9254bdbb485ec01a84e29f750f00cb18b21cb3` and `e03f9b29c23671dd9cdc0a806220e9ee7796493d`; canonical WSS invalid handshakes observe `4003` and same-device supersede observes `4002`.
+- `BUG-20260527-01`: `verified-non-product / guardrails-added` by commits `e03f9b29c23671dd9cdc0a806220e9ee7796493d` and `47340c9bc435303c97b5ce3cb05631e815d41207`; root cause category is external SIGKILL/no OOM with previous `Restart=no`, now covered by restart policy, bounded stop timeout, incident collector, controlled SIGKILL recovery, health smoke, browser inventory, and agent reconnect evidence.
+- Synchronized fixed statuses: `BUG-20260527-04`, `BUG-20260527-05`, `BUG-20260527-06`, `BUG-20260527-07`, `BUG-20260527-09` are `verified-fixed`; `BUG-20260527-08` is `verified-fixed / residual-noise` because current lifecycle events persist, while historical duplicate/noise rows from pre-fix live testing remain as evidence and should not be counted as new regressions.
+- Browser evidence retained: admin inventory/device online, UIA-created ticket detail `T-000608`, automation tool result timeline `T-000607`, cancel result timeline `T-000606`, malformed-probe no-phantom confirmation.
+- UIA evidence retained: pywinauto `0.6.9`, `Application(backend="uia")`, main connected `Maria Agent v3.1.61` window, stable create wizard controls, submit success/ticket opened JSON and screenshot artifacts.
+
+P0 close summary:
+- Server URL: `https://192.168.100.17:9443`; browser/admin URL: `https://192.168.100.17:9443/admin`.
+- Agent: local Windows source GUI instance `live-v3-deep`, device_id `7a3429ec-1c0b-5495-9aad-b284f08ae965`, hostname `ADMIN-2`, agent version `3.1.61`, Protocol V3 `ws_ticket_v3`.
+- Server version/capabilities evidence: handshake ack advertised Protocol V3 capabilities including `protocol_v3`, `envelope_v3`, `outbox_ack_v3`, `trace_correlation`, `nack_support`, `consent_flow`, `rpc_request`, `rpc_response`, `outbox_item`, `job_events`, and `device_events`; health endpoint returned `status=ok`.
+- Final fresh code gates on this branch:
+  - `python scripts\verify_workspace.py` -> passed.
+  - `python -m compileall -q server pc_agent scripts` -> passed.
+  - `python -m pytest pc_agent\tests\test_gui_automation_controller.py pc_agent\tests\test_dynamic_form_widget.py pc_agent\tests\test_chat_panel_helpers.py::test_ticket_create_wizard_exposes_stable_uia_ids scripts\test_run_https_reverse_proxy.py server\tests\test_runtime_control.py -q` -> `26 passed, 2 warnings`.
+  - `git diff --check` -> passed.
+- Final fresh live sanity:
+  - `python scripts\manage_remote_stack.py smoke server --base-url https://192.168.100.17:9443 --insecure-tls` -> `/api/health` 200.
+  - `python scripts\agent_test_driver.py status live-v3-deep` -> `connection_state=connected`, `bridge_connected=true`, `has_active_profile=true`, `ticket_count=7`.
+  - `.venvs\agent-win\Scripts\python.exe -c "import pywinauto; print(pywinauto.__version__)"` -> `0.6.9`.
+  - `python scripts\live_ws_v3_probe.py --ws-url wss://192.168.100.17:9443/ws --timeout 5 invalid-handshake --case all --expect-close-code 4003` -> all invalid cases observed `4003`.
+  - `python scripts\live_ws_v3_probe.py --ws-url wss://192.168.100.17:9443/ws --timeout 5 double-connect --expect-supersede-close-code 4002` -> superseded socket observed `4002`; follow-up agent status returned `connected`.
+  - Browser/admin final snapshot: `https://192.168.100.17:9443/app/admin/inventory?device=7a3429ec-1c0b-5495-9aad-b284f08ae965` shows `ADMIN-2` online, Windows, version `3.1.61`, last activity `27 мая 2026 г., 13:55`; screenshot `live-v3-final-admin-inventory.png`, snapshot `live-v3-final-admin-inventory-snapshot.md`.
+- Remaining non-P0 known risks: old phantom event in `T-000604`, old stale `device_outbox.status=sent` rows, old local SQLite `UNKNOWN_TICKET` rows from pre-fix `chat_raise`, and historical module/probe noise. These are pre-fix contamination and should be filtered by timestamp/run id in P1/P2.
+- P0 is closed. P1/P2 can start from a clean new run id/ticket/device-state filter without counting the listed pre-fix artifacts as regressions.
+
 Current live state:
-- Local agent `live-v3-deep` is running again after P0.10, currently `pid=4528`, `mode=gui/source`, connected to `wss://192.168.100.17:9443/ws`.
-- Server remains running on `https://192.168.100.17:9443`.
+- Local agent `live-v3-deep` is running in GUI/source mode and is connected to `wss://192.168.100.17:9443/ws`; latest automation status shows the tickets view, active profile, and 7 visible tickets.
+- Server remains running on `https://192.168.100.17:9443`; latest smoke returned health 200.
 - Test ticket `T-000604` contains intentional P0.10 probe evidence (`live malformed probe both_seq`) and should not be treated as normal requester input.
 - Known residual stale rows from pre-fix testing: target cancel run_tool `device_outbox` row id `6` remains `sent`; raw probe `install_module_package` rows ids `12` and `13` remain `sent`; local SQLite still contains old failed `UNKNOWN_TICKET` rows from pre-fix chat_raise `cc002181-f7d9-44da-8726-da46463c090f`. Post-fix cancel regression uses operation `a0512684-cc48-47ee-a20d-f206dc003a9a`, whose target outbox is delivered and local idempotency is terminal canceled.
 
 Recommended next test pass:
-- First fix or explicitly tolerate the P0 protocol/data-integrity defects before running P1.1/P1.2, because malformed ACKs and stale command idempotency can contaminate ACK/dedup and duplicate-command conclusions.
-- Then run P1 in this order: P1.1 ACK/NACK/dedup, P1.2 command idempotency, P1.3 consent, P1.5 restart/reconnect, P1.6 UI projection, P1.4 auto-install negatives.
-- P2 should wait until P0.10 and P0.8 cleanup semantics are fixed or isolated to a disposable test device/ticket.
+- Start P1 with a clean marker/run id and a new ticket so old P0 contamination can be excluded deterministically.
+- Recommended order: P1.1 ACK/NACK/dedup, P1.2 command idempotency, P1.3 consent, P1.5 restart/reconnect, P1.6 UI projection, P1.4 auto-install negatives.
+- P2 can follow after P1.1/P1.2 confirm that ACK/dedup/idempotency remains stable on post-fix clean data.
