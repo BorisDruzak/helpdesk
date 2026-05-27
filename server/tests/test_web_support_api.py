@@ -14,6 +14,7 @@ from app.db.models import (
     AccessGroupPermission,
     Artifact,
     Device,
+    DeviceOutbox,
     Operation,
     Playbook,
     PlaybookStep,
@@ -1788,6 +1789,92 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert operation_payload["details_url"] == "/api/operations/op-detail-lifecycle"
     assert payload["data"]["snapshot"]["presence"]["agent_online"] is False
     assert {item["value"] for item in payload["data"]["actions"]["status_options"]} >= {"in_progress"}
+
+
+@pytest.mark.asyncio
+async def test_web_support_operation_cancel_uses_web_session_boundary(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-web-cancel", status="in_progress")
+    operation_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id="device-web-cancel",
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="screen.record",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="running",
+                queued_at=now - timedelta(seconds=5),
+                started_at=now,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/operations/{operation_id}/cancel",
+        headers=_support_headers(),
+        json={"reason": "operator_requested_from_support_workspace", "actor_role": "user"},
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    cancel_operation_id = payload["cancel_operation_id"]
+
+    async with session_maker() as session:
+        target = await session.get(Operation, operation_id)
+        cancel_op = await session.get(Operation, cancel_operation_id)
+        cancel_outbox = await session.scalar(
+            select(DeviceOutbox).where(DeviceOutbox.operation_id == cancel_operation_id)
+        )
+
+        assert target.status == "cancel_requested"
+        assert target.active_cancel_operation_id == cancel_operation_id
+        assert cancel_op is not None
+        assert cancel_op.kind == "cancel_operation"
+        assert cancel_op.actor_role == "support"
+        assert cancel_op.cancel_target_operation_id == operation_id
+        assert cancel_outbox is not None
+        assert cancel_outbox.command == "cancel_operation"
+
+
+@pytest.mark.asyncio
+async def test_web_support_operation_cancel_denies_auditor(test_client, test_engine):
+    ticket_id = await _seed_support_ticket(test_engine, device_id="device-web-cancel-deny", status="in_progress")
+    operation_id = str(uuid.uuid4())
+
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id="device-web-cancel-deny",
+                ticket_id=ticket_id,
+                kind="tool_call",
+                tool_name="screen.record",
+                actor_role="support",
+                trace_id=str(uuid.uuid4()),
+                status="running",
+                queued_at=datetime.now(timezone.utc).replace(microsecond=0),
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/support/operations/{operation_id}/cancel",
+        headers=_auditor_headers(),
+        json={"reason": "auditor_attempt"},
+    )
+
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "FORBIDDEN"
 
 
 @pytest.mark.asyncio

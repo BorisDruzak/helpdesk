@@ -11,7 +11,7 @@ from loguru import logger
 from access_control.service import can
 from config import ALLOW_REMOTE_CODE
 from app.db import get_session
-from app.db.models import DeviceOutbox
+from app.db.models import DeviceOutbox, Ticket
 from app.repos.operations_repo import OperationsRepo
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
@@ -725,7 +725,47 @@ async def handle_retry_operation(request: web.Request) -> web.Response:
         return _json_error(str(e), status=500, error_code="OPERATION_RETRY_FAILED")
 
 
-async def handle_cancel_operation(request: web.Request) -> web.Response:
+async def _ensure_web_support_can_cancel_operation(
+    session,
+    auth_context: AuthContext,
+    target_op,
+) -> web.Response | None:
+    if auth_context.actor_role not in {"admin", "support"}:
+        return _json_error(
+            "Support/admin role required",
+            status=403,
+            error_code="FORBIDDEN",
+            required_role="support",
+        )
+
+    denied = await _require_permission(session, auth_context, "ticket.tool.run")
+    if denied:
+        return denied
+
+    ticket_id = str(getattr(target_op, "ticket_id", None) or "").strip()
+    if not ticket_id:
+        return _json_error(
+            "Operation is not bound to a support ticket",
+            status=404,
+            error_code="OPERATION_TICKET_NOT_FOUND",
+        )
+
+    ticket = await session.get(Ticket, ticket_id)
+    if ticket is None:
+        return _json_error(
+            "Ticket not found for operation",
+            status=404,
+            error_code="TICKET_NOT_FOUND",
+        )
+
+    return None
+
+
+async def _handle_cancel_operation(
+    request: web.Request,
+    *,
+    web_support_boundary: bool = False,
+) -> web.Response:
     """
     POST /api/operations/{operation_id}/cancel
     
@@ -781,6 +821,11 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
                     "status": "error",
                     "error": "Operation not found"
                 }, status=404)
+
+            if web_support_boundary:
+                denied = await _ensure_web_support_can_cancel_operation(session, auth_context, target_op)
+                if denied:
+                    return denied
             
             # Проверить, что операцию можно отменить
             terminal_statuses = ["succeeded", "failed", "timed_out", "canceled"]
@@ -960,6 +1005,15 @@ async def handle_cancel_operation(request: web.Request) -> web.Response:
             "status": "error",
             "error": str(e)
         }, status=500)
+
+
+async def handle_cancel_operation(request: web.Request) -> web.Response:
+    return await _handle_cancel_operation(request)
+
+
+@require_auth("admin", "support")
+async def handle_web_support_cancel_operation(request: web.Request) -> web.Response:
+    return await _handle_cancel_operation(request, web_support_boundary=True)
 
 
 async def handle_approve_consent(request: web.Request) -> web.Response:

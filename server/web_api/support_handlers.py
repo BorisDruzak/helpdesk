@@ -2588,7 +2588,7 @@ def _operation_cancel_url(operation_id: object, status: str | None) -> str | Non
     value = str(operation_id or "").strip()
     if not value or not _operation_can_cancel(status):
         return None
-    return f"/api/operations/{value}/cancel"
+    return f"/api/web/support/operations/{value}/cancel"
 
 
 def _operation_retry_url(operation_id: object, status: str | None, retry_count: int | None, max_retries: int | None) -> str | None:

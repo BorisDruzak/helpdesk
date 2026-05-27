@@ -275,6 +275,7 @@ from api.operations import (
     handle_get_operation,
     handle_web_admin_get_operation,
     handle_cancel_operation,
+    handle_web_support_cancel_operation,
     handle_retry_operation,
     handle_approve_consent,
     handle_deny_consent
@@ -804,6 +805,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision', handle_web_support_approval_decision),
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
+        web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_cancel_operation),
         web.get('/api/web/remote-assist/{session_id}', handle_remote_assist_status),
         web.get('/api/web/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
         web.post('/api/web/remote-assist/{session_id}/end', handle_remote_assist_end),

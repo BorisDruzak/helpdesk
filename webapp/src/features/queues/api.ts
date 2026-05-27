@@ -1537,7 +1537,7 @@ export async function postSupportOperationCancel(
   operationId: string,
   options: { reason?: string | null } = {}
 ): Promise<SupportOperationCancelPayload> {
-  const response = await fetch(`/api/operations/${encodeURIComponent(operationId)}/cancel`, {
+  const response = await fetch(`/api/web/support/operations/${encodeURIComponent(operationId)}/cancel`, {
     method: "POST",
     credentials: "same-origin",
     headers: {

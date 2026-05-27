@@ -1059,7 +1059,7 @@ describe("TicketListPage", () => {
         can_retry: false,
         can_cancel: true,
         retry_url: null,
-        cancel_url: "/api/operations/op-running/cancel",
+        cancel_url: "/api/web/support/operations/op-running/cancel",
         retry_disabled_reason: "status_not_retryable",
         cancel_disabled_reason: null,
         policy_labels: ["cancel:available"],
