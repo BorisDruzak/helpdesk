@@ -118,19 +118,29 @@ async def handle_web_change_risk_create(request: web.Request) -> web.Response:
 @require_auth("admin", "support")
 async def handle_web_change_risk_submit(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        risk = await RiskAssessmentService(session).submit_assessment(request.match_info.get("change_id"), request.match_info.get("assessment_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(risk=risk)
+    try:
+        async with get_session() as session:
+            risk = await RiskAssessmentService(session).submit_assessment(
+                request.match_info.get("change_id"), request.match_info.get("assessment_id"), actor_id=auth.actor_id
+            )
+            await session.commit()
+            return _ok(risk=risk)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
 async def handle_web_change_risk_approve(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        risk = await RiskAssessmentService(session).approve_assessment(request.match_info.get("change_id"), request.match_info.get("assessment_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(risk=risk)
+    try:
+        async with get_session() as session:
+            risk = await RiskAssessmentService(session).approve_assessment(
+                request.match_info.get("change_id"), request.match_info.get("assessment_id"), actor_id=auth.actor_id
+            )
+            await session.commit()
+            return _ok(risk=risk)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
@@ -148,19 +158,25 @@ async def handle_web_change_plan_create(request: web.Request) -> web.Response:
 @require_auth("admin", "support")
 async def handle_web_change_plan_approve(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        plan = await ChangePlanService(session).approve_plan(request.match_info.get("change_id"), request.match_info.get("plan_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(plan=plan)
+    try:
+        async with get_session() as session:
+            plan = await ChangePlanService(session).approve_plan(request.match_info.get("change_id"), request.match_info.get("plan_id"), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(plan=plan)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
 async def handle_web_change_approvals_request(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        result = await ChangeApprovalService(session).request_approvals(request.match_info.get("change_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(**result)
+    try:
+        async with get_session() as session:
+            result = await ChangeApprovalService(session).request_approvals(request.match_info.get("change_id"), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(**result)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
@@ -246,37 +262,51 @@ async def handle_web_change_task_create(request: web.Request) -> web.Response:
 async def handle_web_change_task_complete(request: web.Request) -> web.Response:
     auth = _auth(request)
     data = await _json(request)
-    async with get_session() as session:
-        task = await ChangeTaskService(session).complete_task(request.match_info.get("change_id"), request.match_info.get("task_id"), actor_id=auth.actor_id, result_notes=data.get("result_notes"))
-        await session.commit()
-        return _ok(task=task)
+    try:
+        async with get_session() as session:
+            task = await ChangeTaskService(session).complete_task(
+                request.match_info.get("change_id"), request.match_info.get("task_id"), actor_id=auth.actor_id, result_notes=data.get("result_notes")
+            )
+            await session.commit()
+            return _ok(task=task)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
 async def handle_web_change_pir_create(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        pir = await PIRService(session).create_pir(request.match_info.get("change_id"), await _json(request), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(pir=pir)
+    try:
+        async with get_session() as session:
+            pir = await PIRService(session).create_pir(request.match_info.get("change_id"), await _json(request), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(pir=pir)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
 async def handle_web_change_pir_submit(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        pir = await PIRService(session).submit_pir(request.match_info.get("change_id"), request.match_info.get("pir_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(pir=pir)
+    try:
+        async with get_session() as session:
+            pir = await PIRService(session).submit_pir(request.match_info.get("change_id"), request.match_info.get("pir_id"), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(pir=pir)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support")
 async def handle_web_change_pir_approve(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        pir = await PIRService(session).approve_pir(request.match_info.get("change_id"), request.match_info.get("pir_id"), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(pir=pir)
+    try:
+        async with get_session() as session:
+            pir = await PIRService(session).approve_pir(request.match_info.get("change_id"), request.match_info.get("pir_id"), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(pir=pir)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support", "auditor")
@@ -296,10 +326,13 @@ async def handle_web_change_policies(request: web.Request) -> web.Response:
 @require_auth("admin")
 async def handle_web_change_policies_save(request: web.Request) -> web.Response:
     auth = _auth(request)
-    async with get_session() as session:
-        policy = await ChangePolicyService(session).save_policy(await _json(request), actor_id=auth.actor_id)
-        await session.commit()
-        return _ok(policy=policy)
+    try:
+        async with get_session() as session:
+            policy = await ChangePolicyService(session).save_policy(await _json(request), actor_id=auth.actor_id)
+            await session.commit()
+            return _ok(policy=policy)
+    except ValueError as exc:
+        return _error(str(exc))
 
 
 @require_auth("admin", "support", "auditor")

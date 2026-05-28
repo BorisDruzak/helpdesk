@@ -95,3 +95,31 @@ async def test_change_web_api_create_from_problem(test_client, test_engine) -> N
     assert payload["change"]["problem_id"] == problem_id
     assert payload["change"]["source_kind"] == "problem"
 
+
+@pytest.mark.asyncio
+async def test_change_web_api_subresource_validation_errors_are_not_500(test_client) -> None:
+    created = await test_client.post(
+        "/api/web/changes",
+        headers=_support_headers(),
+        json={"title": "Invalid subresource mapping", "description": "Validation denials stay structured", "change_type": "normal"},
+    )
+    assert created.status == 200, await created.text()
+    change = (await created.json())["change"]
+
+    cases = [
+        ("risk submit", f"/api/web/changes/{change['change_id']}/risk/not-a-risk/submit"),
+        ("risk approve", f"/api/web/changes/{change['change_id']}/risk/not-a-risk/approve"),
+        ("plan approve", f"/api/web/changes/{change['change_id']}/plans/not-a-plan/approve"),
+        ("approvals request", "/api/web/changes/not-a-change/approvals/request"),
+        ("task complete", f"/api/web/changes/{change['change_id']}/tasks/not-a-task/complete"),
+        ("pir create", "/api/web/changes/not-a-change/pir"),
+        ("pir submit", f"/api/web/changes/{change['change_id']}/pir/not-a-pir/submit"),
+        ("pir approve", f"/api/web/changes/{change['change_id']}/pir/not-a-pir/approve"),
+    ]
+    for label, url in cases:
+        response = await test_client.post(url, headers=_support_headers(), json={"marker": "p5-validation-error-mapping"})
+        assert response.status == 400, f"{label}: {response.status} {await response.text()}"
+        payload = await response.json()
+        assert payload["status"] == "error"
+        assert payload["error"]
+

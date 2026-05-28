@@ -5463,6 +5463,74 @@ Remaining risk:
 - `p5-fix-20260529-0000-8bfc7c76` is labeled test-tool contamination: the probe extracted the risk id from the wrong response field and sent `/risk/undefined/...`; it is not P5-01 product evidence and was not used for verification.
 Status consistency checked: yes
 
+### BUG-20260529-P5-02 - change subresource validation denials return HTTP 500
+
+Severity: P1
+Status: reproduced
+Area: workflow / risk-impact / implementation-task / PIR / browser-ui / server-db
+
+P5 scenario: P5.7 Risk / impact / implementation / rollback gates, P5.8 Implementation tasks, P5.11 PIR / post-implementation review.
+Run id: `p5-errmap-20260529-0010-492d2bf2`
+Expected:
+- Expected validation denials for missing/invalid risk, plan, approval, task and PIR ids should return structured HTTP `400` or `404`, not HTTP `500`.
+- Browser-visible admin actions should not create console 5xx noise for normal validation errors.
+- Denied invalid-id actions must not mutate server DB or dispatch agent work.
+Actual:
+- Real browser/admin same-origin API calls returned HTTP `500` for:
+  - `POST /api/web/changes/{change_id}/risk/not-a-risk/submit`
+  - `POST /api/web/changes/{change_id}/risk/not-a-risk/approve`
+  - `POST /api/web/changes/{change_id}/plans/not-a-plan/approve`
+  - `POST /api/web/changes/not-a-change/approvals/request`
+  - `POST /api/web/changes/{change_id}/tasks/not-a-task/complete`
+  - `POST /api/web/changes/not-a-change/pir`
+Repro steps:
+- Use real browser admin page `https://192.168.100.17:9443/app/admin/changes`.
+- Use clean marker `p5-errmap-20260529-0010-492d2bf2`.
+- Send the invalid-id requests listed above against live change `CHG-000014`.
+- Observe HTTP `500` and browser console failed-resource entries.
+
+Evidence:
+- Transport/API: all six invalid-id subresource requests returned HTTP `500` with generic `Server got itself in trouble`.
+- Server log: expected `ValueError` escapes from handlers that do not wrap service calls; detailed stack capture pending code audit.
+- Agent log: not applicable; change APIs do not dispatch agent work.
+- Server DB: invalid-id requests are expected to be validation-only; no mutation evidence pending post-fix regression.
+- Agent SQLite: not involved; marker check pending post-fix regression.
+- Browser/UI: real browser admin page logged failed resources for all six calls.
+- UIA: not applicable to change admin subresource API; baseline UIA state already passed.
+- Test artifact: Playwright API output in current run; structured regression artifact pending fix.
+- Run marker: `p5-errmap-20260529-0010-492d2bf2`.
+
+Impact:
+- Blocks P5 close because normal bad-input/admin validation paths violate the P5 contract that validation errors are structured and non-500.
+- This also creates unreliable browser evidence for P5.7/P5.8/P5.11 negative scenarios.
+Root cause hypothesis:
+- Several `server/web_api/change_handlers.py` handlers call services that raise `ValueError` but do not catch it and map it to `_error(...)`.
+- Create/transition handlers already have the correct pattern; subresource submit/approve/request/complete/PIR handlers are inconsistent.
+Root cause confirmed:
+- `server/web_api/change_handlers.py` had inconsistent `ValueError` mapping.
+- Create/transition/schedule/task-create handlers caught `ValueError` and returned structured `_error(...)`, but risk submit/approve, plan approve, approval request, task complete, PIR create/submit/approve and policy save allowed service `ValueError` to escape to aiohttp as HTTP `500`.
+- The affected services already raise deterministic `ValueError` messages such as `risk assessment not found`, `change plan not found`, `change task not found`, `PIR not found` and `change not found`; the bug was in the web boundary mapping, not in persistence.
+Fix policy:
+- Blocking further P5: yes
+- Fixed now: yes
+
+Fix summary:
+- Added consistent `try/except ValueError` mapping to the affected change subresource handlers.
+- Expected invalid-id/missing-resource validation now returns structured JSON `{status: "error", error: "..."}` with HTTP `400`, preserving `500` for true unexpected handler failures.
+Changed files:
+- `server/web_api/change_handlers.py`
+- `server/tests/test_change_api.py`
+Tests:
+- `python -m pytest server\tests\test_change_api.py::test_change_web_api_subresource_validation_errors_are_not_500 -q --tb=short` -> `1 passed in 338.47s`.
+- `python -m pytest server\tests\test_change_api.py server\tests\test_change_lifecycle.py server\tests\test_change_pir.py -q --tb=short` -> `7 passed in 360.20s`.
+Live regression: pending deploy and clean live rerun with a fresh P5 error-mapping marker.
+Regression check:
+- Focused tests cover invalid risk submit/approve, plan approve, approval request, task complete, PIR create/submit/approve.
+- Existing P5-01 lifecycle tests still pass in the focused suite.
+Remaining risk:
+- Need live browser/API rerun before changing status to `verified-fixed`.
+Status consistency checked: partial; keep status `reproduced` until live regression passes.
+
 ### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
 
 Severity: P1
