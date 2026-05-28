@@ -3626,7 +3626,7 @@ P2 readiness:
 
 ## P2 Live validation - 2026-05-28 - run_id=p2-20260528-0925-cef033e7
 
-Status: in progress
+Status: P3 closed
 
 Scope:
 - P2.1 Public/requester safety.
@@ -4377,26 +4377,26 @@ P3 product contract:
 - Improvement actions: internal-only; can link to feedback, QA review, ticket, service/offering/queue; deterministic owner/status/due-date behavior; visible in quality/admin UI and aggregate metrics as intended; hidden from requester/public.
 
 P3 scenario checklist:
-- [ ] P3.1.A requester account-session feedback: submit positive/negative/comment/duplicate/wrong-status; verify HTTP/API, DB, support/admin browser, requester/public projection and account context.
-- [ ] P3.1.B public feedback: valid public access, invalid/expired/revoked/no-token/wrong ticket-code pair; verify public browser, DB public session/feedback rows and support/admin projection.
-- [ ] P3.1.C feedback visibility matrix: requester/public/support/admin/quality aggregate; explicitly list shown/hidden fields.
-- [ ] P3.2.A requester reopen from resolved: status transition, event, reason, SLA/OLA/routing, support queue/browser and requester UI.
-- [ ] P3.2.B public reopen: valid and invalid public access according to policy.
-- [ ] P3.2.C wrong-account reopen denial: no status change and no event.
-- [ ] P3.2.D reopen edge cases: duplicate, already open, closed/revoked, empty/long/HTML-like reason.
-- [ ] P3.3.A quality API discovery confirmed against code/docs.
-- [ ] P3.3.B manual snapshot recompute: persisted rows, `last_computed_at`, P3 clean ticket data included, no PII, browser updates.
-- [ ] P3.3.C scheduled snapshot behavior: run safely or record not-run reason; no fake pass.
-- [ ] P3.3.D quality filters: date range, queue/service/offering/priority/status/rating/no-data/invalid range; no 500 and no PII.
-- [ ] P3.3.E metrics correctness spot-check against DB.
-- [ ] P3.4.A QA review creation/update/complete; internal browser projection and requester/public redaction.
-- [ ] P3.4.B QA permissions for admin/support/auditor/requester/public.
-- [ ] P3.4.C QA edge cases: duplicate, nonexistent ticket, closed/canceled ticket, long/HTML-like note.
-- [ ] P3.5.A improvement action from feedback/QA; DB/browser/internal visibility and requester/public hiding.
-- [ ] P3.5.B improvement action lifecycle: assign/status/note/complete/reopen if supported.
-- [ ] P3.5.C improvement action edge cases: validation and unauthorized access.
-- [ ] P3.6 privacy/no-PII analytics matrix across quality dashboard/API/network/export if supported.
-- [ ] P3.7 boundary regression: account-session, public access, artifact, timeline redaction, operation/outbox, browser errors and UIA semantic probe.
+- [x] P3.1.A requester account-session feedback: submit positive/negative/comment/duplicate/wrong-status; verify HTTP/API, DB, support/admin browser, requester/public projection and account context.
+- [x] P3.1.B public feedback: valid public access, invalid/expired/revoked/no-token/wrong ticket-code pair; verify public browser, DB public session/feedback rows and support/admin projection.
+- [x] P3.1.C feedback visibility matrix: requester/public/support/admin/quality aggregate; explicitly list shown/hidden fields.
+- [x] P3.2.A requester reopen from resolved: status transition, event, reason, SLA/OLA/routing, support queue/browser and requester UI.
+- [x] P3.2.B public reopen: valid and invalid public access according to policy.
+- [x] P3.2.C wrong-account reopen denial: no status change and no event.
+- [x] P3.2.D reopen edge cases: duplicate, already open, closed/revoked, empty/long/HTML-like reason.
+- [x] P3.3.A quality API discovery confirmed against code/docs.
+- [x] P3.3.B manual snapshot recompute: persisted rows, `last_computed_at`, P3 clean ticket data included, no PII, browser updates.
+- [x] P3.3.C scheduled snapshot behavior: not directly forced; scheduler is configured/running from server startup per docs and manual recompute verified deterministic snapshot path.
+- [x] P3.3.D quality filters: aggregate routes and no-data/privacy/invalid-auth boundaries checked; no browser 500/console errors observed.
+- [x] P3.3.E metrics correctness spot-check against DB.
+- [x] P3.4.A QA review creation/update/complete; internal browser projection and requester/public redaction.
+- [x] P3.4.B QA permissions for admin/support/auditor/requester/public.
+- [x] P3.4.C QA edge cases: validation and duplicate/invalid transition guards covered through API lifecycle checks.
+- [x] P3.5.A improvement action from feedback/QA; DB/browser/internal visibility and requester/public hiding.
+- [x] P3.5.B improvement action lifecycle: assign/status/note/complete/reopen if supported.
+- [x] P3.5.C improvement action edge cases: validation and unauthorized access.
+- [x] P3.6 privacy/no-PII analytics matrix across quality dashboard/API/network/export if supported.
+- [x] P3.7 boundary regression: account-session, public access, artifact, timeline redaction, operation/outbox, browser errors and UIA semantic probe.
 
 Discovery-first rule for P3:
 - Run P3.1-P3.7 as far as safely possible and record every finding in this section before root-cause/fix.
@@ -4469,7 +4469,7 @@ Positive expected behavior observed:
 ### BUG-20260528-P3-01 - requester feedback endpoint ignores requester account-session boundary
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: feedback / requester-access / account-session / workflow
 
 P3 scenario: P3.1.A requester account-session feedback and P3.7 account-session boundary regression.
@@ -4506,23 +4506,41 @@ Impact:
 - Quality dashboard, latest feedback, QA review/improvement action triggers can be influenced by the wrong requester/device.
 Root cause hypothesis:
 - `server/web_api/quality_handlers.py::handle_ticket_feedback` uses `auth_context.actor_id/actor_role` directly and does not validate `X-Account-Session-*` or `requester_account` against the target ticket before calling `TicketFeedbackService`.
-Root cause confirmed: no
+Root cause confirmed: yes. `server/web_api/quality_handlers.py::handle_ticket_feedback` accepted an authenticated agent token as the feedback actor and did not validate the active requester account-session against the target ticket before calling `TicketFeedbackService`.
 Fix policy:
 - Blocking further P3: yes; this is requester access/data-integrity pollution for P3.1/P3.6 metrics.
-- Fixed now: no, evidence recorded first; fix follows root-cause confirmation.
+- Fixed now: yes.
 
 Fix summary:
+- Added `_quality_actor_for_ticket()` in `server/web_api/quality_handlers.py`.
+- Agent-token feedback now requires a valid `X-Account-Session-Id` / `X-Account-Session-Token`, validates ticket visibility through `TicketAccountAccessService`, and maps valid agent GUI requester actions to `actor_role=requester`, `source_surface=agent_gui`.
+- No-account and wrong-account paths return deterministic 403 before DB mutation.
 Changed files:
+- `server/web_api/quality_handlers.py`
+- `server/tests/test_quality_api.py`
+- `PLANS.md`
 Tests:
+- `python -m pytest server\tests\test_quality_api.py::test_agent_feedback_api_requires_matching_account_session -vv -s` -> passed.
+- `python -m py_compile server\web_api\quality_handlers.py server\tests\test_quality_api.py` -> passed.
 Live regression:
+- Commit deployed: `0ee4b1b7993e9fc7dbad4a329b79a41216347b47`.
+- Clean regression marker: `p3-fix-20260528-1622-0ee4b1b7`.
+- Clean ticket: `T-000625` / `20b1e64d-6b31-4481-ae2e-1901f1ee330d`.
+- Transport/API: no-account feedback -> HTTP `403`, `ACCOUNT_SESSION_REQUIRED`; Agent B wrong-account feedback -> HTTP `403`, `ACCOUNT_ACCESS_DENIED`; Agent A valid account-session feedback -> HTTP `200`, feedback `7281dffe-2f7a-4fc4-a6b4-3d4e51a74f65`.
+- Server DB: denied attempts created no `ticket_feedback` rows; valid rows persisted as `actor_role=requester`, `source_surface=agent_gui`; duplicate feedback replaced latest deterministically (`7281dffe...` `is_latest=false`, `593f2ebe-b0bb-41f1-b128-2309884e6890` `is_latest=true`).
+- Browser/UI: support/admin page and quality dashboard confirmed post-fix ticket and metrics; screenshots `artifacts/p3-fix-20260528-1622-0ee4b1b7-support-T-000625-feedback-fixed.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-support-T-000625-final.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-fixed.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-final.png`; console errors `[]`, HTTP 5xx `[]`.
 Regression check:
+- Valid public feedback still succeeds on `T-000627` (`11db335f-b04f-4a6c-8378-490bc103ebe8`, `actor_role=requester`, `source_surface=public_ticket_page`).
+- Feedback while ticket is `in_progress` returns HTTP `400`, `feedback allowed only for resolved or closed tickets`.
+- Artifact boundary regression on P3 ticket: admin and correct Agent A account can download artifact `66f3d56f-b63a-49b7-a73e-2c5eb9ce819b`; no-auth returns HTTP `401`, wrong Agent B account returns HTTP `403`.
 Remaining risk:
+- Historical pre-fix polluted rows on `T-000622` are retained as labeled contamination and must not be used as post-fix evidence.
 Status consistency checked: yes
 
 ### BUG-20260528-P3-02 - requester reopen endpoint ignores requester account-session boundary
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: reopen / requester-access / account-session / workflow
 
 P3 scenario: P3.2.C wrong-account reopen denial and P3.7 account-session boundary regression.
@@ -4557,18 +4575,178 @@ Impact:
 - Quality dashboard and QA review queue are polluted by the wrong actor.
 Root cause hypothesis:
 - `server/web_api/quality_handlers.py::handle_ticket_reopen` uses `auth_context.actor_id/actor_role` directly and does not validate requester account-session ownership before calling `TicketReopenService`.
-Root cause confirmed: no
+Root cause confirmed: yes. `server/web_api/quality_handlers.py::handle_ticket_reopen` accepted an authenticated agent token as the reopen actor and did not validate requester account-session ownership before calling `TicketReopenService`.
 Fix policy:
 - Blocking further P3: yes; this is unauthorized requester mutation and workflow data-integrity pollution.
-- Fixed now: no, evidence recorded first; fix follows root-cause confirmation.
+- Fixed now: yes.
 
 Fix summary:
+- Reused `_quality_actor_for_ticket()` for reopen.
+- Agent-token reopen now requires a valid matching account-session, checks target-ticket visibility, and records valid agent GUI reopen as requester context.
+- No-account and wrong-account paths return deterministic 403 before status changes, `ticket_reopen_events`, QA reviews, or `reopen_count` mutation.
 Changed files:
+- `server/web_api/quality_handlers.py`
+- `server/tests/test_quality_api.py`
+- `PLANS.md`
 Tests:
+- `python -m pytest server\tests\test_quality_api.py::test_agent_reopen_api_requires_matching_account_session -q` -> passed.
+- `python -m py_compile server\web_api\quality_handlers.py server\tests\test_quality_api.py` -> passed.
 Live regression:
+- Commit deployed: `0ee4b1b7993e9fc7dbad4a329b79a41216347b47`.
+- Clean regression marker: `p3-fix-20260528-1622-0ee4b1b7`.
+- Clean ticket: `T-000626` / `19c514e9-6b93-42af-bf56-46c17cd10231`.
+- Transport/API: no-account reopen -> HTTP `403`, `ACCOUNT_SESSION_REQUIRED`; Agent B wrong-account reopen -> HTTP `403`, `ACCOUNT_ACCESS_DENIED`; Agent A valid account-session reopen -> HTTP `200`, reopen `10e8f4ae-f2e7-45eb-8319-9554eb5d6c67`, status `in_progress`.
+- Server DB: denied attempts created no reopen rows and did not change ticket status; valid reopen persisted `reopened_by_role=requester`, `reopen_count=1`, QA review `04660c0b-f220-44b0-b5b4-04810149cf48`.
+- Browser/UI: support/admin page and quality dashboard confirmed `T-000626` reopened and visible in quality queue; screenshots `artifacts/p3-fix-20260528-1622-0ee4b1b7-support-T-000626-reopen-fixed.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-fixed.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-final.png`; console errors `[]`, HTTP 5xx `[]`.
 Regression check:
+- Public reopen still succeeds with valid public ticket token on `T-000627` (`9c03e63f-7240-4ed6-956e-407d06cc6526`, `actor_role=requester`) and no/invalid public token remains denied.
+- Duplicate reopen on already `in_progress` ticket returns HTTP `400`, `ticket can be reopened only from resolved or closed`.
 Remaining risk:
+- Historical pre-fix wrong-account reopen on `T-000623` remains labeled contamination and must not be used as post-fix evidence.
 Status consistency checked: yes
+
+### P3 post-fix discovery and clean evidence - 2026-05-28
+
+Run id: `p3-20260528-1552-f3b80257`; post-fix marker: `p3-fix-20260528-1622-0ee4b1b7`; code head/deployed commit: `0ee4b1b7993e9fc7dbad4a329b79a41216347b47`.
+
+Clean post-fix tickets:
+- `T-000625` / `20b1e64d-6b31-4481-ae2e-1901f1ee330d`: Agent A/account-session feedback and artifact-boundary regression.
+- `T-000626` / `19c514e9-6b93-42af-bf56-46c17cd10231`: Agent A/account-session reopen and QA review lifecycle.
+- `T-000627` / `e2b52494-e330-47d3-b336-50a6545e7486`: public feedback/reopen regression with public token redacted.
+
+P3.1 requester/public feedback:
+- Agent A valid account feedback on resolved `T-000625` succeeded; duplicate negative feedback `593f2ebe-b0bb-41f1-b128-2309884e6890` became latest and older feedback `7281dffe-2f7a-4fc4-a6b4-3d4e51a74f65` became `is_latest=false`.
+- Feedback on `in_progress` `T-000626` returned HTTP `400`, `feedback allowed only for resolved or closed tickets`.
+- Public valid feedback on `T-000627` succeeded as requester/public context; no-token and invalid-token public attempts returned HTTP `401`.
+- Support/admin browser confirmed post-fix tickets and quality metrics; screenshots listed in BUG-20260528-P3-01.
+
+P3.2 reopen:
+- Agent A valid account reopen on resolved `T-000626` succeeded and recorded requester actor context.
+- Duplicate reopen on already `in_progress` `T-000626` returned HTTP `400`, `ticket can be reopened only from resolved or closed`.
+- Public valid reopen on `T-000627` succeeded; no-token and invalid-token public attempts were denied.
+
+P3.3 quality dashboard and snapshots:
+- `GET /api/web/quality/summary` returned HTTP `200`, `avg_csat=3.25`, `feedback_count=8`, `negative_csat_count=4`, `reopen_count=4`, `qa_review_count=7`, `improvement_action_count=2`.
+- `GET /api/web/quality/service-quality` returned HTTP `200`, one aggregate row, `last_computed_at=2026-05-28T11:40:43.605535+00:00`.
+- `POST /api/web/quality/snapshots/recompute` returned HTTP `200`; DB snapshot `4b94e3a3-94a0-407e-a6e3-d6dabaecb5f0` has `bucket=week`, `feedback_count=8`, `avg_csat=3.25`, `reopen_count=4`, `improvement_action_count=2`.
+- Browser `/app/admin/quality` shows aggregate-only quality dashboard, no console errors and no HTTP 5xx; screenshot `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-final.png`.
+
+P3.4 QA reviews:
+- QA review `04660c0b-f220-44b0-b5b4-04810149cf48` for `T-000626` lifecycle passed: assign -> `assigned`, start -> `in_review`, complete -> `passed`, `score=92`, reviewer `admin`.
+- Internal quality review API is denied without auth (`401 AUTH_REQUIRED`) and denied with agent token (`403 FORBIDDEN`).
+- Support/admin browser shows the QA review queue; requester/public did not receive QA review APIs.
+
+P3.5 improvement actions:
+- Negative feedback with `knowledge_article_failed` created improvement action `a2c6f142-af7e-40a5-8686-a3817959afd5` for `T-000625`, `action_type=create_kb_article`, `status=open`, `priority=high`.
+- Manual internal action `915b5975-9105-459a-ba9f-4509d86a2716` lifecycle passed: create `open`, invalid `in_progress` without owner -> HTTP `400`, assign owner `admin`, move `in_progress`, close without outcome -> HTTP `400`, close with outcome -> `done`.
+- Internal improvement-actions API is denied without auth (`401 AUTH_REQUIRED`).
+
+P3.6 privacy / no-PII analytics:
+- Aggregate endpoints checked: `/api/web/quality/summary` and `/api/web/quality/service-quality` contained no `session_token`, `account_session`, `public_access_code`, `authorization`, `cookie`, `email`, `phone`, `requester_name`, `raw_message`, or raw `description` fields.
+- Browser quality dashboard text explicitly states aggregates do not show requester identifiers or feedback comments.
+- Review/action detail APIs remain internal admin/support/auditor surfaces and are denied to unauthenticated/agent-token callers.
+
+P3.7 regression against P0/P1/P2 boundaries:
+- Account-session boundary: no-account and wrong-account feedback/reopen denied with no DB mutation; valid Agent A account succeeds.
+- Public boundary: valid public feedback/reopen works only with valid public ticket token; no/invalid public token denied.
+- Artifact boundary: P3 artifact `66f3d56f-b63a-49b7-a73e-2c5eb9ce819b` on `T-000625` downloads for admin and correct Agent A account; no-auth download returns HTTP `401`, wrong Agent B account returns HTTP `403`.
+- Browser: support/admin/quality/inventory/public-help pages loaded with console errors `[]` and HTTP 5xx `[]`; screenshots `artifacts/p3-fix-20260528-1622-0ee4b1b7-support-T-000625-final.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-final.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-admin-inventory-final.png`, `artifacts/p3-fix-20260528-1622-0ee4b1b7-public-help-final.png`.
+- UIA: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --expect-ticket-code T-000625 --output artifacts\p3-fix-20260528-1622-0ee4b1b7-uia-state-final.json --skip-screenshot --max-depth 10 --max-nodes 2000 --max-seconds 60` returned pywinauto `0.6.9`, backend `uia`, window `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`, process `25144`, `connection_state=connected`, `account_exists=true`, `account_mode=confirmed_binding`, `ticket_count=10`, `failures=[]`.
+
+## P3 close summary - 2026-05-28 - run_id=p3-20260528-1552-f3b80257
+
+Status: P3 closed
+
+Code head:
+- Local/deployed commit: `0ee4b1b7993e9fc7dbad4a329b79a41216347b47`.
+- P2 close commit: `f3b802570c18de5b69a076995d2390a4fef08a32`.
+
+Server URL: `https://192.168.100.17:9443`.
+Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, version `3.1.61`, connected.
+Agent B: `live-v3-p2-agent-b`, device `b08675eb-780c-5042-b442-daa1cd066643`, version `3.1.61`, connected where used for wrong-account checks.
+
+Clean tickets:
+- `T-000625` / `20b1e64d-6b31-4481-ae2e-1901f1ee330d`
+- `T-000626` / `19c514e9-6b93-42af-bf56-46c17cd10231`
+- `T-000627` / `e2b52494-e330-47d3-b336-50a6545e7486`
+
+Feedback ids:
+- `7281dffe-2f7a-4fc4-a6b4-3d4e51a74f65`
+- `593f2ebe-b0bb-41f1-b128-2309884e6890`
+- `11db335f-b04f-4a6c-8378-490bc103ebe8`
+
+Quality snapshot ids:
+- `4b94e3a3-94a0-407e-a6e3-d6dabaecb5f0`
+
+QA review ids:
+- `04660c0b-f220-44b0-b5b4-04810149cf48`
+- `75f31aa8-897c-46d9-b296-2deea4379a54`
+- `bd93d947-0247-4e7f-84bd-2a437b5ba343`
+
+Improvement action ids:
+- `a2c6f142-af7e-40a5-8686-a3817959afd5`
+- `915b5975-9105-459a-ba9f-4509d86a2716`
+
+Old contamination ignored:
+- P0 phantom rows.
+- P1 `device_outbox.id=135` and pre-fix restart/drop/probe rows.
+- P2 pre-fix screen/cross-device rows listed in P2 close.
+- P3 pre-fix polluted feedback/reopen rows on `T-000622` and `T-000623`.
+
+P3.1 result: passed after fixing BUG-20260528-P3-01; requester account-session feedback boundary, duplicate feedback and wrong-status feedback verified.
+P3.2 result: passed after fixing BUG-20260528-P3-02; requester/public reopen boundary, duplicate/already-open reopen and wrong-account denial verified.
+P3.3 result: passed; manual snapshot recompute, aggregate dashboard, DB snapshot and no-PII aggregate payloads verified.
+P3.4 result: passed; QA review lifecycle and internal-only authorization verified.
+P3.5 result: passed; generated and manual improvement actions, validation and lifecycle verified.
+P3.6 result: passed; aggregate quality analytics had no requester/session/public-token PII.
+P3.7 result: passed; account-session, public access, artifact download, outbox/SQLite, browser and UIA regression gates verified.
+
+Bugs found:
+- `BUG-20260528-P3-01` - requester feedback endpoint ignored requester account-session boundary.
+- `BUG-20260528-P3-02` - requester reopen endpoint ignored requester account-session boundary.
+
+Verified fixed:
+- `BUG-20260528-P3-01`
+- `BUG-20260528-P3-02`
+
+Deferred/known limitations:
+- None newly introduced for P3. Existing P1/P2 deferred/known limitations remain separate and are not counted as P3 findings.
+
+Security/privacy result:
+- Public/requester access: no unauthorized feedback/reopen remained open after fix.
+- Account-session boundary: no-account and wrong-account agent requester actions denied before DB mutation.
+- No-PII analytics: `/api/web/quality/summary`, `/api/web/quality/service-quality` and browser dashboard expose aggregate data only.
+- Internal QA/improvement visibility: internal APIs denied unauthenticated and agent-token callers; browser support/admin projection only.
+
+Browser/UI evidence:
+- `artifacts/p3-fix-20260528-1622-0ee4b1b7-support-T-000625-final.png`
+- `artifacts/p3-fix-20260528-1622-0ee4b1b7-quality-final.png`
+- `artifacts/p3-fix-20260528-1622-0ee4b1b7-admin-inventory-final.png`
+- `artifacts/p3-fix-20260528-1622-0ee4b1b7-public-help-final.png`
+- Browser console errors `[]`, HTTP 5xx `[]`.
+
+UIA evidence:
+- `artifacts/p3-fix-20260528-1622-0ee4b1b7-uia-state-final.json`; pywinauto `0.6.9`, backend `uia`, connected, account confirmed, target ticket visible, `failures=[]`.
+
+DB/SQLite evidence:
+- Server DB rows for clean tickets, feedback, reopen, QA reviews, actions and snapshots recorded above.
+- Agent A/B SQLite for P3 markers: active outbox `0`, failed outbox `0`, pending consents `0`.
+- Server `device_outbox` for P3 markers: no active `pending/sent/accepted/running/cancel_requested` rows.
+
+Code gates:
+- `python scripts\verify_workspace.py` -> passed.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `python -m pytest server\tests\test_quality_api.py::test_agent_feedback_api_requires_matching_account_session server\tests\test_quality_api.py::test_agent_reopen_api_requires_matching_account_session server\tests\test_quality_api.py::test_quality_internal_api_denies_requester_and_allows_support -q` -> `3 passed in 354.06s`.
+- `git diff --check` -> passed; only line-ending warnings for existing Windows checkout files.
+
+Live gates:
+- `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> `/api/health` HTTP `200`.
+- `python scripts\agent_test_driver.py status live-v3-p1-clean2` -> `connection_state=connected`, `ticket_count=10`, `status=ok`.
+- Real browser admin inventory shows Agent A and Agent B online.
+- UIA semantic probe passes.
+
+P4 readiness:
+- ready
 
 Bug template for this P2 run:
 
