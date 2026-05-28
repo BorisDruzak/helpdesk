@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
-from tickets.public_access import PUBLIC_ACCESS_MESSAGE_KIND, is_public_access_message_payload
+from tickets.public_access import is_public_access_message_payload
 
 
 RequesterTimelineKind = Literal[
@@ -184,7 +184,7 @@ def _project_chat_message(event: object | dict[str, Any], payload: Mapping[str, 
         return RequesterTimelineProjection(
             "Код доступа к заявке сформирован.",
             "system_event",
-            {"message_kind": PUBLIC_ACCESS_MESSAGE_KIND},
+            {"message_kind": "ticket_access_notice"},
         )
 
     attachments = _safe_attachments(payload.get("attachments") or payload.get("attachment_refs") or [])

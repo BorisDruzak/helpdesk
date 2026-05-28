@@ -97,7 +97,7 @@ def test_public_access_code_message_is_system_event_not_support_message():
     assert projection is not None
     assert projection.kind == "system_event"
     assert projection.text == "Код доступа к заявке сформирован."
-    assert projection.payload == {"message_kind": "ticket_public_access_code"}
+    assert projection.payload == {"message_kind": "ticket_access_notice"}
     assert "RZ76RPDR" not in projection.text
     assert "RZ76RPDR" not in str(projection.payload)
 
@@ -183,7 +183,7 @@ def test_ticket_handler_requester_message_sanitizes_public_access_code():
 
     message = _serialize_message_for_requester(event)
 
-    assert message["metadata"] == {"message_kind": "ticket_public_access_code"}
+    assert message["metadata"] == {"message_kind": "ticket_access_notice"}
     assert "RZ76RPDR" not in message["text"]
     assert "RZ76RPDR" not in str(message["metadata"])
 
