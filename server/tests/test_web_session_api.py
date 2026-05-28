@@ -314,6 +314,67 @@ async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_public_ticket_token_auth_bridges_artifact_download(monkeypatch):
+    async def fake_verify_agent_token(_self, token: str):
+        return None
+
+    async def fake_verify_ui_token(_self, token: str):
+        return None
+
+    async def fake_verify_ticket_public_session_token(_self, token: str):
+        if token != "public-ticket-token":
+            return None
+        return {
+            "actor_id": "public:ticket-1",
+            "ticket_id": "ticket-1",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "public_ticket",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", fake_verify_agent_token)
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+    monkeypatch.setattr(
+        auth_middleware_module.AuthService,
+        "verify_ticket_public_session_token",
+        fake_verify_ticket_public_session_token,
+    )
+
+    async def protected_handler(request: web.Request):
+        auth_context = request["auth_context"]
+        return web.json_response(
+            {
+                "status": "ok",
+                "actor_id": auth_context.actor_id,
+                "auth_type": auth_context.auth_type.value,
+                "ticket_scope": auth_context.ticket_scope,
+                "path": request.path,
+            }
+        )
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    route_path = "/api/artifacts/artifact-1/download"
+    app.router.add_get(route_path, protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get(
+            f"{route_path}?ticket_id=ticket-1",
+            headers={"Authorization": "Bearer public-ticket-token"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "ok",
+        "actor_id": "public:ticket-1",
+        "auth_type": "public_ticket_token",
+        "ticket_scope": "ticket-1",
+        "path": route_path,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_session_me_exposes_admin_default_workspace():
     @web.middleware
     async def auth_context_middleware(request, handler):

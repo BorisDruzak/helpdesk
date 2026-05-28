@@ -6,14 +6,20 @@ HTTP обработчики для загрузки файлов (артефак
 """
 
 import hashlib
+import re
+import unicodedata
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from aiohttp import web
 from loguru import logger
 
 from config import UPLOAD_DIR, ARTIFACT_MAX_BYTES
 from auth.context import AuthType
+
+
+_FILENAME_FALLBACK_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _suffix_from_filename(filename: str) -> str:
@@ -32,6 +38,19 @@ def _default_kind(mime_type: str, current_kind: str | None) -> str:
     if mime.startswith("video/"):
         return "screen_recording"
     return "file"
+
+
+def _ascii_filename_fallback(filename: str) -> str:
+    base = Path((filename or "download").replace("\\", "/")).name or "download"
+    normalized = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode("ascii")
+    cleaned = _FILENAME_FALLBACK_RE.sub("_", normalized).strip("._ ")
+    return cleaned or "download"
+
+
+def _content_disposition_attachment(filename: str) -> str:
+    fallback = _ascii_filename_fallback(filename)
+    encoded = quote(filename or fallback, safe="")
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def _can_upload_to_ticket(auth_context, ticket) -> bool:
@@ -365,7 +384,7 @@ async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
                 "Content-Type": artifact.mime_type,
                 "Content-Length": str(len(body)),
                 "Accept-Ranges": "bytes",
-                "Content-Disposition": f'attachment; filename="{artifact.original_name}"',
+                "Content-Disposition": _content_disposition_attachment(artifact.original_name),
             },
         )
 
@@ -396,6 +415,6 @@ async def handle_artifact_download(request: web.Request) -> web.StreamResponse:
             "Content-Length": str(len(body)),
             "Content-Range": f"bytes {start}-{end}/{size}",
             "Accept-Ranges": "bytes",
-            "Content-Disposition": f'attachment; filename="{artifact.original_name}"',
+            "Content-Disposition": _content_disposition_attachment(artifact.original_name),
         },
     )

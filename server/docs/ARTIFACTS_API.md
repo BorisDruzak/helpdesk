@@ -92,6 +92,7 @@
 **Реализация:** `server/uploads/handlers.py` — `handle_artifact_download`; проверка прав — `server/app/services/artifact_service.py` (`ArtifactService.get_artifact_for_download`).
 
 **Аутентификация:** обязательна (Bearer token).  
+Public-ticket session tokens are accepted on this route and are scoped by `AuthContext.ticket_scope`; they still pass through `ArtifactService` ticket/artifact visibility checks.
 Доступ к артефакту проверяется по привязке к тикету: пользователь (UI token) может скачать артефакт, привязанный к тикету (тикет должен существовать); агент (agent token) — только к своим артефактам (по device_id). Артефакты без ticket_id в БД доступны только агенту-владельцу, **кроме случая fallback** (см. ниже).
 
 ### Query-параметры
@@ -107,7 +108,7 @@
 - **Content-Type:** соответствует `mime_type` артефакта.
 - **Content-Length:** размер файла.
 - **Accept-Ranges:** bytes (для видео поддерживается Range запрос).
-- **Content-Disposition:** attachment; filename="..." (оригинальное имя).
+- **Content-Disposition:** `attachment; filename="<ascii fallback>"; filename*=UTF-8''<encoded original>`. Unicode names must be exposed through `filename*`; the plain `filename` value is only a safe ASCII fallback.
 
 ### Range (206 Partial Content)
 

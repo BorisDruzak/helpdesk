@@ -3866,7 +3866,7 @@ Status consistency checked: yes
 ### BUG-20260528-P2-03 - Unicode attachment filename is mojibake in Content-Disposition
 
 Severity: P2
-Status: reproduced
+Status: fix-in-progress
 Area: artifact-access / attachment-upload / browser-ui
 
 P2 scenario: P2.2.B / P2.2.E Manual support/browser attachment download and filename safety.
@@ -3897,15 +3897,91 @@ Evidence:
 Impact:
 - Does not leak data and does not block attachment access-control validation, but fails P2 filename preservation/safety expectation for Unicode attachments.
 Root cause hypothesis:
-- Artifact download handler likely sends raw Unicode only in `filename="..."` instead of RFC 5987 `filename*=` with a safe ASCII fallback, causing client/header encoding corruption.
-Root cause confirmed: no; code path not yet inspected after recording evidence.
+- Artifact download handler sends raw Unicode only in `filename="..."` instead of RFC 5987 `filename*=` with a safe ASCII fallback, causing client/header encoding corruption.
+Root cause confirmed: yes. `server/uploads/handlers.py::handle_artifact_download()` used `Content-Disposition: attachment; filename="{artifact.original_name}"` for full and range responses with no ASCII fallback or `filename*`.
 Fix policy:
 - Blocking further P2: no for access-control matrix; yes before final P2.2 filename-safety close unless classified as known limitation.
 - Fixed now: no; continue P2 discovery first.
 
 Fix summary:
+- Added `_content_disposition_attachment()` with sanitized ASCII `filename` fallback and RFC 5987 `filename*=UTF-8''...` original-name encoding.
+- Reused the helper for both full download and range download responses.
 Changed files:
+- `server/uploads/handlers.py`
+- `server/tests/test_upload_handlers.py`
+- `server/docs/ARTIFACTS_API.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
 Tests:
+- `python -m pytest server\tests\test_web_session_api.py server\tests\test_upload_handlers.py -q` -> `18 passed, 15 warnings` (existing aiohttp `NotAppKeyWarning` only).
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `python scripts\verify_workspace.py` -> passed.
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes
+
+### BUG-20260528-P2-04 - Public ticket token cannot download ticket attachment artifacts
+
+Severity: P1
+Status: fix-in-progress
+Area: artifact-access / public-safety / requester-access
+
+P2 scenario: P2.2.D Artifact download access matrix.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- If an artifact is linked to a requester/public-visible ticket message, a valid public-ticket token scoped to that ticket can download the artifact through `/api/artifacts/{artifact_id}/download`.
+- Anonymous/no-token access remains denied.
+- A public token scoped to another ticket remains denied.
+Actual:
+- The browser had a public-ticket session token for `T-000616` in sessionStorage (`length=64`, prefix only recorded).
+- Fetching `/api/artifacts/5101f949-1e3f-4152-8ac0-9d7b6f2a3490/download?ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a` with that public token and no cookies returned HTTP `401`.
+- Anonymous/no-cookie/no-header also returned HTTP `401`, which is correct for the negative case.
+Repro steps:
+1. In the real browser, open support ticket `T-000616` and confirm sessionStorage contains `public_ticket_token:1896f5af-a7e8-4943-87dd-980f7289aa4a` from the earlier public help flow.
+2. From the browser context, fetch the artifact download URL with `credentials: 'omit'` and `Authorization: Bearer <redacted public token>`.
+3. Observe HTTP `401` for the public-token positive case.
+
+Evidence:
+- Transport/API: public-token download probes returned `401` for correct ticket, wrong ticket param and no ticket param; anonymous/no-header returned `401`.
+- Server log: not collected yet; browser console captured four expected failed-resource entries for the 401 probes.
+- Agent A log: not applicable; browser/public artifact path.
+- Agent B log: not applicable.
+- Server DB: artifact row exists and is bound to ticket `1896f5af-a7e8-4943-87dd-980f7289aa4a`.
+- Agent A SQLite: not applicable.
+- Agent B SQLite: not applicable.
+- Browser/UI: real browser URL `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a`; public token evidence recorded only as prefix/length, not raw token.
+- UIA: not applicable.
+- Test artifact: Playwright MCP browser evaluate output in this session; no raw cookies/tokens printed.
+- Run marker: `p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2`.
+
+Impact:
+- Blocks the public-positive branch of P2.2.D artifact download access matrix.
+- Security negative case is safe, but requester/public users cannot download an attachment that the product otherwise exposes through a public-visible ticket message.
+Root cause hypothesis:
+- `server/auth/middleware.py::extract_auth_context()` allows public-ticket tokens only on `/api/tickets*` and `/api/upload`, but not `/api/artifacts/*`, even though `ArtifactService` explicitly supports `AuthType.PUBLIC_TICKET_TOKEN`.
+Root cause confirmed: yes. The middleware route allowlist excluded `/api/artifacts/*`; therefore the token was never verified as `AuthType.PUBLIC_TICKET_TOKEN` before the download handler.
+Fix policy:
+- Blocking further P2: yes for P2.2.D public artifact matrix.
+- Fixed now: yes after this evidence entry.
+
+Fix summary:
+- Added `/api/artifacts/*` to the public-ticket token authentication allowlist.
+- Added a middleware test that verifies `Authorization: Bearer <public ticket token>` reaches artifact download handlers as `AuthType.PUBLIC_TICKET_TOKEN` with the expected `ticket_scope`.
+Changed files:
+- `server/auth/middleware.py`
+- `server/tests/test_web_session_api.py`
+- `server/docs/SECURITY_AND_AUTH.md`
+- `server/docs/ARTIFACTS_API.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+Tests:
+- `python -m pytest server\tests\test_web_session_api.py server\tests\test_upload_handlers.py -q` -> `18 passed, 15 warnings` (existing aiohttp `NotAppKeyWarning` only).
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `python scripts\verify_workspace.py` -> passed.
 Live regression:
 Regression check:
 Remaining risk:

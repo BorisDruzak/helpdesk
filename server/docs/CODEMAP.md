@@ -180,7 +180,7 @@
 | `server/tools/` | handlers, service (каталог инструментов, manifest) |
 | `server/chat/` | handlers, service |
 | `server/jobs/` | handlers |
-| `server/uploads/` | handlers |
+| `server/uploads/` | upload/download handlers for artifacts; download auth accepts web-session, agent and public-ticket tokens before `ArtifactService` visibility checks, and `Content-Disposition` uses safe ASCII `filename` fallback plus RFC 5987 `filename*` for Unicode originals. |
 | `server/auth/` | handlers, admin_users_handlers, connection_request_handlers (запросы на подключение устройств, включая `DEVICE_ARCHIVED`, legacy `TOKEN_LIMIT_EXCEEDED` status/error_code и новый `DEVICE_FINGERPRINT_MISMATCH`), `device_fingerprint.py` (majority-match hardware proof для machine_id), middleware, service, `agent_token_service.py`, `connection_request_service.py`, password_service; legacy `handlers.py` содержит UI login/session endpoints, `middleware.py` дополнительно читает web session cookie `pc_client_web_session` для `/api/web/*`, `/api/notifications*`, admin tech/module/ticket-form bridges, а `service.py` теперь поддерживает config/in-memory fallback для локального UI session flow без PostgreSQL |
 | `server/playbook_handlers.py` | Старт playbook run |
 | `server/static_pages/` | `cutover.py` с operational policy для default-route switch, `handlers.py` для legacy login/admin/support/ticket/public_queue/help shell-файлов и общего `web_shared.js`, плюс `webapp_assets.py` для отдачи built React bundle: `/app/*`, `/assets/*`, `/favicon.svg`; direct route `/favicon.svg` теперь обслуживается тем же public-asset handler без обязательного `match_info`, чтобы browser shell не ловил `500` на favicon при cutover |

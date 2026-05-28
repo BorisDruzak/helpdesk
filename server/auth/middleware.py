@@ -190,6 +190,7 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
         request.path == "/api/tickets"
         or request.path.startswith("/api/tickets/")
         or request.path == "/api/upload"
+        or request.path.startswith("/api/artifacts/")
     )
     if allow_public_ticket_token:
         token_info = await auth_service.verify_ticket_public_session_token(token)
