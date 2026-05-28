@@ -409,6 +409,82 @@ def _record_sync(
     output_path: str,
     stop_event: Optional[object],
 ) -> Dict[str, Any]:
+    raw_result = _record_rawvideo(
+        ffmpeg_path=ffmpeg_path,
+        monitor=monitor,
+        fps=fps,
+        duration_sec=duration_sec,
+        max_width=max_width,
+        quality_crf=quality_crf,
+        size_limit_bytes=size_limit_bytes,
+        output_path=output_path,
+        stop_event=stop_event,
+    )
+    if not raw_result.get("error"):
+        raw_result["encoder_mode"] = "rawvideo_pipe"
+        return raw_result
+
+    if stop_event is not None and getattr(stop_event, "is_set", lambda: False) and stop_event.is_set():
+        return raw_result
+
+    logger.warning("[screen] raw ffmpeg pipe failed, retrying via temp frame sequence: {}", raw_result["error"])
+    fallback_result = _record_frame_sequence(
+        ffmpeg_path=ffmpeg_path,
+        monitor=monitor,
+        fps=fps,
+        duration_sec=duration_sec,
+        max_width=max_width,
+        quality_crf=quality_crf,
+        size_limit_bytes=size_limit_bytes,
+        output_path=output_path,
+        stop_event=stop_event,
+    )
+    if fallback_result.get("error"):
+        fallback_result["error"] = (
+            f"raw ffmpeg failed: {raw_result['error']}; "
+            f"frame-sequence fallback failed: {fallback_result['error']}"
+        )
+        return fallback_result
+    fallback_result["encoder_mode"] = "image_sequence_fallback"
+    fallback_result["raw_error"] = raw_result["error"]
+    return fallback_result
+
+
+def _ffmpeg_stderr_tail(stderr_bytes: Optional[bytes], *, limit: int = 1200) -> str:
+    if not stderr_bytes:
+        return ""
+    text = stderr_bytes.decode("utf-8", errors="replace").strip()
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+def _ffmpeg_error(prefix: str, returncode: Optional[int], stderr_bytes: Optional[bytes]) -> str:
+    stderr_tail = _ffmpeg_stderr_tail(stderr_bytes)
+    message = f"{prefix} (returncode={returncode})"
+    if stderr_tail:
+        message = f"{message}: {stderr_tail}"
+    return message
+
+
+def _scale_filter_args(width: int, max_width: int) -> list[str]:
+    if width <= max_width:
+        return []
+    return ["-vf", f"scale={max_width}:-2"]
+
+
+def _record_rawvideo(
+    *,
+    ffmpeg_path: str,
+    monitor: int,
+    fps: int,
+    duration_sec: int,
+    max_width: int,
+    quality_crf: int,
+    size_limit_bytes: int,
+    output_path: str,
+    stop_event: Optional[object],
+) -> Dict[str, Any]:
     import time as time_mod
 
     max_frames = fps * duration_sec
@@ -418,10 +494,12 @@ def _record_sync(
             mon_idx = 1 if len(sct.monitors) > 1 else 0
         img = sct.grab(sct.monitors[mon_idx])
         w, h = img.width, img.height
-        scale = f"scale={max_width}:-2" if w > max_width else "copy"
         cmd = [
             ffmpeg_path,
             "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -432,8 +510,7 @@ def _record_sync(
             str(fps),
             "-i",
             "pipe:0",
-            "-vf",
-            scale,
+            *_scale_filter_args(w, max_width),
             "-c:v",
             "libx264",
             "-crf",
@@ -444,8 +521,9 @@ def _record_sync(
             "yuv420p",
             output_path,
         ]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         frames_captured = 0
+        pipe_error: Optional[BaseException] = None
         start = time_mod.time()
         try:
             for _ in range(max_frames):
@@ -455,7 +533,8 @@ def _record_sync(
                     img = sct.grab(sct.monitors[mon_idx])
                     proc.stdin.write(img.raw)
                     frames_captured += 1
-                except BrokenPipeError:
+                except (BrokenPipeError, OSError) as exc:
+                    pipe_error = exc
                     break
                 if frames_captured % (fps * 5) == 0 and frames_captured > 0:
                     if os.path.exists(output_path) and os.path.getsize(output_path) >= size_limit_bytes:
@@ -467,7 +546,23 @@ def _record_sync(
             except Exception:
                 pass
             proc.wait(timeout=30)
+            stderr_bytes = proc.stderr.read() if proc.stderr else b""
     duration_actual = time_mod.time() - start
+    if pipe_error is not None or proc.returncode not in (0, None):
+        error = _ffmpeg_error("ffmpeg rawvideo pipe failed", proc.returncode, stderr_bytes)
+        if pipe_error is not None:
+            error = f"{error}; pipe_error={type(pipe_error).__name__}: {pipe_error}"
+        return {
+            "frames_captured": frames_captured,
+            "duration_actual_sec": round(duration_actual, 1),
+            "error": error,
+        }
+    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        return {
+            "frames_captured": frames_captured,
+            "duration_actual_sec": round(duration_actual, 1),
+            "error": "ffmpeg rawvideo pipe produced no video output",
+        }
     if os.path.exists(output_path) and os.path.getsize(output_path) > size_limit_bytes:
         logger.warning(f"[screen] recording exceeded size limit {size_limit_bytes // (1024 * 1024)} MB")
     return {
@@ -475,3 +570,96 @@ def _record_sync(
         "duration_actual_sec": round(duration_actual, 1),
         "error": None,
     }
+
+
+def _record_frame_sequence(
+    *,
+    ffmpeg_path: str,
+    monitor: int,
+    fps: int,
+    duration_sec: int,
+    max_width: int,
+    quality_crf: int,
+    size_limit_bytes: int,
+    output_path: str,
+    stop_event: Optional[object],
+) -> Dict[str, Any]:
+    import time as time_mod
+
+    max_frames = fps * duration_sec
+    frames_dir = Path(output_path).with_suffix("").with_name(f"{Path(output_path).stem}_frames")
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir, ignore_errors=True)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    frames_captured = 0
+    start = time_mod.time()
+    try:
+        with mss.mss() as sct:
+            mon_idx = 0 if monitor <= 0 else monitor
+            if mon_idx >= len(sct.monitors):
+                mon_idx = 1 if len(sct.monitors) > 1 else 0
+            first = sct.grab(sct.monitors[mon_idx])
+            w = first.width
+            for frame_index in range(max_frames):
+                if stop_event is not None and getattr(stop_event, "is_set", lambda: False) and stop_event.is_set():
+                    break
+                img = first if frame_index == 0 else sct.grab(sct.monitors[mon_idx])
+                frame_path = frames_dir / f"frame_{frame_index:06d}.png"
+                mss.tools.to_png(img.rgb, img.size, output=str(frame_path))
+                frames_captured += 1
+                time_mod.sleep(1.0 / fps)
+        if frames_captured == 0:
+            return {
+                "frames_captured": 0,
+                "duration_actual_sec": round(time_mod.time() - start, 1),
+                "error": "no frames captured for frame-sequence encoding",
+            }
+        cmd = [
+            ffmpeg_path,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(frames_dir / "frame_%06d.png"),
+            *_scale_filter_args(w, max_width),
+            "-c:v",
+            "libx264",
+            "-crf",
+            str(quality_crf),
+            "-movflags",
+            "+faststart",
+            "-pix_fmt",
+            "yuv420p",
+            output_path,
+        ]
+        completed = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=max(30, duration_sec + 60),
+        )
+        duration_actual = time_mod.time() - start
+        if completed.returncode != 0:
+            return {
+                "frames_captured": frames_captured,
+                "duration_actual_sec": round(duration_actual, 1),
+                "error": _ffmpeg_error("ffmpeg frame-sequence encode failed", completed.returncode, completed.stderr),
+            }
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            return {
+                "frames_captured": frames_captured,
+                "duration_actual_sec": round(duration_actual, 1),
+                "error": "ffmpeg frame-sequence encode produced no video output",
+            }
+        if os.path.getsize(output_path) > size_limit_bytes:
+            logger.warning(f"[screen] recording exceeded size limit {size_limit_bytes // (1024 * 1024)} MB")
+        return {
+            "frames_captured": frames_captured,
+            "duration_actual_sec": round(duration_actual, 1),
+            "error": None,
+        }
+    finally:
+        shutil.rmtree(frames_dir, ignore_errors=True)

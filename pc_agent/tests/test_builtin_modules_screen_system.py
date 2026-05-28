@@ -1,4 +1,5 @@
 import sys
+import io
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -29,6 +30,26 @@ class _FakeMss:
 
     def grab(self, region):
         return _FakeGrab(region["width"], region["height"])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeShot:
+    def __init__(self, width: int = 64, height: int = 48):
+        self.width = width
+        self.height = height
+        self.raw = b"\x00" * (width * height * 4)
+        self.rgb = b"\x00" * (width * height * 3)
+        self.size = (width, height)
+
+
+class _FakeRecordingMss(_FakeMss):
+    def grab(self, region):
+        return _FakeShot(region["width"], region["height"])
 
 
 @pytest.mark.asyncio
@@ -91,3 +112,102 @@ async def test_system_collect_uses_presets_and_overrides(monkeypatch):
     assert result["ip"] == "10.0.0.5"
     assert result["sections"]["cpu"]["percent"] == 12.5
     assert result["sections"]["boot_time"]["epoch"] == 1234567890.0
+
+
+@pytest.mark.no_db
+def test_screen_record_falls_back_to_frame_sequence_when_raw_pipe_crashes(monkeypatch, tmp_path):
+    class _FailingStdin:
+        def write(self, data):
+            raise OSError(22, "Invalid argument")
+
+        def close(self):
+            pass
+
+    class _FailingPopen:
+        def __init__(self, *args, **kwargs):
+            self.stdin = _FailingStdin()
+            self.stderr = io.BytesIO(b"raw pipe crashed")
+            self.returncode = 3221225794
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    run_calls = []
+
+    def _fake_run(cmd, stdout=None, stderr=None, timeout=None):
+        run_calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"mp4")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(screen_module.mss, "mss", lambda: _FakeRecordingMss())
+    monkeypatch.setattr(screen_module.mss.tools, "to_png", lambda rgb, size, output: Path(output).write_bytes(b"png"))
+    monkeypatch.setattr(screen_module.subprocess, "Popen", _FailingPopen)
+    monkeypatch.setattr(screen_module.subprocess, "run", _fake_run)
+    monkeypatch.setattr(screen_module.time, "sleep", lambda seconds: None)
+
+    output_path = tmp_path / "recording.mp4"
+    result = screen_module._record_sync(
+        "ffmpeg",
+        monitor=1,
+        fps=5,
+        duration_sec=1,
+        max_width=640,
+        quality_crf=28,
+        size_limit_bytes=screen_module.SIZE_LIMIT_BYTES,
+        output_path=str(output_path),
+        stop_event=None,
+    )
+
+    assert result["error"] is None
+    assert result["frames_captured"] == 5
+    assert result["encoder_mode"] == "image_sequence_fallback"
+    assert result["raw_error"]
+    assert output_path.read_bytes() == b"mp4"
+    assert run_calls
+    assert "-framerate" in run_calls[0]
+    assert not any(path.name.endswith("_frames") for path in tmp_path.iterdir())
+
+
+@pytest.mark.no_db
+def test_screen_record_reports_ffmpeg_stderr_when_raw_and_fallback_fail(monkeypatch, tmp_path):
+    class _FailingStdin:
+        def write(self, data):
+            raise OSError(22, "Invalid argument")
+
+        def close(self):
+            pass
+
+    class _FailingPopen:
+        def __init__(self, *args, **kwargs):
+            self.stdin = _FailingStdin()
+            self.stderr = io.BytesIO(b"raw pipe crashed")
+            self.returncode = 3221225794
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    def _fake_run(cmd, stdout=None, stderr=None, timeout=None):
+        return SimpleNamespace(returncode=1, stderr=b"fallback encoder failed")
+
+    monkeypatch.setattr(screen_module.mss, "mss", lambda: _FakeRecordingMss())
+    monkeypatch.setattr(screen_module.mss.tools, "to_png", lambda rgb, size, output: Path(output).write_bytes(b"png"))
+    monkeypatch.setattr(screen_module.subprocess, "Popen", _FailingPopen)
+    monkeypatch.setattr(screen_module.subprocess, "run", _fake_run)
+    monkeypatch.setattr(screen_module.time, "sleep", lambda seconds: None)
+
+    result = screen_module._record_sync(
+        "ffmpeg",
+        monitor=1,
+        fps=5,
+        duration_sec=1,
+        max_width=640,
+        quality_crf=28,
+        size_limit_bytes=screen_module.SIZE_LIMIT_BYTES,
+        output_path=str(tmp_path / "recording.mp4"),
+        stop_event=None,
+    )
+
+    assert result["error"]
+    assert "raw ffmpeg failed" in result["error"]
+    assert "raw pipe crashed" in result["error"]
+    assert "fallback encoder failed" in result["error"]

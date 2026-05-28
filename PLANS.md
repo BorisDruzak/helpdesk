@@ -4074,7 +4074,7 @@ Evidence:
 ### BUG-20260528-P2-05 - `screen.record` fails before producing video artifact
 
 Severity: P2
-Status: reproduced
+Status: verified-fixed
 Area: artifact-access / module-runtime / operation lifecycle / browser-ui
 
 P2 scenario: P2.2.C Tool-generated artifacts - duration/video artifact variant.
@@ -4085,6 +4085,8 @@ Actual:
 - Local GUI automation bridge accepted the `screen.record` command, but Agent A failed the tool locally with `[Errno 22] Invalid argument` before any artifact was uploaded.
 - Server operation became terminal `failed`, device_outbox was delivered, and no artifact row was created for the operation.
 - Browser support timeline shows `screen.record` result status `error` and the same invalid-argument failure.
+- Clean rerun through `ticket.tool.run` reproduced the same failure for operation `9886552c-64ca-4745-998d-cf8153fe6495` with explicit params `duration_sec=5,fps=15,max_width=1920` and marker `p2-20260528-0925-cef033e7-screen-record-rerun`.
+- Low-resolution rerun through the same live product path also failed for operation `bc43b0bf-6dce-4de5-a761-265f31ad8761` with `duration_sec=5,fps=5,max_width=640`, so the bug is not just large-frame pressure.
 Repro steps:
 1. Use clean P2 ticket `T-000619` / `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`.
 2. Run `python scripts\agent_test_driver.py capture-video live-v3-p1-clean2 --ticket-id eadd3b88-70b2-444e-a8cb-efad7484f852 --duration-sec 5`.
@@ -4092,34 +4094,54 @@ Repro steps:
 
 Evidence:
 - Transport/API: local GUI automation bridge returned `status=ok`, accepted operation `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5`, tool `screen.record`, trace `3e2167c3-23d8-4469-876c-da949ffa488e`.
-- Server log: not collected yet.
-- Agent A log: not collected yet; Agent A SQLite contains local ToolResponse error with `TOOL_EXEC_FAILED` and `exc_message="[Errno 22] Invalid argument"`.
+- Server log: terminal `command_result` persisted for operation `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5`; no artifact upload request existed for that operation because the agent failed before producing `_artifacts`.
+- Agent A log: traceback reaches `pc_agent/modules/impl/screen.py::_record_sync`, line writing `proc.stdin.write(img.raw)` to the ffmpeg rawvideo pipe. The `Popen` object already had `returncode=3221225794`, and stderr was discarded by the current implementation. Reproduced again for `9886552c-64ca-4745-998d-cf8153fe6495` and `bc43b0bf-6dce-4de5-a761-265f31ad8761`.
 - Agent B log: not applicable.
 - Server DB: operation `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5` is `status=failed`, `error_code=TOOL_EXEC_FAILED`, `error_message=Ошибка выполнения инструмента "screen.record": [Errno 22] Invalid argument`; `device_outbox.id=148` is `delivered`; ticket events `309 tool_call_started` and `311 tool_call_result`; artifact count for the operation is `0`.
 - Agent A SQLite: `seen_commands.command_id=a5aeddba-7f7f-4124-ab1a-628d5e3b38c5` has `status=error`; local `outbox=[]`; sent history has the error `tool_response`; `pending_consents_count=0`.
 - Agent B SQLite: not applicable.
 - Browser/UI: real support browser URL `https://192.168.100.17:9443/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852` shows `screen.record`, status `error`, and `Tool screen.record failed: Ошибка выполнения инструмента "screen.record": [Errno 22] Invalid argument`. Screenshot `p2-20260528-screen-record-failed-T-000619.png`; console/network artifacts `p2-20260528-screen-record-failed-console-errors.json`, `p2-20260528-screen-record-failed-network.json`.
 - UIA: not applicable for the tool runtime; local GUI automation bridge is the trigger surface and browser is the projection surface.
-- Test artifact: DB/SQLite command output from this run; no raw tokens/cookies/session tokens printed.
+- Test artifact: DB/SQLite command output from this run; standalone `_record_sync()` with the same ffmpeg binary and params `duration_sec=5,fps=15,max_width=1920` succeeded outside the live agent process (`75` frames, mp4 file created). A qasync/PySide local `_record_sync()` check also succeeded, isolating the defect to the live recorder child-process/raw-pipe path rather than basic screen/ffmpeg availability. No raw tokens/cookies/session tokens printed.
 - Run marker: `p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded`.
 
 Impact:
 - Blocks the `screen.record`/video branch of P2.2.C and any P2.2 artifact-size/duration conclusion for video artifacts.
 - Does not block P2.2 screenshot artifact access-control evidence because `screen.collect` passed cleanly after the operation-bound upload fix.
 Root cause hypothesis:
-- Agent-side `screen.record` recorder path is passing an invalid ffmpeg/capture argument or invalid output path/stream option in this Windows runtime.
-Root cause confirmed: no.
+- The Windows live-agent recorder uses a rawvideo stdin pipe to ffmpeg, but the ffmpeg child exits/crashes before accepting the first frame in the long-running GUI agent runtime. The current code discards stderr and treats the pipe write as a generic `OSError`, with no fallback encoder path.
+Root cause confirmed:
+- Primary layer: module-runtime.
+- Secondary layers: operation lifecycle / browser-ui projection.
+- Confirmed by two live product-path failures before artifact creation (`a5aeddba-7f7f-4124-ab1a-628d5e3b38c5`, `9886552c-64ca-4745-998d-cf8153fe6495`) and one low-res live failure (`bc43b0bf-6dce-4de5-a761-265f31ad8761`), all failing at `proc.stdin.write(img.raw)` after ffmpeg had exited, while standalone and qasync/PySide local `_record_sync()` checks with the same ffmpeg binary succeeded.
 Fix policy:
 - Blocking further P2: no for public/requester safety, screenshot artifact access, or two-agent isolation; yes for closing the video-artifact branch.
-- Fixed now: no, defer until the remaining discovery pass unless later P2 evidence requires video artifacts specifically.
+- Fixed now: yes, because P2.2 requires a video/duration artifact branch or a formal product limitation, and the root cause is isolated to the recorder implementation.
 
 Fix summary:
+- Added ffmpeg rawvideo pipe diagnostics and stderr capture.
+- Added a temp PNG frame-sequence fallback when the raw pipe exits before accepting frames.
+- The fallback cleans its temp frame directory and preserves the normal ToolResponse artifact contract.
 Changed files:
+- `pc_agent/modules/impl/screen.py`
+- `pc_agent/tests/test_builtin_modules_screen_system.py`
 Tests:
+- RED: `python -m pytest pc_agent\tests\test_builtin_modules_screen_system.py::test_screen_record_falls_back_to_frame_sequence_when_raw_pipe_crashes pc_agent\tests\test_builtin_modules_screen_system.py::test_screen_record_reports_ffmpeg_stderr_when_raw_and_fallback_fail -q` -> failed with raw `OSError` escaping `_record_sync`.
+- GREEN: same targeted tests -> `2 passed`.
+- `python -m pytest pc_agent\tests\test_builtin_modules_screen_system.py -q` -> `4 passed`.
+- `python -m py_compile pc_agent\modules\impl\screen.py pc_agent\tests\test_builtin_modules_screen_system.py` -> pass.
 Live regression:
+- Restarted local source agent `live-v3-p1-clean2` and reran local GUI automation bridge `ticket.tool.run` on `T-000619`, operation `75c6c329-9228-47f0-b516-85339c788bc5`, marker `p2-20260528-0925-cef033e7-screen-record-fixed`, params `duration_sec=5,fps=5,max_width=640`.
+- Transport/API: automation bridge returned accepted operation `75c6c329-9228-47f0-b516-85339c788bc5`.
+- Server DB: operation `75c6c329-9228-47f0-b516-85339c788bc5` is `succeeded`; ticket events `334 tool_call_started` and `336 tool_call_result`; artifact `16da7839-50c2-4293-a2ad-18533fb40e1c`, `kind=screen_recording`, `mime_type=video/mp4`, `size_bytes=11649`.
+- Agent A SQLite: `seen_commands.command_id=75c6c329-9228-47f0-b516-85339c788bc5` is `success`; local `outbox=[]`; result contains one `screen_recording` artifact and no errors.
+- Agent A log/action trace: `record.capture` finished `ok`, `record.summary` shows `frames_captured=25`, output mp4 path, and module execution completed with `artifact_count=1`.
+- Browser/UI: real support browser `https://192.168.100.17:9443/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852` shows the fixed `screen.record` result as `Успешно`, output `frames_captured=25`, `duration_sec=6.8`, `file_size_bytes=11649`, and `1 влож.`. Screenshot `p2-20260528-screen-record-fixed-T-000619.png`.
 Regression check:
+- Existing `screen.collect` artifact path remains green from P2.2.C.
+- The local source agent reconnected cleanly after restart and had no failed local outbox rows for the fixed operation.
 Remaining risk:
-- P2.2 cannot be fully closed until this is fixed or formally reclassified as a known runtime limitation with an alternate safe video artifact fixture.
+- The packaged `pc_agent/modules_packages/screen/module.py` still contains the legacy raw-pipe implementation and mojibake text; this P2 live path used the builtin module `pc_agent.modules.impl.screen`. A follow-up should sync the packaged screen module in a dedicated module-package cleanup, without mixing it into P2 close evidence.
 Status consistency checked: yes
 
 ### P2.3.A/B/C Two-agent baseline and positive routing evidence
@@ -4144,7 +4166,7 @@ Evidence:
 ### BUG-20260528-P2-06 - Legacy direct run_tool accepts cross-device ticket context
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: two-agent / operation lifecycle / server-db / agent-sqlite / protocol
 
 P2 scenario: P2.3.C Tool routing isolation - negative cross-device direct API.
@@ -4198,12 +4220,117 @@ Tests:
 - GREEN: `python -m pytest server/tests/test_tools_async_response_contract.py server/tests/test_tools_run_device_binding.py -q` -> `10 passed`.
 - Compile: `python -m py_compile server\tools\handlers.py server\tests\test_tools_run_device_binding.py server\tests\test_tools_async_response_contract.py` -> pass.
 Live regression:
-- Pending deploy and clean rerun against real Agent A/B.
+- Deployed commit `c3defc8fa44788cffc726be49bf6aa80cd06a694` with `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; `/api/health` recovered to 200 on smoke attempt 2.
+- Post-fix marker: `p2-20260528-0925-cef033e7-cross-device-fixed-c3defc8f`.
+- Direct HTTP/API: repeated legacy `POST /api/tools/run` with Agent A ticket `eadd3b88-70b2-444e-a8cb-efad7484f852` and Agent B device `b08675eb-780c-5042-b442-daa1cd066643`; response was HTTP `403`, `error_code=DEVICE_MISMATCH`, `bound_device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`. Only UI token prefix/length was printed.
+- Server DB: `operations_with_marker=[]`, `ticket_events_with_marker=[]`, `device_outbox_with_marker=[]`; the only `operations` row for Agent A ticket + Agent B device remains the labeled pre-fix contamination `c451c19b-a032-467f-9d06-10b0e84e8b0d`.
+- Agent SQLite: Agent A and Agent B `seen_commands`, `outbox`, and `outbox_sent_history` have no rows containing post-fix marker.
+- Browser/UI: real support browser `https://192.168.100.17:9443/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852` shows no new post-fix `system.collect` event; screenshot `p2-20260528-cross-device-fixed-no-new-event-T-000619.png`. The 11:33 `system.collect` entries are old pre-fix contamination from operation `c451c19b-a032-467f-9d06-10b0e84e8b0d`.
 Regression check:
-- Pending.
+- Positive Agent B route remains covered by earlier clean P2.3 evidence: browser/web-support `system.collect` on `T-000620` reached Agent B only and succeeded; P2 clean rerun must repeat the positive path after all remaining P2 fixes/classifications.
 Remaining risk:
 - Pre-fix contamination remains on Agent B local SQLite `outbox_id=3` and Agent A ticket `T-000619` events `323/324`; future P2 checks must filter by post-fix marker.
 Status consistency checked: yes
+
+## P2 findings summary - 2026-05-28 - run_id=p2-20260528-0925-cef033e7
+
+| Bug | Severity | Area | Blocking P2 | Fix now | Status |
+|---|---|---|---|---|---|
+| BUG-20260528-P2-01 | P1 | public-safety / requester-access / UI projection | yes | yes | verified-fixed |
+| BUG-20260528-P2-02 | P1 | attachment-upload / browser-ui / account-session | yes | yes | verified-fixed |
+| BUG-20260528-P2-03 | P2 | attachment-upload / filename-safety | yes for filename-safety close | yes | verified-fixed |
+| BUG-20260528-P2-04 | P1 | artifact-access / public-requester access | yes | yes | verified-fixed |
+| BUG-20260528-P2-05 | P2 | module-runtime / artifact-access | yes for video artifact branch | yes | verified-fixed |
+| BUG-20260528-P2-06 | P1 | two-agent / operation lifecycle / server-db | yes | yes | verified-fixed |
+
+## P2.1.C / P2.3 account and device isolation clean close - 2026-05-28
+
+Status: passed for the clean P2 Agent A/B matrix.
+Run id: `p2-20260528-0925-cef033e7`
+
+Setup:
+- Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, existing confirmed account session, clean ticket `T-000619`.
+- Agent B: `live-v3-p2-agent-b`, device `b08675eb-780c-5042-b442-daa1cd066643`, separate local data root/SQLite/UI port `8766`.
+- Created Agent B confirmed-binding account session through server `RegistrationService` + `AccountSessionService`; no raw session token was printed. Evidence recorded only `person_id=29307b0c-c3c9-4547-93a0-9cf140aae650`, `binding_id=e5973c2c-a5b7-4315-8659-0227fb369172`, `session_id=88f4cd07-e9ce-41ae-9551-4b4ea4d3ef45`, `token_len=43`.
+
+Evidence:
+- Agent B create path: `python scripts\agent_test_driver.py create-ticket live-v3-p2-agent-b ...` created clean ticket `T-000621`, `ticket_id=4ef67d9a-7de2-40c2-b9b8-c5927998a29b`, `device_id=b08675eb-780c-5042-b442-daa1cd066643`, `requester_person_id=29307b0c-c3c9-4547-93a0-9cf140aae650`, `requester_binding_id=e5973c2c-a5b7-4315-8659-0227fb369172`, `requester_account_session_id=88f4cd07-e9ce-41ae-9551-4b4ea4d3ef45`, `requester_account_mode=confirmed_binding`.
+- Positive requester reads: Agent B `snapshot-ticket` for `T-000621` succeeded; Agent A `snapshot-ticket` for `T-000619` succeeded.
+- Cross-account denials: Agent B `snapshot-ticket` and `send-message` against Agent A ticket `T-000619` both returned HTTP 403 `ACCOUNT_ACCESS_DENIED`; Agent A `snapshot-ticket` and `send-message` against Agent B ticket `T-000621` both returned HTTP 403 `ACCOUNT_ACCESS_DENIED`.
+- Browser/UI: support browser `https://192.168.100.17:9443/app/tickets/4ef67d9a-7de2-40c2-b9b8-c5927998a29b` shows `T-000621`, requester `P2 Account B`, status `В очереди`, and the clean run marker. Screenshot `p2-20260528-account-b-ticket-T-000621.png`.
+- Two-agent routing: positive Agent B `system.collect` on earlier clean `T-000620` succeeded and targeted only device `b08675eb-780c-5042-b442-daa1cd066643`; post-fix negative direct cross-device `/api/tools/run` now returns HTTP 403 `DEVICE_MISMATCH` and creates no new operation/device_outbox/ticket_event rows for the post-fix marker.
+
+Result:
+- P2.1.C requester account matrix is green for same-account positive reads/create and cross-account read/message denials.
+- P2.3.A/B/C two-agent baseline, ticket visibility and tool-routing isolation are green for the available two local agents.
+
+## P2 close summary - 2026-05-28 - run_id=p2-20260528-0925-cef033e7
+
+Status: P2 closed.
+
+Code head:
+- Pre-P2 close code head before P2-05 local fix: `c3defc8fa44788cffc726be49bf6aa80cd06a694`.
+- P2-05 local fix is included in the final P2 close checkpoint commit; final response records the pushed SHA.
+
+Server URL: `https://192.168.100.17:9443`
+Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`
+Agent B: `live-v3-p2-agent-b`, device `b08675eb-780c-5042-b442-daa1cd066643`
+Clean tickets:
+- `T-000619` / `eadd3b88-70b2-444e-a8cb-efad7484f852` - artifact/tool-generated evidence and Agent A account.
+- `T-000621` / `4ef67d9a-7de2-40c2-b9b8-c5927998a29b` - Account B requester matrix.
+Attachment/artifact ids:
+- `16da7839-50c2-4293-a2ad-18533fb40e1c` - fixed `screen.record` mp4 artifact, `video/mp4`, `11649` bytes.
+
+Old contamination ignored:
+- P0 phantom rows and P1 pre-fix stale rows listed in earlier sections.
+- P2 pre-fix `screen.record` failed operations `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5`, `9886552c-64ca-4745-998d-cf8153fe6495`, `bc43b0bf-6dce-4de5-a761-265f31ad8761`.
+- P2 pre-fix cross-device contamination operation `c451c19b-a032-467f-9d06-10b0e84e8b0d`, Agent B local failed outbox row from that pre-fix command.
+
+P2.1 result: passed after `BUG-20260528-P2-01` fix and clean Account A/B matrix; no unauthorized requester cross-account read/message remained in the clean matrix.
+P2.2 result: passed after `BUG-20260528-P2-02/03/04/05` fixes; browser support upload/download, filename safety, public artifact positive branch, `screen.collect`, and fixed `screen.record` mp4 artifact have DB/SQLite/browser evidence.
+P2.3 result: passed for two local agents A/B; distinct device ids, separate SQLite roots, positive Agent B tool route, and post-fix cross-device negative route evidence recorded.
+
+Bugs found:
+- `BUG-20260528-P2-01`
+- `BUG-20260528-P2-02`
+- `BUG-20260528-P2-03`
+- `BUG-20260528-P2-04`
+- `BUG-20260528-P2-05`
+- `BUG-20260528-P2-06`
+
+Verified fixed:
+- `BUG-20260528-P2-01`
+- `BUG-20260528-P2-02`
+- `BUG-20260528-P2-03`
+- `BUG-20260528-P2-04`
+- `BUG-20260528-P2-05`
+- `BUG-20260528-P2-06`
+
+Security/access-control result: no open P2 unauthorized public/requester artifact or ticket access leak remains after fixes and clean negative tests.
+Artifact access result: operation-bound screenshots and fixed video artifact persist with metadata and browser projection; wrong-account requester ticket access is denied.
+Two-agent isolation result: support can see both tickets, Agent A/B requester views are isolated, and cross-device direct tool dispatch is denied before persistence/dispatch.
+Browser/UI evidence:
+- `p2-20260528-screen-record-fixed-T-000619.png`
+- `p2-20260528-account-b-ticket-T-000621.png`
+- Browser final admin inventory: `https://192.168.100.17:9443/app/admin/inventory?device=b08675eb-780c-5042-b442-daa1cd066643` showed both P2 devices online (`b08675eb...6643`, `2447d396...56da`) and online count `2`; screenshot `p2-20260528-0925-cef033e7-admin-inventory-final.png`.
+- Earlier P2 browser screenshots for public queue/tickets and artifact upload/download are retained above.
+UIA evidence:
+- P2 baseline UIA semantic state probe passed for Agent A; final probe `artifacts/p2-20260528-0925-cef033e7-final-uia-state-depth10.json` used `pywinauto=0.6.9`, `backend=uia`, window `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`, `connection_state=connected`, `account_exists=true`, `account_mode=confirmed_binding`, `ticket_count=6`, no failures. Agent B GUI status was verified through local automation bridge and browser/admin inventory.
+DB/SQLite evidence:
+- Server DB rows for fixed video operation `75c6c329-9228-47f0-b516-85339c788bc5`; Agent A SQLite `seen_commands` success and empty local outbox.
+- Server DB rows for Agent B ticket `T-000621`; cross-account automation denials returned `ACCOUNT_ACCESS_DENIED`.
+- Final stale-state check: server `device_outbox` query for active statuses with `p2-20260528-0925-cef033e7` marker returned `[]`; recent marked outbox rows were delivered. Agent A/B SQLite marker query returned `outbox_rows_with_marker=[]` and `seen_commands_with_marker=[]` for the final fixed markers.
+
+Final code/live gates:
+- `python scripts\verify_workspace.py` - passed.
+- `python -m compileall -q server pc_agent scripts` - passed.
+- `python -m pytest pc_agent\tests\test_builtin_modules_screen_system.py server\tests\test_tools_async_response_contract.py server\tests\test_tools_run_device_binding.py -q` - `14 passed`.
+- `git diff --check` - passed with CRLF warnings only.
+- `/api/health` on `https://192.168.100.17:9443` returned HTTP 200 `{"status": "ok", "deploy_check": "verified", "run": "2025-03-17"}`.
+- `python scripts\agent_test_driver.py status live-v3-p1-clean2` - connected, `active_ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`, `ticket_count=6`.
+- `python scripts\agent_test_driver.py status live-v3-p2-agent-b` - connected, `active_ticket_id=4ef67d9a-7de2-40c2-b9b8-c5927998a29b`, `ticket_count=1`.
+
+P3 readiness: ready.
 
 Bug template for this P2 run:
 
