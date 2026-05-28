@@ -10,6 +10,14 @@ from tools.handlers import handle_tools_run
 from tests.test_helpers import TEST_ECHO_TOOL
 
 
+@pytest.fixture(autouse=True)
+def allow_ticket_device_match(monkeypatch):
+    async def _allow_ticket_device_match(**_kwargs):
+        return None
+
+    monkeypatch.setattr("tools.handlers._require_ticket_device_match", _allow_ticket_device_match)
+
+
 @pytest.fixture
 async def test_client_no_db():
     @web.middleware
@@ -115,6 +123,49 @@ async def test_tools_run_rejects_agent_token_for_different_device_context(monkey
     assert response.status == 403
     assert payload["status"] == "error"
     assert payload["error_code"] == "DEVICE_CONTEXT_MISMATCH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_tools_run_rejects_ticket_device_mismatch_before_dispatch(test_client_no_db, monkeypatch):
+    async def _fake_ticket_device_guard(**_kwargs):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Ticket is bound to a different device",
+                "error_code": "DEVICE_MISMATCH",
+            },
+            status=403,
+        )
+
+    async def _fake_get_tools_list(self, _device_id):
+        return []
+
+    async def _fake_get_tools_from_server(self, _device_id):
+        return []
+
+    async def _unexpected_run_tool(self, **_kwargs):
+        pytest.fail("ticket/device mismatch reached run_tool dispatch")
+
+    monkeypatch.setattr("tools.handlers._require_ticket_device_match", _fake_ticket_device_guard, raising=False)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.run_tool", _unexpected_run_tool)
+
+    response = await test_client_no_db.post(
+        "/api/tools/run",
+        json={
+            "device_id": "device-b",
+            "ticket_id": "ticket-owned-by-device-a",
+            "tool_name": TEST_ECHO_TOOL,
+            "params": {"marker": "ticket-device-mismatch"},
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 403
+    assert payload["status"] == "error"
+    assert payload["error_code"] == "DEVICE_MISMATCH"
 
 
 @pytest.mark.asyncio

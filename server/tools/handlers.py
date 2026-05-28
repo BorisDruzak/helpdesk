@@ -63,6 +63,49 @@ async def _require_agent_tool_account_access(
     return None
 
 
+async def _require_ticket_device_match(
+    *,
+    ticket_id: str,
+    device_id: str,
+) -> web.Response | None:
+    from app.db import get_session
+    from app.repos.ticket_events_repo import TicketEventsRepo
+
+    async with get_session() as session:
+        ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
+        if not ticket:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Ticket not found",
+                    "error_code": "UNKNOWN_TICKET",
+                    "ticket_id": ticket_id,
+                    "device_id": device_id,
+                },
+                status=404,
+            )
+
+        bound_device_id = str(getattr(ticket, "device_id", "") or "").strip()
+        if bound_device_id != device_id:
+            logger.warning(
+                "[handle_tools_run] Ticket/device mismatch rejected before dispatch: "
+                f"ticket_id={ticket_id!r} bound_device_id={bound_device_id!r} target_device_id={device_id!r}"
+            )
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Ticket is bound to a different device",
+                    "error_code": "DEVICE_MISMATCH",
+                    "ticket_id": ticket_id,
+                    "device_id": device_id,
+                    "bound_device_id": bound_device_id,
+                },
+                status=403,
+            )
+
+    return None
+
+
 def _tool_error_status_code(result: dict) -> int:
     error_code = str(result.get("error_code") or "").strip().upper()
     if error_code == "WS_COMMAND_QUEUE_FULL":
@@ -227,6 +270,13 @@ async def handle_tools_run(request):
                 "error": "Agent token is not allowed for this device context",
                 "error_code": "DEVICE_CONTEXT_MISMATCH",
             }, status=403)
+
+        ticket_device_error = await _require_ticket_device_match(
+            ticket_id=ticket_id,
+            device_id=device_id,
+        )
+        if ticket_device_error is not None:
+            return ticket_device_error
 
         if auth_context.actor_role == "agent":
             access_error = await _require_agent_tool_account_access(

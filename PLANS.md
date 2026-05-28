@@ -4071,6 +4071,140 @@ Evidence:
 - Browser download: HTTP `200`, `content-type=image/png`, `bytes=740258`, `Content-Disposition` includes safe fallback and `filename*`.
 - Pre-fix comparison: clean `T-000618` reproduced HTTP 403 upload and `status=partial`; clean `T-000619` after commit `7bb28ded` persisted the artifact and no longer hit the partial path.
 
+### BUG-20260528-P2-05 - `screen.record` fails before producing video artifact
+
+Severity: P2
+Status: reproduced
+Area: artifact-access / module-runtime / operation lifecycle / browser-ui
+
+P2 scenario: P2.2.C Tool-generated artifacts - duration/video artifact variant.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- `screen.record` with a short safe duration should execute on Agent A, upload a video artifact, persist artifact metadata, mark the operation terminal success or partial with explicit artifact warning, and show the artifact in the support browser timeline.
+Actual:
+- Local GUI automation bridge accepted the `screen.record` command, but Agent A failed the tool locally with `[Errno 22] Invalid argument` before any artifact was uploaded.
+- Server operation became terminal `failed`, device_outbox was delivered, and no artifact row was created for the operation.
+- Browser support timeline shows `screen.record` result status `error` and the same invalid-argument failure.
+Repro steps:
+1. Use clean P2 ticket `T-000619` / `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`.
+2. Run `python scripts\agent_test_driver.py capture-video live-v3-p1-clean2 --ticket-id eadd3b88-70b2-444e-a8cb-efad7484f852 --duration-sec 5`.
+3. Wait for Agent A to finish and query DB/SQLite/browser by operation id.
+
+Evidence:
+- Transport/API: local GUI automation bridge returned `status=ok`, accepted operation `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5`, tool `screen.record`, trace `3e2167c3-23d8-4469-876c-da949ffa488e`.
+- Server log: not collected yet.
+- Agent A log: not collected yet; Agent A SQLite contains local ToolResponse error with `TOOL_EXEC_FAILED` and `exc_message="[Errno 22] Invalid argument"`.
+- Agent B log: not applicable.
+- Server DB: operation `a5aeddba-7f7f-4124-ab1a-628d5e3b38c5` is `status=failed`, `error_code=TOOL_EXEC_FAILED`, `error_message=Ошибка выполнения инструмента "screen.record": [Errno 22] Invalid argument`; `device_outbox.id=148` is `delivered`; ticket events `309 tool_call_started` and `311 tool_call_result`; artifact count for the operation is `0`.
+- Agent A SQLite: `seen_commands.command_id=a5aeddba-7f7f-4124-ab1a-628d5e3b38c5` has `status=error`; local `outbox=[]`; sent history has the error `tool_response`; `pending_consents_count=0`.
+- Agent B SQLite: not applicable.
+- Browser/UI: real support browser URL `https://192.168.100.17:9443/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852` shows `screen.record`, status `error`, and `Tool screen.record failed: Ошибка выполнения инструмента "screen.record": [Errno 22] Invalid argument`. Screenshot `p2-20260528-screen-record-failed-T-000619.png`; console/network artifacts `p2-20260528-screen-record-failed-console-errors.json`, `p2-20260528-screen-record-failed-network.json`.
+- UIA: not applicable for the tool runtime; local GUI automation bridge is the trigger surface and browser is the projection surface.
+- Test artifact: DB/SQLite command output from this run; no raw tokens/cookies/session tokens printed.
+- Run marker: `p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded`.
+
+Impact:
+- Blocks the `screen.record`/video branch of P2.2.C and any P2.2 artifact-size/duration conclusion for video artifacts.
+- Does not block P2.2 screenshot artifact access-control evidence because `screen.collect` passed cleanly after the operation-bound upload fix.
+Root cause hypothesis:
+- Agent-side `screen.record` recorder path is passing an invalid ffmpeg/capture argument or invalid output path/stream option in this Windows runtime.
+Root cause confirmed: no.
+Fix policy:
+- Blocking further P2: no for public/requester safety, screenshot artifact access, or two-agent isolation; yes for closing the video-artifact branch.
+- Fixed now: no, defer until the remaining discovery pass unless later P2 evidence requires video artifacts specifically.
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+- P2.2 cannot be fully closed until this is fixed or formally reclassified as a known runtime limitation with an alternate safe video artifact fixture.
+Status consistency checked: yes
+
+### P2.3.A/B/C Two-agent baseline and positive routing evidence
+
+Status: partial pass; negative cross-device direct API recorded separately as `BUG-20260528-P2-06`.
+Run id: `p2-20260528-0925-cef033e7`
+
+Setup:
+- Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, UI bridge port `8765`, requester/account session active.
+- Agent B: `live-v3-p2-agent-b`, device `b08675eb-780c-5042-b442-daa1cd066643`, UI bridge port `8766`, separate data dir/SQLite, no active requester account session.
+- Agent B token was issued through remote `AuthService.generate_agent_token()` with only token prefix logged by the server; raw token was not printed or stored in `PLANS.md`.
+
+Evidence:
+- Agent B bridge status: `connection_state=connected`, `has_active_profile=false`, `ticket_count=0`, separate instance `live-v3-p2-agent-b`.
+- Server DB devices: Agent A and Agent B have distinct `device_id`, same hostname `ADMIN-2`, agent version `3.1.61`, distinct `last_handshake_at`; browser admin inventory shows both online. Screenshot `p2-20260528-two-agent-baseline-admin-inventory.png`.
+- Clean Agent B ticket: `T-000620`, `ticket_id=5fbda42d-c9c3-4915-b55a-b62996102f9d`, `device_id=b08675eb-780c-5042-b442-daa1cd066643`, marker `p2-20260528-0925-cef033e7-agent-b-ticket`.
+- Browser/web-support route `POST /api/web/support/tickets/{ticket_id}/tools/run` on `T-000620` accepted `system.collect` operation `c586c7c4-682d-419e-bef9-b1a07214c05d`.
+- Server DB: operation `c586c7c4-682d-419e-bef9-b1a07214c05d` is `succeeded`, `device_id=b08675eb-780c-5042-b442-daa1cd066643`, `ticket_id=5fbda42d-c9c3-4915-b55a-b62996102f9d`; `device_outbox.id=150` targets Agent B and is `delivered`; ticket events `319 tool_call_started` and `320 tool_call_result`.
+- Agent SQLite: Agent B `seen_commands` has command `c586c7c4-682d-419e-bef9-b1a07214c05d` with `status=success`; Agent A has no `seen_commands` row for that operation.
+- Browser/UI: real support browser ticket `T-000620` shows `system.collect` status `Успешно`; screenshot `p2-20260528-two-agent-B-tool-T-000620.png`.
+
+### BUG-20260528-P2-06 - Legacy direct run_tool accepts cross-device ticket context
+
+Severity: P1
+Status: fix-in-progress
+Area: two-agent / operation lifecycle / server-db / agent-sqlite / protocol
+
+P2 scenario: P2.3.C Tool routing isolation - negative cross-device direct API.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- A request that combines `ticket_id` for Agent A (`T-000619`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`) with target `device_id` for Agent B (`b08675eb-780c-5042-b442-daa1cd066643`) must be rejected before operation/device_outbox creation.
+- No command should be sent to Agent B, no operation should be marked success, no `tool_call_result` should appear on Agent A's ticket timeline, and no Agent B local outbox row should be left failed.
+Actual:
+- Legacy direct `POST /api/tools/run` accepted the mismatched payload and returned HTTP `202`, `status=accepted`, operation `c451c19b-a032-467f-9d06-10b0e84e8b0d`, `device_id=b08675eb-780c-5042-b442-daa1cd066643`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`.
+- Server created and delivered `device_outbox.id=151` to Agent B, then marked operation `succeeded` and persisted `tool_call_result` on Agent A ticket `T-000619`.
+- Agent B executed the command but its own V3 outbox `tool_response` was later NACKed `DEVICE_MISMATCH`, leaving a local failed outbox row.
+Repro steps:
+1. Ensure Agent A and Agent B are online and distinct.
+2. Use a support UI token on legacy direct API `POST /api/tools/run` with body `device_id=b08675eb-780c-5042-b442-daa1cd066643`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`, `tool_name=system.collect`, marker `p2-20260528-0925-cef033e7-cross-device-negative`.
+3. Observe HTTP `202 accepted`, then query operation/device_outbox/ticket_events and both local SQLite DBs.
+
+Evidence:
+- Transport/API: HTTP `202`, `status=accepted`, operation `c451c19b-a032-467f-9d06-10b0e84e8b0d`, target device Agent B, ticket Agent A.
+- Server log: not collected yet.
+- Agent A log: not applicable for execution; Agent A did not execute the command.
+- Agent B log: not collected yet; Agent B SQLite confirms execution and later failed local outbox.
+- Server DB: operation `c451c19b-a032-467f-9d06-10b0e84e8b0d` is `status=succeeded`, `device_id=b08675eb-780c-5042-b442-daa1cd066643`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`; `device_outbox.id=151` is `delivered`; Agent A ticket `T-000619` has events `323 tool_call_started` and `324 tool_call_result` for this operation even though the ticket is bound to Agent A.
+- Agent A SQLite: no `seen_commands` row for operation `c451c19b-a032-467f-9d06-10b0e84e8b0d`.
+- Agent B SQLite: `seen_commands.command_id=c451c19b-a032-467f-9d06-10b0e84e8b0d` has `status=success`; local `outbox_id=3` has `kind=tool_response`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`, `status=failed`, `last_error=NACK: DEVICE_MISMATCH - Ticket ... bound to 2447d396..., not b08675eb...`.
+- Browser/UI: real support browser ticket `T-000619` shows a new `system.collect` successful diagnostic result at 11:33, polluting the Agent A ticket timeline with Agent B execution output. Screenshot `p2-20260528-cross-device-tool-pollution-T-000619.png`.
+- UIA: not applicable; direct API negative path plus browser projection.
+- Test artifact: DB/SQLite/browser outputs from this run; no raw tokens/cookies/session tokens printed.
+- Run marker: `p2-20260528-0925-cef033e7-cross-device-negative`.
+
+Impact:
+- Cross-device command routing is possible through the legacy direct API, causing ticket timeline pollution and a contradictory server/agent state: server records success while Protocol V3 outbox correctly NACKs the agent-originated result as `DEVICE_MISMATCH`.
+- This is a P2.3 isolation/data-integrity blocker and must be fixed before P2 can close.
+Root cause hypothesis:
+- `server/tools/handlers.py::handle_tools_run` validates agent-token actor/device mismatch but does not validate that a provided `ticket_id` belongs to the requested `device_id` for support/admin/user direct API calls before enqueueing `run_tool`.
+Root cause confirmed: yes. The route generated `operation_id`, created `tool_call_started` and called `ToolExecutionService.run_tool()` without loading the ticket row or comparing `tickets.device_id` with the requested target `device_id`; the later Protocol V3 ingest layer caught the mismatch only after Agent B had already executed the command.
+Fix policy:
+- Blocking further P2: yes for two-agent/tool routing isolation and clean P2 close.
+- Fixed now: yes, because continuing P2.3 with this route open creates invalid evidence and failed local outbox contamination.
+
+Fix summary:
+- Added a pre-dispatch `ticket_id -> device_id` guard in legacy `/api/tools/run`; unknown tickets return `UNKNOWN_TICKET`, mismatched tickets return 403 `DEVICE_MISMATCH`, and the handler returns before policy metadata lookup, operation creation or `device_outbox` dispatch.
+Changed files:
+- `server/tools/handlers.py`
+- `server/tests/test_tools_async_response_contract.py`
+- `server/tests/test_tools_run_device_binding.py`
+- `server/docs/README.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+Tests:
+- RED: `python -m pytest server/tests/test_tools_async_response_contract.py::test_tools_run_rejects_ticket_device_mismatch_before_dispatch -q` failed before the guard because route reached dispatch.
+- GREEN: `python -m pytest server/tests/test_tools_async_response_contract.py server/tests/test_tools_run_device_binding.py -q` -> `10 passed`.
+- Compile: `python -m py_compile server\tools\handlers.py server\tests\test_tools_run_device_binding.py server\tests\test_tools_async_response_contract.py` -> pass.
+Live regression:
+- Pending deploy and clean rerun against real Agent A/B.
+Regression check:
+- Pending.
+Remaining risk:
+- Pre-fix contamination remains on Agent B local SQLite `outbox_id=3` and Agent A ticket `T-000619` events `323/324`; future P2 checks must filter by post-fix marker.
+Status consistency checked: yes
+
 Bug template for this P2 run:
 
 ```md
