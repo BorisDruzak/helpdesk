@@ -5194,6 +5194,263 @@ Final code/live gates:
 P5 readiness:
 - ready, but P5 not started.
 
+## P5 Live validation - 2026-05-28 - run_id=p5-20260528-2325-da0d8ee6
+
+Status: in progress.
+
+Scope:
+- P5.1 Change API / route discovery.
+- P5.2 Change request creation: standard, normal, emergency.
+- P5.3 Standard preapproval catalog.
+- P5.4 Normal change approval flow.
+- P5.5 Emergency change and retrospective.
+- P5.6 Maintenance windows and blackout windows.
+- P5.7 Risk / impact / implementation / rollback gates.
+- P5.8 Implementation tasks.
+- P5.9 Change lifecycle and invalid transitions.
+- P5.10 Problem / RCA / improvement action linkage.
+- P5.11 PIR / post-implementation review.
+- P5.12 Change metrics / no-PII analytics.
+- P5.13 RBAC and requester/public boundary.
+- P5.14 Regression against P0-P4 boundaries.
+
+Phase 0 status audit:
+- Branch: `codex/helpdesk-process-model`.
+- Commit SHA at P5 start: `da0d8ee67a55ad585b31774f9e32f01d1ca02202`.
+- `PLANS.md` contains P4 close summary with `Status: P4 closed` and `P5 readiness: ready`.
+- `BUG-20260528-P4-01` is `verified-fixed`.
+- P2/P3/P4 live sections are status-consistent: `P2 closed`, `P3 closed`, `P4 closed`.
+- Historical accepted feature sections for P5 Change Enablement exist at the top of this file, but there is no prior `P5 Live validation`, `P5 close summary` or `BUG-*-P5-*` section; this run starts the live-validation phase.
+- Remote server was intentionally stopped after P4/P4-01 checks. Starting it for P5 baseline is baseline recovery, not a runtime incident.
+- Existing unrelated dirty file `pc_agent/ui_gui/tickets_list_model.py` and old/untracked `artifacts/*` are excluded from P5 scope unless a new P5 evidence artifact is explicitly listed here.
+
+Baseline:
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/admin`.
+- Browser/support URL: `https://192.168.100.17:9443/app/tickets`.
+- Change UI URL: `https://192.168.100.17:9443/app/admin/changes`.
+- Agent A: `live-v3-p1-clean2` (expected canonical GUI/runtime instance).
+- Agent B: not required for baseline; use only if a P5 scenario needs cross-actor evidence.
+- Device ids: Agent A expected `2447d396-79cd-53da-b3a9-028c5a4d56da`; confirm during baseline.
+- Agent versions: confirm during baseline.
+- pywinauto version: confirm during baseline; expected `0.6.9`.
+- Change docs/routes discovered:
+  - `server/docs/CHANGE_ENABLEMENT.md` exists and documents P5 model, lifecycle, operator guide and APIs.
+  - Server domain: `server/change/contracts.py`, `change_service.py`, `risk_service.py`, `plan_service.py`, `approval_service.py`, `calendar_service.py`, `task_service.py`, `pir_service.py`, `policy_service.py`, `analytics_service.py`, `serializers.py`.
+  - Repo/model: `server/app/repos/change_repo.py`, migration `server/app/db/migrations/versions/20260518_0900_092_change_enablement.py`.
+  - Web API: `server/web_api/change_handlers.py`, routes registered in `server/routes.py`.
+  - Webapp: `webapp/src/features/changes/api.ts`, `webapp/src/features/changes/change-workspace.tsx`, `webapp/src/pages/admin/changes-page.tsx`.
+- Actual route map discovered:
+  - `GET /api/web/changes/metrics/summary`
+  - `GET|POST /api/web/changes`
+  - `POST /api/web/changes/from-problem/{problem_id}`
+  - `POST /api/web/changes/from-improvement-action/{action_id}`
+  - `GET /api/web/changes/{change_id}`
+  - `POST /api/web/changes/{change_id}/transition`
+  - `POST /api/web/changes/{change_id}/risk`
+  - `POST /api/web/changes/{change_id}/risk/{assessment_id}/submit`
+  - `POST /api/web/changes/{change_id}/risk/{assessment_id}/approve`
+  - `POST /api/web/changes/{change_id}/plans`
+  - `POST /api/web/changes/{change_id}/plans/{plan_id}/approve`
+  - `POST /api/web/changes/{change_id}/approvals/request`
+  - `POST /api/web/changes/{change_id}/approvals/{approval_id}/approve|reject`
+  - `POST /api/web/changes/{change_id}/schedule`
+  - `GET|POST /api/web/changes/{change_id}/tasks`
+  - `POST /api/web/changes/{change_id}/tasks/{task_id}/complete`
+  - `POST /api/web/changes/{change_id}/pir`
+  - `POST /api/web/changes/{change_id}/pir/{pir_id}/submit`
+  - `POST /api/web/changes/{change_id}/pir/{pir_id}/approve`
+  - `GET|POST /api/web/change-windows`
+  - `GET /api/web/change-policies`
+  - `POST /api/web/change-policies/save`
+  - `POST /api/web/change-policies/effective-preview`
+- Problem/RCA docs/routes used for linkage: `server/docs/PROBLEM_MANAGEMENT.md`, `server/docs/QUALITY_LOOP.md`, problem/improvement action linkage routes above.
+- Known P0/P1/P2/P3/P4 contamination ignored:
+  - All historical P0 phantom/pre-fix outbox/local SQLite rows listed in prior P0/P1/P2/P3/P4 sections.
+  - P1 known/deferred limitations and test-contamination rows listed in P1 close.
+  - P2/P3/P4 historical tickets, artifacts, candidates, problems, RCA, Knowledge drafts and bridge failure evidence.
+  - P4-01 historical failed `/ui/automation/run` 500 responses are test-surface evidence only, not P5 change evidence.
+- Baseline evidence:
+  - Remote server pre-baseline state: `server: stopped`; this matches expected handoff after P4/P4-01 and is not an incident.
+  - Baseline recovery: `python scripts\manage_remote_stack.py start server` -> `running`, pid `384213`.
+  - Health: `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> `https://192.168.100.17:9443/api/health -> 200`.
+  - Control-plane: `control: running`, pid `326023`.
+  - pywinauto: `.venvs\agent-win\Scripts\python.exe -c "import pywinauto; print(pywinauto.__version__)"` -> `0.6.9`.
+  - Local agent status before server recovery: bridge reachable, `connection_state=disconnected`, detail `ошибка handshake`.
+  - Local agent status after server recovery: `python scripts\agent_test_driver.py status live-v3-p1-clean2` -> bridge reachable, `connection_state=connected`, detail `WS подключён`, ticket_count `21`.
+  - Local agent process: `python scripts\manage_local_agent.py status live-v3-p1-clean2` -> running, source GUI mode, pid `26848`, ws `wss://192.168.100.17:9443/ws`.
+  - UIA: `scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --output artifacts\p5-20260528-2325-da0d8ee6-uia-baseline.json --max-depth 10 --max-nodes 2000 --max-seconds 60` -> pywinauto `0.6.9`, backend `uia`, window `Maria Agent v3.1.61`, process `28128`, `connection_state=connected`, `account_mode=confirmed_binding`, `ticket_count=21`, failures `[]`.
+  - Agent SQLite path: `.local-agent\instances\live-v3-p1-clean2\data\storage.db`.
+  - Agent SQLite marker counts: active `outbox` rows `0`; `outbox_sent_history` marker rows `0`; `seen_commands` marker rows `0`; `pending_consents_total=0`.
+  - Server DB marker check: no `device_outbox` rows matched marker `p5-20260528-2325-da0d8ee6` by `command_id`, `request_id`, `trace_id`, `operation_id`, `command` or `params`.
+  - Browser/change UI: real browser URL `https://192.168.100.17:9443/app/admin/changes`, login `admin` fixture, visible `Рабочее место изменений` and empty state `Изменений пока нет`; console errors `[]`; HTTP errors `[]`.
+  - Browser evidence artifact: `artifacts\p5-20260528-2325-da0d8ee6-admin-changes-baseline.png`.
+
+P5 product contract:
+- Change records are internal support/admin objects. Requester/public users have no direct change API. Agent token must not create, approve or implement changes unless explicitly bound to an authorized support/admin context, which is not the default.
+- Supported change types are `standard`, `normal` and `emergency`. Standard changes are preapproved only when a valid standard/preapproval catalog policy matches. Normal changes require approval according to risk/policy. Emergency changes may use emergency flow but must require retrospective/PIR according to policy.
+- Approval state is server-authoritative. Approval cannot be faked by request body fields. Duplicate approval is idempotent or deterministic. Unauthorized approval is denied before DB mutation.
+- Maintenance windows and blackout windows are enforced server-side. Blackout scheduling is denied unless a documented emergency override exists and is audited. Timestamps must be recorded with absolute UTC/timezone evidence.
+- Non-standard/high-risk changes require risk/impact/implementation/rollback/test plans according to policy. Client-only fields must not downgrade risk or bypass gates. Validation errors must be structured and non-500.
+- P5 does not auto-execute changes. Implementation tasks are internal workflow items. Task completion/dependencies gate implementation/closure only where policy says so, and no agent tools are silently dispatched.
+- Implemented or emergency changes require PIR/retrospective if policy says so. PIR is internal-only, feeds metrics and is not requester/public visible.
+- Change metrics are aggregate-only and must not include requester name, phone/email, account session ids/tokens, public codes/hashes, raw ticket text/messages, artifact paths, device tokens, cookies or auth headers.
+
+P5 bug template:
+
+```md
+### BUG-YYYYMMDD-P5-NN - short title
+
+Severity: P0/P1/P2/P3/P4/P5
+Status: reproduced / root-cause-confirmed / fix-in-progress / verified-fixed / verified-non-product / known-limitation / deferred / not-a-bug
+Area: change-create / standard-change / emergency-change / approval / preapproval / maintenance-window / blackout-window / risk-impact / rollback / implementation-task / lifecycle / PIR / problem-linkage / RBAC / public-access / requester-access / privacy-PII / metrics / browser-ui / server-db / workflow / test-contamination
+
+P5 scenario:
+Run id:
+Expected:
+Actual:
+Repro steps:
+
+Evidence:
+- Transport/API:
+- Server log:
+- Agent log:
+- Server DB:
+- Agent SQLite:
+- Browser/UI:
+- UIA:
+- Test artifact:
+- Run marker:
+
+Impact:
+Root cause hypothesis:
+Root cause confirmed:
+Fix policy:
+- Blocking further P5: yes/no
+- Fixed now: yes/no
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes/no
+```
+
+P5 scenario checklist:
+- [x] P5.1 Change API / route discovery.
+- [ ] P5.2 Change request creation: standard, normal, emergency.
+- [ ] P5.3 Standard preapproval catalog.
+- [ ] P5.4 Normal change approval flow.
+- [ ] P5.5 Emergency change and retrospective.
+- [ ] P5.6 Maintenance windows and blackout windows.
+- [ ] P5.7 Risk / impact / implementation / rollback gates.
+- [ ] P5.8 Implementation tasks.
+- [ ] P5.9 Change lifecycle and invalid transitions.
+- [ ] P5.10 Problem / RCA / improvement action linkage.
+- [ ] P5.11 PIR / post-implementation review.
+- [ ] P5.12 Change metrics / no-PII analytics.
+- [ ] P5.13 RBAC and requester/public boundary.
+- [ ] P5.14 Regression against P0-P4 boundaries.
+
+Discovery-first rule:
+- Run P5.1-P5.14 as far as safely possible and record every finding in this section before root cause/fix.
+- Fix immediately only for requester/public/RBAC access leaks, PII leaks, approval/preapproval bypass, scheduling/blackout safety breach, unauthorized mutation, data-integrity corruption or a blocker that invalidates downstream evidence.
+- Do not mark P5 closed while requester/public can access or mutate change APIs, approval/preapproval can be bypassed, emergency/PIR gates fail, blackout/maintenance validation fails, high-risk rollback/plan gates fail, internal change/problem/RCA data leaks externally, change metrics leak PII, stale P5 outbox/device_outbox exists, or browser/UIA evidence is missing.
+
+P5 discovery evidence before fixes:
+- P5.2 route tested: real browser-admin session calling real `/api/web/changes*` APIs from `https://192.168.100.17:9443/app/admin/changes`.
+- `GET /api/web/change-policies` -> HTTP `200`, no policies.
+- `GET /api/web/changes/metrics/summary` -> HTTP `200`, aggregate keys only: `change_count`, `open_change_count`, `emergency_change_count`, `failed_change_count`, `rollback_count`, `failure_rate`, `rollback_rate`, `average_lead_time_hours`, `average_implementation_duration_hours`, `pir_completion_rate`, `emergency_retrospective_overdue_count`, breakdown maps by type/status/risk/service.
+- Created clean P5 changes:
+  - Standard: `CHG-000009`, id `de4d626b-d863-47de-bb63-0202dec424b0`, status `draft`, marker `p5-20260528-2325-da0d8ee6`.
+  - Normal: `CHG-000010`, id `9d388434-3092-4545-98f8-38d598d64608`, status moved to `awaiting_approval` during P5.4/P5.7 gate probing.
+  - Emergency with justification: `CHG-000011`, id `cbce0b63-dccd-4a0c-a08c-06f1151efbea`, status `draft`.
+  - Emergency missing justification: `CHG-000012`, id `e492c9a7-827e-40b6-baa3-393e236a3018`, create accepted as `draft`; subsequent `awaiting_approval` attempt denied by missing risk assessment before emergency-justification gate was reached.
+- Invalid `change_type=not_real_type` with body-supplied `status=approved` / `approved=true` returned HTTP `400`, `error=change_type is invalid`; no approval bypass observed on this negative create path.
+
+### BUG-20260528-P5-01 - duplicate risk/plan rows make change transition return HTTP 500
+
+Severity: P1
+Status: reproduced
+Area: lifecycle / risk-impact / rollback / approval / browser-ui / server-db
+
+P5 scenario: P5.4 Normal change approval flow and P5.7 Risk / impact / implementation / rollback gates.
+Run id: `p5-20260528-2325-da0d8ee6`
+Expected:
+- Change lifecycle validation should be deterministic and return structured non-500 denials for invalid/repeated transitions.
+- Normal/high-risk change should evaluate approved risk and plan rows without crashing even if multiple drafts/approved rows exist from repeated operator/API actions.
+- Body-supplied `approved=true` must not bypass approval; after legitimate approval, transition to `approved` should succeed or return a structured validation denial.
+Actual:
+- Several `/api/web/changes/9d388434-3092-4545-98f8-38d598d64608/transition` calls returned HTTP `500`.
+- Server log shows `sqlalchemy.exc.MultipleResultsFound: Multiple rows were found when one or none was required` in `ChangeService._validate_assessment_ready()` and `_validate_approval_ready()`.
+- Browser console recorded failed resources for the transition route during the real admin page session.
+Repro steps:
+- In real browser admin session at `/app/admin/changes`, create normal change `CHG-000010`.
+- Transition it through `submitted -> assessing`.
+- Create/submit/approve risk assessments and create/approve more than one plan row while probing missing rollback/good rollback gates.
+- Call `POST /api/web/changes/{change_id}/transition` with `{"status":"awaiting_approval"}` and later `{"status":"approved"}`.
+- Observe HTTP `500` on transition route.
+
+Evidence:
+- Transport/API:
+  - `POST /api/web/changes/{normal_id}/transition {"status":"awaiting_approval"}` returned HTTP `500` after duplicate risk/plan rows existed.
+  - `POST /api/web/changes/{normal_id}/transition {"status":"approved","approved":true}` returned HTTP `500`; body-supplied approval did not produce a successful bypass, but the route crashed instead of returning structured denial.
+  - `POST /api/web/changes/{normal_id}/approvals/{approval_id}/approve` returned HTTP `200`; duplicate approve returned HTTP `200` with `approval_status=approved`.
+- Server log:
+  - `server/web_api/change_handlers.py:75` -> `ChangeService.transition_change(...)`.
+  - `server/change/change_service.py:316` in `_validate_assessment_ready()` -> `.scalar_one_or_none()` -> `sqlalchemy.exc.MultipleResultsFound`.
+  - `server/change/change_service.py:330` in `_validate_approval_ready()` -> `.scalar_one_or_none()` -> `sqlalchemy.exc.MultipleResultsFound`.
+- Agent log: not applicable; P5 change APIs do not dispatch agent work.
+- Server DB:
+  - Normal change `CHG-000010` exists with marker `p5-20260528-2325-da0d8ee6`; risk/plan/approval rows were created by real API calls.
+- Agent SQLite:
+  - Not involved; baseline marker checks were zero and P5 transition calls are server/web only.
+- Browser/UI:
+  - Real browser URL `https://192.168.100.17:9443/app/admin/changes`.
+  - Browser console recorded transition route failed-resource entries during the scenario.
+- UIA:
+  - Not directly applicable to change workflow; baseline UIA state probe passed before P5 discovery.
+- Test artifact:
+  - Baseline browser screenshot `artifacts\p5-20260528-2325-da0d8ee6-admin-changes-baseline.png`.
+- Run marker: `p5-20260528-2325-da0d8ee6`.
+
+Impact:
+- Blocks P5 close because normal change approval/lifecycle evidence becomes unreliable after repeated operator/API actions.
+- A normal operator retry can turn expected validation into HTTP 500 and prevent approval transition.
+Root cause hypothesis:
+- `ChangeService` readiness validators assume at most one approved/submitted risk/plan/approval row and use `scalar_one_or_none()`.
+- The API allows creating multiple risk assessments/plans/approval rows for the same change; once multiple rows match readiness criteria, the validator raises `MultipleResultsFound`.
+Root cause confirmed:
+- `server/change/change_service.py` used `.scalar_one_or_none()` in `_validate_assessment_ready()` and `_validate_approval_ready()` for approved `ChangeRiskAssessment` and `ChangePlan` rows.
+- `RiskAssessmentService.create_assessment()` and `ChangePlanService.create_plan()` intentionally create versioned rows; repeated operator/API edits can leave multiple approved versions for one change.
+- The readiness validators therefore crashed with SQLAlchemy `MultipleResultsFound` instead of evaluating the latest approved version and returning deterministic lifecycle results.
+- Adjacent audit found `_has_approved_pir()` used the same single-row assumption for approved PIR rows.
+Fix policy:
+- Blocking further P5: yes
+- Fixed now: yes
+
+Fix summary:
+- Added deterministic latest-approved selectors for change risk assessments and plans, ordered by `version_number` then approval timestamp/id.
+- `_validate_assessment_ready()` now checks existence of the latest approved risk/plan without crashing on older approved versions.
+- `_validate_approval_ready()` now evaluates rollback/approval gates against the latest approved plan, preserving the product contract that newer approved plan versions supersede older ones.
+- `_has_approved_pir()` now checks for any latest approved PIR row with a limited ordered query, avoiding the same duplicate-row crash class.
+Changed files:
+- `server/change/change_service.py`
+- `server/tests/test_change_lifecycle.py`
+Tests:
+- Red before fix: `python -m pytest server\tests\test_change_lifecycle.py::test_duplicate_approved_risk_and_plan_versions_do_not_break_approval_transition server\tests\test_change_lifecycle.py::test_latest_approved_plan_controls_rollback_gate -q --tb=short` reproduced `MultipleResultsFound`.
+- Green after fix: same command -> `2 passed in 338.27s`.
+- Focused regression: `python -m pytest server\tests\test_change_lifecycle.py server\tests\test_change_api.py server\tests\test_change_pir.py -q --tb=short` -> `6 passed in 353.20s`.
+Live regression: pending deploy and clean live rerun with a fresh P5 fix marker.
+Regression check:
+- Duplicate approved risk/plan versions no longer produce HTTP 500 in service tests.
+- Latest approved plan still controls rollback validation; an approved newer plan without rollback keeps approval transition denied.
+Remaining risk:
+- Need live server regression before changing status to `verified-fixed`.
+Status consistency checked: partial; keep status `reproduced` until live regression passes.
+
 ### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
 
 Severity: P1

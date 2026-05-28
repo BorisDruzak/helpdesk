@@ -308,29 +308,37 @@ class ChangeService:
             if field in payload:
                 setattr(row, field, clean_text(payload.get(field)))
 
-    async def _validate_assessment_ready(self, row: Change) -> None:
-        risk = (
+    async def _latest_approved_risk(self, change_id: str) -> ChangeRiskAssessment | None:
+        return (
             await self.session.execute(
-                select(ChangeRiskAssessment).where(ChangeRiskAssessment.change_id == row.change_id, ChangeRiskAssessment.status == "approved")
+                select(ChangeRiskAssessment)
+                .where(ChangeRiskAssessment.change_id == change_id, ChangeRiskAssessment.status == "approved")
+                .order_by(ChangeRiskAssessment.version_number.desc(), ChangeRiskAssessment.approved_at.desc(), ChangeRiskAssessment.assessment_id.desc())
+                .limit(1)
             )
         ).scalar_one_or_none()
+
+    async def _latest_approved_plan(self, change_id: str) -> ChangePlan | None:
+        return (
+            await self.session.execute(
+                select(ChangePlan)
+                .where(ChangePlan.change_id == change_id, ChangePlan.status == "approved")
+                .order_by(ChangePlan.version_number.desc(), ChangePlan.approved_at.desc(), ChangePlan.plan_id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+    async def _validate_assessment_ready(self, row: Change) -> None:
+        risk = await self._latest_approved_risk(row.change_id)
         if row.change_type in {"normal", "emergency"} and risk is None:
             raise ValueError("risk assessment is required before approval")
-        plan = (
-            await self.session.execute(select(ChangePlan).where(ChangePlan.change_id == row.change_id, ChangePlan.status == "approved"))
-        ).scalar_one_or_none()
+        plan = await self._latest_approved_plan(row.change_id)
         if row.change_type in {"normal", "emergency"} and plan is None:
             raise ValueError("implementation plan is required before approval")
 
     async def _validate_approval_ready(self, row: Change) -> None:
-        risk = (
-            await self.session.execute(
-                select(ChangeRiskAssessment).where(ChangeRiskAssessment.change_id == row.change_id, ChangeRiskAssessment.status == "approved")
-            )
-        ).scalar_one_or_none()
-        plan = (
-            await self.session.execute(select(ChangePlan).where(ChangePlan.change_id == row.change_id, ChangePlan.status == "approved"))
-        ).scalar_one_or_none()
+        risk = await self._latest_approved_risk(row.change_id)
+        plan = await self._latest_approved_plan(row.change_id)
         approvals = await ChangeApprovalService(self.session).approval_status(row.change_id)
         validate_change_approval_payload(
             change_type=row.change_type,
@@ -352,7 +360,12 @@ class ChangeService:
 
     async def _has_approved_pir(self, change_id: str) -> bool:
         row = (
-            await self.session.execute(select(ChangePIRRecord).where(ChangePIRRecord.change_id == change_id, ChangePIRRecord.status == "approved"))
+            await self.session.execute(
+                select(ChangePIRRecord)
+                .where(ChangePIRRecord.change_id == change_id, ChangePIRRecord.status == "approved")
+                .order_by(ChangePIRRecord.approved_at.desc(), ChangePIRRecord.pir_id.desc())
+                .limit(1)
+            )
         ).scalar_one_or_none()
         return row is not None
 
