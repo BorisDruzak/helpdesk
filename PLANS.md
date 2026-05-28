@@ -3243,7 +3243,7 @@ Status after action: known-limitation.
 ### BUG-20260527-P1-06 — screen.record artifact upload is denied and operation is projected as success
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: artifact-upload / auth-account-session / operation lifecycle / UI projection
 
 P1 scenario:
@@ -3310,10 +3310,17 @@ Tests:
 - `python scripts\verify_workspace.py` -> passed.
 
 Live regression:
-Pending deploy and clean P2.2.C rerun on live server/Agent A.
+- Commit `7bb28ded2d997bef589916f137bf37da2c56530b` pushed to GitHub and deployed to the Linux stand through quick release; `/api/health` smoke passed.
+- Clean P2.2.C ticket: `T-000619`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`, marker `p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded`.
+- Local GUI automation bridge path: `capture-screenshot` accepted `screen.collect` operation `5bcfa717-9ccc-4ba2-ab4a-76bf3c161d97`, trace `3e2167c3-23d8-4469-876c-da949ffa488e`.
+- Server DB: operation `5bcfa717-9ccc-4ba2-ab4a-76bf3c161d97` is `status=succeeded`, `error_code=NULL`, `result_event_id=306`; device_outbox id `147` is `delivered`; ticket events ids `304 tool_call_started` and `306 tool_call_result`; artifact row `c0bdd8fd-3179-4e63-acc6-0e4061b1e574` is linked to the same ticket/operation with `kind=screenshot`, `mime_type=image/png`, `size_bytes=740258`.
+- Agent A SQLite: `seen_commands.command_id=5bcfa717-9ccc-4ba2-ab4a-76bf3c161d97` has local `status=success`, ToolResponse `status=success`, `artifact_count=1`; local `outbox=[]`; sent history contains one `tool_response`; `pending_consents_count=0`.
+- Browser/UI: real support browser URL `https://192.168.100.17:9443/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852` shows ticket `T-000619`, `screen.collect` diagnostic result status `Успешно`, result details, and `1 влож.` on the result card. Screenshot: `p2-20260528-agent-artifact-fixed-T-000619.png`.
+- Browser download check: same browser web session fetched `/api/artifacts/c0bdd8fd-3179-4e63-acc6-0e4061b1e574/download?ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852` and received HTTP `200`, `content-type=image/png`, `bytes=740258`, safe `Content-Disposition` with `filename*`.
+- Browser console/network artifacts: `p2-20260528-agent-artifact-fixed-console-errors.json`, `p2-20260528-agent-artifact-fixed-network.json`.
 
 Remaining risk:
-P1.2.C may also use `screen.record`; if artifact upload noise obscures cancel/idempotency evidence, switch that specific scenario to a safe long-running non-artifact diagnostic tool or record the artifact failure as known contamination for this run.
+Screen recording should still get a separate P2.2 artifact-size/duration check; the fixed authorization path is operation-bound and was verified with `screen.collect`.
 
 ### P1 close decision for BUG-20260527-P1-06
 
@@ -3321,9 +3328,9 @@ Current evidence: `screen.record` completes locally with ToolResponse `status=pa
 Product impact: artifact-producing tool results can lose artifacts and mislead UI status. This is directly relevant to P2.2 artifact validation.
 Blocks P1 close: no for P1.2/P1.5 command idempotency/reconnect if clean rerun uses a non-artifact long-running diagnostic or explicitly treats screen-record artifact failure as excluded artifact contamination.
 Correct product behavior: artifact upload auth/context must be fixed and operation/UI status must reflect partial ToolResponse results.
-Action: defer to artifact/status-projection fix pass before P2.2; do not use artifact success as P1 evidence.
+Action: fixed during P2.2 artifact/status-projection pass.
 Required regression: P2.2 must cover upload metadata, browser preview/download, and partial upload failure projection.
-Status after action: deferred.
+Status after action: verified-fixed.
 
 P2 clean evidence before fix:
 - Run id: `p2-20260528-0925-cef033e7`.
@@ -3406,7 +3413,7 @@ Audit path: `PLANS.md` bug blocks and P1 findings summary only. No code fixes st
 | BUG-20260527-P1-03 | verified-fixed | browser / UI projection / server-db | no | Fixed undefined `_iso()` in account-event serialization; rerun admin device page in P1.6 clean gate. |
 | BUG-20260527-P1-04 | verified-fixed | test-tool / protocol / server-db | no | Keep as fixed; old `device_outbox.id=83` is pre-fix contamination; raw probe rerun must use diagnostic isolation. |
 | BUG-20260527-P1-05 | known-limitation | automation / auth-account-session / operation lifecycle | no | Do not use automation bridge as canonical tool-launch evidence; use browser support route in P1 clean rerun. |
-| BUG-20260527-P1-06 | deferred | artifact-upload / auth-account-session / operation lifecycle / UI projection | no for P1, yes before P2.2 | Exclude artifact success from P1 evidence; fix artifact auth/status projection before P2.2. |
+| BUG-20260527-P1-06 | verified-fixed | artifact-upload / auth-account-session / operation lifecycle / UI projection | no | Fixed during P2.2 artifact pass by commit `7bb28ded`; operation-bound agent artifacts upload successfully and partial ToolResponse no longer projects as success. |
 | BUG-20260527-P1-07 | known-limitation | consent / browser / auth-account-session / UI projection | no for P1 close, yes for P1.3 green | Consent center is read-only; future consent milestone needs typed browser approve/deny actions. |
 | BUG-20260527-P1-08 | known-limitation | consent / agent-sqlite / local GUI-UIA / documentation drift | no for P1 close, yes for agent-GUI consent claim | Current consent is server-side before dispatch; future pass must choose/document canonical consent boundary. |
 | BUG-20260527-P1-09 | verified-fixed | module-runtime / outbox / server-db / protocol | no | Clean rerun `p1-close-20260528-0040-dbe1d72f` verified durable `module_state_changed`/`tools_changed`, delivered outbox and browser admin projection. |
@@ -3431,7 +3438,7 @@ Status consistency audit result:
 P1 close decisions recorded during run `p1-close-20260527-2333-ebcd4c0b`:
 - `BUG-20260527-P1-03`: fixed now. Root cause was undefined `_iso()` in `AccountSessionService.serialize_event()`. Commit `dbe1d72f` deployed to remote; real browser account-events route now returns `status=success` and admin device page has no new account-events console 500. Required regression: include account-events/admin device page in P1.6 clean rerun.
 - `BUG-20260527-P1-05`: classified as `known-limitation`. The local automation bridge is a test surface; it carries account session but uses `actor_role=agent`, so server correctly denies support/admin-only tool launch and no operation is created. P1 clean rerun must use the browser support route for tool lifecycle evidence.
-- `BUG-20260527-P1-06`: classified as `deferred` to the artifact/status-projection pass. It does not block P1 idempotency/reconnect if the clean rerun does not use artifact success as evidence. P2.2 must fix/verify artifact upload auth and partial-result UI status.
+- `BUG-20260527-P1-06`: verified-fixed during the P2.2 artifact/status-projection pass. P1 idempotency evidence remains unchanged; P2.2 clean ticket `T-000619` verifies artifact upload auth, DB metadata, Agent A SQLite, browser timeline and download.
 - `BUG-20260527-P1-07`: classified as `known-limitation`. Current consent center is browser-visible but read-only; support web-session approve/deny routes/actions are missing. P1.3 cannot be marked green until consent browser actions exist.
 - `BUG-20260527-P1-08`: classified as `known-limitation / documentation drift`. Current product path holds risky-tool consent server-side before command dispatch, so the agent never receives a local `pending_consents` prompt. Future consent pass must choose and document browser-side vs agent-side canonical consent.
 - `BUG-20260527-P1-09`: verified-fixed by clean rerun `p1-close-20260528-0040-dbe1d72f`. Direct admin HTTP route triggered `network_basic` deactivate/activate, both operations succeeded, local agent emitted `tools_changed` and `module_state_changed`, server persisted device events, and browser admin modules/device pages showed current module/operation projection. Old P1.4.A contamination remains ignored.
@@ -3585,7 +3592,7 @@ Verified fixed / closed for P1:
 
 Deferred / known limitation / not blocking P1:
 - `BUG-20260527-P1-05` -> known-limitation: automation bridge is not support/admin tool-run authority; browser support route is the canonical P1 tool lifecycle path.
-- `BUG-20260527-P1-06` -> deferred to artifact/status-projection pass; P1 close does not use artifact upload success as evidence.
+- `BUG-20260527-P1-06` -> verified-fixed during P2.2 artifact/status-projection pass; original P1 close did not use artifact upload success as evidence.
 - `BUG-20260527-P1-07` -> known-limitation: approval center is browser-visible but read-only; consent approve/deny actions remain outside P1 close.
 - `BUG-20260527-P1-08` -> deferred cleanup/UX issue; not a P1 data-integrity blocker.
 - `BUG-20260527-P1-10` -> deferred negative module auto-install UX/lifecycle issue; final checks found no new stale desired/outbox state for the close run.
@@ -3650,7 +3657,7 @@ Baseline:
   - old P0 phantom ticket/event rows recorded in the P0 section;
   - P1 `device_outbox.id=135` from `BUG-20260527-P1-19` test-tool contamination;
   - pre-fix P1 restart/drop/probe rows from `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`;
-  - deferred P1 limitations `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-10`, kept separate from new P2 evidence unless clean P2 markers reproduce them.
+  - deferred P1 limitations `BUG-20260527-P1-05`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-10`, kept separate from new P2 evidence unless clean P2 markers reproduce them; `BUG-20260527-P1-06` was revalidated and fixed during this P2.2 pass.
 
 P2 execution plan:
 - [ ] P2.1 Public/requester safety discovery with browser + direct HTTP + DB comparison.
@@ -4040,6 +4047,29 @@ Regression check:
 Remaining risk:
 - Need wrong-requester/cross-account artifact denial once P2.1.C Account B is available.
 Status consistency checked: yes
+
+### P2.2.C Tool-generated artifacts - clean regression after artifact auth fix
+
+Status: passed for `screen.collect`; `screen.record` still needs a duration/size variant before P2.2 is complete.
+Run id: `p2-20260528-0925-cef033e7`
+Run marker: `p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded`
+
+Validation surfaces:
+- local GUI automation bridge `/ui/automation/run`: created clean ticket `T-000619` and started `screen.collect`;
+- agent runtime: Agent A `live-v3-p1-clean2` executed the tool and uploaded one screenshot artifact;
+- server DB: operation/device_outbox/ticket_events/artifacts queried by operation id;
+- Agent A SQLite: `seen_commands`, `outbox`, `outbox_sent_history`, `pending_consents`;
+- real browser support UI: `/app/tickets/eadd3b88-70b2-444e-a8cb-efad7484f852`;
+- browser download: support web session downloaded the artifact through `/api/artifacts/{artifact_id}/download?ticket_id=...`.
+
+Evidence:
+- Ticket: `T-000619`, `ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852`, `device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`.
+- Operation: `5bcfa717-9ccc-4ba2-ab4a-76bf3c161d97`, tool `screen.collect`, trace `3e2167c3-23d8-4469-876c-da949ffa488e`.
+- Server DB: operation `succeeded`, error `NULL`; device_outbox delivered; `tool_call_result` event has `payload.status=success` and `artifact_count=1`; artifact `c0bdd8fd-3179-4e63-acc6-0e4061b1e574` persisted with `kind=screenshot`, `mime_type=image/png`, `size_bytes=740258`.
+- Agent A SQLite: `seen_commands.status=success`, ToolResponse `status=success`, `artifact_count=1`; `outbox=[]`; sent history has one `tool_response`; `pending_consents_count=0`.
+- Browser/UI: support ticket page shows `screen.collect` result, status `Успешно`, result details and `1 влож.`; screenshot `p2-20260528-agent-artifact-fixed-T-000619.png`.
+- Browser download: HTTP `200`, `content-type=image/png`, `bytes=740258`, `Content-Disposition` includes safe fallback and `filename*`.
+- Pre-fix comparison: clean `T-000618` reproduced HTTP 403 upload and `status=partial`; clean `T-000619` after commit `7bb28ded` persisted the artifact and no longer hit the partial path.
 
 Bug template for this P2 run:
 
