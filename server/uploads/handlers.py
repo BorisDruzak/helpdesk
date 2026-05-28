@@ -77,6 +77,59 @@ def _account_session_error_response(payload: dict, *, status: int = 403) -> web.
     )
 
 
+def _operation_bound_agent_upload_error(
+    *,
+    operation,
+    auth_context,
+    ticket_id: str,
+) -> web.Response | None:
+    if operation is None:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "operation_not_found",
+                "error_code": "OPERATION_NOT_FOUND",
+            },
+            status=404,
+        )
+    if str(getattr(operation, "ticket_id", "") or "") != str(ticket_id):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "operation_ticket_mismatch",
+                "error_code": "OPERATION_TICKET_MISMATCH",
+            },
+            status=403,
+        )
+    if str(getattr(operation, "device_id", "") or "") != str(auth_context.actor_id):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "operation_device_mismatch",
+                "error_code": "OPERATION_DEVICE_MISMATCH",
+            },
+            status=403,
+        )
+    return None
+
+
+async def _require_agent_operation_artifact_access(
+    *,
+    session,
+    auth_context,
+    ticket_id: str,
+    operation_id: str,
+) -> web.Response | None:
+    from app.repos import OperationsRepo
+
+    operation = await OperationsRepo(session).get_by_operation_id(operation_id)
+    return _operation_bound_agent_upload_error(
+        operation=operation,
+        auth_context=auth_context,
+        ticket_id=ticket_id,
+    )
+
+
 async def _require_agent_ticket_account_access(
     *,
     session,
@@ -220,13 +273,21 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
 
         async with get_session() as session:
             if is_agent_upload and ticket_id:
-                access_error = await _require_agent_ticket_account_access(
-                    session=session,
-                    request=request,
-                    auth_context=auth_context,
-                    ticket_id=ticket_id,
-                    write=True,
-                )
+                if operation_id:
+                    access_error = await _require_agent_operation_artifact_access(
+                        session=session,
+                        auth_context=auth_context,
+                        ticket_id=ticket_id,
+                        operation_id=operation_id,
+                    )
+                else:
+                    access_error = await _require_agent_ticket_account_access(
+                        session=session,
+                        request=request,
+                        auth_context=auth_context,
+                        ticket_id=ticket_id,
+                        write=True,
+                    )
                 if access_error is not None:
                     return access_error
             if not is_agent_upload:

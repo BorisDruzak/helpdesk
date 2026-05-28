@@ -3243,7 +3243,7 @@ Status after action: known-limitation.
 ### BUG-20260527-P1-06 — screen.record artifact upload is denied and operation is projected as success
 
 Severity: P1
-Status: deferred
+Status: fix-in-progress
 Area: artifact-upload / auth-account-session / operation lifecycle / UI projection
 
 P1 scenario:
@@ -3284,16 +3284,33 @@ Likely artifact upload auth/context mismatch from the agent runtime path after a
 Blocking further P1: no for P1.2 idempotency because duplicate command behavior was still deterministically verified; yes for any artifact-focused scenario.
 Fix now: no
 Fix summary:
-Not fixed.
+P2 fix phase in progress:
+- `POST /api/upload` now treats agent-token uploads with both `ticket_id` and `operation_id` as server-commanded operation artifacts and authorizes them by matching `operation_id -> ticket_id + device_id`.
+- Agent-token uploads with `ticket_id` but without `operation_id` still require requester account-session context, preserving the manual local-agent attachment boundary.
+- Command result normalization now preserves ToolResponse `status=partial`; the operation lifecycle maps it to terminal failed instead of succeeded, and the ticket `tool_call_result` payload keeps `status=partial`.
 
 Changed files:
-None.
+- `server/uploads/handlers.py`
+- `server/websocket/command_result_parser.py`
+- `server/websocket/command_result_components.py`
+- `server/tests/test_upload_handlers.py`
+- `server/tests/test_agent_services_pipeline.py`
+- `server/tests/test_command_result_lifecycle_db.py`
+- `server/docs/ARTIFACTS_API.md`
+- `server/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+- `PLANS.md`
 
 Tests:
-Not run for this bug yet.
+- `python -m pytest server\tests\test_upload_handlers.py server\tests\test_agent_services_pipeline.py::test_command_result_normalizer_maps_partial_to_failed_lifecycle server\tests\test_agent_services_pipeline.py::test_tool_call_result_payload_preserves_partial_status server\tests\test_command_result_lifecycle_db.py::test_command_result_partial_marks_operation_failed_and_delivers_outbox -q` -> passed (`7 passed` for no-DB subset plus DB lifecycle test passed separately).
+- `python -m pytest server\tests\test_upload_handlers.py server\tests\test_agent_services_pipeline.py server\tests\test_command_result_lifecycle_db.py server\tests\test_web_session_api.py -q` -> `57 passed, 15 warnings` (existing aiohttp `NotAppKeyWarning` only).
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `python scripts\verify_workspace.py` -> passed.
 
 Live regression:
-Not run.
+Pending deploy and clean P2.2.C rerun on live server/Agent A.
 
 Remaining risk:
 P1.2.C may also use `screen.record`; if artifact upload noise obscures cancel/idempotency evidence, switch that specific scenario to a safe long-running non-artifact diagnostic tool or record the artifact failure as known contamination for this run.
@@ -3307,6 +3324,29 @@ Correct product behavior: artifact upload auth/context must be fixed and operati
 Action: defer to artifact/status-projection fix pass before P2.2; do not use artifact success as P1 evidence.
 Required regression: P2.2 must cover upload metadata, browser preview/download, and partial upload failure projection.
 Status after action: deferred.
+
+P2 clean evidence before fix:
+- Run id: `p2-20260528-0925-cef033e7`.
+- Run marker: `p2-20260528-0925-cef033e7-agent-artifact`.
+- Scenario path tested:
+  - local GUI automation bridge `/ui/automation/run`: `python scripts\agent_test_driver.py capture-screenshot live-v3-p1-clean2 --ticket-id 7339a826-17a7-47fc-9bdf-1bee1b5a1e0c`;
+  - agent runtime flow: real Agent A `live-v3-p1-clean2` executed `screen.collect`;
+  - real browser support UI: `https://192.168.100.17:9443/app/tickets/7339a826-17a7-47fc-9bdf-1bee1b5a1e0c`;
+  - server DB and Agent A SQLite queried separately.
+- Ticket: `T-000618`, `ticket_id=7339a826-17a7-47fc-9bdf-1bee1b5a1e0c`, `device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`.
+- Operation: `bc81d55c-08bb-4bde-9f68-d2852e985da2`, tool `screen.collect`, trace `70d093da-72f7-458e-be48-ee543b33ec0d`.
+- Transport/API: automation bridge accepted the capture request and returned `operation_id=bc81d55c-08bb-4bde-9f68-d2852e985da2`.
+- Server DB: `operations.status=succeeded`, `tool_name=screen.collect`, `error_code=NULL`; `ticket_events` ids `291 tool_call_started` and `293 tool_call_result`; no `artifacts` row exists for this ticket/operation.
+- Agent A SQLite: `seen_commands.command_id=bc81d55c-08bb-4bde-9f68-d2852e985da2` has local `status=error`; ToolResponse has `status=partial`, `artifacts=[]`, and error `ARTIFACT_UPLOAD_FAILED` with `exc_type=AuthorizationError`, HTTP `403`.
+- Browser/UI: real support ticket page shows the `screen.collect` result card as successful (`Успешно`) while the raw ToolResponse on the same card contains `status=partial`, `artifacts=[]`, and the upload failure details.
+- UIA: not applicable for this capture path; it was automation bridge plus runtime tool execution, with browser projection evidence.
+- Old contamination: this is a fresh P2 marker and clean operation; it reproduces the same product bug class as the original P1 record and is not counted as a new P2 bug id.
+- Root cause confirmed:
+  - Agent runtime artifact upload uses the agent Bearer token and sends `ticket_id` plus `operation_id`, but it has no requester account-session headers.
+  - `server/uploads/handlers.py::handle_upload()` routes every agent upload with `ticket_id` through `_require_agent_ticket_account_access()`, which requires requester account session and returns 403.
+  - This is too strict for server-commanded operation artifacts: an agent-token upload should be allowed when `operation_id` belongs to the same `ticket_id` and same `device_id`; manual requester/agent attachment uploads without operation binding should still require account-session.
+  - `server/websocket/command_result_parser.py` also normalizes ToolResponse `status=partial` to lifecycle `success`, causing server operation/browser projection to show success for a partial artifact failure.
+- Fix policy: fix now because P2.2 artifact validation cannot be trusted while operation-bound agent artifacts are denied and partial results are projected as full success.
 
 ## P1 fix phase — 2026-05-27 — run_id=p1-fix-20260527-2123-4f42ec7c
 

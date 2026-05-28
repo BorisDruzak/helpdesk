@@ -26,7 +26,7 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
     Invariants:
         - Всегда возвращает dict с указанными ключами
         - status всегда один из поддерживаемых pipeline-статусов
-        - Входной status "partial" (частичный успех, например upload не удался) нормализуется в "success"
+        - Входной status "partial" сохраняется как partial, чтобы lifecycle/UI не показывали полный успех
         - Любой другой неизвестный status → "error" + is_malformed=True
         - None или не-dict payload → "error" + is_malformed=True
     """
@@ -86,9 +86,6 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
         result["meta"] = raw_payload.get("meta", {}) if isinstance(raw_payload.get("meta"), dict) else {}
         return result
     
-    # partial = частичный успех (например, скриншот снят, но upload не удался); обрабатываем как success
-    if status == "partial":
-        status = "success"
     result["status"] = status
 
     # Нормализовать error (всегда dict)
@@ -107,6 +104,16 @@ def normalize_command_result_payload(raw_payload: Any) -> Dict[str, Any]:
         result["data"] = data_raw
     else:
         result["data"] = {}
+
+    if result["status"] == "partial" and not result["error"]:
+        errors = result["data"].get("errors")
+        first_error = errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], dict) else {}
+        result["error"] = {
+            "code": first_error.get("code") or "PARTIAL_RESULT",
+            "message": first_error.get("message") or "Command completed with partial result",
+        }
+        if first_error.get("details") is not None:
+            result["error"]["details"] = first_error.get("details")
     
     # Нормализовать meta (всегда dict)
     meta_raw = raw_payload.get("meta")

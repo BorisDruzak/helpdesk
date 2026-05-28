@@ -35,6 +35,8 @@ class CommandResultNormalizer:
         lifecycle_status = status
         if status == "success":
             lifecycle_status = "succeeded"
+        elif status == "partial":
+            lifecycle_status = "failed"
         elif status == "error":
             lifecycle_status = "failed"
         elif status == "consent_required":
@@ -360,7 +362,17 @@ class CommandResultEventPublisher:
             "ts": datetime.now(timezone.utc).isoformat(),
             "artifacts": artifacts,
         }
-        if lifecycle_outcome.status == "succeeded":
+        if normalized.status == "partial":
+            error_info = normalized.error_info if isinstance(normalized.error_info, dict) else {}
+            error_message = error_info.get("message") or "Command completed with partial result"
+            payload["status"] = "partial"
+            payload["summary"] = f"Tool {tool_name} completed with partial result: {error_message}"
+            payload["error"] = error_info or {"message": error_message}
+            if result is not None:
+                payload["result"] = result
+            if observations is not None:
+                payload["observations"] = observations
+        elif lifecycle_outcome.status == "succeeded":
             payload["status"] = "success"
             payload["summary"] = (
                 operation.result_summary

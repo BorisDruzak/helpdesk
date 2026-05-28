@@ -182,6 +182,69 @@ async def test_command_result_error_acknowledges_recovery_result(test_client, mo
 
 
 @pytest.mark.asyncio
+async def test_command_result_partial_marks_operation_failed_and_delivers_outbox(test_client, monkeypatch):
+    monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
+    monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)
+    operation_id = "88888888-8888-4888-8888-888888888888"
+
+    async with get_session() as session:
+        await _create_sent_operation(
+            session,
+            operation_id=operation_id,
+            device_id="device-partial-result",
+            command="run_tool",
+            kind="tool_call",
+        )
+        op_service = OperationService(session)
+        await op_service.mark_accepted(operation_id, expected_statuses=["sent"])
+        await session.commit()
+
+    class _Ws:
+        async def send_json(self, _payload):
+            return None
+
+    ctx = AgentConnectionContext(
+        ws=_Ws(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id="device-partial-result",
+    )
+
+    await CommandResultService().handle(
+        {
+            "type": "command_result",
+            "request_id": operation_id,
+            "payload": {
+                "status": "partial",
+                "data": {
+                    "observations": {"screenshot": "captured"},
+                    "errors": [
+                        {
+                            "code": "ARTIFACT_UPLOAD_FAILED",
+                            "message": "Artifact upload failed",
+                        }
+                    ],
+                },
+                "error": {},
+                "meta": {"request_id": operation_id},
+            },
+        },
+        ctx,
+    )
+
+    async with get_session() as session:
+        operation = await session.get(Operation, operation_id)
+        outbox = (
+            await session.execute(select(DeviceOutbox).where(DeviceOutbox.operation_id == operation_id))
+        ).scalar_one()
+
+    assert operation is not None
+    assert operation.status == "failed"
+    assert operation.error_code == "ARTIFACT_UPLOAD_FAILED"
+    assert outbox.status == "delivered"
+
+
+@pytest.mark.asyncio
 async def test_install_module_package_result_syncs_device_module_inventory(test_client, monkeypatch):
     monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
     monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)

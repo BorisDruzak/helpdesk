@@ -1,6 +1,8 @@
+from types import SimpleNamespace
+
 import pytest
 
-from uploads.handlers import _content_disposition_attachment
+from uploads.handlers import _content_disposition_attachment, _operation_bound_agent_upload_error
 
 
 @pytest.mark.no_db
@@ -19,3 +21,48 @@ def test_content_disposition_attachment_sanitizes_path_like_fallback():
 
     assert 'filename="evil_name.txt"' in header
     assert "../" not in header
+
+
+@pytest.mark.no_db
+def test_operation_bound_agent_upload_allows_matching_operation_context():
+    auth_context = SimpleNamespace(actor_id="device-a")
+    operation = SimpleNamespace(ticket_id="ticket-a", device_id="device-a")
+
+    assert (
+        _operation_bound_agent_upload_error(
+            operation=operation,
+            auth_context=auth_context,
+            ticket_id="ticket-a",
+        )
+        is None
+    )
+
+
+@pytest.mark.no_db
+def test_operation_bound_agent_upload_denies_ticket_mismatch():
+    auth_context = SimpleNamespace(actor_id="device-a")
+    operation = SimpleNamespace(ticket_id="ticket-b", device_id="device-a")
+
+    response = _operation_bound_agent_upload_error(
+        operation=operation,
+        auth_context=auth_context,
+        ticket_id="ticket-a",
+    )
+
+    assert response is not None
+    assert response.status == 403
+
+
+@pytest.mark.no_db
+def test_operation_bound_agent_upload_denies_device_mismatch():
+    auth_context = SimpleNamespace(actor_id="device-a")
+    operation = SimpleNamespace(ticket_id="ticket-a", device_id="device-b")
+
+    response = _operation_bound_agent_upload_error(
+        operation=operation,
+        auth_context=auth_context,
+        ticket_id="ticket-a",
+    )
+
+    assert response is not None
+    assert response.status == 403

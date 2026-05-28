@@ -50,6 +50,11 @@
 
 **device_id** не передаётся в теле запроса — берётся из токена (AuthContext) при аутентификации агента.
 
+Agent uploads have two ticket-bound modes:
+
+- Runtime/tool artifacts: if an agent-token upload includes both `ticket_id` and `operation_id`, the server authorizes it by the operation binding. The operation must exist and its `ticket_id` and `device_id` must match the upload context.
+- Manual requester attachments from the local agent UI: if an agent-token upload includes `ticket_id` without `operation_id`, it must carry a valid requester account-session context and pass the ticket account-boundary checks.
+
 ### Ограничения
 
 - Максимальный размер файла: **200 MB** (209715200 байт).
@@ -82,6 +87,7 @@
 |-----|----------|
 | 400 | Нет поля `file` или пустой запрос |
 | 401 | Нет или невалидный токен |
+| 403 | Account-session denied for manual agent upload, or `operation_id` does not match the authenticated agent/ticket context |
 | 413 | Размер файла превышает 200 MB |
 | 500 | Внутренняя ошибка сервера |
 

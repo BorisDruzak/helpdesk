@@ -74,6 +74,77 @@ def test_tool_call_result_payload_marks_late_timeout_reconciliation():
     assert "late_result_ignored" not in payload
 
 
+def test_command_result_normalizer_maps_partial_to_failed_lifecycle():
+    normalized = CommandResultNormalizer().normalize(
+        {
+            "request_id": "op-partial",
+            "payload": {
+                "status": "partial",
+                "data": {
+                    "observations": {"screenshot": "captured"},
+                    "errors": [
+                        {
+                            "code": "ARTIFACT_UPLOAD_FAILED",
+                            "message": "Artifact upload failed",
+                        }
+                    ],
+                },
+                "error": {},
+                "meta": {"request_id": "op-partial", "tool_name": "screen.collect"},
+            },
+        }
+    )
+
+    assert normalized.status == "partial"
+    assert normalized.lifecycle_status == "failed"
+    assert normalized.error_info["code"] == "ARTIFACT_UPLOAD_FAILED"
+
+
+def test_tool_call_result_payload_preserves_partial_status():
+    publisher = CommandResultEventPublisher()
+    normalized = CommandResultNormalizer().normalize(
+        {
+            "request_id": "op-partial",
+            "payload": {
+                "status": "partial",
+                "data": {
+                    "observations": {"screenshot": "captured"},
+                    "errors": [
+                        {
+                            "code": "ARTIFACT_UPLOAD_FAILED",
+                            "message": "Artifact upload failed",
+                        }
+                    ],
+                },
+                "error": {},
+                "meta": {"request_id": "op-partial", "tool_name": "screen.collect"},
+            },
+        }
+    )
+    operation = SimpleNamespace(
+        operation_id="op-partial",
+        tool_name="screen.collect",
+        result_summary=None,
+    )
+    outcome = CommandResultLifecycleOutcome(
+        processed=True,
+        command_id="op-partial",
+        status="failed",
+        operation_id="op-partial",
+    )
+
+    payload = publisher._build_tool_call_result_payload(
+        normalized=normalized,
+        lifecycle_outcome=outcome,
+        operation=operation,
+        artifacts=[],
+    )
+
+    assert payload["status"] == "partial"
+    assert payload["error"]["code"] == "ARTIFACT_UPLOAD_FAILED"
+    assert "partial result" in payload["summary"]
+
+
 @pytest.mark.asyncio
 async def test_operation_lifecycle_reconciles_late_success_after_timeout(monkeypatch):
     import app.repos as repos_module
