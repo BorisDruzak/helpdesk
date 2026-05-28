@@ -1,0 +1,48 @@
+{
+  "run_marker": "p5-fix2-20260529-0005-8bfc7c76",
+  "surface": "real browser admin session + /api/web/changes API",
+  "server_url": "https://192.168.100.17:9443",
+  "commit": "8bfc7c7688c4396625495d3f8a20ae539a6ca94c",
+  "change": {
+    "change_id": "39603dc0-9cfa-49c8-bed4-265b25b3af66",
+    "change_key": "CHG-000014",
+    "type": "normal",
+    "final_status": "approved"
+  },
+  "created_rows": {
+    "approved_risk_assessments": 2,
+    "approved_plans": 2,
+    "approved_approvals": 1
+  },
+  "http_statuses": [
+    ["create normal change", 200],
+    ["transition submitted", 200],
+    ["transition assessing", 200],
+    ["create risk v1", 200],
+    ["submit risk v1", 200],
+    ["approve risk v1", 200],
+    ["create risk v2", 200],
+    ["submit risk v2", 200],
+    ["approve risk v2", 200],
+    ["create incomplete approved plan v1", 200],
+    ["approve plan v1", 200],
+    ["create complete approved plan v2", 200],
+    ["approve plan v2", 200],
+    ["transition awaiting_approval with duplicate approved versions", 200],
+    ["request approvals", 200],
+    ["approve approval", 200],
+    ["transition approved with duplicate approved versions", 200],
+    ["get change final", 200]
+  ],
+  "server_db_evidence": {
+    "change_row": "CHG-000014|approved|normal|high|2|2|1",
+    "device_outbox_rows_for_marker": 0
+  },
+  "agent_sqlite_evidence": {
+    "outbox_marker": 0,
+    "failed_outbox_marker": 0,
+    "sent_history_marker": 0,
+    "seen_commands_marker": 0
+  },
+  "server_log_evidence": "last 120 service log lines contained no MultipleResultsFound, Traceback, ERROR, or p5-fix2 marker errors"
+}

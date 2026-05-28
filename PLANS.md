@@ -5373,7 +5373,7 @@ P5 discovery evidence before fixes:
 ### BUG-20260528-P5-01 - duplicate risk/plan rows make change transition return HTTP 500
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: lifecycle / risk-impact / rollback / approval / browser-ui / server-db
 
 P5 scenario: P5.4 Normal change approval flow and P5.7 Risk / impact / implementation / rollback gates.
@@ -5443,13 +5443,25 @@ Tests:
 - Red before fix: `python -m pytest server\tests\test_change_lifecycle.py::test_duplicate_approved_risk_and_plan_versions_do_not_break_approval_transition server\tests\test_change_lifecycle.py::test_latest_approved_plan_controls_rollback_gate -q --tb=short` reproduced `MultipleResultsFound`.
 - Green after fix: same command -> `2 passed in 338.27s`.
 - Focused regression: `python -m pytest server\tests\test_change_lifecycle.py server\tests\test_change_api.py server\tests\test_change_pir.py -q --tb=short` -> `6 passed in 353.20s`.
-Live regression: pending deploy and clean live rerun with a fresh P5 fix marker.
+Live regression:
+- Deployed commit `8bfc7c7688c4396625495d3f8a20ae539a6ca94c` to `https://192.168.100.17:9443` using `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke passed `/api/health -> 200`.
+- Clean marker: `p5-fix2-20260529-0005-8bfc7c76`.
+- Real browser/admin/API surface: `https://192.168.100.17:9443/app/admin/changes` with same-origin `/api/web/changes*` calls.
+- Created normal change `CHG-000014` / `39603dc0-9cfa-49c8-bed4-265b25b3af66`.
+- Created and approved two risk assessment versions and two plan versions; v1 plan had no rollback, v2 plan had rollback.
+- Transition `assessing -> awaiting_approval` returned HTTP `200`; approval request/decision returned HTTP `200`; transition `awaiting_approval -> approved` returned HTTP `200`; final change status `approved`.
+- No lifecycle call in the clean rerun returned HTTP `500`.
+- Server DB proof: `CHG-000014|approved|normal|high|2|2|1` for change status/type/risk and approved risk/plan/approval counts.
+- Server DB no agent dispatch proof: `device_outbox` rows matching marker `p5-fix2-20260529-0005-8bfc7c76` = `0`.
+- Agent SQLite proof: `outbox_marker=0`, `failed_outbox_marker=0`, `sent_history_marker=0`, `seen_commands_marker=0`.
+- Server logs: last 120 server service lines contained no `MultipleResultsFound`, `Traceback`, `ERROR`, or marker-related errors.
+- Evidence artifact: `artifacts\p5-fix2-20260529-0005-8bfc7c76-change-regression.json`.
 Regression check:
 - Duplicate approved risk/plan versions no longer produce HTTP 500 in service tests.
 - Latest approved plan still controls rollback validation; an approved newer plan without rollback keeps approval transition denied.
 Remaining risk:
-- Need live server regression before changing status to `verified-fixed`.
-Status consistency checked: partial; keep status `reproduced` until live regression passes.
+- `p5-fix-20260529-0000-8bfc7c76` is labeled test-tool contamination: the probe extracted the risk id from the wrong response field and sent `/risk/undefined/...`; it is not P5-01 product evidence and was not used for verification.
+Status consistency checked: yes
 
 ### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
 
