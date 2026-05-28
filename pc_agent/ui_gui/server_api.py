@@ -8,12 +8,133 @@ import json
 import re
 import tempfile
 import uuid
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
 from loguru import logger
 
 from pc_agent.core.action_trace import ActionTraceContext, get_action_trace_recorder
+
+
+class ServerApiError(Exception):
+    """Structured downstream HTTP error from the server API."""
+
+    def __init__(
+        self,
+        *,
+        http_status: int,
+        error: str,
+        error_code: str | None = None,
+        details: dict | list | None = None,
+        response_body: dict | str | None = None,
+        url_path: str | None = None,
+    ) -> None:
+        self.http_status = int(http_status)
+        self.error = str(error or f"http_{http_status}")
+        self.error_code = error_code or self._derive_error_code(self.error)
+        self.details = details
+        self.response_body = response_body
+        self.url_path = url_path
+        super().__init__(self._safe_summary())
+
+    @staticmethod
+    def _derive_error_code(error: str | None) -> str | None:
+        value = str(error or "").strip()
+        if not value:
+            return None
+        code = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").upper()
+        return code or None
+
+    @staticmethod
+    def _url_path(url: str | None) -> str | None:
+        if not url:
+            return None
+        parsed = urlparse(str(url))
+        if parsed.path:
+            return parsed.path
+        return str(url)
+
+    @classmethod
+    def from_response(
+        cls,
+        *,
+        http_status: int,
+        response_text: str,
+        url_path: str | None = None,
+        fallback_error: str | None = None,
+        fallback_error_code: str | None = None,
+    ) -> "ServerApiError":
+        payload: dict | str
+        try:
+            decoded = json.loads(response_text or "{}")
+        except (TypeError, json.JSONDecodeError):
+            decoded = response_text or ""
+        payload = decoded if isinstance(decoded, (dict, str)) else str(decoded)
+        if isinstance(payload, dict):
+            error = str(payload.get("error") or payload.get("message") or fallback_error or f"http_{http_status}")
+            error_code = payload.get("error_code") or fallback_error_code or cls._derive_error_code(error)
+            details = payload.get("details")
+            if not isinstance(details, (dict, list)):
+                details = None
+        else:
+            error = fallback_error or str(payload or f"http_{http_status}")
+            error_code = fallback_error_code or cls._derive_error_code(error)
+            details = None
+        return cls(
+            http_status=http_status,
+            error=error,
+            error_code=str(error_code) if error_code else None,
+            details=details,
+            response_body=payload,
+            url_path=url_path,
+        )
+
+    def _safe_summary(self) -> str:
+        if self.error_code:
+            return f"HTTP {self.http_status}: {self.error} ({self.error_code})"
+        return f"HTTP {self.http_status}: {self.error}"
+
+    def to_automation_payload(self, *, action: str | None = None, action_id: str | None = None) -> dict:
+        payload = {
+            "status": "error",
+            "error": self.error,
+            "downstream_http_status": self.http_status,
+        }
+        if self.error_code:
+            payload["error_code"] = self.error_code
+        if self.details is not None:
+            payload["details"] = self.details
+        if action:
+            payload["action"] = action
+        if action_id:
+            payload["action_id"] = action_id
+        if self.url_path:
+            payload["downstream_path"] = self.url_path
+        return payload
+
+
+class ServerApiConnectionError(Exception):
+    """Network-level failure while calling the downstream server API."""
+
+    def __init__(self, *, error: str, url_path: str | None = None) -> None:
+        self.error = str(error or "server_api_unavailable")
+        self.error_code = "SERVER_API_UNAVAILABLE"
+        self.url_path = url_path
+        super().__init__(self.error)
+
+    def to_automation_payload(self, *, action: str | None = None, action_id: str | None = None) -> dict:
+        payload = {
+            "status": "error",
+            "error": self.error,
+            "error_code": self.error_code,
+        }
+        if action:
+            payload["action"] = action
+        if action_id:
+            payload["action_id"] = action_id
+        if self.url_path:
+            payload["downstream_path"] = self.url_path
+        return payload
 
 
 class ServerApiClient:
@@ -84,7 +205,21 @@ class ServerApiClient:
 
     @staticmethod
     def _trace_payload_preview(payload: dict) -> dict:
-        preview = dict(payload or {})
+        def _redact(value: Any) -> Any:
+            if isinstance(value, dict):
+                redacted: dict[str, Any] = {}
+                for key, item in value.items():
+                    key_text = str(key).lower()
+                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                        redacted[key] = "<redacted>"
+                    else:
+                        redacted[key] = _redact(item)
+                return redacted
+            if isinstance(value, list):
+                return [_redact(item) for item in value]
+            return value
+
+        preview = _redact(dict(payload or {}))
         text = str(preview.get("text") or "")
         if text:
             preview["text"] = text[:160]
@@ -115,7 +250,21 @@ class ServerApiClient:
 
     @staticmethod
     def _trace_payload_preview(payload: dict) -> dict:
-        preview = dict(payload or {})
+        def _redact(value: Any) -> Any:
+            if isinstance(value, dict):
+                redacted: dict[str, Any] = {}
+                for key, item in value.items():
+                    key_text = str(key).lower()
+                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                        redacted[key] = "<redacted>"
+                    else:
+                        redacted[key] = _redact(item)
+                return redacted
+            if isinstance(value, list):
+                return [_redact(item) for item in value]
+            return value
+
+        preview = _redact(dict(payload or {}))
         text = str(preview.get("text") or "")
         if text:
             preview["text"] = text[:160]
@@ -414,7 +563,21 @@ class TicketApiClient:
 
     @staticmethod
     def _trace_payload_preview(payload: dict) -> dict:
-        preview = dict(payload or {})
+        def _redact(value: Any) -> Any:
+            if isinstance(value, dict):
+                redacted: dict[str, Any] = {}
+                for key, item in value.items():
+                    key_text = str(key).lower()
+                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                        redacted[key] = "<redacted>"
+                    else:
+                        redacted[key] = _redact(item)
+                return redacted
+            if isinstance(value, list):
+                return [_redact(item) for item in value]
+            return value
+
+        preview = _redact(dict(payload or {}))
         text = str(preview.get("text") or "")
         if text:
             preview["text"] = text[:160]
@@ -758,6 +921,27 @@ class TicketApiClient:
             "body": response_text,
         }
 
+    @staticmethod
+    def _server_error_from_response(
+        *,
+        status: int,
+        response_text: str,
+        url: str,
+        fallback_error: str | None = None,
+        fallback_error_code: str | None = None,
+    ) -> ServerApiError:
+        return ServerApiError.from_response(
+            http_status=status,
+            response_text=response_text,
+            url_path=ServerApiError._url_path(url),
+            fallback_error=fallback_error,
+            fallback_error_code=fallback_error_code,
+        )
+
+    @staticmethod
+    def _server_connection_error(*, exc: Exception, url: str) -> ServerApiConnectionError:
+        return ServerApiConnectionError(error=str(exc), url_path=ServerApiError._url_path(url))
+
     async def get_registry_options(self) -> dict:
         """Получает справочники для picker-полей формы обращения."""
         url = f"{self.base_url}/registry/options"
@@ -875,7 +1059,7 @@ class TicketApiClient:
             details={"payload": self._trace_payload_preview(payload)},
         )
         
-        logger.debug(f"POST {url} с payload: {payload}")
+        logger.debug(f"POST {url} с payload: {self._trace_payload_preview(payload)}")
         
         session = await self._get_session()
         headers = self._get_headers()
@@ -884,9 +1068,25 @@ class TicketApiClient:
                 response_text = await response.text()
                 
                 if response.status != 200:
-                    error_msg = f"HTTP {response.status}: {response_text}"
-                    logger.error(f"Ошибка create_ticket: {error_msg}")
-                    raise Exception(error_msg)
+                    error = self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
+                    get_action_trace_recorder().record(
+                        trace,
+                        stage="response",
+                        status="error",
+                        summary="server rejected ticket create",
+                        details={
+                            "http_status": error.http_status,
+                            "error": error.error,
+                            "error_code": error.error_code,
+                            "details": error.details,
+                        },
+                    )
+                    logger.error(f"Ошибка create_ticket: {error}")
+                    raise error
                 
                 result = json.loads(response_text)
                 ticket_data = result.get('ticket', {})
@@ -915,7 +1115,7 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при create_ticket: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
 
     async def preview_ticket_create(
         self,
@@ -962,11 +1162,15 @@ class TicketApiClient:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    raise Exception(f"HTTP {response.status}: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 return json.loads(response_text)
         except aiohttp.ClientError as exc:
             logger.info(f"Предпросмотр создания обращения недоступен: {exc}")
-            raise Exception(f"Network error: {exc}")
+            raise self._server_connection_error(exc=exc, url=url)
     
     async def get_service_catalog_current(self) -> dict:
         """Fetch requester-safe Service Catalog for the local agent wizard."""
@@ -977,11 +1181,15 @@ class TicketApiClient:
             async with session.get(url, headers=headers) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    raise Exception(f"HTTP {response.status}: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 return json.loads(response_text)
         except aiohttp.ClientError as exc:
             logger.info("Service catalog sync unavailable: %s", exc)
-            raise Exception(f"Network error: {exc}")
+            raise self._server_connection_error(exc=exc, url=url)
 
     async def get_knowledge_suggestions(
         self,
@@ -1018,11 +1226,15 @@ class TicketApiClient:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    raise Exception(f"HTTP {response.status}: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 return json.loads(response_text)
         except aiohttp.ClientError as exc:
             logger.info("Knowledge suggestions unavailable: %s", exc)
-            raise Exception(f"Network error: {exc}")
+            raise self._server_connection_error(exc=exc, url=url)
 
     async def record_knowledge_feedback(
         self,
@@ -1053,11 +1265,15 @@ class TicketApiClient:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    raise Exception(f"HTTP {response.status}: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 return json.loads(response_text)
         except aiohttp.ClientError as exc:
             logger.info("Knowledge feedback unavailable: %s", exc)
-            raise Exception(f"Network error: {exc}")
+            raise self._server_connection_error(exc=exc, url=url)
 
     async def get_ticket_form_pack_current(
         self,
@@ -1080,7 +1296,11 @@ class TicketApiClient:
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка get_ticket_form_pack_current: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 result = await response.json()
                 logger.debug(
                     "get_ticket_form_pack_current успешно: "
@@ -1089,7 +1309,7 @@ class TicketApiClient:
                 return result
         except aiohttp.ClientError as e:
             logger.error(f"Ошибка сети при get_ticket_form_pack_current: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
 
     async def list_tickets(self, *, account_session: Optional[dict] = None, trace_parent_action_id: Optional[str] = None) -> dict:
         """
@@ -1126,7 +1346,11 @@ class TicketApiClient:
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка list_tickets: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
 
                 result = await response.json()
                 tickets = result.get("tickets", [])
@@ -1149,7 +1373,7 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при list_tickets: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
     
     async def get_ticket(
         self,
@@ -1214,12 +1438,20 @@ class TicketApiClient:
                 if response.status == 404:
                     error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка get_ticket: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка get_ticket: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 result = await response.json()
                 messages_count = len(result.get('messages', []))
@@ -1247,7 +1479,7 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при get_ticket: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
     
     async def send_message(
         self,
@@ -1313,7 +1545,7 @@ class TicketApiClient:
             details={"payload": self._trace_payload_preview(payload)},
         )
         
-        logger.debug(f"POST {url} с payload: {payload}")
+        logger.debug(f"POST {url} с payload: {self._trace_payload_preview(payload)}")
         
         session = await self._get_session()
         headers = self._with_account_headers(self._get_headers(), account_session)
@@ -1324,17 +1556,29 @@ class TicketApiClient:
                 if response.status == 404:
                     error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка send_message: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 if response.status == 409:
                     error_msg = "Обращение закрыто (ticket_closed)"
                     logger.warning(f"Ошибка send_message: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка send_message: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 result = await response.json()
                 get_action_trace_recorder().record(
@@ -1356,7 +1600,7 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при send_message: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
 
     async def mark_ticket_read(self, ticket_id: str, last_read_event_id: int, *, account_session: Optional[dict] = None) -> dict:
         """
@@ -1378,7 +1622,7 @@ class TicketApiClient:
         if account_payload:
             payload["requester_account"] = account_payload
 
-        logger.debug(f"POST {url} с payload: {payload}")
+        logger.debug(f"POST {url} с payload: {self._trace_payload_preview(payload)}")
 
         session = await self._get_session()
         headers = self._with_account_headers(self._get_headers(), account_session)
@@ -1389,12 +1633,20 @@ class TicketApiClient:
                 if response.status == 404:
                     error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка mark_ticket_read: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
 
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка mark_ticket_read: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
 
                 result = await response.json()
                 logger.debug(
@@ -1406,7 +1658,7 @@ class TicketApiClient:
                 return result
         except aiohttp.ClientError as e:
             logger.error(f"Ошибка сети при mark_ticket_read: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
 
     async def upload_attachment(
         self,
@@ -1470,7 +1722,11 @@ class TicketApiClient:
                     if response.status != 200:
                         error_msg = f"HTTP {response.status}: {response_text}"
                         logger.error(f"Ошибка upload_attachment: {error_msg}")
-                        raise Exception(error_msg)
+                        raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
 
                     result = await response.json()
                     get_action_trace_recorder().record(
@@ -1506,7 +1762,7 @@ class TicketApiClient:
                     details={"exception_type": type(e).__name__, "error": str(e)},
                 )
                 logger.error(f"Ошибка сети при upload_attachment: {e}")
-                raise Exception(f"Network error: {e}")
+                raise self._server_connection_error(exc=e, url=url)
     
     @staticmethod
     def _filename_from_content_disposition(value: str | None, *, fallback: str) -> str:
@@ -1641,10 +1897,10 @@ class TicketApiClient:
             stage="request",
             status="started",
             summary="POST /tickets/{ticket_id}/close",
-            details={"payload": payload},
+            details={"payload": self._trace_payload_preview(payload)},
         )
         
-        logger.debug(f"POST {url} с payload: {payload}")
+        logger.debug(f"POST {url} с payload: {self._trace_payload_preview(payload)}")
         
         session = await self._get_session()
         headers = self._with_account_headers(self._get_headers(), account_session)
@@ -1655,12 +1911,20 @@ class TicketApiClient:
                 if response.status == 404:
                     error_msg = f"Обращение не найдено: {ticket_id}"
                     logger.error(f"Ошибка close_ticket: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}: {response_text}"
                     logger.error(f"Ошибка close_ticket: {error_msg}")
-                    raise Exception(error_msg)
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
                 
                 result = await response.json()
                 get_action_trace_recorder().record(
@@ -1686,7 +1950,7 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при close_ticket: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)
 
     async def run_tool(
         self,
@@ -1737,7 +2001,7 @@ class TicketApiClient:
             stage="request",
             status="started",
             summary="POST /tools/run",
-            details={"payload": payload},
+            details={"payload": self._trace_payload_preview(payload)},
         )
 
         logger.debug(f"POST {url} tool_name={tool_name}, ticket_id={ticket_id}")
@@ -1748,12 +2012,28 @@ class TicketApiClient:
             async with session.post(url, json=payload, headers=headers) as response:
                 response_text = await response.text()
                 if response.status == 401:
-                    raise Exception("Требуется авторизация (401)")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                        fallback_error="auth_required",
+                        fallback_error_code="AUTH_REQUIRED",
+                    )
                 if response.status == 400:
-                    raise Exception(f"Ошибка запроса: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                        fallback_error="validation_error",
+                        fallback_error_code="VALIDATION_ERROR",
+                    )
                 # 200 = синхронный результат (wait=1), 202 = операция принята и поставлена в очередь (норма для async)
                 if response.status not in (200, 202):
-                    raise Exception(f"HTTP {response.status}: {response_text}")
+                    raise self._server_error_from_response(
+                        status=response.status,
+                        response_text=response_text,
+                        url=url,
+                    )
 
                 result = json.loads(response_text) if response_text.strip() else {}
                 trace.operation_id = str(result.get("operation_id") or "") or trace.operation_id
@@ -1779,4 +2059,4 @@ class TicketApiClient:
                 details={"exception_type": type(e).__name__, "error": str(e)},
             )
             logger.error(f"Ошибка сети при run_tool: {e}")
-            raise Exception(f"Network error: {e}")
+            raise self._server_connection_error(exc=e, url=url)

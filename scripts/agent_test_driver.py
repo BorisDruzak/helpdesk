@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -56,7 +57,18 @@ def _request_json(method: str, url: str, payload: dict[str, Any] | None = None) 
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"HTTP {exc.code} for {url}: {body}") from exc
+        try:
+            error_payload = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            error_payload = {"status": "error", "error": body}
+        if not isinstance(error_payload, dict):
+            error_payload = {"status": "error", "error": str(error_payload)}
+        error_payload.setdefault("status", "error")
+        error_payload["local_http_status"] = exc.code
+        error_payload["automation_url_path"] = urllib.parse.urlparse(url).path
+        sys.stdout.write(json.dumps(error_payload, ensure_ascii=False, indent=2))
+        sys.stdout.write("\n")
+        raise SystemExit(1) from exc
     except urllib.error.URLError as exc:
         raise SystemExit(f"Request failed for {url}: {exc}") from exc
 

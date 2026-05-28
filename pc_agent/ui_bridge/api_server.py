@@ -19,6 +19,7 @@ from loguru import logger
 
 from .event_bus import EventBus
 from .models import ConsentDecision
+from pc_agent.ui_gui.server_api import ServerApiConnectionError, ServerApiError
 
 
 def _is_address_in_use(exc: OSError) -> bool:
@@ -791,6 +792,23 @@ class UiApiServer:
                 result = {"result": result}
             result.setdefault("status", "ok")
             return web.json_response(result, headers={"Access-Control-Allow-Origin": "*"})
+        except ServerApiError as e:
+            action = str(payload.get("action") or "").strip() if isinstance(payload, dict) else ""
+            action_id = str(payload.get("action_id") or "").strip() if isinstance(payload, dict) else ""
+            status = e.http_status if 400 <= e.http_status < 500 else 502
+            return web.json_response(
+                e.to_automation_payload(action=action or None, action_id=action_id or None),
+                status=status,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
+        except ServerApiConnectionError as e:
+            action = str(payload.get("action") or "").strip() if isinstance(payload, dict) else ""
+            action_id = str(payload.get("action_id") or "").strip() if isinstance(payload, dict) else ""
+            return web.json_response(
+                e.to_automation_payload(action=action or None, action_id=action_id or None),
+                status=503,
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
         except ValueError as e:
             return web.json_response(
                 {"status": "error", "error": str(e)},

@@ -4936,8 +4936,8 @@ Status consistency checked: yes/no
 ### BUG-20260528-P4-01 - automation create-ticket wraps validation denial as HTTP 500
 
 Severity: P4
-Status: deferred
-Area: workflow / test-contamination
+Status: verified-fixed
+Area: automation-bridge / workflow / test-surface
 
 P4 scenario: P4.1.B Create P4 signal dataset; attempted supporting test surface `/ui/automation/run`, not canonical product proof.
 Run id: `p4-20260528-1815-5217eb14`
@@ -4969,25 +4969,123 @@ Impact:
 - Pollutes interpretation if someone treats `/ui/automation/run` HTTP status as product ticket create result.
 Root cause hypothesis:
 - `GuiAutomationController` or UI bridge converts downstream server `HTTP 400` into bridge `HTTP 500` instead of preserving a structured validation denial.
-Root cause confirmed: no
+Root cause confirmed: yes, confirmed during fix run `p4-01-fix-20260528-2112-f7dc521b`.
 Fix policy:
 - Blocking further P4: no
-- Fixed now: no
+- Fixed now: yes
 
 Fix summary:
+- Added structured downstream server error handling for GUI ticket API calls and `/ui/automation/run`.
+- Expected downstream validation/auth/not-found/conflict denials now preserve `downstream_http_status`, `error`, `error_code`, `details`, `action`, and `action_id` in a local non-500 bridge response.
+- Network failures map to a structured local `503`; true unexpected bridge/controller exceptions still map to local `500`.
+- Ticket API trace/debug payload previews redact session tokens before logging.
 Changed files:
+- `pc_agent/ui_gui/server_api.py`
+- `pc_agent/ui_bridge/api_server.py`
+- `scripts/agent_test_driver.py`
+- `pc_agent/tests/test_ticket_api_client_error_mapping.py`
+- `pc_agent/tests/test_ui_api_server_shutdown.py`
+- `pc_agent/docs/CODEMAP.md`
+- `docs/QUICK_LOOKUP.md`
+- `PLANS.md`
 Tests:
+- `python -m py_compile pc_agent\ui_gui\server_api.py pc_agent\ui_bridge\api_server.py scripts\agent_test_driver.py pc_agent\tests\test_ticket_api_client_error_mapping.py pc_agent\tests\test_ui_api_server_shutdown.py` -> passed.
+- `python -m pytest pc_agent\tests\test_ticket_api_client_error_mapping.py pc_agent\tests\test_ui_api_server_shutdown.py::test_ui_api_server_automation_maps_downstream_validation_error pc_agent\tests\test_ui_api_server_shutdown.py::test_ui_api_server_automation_keeps_unexpected_exception_as_500 pc_agent\tests\test_gui_automation_controller.py -q` -> `15 passed`.
 Live regression:
+- Server baseline recovery: server was intentionally stopped after P4; `python scripts\manage_remote_stack.py start server` followed by smoke returned `/api/health -> 200`.
+- Local agent restarted from source: `live-v3-p1-clean2`, bridge connected, WS state `connected`.
+- Invalid automation create with marker `p4-01-fix-20260528-2112-f7dc521b` returned local HTTP `400`, not `500`, body `status=error`, `error=validation_error`, `error_code=VALIDATION_ERROR`, `downstream_http_status=400`, details for missing `impact_scope` and `work_continuity`.
+- Direct server API invalid create remained HTTP `400` with the same validation details; server behavior was not weakened.
+- Invalid create no-mutation proof before valid create: server DB marker rows for `tickets`, `ticket_events`, `operations`, `device_outbox` were `[]`; agent SQLite marker rows for `outbox`, `outbox_sent_history`, `seen_commands`, `pending_consents` were `[]`.
+- Valid automation create with complete form payload succeeded: ticket `T-000638`, id `896665d2-fd69-41a5-a8cc-261116f3d334`, requester account session `0a8c0210-3028-4fb8-89aa-9a40f1d643f9`, status `queued`.
+- Adjacent downstream `4xx` check: `snapshot-ticket` for nonexistent ticket returned local HTTP `404`, `error_code=TICKET_NOT_FOUND`, `downstream_http_status=404`, not `500`.
+- Browser/admin evidence: real browser URL `https://192.168.100.17:9443/app/tickets/896665d2-fd69-41a5-a8cc-261116f3d334`; visible DOM contained `T-000638`, marker, and status `В очереди`; browser console warning/error count `0`. Screenshot capture timed out in the browser tool, so DOM output is the browser evidence artifact for this flow.
+- UIA smoke: `pywinauto==0.6.9`, backend `uia`, `scripts\live_agent_uia_state_probe.py` output `artifacts\p4-01-fix-20260528-2112-f7dc521b-uia-state.json`, connected/account confirmed, `ticket_count=21`, target `T-000638` present in `agent.tickets.list`, failures `[]`.
 Regression check:
+- Existing P4 close remains valid; P5 readiness remains ready and P5 was not started.
+- `/ui/automation/run` remains a separate test surface, not GUI-equivalent pass evidence.
+- Final code gates:
+  - `python scripts\verify_workspace.py` -> passed.
+  - `python -m compileall -q server pc_agent scripts` -> passed.
+  - `git diff --check` -> passed with CRLF warnings only.
+  - `python -m pytest pc_agent\tests\test_ticket_api_client_error_mapping.py pc_agent\tests\test_ui_api_server_shutdown.py pc_agent\tests\test_gui_automation_controller.py -q` -> `21 passed`.
 Remaining risk:
-- Local automation bridge is not reliable evidence for this P4 dataset creation until mapped validation errors are fixed or required smart-form payloads are supplied.
+- `agent_test_driver.py` now prints structured JSON for expected bridge HTTP errors and exits nonzero; scripts that expected text-only `HTTP <status>` stderr may need to read stdout JSON.
 Status consistency checked: yes
+
+Fix attempt started:
+- Run marker: `p4-01-fix-20260528-2112-f7dc521b`.
+- Commit before fix: `f7dc521b387f31806895fd0dfb01b238eace9c80`.
+- Phase/status audit:
+  - P0/P1/P2/P3/P4 are closed; P5 is not started.
+  - `BUG-20260528-P4-01` was still `deferred` before this fix attempt.
+  - Remote server was intentionally stopped after P4 close (`server: stopped`); this is baseline recovery, not a live incident.
+  - Agent `live-v3-p1-clean2` bridge was reachable, but server connection showed `disconnected / ошибка handshake` while the server was stopped.
+  - Existing unrelated dirty file `pc_agent/ui_gui/tickets_list_model.py` and old/untracked `artifacts/*` are excluded from this fix scope.
+- Validation surfaces:
+  - local automation bridge `/ui/automation/run`;
+  - direct server HTTP/API;
+  - server DB no-mutation check;
+  - agent SQLite no-outbox/no-command check;
+  - browser/admin/support only where UI-visible.
+
+Fix attempt evidence before code changes:
+- Local automation bridge repro:
+  - Path tested: local GUI automation bridge `/ui/automation/run`.
+  - Command: `python scripts\agent_test_driver.py create-ticket live-v3-p1-clean2 --title "P4-01 validation denial marker p4-01-fix-20260528-2112-f7dc521b" --description "P4-01 automation bridge validation-denial repro p4-01-fix-20260528-2112-f7dc521b" --form-key network --ticket-type incident --form-payload-json "@artifacts\p4-01-fix-20260528-2112-f7dc521b-invalid-form-payload.json"`.
+  - Actual: local bridge HTTP `500`, body `{"status":"error","error":"HTTP 400: {\"status\":\"error\",\"error\":\"validation_error\",\"details\":{\"form_payload\":{\"impact_scope\":\"Поле обязательно\",\"work_continuity\":\"Поле обязательно\"}}}"}`.
+  - Interpretation: expected server validation denial was flattened into generic exception text and mapped to local bridge `500`.
+- Direct server API comparison:
+  - Path tested: direct server HTTP/API.
+  - Same invalid form payload and account session context sent to `POST /api/tickets/create`.
+  - Result: server HTTP `400`, `status=error`, `error=validation_error`, details for missing `form_payload.impact_scope` and `form_payload.work_continuity`.
+  - Account evidence: account session id `0a8c0210-3028-4fb8-89aa-9a40f1d643f9`, display `P1 Clean User`; raw session token was not printed.
+  - Product conclusion: server-side validation behavior is correct and must not be weakened.
+- Server DB no-mutation proof:
+  - Path tested: server DB query.
+  - Marker-filtered rows for `tickets`, `ticket_events`, `operations`, and `device_outbox`: `[]`.
+- Agent SQLite no-mutation proof:
+  - Path tested: agent SQLite query for `live-v3-p1-clean2`.
+  - Marker-filtered rows for `outbox`, `outbox_sent_history`, `seen_commands`, and `pending_consents`: `[]`.
+- Browser/support evidence:
+  - Path tested: real browser/admin/support UI.
+  - URL: `https://192.168.100.17:9443/app/tickets/5aefd56e-226f-4030-b7ef-e76686770efc`.
+  - Visible ticket list did not contain marker `p4-01-fix-20260528-2112-f7dc521b`; browser console warning/error count was `0`.
+  - This is supporting evidence only: invalid automation create has no expected UI artifact.
+- Test artifact:
+  - `artifacts\p4-01-fix-20260528-2112-f7dc521b-invalid-form-payload.json`; intentionally omits required `impact_scope` and `work_continuity`.
+
+Root cause confirmed:
+- Primary layer: automation bridge / test-surface error mapping.
+- Secondary layer: local agent `TicketApiClient` error model.
+- `TicketApiClient.create_ticket()` converts non-2xx server responses into a generic `Exception(f"HTTP {response.status}: {response_text}")`.
+- `GuiAutomationController.run_action()` records the exception and re-raises it.
+- `UiApiServer.handle_run_automation()` treats every non-`ValueError` exception as an unexpected bridge failure and returns local HTTP `500`.
+- The downstream server response body stays embedded as string text, so `http_status`, `error`, `error_code`, and validation `details` are not machine-readable at `/ui/automation/run`.
+
+Adjacent automation bridge audit:
+
+| Action | Downstream expected errors | Current bridge behavior before fix | Needs fix |
+|---|---|---|---|
+| `ticket.create` | `400` validation, `403` account, `409` workflow/conflict | `TicketApiClient.create_ticket()` raises generic `Exception`; `/ui/automation/run` returns `500` | yes |
+| `ticket.snapshot` / `ticket.open` | `403` account, `404` ticket | `TicketApiClient.get_ticket()` raises generic `Exception` or text-only 404; bridge returns `500` | yes |
+| `ticket.message.send` | `403` account, `404` ticket, `409` closed | `TicketApiClient.send_message()` raises generic/text-only exceptions; bridge returns `500` | yes |
+| `ticket.tool.run` / capture actions | `400` validation, `401/403` auth/account, `404` ticket/tool, `409` state | `TicketApiClient.run_tool()` raises generic/text-only exceptions; bridge returns `500` | yes |
+| `ticket.attach_files` / upload | `400` invalid file, `403` account, `413` size | upload path raises generic `Exception`; bridge returns `500` if propagated | yes |
+| `ticket.confirm_resolution` | `403` account, `404` ticket, `409` workflow | `TicketApiClient.close_ticket()` raises generic/text-only exceptions; bridge returns `500` | yes |
+
+Fix plan:
+- Add a typed, structured `ServerApiError` for downstream HTTP responses and preserve status/error/error_code/details without tokens or headers.
+- Add a typed network error for local bridge `502/503` mapping.
+- Update ticket-bound `TicketApiClient` paths used by automation actions to raise structured errors on downstream non-2xx responses.
+- Update `/ui/automation/run` to map structured downstream `4xx` to the same local non-500 status, keeping `500` only for true unexpected bridge exceptions.
+- Keep `/ui/automation/run` classified as a test surface, not GUI-pass evidence.
 
 ## P4 findings summary - 2026-05-28 - run_id=p4-20260528-1815-5217eb14
 
 | Bug | Severity | Area | Blocking P4 | Fix now | Status |
 |---|---|---|---|---|---|
-| BUG-20260528-P4-01 | P4 | workflow / test-contamination | no | no | reproduced; deferred |
+| BUG-20260528-P4-01 | P4 | automation-bridge / test-surface | no | yes | verified-fixed |
 | BUG-20260528-P4-02 | P2 | problem-candidate / problem-scanner | yes | yes | verified-fixed |
 | BUG-20260528-P4-03 | P1 | problem-candidate / problem-lifecycle | yes | yes | verified-fixed |
 | BUG-20260528-P4-04 | P1 | known-error / workaround / knowledge-draft | yes | yes | verified-fixed |
@@ -5051,18 +5149,19 @@ P4.9 result:
 - Passed. Agent SQLite marker counts `0`; server `device_outbox` active marker count `0`; UIA state probe passed; fresh browser navigation to `/app/admin/problems` had HTTP errors `[]` and console errors `[]`.
 
 Bugs found:
-- `BUG-20260528-P4-01` - deferred non-blocking automation bridge validation status mapping.
+- `BUG-20260528-P4-01` - verified-fixed.
 - `BUG-20260528-P4-02` - verified-fixed.
 - `BUG-20260528-P4-03` - verified-fixed.
 - `BUG-20260528-P4-04` - verified-fixed.
 
 Verified fixed:
+- Automation bridge downstream validation/auth/not-found/conflict error mapping.
 - Scanner duplicate candidate creation across lookback windows.
 - Scanner legacy/uncategorized candidate conversion.
 - Knowledge draft slug collision/idempotency.
 
 Deferred/known limitations:
-- `BUG-20260528-P4-01`: local automation bridge surfaces downstream validation denial as HTTP `500`; it did not block P4 canonical browser/server validation.
+- None for P4 close. Historical pre-fix P4-01 failed bridge responses remain evidence only and are not product DB contamination.
 
 Security/privacy result:
 - Requester/public P4 API access: denied for anonymous and agent token surfaces tested.

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pc_agent.ui_bridge.api_server import UiApiServer
 from pc_agent.ui_bridge.event_bus import EventBus
+from pc_agent.ui_gui.server_api import ServerApiError
 
 
 @pytest.mark.asyncio
@@ -219,6 +220,88 @@ async def test_ui_api_server_automation_endpoints():
             assert payload["status"] == "ok"
             assert payload["action"] == "window.show"
             assert payload["echo"]["force"] is True
+    finally:
+        await session.close()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_ui_api_server_automation_maps_downstream_validation_error():
+    server = UiApiServer(
+        EventBus(),
+        host="127.0.0.1",
+        port=0,
+        on_run_automation=lambda _payload: (_ for _ in ()).throw(
+            ServerApiError(
+                http_status=400,
+                error="validation_error",
+                error_code="VALIDATION_ERROR",
+                details={
+                    "form_payload": {
+                        "impact_scope": "Поле обязательно",
+                        "work_continuity": "Поле обязательно",
+                    }
+                },
+                response_body={
+                    "status": "error",
+                    "error": "validation_error",
+                    "error_code": "VALIDATION_ERROR",
+                },
+                url_path="/tickets/create",
+            )
+        ),
+    )
+    await server.start()
+
+    sockets = getattr(getattr(server.site, "_server", None), "sockets", None)
+    assert sockets
+    port = sockets[0].getsockname()[1]
+
+    session = aiohttp.ClientSession()
+    try:
+        async with session.post(
+            f"http://127.0.0.1:{port}/ui/automation/run",
+            json={"action": "ticket.create", "action_id": "action-validation"},
+        ) as response:
+            assert response.status == 400
+            payload = await response.json()
+            assert payload["status"] == "error"
+            assert payload["action"] == "ticket.create"
+            assert payload["action_id"] == "action-validation"
+            assert payload["downstream_http_status"] == 400
+            assert payload["error"] == "validation_error"
+            assert payload["error_code"] == "VALIDATION_ERROR"
+            assert payload["details"]["form_payload"]["impact_scope"] == "Поле обязательно"
+            assert "token" not in str(payload).lower()
+    finally:
+        await session.close()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_ui_api_server_automation_keeps_unexpected_exception_as_500():
+    server = UiApiServer(
+        EventBus(),
+        host="127.0.0.1",
+        port=0,
+        on_run_automation=lambda _payload: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    await server.start()
+
+    sockets = getattr(getattr(server.site, "_server", None), "sockets", None)
+    assert sockets
+    port = sockets[0].getsockname()[1]
+
+    session = aiohttp.ClientSession()
+    try:
+        async with session.post(
+            f"http://127.0.0.1:{port}/ui/automation/run",
+            json={"action": "ticket.create"},
+        ) as response:
+            assert response.status == 500
+            payload = await response.json()
+            assert payload["status"] == "error"
+            assert payload["error"] == "boom"
     finally:
         await session.close()
         await server.stop()
