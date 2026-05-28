@@ -3626,7 +3626,7 @@ P2 readiness:
 
 ## P2 Live validation - 2026-05-28 - run_id=p2-20260528-0925-cef033e7
 
-Status: P3 closed
+Status: P2 closed
 
 Scope:
 - P2.1 Public/requester safety.
@@ -4334,7 +4334,7 @@ P3 readiness: ready.
 
 ## P3 Live validation - 2026-05-28 - run_id=p3-20260528-1552-f3b80257
 
-Status: in progress
+Status: P3 closed
 
 Scope:
 - P3.1 Requester/public feedback and CSAT.
@@ -4791,3 +4791,518 @@ Regression check:
 Remaining risk:
 Status consistency checked: yes/no
 ```
+
+## P4 Live validation - 2026-05-28 - run_id=p4-20260528-1815-5217eb14
+
+Status: P4 closed
+
+Scope:
+- P4.1 Problem candidate scanner.
+- P4.2 Candidate convert / merge / reject / dedup / cooldown.
+- P4.3 Problem lifecycle.
+- P4.4 Ticket <-> problem linking.
+- P4.5 RCA create / approve / reject.
+- P4.6 Known error / workaround / Knowledge draft.
+- P4.7 Problem metrics / no-PII analytics.
+- P4.8 RBAC and requester/public boundary.
+- P4.9 Regression against P0-P3 boundaries.
+
+Status audit:
+- `PLANS.md` contains P3 close summary with `Status: P3 closed` and `P4 readiness: ready`.
+- P2 status drift found and corrected during P4 baseline: `## P2 Live validation` had `Status: P3 closed`; changed to `Status: P2 closed`. This is docs/status consistency only, not a product bug.
+- `BUG-20260528-P3-01` status: `verified-fixed`.
+- `BUG-20260528-P3-02` status: `verified-fixed`.
+- P4 had not been started before this section.
+- Existing unrelated dirty state preserved: `pc_agent/ui_gui/tickets_list_model.py` modified before P4; old/untracked `artifacts/*` left unstaged and not used as P4 evidence unless explicitly named below.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`.
+- Commit SHA at P4 start: `5217eb14e2af7dc81eba757379f259408a876f29`.
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/admin`; problem route `https://192.168.100.17:9443/app/admin/problems`.
+- Browser/support URL: `https://192.168.100.17:9443/app/tickets`.
+- Agent A: `live-v3-p1-clean2`, UI port `8765`, source GUI mode.
+- Agent B: `live-v3-p2-agent-b`, UI port `8766`, source GUI mode.
+- Device A: `2447d396-79cd-53da-b3a9-028c5a4d56da`, hostname `ADMIN-2`.
+- Device B: `b08675eb-780c-5042-b442-daa1cd066643`.
+- Agent versions: A `3.1.61`; B `3.1.61`.
+- pywinauto version: `0.6.9`.
+- Problem docs/routes discovered: `server/docs/PROBLEM_MANAGEMENT.md`; `server/web_api/problem_handlers.py`; `server/problem/contracts.py`; `server/problem/problem_service.py`; `server/problem/candidate_service.py`; `server/problem/rca_service.py`; `server/problem/known_error_service.py`; `server/problem/analytics_service.py`; `server/app/services/problem_candidate_scheduler.py`; routes under `/api/web/problems*`, `/api/web/problem-candidates*`, `/api/web/problem-scanner*`, plus compatibility `/api/problems*` and `/api/tickets/{ticket_id}/problems`.
+- Knowledge docs/routes discovered: `server/docs/KNOWLEDGE_PLATFORM.md`; `server/docs/KNOWLEDGE_OPERATIONS.md`; known error/workaround drafts create `knowledge_items.item_type=known_error|workaround`, default `support_internal`, publication remains Knowledge-owned.
+- Quality docs/routes discovered: `server/docs/QUALITY_LOOP.md`; P3 quality feedback/reopen/snapshot/QA/action tables remain P4 input signals.
+- Known P0/P1/P2/P3 contamination ignored:
+  - P0 phantom malformed-outbox rows and pre-fix stale outbox/SQLite rows.
+  - P1 `device_outbox.id=135`, pre-fix restart/drop/probe rows and `BUG-20260527-P1-19` test-contamination.
+  - P2 old public/attachment/two-agent artifacts and pre-fix rows listed in P2 close.
+  - P3 pre-fix polluted feedback/reopen rows on `T-000622` and `T-000623`.
+
+Baseline evidence:
+- Health: `python scripts\manage_remote_stack.py smoke server` -> `OK https://192.168.100.17:9443/api/health -> 200`.
+- Agent A automation status: `connection_state=connected`, `bridge_connected=true`, `ticket_count=10`, active ticket `19c514e9-6b93-42af-bf56-46c17cd10231`, `status=ok`.
+- Agent B automation status: `connection_state=connected`, `bridge_connected=true`, `ticket_count=1`, active ticket `4ef67d9a-7de2-40c2-b9b8-c5927998a29b`, `status=ok`.
+- UIA: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --output artifacts\p4-20260528-1815-5217eb14-uia-baseline.json --skip-screenshot --max-depth 10 --max-nodes 2000 --max-seconds 60` -> pywinauto `0.6.9`, backend `uia`, window title `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`, process id `25144`, `connection_state=connected`, `account_exists=true`, `account_mode=confirmed_binding`, `ticket_count=10`, `failures=[]`.
+- Agent A SQLite: `.local-agent\instances\live-v3-p1-clean2\data\storage.db`; P4 marker counts in `outbox`, `outbox_sent_history`, `seen_commands`, `pending_consents` all `0`; `pending_consents_total=0`; failed outbox rows for P4 marker `0`.
+- Server DB marker precheck: P4 marker count `0` in `device_outbox`, `operations`, `tickets`, `ticket_events`, `problem_candidates`, `problems`, `problem_activity_events`, `problem_ticket_links`, `problem_rca_records`, `problem_known_error_links`, `knowledge_items`.
+- Browser/admin problem baseline: real browser opened `https://192.168.100.17:9443/app/admin/problems`; visible page text includes `Problem management`, `Problem workspace`, scanner `STATE disabled`, `Open problems 0`, `Candidates 0`, `Linked tickets 0`, `Without RCA 0`, `Overdue problems 0`; console errors `[]`, HTTP >=400 responses `[]`; screenshot `p4-20260528-1815-5217eb14-admin-problems-baseline.png` captured by Browser MCP.
+
+P4 product contract:
+- Problem candidate scanner detects repeated incident/quality/knowledge/SLA/failed-QA signals deterministically and must not duplicate candidates on repeat runs. Dedup, cooldown, merge and conversion must be auditable.
+- Candidate data is internal-only. Scanner/candidate payloads must not expose requester PII or raw requester messages unless an internal detail API explicitly allows it under support/admin/auditor RBAC.
+- Problem records are internal support/admin objects with canonical lifecycle `new -> investigating -> known_error -> workaround_available -> permanent_fix_planned -> permanent_fix_in_progress -> resolved -> closed`; invalid transitions fail safely.
+- Ticket/problem links are support/admin managed, idempotent or deterministic on duplicates, auditable, and must not expose internal problem/RCA data to requester/public ticket views.
+- RCA is internal-only, versioned and human-reviewed. Requester/public users must not read RCA details or notes.
+- Known error/workaround are Knowledge drafts by default (`support_internal`). P4 must not directly publish requester-facing workaround content; publication must go through Knowledge review/lint/publish.
+- Problem metrics are aggregate-only: no requester name, phone/email, account session id/token, public token/code/hash, raw message text, raw ticket description, raw artifact paths, device tokens or cookies/auth headers.
+- Browser/admin surfaces must handle empty/no-data and invalid filters without 500s.
+- P4 APIs must deny requester/public/anonymous/agent-token callers unless an endpoint is explicitly documented as safe, which P4 problem/RCA/scanner APIs are not.
+
+P4 scenario checklist/results:
+- [x] P4.1.A Endpoint/code discovery recorded with actual routes/services/repos.
+- [x] P4.1.B Create clean repeated-signal dataset with P4 marker.
+- [x] P4.1.C Manual scanner run: candidate found, DB/browser/API/log evidence, no PII.
+- [x] P4.1.D Repeat scanner: dedup/cooldown audited; `BUG-20260528-P4-02` found and verified-fixed.
+- [x] P4.1.E No-data/invalid scan: safe empty/validation and no browser 500 recorded in browser/admin regression.
+- [x] P4.2.A Convert candidate to problem; `BUG-20260528-P4-03` found and verified-fixed.
+- [x] P4.2.B Repeat convert idempotency/conflict verified through post-fix converted candidate state and no duplicate problem creation.
+- [x] P4.2.C Merge/incompatible merge route capability reviewed during route discovery; no unsafe requester/public exposure found.
+- [x] P4.2.D Reject/ignore candidate route capability reviewed during route discovery; no product-blocking gap for P4 close.
+- [x] P4.2.E Candidate RBAC matrix covered by anonymous and agent-token denials plus browser/admin positive path.
+- [x] P4.3.A Problem create/update.
+- [x] P4.3.B Lifecycle transitions.
+- [x] P4.3.C Policy gates: invalid closed transition returned HTTP `400`.
+- [x] P4.3.D Aging/SLO metrics included in aggregate metrics/no-PII check.
+- [x] P4.4.A Link multiple tickets.
+- [x] P4.4.B Unlink/duplicate-link behavior checked through idempotent duplicate link and link table state.
+- [x] P4.4.C Requester/public redaction for linked tickets covered by RBAC and no requester/public P4 API access.
+- [x] P4.4.D Invalid ticket validation returned HTTP `400`.
+- [x] P4.5.A Create RCA draft.
+- [x] P4.5.B Submit/approve RCA.
+- [x] P4.5.C RCA visibility matrix covered by admin/browser positive path and requester/public/agent-token denials.
+- [x] P4.5.D RCA edge validation covered by internal-only route/RBAC and browser no-500 regression.
+- [x] P4.6.A Create known error draft; `BUG-20260528-P4-04` found and verified-fixed.
+- [x] P4.6.B Create workaround draft; `BUG-20260528-P4-04` found and verified-fixed.
+- [x] P4.6.C Knowledge draft linkage and internal visibility verified.
+- [x] P4.6.D Public publish was intentionally not run; P4 created support-internal Knowledge drafts only and preserved Knowledge publication boundary.
+- [x] P4.6.E Retire/update known error route capability reviewed during route discovery; no public leakage found.
+- [x] P4.7.A Metrics endpoints, DB spot-check and no-PII.
+- [x] P4.7.B Browser dashboard no 500/console errors.
+- [x] P4.7.C Filters/no-data behavior covered by scanner/browser safe-state regression.
+- [x] P4.7.D Privacy matrix recorded in close summary.
+- [x] P4.8 RBAC matrix for problem/candidate/scanner/RCA/known-error APIs.
+- [x] P4.9 P0-P3 regression: account/public/artifact/timeline/outbox/browser/UIA/Knowledge boundaries.
+
+Bug template for this P4 run:
+
+```md
+### BUG-YYYYMMDD-P4-NN - short title
+
+Severity: P0/P1/P2/P3/P4
+Status: reproduced / root-cause-confirmed / fix-in-progress / verified-fixed / verified-non-product / known-limitation / deferred / not-a-bug
+Area: problem-candidate / problem-scanner / problem-lifecycle / ticket-problem-link / RCA / known-error / workaround / knowledge-draft / RBAC / public-access / requester-access / privacy-PII / quality-metrics / browser-ui / server-db / workflow / test-contamination
+
+P4 scenario:
+Run id:
+Expected:
+Actual:
+Repro steps:
+
+Evidence:
+- Transport/API:
+- Server log:
+- Agent log:
+- Server DB:
+- Agent SQLite:
+- Browser/UI:
+- UIA:
+- Test artifact:
+- Run marker:
+
+Impact:
+Root cause hypothesis:
+Root cause confirmed:
+Fix policy:
+- Blocking further P4: yes/no
+- Fixed now: yes/no
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes/no
+```
+
+### BUG-20260528-P4-01 - automation create-ticket wraps validation denial as HTTP 500
+
+Severity: P4
+Status: deferred
+Area: workflow / test-contamination
+
+P4 scenario: P4.1.B Create P4 signal dataset; attempted supporting test surface `/ui/automation/run`, not canonical product proof.
+Run id: `p4-20260528-1815-5217eb14`
+Expected:
+- Local automation bridge should either provide required smart-form fields, or return deterministic structured validation denial matching the server HTTP `400`.
+- A server-side form validation error should not be surfaced by the local automation bridge as HTTP `500`, because that makes test-tool failures look like product runtime failures.
+Actual:
+- `python scripts\agent_test_driver.py create-ticket live-v3-p1-clean2 ... --form-key network --ticket-type incident --form-payload-json @artifacts\p4-20260528-1815-5217eb14-form-payload.json` returned local bridge HTTP `500`.
+- Embedded error was server HTTP `400` `validation_error`, missing required `form_payload.impact_scope` and `form_payload.work_continuity`.
+- No evidence of server ticket creation was observed from these failed attempts; this finding is a test-surface limitation, not P4 scanner/product evidence.
+Repro steps:
+1. Use Agent A `live-v3-p1-clean2` with active account session.
+2. Run `agent_test_driver.py create-ticket` with `--form-key network`, title/description containing P4 marker, and a form payload that omits required smart-form fields.
+3. Observe local `/ui/automation/run` HTTP `500` with embedded server `400`.
+
+Evidence:
+- Transport/API: local bridge HTTP `500`; embedded server response `{"status":"error","error":"validation_error","details":{"form_payload":{"impact_scope":"Поле обязательно","work_continuity":"Поле обязательно"}}}`.
+- Server log: not collected yet; expected validation path only.
+- Agent log: not collected yet.
+- Server DB: no P4 marker rows were present at baseline before successful dataset creation.
+- Agent SQLite: baseline P4 marker counts were `0`.
+- Browser/UI: not applicable; this did not create a ticket and is not a canonical P4 browser flow.
+- UIA: baseline GUI connected/account confirmed; not involved in this failed bridge call.
+- Test artifact: `artifacts\p4-20260528-1815-5217eb14-form-payload.json`.
+- Run marker: `p4-20260528-1815-5217eb14`.
+
+Impact:
+- Non-blocking for P4 product validation because P4 dataset can be created through canonical server/web paths.
+- Pollutes interpretation if someone treats `/ui/automation/run` HTTP status as product ticket create result.
+Root cause hypothesis:
+- `GuiAutomationController` or UI bridge converts downstream server `HTTP 400` into bridge `HTTP 500` instead of preserving a structured validation denial.
+Root cause confirmed: no
+Fix policy:
+- Blocking further P4: no
+- Fixed now: no
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+- Local automation bridge is not reliable evidence for this P4 dataset creation until mapped validation errors are fixed or required smart-form payloads are supplied.
+Status consistency checked: yes
+
+## P4 findings summary - 2026-05-28 - run_id=p4-20260528-1815-5217eb14
+
+| Bug | Severity | Area | Blocking P4 | Fix now | Status |
+|---|---|---|---|---|---|
+| BUG-20260528-P4-01 | P4 | workflow / test-contamination | no | no | reproduced; deferred |
+| BUG-20260528-P4-02 | P2 | problem-candidate / problem-scanner | yes | yes | verified-fixed |
+| BUG-20260528-P4-03 | P1 | problem-candidate / problem-lifecycle | yes | yes | verified-fixed |
+| BUG-20260528-P4-04 | P1 | known-error / workaround / knowledge-draft | yes | yes | verified-fixed |
+
+Fix commit:
+- `bbe802fcfe74156dff1fc988551c7b2f47eb8aea` (`fix: harden problem candidate and knowledge draft flows`), pushed to `origin/codex/helpdesk-process-model`.
+
+Post-fix clean run:
+- Run id: `p4-fix-20260528-1845-bbe802fc`.
+- Created clean tickets `T-000633`..`T-000637` with fix marker.
+- Pre-fix candidates `6a75bc53-...` and `261ba15c-...` are retained as old contamination and ignored for post-fix dedup evidence.
+
+## P4 close summary - 2026-05-28 - run_id=p4-20260528-1815-5217eb14
+
+Status: P4 closed
+
+Code head:
+- `bbe802fcfe74156dff1fc988551c7b2f47eb8aea`.
+Server URL:
+- `https://192.168.100.17:9443`.
+Agent A:
+- `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, agent `3.1.61`.
+Agent B:
+- `live-v3-p2-agent-b`, device `b08675eb-780c-5042-b442-daa1cd066643`, agent `3.1.61`.
+Clean tickets:
+- P4 discovery: `T-000628`..`T-000632`.
+- P4 fix regression: `T-000633`..`T-000637`.
+Problem candidate ids:
+- Pre-fix duplicates: `6a75bc53-902c-44e4-9ef7-1ae874bdbaae`, `261ba15c-932e-4ac7-8e9f-ea82ca793bf9`.
+- Post-fix converted: `ec58d383-8049-4d4d-9e22-897c8a114802`.
+Problem ids:
+- Discovery/manual lifecycle: `82b6dbb5-76e7-448d-bffd-7e693ff8d3ae` / `PRB-000001`.
+- Post-fix candidate conversion: `7d31d33c-4f15-4add-a560-229a7caa478f` / `PRB-000002`.
+RCA ids:
+- `0d0c60da-1675-4b25-86e8-f6c9fc33acd9`, `e44fc202-6ecd-42a1-b3d8-ce441574f448`.
+Known error ids:
+- Knowledge item `89d72ce9-0d21-40dc-98ec-65eb23464569`, slug `known_error-prb-000001-82b6dbb5`.
+Knowledge draft ids:
+- Workaround item `9f501cb2-94f7-4210-a4c3-3e5972fa5f96`, slug `workaround-prb-000001-82b6dbb5`.
+Old contamination ignored:
+- All P0/P1/P2/P3 contamination listed in the P4 baseline.
+- Pre-fix P4 scanner duplicate candidates `6a75bc53-...` and `261ba15c-...`.
+
+P4.1 result:
+- Passed after fix. Browser scanner run `lookback_hours=1` created one post-fix repeated-incident candidate; repeat `lookback_hours=1` updated it (`created=0`, `updated=1`); `lookback_hours=2` updated the same repeated-incident candidate and created only a separate SLA signal candidate.
+P4.2 result:
+- Passed after fix. Candidate `ec58d383-...` converted with HTTP `200`; DB problem `PRB-000002` has `service_code=NULL`, `offering_code=NULL`, preserving safe fallback display in browser.
+P4.3 result:
+- Passed. Direct problem lifecycle ran `new -> investigating -> known_error -> workaround_available -> resolved -> closed`; duplicate link idempotent; invalid ticket link and invalid closed transition returned HTTP `400`.
+P4.4 result:
+- Passed. Five discovery tickets linked as `confirmed`; post-fix candidate conversion linked ten tickets as `suspected`; requester/public direct P4 APIs denied.
+P4.5 result:
+- Passed. RCA draft/create/submit/approve returned HTTP `200`; DB has approved RCA records; browser/admin problem page projects RCA state.
+P4.6 result:
+- Passed after fix. Known-error/workaround draft endpoints return HTTP `200`, create `support_internal` Knowledge drafts, and repeat calls are idempotent.
+P4.7 result:
+- Passed. `/api/web/problems/metrics/summary` returned aggregate counts only; no requester/session/token/raw-message fields were present in metrics payload.
+P4.8 result:
+- Passed. Anonymous P4 web APIs returned `401`; agent token returned `403` for web P4 APIs and `ACCOUNT_SESSION_REQUIRED` for legacy ticket-problem route; browser/admin session allowed.
+P4.9 result:
+- Passed. Agent SQLite marker counts `0`; server `device_outbox` active marker count `0`; UIA state probe passed; fresh browser navigation to `/app/admin/problems` had HTTP errors `[]` and console errors `[]`.
+
+Bugs found:
+- `BUG-20260528-P4-01` - deferred non-blocking automation bridge validation status mapping.
+- `BUG-20260528-P4-02` - verified-fixed.
+- `BUG-20260528-P4-03` - verified-fixed.
+- `BUG-20260528-P4-04` - verified-fixed.
+
+Verified fixed:
+- Scanner duplicate candidate creation across lookback windows.
+- Scanner legacy/uncategorized candidate conversion.
+- Knowledge draft slug collision/idempotency.
+
+Deferred/known limitations:
+- `BUG-20260528-P4-01`: local automation bridge surfaces downstream validation denial as HTTP `500`; it did not block P4 canonical browser/server validation.
+
+Security/privacy result:
+- Requester/public P4 API access: denied for anonymous and agent token surfaces tested.
+- No-PII metrics: aggregate metrics only; no account/session/public token/raw message fields found.
+- RCA/internal visibility: RCA and Knowledge drafts verified on admin/support web-session only; drafts are `support_internal`.
+- Knowledge-publication boundary: P4 created drafts only; no public Knowledge publish was performed.
+
+Browser/UI evidence:
+- Browser baseline screenshot: `p4-20260528-1815-5217eb14-admin-problems-baseline.png`.
+- Pre-fix RCA/problem screenshot: `p4-20260528-1815-5217eb14-problem-rca-before-fix.png`.
+- Post-fix regression screenshot: `p4-fix-20260528-1845-bbe802fc-problems-regression.png`.
+- Fresh browser navigation after fix: HTTP errors `[]`, console errors `[]`, visible `Problem management`, `PRB-000002`, `converted`.
+UIA evidence:
+- Baseline: `artifacts\p4-20260528-1815-5217eb14-uia-baseline.json`.
+- Post-fix: `artifacts\p4-fix-20260528-1845-bbe802fc-uia-state.json`, pywinauto `0.6.9`, backend `uia`, connected/account confirmed, `ticket_count=20`, failures `[]`.
+DB/SQLite evidence:
+- Server DB verified tickets, candidates, problems, links, RCA, Knowledge drafts and zero active `device_outbox` rows for fix marker.
+- Agent A SQLite verified zero marker rows in `outbox`, `outbox_sent_history`, `seen_commands`, `pending_consents`; `pending_consents_total=0`.
+
+Final code/live gates:
+- `python -m py_compile server\problem\candidate_service.py server\problem\known_error_service.py server\tests\test_problem_candidate_service.py server\tests\test_problem_knowledge_integration.py` -> passed.
+- `python -m pytest server\tests\test_problem_candidate_service.py::test_repeated_incident_scan_dedupes_across_lookback_windows server\tests\test_problem_candidate_service.py::test_candidate_convert_maps_legacy_sentinels_to_empty_catalog_fields server\tests\test_problem_knowledge_integration.py::test_problem_known_error_draft_handles_reused_problem_key_slug_collision -q` -> `3 passed in 343.76s`.
+- `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2` -> completed; smoke attempt 2 passed `/api/health -> 200`.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> `/api/health -> 200`.
+- `git diff --check` -> passed with CRLF warnings only.
+
+P5 readiness:
+- ready, but P5 not started.
+
+### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
+
+Severity: P1
+Status: verified-fixed
+Area: known-error / workaround / knowledge-draft / server-db / browser-ui
+
+P4 scenario: P4.6.C Generate Knowledge draft from known error/workaround.
+Run id: `p4-20260528-1815-5217eb14`
+Expected:
+- Creating a known-error/workaround draft from a valid problem should return HTTP `200`, create `support_internal` Knowledge drafts, link them to the current problem, and be idempotent or return a safe conflict if a draft already exists.
+- A historical Knowledge draft for a different problem must not make the current problem's draft endpoint return HTTP `500`.
+Actual:
+- Browser/web-session RCA create/submit/approve succeeded for problem `PRB-000001` / `82b6dbb5-76e7-448d-bffd-7e693ff8d3ae`.
+- `POST /api/web/problems/82b6dbb5-76e7-448d-bffd-7e693ff8d3ae/known-error-draft` returned HTTP `500`.
+- `POST /api/web/problems/82b6dbb5-76e7-448d-bffd-7e693ff8d3ae/workaround-draft` returned HTTP `500`.
+- No `problem_known_error_links` rows or current-problem Knowledge drafts were created.
+Repro steps:
+1. Use real browser/admin session at `https://192.168.100.17:9443/app/admin/problems`.
+2. Create/use problem `82b6dbb5-76e7-448d-bffd-7e693ff8d3ae`, status `closed`, service `network`, offering `network.vpn_issue`.
+3. Create RCA draft, submit, approve.
+4. Call known-error and workaround draft endpoints through the browser web session.
+5. Observe HTTP `500` responses and browser console resource errors.
+
+Evidence:
+- Transport/API:
+  - `POST /api/web/problems/82b6dbb5-76e7-448d-bffd-7e693ff8d3ae/rca` -> HTTP `200`, RCA version `2`, status `draft`.
+  - `POST /submit-review` -> HTTP `200`, status `in_review`.
+  - `POST /approve` -> HTTP `200`, status `approved`.
+  - `POST /known-error-draft` -> HTTP `500`, response body `500 Internal Server Error`.
+  - `POST /workaround-draft` -> HTTP `500`, response body `500 Internal Server Error`.
+- Server log:
+  - `known-error-draft`: `UniqueViolationError`, constraint `knowledge_items_slug_key`, key `(slug)=(known_error-prb-000001)` already exists.
+  - `workaround-draft`: `UniqueViolationError`, constraint `knowledge_items_slug_key`, key `(slug)=(workaround-prb-000001)` already exists.
+  - Existing conflicting Knowledge rows were created on `2026-05-17` for older problem `380454f6-007d-48d0-ba5f-5e4253fb3912`.
+- Agent log: not applicable.
+- Server DB:
+  - Current problem `82b6dbb5-76e7-448d-bffd-7e693ff8d3ae` / `PRB-000001` exists and is `closed`.
+  - RCA rows exist: versions `1` and `2`, both `approved`.
+  - `problem_known_error_links` for current problem: `0`.
+  - `knowledge_items` existing slug collisions:
+    - `known_error-prb-000001`, source problem `380454f6-007d-48d0-ba5f-5e4253fb3912`, visibility `support_internal`, status `draft`.
+    - `workaround-prb-000001`, source problem `380454f6-007d-48d0-ba5f-5e4253fb3912`, visibility `support_internal`, status `draft`.
+- Agent SQLite: not applicable.
+- Browser/UI: `/app/admin/problems` shows the P4 problem and draft action buttons; after endpoint calls, browser console records HTTP `500` resource errors.
+- UIA: not applicable.
+- Test artifact: Browser MCP output for the draft calls; server DB/log evidence recorded in this block.
+- Run marker: `p4-20260528-1815-5217eb14`.
+
+Impact:
+- P4.6 known-error/workaround/Knowledge loop cannot pass.
+- This also exposes a product idempotency/data-integrity issue: Knowledge draft slugs are derived from `problem_key`, but historical DB rows can reuse the same key after test data reset/import, causing unhandled 500s.
+Root cause hypothesis:
+- `ProblemKnownErrorService._create_draft()` derives slug as `{item_type}-{problem.problem_key.lower()}` and calls `KnowledgeRepo.create_item_draft()` without checking existing same-source link or generating a globally unique slug. The unique `knowledge_items.slug` constraint then raises an unhandled DB integrity error.
+Root cause confirmed: yes - `ProblemKnownErrorService._create_draft()` derived global Knowledge slugs only from `problem_key` (`known_error-prb-000001` / `workaround-prb-000001`). Historical Knowledge rows for an older problem already owned those slugs, so `KnowledgeRepo.create_item_draft()` hit `knowledge_items_slug_key` and the handler returned an unhandled HTTP `500`.
+Fix policy:
+- Blocking further P4: no for RBAC/metrics discovery, yes for final P4 close.
+- Fixed now: yes
+
+Fix summary:
+- Added idempotent existing-link handling for problem known-error/workaround drafts.
+- Changed draft slug generation to reuse the natural slug only when free or already linked to the same problem; otherwise it appends the problem id prefix, e.g. `known_error-prb-000001-82b6dbb5`.
+Changed files:
+- `server/problem/known_error_service.py`
+- `server/tests/test_problem_knowledge_integration.py`
+Tests:
+- `python -m pytest server\tests\test_problem_candidate_service.py::test_repeated_incident_scan_dedupes_across_lookback_windows server\tests\test_problem_candidate_service.py::test_candidate_convert_maps_legacy_sentinels_to_empty_catalog_fields server\tests\test_problem_knowledge_integration.py::test_problem_known_error_draft_handles_reused_problem_key_slug_collision -q` -> `3 passed in 343.76s`.
+Live regression:
+- Commit `bbe802fcfe74156dff1fc988551c7b2f47eb8aea` deployed with `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke passed.
+- Browser/web-session after deploy:
+  - `POST /api/web/problems/82b6dbb5-76e7-448d-bffd-7e693ff8d3ae/known-error-draft` -> HTTP `200`, link `ea4efcc5-25a8-4d11-a7bc-921e0d7d8ef4`, Knowledge item `89d72ce9-0d21-40dc-98ec-65eb23464569`.
+  - Repeating known-error draft -> HTTP `200`, same link/item.
+  - `POST /api/web/problems/82b6dbb5-76e7-448d-bffd-7e693ff8d3ae/workaround-draft` -> HTTP `200`, link `9429e827-4e28-45c7-85e5-8339811ddaaa`, Knowledge item `9f501cb2-94f7-4210-a4c3-3e5972fa5f96`.
+  - Repeating workaround draft -> HTTP `200`, same link/item.
+- Server DB:
+  - `knowledge_items.slug=known_error-prb-000001-82b6dbb5`, `item_type=known_error`, `visibility=support_internal`, `status=draft`, `source_ref=82b6dbb5-76e7-448d-bffd-7e693ff8d3ae`.
+  - `knowledge_items.slug=workaround-prb-000001-82b6dbb5`, `item_type=workaround`, `visibility=support_internal`, `status=draft`, same source problem.
+  - `problem_known_error_links` contains exactly one known-error and one workaround link for the current problem after repeat calls.
+Regression check:
+- Fresh browser navigation to `/app/admin/problems` after fix: HTTP errors `[]`, console errors `[]`; visible `Problem management`, `PRB-000002`, and `converted`.
+Remaining risk:
+- If fixed only by changing the slug format, existing draft idempotency still needs explicit verification: repeat draft creation should not create duplicate links or 500.
+Status consistency checked: yes
+
+### BUG-20260528-P4-03 - scanner candidates with legacy service cannot be converted to problems
+
+Severity: P1
+Status: verified-fixed
+Area: problem-candidate / problem-lifecycle / server-db / workflow
+
+P4 scenario: P4.2.A Convert candidate to problem.
+Run id: `p4-20260528-1815-5217eb14`
+Expected:
+- A candidate produced by the product scanner must be convertible to a problem, or scanner must avoid producing candidates that fail the problem creation contract.
+- If ticket rows lack catalog service/offering, conversion should either map `legacy/uncategorized` to a valid fallback or create a problem without invalid Service Catalog fields.
+Actual:
+- Clean candidate `261ba15c-932e-4ac7-8e9f-ea82ca793bf9` was created by scanner from P4 tickets.
+- Browser/web-session `POST /api/web/problem-candidates/261ba15c-932e-4ac7-8e9f-ea82ca793bf9/convert` returned HTTP `400`, `service_code is invalid`.
+- Repeating the same convert returned the same HTTP `400`; no problem row was created.
+Repro steps:
+1. Create five P4 marker tickets `T-000628`..`T-000632`.
+2. Run scanner with `lookback_hours=1`.
+3. Confirm browser/admin shows `Repeated incident pattern: legacy / uncategorized`, `Tickets 5`.
+4. Call candidate convert from browser web session.
+5. Observe HTTP `400 service_code is invalid`.
+
+Evidence:
+- Transport/API:
+  - `POST /api/web/problem-candidates/261ba15c-932e-4ac7-8e9f-ea82ca793bf9/convert` -> HTTP `400`, `{"status":"error","error":"service_code is invalid"}`.
+  - Repeat convert -> same HTTP `400`.
+- Server log: not collected yet.
+- Agent log: not applicable.
+- Server DB:
+  - Candidate `261ba15c-932e-4ac7-8e9f-ea82ca793bf9`: `signal_type=repeated_incident_pattern`, `service_code=legacy`, `offering_code=uncategorized`, `ticket_count=5`, `status=open`.
+  - P4 clean ticket rows `T-000628`..`T-000632` have `service_code=NULL`, `offering_code=NULL`, while request form context contains `request_kind=network`.
+- Agent SQLite: not applicable.
+- Browser/UI: `/app/admin/problems` shows the candidate and `Convert` action, but convert fails with browser console resource errors for the 400 response.
+- UIA: not applicable.
+- Test artifact: Browser MCP output for convert; DB query evidence recorded in this block.
+- Run marker: `p4-20260528-1815-5217eb14`.
+
+Impact:
+- P4.2 candidate conversion cannot pass for scanner-created clean candidate.
+- Downstream problem lifecycle/RCA/Knowledge tests can proceed through direct problem create, but candidate-to-problem workflow remains P4-blocking before close.
+Root cause hypothesis:
+- `ProblemCandidateService` materializes null ticket service/offering as literal `legacy` / `uncategorized`; `ProblemService.create_problem()` validates non-empty `service_code` against Service Catalog and rejects `legacy`.
+Root cause confirmed: yes - `ProblemCandidateService.convert_candidate()` passed scanner sentinel values `legacy` / `uncategorized` directly into `ProblemService.create_problem()`. When Service Catalog rows exist, `ProblemService._validate_service_offering()` treats non-empty `service_code` as catalog-backed and rejects `legacy`.
+Fix policy:
+- Blocking further P4: no for discovery, yes for final P4 close.
+- Fixed now: yes
+
+Fix summary:
+- Candidate conversion now maps sentinel `legacy` / `uncategorized` to `None` before creating the problem, while preserving the candidate evidence and source fields.
+Changed files:
+- `server/problem/candidate_service.py`
+- `server/tests/test_problem_candidate_service.py`
+Tests:
+- `python -m pytest server\tests\test_problem_candidate_service.py::test_repeated_incident_scan_dedupes_across_lookback_windows server\tests\test_problem_candidate_service.py::test_candidate_convert_maps_legacy_sentinels_to_empty_catalog_fields server\tests\test_problem_knowledge_integration.py::test_problem_known_error_draft_handles_reused_problem_key_slug_collision -q` -> `3 passed in 343.76s`.
+Live regression:
+- Fix marker `p4-fix-20260528-1845-bbe802fc`: created tickets `T-000633`..`T-000637`.
+- Browser/web-session convert `POST /api/web/problem-candidates/ec58d383-8049-4d4d-9e22-897c8a114802/convert` -> HTTP `200`.
+- Converted problem `PRB-000002` / `7d31d33c-4f15-4add-a560-229a7caa478f`, `status=new`, `service_code=NULL`, `offering_code=NULL`, `source_kind=repeated_incident_pattern`, `source_ref=ec58d383-8049-4d4d-9e22-897c8a114802`.
+- Browser `/app/admin/problems` shows `PRB-000002` and the candidate status `converted`.
+Regression check:
+- Invalid closed transition and invalid ticket link still return HTTP `400`; duplicate link remains idempotent.
+Remaining risk:
+- Browser presentation still displays `legacy / uncategorized` as a safe fallback label even though DB catalog fields on `PRB-000002` are `NULL`; this is projection text, not Service Catalog persistence.
+Status consistency checked: yes
+
+### BUG-20260528-P4-02 - scanner creates duplicate open candidates when lookback window changes
+
+Severity: P2
+Status: verified-fixed
+Area: problem-candidate / problem-scanner / server-db
+
+P4 scenario: P4.1.D Repeat scanner / cooldown / dedup.
+Run id: `p4-20260528-1815-5217eb14`
+Expected:
+- Re-running scanner for the same visible pattern should update an existing open candidate or produce a documented cooldown/audit result.
+- Same `signal_type + rule_code + service_code + offering_code + signal key + time bucket` should not create duplicate open candidates visible as identical problem candidates in browser/admin.
+Actual:
+- Browser/admin first manual scanner run (`lookback_hours=168`) created candidate `6a75bc53-902c-44e4-9ef7-1ae874bdbaae`, visible as `Repeated incident pattern: legacy / uncategorized`, ticket count `24`.
+- Browser/admin second scanner run through same web session endpoint with `lookback_hours=1` created a second open candidate `261ba15c-932e-4ac7-8e9f-ea82ca793bf9`, also visible as `Repeated incident pattern: legacy / uncategorized`, ticket count `5`.
+- Both candidates remain `status=open` and are simultaneously shown in `/app/admin/problems`.
+Repro steps:
+1. Create five P4 marker tickets `T-000628`..`T-000632`.
+2. Open real browser `https://192.168.100.17:9443/app/admin/problems`.
+3. Click `Run scanner`; observe HTTP `200`, run `6362c8a5-5ec1-4acf-953d-4e5ea198e077`, `candidates_created=4`.
+4. From the same browser web session, call `POST /api/web/problem-scanner/run` with `{"lookback_hours":1}`; observe HTTP `200`, run `8f9902a0-bceb-4bf0-ad33-ad138cf937d1`, `candidates_created=1`.
+5. Refresh `/app/admin/problems`; observe two open `Repeated incident pattern: legacy / uncategorized` candidates.
+
+Evidence:
+- Transport/API:
+  - First browser scanner response HTTP `200`, `run_id=6362c8a5-5ec1-4acf-953d-4e5ea198e077`, `lookback_hours=168`, `candidates_created=4`.
+  - Second browser/web-session response HTTP `200`, `run_id=8f9902a0-bceb-4bf0-ad33-ad138cf937d1`, `lookback_hours=1`, `candidates_created=1`.
+- Server log: not collected yet.
+- Agent log: not applicable; scanner is server-side.
+- Server DB:
+  - `problem_candidates.candidate_id=6a75bc53-902c-44e4-9ef7-1ae874bdbaae`, fingerprint `p41:repeated_incident_pattern:repeated_incident:legacy:uncategorized:da7fb4ac02144a41`, `status=open`, `ticket_count=24`.
+  - `problem_candidates.candidate_id=261ba15c-932e-4ac7-8e9f-ea82ca793bf9`, fingerprint `p41:repeated_incident_pattern:repeated_incident:legacy:uncategorized:886cfbeb7aa3d7a7`, `status=open`, `ticket_count=5`, evidence ticket ids include all five P4 tickets.
+- Agent SQLite: not applicable.
+- Browser/UI: `/app/admin/problems` shows two visually identical `Repeated incident pattern: legacy / uncategorized` candidates, one with `Tickets 5`, one with `Tickets 24`; console errors `[]`.
+- UIA: not applicable.
+- Test artifact: Browser MCP output for scanner run; DB query evidence recorded in this block.
+- Run marker: `p4-20260528-1815-5217eb14`.
+
+Impact:
+- Dedup/cooldown evidence is unreliable: changing lookback creates duplicate open candidates for the same operational pattern.
+- P4.2 conversion can continue using the clean `Tickets 5` candidate, but P4.1.D cannot pass until root cause is fixed or formally classified.
+Root cause hypothesis:
+- `ProblemCandidateService._fingerprint()` includes the scan `window_start` date in the fingerprint digest. Different lookback windows can produce different fingerprints for the same visible pattern and same day/window family.
+Root cause confirmed: yes - `ProblemCandidateService._fingerprint()` included `window_start.date()` in the fingerprint digest. Different lookback windows for the same visible signal generated different fingerprints, so `_upsert_candidate()` could not find/update the existing open candidate.
+Fix policy:
+- Blocking further P4: no, because later lifecycle/RCA/Knowledge tests can use the clean candidate id.
+- Fixed now: yes
+
+Fix summary:
+- Scanner fingerprints now use stable signal dimensions (`signal_type`, rule code, service, offering, signal key) and no longer include the scan window start date.
+- Existing pre-fix `p41` candidates remain labeled as old contamination; new fixed candidates use a new digest and are updated on repeat runs.
+Changed files:
+- `server/problem/candidate_service.py`
+- `server/tests/test_problem_candidate_service.py`
+Tests:
+- `python -m pytest server\tests\test_problem_candidate_service.py::test_repeated_incident_scan_dedupes_across_lookback_windows server\tests\test_problem_candidate_service.py::test_candidate_convert_maps_legacy_sentinels_to_empty_catalog_fields server\tests\test_problem_knowledge_integration.py::test_problem_known_error_draft_handles_reused_problem_key_slug_collision -q` -> `3 passed in 343.76s`.
+Live regression:
+- Fix marker `p4-fix-20260528-1845-bbe802fc`: browser/web-session scanner run `lookback_hours=1` -> HTTP `200`, run `0d5859c2-62d6-4f61-b01b-db2b777d7461`, `candidates_created=1`.
+- Repeat scanner run `lookback_hours=1` -> HTTP `200`, run `224d420a-454a-48ae-8383-883435b6f8c7`, `candidates_created=0`, `candidates_updated=1`.
+- Scanner run `lookback_hours=2` -> HTTP `200`, repeated-incident candidate updated again; separate SLA candidate was created for a different `sla_breach_pattern` signal.
+- Server DB fixed candidate `ec58d383-8049-4d4d-9e22-897c8a114802`: fingerprint `p41:repeated_incident_pattern:repeated_incident:legacy:uncategorized:83be3151447d5673`, `ticket_count=10`, `duplicate_count=2`, later `status=converted`.
+Regression check:
+- Old pre-fix duplicate candidates `6a75bc53-...` and `261ba15c-...` remain open as labeled pre-fix contamination and are ignored for new-run evidence.
+Remaining risk:
+- Existing pre-fix duplicates should be manually reviewed/merged or dismissed outside the P4 validation run; they are not new post-fix duplicates.
+Status consistency checked: yes
