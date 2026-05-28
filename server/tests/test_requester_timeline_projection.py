@@ -153,6 +153,41 @@ def test_ticket_handler_serializers_include_requester_projection_fields():
     assert agent["requester_timeline_payload"] == {"status": "in_progress"}
 
 
+def test_ticket_handler_requester_serializer_omits_raw_event_payload():
+    from tickets.handlers import _serialize_event_for_requester
+
+    event = Event(
+        "routing_applied",
+        {
+            "actions": {"queue_id": 1},
+            "to_queue_id": 1,
+            "matched_rule": {"internal": True},
+            "routing_source": "fallback_queue",
+        },
+    )
+
+    requester = _serialize_event_for_requester(event)
+
+    assert requester["type"] == "routing_applied"
+    assert requester["requester_timeline_kind"] == "system_event"
+    assert "actions" not in requester
+    assert "to_queue_id" not in requester
+    assert "matched_rule" not in requester
+    assert "queue_id" not in str(requester)
+
+
+def test_ticket_handler_requester_message_sanitizes_public_access_code():
+    from tickets.handlers import _serialize_message_for_requester
+
+    event = Event("chat_message", build_public_access_message("RZ76RPDR", "ticket-1"))
+
+    message = _serialize_message_for_requester(event)
+
+    assert message["metadata"] == {"message_kind": "ticket_public_access_code"}
+    assert "RZ76RPDR" not in message["text"]
+    assert "RZ76RPDR" not in str(message["metadata"])
+
+
 def test_ticket_handler_requester_visibility_uses_projection_rules():
     from tickets.handlers import _event_visible_to_requester
 

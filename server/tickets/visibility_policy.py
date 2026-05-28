@@ -27,6 +27,54 @@ DEFAULT_HIDE_FROM_REQUESTER = {
     "custom_fields.request_template",
 }
 
+REQUESTER_SAFE_TICKET_FIELDS = {
+    "ticket_id",
+    "ticket_code",
+    "title",
+    "description",
+    "status",
+    "status_label",
+    "requester_status",
+    "requester_status_label",
+    "public_status",
+    "public_status_label",
+    "next_action_owner",
+    "next_action_due_at",
+    "status_reason",
+    "created_at",
+    "updated_at",
+    "queue_code",
+    "ticket_type",
+    "first_response_due_at",
+    "resolution_due_at",
+    "first_response_at",
+    "resolution_at",
+    "resolved_at",
+    "closed_at",
+    "canceled_at",
+    "reopen_count",
+    "requester_resolution_summary",
+    "closure_feedback",
+    "requester_profile",
+    "requester_display_name",
+    "requires_operator_action",
+    "public_access_code_hint",
+    "public_access_url",
+    "public_ticket_unbound",
+    "resolution_confirmation_pending",
+    "tags",
+    "visibility",
+    "requester_visible_fields",
+    "support_visible_fields",
+    "chat_counters",
+    "presence",
+    "actor_role",
+    "events",
+    "history",
+    "last_event_id",
+    "relations",
+}
+
 
 def get_template_visibility_policy(ticket: Any) -> dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
@@ -124,6 +172,21 @@ def _remove_path(payload: dict[str, Any], path: str) -> None:
         current.pop(parts[-1], None)
 
 
+def _prune_requester_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return an explicit requester/public allowlist projection."""
+
+    if "ticket_id" not in payload and "ticket_code" not in payload:
+        return payload
+    pruned = {key: value for key, value in payload.items() if key in REQUESTER_SAFE_TICKET_FIELDS}
+    visibility = pruned.get("visibility")
+    if isinstance(visibility, dict):
+        pruned["visibility"] = {
+            "source": visibility.get("source") or "default",
+            "requester_safe": True,
+        }
+    return pruned
+
+
 def build_visibility_metadata(ticket: Any) -> dict[str, Any]:
     policy = get_template_visibility_policy(ticket)
     return _build_visibility_metadata_with_policy(
@@ -154,6 +217,7 @@ def _apply_visibility_payload_with_policy(
     if str(visibility or "").lower() in {"requester", "public", "user"}:
         for key in metadata["hidden_from_requester"]:
             _remove_path(result, key)
+        result = _prune_requester_payload(result)
     return result
 
 

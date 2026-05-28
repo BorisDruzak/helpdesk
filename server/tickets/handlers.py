@@ -466,6 +466,51 @@ def _serialize_message(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     }
 
 
+def _serialize_message_for_requester(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
+    payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
+    if ticket is not None:
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
+    projection = build_requester_timeline_projection(
+        {"event_type": getattr(event, "event_type", None), "payload": payload},
+        ticket=ticket,
+    )
+    sender_role = payload.get("sender_role") or payload.get("from") or "user"
+    reply_to = _extract_reply_to_from_payload(payload)
+    metadata: dict[str, Any] = {}
+    if projection is not None and projection.payload.get("message_kind"):
+        metadata["message_kind"] = projection.payload["message_kind"]
+    return {
+        "message_id": payload.get("message_id"),
+        "from_role": sender_role,
+        "text": projection.text if projection is not None else (payload.get("text") or ""),
+        "ts": getattr(event, "created_at", None).isoformat() if getattr(event, "created_at", None) else None,
+        "event_id": getattr(event, "id", None),
+        "visibility": payload.get("visibility") or "public",
+        "attachment_refs": payload.get("attachment_refs") or [],
+        "attachments": payload.get("attachments") or [],
+        "metadata": metadata,
+        "reply_to": reply_to,
+        "direction": "from_agent" if sender_role in {"agent", "support", "admin"} else "to_agent",
+    }
+
+
+def _serialize_event_for_requester(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
+    payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
+    if ticket is not None and getattr(event, "event_type", None) == "chat_message":
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
+    projection = build_requester_timeline_projection(
+        {"event_type": getattr(event, "event_type", None), "payload": payload},
+        ticket=ticket,
+    )
+    data = {
+        "id": getattr(event, "id", None),
+        "type": getattr(event, "event_type", None),
+        "ts": getattr(event, "created_at", None).isoformat() if getattr(event, "created_at", None) else None,
+    }
+    data.update(projection_to_fields(projection))
+    return data
+
+
 REQUESTER_HIDDEN_EVENT_TYPES = frozenset(
     {
         "sla_paused",
@@ -1453,8 +1498,22 @@ async def handle_ticket_get(request: web.Request) -> web.Response:
         return _json_ok(
             ticket=ticket_data,
             session={"ticket_id": ticket.ticket_id, "actor_role": auth_context.actor_role},
-            messages=[_serialize_message(event, ticket=ticket) for event in messages],
-            events=[_serialize_event_for_agent(event, ticket=ticket) for event in visible_events],
+            messages=[
+                (
+                    _serialize_message_for_requester(event, ticket=ticket)
+                    if visibility == "requester"
+                    else _serialize_message(event, ticket=ticket)
+                )
+                for event in messages
+            ],
+            events=[
+                (
+                    _serialize_event_for_requester(event, ticket=ticket)
+                    if visibility == "requester"
+                    else _serialize_event_for_agent(event, ticket=ticket)
+                )
+                for event in visible_events
+            ],
             agent_online=presence["agent_online"],
             presence=presence,
             incremental=incremental,
@@ -1488,8 +1547,19 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
         visible_events = list(events)
         if visibility == "requester":
             visible_events = [event for event in events if _event_visible_to_requester(event)]
-        raw_events = [_serialize_event_raw(event, ticket=ticket) for event in visible_events]
-        history = [item for item in raw_events if item["event_type"] in HISTORY_EVENT_TYPES]
+        raw_events = [
+            (
+                _serialize_event_for_requester(event, ticket=ticket)
+                if visibility == "requester"
+                else _serialize_event_raw(event, ticket=ticket)
+            )
+            for event in visible_events
+        ]
+        history = [
+            item
+            for item in raw_events
+            if (item.get("event_type") or item.get("type")) in HISTORY_EVENT_TYPES
+        ]
         counters_map = await _chat_counters_by_ticket_ids(repo, [ticket.ticket_id])
         ticket_data = await _ticket_payload(
             session,

@@ -3576,3 +3576,211 @@ Code gates:
 
 P2 readiness:
 - ready. P2 can start after this `PLANS.md` evidence update is committed and pushed.
+
+## P2 Live validation - 2026-05-28 - run_id=p2-20260528-0925-cef033e7
+
+Status: in progress
+
+Scope:
+- P2.1 Public/requester safety.
+- P2.2 Attachments/artifacts.
+- P2.3 Two-agent matrix.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`.
+- Commit SHA: `cef033e7b80ae349231dd0c86e2a084f27f49656` (`docs: close P1 live validation`).
+- Server URL: `https://192.168.100.17:9443`.
+- Browser/admin URL: `https://192.168.100.17:9443/admin` / routed app URL `https://192.168.100.17:9443/app/admin`.
+- Browser/support URL: `https://192.168.100.17:9443/app/tickets`.
+- Local agent A: `live-v3-p1-clean2`, GUI/source mode, UI port `8765`.
+- Local agent B: pending P2.3 setup as a separate local instance; P2.3 is not passed until distinct device/token/SQLite evidence exists.
+- Device A: `2447d396-79cd-53da-b3a9-028c5a4d56da`, hostname `ADMIN-2`.
+- Device B: pending P2.3 setup.
+- Agent versions: Agent A `3.1.61`; Agent B pending.
+- pywinauto version: `0.6.9`.
+- Server health: `python scripts\manage_remote_stack.py smoke server` returned `OK https://192.168.100.17:9443/api/health -> 200`.
+- Server runtime: `pc-client-server.service` active/running, pid `80609`, uptime about 8h at baseline.
+- Agent A connection state: `python scripts\agent_test_driver.py status live-v3-p1-clean2` returned `connection_state=connected`, `bridge_connected=true`, `ticket_count=4`, active ticket `15f87a9a-726e-488d-9868-2d4b78cfac9c`.
+- Browser/admin evidence: real browser login to `/app/admin`, then `/app/admin/inventory`; visible text shows `ADMIN-2`, `2447d396...56da`, `Онлайн`, Windows, agent `3.1.61`, total agents `7`, online `1`. Screenshot: `artifacts\p2-20260528-0925-cef033e7-admin-inventory-baseline.png`.
+- UIA evidence: real local GUI via `pywinauto==0.6.9`, backend `uia`; after `window.show` and `sidebar.select profile`, `scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --expect-account-confirmed --output artifacts\p2-20260528-baseline-uia-profile-depth10.json --skip-screenshot --max-depth 10 --max-nodes 1600 --max-seconds 30` returned `connection_state=connected`, `account_exists=true`, `account_mode=confirmed_binding`, window title `Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61`.
+- UIA surface note: the same probe in ticket/chat view with shallow traversal found only root/title/footer controls and not account/connection semantic labels. This is recorded as view-surface nuance, not a P2 bug, because the required baseline connection/account semantics pass in the canonical profile surface and P1 already records split-view UIA evidence for ticket semantics.
+- Agent A SQLite baseline: `.local-agent\instances\live-v3-p1-clean2\data\storage.db` has `outbox=[]`, `failed_outbox_count=0`, `pending_consents_count=0`; recent `seen_commands` rows are terminal (`error`, `success`, `canceled`) and are P1-era commands, not P2 marker rows.
+- Server DB baseline: `device_outbox` has no rows containing marker prefix `p2-20260528`; active device inventory query shows `ADMIN-2` / `2447d396-79cd-53da-b3a9-028c5a4d56da`, agent `3.1.61`.
+- Known P0/P1 contamination ignored for P2:
+  - old P0 phantom ticket/event rows recorded in the P0 section;
+  - P1 `device_outbox.id=135` from `BUG-20260527-P1-19` test-tool contamination;
+  - pre-fix P1 restart/drop/probe rows from `BUG-20260527-P1-12`, `BUG-20260527-P1-13`, `BUG-20260527-P1-14`;
+  - deferred P1 limitations `BUG-20260527-P1-05`, `BUG-20260527-P1-06`, `BUG-20260527-P1-07`, `BUG-20260527-P1-08`, `BUG-20260527-P1-10`, kept separate from new P2 evidence unless clean P2 markers reproduce them.
+
+P2 execution plan:
+- [ ] P2.1 Public/requester safety discovery with browser + direct HTTP + DB comparison.
+- [ ] P2.2 Attachments/artifacts discovery with browser/local GUI where supported + DB/SQLite/download matrix.
+- [ ] P2.3 Two-agent matrix after creating or verifying a second distinct local agent/device.
+- [ ] P2 findings summary and fix/classification phase.
+- [ ] P2 final close gate.
+
+### P2.1.A Public queue endpoints - 2026-05-28
+
+Run id: `p2-20260528-0925-cef033e7`
+Marker: `p2-20260528-0925-cef033e7-public-queue`
+Path tested: direct HTTP/API + real browser public queue + server DB comparison.
+
+Expected:
+- Anonymous public queue endpoints expose only the documented public projection.
+- Numeric/internal `queue_id` is rejected.
+- Malformed limit/days/missing/unknown queue inputs return safe 400, not 500.
+- Injected internal filters such as `assignee_id`, `device_id`, `account_id`, `requester_id` do not leak internal fields.
+- Browser public queue page renders safe public fields only.
+
+Evidence:
+- Direct HTTP/API:
+  - `GET /public_api/queues` -> `200`, body `{"queues":[{"queue_code":"servicedesk_l1","open_count":4}]}`.
+  - `GET /public_api/queues?include_empty=true` -> `200`, includes active queue codes/counts only.
+  - `GET /public_api/queue/tickets?limit=5` -> `400 validation_error`, `queue required`.
+  - `GET /public_api/queue/tickets?queue_id=1&limit=5` -> `400 validation_error`, `queue_id is not supported; use queue_code or public_queue_code`.
+  - `GET /public_api/queue/stats?queue_id=1&days=7` -> `400 validation_error`, same queue_id rejection.
+  - `GET /public_api/queue/tickets?queue_code=servicedesk_l1&limit=5&assignee_id=admin&device_id=2447d396-79cd-53da-b3a9-028c5a4d56da&account_id=x&requester_id=y` -> `200`, returns four rows with only `ticket_code`, `public_position`, `public_status`, `public_status_label`, `queue_code`, `wait_bucket`, `updated_at`.
+  - `GET /public_api/queue/tickets?queue_code=servicedesk_l1&limit=9999` -> `400 validation_error`, `limit must be in range [1, 200]`.
+  - `GET /public_api/queue/stats?queue_code=servicedesk_l1&days=999` -> `400 validation_error`, `days must be in range [1, 90]`.
+  - `GET /public_api/queue/tickets?queue_code=p2_missing_queue&limit=5` -> `400 validation_error`, `invalid queue`.
+- Browser/UI: real browser URL `https://192.168.100.17:9443/queue` rendered queue `servicedesk_l1`, four public ticket rows `T-000609`..`T-000612`, public status `Заявка принята`, wait bucket `2h+`; console errors `[]`; regex scan of visible text found no `queue_id`, `assignee`, `device_id`, `account_id`, `requester_id`, `session_token`, or `public_token`. Screenshot: `artifacts\p2-20260528-0925-cef033e7-public-queue-browser.png`.
+- Server DB: comparison rows for `T-000609`..`T-000612` have internal `ticket_id`, `requester_id`, `device_id`, `queue_id=1`, `status=queued`, priority/urgency/importance fields. These were absent from the public API/browser projection except public `ticket_code`, queue code and public status.
+- Server log: no 500 was observed for the tested cases; intentional invalid cases returned safe 400.
+
+Result: passed so far for P2.1.A. No bug recorded.
+
+### BUG-20260528-P2-01 - Public ticket API returns requester-visible payload with internal fields
+
+Severity: P1
+Status: fix-in-progress
+Area: public-safety / requester-access
+
+P2 scenario: P2.1.B Public ticket access and authorization.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- Anonymous/no-token access to `/api/tickets/{ticket_id}` is denied.
+- Invalid token is denied.
+- Valid public ticket token can read only requester-safe/public-safe fields for its scoped ticket.
+- Public ticket token cannot list tickets or read another ticket.
+- Public/browser timeline must not expose internal queue ids, device ids, raw policy/routing/SLA internals, custom field internals, token/session details or access-code hashes.
+
+Actual:
+- Positive/negative authorization boundaries worked:
+  - no token -> `401 AUTH_REQUIRED`;
+  - invalid token -> `401 AUTH_REQUIRED`;
+  - public token for another ticket -> `403 forbidden`;
+  - `GET /api/tickets?limit=5` with public token -> `403 forbidden`;
+  - wrong public access code -> `403 invalid_code`;
+  - valid public access code -> `200` with a new public token, redacted in evidence.
+- But `GET /api/tickets/{public_ticket_id}` with valid public token returned `200` and included requester-visible JSON with internal fields:
+  - top-level ticket fields: `device_id`, `queue_id`, `assignee_id`, `requester_id`, `priority`, `priority_class`, `effective_priority`, `urgency`, `importance`, SLA timestamps, `custom_fields`;
+  - `custom_fields.public_access.code_hash`, `code_hint`, `routing_decision.actions.queue_id`, `routing_decision.to_queue_id`, `priority_decision`;
+  - requester-visible events for `routing_applied`, `queue_changed`, `sla_started` included `queue_id`, SLA target internals and policy metadata;
+  - messages included a system public access code message and metadata containing the public access code. This may be product-intended for the requester page, but it must be explicitly classified/redacted by policy; it should not appear in generic public API evidence unless documented.
+- Browser `/help?ticket_id=<ticket_id>` did not visibly render the raw internal field names (`queue_id`, `priority_decision`, `routing_decision`, `code_hash`, `device_id`, `assignee_id`, `session_token`, `public_token`) in the page text, but it is backed by the same API response and the browser displayed the public access code in the requester page flow.
+
+Repro steps:
+1. `POST /public_api/tickets/create` with marker `p2-20260528-0925-cef033e7`, title `P2 public safety ...`, requester display name `P2 Public Requester`, urgency/importance `1`.
+2. Capture returned `ticket_id=T-000613 / 34ca8987-9f90-4f25-83c8-66b1fa507151`, public access code redacted as `MAQ...TU5`, public token redacted by prefix/hash/length.
+3. Call `/api/tickets/{ticket_id}` with no token, invalid token, valid public token, and valid public token against unrelated ticket `15f87a9a-726e-488d-9868-2d4b78cfac9c`.
+4. Exchange wrong and valid public access code through `/public_api/tickets/{ticket_id}/authorize`.
+5. Open real browser `https://192.168.100.17:9443/help?ticket_id=34ca8987-9f90-4f25-83c8-66b1fa507151`, enter the public access code, and inspect visible text.
+
+Evidence:
+- Transport/API:
+  - create public ticket -> `200`, ticket `T-000613`, public token redacted `{prefix=22753ff3, sha256_12=e07ac51af24e, length=64}`;
+  - no token -> `401 AUTH_REQUIRED`;
+  - invalid token -> `401 AUTH_REQUIRED`;
+  - valid public token -> `200` but leaks internal fields listed above;
+  - public token list -> `403 forbidden`;
+  - wrong public code -> `403 invalid_code`;
+  - valid public code -> `200`, replacement public token redacted `{prefix=7adbffc5, sha256_12=83b368b64afb, length=64}`;
+  - cross-ticket public token read -> `403 forbidden`.
+- Server log: no 500 observed in this reproduction.
+- Agent A log: not applicable; public/requester HTTP flow does not involve the local agent runtime.
+- Agent B log: not applicable.
+- Server DB: ticket `34ca8987-9f90-4f25-83c8-66b1fa507151` was created with public requester id and internal queue/device/routing/SLA fields; DB details need follow-up query during root-cause isolation.
+- Agent A SQLite: not applicable.
+- Agent B SQLite: not applicable.
+- Browser/UI: real browser `/help?ticket_id=34ca8987-9f90-4f25-83c8-66b1fa507151` loaded ticket `T-000613`, status `Заявка принята`, public message marker, and did not visibly show internal field names. Screenshot: `artifacts\p2-20260528-0925-cef033e7-help-browser-T-000613.png`.
+- UIA: not applicable.
+- Test artifact: command output in this session; no raw public/session token printed, only token prefix/hash/length. The public access code is a synthetic P2 code and is redacted in `PLANS.md`.
+- Run marker: `p2-20260528-0925-cef033e7`.
+
+Impact:
+- Public requester API response exposes internal ticket implementation details and policy/routing/SLA metadata to a public-token caller. Browser rendering currently hides many fields, but UI redaction is not sufficient; server-side public/requester projection must be authoritative.
+- This is a security/access-control class issue and blocks further P2.1 requester/public safety conclusions until classified/fixed.
+
+Root cause hypothesis:
+- `ticket_to_dict(..., visibility="requester")` and/or `_ticket_payload(..., visibility="requester")` do not strip all internal fields and `handle_ticket_get` serializes requester-safe events by adding requester timeline projection while still carrying raw event fields.
+
+Root cause confirmed: yes. `server/tickets/visibility_policy.py` was deny-list based and only removed configured `hidden_from_requester` paths, so unlisted ticket fields such as `queue_id`, `device_id`, `requester_id`, `priority_*` and raw `custom_fields` remained in requester/public ticket payloads. `server/tickets/handlers.py::_serialize_event_for_agent()` was reused for requester/public `events`, so it filtered event types but still merged raw event payload fields into the public response. `_serialize_message()` likewise returned raw public-access message metadata.
+Fix policy:
+- Blocking further P2: yes for P2.1 public/requester safety; P2.2/P2.3 can continue only after clearly separating this known leak if they do not use public requester ticket API evidence.
+- Fixed now: no, evidence recorded first; root-cause isolation next.
+
+Fix summary:
+- Added an explicit requester/public ticket payload allowlist in `server/tickets/visibility_policy.py`, scoped only to ticket-like payloads (`ticket_id`/`ticket_code`) so generic passport/visibility policy projections still work.
+- Added requester-specific event/message serializers in `server/tickets/handlers.py` and switched `handle_ticket_get` plus requester snapshot event serialization to safe projection output.
+- Sanitized public access code messages in requester API responses to `message_kind=ticket_public_access_code` without echoing the raw code in metadata/text.
+- Updated docs for public-token `/api/tickets/{ticket_id}` projection contract.
+Changed files:
+- `server/tickets/visibility_policy.py`
+- `server/tickets/handlers.py`
+- `server/tests/test_ticket_visibility_policy.py`
+- `server/tests/test_requester_timeline_projection.py`
+- `server/docs/TICKET_SYSTEM.md`
+- `server/docs/CODEMAP.md`
+- `PLANS.md`
+Tests:
+- `python -m py_compile server\tickets\visibility_policy.py server\tickets\handlers.py server\tests\test_ticket_visibility_policy.py server\tests\test_requester_timeline_projection.py` -> passed.
+- First targeted pytest run without `pytest.mark.no_db` on `test_ticket_visibility_policy.py` spent about 5m36s building the isolated DB and exposed an over-broad allowlist side effect; fixed by narrowing allowlist to ticket-like payloads and marking the no-DB visibility unit tests.
+- `python -m pytest server\tests\test_ticket_visibility_policy.py server\tests\test_requester_timeline_projection.py -q` -> `15 passed in 0.20s`.
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes
+
+Bug template for this P2 run:
+
+```md
+### BUG-YYYYMMDD-P2-NN - short title
+
+Severity: P0/P1/P2
+Status: reproduced / root-cause-confirmed / fix-in-progress / verified-fixed / verified-non-product / known-limitation / deferred / not-a-bug
+Area: public-safety / requester-access / account-session / artifact-access / attachment-upload / browser-ui / local-gui-uia / server-db / agent-sqlite / protocol / module-runtime / two-agent / test-contamination
+
+P2 scenario:
+Run id:
+Expected:
+Actual:
+Repro steps:
+
+Evidence:
+- Transport/API:
+- Server log:
+- Agent A log:
+- Agent B log:
+- Server DB:
+- Agent A SQLite:
+- Agent B SQLite:
+- Browser/UI:
+- UIA:
+- Test artifact:
+- Run marker:
+
+Impact:
+Root cause hypothesis:
+Root cause confirmed:
+Fix policy:
+- Blocking further P2: yes/no
+- Fixed now: yes/no
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes/no
+```

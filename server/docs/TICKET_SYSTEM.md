@@ -360,6 +360,7 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 - GET /public_api/queues — список очередей с open_count; по умолчанию только с open_count &gt; 0; `include_empty=true` — все активные.
 - GET /public_api/queue/tickets — `queue_code` или `public_queue_code`, limit, offset, ticket_code; sanitized projection only: код талона, публичная позиция, requester-facing статус/label, `queue_code`, wait bucket, rounded/update timestamp; ETag/304. `queue_id`, ФИО/requester identity, urgency/importance/internal priority and raw custom fields are not exposed.
 - GET /public_api/queue/stats — days, optional `queue_code` / `public_queue_code`; public KPI projection and top queue load by `queue_code` only; ETag/304. Numeric `queue_id` is rejected before DB lookup.
+- GET `/api/tickets/{ticket_id}` with a scoped public ticket token uses the same requester-safe allowlist projection: no `queue_id`, `device_id`, assignee, requester id, raw `custom_fields`, policy/routing/SLA internals, token/session fields or public access code hashes. Requester-visible timeline entries use sanitized projection fields, not raw event payloads.
 
 **Внутренние (admin/support):**
 - POST /api/tickets/{id}/order — body direction (up|down|top|bottom), reason. Событие `queue_reordered`.

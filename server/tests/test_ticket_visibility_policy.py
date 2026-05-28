@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+pytestmark = pytest.mark.no_db
+
 
 def test_requester_visibility_redacts_nested_fields_and_keeps_support_preview_metadata():
     from tickets.visibility_policy import apply_ticket_visibility_payload
@@ -95,3 +99,48 @@ def test_public_visibility_redacts_passport_export_sections_from_policy_shape():
         "problem": "Website unavailable",
         "user_result": "Site opens",
     }
+
+
+def test_requester_visibility_uses_ticket_payload_allowlist():
+    from tickets.visibility_policy import apply_ticket_visibility_payload
+
+    ticket = SimpleNamespace(status="queued", requester_status="accepted", custom_fields={})
+    payload = {
+        "ticket_id": "ticket-1",
+        "ticket_code": "T-1",
+        "title": "Printer issue",
+        "description": "Cannot print",
+        "status": "queued",
+        "requester_status": "accepted",
+        "requester_status_label": "Accepted",
+        "public_status": "accepted",
+        "public_status_label": "Accepted",
+        "queue_code": "servicedesk_l1",
+        "queue_id": 1,
+        "device_id": "device-1",
+        "assignee_id": "support-1",
+        "requester_id": "requester-1",
+        "priority": "P1",
+        "priority_decision": {"routing": "internal"},
+        "custom_fields": {
+            "public_access": {"code_hash": "secret-hash"},
+            "routing_decision": {"to_queue_id": 1},
+        },
+        "visibility": {"source": "default", "hidden_from_requester": ["custom_fields"]},
+    }
+
+    requester_payload = apply_ticket_visibility_payload(ticket, payload, visibility="requester")
+
+    assert requester_payload["ticket_id"] == "ticket-1"
+    assert requester_payload["queue_code"] == "servicedesk_l1"
+    assert requester_payload["visibility"] == {"source": "default", "requester_safe": True}
+    for forbidden in (
+        "queue_id",
+        "device_id",
+        "assignee_id",
+        "requester_id",
+        "priority",
+        "priority_decision",
+        "custom_fields",
+    ):
+        assert forbidden not in requester_payload
