@@ -252,6 +252,62 @@ async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/api/upload"),
+        ("GET", "/api/artifacts/artifact-1/download"),
+    ],
+)
+async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(monkeypatch, method: str, path: str):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "support-cookie",
+            "actor_role": "support",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    async def protected_handler(request: web.Request):
+        auth_context = request["auth_context"]
+        return web.json_response(
+            {
+                "status": "ok",
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "auth_type": auth_context.auth_type.value,
+                "path": request.path,
+            }
+        )
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_route(method, path, protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.request(
+            method,
+            path,
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {
+        "status": "ok",
+        "actor_id": "support-cookie",
+        "actor_role": "support",
+        "auth_type": "ui_token",
+        "path": path,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_session_me_exposes_admin_default_workspace():
     @web.middleware
     async def auth_context_middleware(request, handler):

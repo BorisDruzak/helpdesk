@@ -3774,6 +3774,86 @@ Remaining risk:
 - Browser currently displays the public access code during the legitimate requester login flow; screenshots/evidence must redact it. This is expected product behavior for the ticket owner and is separate from the fixed API payload leak.
 Status consistency checked: yes
 
+P2.1.C Requester account-session access matrix:
+- Status: pending, not passed.
+- Evidence collected: Agent A/local GUI account session is active confirmed binding:
+  - instance `live-v3-p1-clean2`;
+  - account session id `0a8c0210-3028-4fb8-89aa-9a40f1d643f9`;
+  - account mode `confirmed_binding`;
+  - person id `f0e074a5-7c1b-4e38-bb4a-abfb2be3612f`;
+  - display name `P1 Clean User`;
+  - no session token printed.
+- Server DB account-session survey found only one active verified requester person/session family for Agent A; old second-device sessions for person `bb00a942-fe2c-461c-b982-9da17d3fd1ff` are revoked. This is an environment/setup constraint for the cross-account matrix, not a product pass.
+- Required next step: create/approve a clean Account B/requester session through the registration/account-session workflow or Agent B setup before marking P2.1.C.
+
+P2.1.D Timeline redaction:
+- Status: partial pass for clean ticket `T-000616`; broader requester/account/public matrix still depends on P2.1.C Account B setup and P2.2 artifact events.
+- Public/requester browser surface: real browser URL `https://192.168.100.17:9443/help?ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a`; after code entry, visible text showed ticket `T-000616`, public status `Заявка принята`, requester message marker and safe system notice `Код доступа к заявке сформирован.`. Browser text scan found no `queue_id`, `device_id`, `assignee_id`, `requester_id`, `custom_fields`, `priority_decision`, `routing_decision`, `code_hash`, `public_access_code`, `session_token`, `public_token`, `trace_id` or `operation_id`. Redacted screenshot: `artifacts\p2-20260528-0925-cef033e7-p2-01-browser-049c16dd-public-help-redacted.png`.
+- Support/admin browser surface: real browser URL `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a`; support sees expected internal context (`Очередь: ServiceDesk L1`, `Исполнитель: Не назначен`) and timeline system events, but no `code_hash`, `session_token` or `public_token` visible. Screenshot: `artifacts\p2-20260528-0925-cef033e7-p2-01-support-timeline-T-000616.png`.
+- Server DB source events for `T-000616`: `chat_message=2`, `routing_applied=1`, `queue_changed=1`, `sla_started=1`; requester/public projection hides the raw routing/SLA payload while support/admin surface can show operational context.
+
+### BUG-20260528-P2-02 - Browser support attachment upload is not authenticated by web session
+
+Severity: P1
+Status: fix-in-progress
+Area: attachment-upload / browser-ui / auth-account-session
+
+P2 scenario: P2.2.B Manual support/browser attachment upload.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- A real support/admin browser session that can open `/app/tickets/{ticket_id}` can upload an attachment through the support UI path.
+- `POST /api/upload` accepts the same typed web-session authentication used by support browser routes, applies ticket access checks, creates an artifact row, and the subsequent support message can reference it.
+- Browser timeline shows the attachment/message; unauthorized/no-session upload remains denied.
+Actual:
+- Real browser support session opened ticket `T-000616` at `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a`.
+- Browser-side `fetch('/api/upload', { credentials: 'same-origin', multipart FormData(file,ticket_id,kind) })` returned `401` with `AUTH_REQUIRED`.
+- No artifact id was returned, no support message was sent, and the browser timeline did not show the attachment marker.
+Repro steps:
+1. Login in real browser through `/app/login` as admin fixture user.
+2. Open `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a`.
+3. From the browser page context, create a small text `File` named `p2 вложение p2-20260528-0925-cef033e7-p2-22-support-upload.txt`.
+4. Submit `POST /api/upload` with `credentials: 'same-origin'`, multipart fields `file`, `ticket_id`, `kind=file`.
+Evidence:
+- Transport/API: browser fetch to `/api/upload` -> `401`, payload `{status:error, error_code:AUTH_REQUIRED}`.
+- Server log: browser console captured one failed resource for `https://192.168.100.17:9443/api/upload` with unauthorized status.
+- Agent A log: not applicable; browser support upload path.
+- Agent B log: not applicable.
+- Server DB: no artifact id returned; artifact row not created for marker in this failed attempt.
+- Agent A SQLite: not applicable.
+- Agent B SQLite: not applicable.
+- Browser/UI: real browser ticket page stayed on `T-000616`; upload marker/filename not visible after reload. Screenshot: `artifacts\p2-20260528-0925-cef033e7-p2-22-support-upload-T-000616.png`.
+- UIA: not applicable.
+- Test artifact: browser MCP run output in this session; no raw cookies/tokens printed.
+- Run marker: `p2-20260528-0925-cef033e7-p2-22-support-upload`.
+Impact:
+- Blocks P2.2.B support/browser attachment upload and the support side of artifact access matrix.
+- Browser UI attachment action cannot work with the current typed web-session auth boundary, even though the user is authenticated for `/api/web/support/...`.
+Root cause hypothesis:
+- Auth middleware only extracts the `pc_client_web_session` cookie for `WEB_SESSION_AUTH_PATH_PREFIXES`, which include `/api/web/` but not `/api/upload` or `/api/artifacts/`. Therefore same-origin browser requests to legacy upload/download endpoints do not become `AuthType.UI_TOKEN` and hit the upload handler as unauthenticated.
+Root cause confirmed: yes. `server/auth/middleware.py::WEB_SESSION_AUTH_PATH_PREFIXES` did not include `/api/upload` or `/api/artifacts/`, while `webapp/src/features/queues/api.ts::uploadSupportTicketAttachment()` calls `/api/upload` from the authenticated support browser with only same-origin cookie credentials. The upload handler already allows `AuthType.UI_TOKEN`, but the auth middleware never created that context for this legacy endpoint.
+Fix policy:
+- Blocking further P2: yes for P2.2 support/browser attachment upload and download matrix.
+- Fixed now: yes, after evidence/root-cause confirmation.
+Fix summary:
+- Added `/api/upload` and `/api/artifacts/` to the httpOnly web-session cookie bridge in `server/auth/middleware.py`, so browser support/admin attachment upload/download requests can authenticate as `AuthType.UI_TOKEN` without exposing raw bearer tokens.
+- Kept server-side upload/download authorization in `server/uploads/handlers.py` and `ArtifactService`; this change only bridges the existing cookie-bound UI session to the legacy attachment endpoints.
+Changed files:
+- `server/auth/middleware.py`
+- `server/tests/test_web_session_api.py`
+- `docs/QUICK_LOOKUP.md`
+- `server/docs/SECURITY_AND_AUTH.md`
+- `scripts/navigation_catalog.py`
+- `PLANS.md`
+Tests:
+- `python -m pytest server\tests\test_web_session_api.py -q` -> `14 passed, 13 warnings` (existing aiohttp `NotAppKeyWarning` only).
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `python scripts\verify_workspace.py` -> passed.
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes
+
 Bug template for this P2 run:
 
 ```md

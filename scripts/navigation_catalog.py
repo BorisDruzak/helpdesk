@@ -288,7 +288,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification surfaces, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering, and security invariants.",
+        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification/upload/artifact-download surfaces, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering, and security invariants.",
         aliases=(
             "auth",
             "token",
@@ -305,6 +305,9 @@ TOPICS: tuple[Topic, ...] = (
             "request_id",
             "legacy ui login",
             "web session cookie",
+            "/api/upload",
+            "/api/artifacts",
+            "artifact download auth",
             "notification auth",
             "notifications preferences",
             "knowledge auth",
