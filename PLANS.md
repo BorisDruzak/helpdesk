@@ -4975,6 +4975,7 @@ Fix policy:
 - Fixed now: yes
 
 Fix summary:
+- Fix commit: `6677b289f87927bccb2bdc9da579b3955bf6c245` (`pc_agent: preserve automation downstream errors`).
 - Added structured downstream server error handling for GUI ticket API calls and `/ui/automation/run`.
 - Expected downstream validation/auth/not-found/conflict denials now preserve `downstream_http_status`, `error`, `error_code`, `details`, `action`, and `action_id` in a local non-500 bridge response.
 - Network failures map to a structured local `503`; true unexpected bridge/controller exceptions still map to local `500`.
@@ -5103,7 +5104,8 @@ Post-fix clean run:
 Status: P4 closed
 
 Code head:
-- `bbe802fcfe74156dff1fc988551c7b2f47eb8aea`.
+- P4 product close: `bbe802fcfe74156dff1fc988551c7b2f47eb8aea`.
+- P4-01 automation bridge fix: `6677b289f87927bccb2bdc9da579b3955bf6c245`.
 Server URL:
 - `https://192.168.100.17:9443`.
 Agent A:
