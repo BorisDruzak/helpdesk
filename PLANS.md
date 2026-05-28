@@ -5580,7 +5580,7 @@ Status: P5 closed
 
 Code head:
 - Product head deployed for P5 fixes: `1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3`.
-- PLANS/evidence head after close notes: pending commit after this update.
+- PLANS/evidence close head: `a79b85a54e2360c549890ee0728e2985f647a10a`.
 Server URL: `https://192.168.100.17:9443`
 Agent A: `live-v3-p1-clean2`
 Agent B: not used; P5 change enablement scenarios did not require two-agent command routing.
