@@ -3795,7 +3795,7 @@ P2.1.D Timeline redaction:
 ### BUG-20260528-P2-02 - Browser support attachment upload is not authenticated by web session
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: attachment-upload / browser-ui / auth-account-session
 
 P2 scenario: P2.2.B Manual support/browser attachment upload.
@@ -3830,12 +3830,13 @@ Impact:
 - Browser UI attachment action cannot work with the current typed web-session auth boundary, even though the user is authenticated for `/api/web/support/...`.
 Root cause hypothesis:
 - Auth middleware only extracts the `pc_client_web_session` cookie for `WEB_SESSION_AUTH_PATH_PREFIXES`, which include `/api/web/` but not `/api/upload` or `/api/artifacts/`. Therefore same-origin browser requests to legacy upload/download endpoints do not become `AuthType.UI_TOKEN` and hit the upload handler as unauthenticated.
-Root cause confirmed: yes. `server/auth/middleware.py::WEB_SESSION_AUTH_PATH_PREFIXES` did not include `/api/upload` or `/api/artifacts/`, while `webapp/src/features/queues/api.ts::uploadSupportTicketAttachment()` calls `/api/upload` from the authenticated support browser with only same-origin cookie credentials. The upload handler already allows `AuthType.UI_TOKEN`, but the auth middleware never created that context for this legacy endpoint.
+Root cause confirmed: yes. `server/auth/middleware.py::WEB_SESSION_AUTH_PATH_PREFIXES` did not include `/api/upload` or `/api/artifacts/`, while `webapp/src/features/queues/api.ts::uploadSupportTicketAttachment()` calls `/api/upload` from the authenticated support browser with only same-origin cookie credentials. The upload handler already allows `AuthType.UI_TOKEN`, but the auth middleware never created that context for this legacy endpoint. A second regression showed the old `GET /api/artifacts/{artifact_id}/download?ticket_id=...` middleware skip still bypassed auth extraction before `ArtifactService`; this was removed so `ticket_id` is only context, not authentication.
 Fix policy:
 - Blocking further P2: yes for P2.2 support/browser attachment upload and download matrix.
 - Fixed now: yes, after evidence/root-cause confirmation.
 Fix summary:
 - Added `/api/upload` and `/api/artifacts/` to the httpOnly web-session cookie bridge in `server/auth/middleware.py`, so browser support/admin attachment upload/download requests can authenticate as `AuthType.UI_TOKEN` without exposing raw bearer tokens.
+- Removed the stale anonymous `ticket_id` download skip from `server/auth/middleware.py`; artifact downloads now require web-session, agent token or public-ticket auth before artifact visibility checks.
 - Kept server-side upload/download authorization in `server/uploads/handlers.py` and `ArtifactService`; this change only bridges the existing cookie-bound UI session to the legacy attachment endpoints.
 Changed files:
 - `server/auth/middleware.py`
@@ -3845,10 +3846,66 @@ Changed files:
 - `scripts/navigation_catalog.py`
 - `PLANS.md`
 Tests:
-- `python -m pytest server\tests\test_web_session_api.py -q` -> `14 passed, 13 warnings` (existing aiohttp `NotAppKeyWarning` only).
+- `python -m pytest server\tests\test_web_session_api.py -q` -> `15 passed, 14 warnings` (existing aiohttp `NotAppKeyWarning` only).
 - `python -m compileall -q server pc_agent scripts` -> passed.
 - `git diff --check` -> exit 0; CRLF warnings only.
 - `python scripts\verify_workspace.py` -> passed.
+Live regression:
+- Product commits deployed: `d97104f2` (web-session bridge for upload/artifact endpoints) and `d38b4bb8` (remove anonymous `ticket_id` artifact download skip). Deploy command: `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote `/api/health` smoke passed on attempt 2.
+- Browser upload path: real browser support page `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a` uploaded a text file through `POST /api/upload` with `credentials: same-origin` and returned HTTP `200`; support message with marker `p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2` was sent and visible in the ticket timeline. Screenshot: `artifacts\p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-T-000616.png`.
+- Server DB: artifact row exists for `artifact_id=5101f949-1e3f-4152-8ac0-9d7b6f2a3490`, `ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a`, `original_name="p2 вложение p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2.txt"`, `mime_type=text/plain`, `size_bytes=91`, `kind=file`.
+- Browser download path: same real browser/session fetched `/api/artifacts/5101f949-1e3f-4152-8ac0-9d7b6f2a3490/download?ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a` and received HTTP `200`, `content-type=text/plain`, body containing the P2 run marker.
+- Anonymous/direct HTTP path: same download URL without browser cookies/tokens returned HTTP `401` JSON `AUTH_REQUIRED`; no file body or `Content-Disposition` was returned.
+Regression check:
+- Browser support route `/app/tickets/{ticket_id}` remained loadable after deploy and the attachment marker stayed visible after reload.
+- Server-side authorization still runs in `ArtifactService`; this fix only ensures the authenticated browser session reaches that layer.
+Remaining risk:
+- Unicode filename in `Content-Disposition` is corrupted in the browser-observed header while DB `original_name` is intact; recorded separately as `BUG-20260528-P2-03`.
+Status consistency checked: yes
+
+### BUG-20260528-P2-03 - Unicode attachment filename is mojibake in Content-Disposition
+
+Severity: P2
+Status: reproduced
+Area: artifact-access / attachment-upload / browser-ui
+
+P2 scenario: P2.2.B / P2.2.E Manual support/browser attachment download and filename safety.
+Run id: `p2-20260528-0925-cef033e7`
+Expected:
+- Unicode attachment names should either be preserved through a standards-compliant `Content-Disposition` header, for example `filename*`, or safely normalized to a deterministic ASCII fallback without mojibake.
+- Browser download UX should not show corrupted Cyrillic characters.
+Actual:
+- DB `artifacts.original_name` is correct: `p2 вложение p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2.txt`.
+- Real browser/session download returned HTTP `200`, but `Content-Disposition` exposed mojibake in the `filename` parameter for the Cyrillic word.
+Repro steps:
+1. Use the support browser session on ticket `T-000616`.
+2. Upload the P2 support attachment with Cyrillic filename through `/api/upload`.
+3. Fetch `/api/artifacts/5101f949-1e3f-4152-8ac0-9d7b6f2a3490/download?ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a` from the browser page context.
+Evidence:
+- Transport/API: browser fetch returned `status=200`, `content-type=text/plain`, body contained run marker, but `Content-Disposition` filename parameter was mojibake.
+- Server log: not collected yet; no server error was observed for the successful download.
+- Agent A log: not applicable; browser support download path.
+- Agent B log: not applicable.
+- Server DB: artifact row preserves `original_name="p2 вложение p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2.txt"`.
+- Agent A SQLite: not applicable.
+- Agent B SQLite: not applicable.
+- Browser/UI: real browser download request from `https://192.168.100.17:9443/app/tickets/1896f5af-a7e8-4943-87dd-980f7289aa4a` observed corrupted filename header; ticket timeline still shows the attachment marker.
+- UIA: not applicable.
+- Test artifact: Playwright MCP browser evaluate output in this session; no raw cookies/tokens printed.
+- Run marker: `p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2`.
+
+Impact:
+- Does not leak data and does not block attachment access-control validation, but fails P2 filename preservation/safety expectation for Unicode attachments.
+Root cause hypothesis:
+- Artifact download handler likely sends raw Unicode only in `filename="..."` instead of RFC 5987 `filename*=` with a safe ASCII fallback, causing client/header encoding corruption.
+Root cause confirmed: no; code path not yet inspected after recording evidence.
+Fix policy:
+- Blocking further P2: no for access-control matrix; yes before final P2.2 filename-safety close unless classified as known limitation.
+- Fixed now: no; continue P2 discovery first.
+
+Fix summary:
+Changed files:
+Tests:
 Live regression:
 Regression check:
 Remaining risk:
