@@ -6,6 +6,7 @@ from typing import Any
 from aiohttp import web
 
 from app.db import get_session
+from app.db.models import Ticket
 from auth.context import AuthContext, AuthType
 from auth.middleware import require_auth
 from auth.service import AuthService
@@ -15,6 +16,7 @@ from quality.improvement_service import ContinuousImprovementService
 from quality.policy_service import QualityPolicyService
 from quality.reopen_service import TicketReopenService
 from quality.review_service import QualityReviewService
+from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
 
 
 def _ok(**payload: Any) -> web.Response:
@@ -37,6 +39,48 @@ def _auth(request: web.Request) -> AuthContext:
     return request.get("auth_context")
 
 
+def _account_error(error_code: str, *, status: int = 403) -> web.Response:
+    return _error("account_session_invalid", status=status, error_code=error_code)
+
+
+async def _quality_actor_for_ticket(
+    request: web.Request,
+    session,
+    data: dict[str, Any],
+    *,
+    ticket_id: str | None,
+) -> tuple[str | None, str | None, web.Response | None]:
+    auth = _auth(request)
+    if auth is None:
+        return None, None, _error("authentication required", status=401)
+
+    role = str(auth.actor_role or "")
+    if role == "agent":
+        requester_account = requester_account_from_payload(data, query=request.query, headers=request.headers)
+        access = TicketAccountAccessService(session)
+        validation = await access.validate_agent_account_session(
+            device_id=auth.actor_id,
+            requester_account=requester_account,
+            require=True,
+        )
+        if not validation.get("valid"):
+            return None, None, _account_error(str(validation.get("error_code") or "ACCOUNT_SESSION_INVALID"))
+
+        ticket = await session.get(Ticket, ticket_id)
+        if ticket is None:
+            return None, None, _error("ticket not found", status=404)
+        if not await access.can_view_ticket(ticket=ticket, account_session=validation.get("session") or {}):
+            return None, None, _account_error("ACCOUNT_ACCESS_DENIED")
+
+        data["source_surface"] = str(data.get("source_surface") or "agent_gui")
+        return str(getattr(ticket, "requester_id", "") or auth.actor_id), "requester", None
+
+    if role in {"admin", "support", "requester", "user"}:
+        return auth.actor_id, role, None
+
+    return None, None, _error("forbidden", status=403, error_code="FORBIDDEN")
+
+
 def _period(request: web.Request) -> tuple[datetime, datetime]:
     now = datetime.now(timezone.utc)
     days = int(request.query.get("days", "30") or "30")
@@ -44,18 +88,25 @@ def _period(request: web.Request) -> tuple[datetime, datetime]:
 
 
 async def handle_ticket_feedback(request: web.Request) -> web.Response:
-    auth = _auth(request)
     data = await _json(request)
     data["ticket_id"] = request.match_info.get("ticket_id")
-    if auth.actor_role in {"user", "requester"}:
-        data["source_surface"] = "requester_portal"
-        data.pop("visibility", None)
     try:
         async with get_session() as session:
+            actor_id, actor_role, actor_error = await _quality_actor_for_ticket(
+                request,
+                session,
+                data,
+                ticket_id=data["ticket_id"],
+            )
+            if actor_error is not None:
+                return actor_error
+            if actor_role in {"user", "requester"}:
+                data["source_surface"] = "requester_portal" if actor_role == "user" else data.get("source_surface") or "agent_gui"
+                data.pop("visibility", None)
             result = await TicketFeedbackService(session).submit_feedback(
                 data,
-                actor_id=auth.actor_id,
-                actor_role=auth.actor_role,
+                actor_id=actor_id,
+                actor_role=actor_role,
             )
             await session.commit()
             return _ok(
@@ -69,18 +120,25 @@ async def handle_ticket_feedback(request: web.Request) -> web.Response:
 
 
 async def handle_ticket_reopen(request: web.Request) -> web.Response:
-    auth = _auth(request)
     data = await _json(request)
     try:
         async with get_session() as session:
+            actor_id, actor_role, actor_error = await _quality_actor_for_ticket(
+                request,
+                session,
+                data,
+                ticket_id=request.match_info.get("ticket_id"),
+            )
+            if actor_error is not None:
+                return actor_error
             result = await TicketReopenService(session).reopen_ticket(
                 request.match_info.get("ticket_id"),
                 reason_code=str(data.get("reason_code") or ""),
                 reason_comment=data.get("reason_comment"),
                 linked_feedback_id=data.get("linked_feedback_id"),
                 linked_knowledge_item_id=data.get("linked_knowledge_item_id"),
-                actor_id=auth.actor_id,
-                actor_role=auth.actor_role,
+                actor_id=actor_id,
+                actor_role=actor_role,
             )
             await session.commit()
             return _ok(ticket_id=result["ticket_id"], ticket_status=result["status"], reopen_id=result["reopen_id"])
