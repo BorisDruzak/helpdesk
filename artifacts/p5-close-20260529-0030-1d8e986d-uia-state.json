@@ -1,0 +1,830 @@
+{
+  "pywinauto_version": "0.6.9",
+  "backend": "uia",
+  "window_title": "Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61",
+  "process_id": 28128,
+  "found_control_ids": {
+    "agent.connection.state": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+        "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 955,
+          "top": 2337,
+          "right": 1490,
+          "bottom": 2379
+        }
+      }
+    ],
+    "agent.connection.detail": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+        "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 955,
+          "top": 2337,
+          "right": 1490,
+          "bottom": 2379
+        }
+      }
+    ],
+    "agent.account.summary": [
+      {
+        "depth": 5,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard",
+        "name": "agent.account.summary; id=agent.account.summary; account_exists=true; account_mode=confirmed_binding; display_name=P1 Clean User; full_name=P1 Clean User 20260527; login=p1-clean-user-20260527; email=p1-clean-user-20260527@example.test; person_id=f0e074a5-7c1b-4e38-bb4a-abfb2be3612f; binding_id=1b87f35b-b826-4768-a7fd-9f0e2b276526",
+        "control_type": "Custom",
+        "class_name": "QFrame",
+        "help_text": "",
+        "rectangle": {
+          "left": 862,
+          "top": 2020,
+          "right": 1517,
+          "bottom": 2232
+        }
+      }
+    ],
+    "agent.account.mode": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+        "name": "agent.account.mode; id=agent.account.mode; account_mode=confirmed_binding; account_exists=true",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 1050,
+          "top": 2155,
+          "right": 1435,
+          "bottom": 2195
+        }
+      }
+    ],
+    "agent.account.person": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardTitle",
+        "name": "agent.account.person; id=agent.account.person; display_name=P1 Clean User",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 1050,
+          "top": 2102,
+          "right": 1435,
+          "bottom": 2149
+        }
+      }
+    ],
+    "agent.tickets.list": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.AgentTicketsSemanticState",
+        "name": "agent.tickets.semantic; id=agent.tickets.list; ticket_count=21; active_ticket_id=896665d2-fd69-41a5-a8cc-261116f3d334; agent.ticket.card.T-000638=id=agent.ticket.card.T-000638; ticket_id=896665d2-fd69-41a5-a8cc-261116f3d334; ticket_code=T-000638; status=queued; title=P4-01 valid automation create marker p4-01-fix-20260528-2112-f7dc521b; agent.ticket.card.T-000637=id=agent.ticket.card.T-000637; ticket_id=5f82425c-f992-4453-ba6d-03a2f3d5249f; ticket_code=T-000637; status=queued; title=P4 fix repeated VPN 5 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000636=id=agent.ticket.card.T-000636; ticket_id=d5ae6a5c-6092-4da8-bdcd-61bb6377a67f; ticket_code=T-000636; status=queued; title=P4 fix repeated VPN 4 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000635=id=agent.ticket.card.T-000635; ticket_id=ebde6dbf-b4d8-4647-a706-bc449326fa45; ticket_code=T-000635; status=queued; title=P4 fix repeated VPN 3 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000634=id=agent.ticket.card.T-000634; ticket_id=6242b7bf-9580-4307-9470-0c8bcb422a92; ticket_code=T-000634; status=queued; title=P4 fix repeated VPN 2 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000633=id=agent.ticket.card.T-000633; ticket_id=8050d4a1-7b63-416b-ad18-d709f48c8ad5; ticket_code=T-000633; status=queued; title=P4 fix repeated VPN 1 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000632=id=agent.ticket.card.T-000632; ticket_id=5514d858-f49e-401e-8da9-0eea9b9854cc; ticket_code=T-000632; status=queued; title=P4 RCA repeated VPN 5 p4-20260528-1815-5217eb14; agent.ticket.card.T-000631=id=agent.ticket.card.T-000631; ticket_id=628668f0-16d6-4803-8523-32f1eb3bb666; ticket_code=T-000631; status=queued; title=P4 RCA repeated VPN 4 p4-20260528-1815-5217eb14; agent.ticket.card.T-000630=id=agent.ticket.card.T-000630; ticket_id=d71f99c3-25f1-44f7-ab9a-df8cba47b392; ticket_code=T-000630; status=queued; title=P4 RCA repeated VPN 3 p4-20260528-1815-5217eb14; agent.ticket.card.T-000629=id=agent.ticket.card.T-000629; ticket_id=54fe9a4d-e00c-4fff-acae-c4e58c3217e8; ticket_code=T-000629; status=queued; title=P4 RCA repeated VPN 2 p4-20260528-1815-5217eb14; agent.ticket.card.T-000628=id=agent.ticket.card.T-000628; ticket_id=276d8fbe-9b09-4670-a36a-32fee2d30289; ticket_code=T-000628; status=queued; title=P4 RCA repeated VPN 1 p4-20260528-1815-5217eb14; agent.ticket.card.T-000626=id=agent.ticket.card.T-000626; ticket_id=19c514e9-6b93-42af-bf56-46c17cd10231; ticket_code=T-000626; status=in_progress; title=P3 p3-fix-20260528-1622-0ee4b1b7 reopen regression; agent.ticket.card.T-000625=id=agent.ticket.card.T-000625; ticket_id=20b1e64d-6b31-4481-ae2e-1901f1ee330d; ticket_code=T-000625; status=resolved; title=P3 p3-fix-20260528-1622-0ee4b1b7 feedback regression; agent.ticket.card.T-000623=id=agent.ticket.card.T-000623; ticket_id=34f5b5b0-5ec7-4476-9ea4-9a5ef4726bf0; ticket_code=T-000623; status=in_progress; title=P3 p3-20260528-1552-f3b80257 reopen ticket; agent.ticket.card.T-000622=id=agent.ticket.card.T-000622; ticket_id=08be9bc1-cbb1-4b6c-b56f-09f8343f4270; ticket_code=T-000622; status=resolved; title=P3 p3-20260528-1552-f3b80257 quality loop ticket; agent.ticket.card.T-000619=id=agent.ticket.card.T-000619; ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852; ticket_code=T-000619; status=queued; title=P2 fixed artifact p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded; agent.ticket.card.T-000618=id=agent.ticket.card.T-000618; ticket_id=7339a826-17a7-47fc-9bdf-1bee1b5a1e0c; ticket_code=T-000618; status=queued; title=P2 agent artifact p2-20260528-0925-cef033e7-agent-artifact; agent.ticket.card.T-000612=id=agent.ticket.card.T-000612; ticket_id=15f87a9a-726e-488d-9868-2d4b78cfac9c; ticket_code=T-000612; status=queued; title=P1 close UIA projection p1-close-20260527-2333-ebcd4c0b; agent.ticket.card.T-000611=id=agent.ticket.card.T-000611; ticket_id=7e90b809-e993-4227-86f4-defb50223e48; ticket_code=T-000611; status=queued; title=P1 fix late result cleanup p1-fix-20260527-2123-4f42ec7c; agent.ticket.card.T-000610=id=agent.ticket.card.T-000610; ticket_id=74976af0-313c-4101-afe4-ea80feea1ce6; ticket_code=T-000610; status=queued; title=P1 fix late result p1-fix-20260527-2123-4f42ec7c; agent.ticket.card.T-000609=id=agent.ticket.card.T-000609; ticket_id=f2918f87-cca3-42a9-b28f-f0a5e09d72b9; ticket_code=T-000609; status=queued; title=P1.1 p1-20260527-1527-c4f03651 outbox ticket",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 1632,
+          "top": 1232,
+          "right": 3977,
+          "bottom": 1234
+        }
+      },
+      {
+        "depth": 6,
+        "automation_id": "agent.tickets.list; id=agent.tickets.list; ticket_count=21",
+        "name": "agent.tickets.list; id=agent.tickets.list; ticket_count=21",
+        "control_type": "List",
+        "class_name": "QListView",
+        "help_text": "",
+        "rectangle": {
+          "left": 1632,
+          "top": 1280,
+          "right": 3977,
+          "bottom": 2227
+        }
+      }
+    ],
+    "agent.tickets.count": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChipActive",
+        "name": "agent.tickets.count; id=agent.tickets.count; ticket_count=21; open_count=21; closed_count=0",
+        "control_type": "CheckBox",
+        "class_name": "QPushButton",
+        "help_text": "",
+        "rectangle": {
+          "left": 1632,
+          "top": 1087,
+          "right": 1837,
+          "bottom": 1187
+        }
+      }
+    ],
+    "agent.ticket.active": []
+  },
+  "connection_state": "connected",
+  "account_exists": "true",
+  "account_mode": "confirmed_binding",
+  "ticket_count": "21",
+  "ticket_matches": [],
+  "tree_excerpt": [
+    {
+      "depth": 0,
+      "automation_id": "QApplication.agent.main_window",
+      "name": "Maria Agent v3.1.61; id=agent.main_window; agent_version=3.1.61",
+      "control_type": "Window",
+      "class_name": "MainWindow",
+      "help_text": "",
+      "rectangle": {
+        "left": 780,
+        "top": 480,
+        "right": 4080,
+        "bottom": 2580
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.AgentRoot",
+      "name": "agent.root; id=agent.root; agent_version=3.1.61",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 780,
+        "top": 480,
+        "right": 4080,
+        "bottom": 2580
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.FramelessResizeHandler",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "FramelessResizeHandler",
+      "help_text": "",
+      "rectangle": {
+        "left": 780,
+        "top": 480,
+        "right": 1030,
+        "bottom": 555
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "CustomTitleBar",
+      "help_text": "",
+      "rectangle": {
+        "left": 780,
+        "top": 480,
+        "right": 4080,
+        "bottom": 580
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 780,
+        "top": 580,
+        "right": 4080,
+        "bottom": 2580
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarIcon",
+      "name": "",
+      "control_type": "Image",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 805,
+        "top": 505,
+        "right": 850,
+        "bottom": 550
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarText",
+      "name": "Maria Agent v3.1.61",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 870,
+        "top": 480,
+        "right": 1177,
+        "bottom": 577
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "–",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 3675,
+        "top": 490,
+        "right": 3790,
+        "bottom": 565
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "□",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 3810,
+        "top": 490,
+        "right": 3925,
+        "bottom": 565
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarCloseButton",
+      "name": "×",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 3945,
+        "top": 490,
+        "right": 4060,
+        "bottom": 565
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QSplitter",
+      "help_text": "",
+      "rectangle": {
+        "left": 820,
+        "top": 620,
+        "right": 4040,
+        "bottom": 2460
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 820,
+        "top": 2460,
+        "right": 4040,
+        "bottom": 2540
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget",
+      "name": "",
+      "control_type": "Pane",
+      "class_name": "QStackedWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 1570,
+        "top": 620,
+        "right": 4040,
+        "bottom": 2460
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 820,
+        "top": 620,
+        "right": 1560,
+        "bottom": 2460
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.qt_splithandle_",
+      "name": "",
+      "control_type": "Thumb",
+      "class_name": "QSplitterHandle",
+      "help_text": "",
+      "rectangle": {
+        "left": 1560,
+        "top": 620,
+        "right": 1570,
+        "bottom": 2460
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter.SecurityFooterIcon",
+      "name": "▣",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1860,
+        "top": 2485,
+        "right": 1880,
+        "bottom": 2532
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter.SecurityFooterText",
+      "name": "Ваше соединение защищено. Все данные передаются в зашифрованном виде.",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1900,
+        "top": 2490,
+        "right": 3000,
+        "bottom": 2530
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel",
+      "name": "agent.tickets.panel; id=agent.tickets.panel",
+      "control_type": "Custom",
+      "class_name": "TicketsSidebarWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 1570,
+        "top": 620,
+        "right": 4040,
+        "bottom": 2460
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.QLabel",
+      "name": "",
+      "control_type": "Image",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 667,
+        "right": 972,
+        "bottom": 777
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SecondaryButton",
+      "name": "‹",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1405,
+        "top": 667,
+        "right": 1517,
+        "bottom": 784
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarSectionLabel",
+      "name": "Навигация",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 860,
+        "right": 1517,
+        "bottom": 900
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButton",
+      "name": "  Рабочий стол",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 930,
+        "right": 1517,
+        "bottom": 1060
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarCreateButton",
+      "name": "  Создать обращение",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 1090,
+        "right": 1517,
+        "bottom": 1220
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButtonActive",
+      "name": "  Обращения",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 1250,
+        "right": 1517,
+        "bottom": 1380
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButton",
+      "name": "  Настройки",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 1410,
+        "right": 1517,
+        "bottom": 1540
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard",
+      "name": "agent.account.summary; id=agent.account.summary; account_exists=true; account_mode=confirmed_binding; display_name=P1 Clean User; full_name=P1 Clean User 20260527; login=p1-clean-user-20260527; email=p1-clean-user-20260527@example.test; person_id=f0e074a5-7c1b-4e38-bb4a-abfb2be3612f; binding_id=1b87f35b-b826-4768-a7fd-9f0e2b276526",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 2020,
+        "right": 1517,
+        "bottom": 2232
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 862,
+        "top": 2262,
+        "right": 1517,
+        "bottom": 2412
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainTitle",
+      "name": "Обращения",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 682,
+        "right": 3977,
+        "bottom": 774
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainSubtitle",
+      "name": "Список ваших обращений. Двойной клик открывает чат справа.",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 820,
+        "right": 3977,
+        "bottom": 867
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SearchInput",
+      "name": "",
+      "control_type": "Edit",
+      "class_name": "QLineEdit",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 912,
+        "right": 3627,
+        "bottom": 1042
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Фильтры",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 3677,
+        "top": 922,
+        "right": 3977,
+        "bottom": 1032
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChipActive",
+      "name": "agent.tickets.count; id=agent.tickets.count; ticket_count=21; open_count=21; closed_count=0",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 1087,
+        "right": 1837,
+        "bottom": 1187
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChip",
+      "name": "agent.tickets.open_count; id=agent.tickets.open_count; open_count=21",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1862,
+        "top": 1087,
+        "right": 2182,
+        "bottom": 1187
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChip",
+      "name": "agent.tickets.closed_count; id=agent.tickets.closed_count; closed_count=0",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 2207,
+        "top": 1087,
+        "right": 2504,
+        "bottom": 1187
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.AgentTicketsSemanticState",
+      "name": "agent.tickets.semantic; id=agent.tickets.list; ticket_count=21; active_ticket_id=896665d2-fd69-41a5-a8cc-261116f3d334; agent.ticket.card.T-000638=id=agent.ticket.card.T-000638; ticket_id=896665d2-fd69-41a5-a8cc-261116f3d334; ticket_code=T-000638; status=queued; title=P4-01 valid automation create marker p4-01-fix-20260528-2112-f7dc521b; agent.ticket.card.T-000637=id=agent.ticket.card.T-000637; ticket_id=5f82425c-f992-4453-ba6d-03a2f3d5249f; ticket_code=T-000637; status=queued; title=P4 fix repeated VPN 5 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000636=id=agent.ticket.card.T-000636; ticket_id=d5ae6a5c-6092-4da8-bdcd-61bb6377a67f; ticket_code=T-000636; status=queued; title=P4 fix repeated VPN 4 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000635=id=agent.ticket.card.T-000635; ticket_id=ebde6dbf-b4d8-4647-a706-bc449326fa45; ticket_code=T-000635; status=queued; title=P4 fix repeated VPN 3 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000634=id=agent.ticket.card.T-000634; ticket_id=6242b7bf-9580-4307-9470-0c8bcb422a92; ticket_code=T-000634; status=queued; title=P4 fix repeated VPN 2 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000633=id=agent.ticket.card.T-000633; ticket_id=8050d4a1-7b63-416b-ad18-d709f48c8ad5; ticket_code=T-000633; status=queued; title=P4 fix repeated VPN 1 p4-fix-20260528-1845-bbe802fc; agent.ticket.card.T-000632=id=agent.ticket.card.T-000632; ticket_id=5514d858-f49e-401e-8da9-0eea9b9854cc; ticket_code=T-000632; status=queued; title=P4 RCA repeated VPN 5 p4-20260528-1815-5217eb14; agent.ticket.card.T-000631=id=agent.ticket.card.T-000631; ticket_id=628668f0-16d6-4803-8523-32f1eb3bb666; ticket_code=T-000631; status=queued; title=P4 RCA repeated VPN 4 p4-20260528-1815-5217eb14; agent.ticket.card.T-000630=id=agent.ticket.card.T-000630; ticket_id=d71f99c3-25f1-44f7-ab9a-df8cba47b392; ticket_code=T-000630; status=queued; title=P4 RCA repeated VPN 3 p4-20260528-1815-5217eb14; agent.ticket.card.T-000629=id=agent.ticket.card.T-000629; ticket_id=54fe9a4d-e00c-4fff-acae-c4e58c3217e8; ticket_code=T-000629; status=queued; title=P4 RCA repeated VPN 2 p4-20260528-1815-5217eb14; agent.ticket.card.T-000628=id=agent.ticket.card.T-000628; ticket_id=276d8fbe-9b09-4670-a36a-32fee2d30289; ticket_code=T-000628; status=queued; title=P4 RCA repeated VPN 1 p4-20260528-1815-5217eb14; agent.ticket.card.T-000626=id=agent.ticket.card.T-000626; ticket_id=19c514e9-6b93-42af-bf56-46c17cd10231; ticket_code=T-000626; status=in_progress; title=P3 p3-fix-20260528-1622-0ee4b1b7 reopen regression; agent.ticket.card.T-000625=id=agent.ticket.card.T-000625; ticket_id=20b1e64d-6b31-4481-ae2e-1901f1ee330d; ticket_code=T-000625; status=resolved; title=P3 p3-fix-20260528-1622-0ee4b1b7 feedback regression; agent.ticket.card.T-000623=id=agent.ticket.card.T-000623; ticket_id=34f5b5b0-5ec7-4476-9ea4-9a5ef4726bf0; ticket_code=T-000623; status=in_progress; title=P3 p3-20260528-1552-f3b80257 reopen ticket; agent.ticket.card.T-000622=id=agent.ticket.card.T-000622; ticket_id=08be9bc1-cbb1-4b6c-b56f-09f8343f4270; ticket_code=T-000622; status=resolved; title=P3 p3-20260528-1552-f3b80257 quality loop ticket; agent.ticket.card.T-000619=id=agent.ticket.card.T-000619; ticket_id=eadd3b88-70b2-444e-a8cb-efad7484f852; ticket_code=T-000619; status=queued; title=P2 fixed artifact p2-20260528-0925-cef033e7-agent-artifact-fixed-7bb28ded; agent.ticket.card.T-000618=id=agent.ticket.card.T-000618; ticket_id=7339a826-17a7-47fc-9bdf-1bee1b5a1e0c; ticket_code=T-000618; status=queued; title=P2 agent artifact p2-20260528-0925-cef033e7-agent-artifact; agent.ticket.card.T-000612=id=agent.ticket.card.T-000612; ticket_id=15f87a9a-726e-488d-9868-2d4b78cfac9c; ticket_code=T-000612; status=queued; title=P1 close UIA projection p1-close-20260527-2333-ebcd4c0b; agent.ticket.card.T-000611=id=agent.ticket.card.T-000611; ticket_id=7e90b809-e993-4227-86f4-defb50223e48; ticket_code=T-000611; status=queued; title=P1 fix late result cleanup p1-fix-20260527-2123-4f42ec7c; agent.ticket.card.T-000610=id=agent.ticket.card.T-000610; ticket_id=74976af0-313c-4101-afe4-ea80feea1ce6; ticket_code=T-000610; status=queued; title=P1 fix late result p1-fix-20260527-2123-4f42ec7c; agent.ticket.card.T-000609=id=agent.ticket.card.T-000609; ticket_id=f2918f87-cca3-42a9-b28f-f0a5e09d72b9; ticket_code=T-000609; status=queued; title=P1.1 p1-20260527-1527-c4f03651 outbox ticket",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 1232,
+        "right": 3977,
+        "bottom": 1234
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "agent.tickets.list; id=agent.tickets.list; ticket_count=21",
+      "name": "agent.tickets.list; id=agent.tickets.list; ticket_count=21",
+      "control_type": "List",
+      "class_name": "QListView",
+      "help_text": "",
+      "rectangle": {
+        "left": 1632,
+        "top": 1280,
+        "right": 3977,
+        "bottom": 2227
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.PrimaryButton",
+      "name": "agent.ticket.open; id=agent.ticket.open",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 3577,
+        "top": 2272,
+        "right": 3977,
+        "bottom": 2397
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.Avatar",
+      "name": "PC",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 900,
+        "top": 2065,
+        "right": 1020,
+        "bottom": 2185
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardKicker",
+      "name": "Аккаунт",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1050,
+        "top": 2057,
+        "right": 1435,
+        "bottom": 2097
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardTitle",
+      "name": "agent.account.person; id=agent.account.person; display_name=P1 Clean User",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1050,
+        "top": 2102,
+        "right": 1435,
+        "bottom": 2149
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+      "name": "agent.account.mode; id=agent.account.mode; account_mode=confirmed_binding; account_exists=true",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1050,
+        "top": 2155,
+        "right": 1435,
+        "bottom": 2195
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+      "name": "›",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 1465,
+        "top": 2057,
+        "right": 1485,
+        "bottom": 2194
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.StatusDotOnline",
+      "name": "",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 900,
+        "top": 2322,
+        "right": 930,
+        "bottom": 2352
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+      "name": "Агент v3.1.61",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 955,
+        "top": 2295,
+        "right": 1490,
+        "bottom": 2337
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+      "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 955,
+        "top": 2337,
+        "right": 1490,
+        "bottom": 2379
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SearchInput.QLineEditIconButton",
+      "name": "",
+      "control_type": "Button",
+      "class_name": "QLineEditIconButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1642,
+        "top": 955,
+        "right": 1832,
+        "bottom": 1115
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketsListView",
+      "name": "P4-01 valid automation create marker p4-01-fix-20260528-2112-f7dc521b",
+      "control_type": "ListItem",
+      "class_name": "",
+      "help_text": "",
+      "rectangle": {
+        "left": 1657,
+        "top": 1305,
+        "right": 3922,
+        "bottom": 1600
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketsListView",
+      "name": "P4 fix repeated VPN 5 p4-fix-20260528-1845-bbe802fc",
+      "control_type": "ListItem",
+      "class_name": "",
+      "help_text": "",
+      "rectangle": {
+        "left": 1657,
+        "top": 1650,
+        "right": 3922,
+        "bottom": 1945
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketsListView",
+      "name": "P4 fix repeated VPN 4 p4-fix-20260528-1845-bbe802fc",
+      "control_type": "ListItem",
+      "class_name": "",
+      "help_text": "",
+      "rectangle": {
+        "left": 1657,
+        "top": 1995,
+        "right": 3922,
+        "bottom": 2290
+      }
+    }
+  ],
+  "screenshot_path": "capture_timeout",
+  "failures": []
+}

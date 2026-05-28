@@ -128,7 +128,7 @@ Stage 9 P2 operation consistency:
 
 ## Active Work: Device Account Session Hardening
 
-Status: in progress.
+Status: P5 closed.
 
 Goal:
 
@@ -5340,19 +5340,19 @@ Status consistency checked: yes/no
 
 P5 scenario checklist:
 - [x] P5.1 Change API / route discovery.
-- [ ] P5.2 Change request creation: standard, normal, emergency.
-- [ ] P5.3 Standard preapproval catalog.
-- [ ] P5.4 Normal change approval flow.
-- [ ] P5.5 Emergency change and retrospective.
-- [ ] P5.6 Maintenance windows and blackout windows.
-- [ ] P5.7 Risk / impact / implementation / rollback gates.
-- [ ] P5.8 Implementation tasks.
-- [ ] P5.9 Change lifecycle and invalid transitions.
-- [ ] P5.10 Problem / RCA / improvement action linkage.
-- [ ] P5.11 PIR / post-implementation review.
-- [ ] P5.12 Change metrics / no-PII analytics.
-- [ ] P5.13 RBAC and requester/public boundary.
-- [ ] P5.14 Regression against P0-P4 boundaries.
+- [x] P5.2 Change request creation: standard, normal, emergency.
+- [x] P5.3 Standard preapproval catalog.
+- [x] P5.4 Normal change approval flow.
+- [x] P5.5 Emergency change and retrospective.
+- [x] P5.6 Maintenance windows and blackout windows.
+- [x] P5.7 Risk / impact / implementation / rollback gates.
+- [x] P5.8 Implementation tasks.
+- [x] P5.9 Change lifecycle and invalid transitions.
+- [x] P5.10 Problem / RCA / improvement action linkage.
+- [x] P5.11 PIR / post-implementation review.
+- [x] P5.12 Change metrics / no-PII analytics.
+- [x] P5.13 RBAC and requester/public boundary.
+- [x] P5.14 Regression against P0-P4 boundaries.
 
 Discovery-first rule:
 - Run P5.1-P5.14 as far as safely possible and record every finding in this section before root cause/fix.
@@ -5538,6 +5538,125 @@ Regression check:
 Remaining risk:
 - Browser devtools records expected failed-resource entries for intentional HTTP `400` negative tests; these are not HTTP `500` regressions.
 Status consistency checked: yes
+
+## P5 findings summary - 2026-05-29 - run_id=p5-close-20260529-0030-1d8e986d
+
+| Bug | Severity | Area | Blocking P5 | Fix now | Status |
+|---|---|---|---|---|---|
+| BUG-20260528-P5-01 | P1 | lifecycle / risk-impact / rollback / approval | yes | yes | verified-fixed |
+| BUG-20260529-P5-02 | P1 | workflow / risk-impact / task / PIR / browser-ui | yes | yes | verified-fixed |
+
+P5 discovery and clean close evidence:
+- Browser/admin/API surface: real browser at `https://192.168.100.17:9443/app/admin/changes`, same-origin `/api/web/changes*` calls.
+- Clean close marker: `p5-close-20260529-0030-1d8e986d`.
+- Standard/preapproval: saved explicit change-type policy `std-preapproval-p5-close-20260529-0030-1d8e986d`; standard change `CHG-000015` used skipped non-required approval row and reached `approved`.
+- Normal approval/package: normal change `CHG-000016` created approved risk, approved implementation/rollback/validation plan, approval row and reached `approved`.
+- Emergency gate: emergency change `CHG-000017` without `emergency_justification` was denied at approval with structured HTTP `400`, `emergency justification is required before approval`.
+- Implementation tasks/PIR: normal change `CHG-000018` was denied `implemented` while required task was open; after task completion it moved to `pir_required`, closure without PIR was denied, then approved PIR allowed final `closed`.
+- Scheduling: maintenance advisory window and blackout window were created for `2026-06-10T10:00:00Z..12:00:00Z` / `10:30:00Z..11:30:00Z`; scheduling `CHG-000019` inside blackout without override returned HTTP `400`, and justified override returned HTTP `200` with status `scheduled`.
+- Problem/RCA/improvement linkage: `POST /api/web/changes/from-problem/7d31d33c-4f15-4add-a560-229a7caa478f` created `CHG-000020` with `source_kind=problem`; `POST /api/web/changes/from-improvement-action/a2c6f142-af7e-40a5-8686-a3817959afd5` created `CHG-000021` with `source_kind=improvement_action`.
+- Metrics/no-PII: `GET /api/web/changes/metrics/summary` returned aggregate counts/rates/breakdowns only; checked for account/session/public token, email/phone, cookie/auth, raw message and device token strings; findings `[]`.
+- Browser evidence: refreshed change workspace showed `Всего изменений=19`, `PIR=100%`, `CHG-000015` approved, `CHG-000018` closed and `CHG-000019` scheduled; intentional negative requests showed browser failed-resource entries for HTTP `400`, not HTTP `500`.
+- RBAC boundary:
+  - Anonymous direct HTTP without cookies returned `401` for `/api/web/changes`, `/api/web/change-windows`, `/api/web/change-policies`, and `/api/web/changes/metrics/summary`.
+  - Handler decorators require `admin/support` for mutations and allow `auditor` only on read/metrics/policies/windows where defined by product policy.
+  - Requester/public direct change APIs are not exposed as public routes; no requester/public route is used to create, approve, schedule, implement or PIR a change.
+- Server DB evidence for close marker:
+  - `changes=5`
+  - `approved_standard=1`
+  - `closed_pir_change=1`
+  - `scheduled_blackout_override=1`
+  - `windows=2`
+  - `approved_pir=1`
+  - `done_tasks=1`
+  - `device_outbox_marker=0`
+- Agent SQLite evidence for close marker: `outbox_marker=0`, `failed_outbox_marker=0`, `seen_commands_marker=0`.
+- UIA evidence: `scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --output artifacts\p5-close-20260529-0030-1d8e986d-uia-state.json` -> pywinauto `0.6.9`, backend `uia`, `connection_state=connected`, `account_mode=confirmed_binding`, `ticket_count=21`, failures `[]`.
+- Server logs: no marker-related `Traceback` / `ERROR` observed during post-fix validation windows.
+
+## P5 close summary - 2026-05-29 - run_id=p5-close-20260529-0030-1d8e986d
+
+Status: P5 closed
+
+Code head:
+- Product head deployed for P5 fixes: `1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3`.
+- PLANS/evidence head after close notes: pending commit after this update.
+Server URL: `https://192.168.100.17:9443`
+Agent A: `live-v3-p1-clean2`
+Agent B: not used; P5 change enablement scenarios did not require two-agent command routing.
+Clean tickets: not created for P5; changes are internal support/admin objects and no agent execution was expected.
+Change ids:
+- `CHG-000015` standard/preapproved approved.
+- `CHG-000016` normal approved.
+- `CHG-000017` emergency missing justification denied at approval.
+- `CHG-000018` task/PIR/closure completed.
+- `CHG-000019` scheduled with justified blackout override.
+- `CHG-000020` problem-linked change.
+- `CHG-000021` improvement-action-linked change.
+Approval ids:
+- `1ae38392-8d89-4f73-bb44-9870eebb8c00` skipped standard preapproval.
+- `1e3782bf-f3d3-43e9-9e18-278f41ea34b4` normal approval.
+- Additional normal/emergency close-run approval rows are tied to the marker in DB/browser evidence.
+Window ids:
+- Maintenance/blackout rows created with titles containing `p5-close-20260529-0030-1d8e986d`.
+Blackout ids:
+- Blackout row title `Blackout block p5-close-20260529-0030-1d8e986d`.
+Task ids:
+- `af57957d-12ed-450c-87f1-7534302646e0`.
+PIR ids:
+- `1cb92aa1-4533-40f0-b22f-4b193137485e`.
+Problem/RCA/action links:
+- `CHG-000020` linked to `PRB-000002`.
+- `CHG-000021` linked to improvement action `a2c6f142-af7e-40a5-8686-a3817959afd5`.
+Old contamination ignored:
+- P0/P1/P2/P3/P4 historical tickets/outbox/artifacts/problem/RCA/Knowledge rows.
+- Pre-fix P5 rows `CHG-000001..CHG-000014` are historical discovery/fix evidence; clean close evidence uses `p5-close-20260529-0030-1d8e986d`.
+- `p5-fix-20260529-0000-8bfc7c76` is test-tool contamination from wrong risk id extraction.
+
+P5.1 result: passed; routes/docs/code discovered and recorded.
+P5.2 result: passed for standard/normal/emergency create paths and invalid type denial.
+P5.3 result: passed for explicit standard preapproval policy and skipped non-required approval.
+P5.4 result: passed; normal approval requires risk/plan/approval and duplicate version bug is fixed.
+P5.5 result: passed; emergency approval without justification denied; emergency/PIR policy verified through gate behavior.
+P5.6 result: passed; maintenance advisory row created, blackout hard-block and justified override verified.
+P5.7 result: passed; risk/impact/implementation/rollback gates verified, including latest-plan regression.
+P5.8 result: passed; implementation task blocks implementation until complete; no agent work dispatched.
+P5.9 result: passed for canonical transitions and invalid transitions exercised in normal/emergency/task/PIR flows.
+P5.10 result: passed for problem and improvement action linkage.
+P5.11 result: passed; PIR required after implementation and required before closure.
+P5.12 result: passed; metrics aggregate/no-PII check clean.
+P5.13 result: passed for admin/support live flow and anonymous denial; server-side route RBAC reviewed for requester/public denial.
+P5.14 result: passed; no P5 marker outbox/device_outbox rows, UIA probe green, no change lifecycle auto-dispatched agent tools.
+
+Bugs found:
+- `BUG-20260528-P5-01`
+- `BUG-20260529-P5-02`
+
+Verified fixed:
+- `BUG-20260528-P5-01`
+- `BUG-20260529-P5-02`
+
+Deferred/known limitations:
+- Maintenance windows are advisory in P5 by documented policy; blackout windows are the hard scheduling block.
+- Agent-token and named requester-account negative checks were not executed with live raw tokens to avoid token handling risk; public/no-auth denial and server-side RBAC decorators were verified.
+
+Security/privacy result:
+- Requester/public change API access: anonymous direct access denied with `401`; no public requester route exists for change mutation.
+- Approval/preapproval boundary: preapproval only through explicit standard policy; normal approval required risk/plan/approval; body `approved=true` did not bypass lifecycle.
+- Scheduling/blackout safety: blackout denied without override and allowed with explicit justification.
+- No-PII metrics: aggregate payload contained counts/rates/breakdowns only; no checked PII/secret strings found.
+- Problem/RCA/change linkage visibility: change linkage is internal admin/support API; no requester/public projection was used or exposed in P5 close evidence.
+
+Browser/UI evidence:
+- Real browser `/app/admin/changes` baseline and close validation; visible rows for `CHG-000015..CHG-000019` and refreshed aggregate counters.
+UIA evidence:
+- `artifacts\p5-close-20260529-0030-1d8e986d-uia-state.json`.
+DB/SQLite evidence:
+- Server DB close marker counts listed above.
+- Agent SQLite close marker counts all zero.
+
+P6 readiness:
+- ready
 
 ### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
 

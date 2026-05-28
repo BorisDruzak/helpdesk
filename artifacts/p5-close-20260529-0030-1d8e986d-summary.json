@@ -1,0 +1,52 @@
+{
+  "run_marker": "p5-close-20260529-0030-1d8e986d",
+  "surface": "real browser admin session, direct anonymous HTTP, server DB, agent SQLite, pywinauto UIA",
+  "server_url": "https://192.168.100.17:9443",
+  "deployed_commit": "1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3",
+  "changes": {
+    "standard_preapproved": "CHG-000015",
+    "normal_approved": "CHG-000016",
+    "emergency_missing_justification_denied": "CHG-000017",
+    "task_pir_closed": "CHG-000018",
+    "blackout_override_scheduled": "CHG-000019",
+    "problem_linked": "CHG-000020",
+    "improvement_action_linked": "CHG-000021"
+  },
+  "negative_checks": {
+    "emergency_without_justification": "400 emergency justification is required before approval",
+    "implementation_with_open_task": "400 all implementation tasks must be completed before implemented",
+    "close_without_pir": "400 approved PIR is required before closure",
+    "schedule_inside_blackout_without_override": "400 blackout window blocks scheduling",
+    "anonymous_web_changes": 401,
+    "anonymous_change_windows": 401,
+    "anonymous_change_policies": 401,
+    "anonymous_change_metrics": 401
+  },
+  "database_counts": {
+    "changes": 5,
+    "approved_standard": 1,
+    "closed_pir_change": 1,
+    "scheduled_blackout_override": 1,
+    "windows": 2,
+    "approved_pir": 1,
+    "done_tasks": 1,
+    "device_outbox_marker": 0
+  },
+  "agent_sqlite_counts": {
+    "outbox_marker": 0,
+    "failed_outbox_marker": 0,
+    "seen_commands_marker": 0
+  },
+  "metrics_privacy": {
+    "surface": "/api/web/changes/metrics/summary",
+    "pii_findings": []
+  },
+  "uia": {
+    "artifact": "artifacts/p5-close-20260529-0030-1d8e986d-uia-state.json",
+    "pywinauto_version": "0.6.9",
+    "backend": "uia",
+    "connection_state": "connected",
+    "account_mode": "confirmed_binding",
+    "failures": []
+  }
+}
