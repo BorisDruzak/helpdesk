@@ -253,13 +253,19 @@ async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch
 @pytest.mark.asyncio
 @pytest.mark.no_db
 @pytest.mark.parametrize(
-    ("method", "path"),
+    ("method", "route_path", "request_path"),
     [
-        ("POST", "/api/upload"),
-        ("GET", "/api/artifacts/artifact-1/download"),
+        ("POST", "/api/upload", "/api/upload"),
+        ("GET", "/api/artifacts/artifact-1/download", "/api/artifacts/artifact-1/download"),
+        ("GET", "/api/artifacts/artifact-1/download", "/api/artifacts/artifact-1/download?ticket_id=ticket-1"),
     ],
 )
-async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(monkeypatch, method: str, path: str):
+async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(
+    monkeypatch,
+    method: str,
+    route_path: str,
+    request_path: str,
+):
     async def fake_verify_ui_token(_self, token: str):
         if token != "cookie-token":
             return None
@@ -286,12 +292,12 @@ async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(monkeypat
 
     app = web.Application(middlewares=[auth_middleware])
     app["state"] = SimpleNamespace(users={})
-    app.router.add_route(method, path, protected_handler)
+    app.router.add_route(method, route_path, protected_handler)
 
     async with TestClient(TestServer(app)) as client:
         response = await client.request(
             method,
-            path,
+            request_path,
             headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
         )
         payload = await response.json()
@@ -302,7 +308,7 @@ async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(monkeypat
         "actor_id": "support-cookie",
         "actor_role": "support",
         "auth_type": "ui_token",
-        "path": path,
+        "path": route_path,
     }
 
 

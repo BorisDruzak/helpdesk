@@ -298,15 +298,6 @@ async def auth_middleware(request: web.Request, handler):
     if request.path.startswith("/api/connection_request"):
         return await handler(request)
 
-    # Скачивание артефакта по ссылке тикета: GET .../download?ticket_id=... — без токена (проверка в handler)
-    if (
-        request.method == "GET"
-        and request.path.startswith("/api/artifacts/")
-        and request.path.endswith("/download")
-        and request.query.get("ticket_id")
-    ):
-        return await handler(request)
-    
     # Extract and verify token
     auth_context = await extract_auth_context(request)
     
