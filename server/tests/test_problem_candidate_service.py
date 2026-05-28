@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ProblemCandidate, Ticket, TicketFeedback, TicketReopenEvent
+from app.db.models import HelpdeskService, HelpdeskServiceOffering, ProblemCandidate, Ticket, TicketFeedback, TicketReopenEvent
 from problem.candidate_service import ProblemCandidateService
 
 
@@ -90,6 +90,20 @@ async def test_candidate_convert_creates_problem_and_links_sample_tickets(test_e
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     now = datetime.now(timezone.utc)
     async with session_maker() as session:
+        service_id = str(uuid.uuid4())
+        session.add(HelpdeskService(service_id=service_id, code="network", name="Network", public_title="Network", lifecycle_status="published", visibility="public"))
+        session.add(
+            HelpdeskServiceOffering(
+                offering_id=str(uuid.uuid4()),
+                service_id=service_id,
+                code="vpn_issue",
+                full_code="network.vpn_issue",
+                name="VPN issue",
+                public_title="VPN issue",
+                lifecycle_status="published",
+                visibility="public",
+            )
+        )
         ticket_ids = [str(uuid.uuid4()) for _ in range(2)]
         for ticket_id in ticket_ids:
             session.add(_ticket(ticket_id))
@@ -112,3 +126,68 @@ async def test_candidate_convert_creates_problem_and_links_sample_tickets(test_e
     assert converted["candidate"]["status"] == "converted"
     assert converted["problem"]["problem_key"].startswith("PRB-")
     assert converted["problem"]["service_code"] == "network"
+
+
+@pytest.mark.asyncio
+async def test_repeated_incident_scan_dedupes_across_lookback_windows(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket_ids = [str(uuid.uuid4()) for _ in range(5)]
+        for ticket_id in ticket_ids:
+            session.add(_ticket(ticket_id, title="Legacy VPN issue"))
+        await session.commit()
+
+        now = datetime.now(timezone.utc)
+        service = ProblemCandidateService(session)
+        first = await service.scan(actor_id="support-1", now=now, lookback_hours=168)
+        second = await service.scan(actor_id="support-1", now=now, lookback_hours=1)
+        await session.commit()
+        rows = (await session.execute(select(ProblemCandidate).where(ProblemCandidate.signal_type == "repeated_incident_pattern"))).scalars().all()
+
+    assert first["created"] == 1
+    assert second["created"] == 0
+    assert second["updated"] == 1
+    assert len(rows) == 1
+    assert rows[0].ticket_count == 5
+
+
+@pytest.mark.asyncio
+async def test_candidate_convert_maps_legacy_sentinels_to_empty_catalog_fields(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        service_id = str(uuid.uuid4())
+        session.add(HelpdeskService(service_id=service_id, code="network", name="Network", public_title="Network", lifecycle_status="published", visibility="public"))
+        session.add(
+            HelpdeskServiceOffering(
+                offering_id=str(uuid.uuid4()),
+                service_id=service_id,
+                code="vpn_issue",
+                full_code="network.vpn_issue",
+                name="VPN issue",
+                public_title="VPN issue",
+                lifecycle_status="published",
+                visibility="public",
+            )
+        )
+        ticket_ids = [str(uuid.uuid4()) for _ in range(2)]
+        for ticket_id in ticket_ids:
+            session.add(_ticket(ticket_id, title="Legacy uncategorized issue"))
+        await session.commit()
+
+        service = ProblemCandidateService(session)
+        candidate = await service.create_manual_candidate(
+            {
+                "title": "Repeated legacy incidents",
+                "summary": "Tickets do not carry catalog fields yet.",
+                "service_code": "legacy",
+                "offering_code": "uncategorized",
+                "evidence": {"ticket_ids": ticket_ids},
+            },
+            actor_id="support-1",
+        )
+        converted = await service.convert_candidate(candidate["candidate_id"], actor_id="support-1")
+        await session.commit()
+
+    assert converted["candidate"]["status"] == "converted"
+    assert converted["problem"]["service_code"] is None
+    assert converted["problem"]["offering_code"] is None

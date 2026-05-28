@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from sqlalchemy import select
+
 from app.db.models import KnowledgeSpace, Problem, ProblemKnownErrorLink
 from knowledge.graph_service import KnowledgeGraphService
 from app.repos.knowledge_repo import KnowledgeRepo
@@ -24,7 +26,10 @@ class ProblemKnownErrorService:
         if problem is None:
             raise ValueError("problem not found")
         space_code = await self._ensure_space(actor_id=actor_id)
-        slug = f"{item_type}-{problem.problem_key.lower()}"
+        existing = await self._existing_link(problem.problem_id, link_type)
+        if existing is not None:
+            return existing
+        slug = await self._draft_slug(item_type=item_type, problem=problem)
         repo = KnowledgeRepo(self.session)
         item = await repo.create_item_draft(
             {
@@ -75,6 +80,32 @@ class ProblemKnownErrorService:
         if link_type == "workaround" and problem.status in {"investigating", "known_error"}:
             problem.status = "workaround_available"
         return {"link_id": link.link_id, "problem_id": problem.problem_id, "knowledge_item_id": item["item_id"], "link_type": link.link_type}
+
+    async def _existing_link(self, problem_id: str, link_type: str) -> dict[str, Any] | None:
+        row = (
+            await self.session.execute(
+                select(ProblemKnownErrorLink).where(
+                    ProblemKnownErrorLink.problem_id == problem_id,
+                    ProblemKnownErrorLink.link_type == link_type,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return {
+            "link_id": row.link_id,
+            "problem_id": row.problem_id,
+            "knowledge_item_id": row.knowledge_item_id,
+            "link_type": row.link_type,
+        }
+
+    async def _draft_slug(self, *, item_type: str, problem: Problem) -> str:
+        base = f"{item_type}-{problem.problem_key.lower()}"
+        repo = KnowledgeRepo(self.session)
+        existing = await repo.get_item_row(base)
+        if existing is None or existing.source_ref == problem.problem_id:
+            return base
+        return f"{base}-{problem.problem_id[:8]}"
 
     async def _ensure_space(self, *, actor_id: str | None) -> str:
         repo = KnowledgeRepo(self.session)

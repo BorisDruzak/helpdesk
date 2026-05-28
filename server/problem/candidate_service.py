@@ -115,8 +115,8 @@ class ProblemCandidateService:
             {
                 "title": row.title,
                 "description": row.summary,
-                "service_code": row.service_code,
-                "offering_code": row.offering_code,
+                "service_code": self._catalog_code_or_none(row.service_code),
+                "offering_code": self._catalog_code_or_none(row.offering_code),
                 "request_type": row.request_type,
                 "source_kind": row.signal_type,
                 "source_ref": row.candidate_id,
@@ -587,9 +587,16 @@ class ProblemCandidateService:
         return signal_type in rules.get("disabled", set())
 
     def _fingerprint(self, signal_type: str, rule_code: str, service: str, offering: str, signal_key: str, start: datetime) -> str:
-        raw = "|".join(["p4.1", signal_type, rule_code, service or "legacy", offering or "uncategorized", signal_key or "-", start.date().isoformat()])
+        raw = "|".join(["p4.2", signal_type, rule_code, service or "legacy", offering or "uncategorized", signal_key or "-"])
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
         return f"p41:{signal_type}:{rule_code}:{service}:{offering}:{digest}"[:220]
+
+    @staticmethod
+    def _catalog_code_or_none(value: str | None) -> str | None:
+        code = clean_text(value)
+        if code in {"legacy", "uncategorized"}:
+            return None
+        return code
 
     def _evidence_hash(self, evidence: dict[str, Any]) -> str:
         payload = json.dumps(evidence, sort_keys=True, default=str, ensure_ascii=True)
