@@ -5582,6 +5582,7 @@ Code head:
 - Product head deployed for P5 fixes: `1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3`.
 - PLANS/evidence close head: `a79b85a54e2360c549890ee0728e2985f647a10a`.
 Server URL: `https://192.168.100.17:9443`
+Post-validation handoff: remote server was stopped after P5 checks per project workflow; final live smoke before stop returned `/api/health -> 200`.
 Agent A: `live-v3-p1-clean2`
 Agent B: not used; P5 change enablement scenarios did not require two-agent command routing.
 Clean tickets: not created for P5; changes are internal support/admin objects and no agent execution was expected.
