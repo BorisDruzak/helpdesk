@@ -3866,7 +3866,7 @@ Status consistency checked: yes
 ### BUG-20260528-P2-03 - Unicode attachment filename is mojibake in Content-Disposition
 
 Severity: P2
-Status: fix-in-progress
+Status: verified-fixed
 Area: artifact-access / attachment-upload / browser-ui
 
 P2 scenario: P2.2.B / P2.2.E Manual support/browser attachment download and filename safety.
@@ -3919,14 +3919,21 @@ Tests:
 - `git diff --check` -> exit 0; CRLF warnings only.
 - `python scripts\verify_workspace.py` -> passed.
 Live regression:
+- Product commit deployed: `de6b3cd2` with `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; `/api/health` smoke passed on attempt 2.
+- Existing support attachment on `T-000616`: real browser support-session download returned HTTP `200` with `Content-Disposition` containing ASCII fallback `filename="p2_p2-20260528-0925-cef033e7-p2-22-support-upload-fixed-d97104f2.txt"` plus `filename*=UTF-8''...`; `hasFilenameStar=true`, `hasMojibake=false`, body contained the run marker.
+- Clean public attachment on `T-000617`: real browser context created ticket `5aefd56e-226f-4030-b7ef-e76686770efc` / `T-000617`, uploaded artifact `f0986a16-7447-4790-97ad-7f4c93166a00`, and public-token download returned HTTP `200` with `filename*=UTF-8''public%20...`, `hasMojibake=false`, body contained marker `p2-20260528-0925-cef033e7-public-artifact-de6b3cd2c`.
+- Server DB: artifact row `f0986a16-7447-4790-97ad-7f4c93166a00` has `original_name="public вложение p2-20260528-0925-cef033e7-public-artifact-de6b3cd2c.txt"`, `mime_type=text/plain`, `size_bytes=80`, `kind=file`, `ticket_id=5aefd56e-226f-4030-b7ef-e76686770efc`.
 Regression check:
+- Anonymous download for the clean public artifact returned HTTP `401` and no file body.
+- Browser support page for `T-000617` loaded and shows the clean marker in the ticket list/detail; screenshot artifact from Playwright MCP: `p2-20260528-0925-public-artifact-T-000617.png`.
 Remaining risk:
+- P2.2 still needs broader wrong-account/requester artifact access matrix and tool-generated artifact scenarios.
 Status consistency checked: yes
 
 ### BUG-20260528-P2-04 - Public ticket token cannot download ticket attachment artifacts
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: artifact-access / public-safety / requester-access
 
 P2 scenario: P2.2.D Artifact download access matrix.
@@ -3983,8 +3990,15 @@ Tests:
 - `git diff --check` -> exit 0; CRLF warnings only.
 - `python scripts\verify_workspace.py` -> passed.
 Live regression:
+- Product commit deployed: `de6b3cd2`; remote `/api/health` passed after quick release.
+- Clean public/browser path: created `T-000617` with marker `p2-20260528-0925-cef033e7-public-artifact-de6b3cd2c`, received public token evidence only as prefix/length, uploaded artifact `f0986a16-7447-4790-97ad-7f4c93166a00` with that token, then downloaded the artifact with the same public token and no cookies: HTTP `200`, `content-type=text/plain`, body contained marker.
+- Negative path: anonymous/no-cookie/no-header download for the same artifact URL returned HTTP `401` JSON and did not return a file body or `Content-Disposition`.
+- Server DB: ticket `T-000617` and artifact row are bound to the same ticket id; artifact metadata preserves the Unicode original name.
 Regression check:
+- Support/browser web-session download for existing `T-000616` artifact still returns HTTP `200`.
+- Stale public token generated before server restart still returned HTTP `401`; not a regression for this bug because the clean post-deploy public token path passed.
 Remaining risk:
+- Need wrong-requester/cross-account artifact denial once P2.1.C Account B is available.
 Status consistency checked: yes
 
 Bug template for this P2 run:
