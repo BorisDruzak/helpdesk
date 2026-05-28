@@ -5466,7 +5466,7 @@ Status consistency checked: yes
 ### BUG-20260529-P5-02 - change subresource validation denials return HTTP 500
 
 Severity: P1
-Status: reproduced
+Status: verified-fixed
 Area: workflow / risk-impact / implementation-task / PIR / browser-ui / server-db
 
 P5 scenario: P5.7 Risk / impact / implementation / rollback gates, P5.8 Implementation tasks, P5.11 PIR / post-implementation review.
@@ -5523,13 +5523,21 @@ Changed files:
 Tests:
 - `python -m pytest server\tests\test_change_api.py::test_change_web_api_subresource_validation_errors_are_not_500 -q --tb=short` -> `1 passed in 338.47s`.
 - `python -m pytest server\tests\test_change_api.py server\tests\test_change_lifecycle.py server\tests\test_change_pir.py -q --tb=short` -> `7 passed in 360.20s`.
-Live regression: pending deploy and clean live rerun with a fresh P5 error-mapping marker.
+Live regression:
+- Deployed commit `1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3` to `https://192.168.100.17:9443` using `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke passed `/api/health -> 200`.
+- Clean marker: `p5-errmap-fix-20260529-0020-1d8e986d`.
+- Real browser/admin/API surface: `https://192.168.100.17:9443/app/admin/changes` with same-origin `/api/web/changes*` calls.
+- Invalid risk submit/approve, plan approve, approval request, task complete and PIR create/submit/approve all returned structured HTTP `400` JSON with `status=error`; no request returned HTTP `500`.
+- Server DB no agent dispatch proof: `device_outbox` rows matching marker `p5-errmap-fix-20260529-0020-1d8e986d` = `0`.
+- Agent SQLite proof: `outbox_marker=0`, `failed_outbox_marker=0`, `seen_commands_marker=0`.
+- Server logs: last 160 server service lines contained no marker errors, `Traceback`, or `ERROR`.
+- Evidence artifact: `artifacts\p5-errmap-fix-20260529-0020-1d8e986d-change-error-mapping.json`.
 Regression check:
 - Focused tests cover invalid risk submit/approve, plan approve, approval request, task complete, PIR create/submit/approve.
 - Existing P5-01 lifecycle tests still pass in the focused suite.
 Remaining risk:
-- Need live browser/API rerun before changing status to `verified-fixed`.
-Status consistency checked: partial; keep status `reproduced` until live regression passes.
+- Browser devtools records expected failed-resource entries for intentional HTTP `400` negative tests; these are not HTTP `500` regressions.
+Status consistency checked: yes
 
 ### BUG-20260528-P4-04 - Knowledge draft creation 500s on reused problem_key slug
 

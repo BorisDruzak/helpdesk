@@ -1,0 +1,28 @@
+{
+  "run_marker": "p5-errmap-fix-20260529-0020-1d8e986d",
+  "surface": "real browser admin session + /api/web/changes subresource API",
+  "server_url": "https://192.168.100.17:9443",
+  "commit": "1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3",
+  "reference_change_id": "39603dc0-9cfa-49c8-bed4-265b25b3af66",
+  "http_statuses": [
+    ["risk submit invalid assessment id", 400, "risk assessment not found"],
+    ["risk approve invalid assessment id", 400, "risk assessment not found"],
+    ["plan approve invalid plan id", 400, "change plan not found"],
+    ["approvals request invalid change id", 400, "change not found"],
+    ["task complete invalid task id", 400, "change task not found"],
+    ["pir create invalid change id", 400, "change not found"],
+    ["pir submit invalid pir id", 400, "PIR not found"],
+    ["pir approve invalid pir id", 400, "PIR not found"]
+  ],
+  "has_http_500": false,
+  "all_errors_structured": true,
+  "server_db_evidence": {
+    "device_outbox_rows_for_marker": 0
+  },
+  "agent_sqlite_evidence": {
+    "outbox_marker": 0,
+    "failed_outbox_marker": 0,
+    "seen_commands_marker": 0
+  },
+  "server_log_evidence": "last 160 service log lines contained no p5-errmap-fix marker errors, Traceback, or ERROR"
+}
