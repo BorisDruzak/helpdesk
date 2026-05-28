@@ -3652,7 +3652,7 @@ Result: passed so far for P2.1.A. No bug recorded.
 ### BUG-20260528-P2-01 - Public ticket API returns requester-visible payload with internal fields
 
 Severity: P1
-Status: fix-in-progress
+Status: verified-fixed
 Area: public-safety / requester-access
 
 P2 scenario: P2.1.B Public ticket access and authorization.
@@ -3717,18 +3717,21 @@ Root cause hypothesis:
 Root cause confirmed: yes. `server/tickets/visibility_policy.py` was deny-list based and only removed configured `hidden_from_requester` paths, so unlisted ticket fields such as `queue_id`, `device_id`, `requester_id`, `priority_*` and raw `custom_fields` remained in requester/public ticket payloads. `server/tickets/handlers.py::_serialize_event_for_agent()` was reused for requester/public `events`, so it filtered event types but still merged raw event payload fields into the public response. `_serialize_message()` likewise returned raw public-access message metadata.
 Fix policy:
 - Blocking further P2: yes for P2.1 public/requester safety; P2.2/P2.3 can continue only after clearly separating this known leak if they do not use public requester ticket API evidence.
-- Fixed now: no, evidence recorded first; root-cause isolation next.
+- Fixed now: yes.
 
 Fix summary:
 - Added an explicit requester/public ticket payload allowlist in `server/tickets/visibility_policy.py`, scoped only to ticket-like payloads (`ticket_id`/`ticket_code`) so generic passport/visibility policy projections still work.
 - Added requester-specific event/message serializers in `server/tickets/handlers.py` and switched `handle_ticket_get` plus requester snapshot event serialization to safe projection output.
-- Sanitized public access code messages in requester API responses to `message_kind=ticket_public_access_code` without echoing the raw code in metadata/text.
+- Sanitized public access code messages in requester API responses to neutral `message_kind=ticket_access_notice` without echoing the raw code, hash or the internal `ticket_public_access_code` event kind in requester/public metadata/text.
 - Updated docs for public-token `/api/tickets/{ticket_id}` projection contract.
 Changed files:
 - `server/tickets/visibility_policy.py`
 - `server/tickets/handlers.py`
+- `server/tickets/requester_timeline.py`
 - `server/tests/test_ticket_visibility_policy.py`
 - `server/tests/test_requester_timeline_projection.py`
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
 - `server/docs/TICKET_SYSTEM.md`
 - `server/docs/CODEMAP.md`
 - `PLANS.md`
@@ -3736,9 +3739,39 @@ Tests:
 - `python -m py_compile server\tickets\visibility_policy.py server\tickets\handlers.py server\tests\test_ticket_visibility_policy.py server\tests\test_requester_timeline_projection.py` -> passed.
 - First targeted pytest run without `pytest.mark.no_db` on `test_ticket_visibility_policy.py` spent about 5m36s building the isolated DB and exposed an over-broad allowlist side effect; fixed by narrowing allowlist to ticket-like payloads and marking the no-DB visibility unit tests.
 - `python -m pytest server\tests\test_ticket_visibility_policy.py server\tests\test_requester_timeline_projection.py -q` -> `15 passed in 0.20s`.
+- Post-neutral-marker targeted gates:
+  - `python scripts\verify_workspace.py` -> passed.
+  - `python -m compileall -q server pc_agent scripts` -> passed.
+  - `python -m pytest server\tests\test_ticket_visibility_policy.py server\tests\test_requester_timeline_projection.py -q` -> `15 passed in 0.19s`.
+  - `git diff --check` -> exit 0; CRLF warnings only.
 Live regression:
+- Deployed commit `049c16dd69d2766b3e91220877af8c3ece524bd3` with `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2`; remote smoke passed on attempt 2 with `/api/health -> 200`.
+- Direct HTTP/API clean regression marker `p2-20260528-0925-cef033e7-p2-01-reg-049c16dd`:
+  - created ticket `T-000615` / `4edde76d-053c-43ad-9c04-ea3c19ad4fbb`;
+  - public token redacted `{prefix=e55fdbf4, sha256_12=89c94024ed1b, length=64}`;
+  - public code redacted `{prefix=GSW, suffix=QZ5, length=8}`;
+  - `GET /api/tickets/{ticket_id}` no token -> `401`;
+  - invalid token -> `401`;
+  - valid public token -> `200`;
+  - public token list `/api/tickets?limit=5` -> `403`;
+  - wrong public code -> `403`;
+  - valid public code -> `200`;
+  - cross-ticket read with public token -> `403`;
+  - JSON scan forbidden hits for `queue_id`, `device_id`, `assignee_id`, `requester_id`, `custom_fields`, `priority_decision`, `routing_decision`, `code_hash`, `public_access_code`, `session_token`, `public_token`, `trace_id`, `operation_id` -> `0`;
+  - artifact: `artifacts\p2-20260528-0925-cef033e7-p2-01-reg-049c16dd-api-regression.json`.
+- Browser/public help clean regression marker `p2-20260528-0925-cef033e7-p2-01-browser-049c16dd`:
+  - created ticket `T-000616` / `1896f5af-a7e8-4943-87dd-980f7289aa4a`;
+  - real browser URL `https://192.168.100.17:9443/help?ticket_id=1896f5af-a7e8-4943-87dd-980f7289aa4a`;
+  - entered the public code in the browser but recorded only redacted evidence `{prefix=Z6R, suffix=S5Q, length=8}`;
+  - visible browser text showed `T-000616`, public status `Заявка принята`, requester message marker and safe system notice `Код доступа к заявке сформирован.`;
+  - browser text scan forbidden hits for internal field names/token markers -> `0`;
+  - redacted screenshot: `artifacts\p2-20260528-0925-cef033e7-p2-01-browser-049c16dd-public-help-redacted.png`.
+- Server DB evidence for `T-000615` and `T-000616`: internal fields still exist in source rows (`device_id`, `queue_id`, `requester_id`, priority/urgency/importance, `custom_fields.public_access`, `custom_fields.priority_decision`, `custom_fields.routing_decision`) and events include `chat_message`, `routing_applied`, `queue_changed`, `sla_started`; these internals are now absent from requester/public API/browser projections.
+- Server log regression window: `journalctl -u pc-client-server.service --since '2026-05-28 10:00:00'` filtered for P2 marker/ERROR/Traceback/500 returned no matching errors.
 Regression check:
+- The API negative boundaries from the original repro remained enforced (`401/403` where expected), and the browser public route still loads the requester-safe ticket after code entry.
 Remaining risk:
+- Browser currently displays the public access code during the legitimate requester login flow; screenshots/evidence must redact it. This is expected product behavior for the ticket owner and is separate from the fixed API payload leak.
 Status consistency checked: yes
 
 Bug template for this P2 run:
