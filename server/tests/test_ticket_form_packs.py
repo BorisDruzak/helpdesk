@@ -970,6 +970,42 @@ async def test_public_create_ticket_manual_priority_override_rejects_legacy_poli
 
 
 @pytest.mark.asyncio
+async def test_public_create_ticket_allows_false_priority_flags_without_reasons(test_client, test_engine):
+    response = await test_client.post(
+        "/public_api/tickets/create",
+        json={
+            "title": "Public catalog create with false priority flags",
+            "description": "Requester submits a normal non-urgent ticket.",
+            "user_display_name": "Public requester",
+            "request_template_key": "network",
+            "form_key": "network",
+            "form_pack_key": "request_forms",
+            "form_payload": {
+                "room": "606",
+                "pc_name": "p6-test-pc",
+                "affected_scope": "single",
+                "impact_scope": "single_user",
+                "work_continuity": "workaround_available",
+                "business_importance": "normal",
+            },
+            "urgency": False,
+            "importance": False,
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    ticket_id = (await response.json())["ticket"]["ticket_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))
+        ).scalar_one()
+
+    assert ticket.ticket_type == "incident"
+
+
+@pytest.mark.asyncio
 async def test_create_ticket_stores_diagnostic_consent(test_client, test_engine):
     device_id = str(uuid.uuid4())
     response = await test_client.post(

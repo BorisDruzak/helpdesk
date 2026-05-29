@@ -54,6 +54,7 @@ from tickets.requester_timeline import build_requester_timeline_projection, proj
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
+    default_create_priority_payload,
     enrich_chat_payload_with_requester_name,
     get_requester_display_name,
     get_requester_profile,
@@ -941,18 +942,7 @@ async def _apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo
 
 
 def _default_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    urgency = data.get("urgency")
-    importance = data.get("importance")
-    urgency_reason = str(data.get("urgency_reason") or "").strip()
-    importance_reason = str(data.get("importance_reason") or "").strip()
-    if urgency is None or importance is None:
-        urgency = False
-        importance = False
-    if not urgency_reason:
-        urgency_reason = "Не указано при создании"
-    if not importance_reason:
-        importance_reason = "Не указано при создании"
-    return normalize_ticket_priority_inputs(urgency, importance, urgency_reason, importance_reason)
+    return default_create_priority_payload(data)
 
 
 def _priority_policy_fallback(data: Dict[str, Any], *, actor_role: str) -> Dict[str, Any]:

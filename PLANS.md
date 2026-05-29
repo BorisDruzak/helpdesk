@@ -3821,6 +3821,231 @@ Remaining risk:
 - Browser currently displays the public access code during the legitimate requester login flow; screenshots/evidence must redact it. This is expected product behavior for the ticket owner and is separate from the fixed API payload leak.
 Status consistency checked: yes
 
+## P6 Live validation - 2026-05-29 - run_id=p6-20260529-0828-d151a7f6
+
+Status: in progress
+
+Scope:
+- P6.1 Route/code discovery and operational surface map.
+- P6.2 Request Template Studio -> ticket create.
+- P6.3 Ticket Workbench full operator flow.
+- P6.4 Operator Command Center / Support Action Center.
+- P6.5 Approval / Consent Center.
+- P6.6 Device Operations workspace.
+- P6.7 Admin Tech Panel / Pilot Readiness.
+- P6.8 Cross-domain E2E pilot scenario.
+- P6.9 RBAC and route matrix.
+- P6.10 Regression against P0-P5 boundaries.
+- P6.11 Browser/UI/UX consistency and no-stale-state pass.
+
+Status audit:
+- P0/P1/P2/P3/P4/P5 are closed in this file.
+- `P6 readiness: ready` is recorded in the P5 close summary.
+- `BUG-20260528-P4-01` is `verified-fixed`.
+- P5 close summary records the remote server was intentionally stopped after successful `/api/health` smoke; P6 will start it as expected handoff recovery, not an incident.
+- No prior P6 Live validation section existed before this section.
+- Existing unrelated dirty state is preserved and out of P6 scope: `pc_agent/ui_gui/tickets_list_model.py`; old/untracked `artifacts/*`.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`
+- Commit SHA: `d151a7f6c44f73c69e1b549255389fc406ac0afa`
+- Server URL: `https://192.168.100.17:9443`
+- Browser/admin URL: `https://192.168.100.17:9443/admin`
+- Browser/support URL: `https://192.168.100.17:9443/app/support`
+- Browser/requester URL: `https://192.168.100.17:9443/app/tickets` / requester-safe routes as scenario-specific.
+- Browser/public URL: `https://192.168.100.17:9443/app/help` / public ticket routes as scenario-specific.
+- Agent A: `live-v3-p1-clean2`
+- Agent B if used: not planned for baseline unless P6 RBAC/cross-account checks require it.
+- Device ids: Agent A server/browser device id `2447d396-79cd-53da-b3a9-028c5a4d56da`; local `install_id=5b365c85-86d8-41e0-8cdd-b26594d3e581`; local identity file has no separate `device_id` field.
+- Agent versions: Agent A UIA title reports `3.1.61`.
+- pywinauto version: `0.6.9`.
+- Canonical browser workspaces:
+  - `/app/support`
+  - `/app/tickets`
+  - `/app/admin/request-template-studio`
+  - `/app/admin/device-operations/<device_id>` and `/app/admin/device-operations?device_id=<device_id>`
+  - `/app/admin/tech`
+  - `/app/support/approvals`
+- Old contamination ignored:
+  - P0 phantom/pre-fix rows and historical live validation artifacts.
+  - P1 pre-fix restart/drop/probe rows, including old stale `device_outbox` evidence.
+  - P2 old public/artifact/two-agent contamination and known/deferred P1 limitations carried forward only as historical context.
+  - P3/P4/P5 historical tickets/problems/changes and closed bug evidence.
+  - P4 pre-fix scanner duplicate candidates and historical P4-01 automation bridge invalid-create attempts.
+  - P5 `p5-fix-20260529-0000-8bfc7c76` test-tool contamination from wrong risk id extraction.
+  - Old/untracked `artifacts/*` not created for this P6 run.
+
+Baseline gates before scenarios:
+- [x] Start server as expected handoff recovery: `python scripts\manage_remote_stack.py start server` -> `running`, pid `508817`.
+- [x] `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> passed after startup warmup. The first immediate smoke attempt raced server startup and is recorded as handoff recovery timing, not an incident.
+- [x] `/api/health` -> HTTP `200`.
+- [x] Agent A connected: `python scripts\agent_test_driver.py status live-v3-p1-clean2` -> `connection_state=connected`, `WS connected`.
+- [x] Browser admin/device workspace shows Agent A online: `/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da` -> `ADMIN-2`, online, last contact during baseline.
+- [x] `pywinauto==0.6.9`.
+- [x] UIA semantic state probe passes for Agent A: `artifacts\p6-20260529-0828-d151a7f6-uia-baseline.json`; connection `connected`, account mode `confirmed_binding`, ticket count `21`, failures `[]`.
+- [x] Agent SQLite has no active/failed rows for `p6-20260529-0828-d151a7f6` in `outbox`, `outbox_sent_history`, `seen_commands`, `pending_command_results`; `pending_consents=0`.
+- [x] Server DB has no active `device_outbox` rows for `p6-20260529-0828-d151a7f6`; all marker rows `0`.
+- [x] Browser opens all P6 canonical workspaces with console/network baseline captured.
+
+Baseline browser evidence:
+- Real browser route `/app/support`: loaded Support workspace / Command Center; console current route `0` errors/warnings; network captured as `p6-20260529-0828-support-network.json`; snapshot `p6-20260529-0828-support-baseline.md`.
+- Real browser route `/app/tickets`: loaded Ticket Workbench at selected ticket detail; console current route `0` errors/warnings; network `p6-20260529-0828-tickets-network.json`; snapshot `p6-20260529-0828-tickets-baseline.md`.
+- Real browser route `/app/admin/request-template-studio`: loaded Studio; console current route `0` errors/warnings; network `p6-20260529-0828-template-studio-network.json`; snapshot `p6-20260529-0828-template-studio-baseline.md`. The selected historical template shows publication unavailable/missing policy gates; this is old context until P6.2 tests a clean P6 template path.
+- Real browser route `/app/support/approvals`: loaded Approval/Consent Center; pending counts `0`; console current route `0` errors/warnings; network `p6-20260529-0828-approvals-network.json`; snapshot `p6-20260529-0828-approvals-baseline.md`.
+- Real browser route `/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`: loaded device operations for Agent A; online state visible; outbox current state empty; historical failed operations are old contamination, not P6 marker evidence. Network `p6-20260529-0828-device-operations-network.json`; snapshot `p6-20260529-0828-device-operations-baseline.md`.
+- Real browser route `/app/admin/device-operations?device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`: query fallback opens the same Agent A device context; console current route `0` errors/warnings; snapshot `p6-20260529-0828-device-operations-query-baseline.md`.
+- Real browser route `/app/admin/tech`: loaded Pilot Readiness panel with score `100`, blockers `0`, warnings `0`, stuck operations `0`, no false red state from the expected P5 handoff server stop after baseline recovery. Network `p6-20260529-0828-tech-network.json`; snapshot `p6-20260529-0828-tech-baseline.md`.
+- Real browser route `/app/help`: public/requester help page loads; console errors captured to `p6-20260529-0828-public-help-console-errors.json`; network `p6-20260529-0828-public-help-network.json`; snapshot `p6-20260529-0828-public-help-baseline.md`.
+- Browser note: old console errors from the pre-baseline stopped server state were ignored as expected handoff contamination; each fresh P6 baseline route was checked separately after server recovery.
+
+Route/code discovery:
+- Request Template Studio / Service Catalog / Policy Health:
+  - Browser routes: `/app/admin/request-template-studio`, `/app/admin/service-catalog`, `/app/admin/policy-health`.
+  - Backend routes: `/api/web/admin/service-catalog*`, `/api/web/admin/helpdesk/policy-health*`, `/api/web/admin/helpdesk-model/request-templates/publish-from-form`, requester-safe `/api/service-catalog/current`, `POST /api/service-catalog/preview`.
+  - Files: `webapp/src/pages/admin/request-template-studio-page.tsx`, `webapp/src/features/service-catalog/*`, `webapp/src/features/policy-health/*`, `server/web_api/service_catalog_handlers.py`, `server/web_api/policy_health_handlers.py`.
+- Ticket Workbench:
+  - Browser route: `/app/tickets`.
+  - Backend routes include `/api/web/support/workspace/summary`, `/api/web/support/tickets/{ticket_id}/read`, `/api/web/support/tickets/{ticket_id}/messages`, `/api/web/support/tickets/{ticket_id}/diagnostics/capabilities*`.
+  - Files: `webapp/src/pages/tickets/list-page.tsx`, `webapp/src/features/queues/*`, `server/web_api/support_handlers.py`.
+- Operator Command Center / Support Action Center:
+  - Browser route: `/app/support`.
+  - Backend route: `GET /api/web/support/command-center`.
+  - Files: `webapp/src/pages/support/command-center-page.tsx`, `webapp/src/features/operator-command-center/*`, `server/support/operator_command_center.py`, `server/web_api/support_handlers.py`.
+- Approval / Consent Center:
+  - Browser route: `/app/support/approvals`.
+  - Backend route: `GET /api/web/support/approvals`.
+  - Files: `webapp/src/pages/support/approval-consent-center-page.tsx`, `webapp/src/features/approval-consent-center/*`, `server/approvals/service.py`, `server/web_api/approval_handlers.py`.
+- Device Operations:
+  - Browser routes: `/app/admin/device-operations/{device_id}`, `/app/admin/device-operations?device_id=...`.
+  - Backend route: `GET /api/web/admin/device-operations/{device_id}` and query fallback.
+  - Files: `webapp/src/pages/admin/device-operations-page.tsx`, `webapp/src/features/device-operations/*`, `server/device_operations/service.py`, `server/web_api/device_operations_handlers.py`.
+- Admin Tech Panel:
+  - Browser route: `/app/admin/tech`.
+  - Backend routes: `GET /api/web/admin/tech/snapshot`, legacy aliases `/overview`, `/alerts`, `/logs`, `/agents/audit`, `/users/audit`, `/operations/stuck`.
+  - Files: `webapp/src/pages/admin/tech-page.tsx`, `webapp/src/features/tech/*`, `server/tech/snapshot.py`, `server/tech/handlers.py`.
+
+P6 bug template:
+
+```md
+### BUG-20260529-P6-NN - short title
+
+Severity: P0/P1/P2/P3/P4/P5/P6
+Status: reproduced / root-cause-confirmed / fix-in-progress / verified-fixed / verified-non-product / known-limitation / deferred / not-a-bug
+Area: request-template-studio / ticket-workbench / operator-command-center / support-action-center / approval-center / consent-center / device-operations / admin-tech / browser-ui / account-session / public-access / requester-access / artifact-access / operation-lifecycle / problem-linkage / change-linkage / quality-linkage / RBAC / privacy-PII / server-db / agent-sqlite / UIA / test-contamination
+
+P6 scenario:
+Run id:
+Expected:
+Actual:
+Repro steps:
+
+Evidence:
+- Transport/API:
+- Server log:
+- Agent log:
+- Server DB:
+- Agent SQLite:
+- Browser/UI:
+- UIA:
+- Test artifact:
+- Run marker:
+
+Impact:
+Root cause hypothesis:
+Root cause confirmed:
+Fix policy:
+- Blocking further P6: yes/no
+- Fixed now: yes/no
+
+Fix summary:
+Changed files:
+Tests:
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes/no
+```
+
+P6 product contract:
+- Operational workspaces must reflect real backend state. Browser UI must match DB/API for ticket status, unread counts, support action tasks, pending approvals/consents, device state, operation failures, module/outbox state and problem/change/quality links when shown.
+- Request Template Studio is the primary workflow for service -> offering -> template -> form -> policy -> simulation -> publication gates. Published templates must create tickets with correct top-level `service_code`, `offering_code` and `offering_full_code`; `custom_fields` is not the canonical catalog source.
+- Ticket Workbench must show requester/account, device/agent/inventory context and operation timeline. Support messages, attachments and safe diagnostic actions must persist and render through web-session routes.
+- Operator Command Center sections are real task projections from `GET /api/web/support/command-center`; `unread_user_messages` is based on support unread user message count and must clear/update after support opens the ticket.
+- Approval/Consent Center must reflect real pending approval/operation/remote-assist state and must not expose Remote Assist tokens, ICE, SDP or raw operation params.
+- Device Operations must compose real device card, inventory/binding, agent/update state, module reconcile, outbox, recent operations, observer traces, provisioning/auth and Remote Assist state without exposing raw tokens or raw inventory by default.
+- Admin Tech Panel must reflect current pilot readiness/runtime health and must not report the expected P5 handoff server stop as a current incident after P6 baseline recovery.
+- Requester/public roles must not see internal operator/admin/problem/change/device/tech data.
+
+P6 scenario checklist:
+- [x] P6.1 Route/code discovery and operational surface map.
+- [ ] P6.2 Request Template Studio -> ticket create.
+- [ ] P6.3 Ticket Workbench full operator flow.
+- [ ] P6.4 Operator Command Center / Support Action Center.
+- [ ] P6.5 Approval / Consent Center.
+- [ ] P6.6 Device Operations workspace.
+- [ ] P6.7 Admin Tech Panel / Pilot Readiness.
+- [ ] P6.8 Cross-domain E2E pilot scenario.
+- [ ] P6.9 RBAC and route matrix.
+- [ ] P6.10 Regression against P0-P5 boundaries.
+- [ ] P6.11 Browser/UI/UX consistency and no-stale-state pass.
+
+### BUG-20260529-P6-01 - requester catalog ticket create requires urgency reason when urgency is false
+
+Severity: P2
+Status: fix-in-progress
+Area: request-template-studio / requester-access / workflow / browser-ui
+
+P6 scenario: P6.2.E Ticket create from template; P6.8 Cross-domain E2E pilot scenario.
+Run id: `p6-20260529-0828-d151a7f6`
+Expected:
+- A requester/public ticket create payload with `urgency=false` and `importance=false` should not require `urgency_reason` or `importance_reason`.
+- The same catalog context that passes requester-safe `POST /api/service-catalog/preview` should be creatable when required form fields are present.
+- Expected validation errors should be field-specific, and no invalid create should mutate ticket, event, outbox or agent state.
+Actual:
+- Real browser context on `/app/help` ran `POST /api/service-catalog/preview` for service `network`, offering `network.vpn_issue`, template/form `network`, marker `p6-20260529-0828-d151a7f6`; preview returned HTTP `200`, service/offering resolved, blockers `[]`, diagnostics `required=true`, `consent_required=true`, warning `priority_not_allowed`.
+- The follow-up requester/public `POST /public_api/tickets/create` with the same required form fields and `urgency=false`, `importance=false` returned HTTP `400` JSON `{"status":"error","error":"validation_error","details":{"priority":"urgency_reason is required"}}`.
+- Repeating with explicit `form_pack_version=1` returned the same HTTP `400` validation denial.
+Repro steps:
+1. Open real browser route `https://192.168.100.17:9443/app/help`.
+2. From that browser session, submit requester-safe preview for `service_code=network`, `offering_full_code=network.vpn_issue`, `request_template_key=network`, `form_key=network`, required form fields `impact_scope=single_user`, `work_continuity=workaround_available`, marker in `form_payload.run_id`.
+3. Submit `/public_api/tickets/create` with the same catalog/form context, `title` and `description` containing marker, `urgency=false`, `importance=false`, and no urgency/importance reasons.
+
+Evidence:
+- Transport/API: browser context preview -> HTTP `200`, blockers `[]`; browser context create -> HTTP `400`, `validation_error`, `details.priority="urgency_reason is required"`.
+- Server log: not yet inspected.
+- Agent log: not applicable to public/requester create path.
+- Server DB: no mutation for marker before fix: `tickets_marker=0`, `ticket_events_marker=0`, `device_outbox_marker_active=0`.
+- Agent SQLite: no marker rows in `outbox`, `outbox_sent_history`, `seen_commands`, `pending_command_results` or `pending_consents`.
+- Browser/UI: real browser route `/app/help`; browser console recorded failed resource for `/public_api/tickets/create` after the 400 response.
+- UIA: not applicable to this public browser create path.
+- Test artifact: browser MCP output for preview/create; no raw public access code/token returned.
+- Run marker: `p6-20260529-0828-d151a7f6`.
+
+Impact:
+- Blocks P6.2.E and P6.8 clean requester/public E2E ticket creation for normal non-urgent/non-important tickets.
+- This appears to be a workflow validation defect, not a server availability or auth issue.
+Root cause hypothesis:
+- The public/create validation layer likely treats the presence of boolean priority fields or their default false value as requiring a reason, instead of requiring a reason only when `urgency=true` or `importance=true`.
+Root cause confirmed: yes. `server/tickets/public_ticket_handlers.py::handle_public_ticket_create()` calls strict `normalize_ticket_priority_inputs(urgency, importance, urgency_reason, importance_reason)` before form/catalog policy resolution. That helper always requires both reason strings. The authenticated create path in `server/tickets/handlers.py::_default_priority_payload()` defaults missing priority booleans/reasons, so browser/requester defaults from `/app/help` are treated differently on the public create route.
+Fix policy:
+- Blocking further P6: yes for requester/public catalog ticket creation and cross-domain E2E.
+- Fixed now: yes, after root cause is confirmed, because direct workaround would not validate the normal browser product path.
+
+Fix summary:
+Fixed create-time priority normalization so public/requester create uses the same safe default priority payload behavior as authenticated create. The strict reason-requiring helper remains available for explicit priority mutation paths.
+Changed files:
+- `server/tickets/statuses.py`
+- `server/tickets/handlers.py`
+- `server/tickets/public_ticket_handlers.py`
+- `server/tests/test_ticket_form_packs.py`
+Tests:
+- `python -m pytest server\tests\test_ticket_form_packs.py::test_public_create_ticket_allows_false_priority_flags_without_reasons -q` -> passed (`1 passed in 344.36s`).
+- `python -m py_compile server\tickets\statuses.py server\tickets\handlers.py server\tickets\public_ticket_handlers.py` -> passed.
+Live regression:
+Regression check:
+Remaining risk:
+Status consistency checked: yes
+
 P2.1.C Requester account-session access matrix:
 - Status: pending, not passed.
 - Evidence collected: Agent A/local GUI account session is active confirmed binding:

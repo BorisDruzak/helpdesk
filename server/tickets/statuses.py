@@ -288,6 +288,21 @@ def normalize_ticket_priority_inputs(
     }
 
 
+def default_create_priority_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    urgency = data.get("urgency")
+    importance = data.get("importance")
+    urgency_reason = str(data.get("urgency_reason") or "").strip()
+    importance_reason = str(data.get("importance_reason") or "").strip()
+    if urgency is None or importance is None:
+        urgency = False
+        importance = False
+    if not urgency_reason:
+        urgency_reason = "Not specified during ticket create"
+    if not importance_reason:
+        importance_reason = "Not specified during ticket create"
+    return normalize_ticket_priority_inputs(urgency, importance, urgency_reason, importance_reason)
+
+
 def extract_priority_class(ticket: Any) -> str:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
     if isinstance(custom_fields, dict):

@@ -35,10 +35,10 @@ from tickets.ola_service import start_ola_for_ticket
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import (
+    default_create_priority_payload,
     enrich_chat_payload_with_requester_name,
     merge_requester_custom_fields,
     normalize_requester_profile,
-    normalize_ticket_priority_inputs,
 )
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
@@ -100,8 +100,6 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
     user_display_name = str(data.get("user_display_name") or "").strip()
     urgency_input = data.get("urgency")
     importance_input = data.get("importance")
-    urgency_reason_input = data.get("urgency_reason")
-    importance_reason_input = data.get("importance_reason")
     request_template_key = str(data.get("request_template_key") or "").strip()
     service_code = str(data.get("service_code") or "").strip()
     offering_code = str(data.get("offering_code") or "").strip()
@@ -131,12 +129,7 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
         validation_errors["importance"] = "importance is required"
     if not validation_errors:
         try:
-            normalized_priority = normalize_ticket_priority_inputs(
-                urgency_input,
-                importance_input,
-                urgency_reason_input,
-                importance_reason_input,
-            )
+            normalized_priority = default_create_priority_payload(data)
         except ValueError as exc:
             validation_errors["priority"] = str(exc)
     if validation_errors:
