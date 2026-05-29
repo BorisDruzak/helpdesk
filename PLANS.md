@@ -36,7 +36,7 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 
 ## OBS1 Operational Integrity Observer - 2026-05-29 - run_id=obs1-20260529-1033-7410ce46
 
-Status: in progress
+Status: OBS1 closed
 
 Scope:
 - OBS1.1 Observer architecture and code discovery.
@@ -188,7 +188,7 @@ Status consistency checked: yes.
 ### BUG-20260529-OBS1-03 - live scan endpoint failed when runtime state was present
 
 Severity: OBS1
-Status: verified-fixed locally / live redeploy pending
+Status: verified-fixed
 Area: runtime-presence / observer-event
 
 OBS1 scenario: Live scan through `POST /api/web/admin/observer/integrity/scan`.
@@ -213,7 +213,7 @@ Fix policy:
 Fix summary: changed runtime-presence query to `Device.deleted_at.is_(None)` and added a regression test using a fake online runtime state.
 Changed files: `server/observer/checks/runtime_presence.py`, `server/tests/test_observer_integrity.py`.
 Tests: `python -m pytest server\tests\test_observer_integrity.py -q` with shared test DB/watchdog -> `9 passed`.
-Live regression: pending redeploy and scan endpoint rerun.
+Live regression: redeployed `90d74216`, `POST /api/web/admin/observer/integrity/scan` returned 200 and persisted scan results.
 Regression check: `python -m py_compile server\observer\checks\runtime_presence.py server\tests\test_observer_integrity.py` -> passed.
 Remaining risk: real runtime state may expose additional live-only assumptions.
 Status consistency checked: yes.
@@ -226,6 +226,88 @@ OBS1 verification evidence so far:
 - `python -m compileall -q server pc_agent scripts` -> passed before the latest focused test additions; final close gate will rerun.
 - `git diff --check` -> passed with line-ending warnings only.
 - `pnpm --dir webapp build` -> passed after OBS1 UI integration.
+
+## OBS1 findings summary - 2026-05-29 - run_id=obs1-20260529-1033-7410ce46
+
+| Finding | Severity | Area | Current bug or historical | Blocking OBS1 | Action |
+|---|---|---|---|---|---|
+| `protocol_ack_audit_gap:global` | warning | protocol-v3 | current telemetry gap | no | Left active; ACK persistence audit is an explicit next hardening item. |
+| `toolset_hash_drift:2447d396-79cd-53da-b3a9-028c5a4d56da` | error | module-toolset | current state drift | no | Left active; Observer correctly reports drift for Agent A. |
+| `toolset_hash_drift:b08675eb-780c-5042-b442-daa1cd066643` | error | module-toolset | current state drift | no | Left active; not fixed during OBS1 discovery-first pass. |
+| P4 duplicate problem candidate dedupe keys | error | governance | historical P4 contamination | no | Added exact runtime suppression rows. |
+| P5 `change_approved_without_package:f3b7db77-7a38-4afc-984b-97bbe7c8e238` | error | governance | historical P5 contamination | no | Added exact runtime suppression row. |
+| P2/P3 terminal operation rows `0b5da7ba...`, `e7cf0b9d...` | error | operation-lifecycle | historical live-validation contamination | no | Added exact runtime suppression rows. |
+| OBS1 synthetic `operation_outbox_mismatch:d4bb5633...:159` | critical | operation-lifecycle | intentional OBS1 fault injection | no | Created, observed as active critical, then resolved after outbox status cleanup. |
+
+## OBS1 close summary - 2026-05-29 - run_id=obs1-20260529-1033-7410ce46
+
+Status: OBS1 closed
+
+Code head: `90d74216e9678994401c40754c01139bd577bad1`
+Server URL: `https://192.168.100.17:9443`
+Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, connected.
+Agent B: not used for OBS1 fault injection.
+Observer event ids: baseline active after suppression has 3 active non-critical events; 5 historical events suppressed; 1 synthetic critical resolved.
+Synthetic anomaly ids: operation `d4bb5633-cf2b-4d29-aecc-040e0ea12f4a`, device_outbox `159`, event `4cb05f28-5b02-5e72-a586-04b077adb311`.
+Known contamination ids: P1 `device_outbox.id=135`; P4 duplicate problem candidate dedupe keys; P5 change `f3b7db77-7a38-4afc-984b-97bbe7c8e238`; P2/P3 operations `0b5da7ba-fa46-48e4-8e7d-d0ac38eef029`, `e7cf0b9d-beee-46d2-82fc-9981bf17c80b`.
+Old contamination ignored: P0 phantom/malformed rows; P1 reconnect/probe rows; P2 screen/cross-device pre-fix rows; P3 feedback/reopen pre-fix rows; P4/P5 rows listed above; P6 historical non-P6 `agent_offline_active` tasks.
+
+OBS1.1 result: implementation map recorded.
+OBS1.2 result: durable observer integrity table/repo/service/API implemented and migrated.
+OBS1.3 result: operation lifecycle checker detects stale terminal operation/outbox and resolves after cleanup.
+OBS1.4 result: repeated NACK checker implemented; ACK audit gap is visible warning until ACK persistence audit is added.
+OBS1.5 result: runtime presence checker implemented and API-state regression fixed.
+OBS1.6 result: security-boundary audit checker implemented; anonymous live RBAC denied observer endpoints with 401.
+OBS1.7 result: module/toolset/artifact checker implemented; live toolset drift remains active and actionable.
+OBS1.8 result: governance checker implemented; historical rows suppressed by exact dedupe keys.
+OBS1.9 result: known contamination registry implemented and live suppressions verified.
+OBS1.10 result: Admin Tech, Device Operations and Observer workbench show OBS1 state in browser with no console errors.
+OBS1.11 result: runbooks added for operation lifecycle, protocol, runtime presence, account boundary, module/toolset and governance.
+OBS1.12 result: live scan, synthetic stale outbox create/resolve, RBAC denial, browser projections and marker cleanup passed.
+OBS1.13 result: final local and remote gates passed with noted non-critical active findings.
+
+Bugs found:
+- BUG-20260529-OBS1-01 module/toolset checker SQL property crash.
+- BUG-20260529-OBS1-02 suppression/redaction evidence ambiguity.
+- BUG-20260529-OBS1-03 live scan endpoint failed with runtime state.
+
+Verified fixed:
+- All three OBS1 implementation blockers were fixed, tested locally and redeployed.
+
+Deferred/known limitations:
+- ACK persistence audit is not yet durable enough for positive ACK/persistence correlation; Observer reports this as `protocol_ack_audit_gap` warning.
+- Two live devices have current toolset hash drift; Observer reports them as active errors and no product state was mutated during OBS1.
+- Full wrong-account and diagnostic-probe live scenarios were not rerun end-to-end in this close pass; API RBAC, unit coverage and browser/DB evidence cover the new observer surfaces.
+- Browser screenshot capture timed out in the in-app browser; browser DOM evidence and console-log checks were recorded instead.
+
+Operational integrity result:
+- Protocol ACK/persistence: telemetry gap detected and surfaced as warning.
+- Operation/outbox/seen_commands: synthetic stale outbox critical detected and resolved.
+- Runtime presence: state-aware scan endpoint fixed and regression-tested.
+- Account/public security: audit checker and RBAC denial verified.
+- Module/toolset/artifact: toolset drift detected for current devices; artifact checker covered by tests.
+- Governance: duplicate/problem and change package invariants implemented; old rows suppressed.
+- Admin Tech: shows `critical 0`, `error 2`, `suppressed 5`.
+- Device Operations: device-scoped Observer tab shows current Agent A `toolset_hash_drift` and hides suppressed historical operation events.
+
+Browser/UI evidence:
+- `/app/admin/observer`: Operational Integrity Observer shows `critical 0`, `error 2`, `warning 1`, `suppressed 5`; no console errors.
+- `/app/admin/tech`: Operational Integrity Observer section shows same counts and top events; no console errors.
+- `/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`, Observer tab: shows device-scoped `toolset_hash_drift`, suppressed historical operation events no longer shown; no console errors.
+UIA evidence: baseline UIA semantic probe passed with `pywinauto==0.6.9`, `backend=uia`, connected account state, evidence `artifacts\obs1-20260529-0000-7410ce46-uia-baseline.json`.
+DB/SQLite evidence:
+- Server marker check: `server_marker_device_outbox_total=1`, `server_marker_device_outbox_active=0`, `active_critical_obs1=0`.
+- Agent SQLite marker check: `outbox_obs1=0`, `failed_outbox_obs1=0`, `pending_command_results_obs1=0`, `pending_consents_total=0`.
+Runbooks:
+- `docs/runbooks/observer_operation_lifecycle.md`
+- `docs/runbooks/observer_protocol_v3.md`
+- `docs/runbooks/observer_runtime_presence.md`
+- `docs/runbooks/observer_account_boundary.md`
+- `docs/runbooks/observer_module_toolset.md`
+- `docs/runbooks/observer_governance.md`
+
+Next readiness:
+- ready for follow-up hardening on ACK persistence audit and toolset drift remediation; no false current critical OBS1 event remains.
 
 ## Active Work: Pilot Hardening / Mini-prod Readiness
 
