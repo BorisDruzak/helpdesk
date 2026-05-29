@@ -6575,7 +6575,7 @@ Baseline:
 ### BUG-20260529-OBS1-04 - Protocol V3 ACK audit gap has no persistence proof
 
 Severity: OBS1
-Status: fix-in-progress
+Status: verified-fixed
 Area: protocol-v3 / observer-event / noise-tuning
 
 OBS1 scenario: ACK persistence audit follow-up.
@@ -6623,17 +6623,21 @@ Tests:
 - `python -m compileall -q server pc_agent scripts` -> passed.
 - `git diff --check` -> passed.
 Live regression:
-- Pending.
+- Commit `fba082b1` deployed first and diagnostic_probe marker `obs1-followup-20260529-ack-live-fba082b1` produced `outbox_ack` with no commands delivered to the probe.
+- That first live row exposed BUG-20260529-OBS1-07: `agent_runtime_audit.id=4132` had `persisted=true` but `persisted_event_id=null`.
+- After v2 proof fix, commit `17206868` deployed successfully; diagnostic_probe marker `obs1-followup-20260529-ack-v2-live-17206868` produced `outbox_ack` for `obs1-ack-v2-live-dda2f0da48d4`.
+- Server DB `agent_runtime_audit.id=4135` has `audit_contract_version=2`, `persistence_kind=device_event`, `persisted=true`, and `persisted_event_id=64`.
+- Observer scan `obs1-followup-20260529-after-ack-v2-17206868` had no active `protocol_ack_audit_gap` and no active `protocol_ack_without_persistence`.
 Regression check:
-- Pending.
+- Repeated scans dedupe by stable keys; `protocol_ack_audit_gap` remained resolved and no new protocol critical was created.
 Remaining risk:
-- Live ACK audit requires a real or safe diagnostic outbox item after deploy; pending live validation.
+- Legacy weak audit row `agent_runtime_audit.id=4132` is OBS1 follow-up contamination and is not accepted as v2 proof.
 Status consistency checked: yes.
 
 ### BUG-20260529-OBS1-05 - Handshake toolset hash change does not request list_tools refresh
 
 Severity: OBS1
-Status: fix-in-progress
+Status: verified-fixed
 Area: module-toolset / runtime-presence / observer-event
 
 OBS1 scenario: Toolset hash drift remediation.
@@ -6673,11 +6677,17 @@ Tests:
 - `python -m compileall -q server pc_agent scripts` -> passed.
 - `git diff --check` -> passed.
 Live regression:
-- Pending remote deploy and drift-device refresh classification.
+- Commit `17206868` deployed successfully and `/api/health` smoke returned 200.
+- Live drift classification: both devices had `devices.current_toolset_hash` ahead of latest `device_toolset_snapshots.toolset_hash`; this was real stale snapshot/current-hash inconsistency, not expected legacy drift.
+- Safe product refresh enqueued `list_tools` operations through `DeviceOutboxRepo`/`OperationService` without direct snapshot edits: operations `75e24a34-5fa6-4062-9e45-af23b4b47f01` and `e88d7d70-2add-431a-b535-1970f9b22258`, outbox rows `160` and `161`.
+- Both operations succeeded; outbox rows became `delivered`.
+- Device `2447d396-79cd-53da-b3a9-028c5a4d56da`: `current_toolset_hash` converged to latest snapshot hash `1235fe825dbaf572`, snapshot id `34`.
+- Device `b08675eb-780c-5042-b442-daa1cd066643`: `current_toolset_hash` converged to latest snapshot hash `b79fbe209afb45c2`, snapshot id `55`.
+- Observer scan `obs1-followup-20260529-after-toolset-refresh-17206868` resolved both `toolset_hash_drift` events and returned `active=0`, `resolved=2`, `suppressed=5`.
 Regression check:
-- Pending.
+- No direct DB edit was used to silence Observer; resolution came from normal `list_tools` command results and snapshot reconciliation.
 Remaining risk:
-- Existing live drift rows need normal product refresh after deploy; do not direct-edit DB to silence them.
+- Legacy auth endpoints reject web-session cookies for module/device sync; future UI should use typed web aliases for refresh actions where needed.
 Status consistency checked: yes.
 
 Runbook validation:
@@ -6688,7 +6698,7 @@ Runbook validation:
 ### BUG-20260529-OBS1-06 - release quick gate blocked by docs drift artifacts
 
 Severity: OBS1
-Status: verified-non-product / fix-in-progress
+Status: verified-non-product
 Area: governance / documentation
 
 OBS1 scenario: Release/deploy gate for ACK audit and toolset drift remediation.
@@ -6716,7 +6726,7 @@ Status consistency checked: yes.
 ### BUG-20260529-OBS1-07 - ACK audit proof accepts persisted flag without event id
 
 Severity: OBS1
-Status: fix-in-progress
+Status: verified-fixed
 Area: protocol-v3 / observer-event / noise-tuning
 
 OBS1 scenario: Live ACK persistence proof validation after initial follow-up deploy.
@@ -6760,9 +6770,41 @@ Tests:
 - `python -m py_compile server\websocket\agent_services.py server\websocket\outbox_ingest_components.py server\observer\checks\protocol_integrity.py` -> passed.
 - `python -m pytest server\tests\test_observer_integrity.py::test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing_proof server\tests\test_observer_integrity.py::test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupes -q -s` -> passed.
 Live regression:
-- Pending redeploy and v2 ACK proof probe.
+- Commit `17206868` deployed successfully.
+- Diagnostic_probe marker `obs1-followup-20260529-ack-v2-live-17206868` received `handshake_ack` and `outbox_ack`; no command was delivered to the probe.
+- Server DB `agent_runtime_audit.id=4135` for outbox `obs1-ack-v2-live-dda2f0da48d4` has `audit_contract_version=2` and concrete `persisted_event_id=64`.
+- Observer scan after v2 probe showed no active `protocol_ack_audit_gap` and no active `protocol_ack_without_persistence`.
 Regression check:
-- Pending.
+- The previous weak audit row remains legacy telemetry and does not satisfy the v2 proof contract.
 Remaining risk:
 - Legacy ACK audit row `agent_runtime_audit.id=4132` is pre-v2 OBS1 follow-up contamination and must not be used as proof.
 Status consistency checked: yes.
+
+## OBS1 follow-up close summary - 2026-05-29 - run_id=obs1-followup-20260529-1207-afe478ad
+
+Status: OBS1 follow-up closed
+
+Code heads:
+- `fba082b1cfc6c98c65d96c22f3d371213e06cbfb` - initial ACK audit / toolset handshake fix.
+- `17206868b625a4c25c1d584eac6d699b01a2df81` - v2 ACK proof contract hardening.
+
+Live result:
+- `/api/health` returned 200 after explicit release start.
+- ACK persistence audit now requires v2 proof: `persisted_event_id`, duplicate proof, or documented no-op.
+- Live v2 ACK evidence: `agent_runtime_audit.id=4135`, `persisted_event_id=64`, outbox `obs1-ack-v2-live-dda2f0da48d4`.
+- Toolset drift on both live devices was real stale snapshot/current-hash inconsistency and was remediated through normal `list_tools` operations.
+- Observer scan after toolset refresh: `generated=5`, `active=0`, `suppressed=5`, `resolved=2`.
+- Noise tuning verified: repeated scans reused existing event ids and updated occurrence/last-seen instead of creating duplicate active events.
+
+Bugs found:
+- BUG-20260529-OBS1-04 - verified fixed.
+- BUG-20260529-OBS1-05 - verified fixed.
+- BUG-20260529-OBS1-06 - verified non-product docs drift gate.
+- BUG-20260529-OBS1-07 - verified fixed.
+
+Known contamination:
+- Legacy weak ACK audit row `agent_runtime_audit.id=4132`, outbox `obs1-ack-live-b0aa985414a6`, is OBS1 follow-up pre-v2 contamination.
+- Existing unrelated dirty `pc_agent/ui_gui/tickets_list_model.py` and old `artifacts/*` remained untouched.
+
+Next readiness:
+- ready
