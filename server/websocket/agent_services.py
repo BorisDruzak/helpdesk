@@ -707,6 +707,7 @@ class OutboxAckDecisionService:
         if not ctx.agent_id:
             return
         details = {
+            "audit_contract_version": 2,
             "ack_type": "outbox_ack",
             "outbox_id": str(outcome.outbox_id or ""),
             "trace_id": str(outcome.trace_id or ""),
@@ -714,6 +715,13 @@ class OutboxAckDecisionService:
             "persisted_event_id": getattr(outcome, "created_event_id", None),
             "persisted": bool(getattr(outcome, "persisted", False)),
             "duplicate": bool(getattr(outcome, "duplicate", False)),
+            "duplicate_proof": (
+                "db_unique_ticket_agent_seq"
+                if getattr(outcome, "duplicate", False) and getattr(outcome, "ticket_id", None)
+                else "db_unique_device_seq"
+                if getattr(outcome, "duplicate", False)
+                else None
+            ),
             "documented_noop": False,
             "persistence_kind": "ticket_event" if getattr(outcome, "ticket_id", None) else "device_event",
             "db_persistence_enabled": bool(ENABLE_DB_PERSISTENCE),
@@ -750,6 +758,7 @@ class OutboxAckDecisionService:
         event = payload.get("event") if isinstance(payload, dict) else {}
         is_ticket_event = isinstance(payload, dict) and payload.get("agent_seq") is not None
         details = {
+            "audit_contract_version": 2,
             "ack_type": "outbox_ack",
             "outbox_id": str(envelope_check.outbox_id or ""),
             "trace_id": str(envelope_check.trace_id or ""),

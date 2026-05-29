@@ -2,7 +2,7 @@
 
 ## Meaning
 
-`protocol_ack_audit_gap` means the server has not produced recent durable ACK audit rows, so Observer cannot prove ACK -> persistence. `protocol_ack_without_persistence` means an ACK audit exists but has no `persisted_event_id`, `persisted=true`, `duplicate=true`, or `documented_noop=true`; treat this as possible event loss. `protocol_repeated_nack` means the same device is repeatedly rejected with validation/routing errors.
+`protocol_ack_audit_gap` means the server has not produced recent durable v2 ACK audit rows, so Observer cannot prove ACK -> persistence. `protocol_ack_without_persistence` means a v2 ACK audit exists but has no `persisted_event_id`, no `duplicate=true` with `duplicate_proof`, and no `documented_noop=true`; treat this as possible event loss. `protocol_repeated_nack` means the same device is repeatedly rejected with validation/routing errors.
 
 ## Immediate Checks
 
@@ -11,6 +11,7 @@
 - For ticket events, confirm `ticket_events` has the expected `(ticket_id, agent_seq/event_id, event_type, trace_id)` row.
 - For device events, confirm `device_events` has the expected `(device_id, device_seq/event_id, event_type, trace_id)` row.
 - Check `agent_runtime_audit.details_json` for `persisted_event_id`, `duplicate`, `duplicate_proof`, `documented_noop`, and `db_persistence_enabled`.
+- Require `details_json.audit_contract_version >= 2`; a bare `persisted=true` flag is legacy telemetry and is not enough proof.
 
 ## Safe Queries
 

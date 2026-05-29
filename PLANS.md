@@ -6712,3 +6712,57 @@ Tests:
 - `python scripts\verify_workspace.py` -> passed as part quick release preflight.
 - Quick release gate re-ran and passed, but because workspace was dirty it deployed previous commit `afe478ad`; new-code live validation remains pending until commit/push/release of the follow-up SHA.
 Status consistency checked: yes.
+
+### BUG-20260529-OBS1-07 - ACK audit proof accepts persisted flag without event id
+
+Severity: OBS1
+Status: fix-in-progress
+Area: protocol-v3 / observer-event / noise-tuning
+
+OBS1 scenario: Live ACK persistence proof validation after initial follow-up deploy.
+Run id: `obs1-followup-20260529-ack-live-fba082b1`
+Expected:
+- Durable ACK audit proves ACK -> persistence with a concrete `persisted_event_id`, duplicate proof, or documented no-op.
+Actual:
+- Live diagnostic `device_event` ACK created `agent_runtime_audit.id=4132` with `persisted=true`, but `persisted_event_id=null`.
+- Observer resolved `protocol_ack_audit_gap`, so the proof was weaker than the product contract.
+Repro steps:
+1. Deploy commit `fba082b1`.
+2. Send diagnostic_probe `outbox_item` with marker `obs1-followup-20260529-ack-live-fba082b1`.
+3. Query `agent_runtime_audit` for outbox id `obs1-ack-live-b0aa985414a6`.
+
+Evidence:
+- Observer event: `protocol_ack_audit_gap` resolved after the weak audit row.
+- Server DB: `agent_runtime_audit.id=4132`, `event_type=outbox_ack_persisted`, `persisted=true`, `persisted_event_id=null`.
+- Transport/API: diagnostic probe received `handshake_ack` and `outbox_ack`; no command was delivered to the probe.
+- Run marker: `obs1-followup-20260529-ack-live-fba082b1`.
+
+Impact:
+- ACK audit could prove that the persistence branch thought it inserted a row, but not which durable event row backs the ACK.
+Root cause confirmed: yes - device-event `OutboxPersistenceOutcome` did not carry `created_event_id`, and protocol checker accepted bare `persisted=true`.
+Fix policy:
+- Blocking further OBS1 follow-up: yes.
+- Fixed now: yes.
+
+Fix summary:
+- Device-event persistence outcome now carries `created_event_id`.
+- ACK audit rows use `audit_contract_version=2`.
+- Duplicate ACK audit includes explicit `duplicate_proof`.
+- Protocol checker only treats v2 ACK audit as sufficient when it has `persisted_event_id`, duplicate proof, or documented no-op; legacy rows no longer satisfy the proof contract.
+Changed files:
+- `server/websocket/outbox_ingest_components.py`
+- `server/websocket/agent_services.py`
+- `server/observer/checks/protocol_integrity.py`
+- `server/tests/test_observer_integrity.py`
+- `docs/runbooks/observer_protocol_v3.md`
+- `server/docs/PROTOCOL_V3.md`
+Tests:
+- `python -m py_compile server\websocket\agent_services.py server\websocket\outbox_ingest_components.py server\observer\checks\protocol_integrity.py` -> passed.
+- `python -m pytest server\tests\test_observer_integrity.py::test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing_proof server\tests\test_observer_integrity.py::test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupes -q -s` -> passed.
+Live regression:
+- Pending redeploy and v2 ACK proof probe.
+Regression check:
+- Pending.
+Remaining risk:
+- Legacy ACK audit row `agent_runtime_audit.id=4132` is pre-v2 OBS1 follow-up contamination and must not be used as proof.
+Status consistency checked: yes.

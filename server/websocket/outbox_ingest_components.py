@@ -231,6 +231,7 @@ class OutboxPersistenceService:
                         duplicate=inserted_id is None,
                         event_type=event_type,
                         payload_event=event,
+                        created_event_id=inserted_id,
                     )
 
                 validation = await event_validator.validate_ticket_event(

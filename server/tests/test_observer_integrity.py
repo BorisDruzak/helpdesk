@@ -307,6 +307,7 @@ async def test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing
                     source="observer_test",
                     ticket_id=str(uuid.uuid4()),
                     details_json={
+                        "audit_contract_version": 2,
                         "outbox_id": "ack-persisted",
                         "trace_id": str(uuid.uuid4()),
                         "event_type": "tool_call_result",
@@ -322,6 +323,7 @@ async def test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing
                     severity="info",
                     source="observer_test",
                     details_json={
+                        "audit_contract_version": 2,
                         "outbox_id": "ack-duplicate",
                         "trace_id": str(uuid.uuid4()),
                         "event_type": "tools_changed",
@@ -337,9 +339,11 @@ async def test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing
                     severity="info",
                     source="observer_test",
                     details_json={
+                        "audit_contract_version": 2,
                         "outbox_id": "ack-missing-proof",
                         "trace_id": "trace-missing-proof",
                         "event_type": "tool_call_result",
+                        "persisted_event_id": None,
                         "persisted": False,
                         "duplicate": False,
                     },
@@ -394,6 +398,7 @@ async def test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupe
                 severity="info",
                 source="observer_test",
                 details_json={
+                    "audit_contract_version": 2,
                     "outbox_id": "ack-stable-dedupe",
                     "trace_id": "trace-stable-dedupe",
                     "event_type": "tools_changed",
@@ -416,9 +421,11 @@ async def test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupe
             severity="info",
             source="observer_test",
             details_json={
+                "audit_contract_version": 2,
                 "outbox_id": "ack-noise-tuning",
                 "trace_id": "trace-noise-tuning",
                 "event_type": "tool_call_result",
+                "persisted_event_id": None,
                 "persisted": False,
                 "duplicate": False,
             },
