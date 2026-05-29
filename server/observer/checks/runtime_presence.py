@@ -32,7 +32,7 @@ async def check_runtime_presence(
     if state is None or not hasattr(state, "is_agent_online"):
         return []
     now = datetime.now(timezone.utc)
-    result = await session.execute(select(Device).where(Device.is_deleted.is_(False)).limit(500))
+    result = await session.execute(select(Device).where(Device.deleted_at.is_(None)).limit(500))
     events: list[ObserverIntegrityEventInput] = []
     for device in result.scalars().all():
         device_id = str(device.device_id or "")

@@ -185,6 +185,39 @@ Regression check: focused pytest green.
 Remaining risk: live contamination ids beyond P1 still need exact runtime entries when discovered.
 Status consistency checked: yes.
 
+### BUG-20260529-OBS1-03 - live scan endpoint failed when runtime state was present
+
+Severity: OBS1
+Status: verified-fixed locally / live redeploy pending
+Area: runtime-presence / observer-event
+
+OBS1 scenario: Live scan through `POST /api/web/admin/observer/integrity/scan`.
+Run id: `obs1-20260529-1033-7410ce46`
+Expected: admin scan endpoint runs checkers and persists OBS1 events.
+Actual: endpoint returned HTTP 500 `OBSERVER_INTEGRITY_SCAN_FAILED`.
+Repro steps: login through `/api/web/session/login`, then POST `/api/web/admin/observer/integrity/scan` with OBS1 run id.
+
+Evidence:
+- Observer event: none from endpoint because scan failed before response.
+- Transport/API: `scan_http 500`, error code `OBSERVER_INTEGRITY_SCAN_FAILED`.
+- Server DB: direct service scan without runtime state succeeded and generated 8 non-critical current events.
+- Run marker: `obs1-20260529-1033-7410ce46`.
+
+Impact: browser/admin live evidence could not trigger scans through the public admin API.
+Root cause hypothesis: runtime-presence checker used `Device.is_deleted` property in SQL when the real app state enabled that checker.
+Root cause confirmed: `server/observer/checks/runtime_presence.py` filtered with `Device.is_deleted.is_(False)`; direct scan without `state` bypassed that code path.
+Fix policy:
+- Blocking further OBS1: yes
+- Fixed now: yes
+
+Fix summary: changed runtime-presence query to `Device.deleted_at.is_(None)` and added a regression test using a fake online runtime state.
+Changed files: `server/observer/checks/runtime_presence.py`, `server/tests/test_observer_integrity.py`.
+Tests: `python -m pytest server\tests\test_observer_integrity.py -q` with shared test DB/watchdog -> `9 passed`.
+Live regression: pending redeploy and scan endpoint rerun.
+Regression check: `python -m py_compile server\observer\checks\runtime_presence.py server\tests\test_observer_integrity.py` -> passed.
+Remaining risk: real runtime state may expose additional live-only assumptions.
+Status consistency checked: yes.
+
 OBS1 verification evidence so far:
 - `python -m py_compile server\app\db\models.py server\app\repos\observer_integrity_repo.py server\observer\integrity_service.py server\observer\checks\operation_lifecycle.py server\observer\checks\protocol_integrity.py server\observer\checks\runtime_presence.py server\observer\checks\module_toolset.py server\observer\checks\governance.py server\observer\checks\account_boundary.py server\web_api\observer_integrity_handlers.py server\device_operations\service.py server\tech\snapshot.py server\routes.py` -> passed.
 - `python -m py_compile server\tests\test_observer_integrity.py server\tests\conftest.py server\tests\test_tech_panel_snapshot.py` -> passed.

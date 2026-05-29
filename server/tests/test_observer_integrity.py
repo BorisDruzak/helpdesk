@@ -26,6 +26,14 @@ from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 RUN_ID = "obs1-test-20260529-0000"
 
 
+class _FakeRuntimeState:
+    def __init__(self, online_devices: set[str]) -> None:
+        self._online_devices = online_devices
+
+    def is_agent_online(self, device_id: str) -> bool:
+        return device_id in self._online_devices
+
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 
@@ -280,6 +288,32 @@ async def test_observer_integrity_protocol_repeated_nack_becomes_warning_or_erro
             )
         ).scalar_one()
         assert event.severity == "error"
+        assert event.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_observer_integrity_runtime_online_stale_db_projection(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    device_id = f"obs1-device-{uuid.uuid4().hex[:8]}"
+    async with session_maker() as session:
+        await _seed_device(session, device_id=device_id)
+        device = (await session.execute(select(Device).where(Device.device_id == device_id))).scalar_one()
+        device.last_seen_at = now - timedelta(hours=1)
+        await session.commit()
+
+    async with session_maker() as session:
+        await ObserverIntegrityService(session, state=_FakeRuntimeState({device_id})).run_scan(run_id=RUN_ID)
+        await session.commit()
+        event = (
+            await session.execute(
+                select(ObserverIntegrityEvent).where(
+                    ObserverIntegrityEvent.event_type == "runtime_online_db_last_seen_stale",
+                    ObserverIntegrityEvent.device_id == device_id,
+                )
+            )
+        ).scalar_one()
+        assert event.severity == "warning"
         assert event.status == "active"
 
 
