@@ -108,6 +108,43 @@ def test_command_center_aggregates_compact_ticket_signals_without_db():
 
 
 @pytest.mark.no_db
+def test_command_center_prefers_live_agent_presence_over_stale_last_seen():
+    now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
+    queue_item = item(
+        "ticket-live-agent",
+        "Device-bound P6 ticket",
+        status="in_progress",
+    )
+    ticket_data = {
+        "ticket_id": queue_item.ticket_id,
+        "device_id": queue_item.device_id,
+        "status": "in_progress",
+        "custom_fields": {"diagnostics": {"recommended": True}},
+    }
+
+    payload = build_operator_command_center_payload(
+        [(ticket_data, queue_item)],
+        devices_by_id={
+            queue_item.device_id: SimpleNamespace(last_seen_at=now - timedelta(minutes=30)),
+        },
+        online_device_ids={queue_item.device_id},
+        scope="team",
+        queue=None,
+        assignee=None,
+        query=None,
+        limit_per_section=8,
+        window_hours=24,
+        sla_risk_minutes=120,
+        ola_risk_minutes=60,
+        generated_at=now,
+    )
+
+    assert payload.summary.agent_offline_active_count == 0
+    operator_action = next(section for section in payload.sections if section.key == "operator_action")
+    assert operator_action.items[0].agent.connection_state == "online"
+
+
+@pytest.mark.no_db
 def test_command_center_builds_deterministic_similar_spike_group():
     now = datetime(2026, 5, 19, 10, 0, tzinfo=timezone.utc)
     entries = []

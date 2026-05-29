@@ -4335,6 +4335,20 @@ async def _devices_by_id(session, device_ids: list[str]) -> dict[str, Device]:
     return {str(row.device_id): row for row in rows}
 
 
+def _online_device_ids_from_state(state: Any, device_ids: list[str]) -> set[str]:
+    checker = getattr(state, "is_agent_online", None)
+    if not callable(checker):
+        return set()
+    online_ids: set[str] = set()
+    for device_id in sorted({str(value or "").strip() for value in device_ids if str(value or "").strip()}):
+        try:
+            if checker(device_id):
+                online_ids.add(device_id)
+        except Exception:
+            continue
+    return online_ids
+
+
 async def _latest_passports_by_ticket(session, ticket_ids: list[str]) -> dict[str, TicketResolutionPassport]:
     if not ticket_ids:
         return {}
@@ -4524,6 +4538,7 @@ async def handle_web_support_command_center(request: web.Request):
             device_ids = [str(ticket_data.get("device_id") or "") for ticket_data, _item in entries]
             operations_by_ticket = await _latest_operations_by_ticket(session, ticket_ids)
             devices_by_id = await _devices_by_id(session, device_ids)
+            online_device_ids = _online_device_ids_from_state(request.app.get("state"), device_ids)
             passports_by_ticket = await _latest_passports_by_ticket(session, ticket_ids)
             approvals_by_ticket = await _approvals_by_ticket(session, ticket_ids)
             diagnostics_by_ticket = await _diagnostics_by_ticket(session, ticket_ids)
@@ -4531,6 +4546,7 @@ async def handle_web_support_command_center(request: web.Request):
                 metadata["candidate_ticket_count"] = len(entries)
                 metadata["operation_ticket_count"] = len(operations_by_ticket)
                 metadata["device_count"] = len(devices_by_id)
+                metadata["online_device_count"] = len(online_device_ids)
                 metadata["passport_ticket_count"] = len(passports_by_ticket)
                 metadata["approval_ticket_count"] = len(approvals_by_ticket)
                 metadata["diagnostics_ticket_count"] = len(diagnostics_by_ticket)
@@ -4538,6 +4554,7 @@ async def handle_web_support_command_center(request: web.Request):
                 entries,
                 operations_by_ticket=operations_by_ticket,
                 devices_by_id=devices_by_id,
+                online_device_ids=online_device_ids,
                 passports_by_ticket=passports_by_ticket,
                 approvals_by_ticket=approvals_by_ticket,
                 diagnostics_by_ticket=diagnostics_by_ticket,

@@ -3992,7 +3992,7 @@ P6 scenario checklist:
 ### BUG-20260529-P6-01 - requester catalog ticket create requires urgency reason when urgency is false
 
 Severity: P2
-Status: fix-in-progress
+Status: verified-fixed
 Area: request-template-studio / requester-access / workflow / browser-ui
 
 P6 scenario: P6.2.E Ticket create from template; P6.8 Cross-domain E2E pilot scenario.
@@ -4041,6 +4041,70 @@ Changed files:
 Tests:
 - `python -m pytest server\tests\test_ticket_form_packs.py::test_public_create_ticket_allows_false_priority_flags_without_reasons -q` -> passed (`1 passed in 344.36s`).
 - `python -m py_compile server\tickets\statuses.py server\tickets\handlers.py server\tickets\public_ticket_handlers.py` -> passed.
+Live regression:
+- Deployed commit `80ce0528790a9c79bed851f7bef3339c09c1a575` to remote with quick release; `/api/health` smoke passed.
+- Real browser `/app/help` requester/public create with marker `p6-20260529-0828-d151a7f6`, `urgency=false`, `importance=false` and no priority reasons returned HTTP `200` and created ticket `T-000639` (`bf9fdfcb-399a-4525-b145-06009924cba9`); raw public token/access code were not recorded.
+- Server DB for `T-000639`: status `new`, `service_code=network`, `offering_code=network.vpn_issue`, `request_type=incident`, `priority=P4`; marker ticket count `1`; active marker `device_outbox` rows `0`.
+- Browser support workbench `/app/tickets/bf9fdfcb-399a-4525-b145-06009924cba9` loaded and showed the clean P6 ticket; evidence artifacts `p6-20260529-0828-ticket-T-000639-after-p6-01-fix.md` and `.png`.
+Regression check:
+- Direct invalid pre-fix marker path caused no DB/SQLite mutation; post-fix valid create still keeps expected ticket/event/catalog fields.
+Remaining risk:
+- Public-created tickets can use a requester placeholder device context; P6 diagnostic/tool checks use the separate Agent A-bound ticket `T-000640`.
+Status consistency checked: yes
+
+### BUG-20260529-P6-02 - Command Center shows online Agent A ticket as agent_offline_active
+
+Severity: P2
+Status: fix-in-progress
+Area: operator-command-center / support-action-center / device-operations / browser-ui
+
+P6 scenario: P6.4 Operator Command Center / Support Action Center; P6.8 Cross-domain E2E pilot scenario.
+Run id: `p6-20260529-0828-d151a7f6`
+Expected:
+- Command Center `agent_offline_active` must only include active tickets whose bound device is actually offline according to the same authoritative device/agent online source used by Device Operations.
+- A ticket bound to online Agent A should not appear as an offline-agent task.
+Actual:
+- Clean Agent A ticket `T-000640` (`ticket_id=530232fa-127a-440d-a6e0-cd0d4a68f8bc`, `device_id=2447d396-79cd-53da-b3a9-028c5a4d56da`) appears in `GET /api/web/support/command-center?limit_per_section=10` section `agent_offline_active`.
+- The same Device Operations API for `2447d396-79cd-53da-b3a9-028c5a4d56da` returns HTTP `200`, `connection_state=online`, last seen during the P6 run.
+Repro steps:
+1. Create device-bound clean ticket through Agent A automation bridge with marker `p6-20260529-0828-d151a7f6`.
+2. Confirm the ticket is bound to Agent A and visible in support workbench.
+3. Fetch real browser web-session `GET /api/web/support/command-center?limit_per_section=10`.
+4. Fetch real browser web-session `GET /api/web/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`.
+
+Evidence:
+- Transport/API: command-center HTTP `200`, ticket `T-000640` present in `new_unassigned`, `operator_action`, `unread_user_messages`, `sla_risk` and incorrectly in `agent_offline_active`; Device Operations HTTP `200`, `connection_state=online`.
+- Server log: not yet inspected.
+- Agent log: not yet inspected.
+- Server DB: `tickets` row `T-000640`, status `queued`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`; `devices` row hostname `ADMIN-2`, `last_seen_at=2026-05-29 09:07:12+05`, `last_handshake_at=2026-05-29 09:07:12+05`; active outbox for device `0`; ticket operation status `succeeded`.
+- Agent SQLite: safe diagnostic `system.collect` for operation `c9ca5e32-77b7-4401-acc2-12f6b69f009f` is terminal `success`; no pending command results.
+- Browser/UI: real browser ticket page shows `T-000640`; Device Operations browser/API says Agent A online; Command Center API says `agent_offline_active`.
+- UIA: Agent A pid `28128` probe sees connected/account/ticket `T-000640`, failures `[]` (`artifacts\p6-20260529-0828-d151a7f6-uia-ticket-T-000640-pid28128.json`).
+- Test artifact: browser MCP API evidence; no raw tokens printed in PLANS.
+- Run marker: `p6-20260529-0828-d151a7f6`.
+
+Impact:
+- Materially wrong operational task projection: support may see a false offline-agent action for an online device during pilot.
+Root cause hypothesis:
+- Command Center likely uses a different/stale device offline heuristic or does not share the Device Operations online projection source.
+Root cause confirmed: yes. `server/web_api/support_handlers.py::handle_web_support_command_center()` loads DB `Device` rows and calls `build_operator_command_center_payload()` without passing runtime websocket presence. `server/support/operator_command_center.py::_agent_state()` then classifies the agent as offline when DB `last_seen_at` is older than 5 minutes. Device Operations uses `DeviceOperationsService._connection_state()` with `request.app["state"].is_agent_online(device_id)` as the authoritative live runtime source, with DB time only as fallback. During P6, Agent A had an active UIA/runtime session and Device Operations returned `online`, but the Command Center DB-only 5-minute heuristic produced a false `agent_offline_active` task.
+Fix policy:
+- Blocking further P6: yes for P6.4/P6.8 Command Center correctness.
+- Fixed now: yes after root cause confirmation, because task-board evidence is invalidated.
+
+Fix summary:
+- Command Center now receives live runtime online device ids from `request.app["state"].is_agent_online()` and passes them into the projection builder.
+- `_agent_state()` prefers authoritative runtime-online presence before stale DB/inventory offline signals; DB `last_seen_at` remains fallback only.
+- Fallback offline threshold was aligned with Device Operations' 15-minute policy.
+Changed files:
+- `server/support/operator_command_center.py`
+- `server/web_api/support_handlers.py`
+- `server/tests/test_operator_command_center_no_db.py`
+Tests:
+- RED: `python -m pytest server\tests\test_operator_command_center_no_db.py::test_command_center_prefers_live_agent_presence_over_stale_last_seen -q --tb=short` failed before implementation with unexpected `online_device_ids` argument.
+- GREEN: `python -m pytest server\tests\test_operator_command_center_no_db.py -q --tb=short` -> `6 passed in 0.11s`.
+- `python -m py_compile server\support\operator_command_center.py server\web_api\support_handlers.py` -> passed.
+- Attempted DB-backed `server\tests\test_operator_command_center.py` on local Windows; it hung and was stopped after several completed dots, matching prior local route-test instability. Live browser/API regression is required before verified-fixed.
 Live regression:
 Regression check:
 Remaining risk:

@@ -37,6 +37,7 @@ ACTIVE_STATUSES = {
 TERMINAL_STATUSES = {"resolved", "closed", "canceled"}
 HIGH_PRIORITIES = {"p1", "p2", "critical", "high"}
 SPIKE_THRESHOLD = 3
+AGENT_OFFLINE_AFTER = timedelta(minutes=15)
 _JUNK_DISPLAY_MARKERS = (
     "???",
     "\ufffd",
@@ -263,7 +264,13 @@ def _operation_state(operation: Any | None) -> CommandCenterOperationState | Non
     )
 
 
-def _agent_state(ticket_data: dict[str, Any], device: Any | None, now: datetime) -> CommandCenterAgentState | None:
+def _agent_state(
+    ticket_data: dict[str, Any],
+    device: Any | None,
+    now: datetime,
+    *,
+    online_device_ids: set[str] | None = None,
+) -> CommandCenterAgentState | None:
     device_id = str(ticket_data.get("device_id") or "").strip()
     if not device_id:
         return None
@@ -272,11 +279,13 @@ def _agent_state(ticket_data: dict[str, Any], device: Any | None, now: datetime)
     inventory_context = custom_fields.get("inventory_context") if isinstance(custom_fields, dict) else None
     signals = inventory_context.get("signals") if isinstance(inventory_context, dict) else None
     explicit_offline = bool(signals.get("agent_offline")) if isinstance(signals, dict) else False
-    if explicit_offline:
+    if online_device_ids is not None and device_id in online_device_ids:
+        state = "online"
+    elif explicit_offline:
         state = "offline"
     elif last_seen_at is None:
         state = "unknown"
-    elif (now - last_seen_at) > timedelta(minutes=5):
+    elif (now - last_seen_at) > AGENT_OFFLINE_AFTER:
         state = "offline"
     else:
         state = "online"
@@ -454,6 +463,7 @@ def build_operator_command_center_payload(
     passports_by_ticket: dict[str, Any] | None = None,
     approvals_by_ticket: dict[str, ApprovalBatchSource] | None = None,
     diagnostics_by_ticket: dict[str, DiagnosticBatchSource] | None = None,
+    online_device_ids: set[str] | None = None,
     scope: str,
     queue: str | None,
     assignee: str | None,
@@ -471,6 +481,7 @@ def build_operator_command_center_payload(
     passports_by_ticket = passports_by_ticket or {}
     approvals_by_ticket = approvals_by_ticket or {}
     diagnostics_by_ticket = diagnostics_by_ticket or {}
+    online_device_ids = online_device_ids or set()
     limit = max(1, int(limit_per_section))
     filtered_entries = [
         (ticket_data, item)
@@ -488,7 +499,12 @@ def build_operator_command_center_payload(
 
     for ticket_data, item in filtered_entries:
         operation = _operation_state(operations_by_ticket.get(item.ticket_id))
-        agent = _agent_state(ticket_data, devices_by_id.get(str(ticket_data.get("device_id") or "")), now)
+        agent = _agent_state(
+            ticket_data,
+            devices_by_id.get(str(ticket_data.get("device_id") or "")),
+            now,
+            online_device_ids=online_device_ids,
+        )
         approval = approvals_by_ticket.get(item.ticket_id)
         diagnostics = _diagnostics_state(ticket_data, diagnostics_by_ticket.get(item.ticket_id))
         closure = _closure_state(ticket_data, passports_by_ticket.get(item.ticket_id))
