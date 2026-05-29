@@ -690,6 +690,18 @@ async def handle_handshake(
                     metadata_db["os_type"] = payload["os_type"]
                 if not metadata_db.get("os_type") and os_info:
                     metadata_db["os_type"] = os_info
+                existing_device = await devices_repo.get_by_device_id(device_id)
+                previous_toolset_hash = (
+                    existing_device.current_toolset_hash
+                    if existing_device is not None
+                    else None
+                )
+                previous_toolset_snapshot_id = (
+                    existing_device.current_toolset_snapshot_id
+                    if existing_device is not None
+                    else None
+                )
+
                 # Upsert device
                 device = await devices_repo.upsert_on_handshake(
                     device_id=device_id,
@@ -751,12 +763,15 @@ async def handle_handshake(
                             f"but rate-limited - skipping list_tools"
                         )
                 
-                elif agent_toolset_hash != device.current_toolset_hash:
+                elif (
+                    agent_toolset_hash != previous_toolset_hash
+                    or previous_toolset_snapshot_id is None
+                ):
                     # Toolset hash changed - always refresh (no rate-limit)
                     should_request_toolset = True
                     logger.info(
                         f"[handshake] Toolset hash changed: "
-                        f"old={device.current_toolset_hash} "
+                        f"old={previous_toolset_hash} "
                         f"new={agent_toolset_hash}, will request list_tools"
                     )
                 else:

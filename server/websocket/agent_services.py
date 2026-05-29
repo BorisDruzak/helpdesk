@@ -10,6 +10,7 @@ from loguru import logger
 
 from app.db import get_session
 from app.repos.agent_observer_events_repo import AgentObserverEventsRepo
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.operations_repo import OperationsRepo
 from config import ENABLE_DB_PERSISTENCE, OUTBOX_INGEST_RATE_LIMIT_PER_SEC
 from websocket.protocol import push_chat_event_to_ui, send_ws_command
@@ -527,6 +528,11 @@ class OutboxIngestService:
                 ctx=ctx,
                 envelope_check=envelope_check,
             )
+            await self._ack_decision._record_duplicate_ack_audit(
+                ctx=ctx,
+                envelope_check=envelope_check,
+                message=message,
+            )
             if flush_immediately and ctx.agent_id and self._batch_ack_manager.has_pending(ctx.agent_id):
                 await self._batch_ack_manager.flush(ctx.ws, ctx.agent_id)
             return True
@@ -692,6 +698,123 @@ class OutboxAckDecisionService:
     def __init__(self) -> None:
         self._component = OutboxAckDecisionComponent()
 
+    async def _record_ack_audit(
+        self,
+        *,
+        ctx: AgentConnectionContext,
+        outcome: Any,
+    ) -> None:
+        if not ctx.agent_id:
+            return
+        details = {
+            "ack_type": "outbox_ack",
+            "outbox_id": str(outcome.outbox_id or ""),
+            "trace_id": str(outcome.trace_id or ""),
+            "event_type": getattr(outcome, "event_type", None),
+            "persisted_event_id": getattr(outcome, "created_event_id", None),
+            "persisted": bool(getattr(outcome, "persisted", False)),
+            "duplicate": bool(getattr(outcome, "duplicate", False)),
+            "documented_noop": False,
+            "persistence_kind": "ticket_event" if getattr(outcome, "ticket_id", None) else "device_event",
+            "db_persistence_enabled": bool(ENABLE_DB_PERSISTENCE),
+        }
+        try:
+            async with get_session() as session:
+                await AgentRuntimeAuditRepo(session).add(
+                    device_id=ctx.agent_id,
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="server.websocket.outbox_ingest",
+                    operation_id=getattr(outcome, "operation_id", None),
+                    ticket_id=getattr(outcome, "ticket_id", None),
+                    actor_role="server",
+                    details_json=details,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "[outbox_pipeline] failed to record ACK persistence audit: "
+                f"device_id={ctx.agent_id} outbox_id={outcome.outbox_id} error={exc}"
+            )
+
+    async def _record_duplicate_ack_audit(
+        self,
+        *,
+        ctx: AgentConnectionContext,
+        envelope_check: Any,
+        message: dict[str, Any],
+    ) -> None:
+        if not ctx.agent_id:
+            return
+        payload = message.get("payload") if isinstance(message, dict) else {}
+        event = payload.get("event") if isinstance(payload, dict) else {}
+        is_ticket_event = isinstance(payload, dict) and payload.get("agent_seq") is not None
+        details = {
+            "ack_type": "outbox_ack",
+            "outbox_id": str(envelope_check.outbox_id or ""),
+            "trace_id": str(envelope_check.trace_id or ""),
+            "event_type": event.get("event") if isinstance(event, dict) else None,
+            "persisted_event_id": None,
+            "persisted": False,
+            "duplicate": True,
+            "duplicate_proof": "session_seen_outbox_id",
+            "documented_noop": False,
+            "persistence_kind": "ticket_event" if is_ticket_event else "device_event",
+            "db_persistence_enabled": bool(ENABLE_DB_PERSISTENCE),
+        }
+        try:
+            async with get_session() as session:
+                await AgentRuntimeAuditRepo(session).add(
+                    device_id=ctx.agent_id,
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="server.websocket.outbox_ingest",
+                    ticket_id=str(message.get("ticket_id")) if is_ticket_event and message.get("ticket_id") else None,
+                    actor_role="server",
+                    details_json=details,
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "[outbox_pipeline] failed to record duplicate ACK audit: "
+                f"device_id={ctx.agent_id} outbox_id={envelope_check.outbox_id} error={exc}"
+            )
+
+    async def _record_nack_audit(
+        self,
+        *,
+        ctx: AgentConnectionContext,
+        outbox_id: str | None,
+        trace_id: str | None,
+        error_code: str,
+        retryable: bool,
+        error_message: str | None = None,
+    ) -> None:
+        if not ctx.agent_id:
+            return
+        try:
+            async with get_session() as session:
+                await AgentRuntimeAuditRepo(session).add(
+                    device_id=ctx.agent_id,
+                    event_type="protocol_nack",
+                    severity="warning" if retryable else "error",
+                    source="server.websocket.outbox_ingest",
+                    actor_role="server",
+                    details_json={
+                        "outbox_id": str(outbox_id or ""),
+                        "trace_id": str(trace_id or ""),
+                        "error_code": error_code,
+                        "retryable": retryable,
+                        "error_message": error_message,
+                    },
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "[outbox_pipeline] failed to record NACK audit: "
+                f"device_id={ctx.agent_id} outbox_id={outbox_id} error={exc}"
+            )
+
     async def reject_invalid_envelope(
         self,
         *,
@@ -708,6 +831,14 @@ class OutboxAckDecisionService:
             outbox_id=envelope_check.outbox_id or "unknown",
             trace_id=envelope_check.trace_id,
             error=envelope_check.error_message or "Invalid outbox envelope",
+        )
+        await self._record_nack_audit(
+            ctx=ctx,
+            outbox_id=envelope_check.outbox_id or "unknown",
+            trace_id=envelope_check.trace_id,
+            error_code="VALIDATION_ERROR",
+            retryable=False,
+            error_message=envelope_check.error_message or "Invalid outbox envelope",
         )
         if flush_immediately:
             await batch_ack_manager.flush(ctx.ws, ctx.agent_id)
@@ -745,7 +876,16 @@ class OutboxAckDecisionService:
                     retry_after_sec=30 if outcome.retryable else None,
                 ),
             )
+            await self._record_nack_audit(
+                ctx=ctx,
+                outbox_id=outcome.outbox_id,
+                trace_id=outcome.trace_id,
+                error_code=outcome.error_code or "SERVER_ERROR",
+                retryable=bool(outcome.retryable),
+                error_message=outcome.error_message or "Outbox processing failed",
+            )
         else:
+            await self._record_ack_audit(ctx=ctx, outcome=outcome)
             batch_ack_manager.add_ack(
                 device_id=ctx.agent_id,
                 outbox_id=outcome.outbox_id,

@@ -2,32 +2,66 @@
 
 ## Meaning
 
-The Observer detected a Protocol V3 ACK/persistence telemetry gap or repeated NACK pattern. ACK without durable persistence is a critical integrity risk; repeated NACKs often indicate routing, validation or stale command state.
+`protocol_ack_audit_gap` means the server has not produced recent durable ACK audit rows, so Observer cannot prove ACK -> persistence. `protocol_ack_without_persistence` means an ACK audit exists but has no `persisted_event_id`, `persisted=true`, `duplicate=true`, or `documented_noop=true`; treat this as possible event loss. `protocol_repeated_nack` means the same device is repeatedly rejected with validation/routing errors.
 
 ## Immediate Checks
 
-- Correlate `trace_id`, `device_id`, `operation_id`, `command_id`, and `device_outbox_id`.
-- Check `ticket_events` and `device_events` for persisted rows before accepting ACK evidence.
-- Inspect server logs around `outbox_ack`, `command_result_ack`, and NACK error codes.
+- Open `/app/admin/observer` and filter by `event_type=protocol_ack_without_persistence` or the reported `device_id`.
+- Correlate `trace_id`, `device_id`, `ticket_id`, `operation_id`, and `outbox_id` from Observer evidence.
+- For ticket events, confirm `ticket_events` has the expected `(ticket_id, agent_seq/event_id, event_type, trace_id)` row.
+- For device events, confirm `device_events` has the expected `(device_id, device_seq/event_id, event_type, trace_id)` row.
+- Check `agent_runtime_audit.details_json` for `persisted_event_id`, `duplicate`, `duplicate_proof`, `documented_noop`, and `db_persistence_enabled`.
 
 ## Safe Queries
 
-- Use exact identifiers from the observer event.
-- Count recent NACKs by `device_id` and `error_code`.
+Use exact identifiers only:
+
+```sql
+SELECT id, device_id, event_type, severity, details_json, created_at
+FROM agent_runtime_audit
+WHERE event_type IN ('outbox_ack_persisted', 'protocol_ack_persisted', 'protocol_nack')
+  AND device_id = :device_id
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+```sql
+SELECT id, ticket_id, device_id, event_type, operation_id, trace_id, created_at
+FROM ticket_events
+WHERE ticket_id = :ticket_id
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+```sql
+SELECT id, device_id, event_type, trace_id, created_at
+FROM device_events
+WHERE device_id = :device_id
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+## Safe Actions
+
+- If audit is missing but events are persisted, deploy/fix ACK audit instrumentation, then run Observer scan again and verify the gap resolves.
+- If ACK lacks persistence proof, preserve DB/log evidence first; then investigate outbox ingest persistence and duplicate handling.
+- For repeated NACKs, fix the validation/routing source or agent payload generator; do not suppress fresh rows.
 
 ## What Not To Do
 
-- Do not trust a transport ACK as proof of persistence.
+- Do not trust WebSocket `outbox_ack` transport alone as proof of persistence.
 - Do not replay commands to diagnostic probes.
+- Do not insert fake `ticket_events` or `device_events` to clear an alert.
+- Do not paste raw payload text, tokens, cookies, or requester messages into evidence.
 
 ## Escalation
 
-Escalate as critical if ACK was emitted without persisted event, duplicate proof, or documented no-op.
+Escalate `protocol_ack_without_persistence` as critical data integrity risk. Escalate repeated `UNKNOWN_TICKET` or `DEVICE_MISMATCH` as error because they can indicate cross-ticket or cross-device routing drift.
 
 ## Related Bugs
 
-Inspired by P0/P1 Protocol V3 ACK/NACK and malformed outbox failures.
+Inspired by P0/P1 Protocol V3 ACK/NACK, malformed outbox, and persistence-order failures.
 
 ## Cleanup and Suppression
 
-Historical malformed/probe rows may be suppressed only by exact row id or stable dedupe key.
+Historical malformed/probe rows may be suppressed only by exact row id or stable dedupe key. Never suppress by broad device or event type for current traffic.

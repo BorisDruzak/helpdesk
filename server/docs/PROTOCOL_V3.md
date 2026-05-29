@@ -108,6 +108,7 @@ Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` update
 
 - **Ticket events:** UNIQUE по `(device_id, ticket_id, agent_seq)` WHERE `agent_seq IS NOT NULL`. Повторная вставка игнорируется, но сервер отправляет ACK.
 - **Device events:** UNIQUE по `(device_id, device_seq)`. Аналогично — идемпотентность и ACK.
+- **ACK persistence audit:** перед отправкой/flush `outbox_ack` сервер пишет redacted `agent_runtime_audit.event_type='outbox_ack_persisted'` с `outbox_id`, `trace_id`, типом события, persistence kind и одним из доказательств: `persisted_event_id` / `persisted=true`, `duplicate=true` с duplicate proof или `documented_noop=true`. Observer считает ACK без такого доказательства критичным `protocol_ack_without_persistence`.
 
 ### 8. Коды ошибок outbox_nack
 

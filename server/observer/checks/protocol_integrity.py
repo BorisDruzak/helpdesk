@@ -26,15 +26,15 @@ async def check_protocol_integrity(
     cutoff = now - lookback
     events: list[ObserverIntegrityEventInput] = []
 
-    ack_audit = int(
-        await session.scalar(
-            select(AgentRuntimeAudit.id)
+    ack_audits = (
+        await session.execute(
+            select(AgentRuntimeAudit)
             .where(AgentRuntimeAudit.event_type.in_(ACK_AUDIT_EVENTS), AgentRuntimeAudit.created_at >= cutoff)
-            .limit(1)
+            .order_by(AgentRuntimeAudit.created_at.desc())
+            .limit(500)
         )
-        or 0
-    )
-    if ack_audit == 0:
+    ).scalars().all()
+    if not ack_audits:
         events.append(
             ObserverIntegrityEventInput(
                 event_type="protocol_ack_audit_gap",
@@ -47,6 +47,42 @@ async def check_protocol_integrity(
                     "lookback_seconds": int(lookback.total_seconds()),
                     "required_audit_events": sorted(ACK_AUDIT_EVENTS),
                     "telemetry_gap": True,
+                },
+                runbook="docs/runbooks/observer_protocol_v3.md",
+                run_id=run_id,
+            )
+        )
+    for row in ack_audits:
+        details = row.details_json if isinstance(row.details_json, dict) else {}
+        persisted_event_id = details.get("persisted_event_id")
+        persisted = bool(details.get("persisted"))
+        duplicate = bool(details.get("duplicate"))
+        documented_noop = bool(details.get("documented_noop"))
+        if persisted_event_id or persisted or duplicate or documented_noop:
+            continue
+        outbox_id = str(details.get("outbox_id") or "").strip() or f"audit-{row.id}"
+        trace_id = str(details.get("trace_id") or "").strip() or None
+        events.append(
+            ObserverIntegrityEventInput(
+                event_type="protocol_ack_without_persistence",
+                severity="critical",
+                source=SOURCE,
+                dedupe_key=f"protocol_ack_without_persistence:{row.device_id}:{outbox_id}:{trace_id or row.id}",
+                device_id=row.device_id,
+                ticket_id=row.ticket_id,
+                operation_id=row.operation_id,
+                outbox_id=outbox_id,
+                trace_id=trace_id,
+                expected="Every Protocol V3 ACK must be backed by a persisted event id, duplicate proof, or documented no-op.",
+                actual="ACK audit row has no persisted_event_id, no persisted flag, no duplicate proof and no documented no-op.",
+                evidence={
+                    "audit_id": row.id,
+                    "outbox_id": outbox_id,
+                    "event_type": details.get("event_type"),
+                    "persistence_kind": details.get("persistence_kind"),
+                    "db_persistence_enabled": details.get("db_persistence_enabled"),
+                    "duplicate": duplicate,
+                    "documented_noop": documented_noop,
                 },
                 runbook="docs/runbooks/observer_protocol_v3.md",
                 run_id=run_id,

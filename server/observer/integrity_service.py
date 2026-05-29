@@ -13,11 +13,16 @@ from app.repos.observer_integrity_repo import (
     serialize_observer_integrity_event,
 )
 from observer.checks.account_boundary import check_account_boundary
+from observer.checks.account_boundary import SOURCE as ACCOUNT_SOURCE
+from observer.checks.governance import SOURCE as GOVERNANCE_SOURCE
 from observer.checks.governance import check_governance
+from observer.checks.module_toolset import SOURCE as MODULE_TOOLSET_SOURCE
 from observer.checks.module_toolset import check_module_toolset
 from observer.checks.operation_lifecycle import SOURCE as OPERATION_SOURCE
 from observer.checks.operation_lifecycle import check_operation_lifecycle
+from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
 from observer.checks.protocol_integrity import check_protocol_integrity
+from observer.checks.runtime_presence import SOURCE as RUNTIME_SOURCE
 from observer.checks.runtime_presence import check_runtime_presence
 
 
@@ -91,12 +96,19 @@ class ObserverIntegrityService:
                 active += 1
 
         resolved = 0
-        # Operation lifecycle has stable evidence and should resolve automatically when rows are cleaned up.
-        resolved += await self.repo.resolve_missing(
-            source=OPERATION_SOURCE,
-            active_dedupe_keys=active_dedupe_by_source.get(OPERATION_SOURCE, set()),
-            run_id=run_id,
-        )
+        for source in (
+            OPERATION_SOURCE,
+            PROTOCOL_SOURCE,
+            RUNTIME_SOURCE,
+            ACCOUNT_SOURCE,
+            MODULE_TOOLSET_SOURCE,
+            GOVERNANCE_SOURCE,
+        ):
+            resolved += await self.repo.resolve_missing(
+                source=source,
+                active_dedupe_keys=active_dedupe_by_source.get(source, set()),
+                run_id=run_id,
+            )
         await self.session.flush()
         return ObserverIntegrityScanResult(
             run_id=run_id,

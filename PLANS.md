@@ -6553,3 +6553,162 @@ Regression check:
 Remaining risk:
 - Existing pre-fix duplicates should be manually reviewed/merged or dismissed outside the P4 validation run; they are not new post-fix duplicates.
 Status consistency checked: yes
+## OBS1 follow-up - 2026-05-29 - run_id=obs1-followup-20260529-1207-afe478ad
+
+Status: in progress
+
+Scope:
+- ACK persistence audit: replace `protocol_ack_audit_gap` as a standing telemetry warning with durable ACK -> persisted event / duplicate proof validation.
+- Toolset hash drift remediation: classify the two live `toolset_hash_drift` devices and fix product reconcile if drift is real.
+- Alert runbook validation: make each Observer runbook actionable for an operator.
+- Noise tuning: verify stable dedupe, occurrence count, `last_seen_at`, and automatic resolution when an invariant clears.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`
+- Start commit: `afe478ad`
+- Known OBS1 follow-up active events before changes:
+  - `protocol_ack_audit_gap` warning: Observer had no durable ACK persistence audit rows to correlate ACK with `ticket_events` / `device_events` persistence.
+  - `toolset_hash_drift` error for device `2447d396-79cd-53da-b3a9-028c5a4d56da`: `current_toolset_hash=afa6647205d24098`, latest snapshot hash `1235fe825dbaf572`, snapshot id `34`.
+  - `toolset_hash_drift` error for device `b08675eb-780c-5042-b442-daa1cd066643`: `current_toolset_hash=464075d978b3230f`, latest snapshot hash `b79fbe209afb45c2`, snapshot id `55`.
+- Existing dirty/untracked state preserved: unrelated `pc_agent/ui_gui/tickets_list_model.py` not touched; old `artifacts/*` not staged.
+
+### BUG-20260529-OBS1-04 - Protocol V3 ACK audit gap has no persistence proof
+
+Severity: OBS1
+Status: fix-in-progress
+Area: protocol-v3 / observer-event / noise-tuning
+
+OBS1 scenario: ACK persistence audit follow-up.
+Run id: `obs1-followup-20260529-1207-afe478ad`
+Expected:
+- Every server `outbox_ack` decision has durable audit evidence proving one of: persisted event id, duplicate proof, or documented no-op.
+- Observer emits critical `protocol_ack_without_persistence` for ACK audit rows without proof.
+- Observer resolves `protocol_ack_audit_gap` once durable ACK audit rows exist.
+Actual:
+- OBS1 left `protocol_ack_audit_gap` as warning because outbox ingest produced no durable ACK audit rows.
+Repro steps:
+1. Run Observer scan on live OBS1 baseline.
+2. Observe active `protocol_ack_audit_gap`.
+3. Inspect outbox ingest pipeline: `OutboxPersistenceOutcome` had persistence proof fields, but `OutboxAckDecisionService` did not write `AgentRuntimeAudit`.
+
+Evidence:
+- Observer event: `protocol_ack_audit_gap`.
+- Code: `server/websocket/agent_services.py` queued ACK/NACK without audit; `server/observer/checks/protocol_integrity.py` only checked whether audit rows existed.
+- Run marker: `obs1-followup-20260529-1207-afe478ad`.
+
+Impact:
+- Observer could see repeated NACK patterns but could not prove ACK -> persistence.
+Root cause confirmed: yes.
+Fix policy:
+- Blocking further OBS1 follow-up: yes.
+- Fixed now: yes.
+
+Fix summary:
+- Added durable `agent_runtime_audit` rows for ACK decisions with `outbox_id`, `trace_id`, event type, persistence kind, `persisted_event_id`, `persisted`, `duplicate`, `duplicate_proof`, and `documented_noop`.
+- Added durable NACK audit for validation/final NACK decisions.
+- Extended Protocol checker to raise critical `protocol_ack_without_persistence` when an ACK audit lacks persistence/duplicate/no-op proof.
+- Extended Observer scan resolution across all checker sources, not only operation lifecycle, so stale warnings/errors resolve when clean.
+Changed files:
+- `server/websocket/agent_services.py`
+- `server/observer/checks/protocol_integrity.py`
+- `server/observer/integrity_service.py`
+- `server/tests/test_observer_integrity.py`
+- `docs/runbooks/observer_protocol_v3.md`
+Tests:
+- `python -m py_compile server\websocket\agent_services.py server\websocket\agent_handshake.py server\observer\checks\protocol_integrity.py server\observer\integrity_service.py` -> passed.
+- `python -m pytest server\tests\test_agent_services_pipeline.py::test_outbox_ack_decision_final_ack_and_nack -q -s` -> passed.
+- `python -m pytest server\tests\test_observer_integrity.py::test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing_proof -q -s` -> passed.
+- `python -m pytest server\tests\test_observer_integrity.py::test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupes -q -s` -> passed.
+- `python scripts\verify_workspace.py` -> passed as part quick release preflight.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed.
+Live regression:
+- Pending.
+Regression check:
+- Pending.
+Remaining risk:
+- Live ACK audit requires a real or safe diagnostic outbox item after deploy; pending live validation.
+Status consistency checked: yes.
+
+### BUG-20260529-OBS1-05 - Handshake toolset hash change does not request list_tools refresh
+
+Severity: OBS1
+Status: fix-in-progress
+Area: module-toolset / runtime-presence / observer-event
+
+OBS1 scenario: Toolset hash drift remediation.
+Run id: `obs1-followup-20260529-1207-afe478ad`
+Expected:
+- When agent handshake reports a changed `toolset_hash`, server updates the device card and requests `list_tools` so `device_toolset_snapshots` converges.
+Actual:
+- Live Observer shows two devices with `devices.current_toolset_hash` newer/different than latest `device_toolset_snapshots.toolset_hash`.
+- Code updated `devices.current_toolset_hash` during `upsert_on_handshake()` before comparing whether the hash changed, so the post-upsert comparison saw the new hash and skipped `list_tools`.
+Repro steps:
+1. Seed device with old `current_toolset_hash`.
+2. Run handshake with a different `payload.toolset_hash`.
+3. Observe no refresh would be requested by the old comparison path.
+
+Evidence:
+- Observer events: two active `toolset_hash_drift` live devices listed in baseline above.
+- Code: `server/websocket/agent_handshake.py` compared `agent_toolset_hash` with the already-updated `device.current_toolset_hash`.
+- Run marker: `obs1-followup-20260529-1207-afe478ad`.
+
+Impact:
+- Device card may report a current toolset hash that has no matching current snapshot, so module/tool availability can be stale.
+Root cause confirmed: yes.
+Fix policy:
+- Blocking further OBS1 follow-up: yes.
+- Fixed now: yes.
+
+Fix summary:
+- Capture previous `current_toolset_hash` and `current_toolset_snapshot_id` before handshake upsert.
+- Request `list_tools` when the reported hash differs from previous hash, or when the device has a hash but no snapshot reference.
+Changed files:
+- `server/websocket/agent_handshake.py`
+- `server/tests/test_handshake_module_reconcile.py`
+- `docs/runbooks/observer_module_toolset.md`
+Tests:
+- `python -m pytest server\tests\test_handshake_module_reconcile.py::test_handshake_enqueues_list_tools_when_toolset_hash_changes -q -s` -> passed.
+- `python scripts\verify_workspace.py` -> passed as part quick release preflight.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed.
+Live regression:
+- Pending remote deploy and drift-device refresh classification.
+Regression check:
+- Pending.
+Remaining risk:
+- Existing live drift rows need normal product refresh after deploy; do not direct-edit DB to silence them.
+Status consistency checked: yes.
+
+Runbook validation:
+- `observer_protocol_v3.md`: expanded with exact alert meanings, ACK proof fields, safe SQL, safe actions, and prohibitions.
+- `observer_module_toolset.md`: expanded with drift classification steps, safe SQL, and refresh/reconcile guidance.
+- `observer_operation_lifecycle.md`, `observer_runtime_presence.md`, `observer_account_boundary.md`, `observer_governance.md`: expanded with safe queries/actions and stronger "do not" guidance.
+
+### BUG-20260529-OBS1-06 - release quick gate blocked by docs drift artifacts
+
+Severity: OBS1
+Status: verified-non-product / fix-in-progress
+Area: governance / documentation
+
+OBS1 scenario: Release/deploy gate for ACK audit and toolset drift remediation.
+Run id: `obs1-followup-20260529-1207-afe478ad`
+Expected:
+- Protocol/observer/handshake changes update canonical navigation docs required by `verify_workspace.py`.
+Actual:
+- `python scripts\release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls --smoke-attempts 8 --smoke-delay 2` stopped at `docs_drift_check`.
+- Missing required artifacts: `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`.
+Root cause confirmed: yes - changed files matched `server_protocol`, `observer`, and `registry_objects` drift rules.
+Fix policy:
+- Blocking further OBS1 follow-up: yes.
+- Fixed now: yes.
+Fix summary:
+- Updated `docs/QUICK_LOOKUP.md` with OBS1 follow-up ACK persistence audit and handshake toolset refresh notes.
+- Updated `scripts/navigation_catalog.py` Protocol V3 and module/toolset summaries and aliases.
+Changed files:
+- `docs/QUICK_LOOKUP.md`
+- `scripts/navigation_catalog.py`
+Tests:
+- `python scripts\verify_workspace.py` -> passed as part quick release preflight.
+- Quick release gate re-ran and passed, but because workspace was dirty it deployed previous commit `afe478ad`; new-code live validation remains pending until commit/push/release of the follow-up SHA.
+Status consistency checked: yes.

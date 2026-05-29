@@ -292,6 +292,157 @@ async def test_observer_integrity_protocol_repeated_nack_becomes_warning_or_erro
 
 
 @pytest.mark.asyncio
+async def test_observer_integrity_protocol_ack_audit_valid_duplicate_and_missing_proof(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    device_id = f"obs1-device-{uuid.uuid4().hex[:8]}"
+    async with session_maker() as session:
+        await _seed_device(session, device_id=device_id)
+        session.add_all(
+            [
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="observer_test",
+                    ticket_id=str(uuid.uuid4()),
+                    details_json={
+                        "outbox_id": "ack-persisted",
+                        "trace_id": str(uuid.uuid4()),
+                        "event_type": "tool_call_result",
+                        "persisted_event_id": 123,
+                        "persisted": True,
+                        "duplicate": False,
+                    },
+                    created_at=now,
+                ),
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="observer_test",
+                    details_json={
+                        "outbox_id": "ack-duplicate",
+                        "trace_id": str(uuid.uuid4()),
+                        "event_type": "tools_changed",
+                        "persisted": False,
+                        "duplicate": True,
+                        "duplicate_proof": "session_seen_outbox_id",
+                    },
+                    created_at=now,
+                ),
+                AgentRuntimeAudit(
+                    device_id=device_id,
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="observer_test",
+                    details_json={
+                        "outbox_id": "ack-missing-proof",
+                        "trace_id": "trace-missing-proof",
+                        "event_type": "tool_call_result",
+                        "persisted": False,
+                        "duplicate": False,
+                    },
+                    created_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        await ObserverIntegrityService(session).run_scan(run_id=RUN_ID)
+        await session.commit()
+        events = (
+            await session.execute(
+                select(ObserverIntegrityEvent).where(
+                    ObserverIntegrityEvent.source == "observer.protocol_integrity",
+                    ObserverIntegrityEvent.device_id == device_id,
+                )
+            )
+        ).scalars().all()
+
+        assert {event.event_type for event in events} == {"protocol_ack_without_persistence"}
+        event = events[0]
+        assert event.severity == "critical"
+        assert event.outbox_id == "ack-missing-proof"
+        assert event.trace_id == "trace-missing-proof"
+
+
+@pytest.mark.asyncio
+async def test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupes(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    device_id = f"obs1-device-{uuid.uuid4().hex[:8]}"
+    async with session_maker() as session:
+        await _seed_device(session, device_id=device_id)
+        await ObserverIntegrityService(session).run_scan(run_id=RUN_ID)
+        await session.commit()
+        gap = (
+            await session.execute(
+                select(ObserverIntegrityEvent).where(
+                    ObserverIntegrityEvent.event_type == "protocol_ack_audit_gap",
+                    ObserverIntegrityEvent.source == "observer.protocol_integrity",
+                )
+            )
+        ).scalar_one()
+        assert gap.status == "active"
+
+        session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                event_type="outbox_ack_persisted",
+                severity="info",
+                source="observer_test",
+                details_json={
+                    "outbox_id": "ack-stable-dedupe",
+                    "trace_id": "trace-stable-dedupe",
+                    "event_type": "tools_changed",
+                    "persisted_event_id": 456,
+                    "persisted": True,
+                    "duplicate": False,
+                },
+                created_at=now,
+            )
+        )
+        await session.flush()
+        await ObserverIntegrityService(session).run_scan(run_id=RUN_ID)
+        await session.commit()
+        await session.refresh(gap)
+        assert gap.status == "resolved"
+
+        bad = AgentRuntimeAudit(
+            device_id=device_id,
+            event_type="outbox_ack_persisted",
+            severity="info",
+            source="observer_test",
+            details_json={
+                "outbox_id": "ack-noise-tuning",
+                "trace_id": "trace-noise-tuning",
+                "event_type": "tool_call_result",
+                "persisted": False,
+                "duplicate": False,
+            },
+            created_at=now,
+        )
+        session.add(bad)
+        await session.flush()
+        await ObserverIntegrityService(session).run_scan(run_id=RUN_ID)
+        await ObserverIntegrityService(session).run_scan(run_id=RUN_ID)
+        await session.commit()
+
+        rows = (
+            await session.execute(
+                select(ObserverIntegrityEvent).where(
+                    ObserverIntegrityEvent.event_type == "protocol_ack_without_persistence",
+                    ObserverIntegrityEvent.outbox_id == "ack-noise-tuning",
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].occurrence_count == 2
+
+
+@pytest.mark.asyncio
 async def test_observer_integrity_runtime_online_stale_db_projection(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     now = datetime.now(timezone.utc).replace(microsecond=0)
