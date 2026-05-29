@@ -1,0 +1,3 @@
+P6 support attachment evidence.
+run_id=p6-20260529-0828-d151a7f6
+ticket=T-000640

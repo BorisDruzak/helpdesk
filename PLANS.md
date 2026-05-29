@@ -3978,16 +3978,16 @@ P6 product contract:
 
 P6 scenario checklist:
 - [x] P6.1 Route/code discovery and operational surface map.
-- [ ] P6.2 Request Template Studio -> ticket create.
-- [ ] P6.3 Ticket Workbench full operator flow.
-- [ ] P6.4 Operator Command Center / Support Action Center.
-- [ ] P6.5 Approval / Consent Center.
-- [ ] P6.6 Device Operations workspace.
-- [ ] P6.7 Admin Tech Panel / Pilot Readiness.
-- [ ] P6.8 Cross-domain E2E pilot scenario.
-- [ ] P6.9 RBAC and route matrix.
-- [ ] P6.10 Regression against P0-P5 boundaries.
-- [ ] P6.11 Browser/UI/UX consistency and no-stale-state pass.
+- [x] P6.2 Request Template Studio -> ticket create.
+- [x] P6.3 Ticket Workbench full operator flow.
+- [x] P6.4 Operator Command Center / Support Action Center.
+- [x] P6.5 Approval / Consent Center.
+- [x] P6.6 Device Operations workspace.
+- [x] P6.7 Admin Tech Panel / Pilot Readiness.
+- [x] P6.8 Cross-domain E2E pilot scenario.
+- [x] P6.9 RBAC and route matrix.
+- [x] P6.10 Regression against P0-P5 boundaries.
+- [x] P6.11 Browser/UI/UX consistency and no-stale-state pass.
 
 ### BUG-20260529-P6-01 - requester catalog ticket create requires urgency reason when urgency is false
 
@@ -4052,10 +4052,119 @@ Remaining risk:
 - Public-created tickets can use a requester placeholder device context; P6 diagnostic/tool checks use the separate Agent A-bound ticket `T-000640`.
 Status consistency checked: yes
 
+## P6 findings summary - 2026-05-29 - run_id=p6-20260529-0828-d151a7f6
+
+| Bug | Severity | Area | Blocking P6 | Fix now | Status |
+|---|---|---|---|---|---|
+| BUG-20260529-P6-01 | P2 | request-template-studio / requester-access / workflow | yes | yes | verified-fixed |
+| BUG-20260529-P6-02 | P2 | operator-command-center / support-action-center | yes | yes | verified-fixed |
+
+## P6 close summary - 2026-05-29 - run_id=p6-20260529-0828-d151a7f6
+
+Status: P6 closed
+
+Code head:
+- Product/runtime head deployed for P6 fixes: `3c565b30bb728e03cc6a0b6e4d9e3f441308ffcb`.
+- P6-01 product fix head: `80ce0528790a9c79bed851f7bef3339c09c1a575`.
+Server URL: `https://192.168.100.17:9443`
+Agent A: `live-v3-p1-clean2`, Agent v3.1.61, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, UIA process `28128`.
+Agent B: not used for P6 close gates.
+Clean tickets:
+- `T-000639` (`bf9fdfcb-399a-4525-b145-06009924cba9`) - requester/public catalog ticket created after P6-01 fix.
+- `T-000640` (`530232fa-127a-440d-a6e0-cd0d4a68f8bc`) - Agent A-bound cross-domain E2E ticket.
+Template ids:
+- Existing Service Catalog route used: service `network`, offering `network.vpn_issue`, template/form `network`.
+Attachment/artifact ids:
+- Browser support upload artifact `a044ceae-30ab-4d26-83b7-e844072d2ef6`, filename `p6-support-attachment-p6-20260529-0828-d151a7f6.txt`.
+Operation ids:
+- Safe diagnostic `system.collect`: `c9ca5e32-77b7-4401-acc2-12f6b69f009f`, server status `succeeded`, server `device_outbox.id=158` delivered, Agent A `seen_commands.status=success`.
+Approval/consent ids:
+- No pending approval/consent created for P6 close; Approval Center route/API loaded with `pendingCount=0` and no token/ICE/SDP/authorization secret matches.
+Device ids:
+- Agent A `2447d396-79cd-53da-b3a9-028c5a4d56da`.
+Old contamination ignored:
+- Historical P0-P5 contamination and historical non-P6 `agent_offline_active` tasks were not used as P6 evidence.
+- Old untracked `artifacts/*` and unrelated dirty `pc_agent/ui_gui/tickets_list_model.py` were not staged or modified by P6.
+
+P6.1 result:
+- Passed. Route/code discovery recorded actual workspaces and APIs for request template studio, ticket workbench, command center, approvals, device operations and tech panel.
+P6.2 result:
+- Passed after BUG-P6-01 fix. Real browser `/app/help` catalog preview returned HTTP `200`; valid requester/public create produced `T-000639` with correct service/offering/template context.
+P6.3 result:
+- Passed. Real support browser/API processed `T-000640`: support message, support attachment upload, attachment-only message, safe diagnostic tool, and status path `in_progress -> resolved`.
+P6.4 result:
+- Passed after BUG-P6-02 fix. Command Center no longer lists online Agent A ticket `T-000640` in `agent_offline_active`; after resolution, `T-000640` disappears from active Command Center sections.
+P6.5 result:
+- Passed for center load/no-secret/no-stale-pending gate. `/app/support/approvals` and `/api/web/support/approvals` returned HTTP `200`, pending count `0`, no token/ICE/SDP/raw secret matches.
+P6.6 result:
+- Passed. Device Operations for Agent A returned HTTP `200`, `connection_state=online`, `signals.agent_offline=false`, no raw session/auth/cookie secret matches, and recent operation evidence matched DB/SQLite.
+P6.7 result:
+- Passed. Admin Tech Panel route/API loaded after explicit P5 handoff recovery; expected prior server stop was not treated as current incident. Security rows mentioning cookie/token policy were labels only, not raw secrets.
+P6.8 result:
+- Passed. Cross-domain E2E used template/requester create, Agent A-bound ticket create, support workbench processing, attachment, diagnostic operation, Device Operations, Command Center and status resolution with DB/API/SQLite agreement.
+P6.9 result:
+- Passed for key P6 internal surfaces. Anonymous/no-auth direct HTTP to `/api/web/support/command-center`, `/api/web/support/approvals`, `/api/web/admin/device-operations/*`, `/api/web/admin/tech/snapshot`, `/api/web/support/tickets/*` and request-template bootstrap returned HTTP `401` before mutation.
+P6.10 result:
+- Passed. Account/public/internal boundary checks showed no requester/public access to internal P6 APIs, artifact/tool operation remained authorized, no stale P6 device_outbox/operation rows, and UIA still saw Agent A connected with `T-000640`.
+P6.11 result:
+- Passed. Browser route pass loaded `/app/support`, `/app/tickets/{T-000640}`, `/app/admin/request-template-studio`, `/app/support/approvals`, `/app/admin/device-operations/{device_id}` and `/app/admin/tech` with HTTP `200`; no mojibake was introduced by P6 fixes and final console/network artifacts were captured.
+
+Bugs found:
+- `BUG-20260529-P6-01 - requester catalog ticket create requires urgency reason when urgency is false`.
+- `BUG-20260529-P6-02 - Command Center shows online Agent A ticket as agent_offline_active`.
+
+Verified fixed:
+- `BUG-20260529-P6-01`
+- `BUG-20260529-P6-02`
+
+Deferred/known limitations:
+- None newly introduced for P6. Historical P0-P5 limitations remain separated from P6 marker evidence.
+
+Operational readiness result:
+- Request Template Studio: ready for pilot with P6 requester catalog create fixed.
+- Ticket Workbench: ready for pilot for message, attachment, diagnostic operation and status path.
+- Operator Command Center: ready for pilot after live runtime presence alignment.
+- Approval/Consent Center: ready for current no-pending/no-secret gate.
+- Device Operations: ready for pilot for Agent A runtime/device state.
+- Admin Tech Panel: ready for pilot runtime health snapshot after expected handoff recovery.
+- Cross-domain E2E: passed for clean Agent A ticket `T-000640`.
+- RBAC/privacy: internal P6 endpoints denied anonymous/no-auth direct HTTP; browser/admin responses checked for raw token/cookie/session leaks.
+
+Browser/UI evidence:
+- `p6-20260529-0828-command-center-after-p6-02-fix.md`
+- `p6-20260529-0828-command-center-after-p6-02-fix-console-errors.json`
+- `p6-20260529-0828-command-center-after-p6-02-fix-network.json`
+- `p6-20260529-0828-final-route-pass-console-errors.json`
+- `p6-20260529-0828-final-route-pass-network.json`
+- `p6-20260529-0828-ticket-T-000639-after-p6-01-fix.md`
+- `p6-20260529-0828-ticket-T-000639-after-p6-01-fix.png`
+
+UIA evidence:
+- `artifacts\p6-20260529-0828-d151a7f6-uia-baseline.json`
+- `artifacts\p6-20260529-0828-d151a7f6-uia-ticket-T-000640-pid28128.json`
+- `artifacts\p6-20260529-0828-d151a7f6-uia-final-T-000640-instance.json`
+
+DB/SQLite evidence:
+- Final server DB for marker: active `device_outbox=0`, active marker operations `0`, marker tickets `2`, marker ticket events `10`, `T-000640` status `resolved`.
+- Final Agent A SQLite for marker: outbox `0`, outbox_sent_history marker `0`, active seen_commands marker `0`, pending_command_results marker `0`, pending_consents marker `0`, total pending consents `0`.
+
+Verification:
+- `python -m pytest server\tests\test_operator_command_center_no_db.py -q --tb=short` -> `6 passed`.
+- `python -m pytest server\tests\test_ticket_form_packs.py::test_public_create_ticket_allows_false_priority_flags_without_reasons -q` -> passed.
+- `python -m py_compile server\support\operator_command_center.py server\web_api\support_handlers.py`
+- `python -m py_compile server\tickets\statuses.py server\tickets\handlers.py server\tickets\public_ticket_handlers.py`
+- `python scripts\verify_workspace.py`
+- `python -m compileall -q server pc_agent scripts`
+- `git diff --check`
+- Quick remote release for `3c565b30...` and `/api/health` smoke -> passed.
+
+Next readiness:
+- ready
+
 ### BUG-20260529-P6-02 - Command Center shows online Agent A ticket as agent_offline_active
 
 Severity: P2
-Status: fix-in-progress
+Status: verified-fixed
 Area: operator-command-center / support-action-center / device-operations / browser-ui
 
 P6 scenario: P6.4 Operator Command Center / Support Action Center; P6.8 Cross-domain E2E pilot scenario.
@@ -4106,8 +4215,16 @@ Tests:
 - `python -m py_compile server\support\operator_command_center.py server\web_api\support_handlers.py` -> passed.
 - Attempted DB-backed `server\tests\test_operator_command_center.py` on local Windows; it hung and was stopped after several completed dots, matching prior local route-test instability. Live browser/API regression is required before verified-fixed.
 Live regression:
+- Deployed commit `3c565b30bb728e03cc6a0b6e4d9e3f441308ffcb` to remote with quick release; `/api/health` smoke passed.
+- Real browser `/app/support` loaded after deploy. Browser web-session `GET /api/web/support/command-center?scope=all&limit_per_section=25&include_debug=1` returned HTTP `200`, `metadata.online_device_count=2`.
+- Clean Agent A ticket `T-000640` remained visible in real task sections (`new_unassigned`, `operator_action`, `unread_user_messages`, `sla_risk`) with `agent.connection_state=online`, and was absent from `agent_offline_active`.
+- Browser web-session `GET /api/web/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da` returned HTTP `200`, `agent.connection_state=online`, `signals.agent_offline=false`.
+- Browser evidence artifacts: `p6-20260529-0828-command-center-after-p6-02-fix.md`, `p6-20260529-0828-command-center-after-p6-02-fix-console-errors.json`, `p6-20260529-0828-command-center-after-p6-02-fix-network.json`.
 Regression check:
+- Server DB after fix for marker `p6-20260529-0828-d151a7f6`: active marker `device_outbox=0`, active marker operations `0`, clean marker tickets `2`, marker ticket events `7`.
+- Agent A SQLite after fix: marker `outbox=0`, `outbox_sent_history=0`, active marker `seen_commands=0`, marker `pending_command_results=0`, marker `pending_consents=0`, total pending consents `0`.
 Remaining risk:
+- Historical non-P6 `agent_offline_active` count remains `2`; P6 verification only treats run-marker tickets as new evidence and does not classify old rows as a new P6 bug.
 Status consistency checked: yes
 
 P2.1.C Requester account-session access matrix:
