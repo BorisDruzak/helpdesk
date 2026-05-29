@@ -130,6 +130,21 @@ export type DeviceOperationsPayload = {
       root_span?: string | null;
       error_summary?: string | null;
     }>;
+    active_integrity_count?: number;
+    critical_integrity_count?: number;
+    integrity_events?: Array<{
+      event_id: string;
+      event_type: string;
+      severity: string;
+      status: string;
+      last_seen_at?: string | null;
+      operation_id?: string | null;
+      ticket_id?: string | null;
+      device_outbox_id?: number | null;
+      expected?: string | null;
+      actual?: string | null;
+      runbook?: string | null;
+    }>;
   };
   remote_assist: {
     availability: "available" | "unavailable" | "requires_consent" | "offline" | "unknown" | string;

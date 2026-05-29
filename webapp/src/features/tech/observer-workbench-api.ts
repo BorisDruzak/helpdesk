@@ -223,6 +223,45 @@ export type ObserverDiagnosticsBundlePayload = {
   recommended_next_checks?: string[];
 };
 
+export type ObserverIntegrityEvent = {
+  event_id: string;
+  event_type: string;
+  severity: "info" | "warning" | "error" | "critical" | string;
+  source: string;
+  detected_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  resolved_at?: string | null;
+  device_id?: string | null;
+  ticket_id?: string | null;
+  operation_id?: string | null;
+  command_id?: string | null;
+  device_outbox_id?: number | null;
+  outbox_id?: string | null;
+  trace_id?: string | null;
+  actor_role?: string | null;
+  expected?: string | null;
+  actual?: string | null;
+  evidence?: Record<string, unknown>;
+  dedupe_key: string;
+  runbook?: string | null;
+  status: "active" | "acknowledged" | "resolved" | "suppressed" | string;
+  suppression_reason?: string | null;
+  occurrence_count?: number | null;
+  run_id?: string | null;
+};
+
+export type ObserverIntegrityPayload = {
+  summary: {
+    active_by_severity?: Record<string, number>;
+    by_status?: Record<string, Record<string, number>>;
+    active_total?: number;
+    suppressed_total?: number;
+    top_active?: ObserverIntegrityEvent[];
+  };
+  items: ObserverIntegrityEvent[];
+};
+
 type RawObserverTraceDetailPayload = Omit<ObserverTraceDetailPayload, "summary"> & {
   summary?: Partial<ObserverTraceDetailPayload["summary"]> | null;
 };
@@ -466,6 +505,24 @@ export async function fetchObserverRuntime(): Promise<ObserverRuntimePayload> {
     "Не удалось загрузить runtime observer."
   );
   return payload.runtime;
+}
+
+export async function fetchObserverIntegrity(params: {
+  status?: string | null;
+  severity?: string | null;
+  deviceId?: string | null;
+  limit?: number;
+} = {}): Promise<ObserverIntegrityPayload> {
+  const searchParams = new URLSearchParams();
+  if (params.status) searchParams.set("status", params.status);
+  if (params.severity) searchParams.set("severity", params.severity);
+  if (params.deviceId) searchParams.set("device_id", params.deviceId);
+  if (params.limit) searchParams.set("limit", String(params.limit));
+  const query = searchParams.toString();
+  const response = await fetch(`/api/web/admin/observer/integrity${query ? `?${query}` : ""}`, {
+    credentials: "same-origin",
+  });
+  return readTypedOrLegacyOk(response, "Не удалось загрузить integrity events observer.");
 }
 
 export async function fetchObserverSettings(): Promise<Record<string, unknown>> {

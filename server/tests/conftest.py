@@ -685,6 +685,8 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
         await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         await conn.execute(text("""
             TRUNCATE TABLE
+                observer_integrity_events,
+                observer_known_contamination,
                 observer_error_occurrences,
                 observer_error_signatures,
                 observer_span_links,

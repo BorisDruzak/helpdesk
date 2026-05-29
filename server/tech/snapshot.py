@@ -22,6 +22,7 @@ from app.db.models import (
     Operation,
     ServerConfig,
 )
+from app.repos.observer_integrity_repo import ObserverIntegrityRepo
 from app.repos.connection_requests_repo import CONNECTION_POLICY_KEY, POLICY_ACCEPT_ALL, POLICY_MANUAL, POLICY_REJECT_ALL
 import auth.middleware as auth_middleware
 from config import OPERATION_ACCEPTED_TIMEOUT, OPERATION_DELIVERY_TIMEOUT, OPERATION_EXECUTION_TIMEOUT
@@ -773,6 +774,45 @@ async def build_operations_snapshot(overview: dict[str, Any], database_reachable
     }
 
 
+async def build_observer_integrity_snapshot(database_reachable: bool) -> dict[str, Any]:
+    if not database_reachable:
+        return {
+            "status": "unknown",
+            "active_by_severity": {"critical": 0, "error": 0, "warning": 0, "info": 0},
+            "active_total": 0,
+            "suppressed_total": 0,
+            "top_active": [],
+        }
+    try:
+        async with get_session() as session:
+            summary = await ObserverIntegrityRepo(session).summary(limit=5)
+    except SQLAlchemyError:
+        return {
+            "status": "unknown",
+            "active_by_severity": {"critical": 0, "error": 0, "warning": 0, "info": 0},
+            "active_total": 0,
+            "suppressed_total": 0,
+            "top_active": [],
+        }
+    active_by_severity = summary.get("active_by_severity") if isinstance(summary.get("active_by_severity"), dict) else {}
+    critical = _safe_int(active_by_severity.get("critical"))
+    error = _safe_int(active_by_severity.get("error"))
+    warning = _safe_int(active_by_severity.get("warning"))
+    status = "critical" if critical else ("error" if error else ("warning" if warning else "ok"))
+    return {
+        "status": status,
+        "active_by_severity": {
+            "critical": critical,
+            "error": error,
+            "warning": warning,
+            "info": _safe_int(active_by_severity.get("info")),
+        },
+        "active_total": _safe_int(summary.get("active_total")),
+        "suppressed_total": _safe_int(summary.get("suppressed_total")),
+        "top_active": summary.get("top_active") if isinstance(summary.get("top_active"), list) else [],
+    }
+
+
 def build_logs_snapshot(overview: dict[str, Any]) -> dict[str, Any]:
     logs = overview.get("problem_logs") if isinstance(overview.get("problem_logs"), list) else []
     error_count = sum(1 for item in logs if str(item.get("level") or "").lower() == "error")
@@ -807,6 +847,7 @@ async def build_tech_panel_v2_snapshot(request: web.Request, overview: dict[str,
     security = await build_security_snapshot(overview, config_values, bool(database.get("reachable")))
     agents = await build_agents_snapshot(overview, config_values, bool(database.get("reachable")))
     operations = await build_operations_snapshot(overview, bool(database.get("reachable")))
+    observer_integrity = await build_observer_integrity_snapshot(bool(database.get("reachable")))
     logs = build_logs_snapshot(overview)
     smoke = build_smoke_snapshot(config_values)
     gates = build_readiness_gates(
@@ -825,6 +866,7 @@ async def build_tech_panel_v2_snapshot(request: web.Request, overview: dict[str,
         "database": database,
         "agents": agents,
         "operations": operations,
+        "observer_integrity": observer_integrity,
         "logs": logs,
         "alerts": overview.get("alerts") if isinstance(overview.get("alerts"), list) else [],
         "release": {key: value for key, value in release.items() if key not in {"alembic_current", "alembic_head"}},

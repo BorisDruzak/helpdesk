@@ -5011,6 +5011,103 @@ class AgentRuntimeAudit(Base):
     )
 
 
+class ObserverIntegrityEvent(Base):
+    """Durable OBS1 integrity event with dedupe, resolution and suppression state."""
+
+    __tablename__ = "observer_integrity_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="active", index=True)
+    detected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    command_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    device_outbox_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    outbox_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    expected: Mapped[str] = mapped_column(Text, nullable=False)
+    actual: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    runbook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    suppression_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    run_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_observer_integrity_status_severity", "status", "severity", "last_seen_at"),
+        Index("ix_observer_integrity_device_status", "device_id", "status", "severity"),
+        Index("ix_observer_integrity_operation", "operation_id", "status"),
+        Index("ix_observer_integrity_ticket", "ticket_id", "status"),
+    )
+
+
+class ObserverKnownContamination(Base):
+    """Narrow suppression registry for historical P0-P6 contamination."""
+
+    __tablename__ = "observer_known_contamination"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_phase: Mapped[str] = mapped_column(String(30), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    suppression_scope: Mapped[str] = mapped_column(String(160), nullable=False, default="observer_integrity")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_phase",
+            "entity_type",
+            "entity_id",
+            "suppression_scope",
+            name="uq_observer_known_contamination_entity",
+        ),
+        Index("ix_observer_known_contamination_entity", "entity_type", "entity_id"),
+        Index("ix_observer_known_contamination_active", "active", "expires_at"),
+    )
+
+
 class AgentObserverEvent(Base):
     """Bounded agent-uploaded telemetry source for server-side observer projection."""
     __tablename__ = "agent_observer_events"

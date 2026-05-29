@@ -147,8 +147,11 @@ function ReadinessBanner({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
 function KpiStrip({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
   const lastSmoke = snapshot.smoke.last_business_smoke?.status ?? snapshot.smoke.status;
   const restore = snapshot.database.last_restore_drill?.status ?? "unknown";
+  const integrity = snapshot.observer_integrity;
+  const activeIntegrity = integrity?.active_total ?? 0;
+  const criticalIntegrity = integrity?.active_by_severity?.critical ?? 0;
   return (
-    <div className="grid gap-4 xl:grid-cols-4 2xl:grid-cols-8">
+    <div className="grid gap-4 xl:grid-cols-4 2xl:grid-cols-9">
       <StatTile accent={<Database className="h-5 w-5 text-emerald-600" />} helper="PostgreSQL" label="База" value={snapshot.database.reachable ? "OK" : "DOWN"} />
       <StatTile accent={<ShieldCheck className="h-5 w-5 text-blue-600" />} helper="Auth/Security" label="Security" value={snapshot.security.auth_mode.status.toUpperCase()} />
       <StatTile accent={<LockKeyhole className="h-5 w-5 text-indigo-600" />} helper="HTTPS/WSS" label="Transport" value={snapshot.readiness.gates.find((gate) => gate.key === "https_wss_required")?.status.toUpperCase() ?? "UNKNOWN"} />
@@ -157,6 +160,7 @@ function KpiStrip({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
       <StatTile accent={<Activity className="h-5 w-5 text-lime-600" />} helper="Inventory scheduler" label="Inventory" value={valueText(snapshot.runtime.schedulers.inventory_scheduler).toUpperCase()} />
       <StatTile accent={<Server className="h-5 w-5 text-slate-600" />} helper="Last smoke" label="Smoke" value={valueText(lastSmoke).toUpperCase()} />
       <StatTile accent={<FileWarning className="h-5 w-5 text-rose-600" />} helper="Restore drill" label="Restore" value={valueText(restore).toUpperCase()} />
+      <StatTile accent={<AlertTriangle className="h-5 w-5 text-rose-600" />} helper={`${criticalIntegrity} critical`} label="OBS1 events" value={String(activeIntegrity)} />
     </div>
   );
 }
@@ -329,6 +333,7 @@ function GateList({ gates }: { gates: TechReadinessGate[] }) {
 }
 
 function OverviewTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
+  const integrity = snapshot.observer_integrity;
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
       <Card>
@@ -338,6 +343,41 @@ function OverviewTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
         </CardHeader>
         <CardContent>
           <GateList gates={snapshot.readiness.gates} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Operational Integrity Observer</CardTitle>
+          <CardDescription>Active OBS1 runtime invariants and narrow historical suppression.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Badge tone={toneForStatus(integrity?.status)} withDot>
+              {integrity?.status ?? "unknown"}
+            </Badge>
+            <Badge tone="danger">critical {integrity?.active_by_severity?.critical ?? 0}</Badge>
+            <Badge tone="warning">error {integrity?.active_by_severity?.error ?? 0}</Badge>
+            <Badge tone="info">suppressed {integrity?.suppressed_total ?? 0}</Badge>
+          </div>
+          {integrity?.top_active?.length ? (
+            <div className="space-y-3">
+              {integrity.top_active.slice(0, 3).map((event) => (
+                <div className="rounded-lg border border-border px-4 py-3" key={event.event_id}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-semibold text-slate-950">{event.event_type}</p>
+                    <Badge tone={toneForStatus(event.severity)} withDot>
+                      {event.severity}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">{event.actual ?? event.expected}</p>
+                  <p className="mt-1 text-xs text-slate-500">{[event.device_id, event.operation_id].filter(Boolean).join(" · ")}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState>Active OBS1 integrity events are not present.</EmptyState>
+          )}
+          <SafeLink href={snapshot.links.observer}>Open Observer workbench</SafeLink>
         </CardContent>
       </Card>
       <Card>

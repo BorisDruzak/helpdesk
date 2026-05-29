@@ -34,6 +34,166 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## OBS1 Operational Integrity Observer - 2026-05-29 - run_id=obs1-20260529-1033-7410ce46
+
+Status: in progress
+
+Scope:
+- OBS1.1 Observer architecture and code discovery.
+- OBS1.2 Observer event model and persistence.
+- OBS1.3 Operation lifecycle integrity checker.
+- OBS1.4 Protocol V3 ACK/persistence integrity checker.
+- OBS1.5 Runtime presence and projection checker.
+- OBS1.6 Account/public/security boundary anomaly checker.
+- OBS1.7 Module/toolset/artifact integrity checker.
+- OBS1.8 Governance integrity checker: quality/problem/change.
+- OBS1.9 Known contamination registry and suppression.
+- OBS1.10 Admin Tech / Device Operations / Observer UI projection.
+- OBS1.11 Alert severity, dedupe and runbook links.
+- OBS1.12 Live fault-injection/regression validation.
+- OBS1.13 Final OBS1 close gate.
+
+Status audit:
+- P0: documentation gap - Status History records `P0 / P0.1 Ticket hardening` as `accepted / baseline`; no literal `P0 closed` marker was found before OBS1. Treat as closed/accepted historical baseline for this run, but do not rewrite old evidence.
+- P1: `Status: P1 closed` present.
+- P2: `Status: P2 closed` present and status drift previously corrected.
+- P3: `Status: P3 closed` present.
+- P4: `Status: P4 closed` present.
+- P5: `Status: P5 closed` present.
+- P6: `Status: P6 closed` present.
+- P6 handoff: remote server was intentionally stopped after successful smoke; OBS1 explicitly started it and verified `/api/health`.
+- OBS1 prior state: no previous OBS1 section or observer-integrity table/repo found before this run.
+- Dirty/untracked preserved: existing dirty `pc_agent/ui_gui/tickets_list_model.py` is unrelated and must not be touched; old/untracked `artifacts/*` remain unstaged unless new OBS1 evidence is explicitly listed here.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`
+- Commit SHA: `7410ce462ad92faeba45ac64a66861cc84dd446c`
+- Server URL: `https://192.168.100.17:9443`
+- Browser/admin URL: `https://192.168.100.17:9443/admin`
+- Browser/tech URL: `https://192.168.100.17:9443/app/admin/tech`
+- Browser/device-operations URL: `https://192.168.100.17:9443/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`
+- Browser/observer URL if present: `https://192.168.100.17:9443/app/admin/observer`; route loads without browser console errors, but current first viewport rendered the Admin Center map for tech/device/observer routes. Record as projection gap to verify during OBS1.10 before claiming UI evidence.
+- Agent A: `live-v3-p1-clean2`
+- Agent B if used: not selected at baseline.
+- Device ids: Agent A `2447d396-79cd-53da-b3a9-028c5a4d56da`
+- Agent versions: Agent A `3.1.61`
+- pywinauto version: `.venvs\agent-win` has `pywinauto==0.6.9`; default Python env does not.
+- Existing observer/tech/device routes: `/api/web/admin/observer/quick`, `/api/web/admin/observer/traces`, `/api/web/admin/observer/traces/{trace_id}`, `/api/admin/tech/observer/quick`, `/api/admin/tech/traces*`, `/api/admin/tech/signatures*`, `/api/admin/tech/degradations`, `/api/web/admin/tech/snapshot`, `/api/web/admin/device-operations/{device_id}`.
+- Known P0-P6 contamination ignored: P0 phantom/malformed rows; P1 `device_outbox.id=135` and reconnect/probe historical rows; P2 screen/cross-device pre-fix rows; P3 pre-fix feedback/reopen rows; P4 pre-fix problem candidate and Knowledge draft rows; P5 pre-fix change rows; P6 historical non-P6 `agent_offline_active` tasks.
+
+Baseline evidence:
+- `/api/health`: `python scripts\manage_remote_stack.py start server` -> running, then `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> `/api/health 200`.
+- Agent A connected: `python scripts\agent_test_driver.py status live-v3-p1-clean2` -> `connection_state=connected`, `bridge_connected=true`, `ticket_count=22`.
+- Browser admin/device/observer baseline: real in-app browser loaded `/app/admin/tech`, `/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`, `/app/admin/observer`; no browser console errors were captured, but dedicated route content needs OBS1.10 verification/fix.
+- UIA semantic state probe: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --output artifacts\obs1-20260529-0000-7410ce46-uia-baseline.json --skip-screenshot --max-depth 10 --max-nodes 2000 --max-seconds 60` -> `pywinauto_version=0.6.9`, `backend=uia`, `connection_state=connected`, `account_mode=confirmed_binding`, `failures=[]`.
+- Agent SQLite: `.local-agent\instances\live-v3-p1-clean2\data\storage.db` has `outbox_obs1=0`, `failed_outbox_obs1=0`, `pending_command_results_obs1=0`, `pending_consents_total=0`.
+- Server DB: for marker `obs1-*`, active `device_outbox=0`, total `device_outbox=0`. Agent A DB row: hostname `ADMIN-2`, agent version `3.1.61`, recent outbox rows all delivered.
+
+OBS1 product contract:
+- Observer purpose: detect runtime integrity problems previously found only by manual Live validation; provide alert/event source, correlation/evidence layer, runbook entry point and suppression-aware current anomaly view.
+- Observer non-goals: not a generic log viewer, not fake counters, not a substitute for browser/UI validation, not an auto-fixer for product state.
+- Observer events must include `event_type`, `severity`, `source`, `detected_at`, optional correlation ids, `expected`, `actual`, `evidence`, stable `dedupe_key`, `runbook`, `status`, and optional `suppression_reason`.
+- Events must not include raw tokens/cookies/session tokens, raw requester message text, unsafe artifact paths or unnecessary PII. Product-side mutation is limited to observer event persistence.
+- Severity contract: `critical` for data/security integrity loss, ACK without persistence, cross-device mismatch, wrong-account mutation success, late result dropped or public/requester leakage; `error` for stale terminal/active lifecycle, projection mismatch, material module/tool drift or materially wrong browser/admin projection; `warning` for fallback frequency, retryable NACK spikes, stale snapshots/schedulers and labeled historical contamination; `info` for check pass, suppression and recovery.
+- Every OBS1 event/test payload must carry marker/run_id `obs1-20260529-1033-7410ce46`.
+- Known historical contamination must be suppressible narrowly and must not hide new OBS1 rows.
+
+## OBS1 implementation map
+
+- Existing Observer routes: typed `/api/web/admin/observer/quick`, `/api/web/admin/observer/traces`, `/api/web/admin/observer/traces/{trace_id}`; legacy tech observer/search/detail under `/api/admin/tech/observer/*`, `/api/admin/tech/traces*`, `/api/admin/tech/signatures*`, `/api/admin/tech/degradations`.
+- Existing Tech routes: typed `GET /api/web/admin/tech/snapshot` plus aliases `overview`, `alerts`, `logs`, `agents/audit`, `users/audit`, `operations/stuck`, `locate`.
+- Existing Device Operations routes: `GET /api/web/admin/device-operations/{device_id}` and query fallback.
+- Existing DB tables: observer trace overlay (`observer_traces`, `observer_spans`, `observer_span_links`, `observer_error_occurrences`, `observer_error_signatures`), `agent_observer_events`, `operations`, `device_outbox`, `ticket_events`, `device_events`, `agent_runtime_audit`, module/inventory/quality/problem/change tables.
+- Missing pieces: no durable operational-integrity event table/repo/service; no known-contamination registry table; no integrity-checker API/projection in Tech/Device Operations/Observer workbench.
+- Chosen MVP implementation: add durable `observer_integrity_events` and narrow `observer_known_contamination`, implement service/checkers for operation lifecycle, protocol audit gaps, runtime projection, security audit hooks, module/tool/artifact and governance invariants, then expose active/suppressed counts through typed admin observer, Tech snapshot and Device Operations.
+
+OBS1 implementation progress:
+- OBS1.1 discovery complete: existing observer/tech/device routes and DB surfaces mapped above.
+- OBS1.2 implemented: `observer_integrity_events`, `observer_known_contamination`, repo, service, admin API and migration `20260529_105`.
+- OBS1.3 implemented: operation lifecycle checker detects terminal operation with active outbox, stuck active operations and missing terminal tool result event.
+- OBS1.4 implemented MVP: repeated Protocol V3 NACK checker and explicit ACK-persistence audit gap event until durable ACK audit exists.
+- OBS1.5 implemented MVP: runtime presence checker accepts runtime state input and detects connected runtime with stale DB projection.
+- OBS1.6 implemented MVP: account/public/requester boundary checker consumes successful anomaly audit events and produces critical observer events without raw tokens.
+- OBS1.7 implemented: toolset hash drift, desired/actual module drift and missing artifact rows for artifact-bearing tool results.
+- OBS1.8 implemented MVP: duplicate open problem candidate and approved/later change missing approved package checks.
+- OBS1.9 implemented: narrow contamination registry seeded with P0/P1/P6 initial known suppressions; P2-P5 are listed for runtime extension when concrete entity ids are discovered.
+- OBS1.10 implemented: Admin Tech snapshot, Device Operations device-scoped observer events and Observer workbench integrity list.
+- OBS1.11 implemented: runbooks added under `docs/runbooks/observer_*.md`, stable dedupe keys, occurrence count, suppression and operation-lifecycle auto-resolution.
+- OBS1.12 pending: remote live deployment, synthetic anomaly and browser projection evidence.
+- OBS1.13 pending: final close gate.
+
+### BUG-20260529-OBS1-01 - module/toolset checker crashed on Device.is_deleted property
+
+Severity: OBS1
+Status: verified-fixed
+Area: module-toolset
+
+OBS1 scenario: focused observer integrity pytest scan.
+Run id: `obs1-test-20260529-0000`
+Expected: checker scan completes and emits relevant integrity events.
+Actual: `AttributeError: 'property' object has no attribute 'is_'` from SQLAlchemy filter using `Device.is_deleted`.
+Repro steps: `python -m pytest server\tests\test_observer_integrity.py -q`.
+
+Evidence:
+- Test artifact: pytest failure in `server\observer\checks\module_toolset.py`.
+- Run marker: `obs1-test-20260529-0000`.
+
+Impact: blocked all OBS1 scan validation after earlier checkers.
+Root cause hypothesis: checker used the Python `Device.is_deleted` property as if it were a mapped SQLAlchemy column.
+Root cause confirmed: `Device.is_deleted` is derived from `deleted_at`, not mapped.
+Fix policy:
+- Blocking further OBS1: yes
+- Fixed now: yes
+
+Fix summary: changed query to `Device.deleted_at.is_(None)` and made checker orchestration sequential so a failing checker does not leave later coroutines unawaited.
+Changed files: `server/observer/checks/module_toolset.py`, `server/observer/integrity_service.py`.
+Tests: `server\tests\test_observer_integrity.py` now passes.
+Live regression: pending remote live scan.
+Regression check: `python -m py_compile ...`, focused pytest green.
+Remaining risk: broader live data may expose additional schema edge cases.
+Status consistency checked: yes.
+
+### BUG-20260529-OBS1-02 - suppression seed and redaction made focused evidence ambiguous
+
+Severity: OBS1
+Status: verified-fixed
+Area: suppression / account-boundary
+
+OBS1 scenario: known contamination and account boundary tests.
+Run id: `obs1-test-20260529-0000`
+Expected: explicit contamination row wins for the same entity and non-secret boundary state remains visible in event evidence.
+Actual: default P1 suppression could take precedence for the same `device_outbox.id=135`; evidence key `auth_state` was redacted even when value was only `missing_account_session`.
+Repro steps: `python -m pytest server\tests\test_observer_integrity.py -q`.
+
+Evidence:
+- Observer event: suppressed operation event had P1 reason instead of test reason; account-boundary event redacted non-secret state.
+- Test artifact: pytest assertion failures in `server\tests\test_observer_integrity.py`.
+- Run marker: `obs1-test-20260529-0000`.
+
+Impact: evidence was less actionable and suppression precedence could hide the specific known-contamination reason.
+Root cause hypothesis: seed lookup included `source_phase`, allowing duplicate suppressions for the same entity/scope; redaction treats `auth_*` keys as secret-like.
+Root cause confirmed: repo `ensure_contamination` only skipped exact source-phase duplicates; account checker used `auth_state` evidence key.
+Fix policy:
+- Blocking further OBS1: yes
+- Fixed now: yes
+
+Fix summary: seed now skips if any entity/scope suppression exists, and account-boundary evidence uses `boundary_state` for non-secret policy state.
+Changed files: `server/app/repos/observer_integrity_repo.py`, `server/observer/checks/account_boundary.py`.
+Tests: `server\tests\test_observer_integrity.py` now passes.
+Live regression: pending remote live scan.
+Regression check: focused pytest green.
+Remaining risk: live contamination ids beyond P1 still need exact runtime entries when discovered.
+Status consistency checked: yes.
+
+OBS1 verification evidence so far:
+- `python -m py_compile server\app\db\models.py server\app\repos\observer_integrity_repo.py server\observer\integrity_service.py server\observer\checks\operation_lifecycle.py server\observer\checks\protocol_integrity.py server\observer\checks\runtime_presence.py server\observer\checks\module_toolset.py server\observer\checks\governance.py server\observer\checks\account_boundary.py server\web_api\observer_integrity_handlers.py server\device_operations\service.py server\tech\snapshot.py server\routes.py` -> passed.
+- `python -m py_compile server\tests\test_observer_integrity.py server\tests\conftest.py server\tests\test_tech_panel_snapshot.py` -> passed.
+- `python -m pytest server\tests\test_observer_integrity.py -q` with shared test DB/watchdog -> `8 passed`.
+- `python -m pytest server\tests\test_observer_integrity.py server\tests\test_tech_panel_snapshot.py -q` with shared test DB/watchdog -> `28 passed`.
+- `python -m compileall -q server pc_agent scripts` -> passed before the latest focused test additions; final close gate will rerun.
+- `git diff --check` -> passed with line-ending warnings only.
+- `pnpm --dir webapp build` -> passed after OBS1 UI integration.
+
 ## Active Work: Pilot Hardening / Mini-prod Readiness
 
 Status: in progress on branch `codex/helpdesk-process-model`.

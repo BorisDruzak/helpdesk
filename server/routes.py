@@ -408,6 +408,10 @@ from web_api.admin_inventory_handlers import (
     handle_web_admin_inventory_refresh_policy_update,
     handle_web_admin_inventory_refresh_runs,
 )
+from web_api.observer_integrity_handlers import (
+    handle_web_admin_observer_integrity,
+    handle_web_admin_observer_integrity_scan,
+)
 from web_api.device_operations_handlers import handle_web_admin_device_operations
 from web_api.policy_health_handlers import (
     handle_web_admin_policy_health,
@@ -847,6 +851,8 @@ def setup_routes(app: web.Application) -> None:
         web.put('/api/web/admin/access/groups/{group_id}/members', handle_web_admin_access_group_members),
         web.put('/api/web/admin/access/groups/{group_id}/queues', handle_web_admin_access_group_queues),
         web.get('/api/web/admin/observer/quick', handle_web_admin_observer_quick),
+        web.get('/api/web/admin/observer/integrity', handle_web_admin_observer_integrity),
+        web.post('/api/web/admin/observer/integrity/scan', handle_web_admin_observer_integrity_scan),
         web.get('/api/web/admin/observer/traces', handle_web_admin_observer_traces),
         web.get('/api/web/admin/observer/trace-detail/{trace_id}', handle_web_admin_observer_trace_detail),
         web.get('/api/web/admin/observer/traces/{trace_id}', handle_web_admin_observer_trace_detail),

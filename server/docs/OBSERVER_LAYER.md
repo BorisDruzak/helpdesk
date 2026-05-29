@@ -53,6 +53,10 @@ Runtime-audit-only auth/provisioning events are first-class projection sources t
 - `observer_span_links`
 - `observer_error_occurrences`
 - `observer_error_signatures`
+- `observer_integrity_events`
+- `observer_known_contamination`
+
+OBS1 Operational Integrity Observer adds a durable integrity-event stream on top of the trace overlay. It does not replace traces and does not mutate product state. It persists runtime invariant violations with `dedupe_key`, severity, source, status, occurrence count, runbook, redacted evidence, optional correlation ids (`device_id`, `ticket_id`, `operation_id`, `command_id`, `device_outbox_id`, `trace_id`) and resolution/suppression state. Known P0-P6 contamination is represented narrowly in `observer_known_contamination` by exact entity ids or stable dedupe keys.
 
 Ticket-root anchor:
 
@@ -145,8 +149,14 @@ Ticket-scoped API:
 - `GET /api/web/support/tickets/{ticket_id}`
 - `GET /api/web/admin/bootstrap`
 - `GET /api/web/admin/observer/quick`
+- `GET /api/web/admin/observer/integrity`
+- `POST /api/web/admin/observer/integrity/scan`
 - `GET /api/web/admin/observer/traces`
 - `GET /api/web/admin/observer/traces/{trace_id}`
+
+`GET /api/web/admin/observer/integrity` is admin/support/auditor readable and supports filters by `severity`, `status`, `device_id`, `ticket_id`, `operation_id`, `event_type`, `since` and `limit`. `POST /api/web/admin/observer/integrity/scan` is admin/support and runs the OBS1 checkers. Requester/public/agent tokens must be denied.
+
+OBS1 checkers live under `server/observer/checks/*` and are orchestrated by `server/observer/integrity_service.py`. The first runtime set covers operation/outbox lifecycle, Protocol V3 ACK telemetry gap/repeated NACK patterns, runtime presence stale-last-seen mismatch, account-boundary anomaly audit, module/toolset/artifact drift and governance invariants. Admin Tech exposes counts in `observer_integrity`; Device Operations embeds device-scoped active integrity events.
 
 Typed admin observer trace rows expose operator-readable context in addition to raw identifiers: `ticket_code`, `ticket_title`, ticket status/priority/queue, requester label, `device_hostname`, `device_label`, operation/tool labels, latest error label/stage and `display_title` / `display_subtitle`. Raw `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id` and `error_signature` stay available for diagnostics and deep links, but UI must treat them as secondary metadata.
 

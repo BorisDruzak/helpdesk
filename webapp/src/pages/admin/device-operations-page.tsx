@@ -108,7 +108,7 @@ function toneForState(value: string | null | undefined): Tone {
   if (["running", "queued", "pending", "sent", "requested", "requires_consent", "warning", "outdated"].includes(normalized)) {
     return "warning";
   }
-  if (["failed", "error", "offline", "stale", "missing", "timed_out", "unknown", "unavailable"].includes(normalized)) {
+  if (["critical", "failed", "error", "offline", "stale", "missing", "timed_out", "unknown", "unavailable"].includes(normalized)) {
     return "danger";
   }
   return "neutral";
@@ -447,28 +447,63 @@ function OperationsTab({ data }: { data: DeviceOperationsPayload }) {
 }
 
 function ObserverTab({ data }: { data: DeviceOperationsPayload }) {
+  const integrityEvents = data.observer.integrity_events ?? [];
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Трассы Observer</CardTitle>
-        <CardDescription>Последние трассы, связанные с device_id.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <Badge tone={data.observer.items.some((item) => item.error_summary) ? "danger" : "neutral"}>Трасс: {data.observer.trace_count ?? 0}</Badge>
-        {data.observer.items.length ? (
-          data.observer.items.map((item) => (
-            <div className="rounded-xl border border-border p-3 text-sm" key={item.trace_id}>
-              <p className="font-semibold text-slate-900">{item.title ?? item.trace_id}</p>
-              <p className="text-slate-500">{item.status ?? "unknown"} · {formatDateTime(item.started_at)}</p>
-              {item.error_summary ? <p className="mt-1 text-rose-600">{item.error_summary}</p> : null}
-              <ExternalLinkButton href={`/app/admin/observer?trace_id=${encodeURIComponent(item.trace_id)}`} label="Открыть трассу" />
-            </div>
-          ))
-        ) : (
-          <EmptyState>Трассы по устройству не найдены.</EmptyState>
-        )}
-      </CardContent>
-    </Card>
+    <div className="grid gap-6 xl:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>OBS1 integrity events</CardTitle>
+          <CardDescription>Device-scoped active Observer invariants.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Badge tone={data.observer.critical_integrity_count ? "danger" : "neutral"}>
+              active {data.observer.active_integrity_count ?? 0}
+            </Badge>
+            <Badge tone="danger">critical {data.observer.critical_integrity_count ?? 0}</Badge>
+          </div>
+          {integrityEvents.length ? (
+            integrityEvents.map((item) => (
+              <div className="rounded-xl border border-border p-3 text-sm" key={item.event_id}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-semibold text-slate-900">{item.event_type}</p>
+                  <Badge tone={toneForState(item.severity)} withDot>
+                    {item.severity}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-slate-500">{item.actual ?? item.expected}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {[item.operation_id, item.ticket_id, item.device_outbox_id ? `outbox ${item.device_outbox_id}` : null].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+            ))
+          ) : (
+            <EmptyState>Active OBS1 integrity events по устройству не найдены.</EmptyState>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Трассы Observer</CardTitle>
+          <CardDescription>Последние трассы, связанные с device_id.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Badge tone={data.observer.items.some((item) => item.error_summary) ? "danger" : "neutral"}>Трасс: {data.observer.trace_count ?? 0}</Badge>
+          {data.observer.items.length ? (
+            data.observer.items.map((item) => (
+              <div className="rounded-xl border border-border p-3 text-sm" key={item.trace_id}>
+                <p className="font-semibold text-slate-900">{item.title ?? item.trace_id}</p>
+                <p className="text-slate-500">{item.status ?? "unknown"} · {formatDateTime(item.started_at)}</p>
+                {item.error_summary ? <p className="mt-1 text-rose-600">{item.error_summary}</p> : null}
+                <ExternalLinkButton href={`/app/admin/observer?trace_id=${encodeURIComponent(item.trace_id)}`} label="Открыть трассу" />
+              </div>
+            ))
+          ) : (
+            <EmptyState>Трассы по устройству не найдены.</EmptyState>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

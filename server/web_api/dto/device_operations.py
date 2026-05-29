@@ -179,12 +179,31 @@ class DeviceOperationsObserverItem(BaseModel):
     error_summary: str | None = None
 
 
+class DeviceOperationsIntegrityEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_type: str
+    severity: str
+    status: str
+    last_seen_at: str | None = None
+    operation_id: str | None = None
+    ticket_id: str | None = None
+    device_outbox_id: int | None = None
+    expected: str | None = None
+    actual: str | None = None
+    runbook: str | None = None
+
+
 class DeviceOperationsObserver(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trace_count: int | None = None
     latest_trace_at: str | None = None
     items: list[DeviceOperationsObserverItem] = Field(default_factory=list)
+    active_integrity_count: int = 0
+    critical_integrity_count: int = 0
+    integrity_events: list[DeviceOperationsIntegrityEvent] = Field(default_factory=list)
 
 
 class DeviceOperationsRemoteAssist(BaseModel):

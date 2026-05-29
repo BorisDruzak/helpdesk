@@ -224,6 +224,24 @@ export type TechPanelV2Snapshot = {
     recent_nack_count?: number | null;
     items: TechStuckOperation[];
   };
+  observer_integrity?: {
+    status?: TechStatus;
+    active_by_severity?: Record<string, number>;
+    active_total?: number;
+    suppressed_total?: number;
+    top_active?: Array<{
+      event_id: string;
+      event_type: string;
+      severity: TechStatus;
+      status: string;
+      last_seen_at?: string | null;
+      device_id?: string | null;
+      operation_id?: string | null;
+      expected?: string | null;
+      actual?: string | null;
+      runbook?: string | null;
+    }>;
+  };
   logs: {
     problem_logs: TechLogEntry[];
     error_count?: number | null;

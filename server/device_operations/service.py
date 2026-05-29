@@ -21,6 +21,7 @@ from app.db.models import (
     Ticket,
 )
 from app.repos.devices_repo import DevicesRepo
+from app.repos.observer_integrity_repo import ObserverIntegrityRepo
 from app.repos.remote_access_repo import ACTIVE_REMOTE_ACCESS_STATUSES
 from inventory.service import DeviceInventoryService
 from web_api.dto.device_operations import (
@@ -28,6 +29,7 @@ from web_api.dto.device_operations import (
     DeviceOperationsBinding,
     DeviceOperationsDevice,
     DeviceOperationsInventory,
+    DeviceOperationsIntegrityEvent,
     DeviceOperationsLinks,
     DeviceOperationsModuleItem,
     DeviceOperationsModules,
@@ -219,7 +221,10 @@ class DeviceOperationsService:
             module_reconcile_failed=bool((modules.failed_count or 0) > 0),
             outbox_backlog=outbox.pending_count > 0,
             failed_recent_operation=operations.recent_failed_count > 0,
-            observer_errors=any((item.status or "").lower() in {"failed", "error"} or item.error_summary for item in observer.items),
+            observer_errors=(
+                any((item.status or "").lower() in {"failed", "error"} or item.error_summary for item in observer.items)
+                or observer.critical_integrity_count > 0
+            ),
             remote_assist_unavailable=remote_assist.availability in {"unavailable", "offline", "unknown"},
         )
         return DeviceOperationsPayload(
@@ -492,6 +497,7 @@ class DeviceOperationsService:
                 .limit(max(1, min(limit, 100)))
             )
             rows = list(result.scalars().all())
+        integrity_events = await self._build_integrity_events(device_id)
         return DeviceOperationsObserver(
             trace_count=count,
             latest_trace_at=_iso(latest),
@@ -509,7 +515,29 @@ class DeviceOperationsService:
                 )
                 for row in rows
             ],
+            active_integrity_count=len(integrity_events),
+            critical_integrity_count=sum(1 for item in integrity_events if item.severity == "critical"),
+            integrity_events=integrity_events,
         )
+
+    async def _build_integrity_events(self, device_id: str) -> list[DeviceOperationsIntegrityEvent]:
+        rows = await ObserverIntegrityRepo(self.session).list_events(device_id=device_id, status="active", limit=10)
+        return [
+            DeviceOperationsIntegrityEvent(
+                event_id=row.event_id,
+                event_type=row.event_type,
+                severity=row.severity,
+                status=row.status,
+                last_seen_at=_iso(row.last_seen_at),
+                operation_id=_string(row.operation_id),
+                ticket_id=_string(row.ticket_id),
+                device_outbox_id=row.device_outbox_id,
+                expected=_string(row.expected),
+                actual=_string(row.actual),
+                runbook=_string(row.runbook),
+            )
+            for row in rows
+        ]
 
     async def _build_remote_assist(self, device_id: str, *, connection_state: str) -> DeviceOperationsRemoteAssist:
         result = await self.session.execute(

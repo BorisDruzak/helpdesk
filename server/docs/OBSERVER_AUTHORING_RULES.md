@@ -124,6 +124,12 @@ Spans нужны не “для галочки”, а чтобы человек 
 
 Все подобные поля идут через redaction helpers.
 
+### 3.7.1 OBS1 integrity events
+
+`observer_integrity_events` are for runtime invariant violations, not generic logs. Each event must include stable `dedupe_key`, severity, source, expected/actual, redacted evidence, runbook and correlation ids when available. The only product-side mutation allowed is writing or resolving the observer event itself. Do not store raw tokens, cookies, requester message text, public access hashes, raw artifact paths or unrestricted result payloads.
+
+Known historical contamination belongs in `observer_known_contamination` with exact entity scope. Broad suppression by phase, device or timestamp is not acceptable unless explicitly documented and time-boxed.
+
 ### 3.8 Зафиксировать canary
 
 Для нового опасного flow нужен воспроизводимый canary или live scenario:
