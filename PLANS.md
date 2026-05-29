@@ -34,6 +34,179 @@ This file is intentionally compact. Detailed phase logs live in git history and 
 - Full DB/API gates use isolated test databases through the P2.3 harness; shared `pc_support_test` is debug-only and not a full gate.
 - Product UI changes require webapp build plus remote/browser signoff at `https://192.168.100.17:9443/admin` before release acceptance.
 
+## OBS2 Live Observer Accuracy & Incident Drill - 2026-05-29 - run_id=obs2-20260529-1314-194489a3
+
+Status: OBS2 closed
+
+Scope:
+- OBS2.1 Healthy baseline scan.
+- OBS2.2 Protocol ACK audit v2 positive proof.
+- OBS2.3 Protocol ACK-without-proof synthetic drill.
+- OBS2.4 Operation lifecycle synthetic mismatch drill.
+- OBS2.5 Runtime presence drill.
+- OBS2.6 Account/public boundary observer drill.
+- OBS2.7 Module/toolset drift drill.
+- OBS2.8 Governance observer drill.
+- OBS2.9 Suppression precision drill.
+- OBS2.10 Browser projection drill.
+- OBS2.11 Runbook/actionability drill.
+- OBS2.12 Noise/dedupe/resolution drill.
+- OBS2.13 Final close gate.
+
+Status audit:
+- P0-P6: historical close/accepted markers are present; P1-P6 have explicit `Status: ... closed` entries, while P0 is recorded as accepted/baseline in Status History and was documented as a status marker gap during OBS1.
+- OBS1: `Status: OBS1 closed` present.
+- OBS1 hardening checkpoint: ACK audit v2, toolset drift remediation and close evidence recorded under `OBS1 hardening checkpoint - 2026-05-29 - run_id=obs1-followup-20260529-1207-afe478ad`.
+- `protocol_ack_audit_gap`: resolved after v2 ACK proof; follow-up scan recorded no active `protocol_ack_audit_gap` and no active `protocol_ack_without_persistence`.
+- Agent A/B `toolset_hash_drift`: resolved through normal `list_tools` operations/outbox, not direct DB edit.
+- Final hardening scan recorded `generated=5`, `active=0`, `suppressed=5`, `resolved=2`.
+- Remote server handoff state: server was intentionally stopped after the previous verification; OBS2 explicitly started it and verified `/api/health`.
+- OBS2 prior state: no previous `OBS2 Live Observer Accuracy` section found before this run.
+- Existing dirty/untracked state preserved: unrelated `pc_agent/ui_gui/tickets_list_model.py` not touched; old `artifacts/*` not staged unless OBS2 evidence is explicitly listed here.
+
+Baseline:
+- Branch: `codex/helpdesk-process-model`
+- Commit SHA: `194489a3b878b008026b6072862b208aa79dc3e5`
+- Server URL: `https://192.168.100.17:9443`
+- Browser/admin URL: `https://192.168.100.17:9443/admin`
+- Browser/observer URL: `https://192.168.100.17:9443/app/admin/observer`
+- Browser/tech URL: `https://192.168.100.17:9443/app/admin/tech`
+- Browser/device-operations URL: `https://192.168.100.17:9443/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da`
+- Agent A: `live-v3-p1-clean2`, connected.
+- Agent B if used: `b08675eb-780c-5042-b442-daa1cd066643` observed online in admin inventory/DB, not used for destructive drills.
+- Device ids: Agent A `2447d396-79cd-53da-b3a9-028c5a4d56da`; Agent B observed `b08675eb-780c-5042-b442-daa1cd066643`.
+- Agent versions: Agent A `3.1.61`; Agent B observed `3.1.61`.
+- pywinauto version: `.venvs\agent-win` has `pywinauto==0.6.9`; UIA probe used `backend=uia`.
+- OBS1/hardening commits: OBS1 close/head `afe478adf05851d4d1046df3a1258922895d3fbe`; hardening `fba082b1`, `17206868`, `194489a3`.
+- Known contamination ignored: P0 phantom/malformed rows; P1 `device_outbox.id=135`; P1/P2/P3/P4/P5 pre-fix rows listed in OBS1; P6 historical non-P6 `agent_offline_active`; OBS1 synthetic operation mismatch; legacy weak ACK audit row `agent_runtime_audit.id=4132`.
+
+Baseline evidence:
+- Remote server pre-start: `python scripts\manage_remote_stack.py status server` -> stopped (`active=inactive`, `sub=dead`), expected handoff state.
+- Server start: `python scripts\manage_remote_stack.py start server` -> running (`active=active`, `sub=running`, pid `598004`).
+- `/api/health`: `python scripts\manage_remote_stack.py smoke server --insecure-tls` -> HTTP 200.
+- Agent A connected: `python scripts\agent_test_driver.py status live-v3-p1-clean2` -> `connection_state=connected`, `bridge_connected=true`, `window_visible=true`.
+- Browser admin inventory online: real browser `/app/admin/inventory` showed 8 agents, online 2; Agent A `2447d396-79cd-53da-b3a9-028c5a4d56da` online and Agent B `b08675eb-780c-5042-b442-daa1cd066643` online. Browser evidence: `obs2-20260529-1314-194489a3-inventory.png`, console/network JSON captured.
+- UIA semantic probe: `.venvs\agent-win\Scripts\python.exe scripts\live_agent_uia_state_probe.py --instance live-v3-p1-clean2 --expect-connected --expect-account --output artifacts\obs2-20260529-1314-194489a3-uia-baseline.json --skip-screenshot --max-depth 10 --max-nodes 2000 --max-seconds 60` -> `pywinauto_version=0.6.9`, `backend=uia`, `connection_state=connected`, `account_mode=confirmed_binding`, `ticket_count=1`, `failures=[]`.
+- Agent SQLite OBS2 marker cleanup: `.local-agent\instances\live-v3-p1-clean2\data\storage.db` -> `outbox_obs2=0`, `failed_outbox_obs2=0`, `pending_command_results_obs2=0`, `pending_consents_total=0`.
+- Server DB OBS2 marker cleanup: `device_outbox` rows with OBS2 marker -> active `0`, total `0`.
+- Browser `/app/admin/observer`: real browser showed `critical 0`, `error 0`, `warning 0`, `suppressed 5`, no active integrity events; screenshot/console/network captured as `obs2-20260529-1314-194489a3-observer.*`.
+- Browser `/app/admin/tech`: real browser showed READY, blockers `0`, warnings `0`, score `100`, OBS1 events `0`, observer `critical 0`, `error 0`, `suppressed 5`; screenshot/console/network captured as `obs2-20260529-1314-194489a3-tech.*`.
+- Browser Device Operations: real browser `/app/admin/device-operations/2447d396-79cd-53da-b3a9-028c5a4d56da` showed device online, modules OK, outbox empty, operations running `0`; Observer tab showed active `0`, critical `0`; screenshot/console/network captured as `obs2-20260529-1314-194489a3-device-ops-observer.*`.
+- Observer scan API: `POST /api/web/admin/observer/integrity/scan` with `run_id=obs2-20260529-1314-194489a3` -> HTTP 200, `generated=5`, `active=0`, `suppressed=5`, `resolved=0`.
+- Baseline observer state: API/DB/UI agreed on active critical `0`, active error `0`, suppressed `5`; resolved history present from OBS1 hardening (`critical 1`, `error 2`, `warning 1`).
+
+OBS2 product contract:
+- Healthy baseline must not produce active critical alerts.
+- Synthetic critical anomalies must be detected.
+- Cleanup must resolve active synthetic events.
+- Known contamination suppression must be exact and narrow.
+- New entities with similar shape must not be suppressed unless explicitly registered.
+- Browser projections must match observer API/DB counts.
+- Observer events must include expected/actual/evidence/dedupe_key/severity/runbook where applicable.
+- Observer must not leak raw tokens/cookies/session tokens/PII.
+- Observer must be read-only except for writing observer events/suppression state.
+- Observer must not fix product state automatically.
+
+ACK audit v2 contract:
+- Valid proof requires one of `persisted_event_id`, `duplicate_proof`, or `documented_noop`.
+- Invalid proof includes bare `persisted=true`, missing proof, or proof without trace/outbox correlation.
+- ACK audit without valid proof must raise `protocol_ack_without_persistence` or equivalent.
+
+Resolution contract:
+- When the invariant no longer exists, the active event becomes `resolved`, `resolved_at` is set, and Admin Tech/Observer/Device Operations no longer count it as active.
+- Resolved event history remains auditable.
+
+Suppression contract:
+- Suppression is exact dedupe key/entity only, has an explicit reason, remains visible as `suppressed`, does not hide different entities/dedupe keys, and does not change product state.
+
+OBS2 findings summary - 2026-05-29 - run_id=obs2-20260529-1314-194489a3
+
+| Finding | Severity | Area | Current bug / historical / synthetic / test-tool | Blocking OBS2 | Action |
+|---|---|---|---|---|---|
+| Healthy baseline scan produced active critical `0`, active error `0`, suppressed `5`. | info | healthy-baseline | current healthy state | no | Passed. |
+| First ACK-positive diagnostic probe used unsupported `item_type=device_event` and received expected `VALIDATION_ERROR` NACK. | info | protocol-ack | test-tool | no | Re-ran with supported `item_type=job_event`; no product fix. |
+| ACK audit v2 positive proof row `agent_runtime_audit.id=4141` had `audit_contract_version=2`, outbox `obs2-20260529-1314-194489a3-ack-positive-bd67931c`, `persisted_event_id=65`, no `protocol_ack_without_persistence`. | info | protocol-ack | synthetic live proof | no | Passed. |
+| Synthetic ACK without proof produced `protocol_ack_without_persistence` critical and resolved after adding documented no-op cleanup proof. | info | protocol-ack | synthetic | no | Passed; event `8ef073c9-63f6-5162-9209-a50d3ce6b147`. |
+| Synthetic operation/outbox mismatch produced critical and resolved after marking synthetic outbox delivered. | info | operation-lifecycle | synthetic | no | Passed; event `36cc0796-6b38-5b32-89a2-54ade30d4e8a`. |
+| Exact suppression for synthetic outbox `165` suppressed only that entity; sibling mismatch outbox `164` remained active until cleanup. | info | suppression | synthetic | no | Passed; suppressed event `77c29a1c-fbc7-5aad-b345-8e67da26e699`. |
+| Synthetic account-boundary success anomaly produced critical and resolved after aging the synthetic audit outside Observer lookback. | info | account-boundary | synthetic | no | Passed; event `afcceb02-ff5f-5c09-b5d5-6f7c231b6810`. |
+| Synthetic toolset hash drift produced error and resolved after aligning current hash to snapshot hash and marking the synthetic device deleted. | info | module-toolset | synthetic | no | Passed; event `87537d19-cee9-5a33-90bf-409190cb115c`. |
+| Synthetic duplicate problem candidates produced governance error and resolved after dismissing the synthetic candidates. | info | governance | synthetic | no | Passed; event `8de296ec-f2da-574a-a85a-310669c1b700`. |
+| Runtime presence healthy path showed Agent A online in runtime, inventory, Device Operations and no active runtime presence event. Controlled stop-agent path was not run to avoid disrupting live agent state. | info | runtime-presence | current healthy state | no | Covered by healthy live path and targeted runtime presence tests. |
+| Browser projections matched active and resolved states: Observer/Tech active critical/error during drill; Observer/Tech/Device Operations active `0` after cleanup. | info | browser-projection | live browser | no | Passed with screenshots/console/network evidence. |
+| Runbooks for operation lifecycle, protocol v3, runtime presence, account boundary, module/toolset and governance contain meaning, immediate checks, safe queries, what not to do, escalation, related context and cleanup/suppression guidance. | info | runbook | docs validation | no | Passed. |
+| Secret/PII scan found no raw token/cookie/session value in OBS2 events. A long-string heuristic matched the OBS2 marker/outbox id, not a secret; account event evidence projected safe boundary fields only. | info | security | evidence validation | no | Passed. |
+
+## OBS2 close summary - 2026-05-29 - run_id=obs2-20260529-1314-194489a3
+
+Status: OBS2 closed
+
+Code head: `194489a3b878b008026b6072862b208aa79dc3e5`
+Server URL: `https://192.168.100.17:9443`
+Agent A: `live-v3-p1-clean2`, device `2447d396-79cd-53da-b3a9-028c5a4d56da`, connected, agent version `3.1.61`
+Agent B: observed online as `b08675eb-780c-5042-b442-daa1cd066643`, version `3.1.61`, not used for destructive drills
+Observer event ids: `8ef073c9-63f6-5162-9209-a50d3ce6b147`, `36cc0796-6b38-5b32-89a2-54ade30d4e8a`, `afcceb02-ff5f-5c09-b5d5-6f7c231b6810`, `87537d19-cee9-5a33-90bf-409190cb115c`, `8de296ec-f2da-574a-a85a-310669c1b700`, suppressed drill event `77c29a1c-fbc7-5aad-b345-8e67da26e699`
+Synthetic anomaly ids: ACK outbox `obs2-20260529-1314-194489a3-ack-missing-proof-580e64c8`; operation `7af5c575-2e79-41da-a5c0-049f9b21a0cc`; device_outbox `164`; suppressed operation `922e7889-e177-45de-805e-78a257d62821`; suppressed device_outbox `165`; account ticket `2e693004-4e47-412c-b5dd-08b3abc7b136`; toolset device `1971cfd3-cb9a-4a1a-a142-784702f52036`; governance candidates `1f8c8d35-34cc-4eb4-962c-039caf9ba405`, `54b3249d-b4bd-4b15-a8b3-cf2158d8804a`
+ACK audit ids: positive v2 proof `4141`; synthetic missing-proof drill `4142`
+Suppression ids: existing historical contamination plus OBS2 exact outbox suppression for `device_outbox.id=165`
+Known contamination ignored: P0 phantom/malformed rows; P1 `device_outbox.id=135`; P2 terminal-event historical rows; P4 duplicate historical candidates; P5 pre-fix change package; P6 historical non-P6 `agent_offline_active`; legacy weak ACK audit row `agent_runtime_audit.id=4132`
+
+OBS2.1 result: passed - healthy baseline scan active critical `0`, active error `0`, suppressed `5`, no unexpected OBS2 active event.
+OBS2.2 result: passed - diagnostic probe ACKed `obs2-20260529-1314-194489a3-ack-positive-bd67931c`; audit v2 proof had `persisted_event_id=65`; diagnostic probe received no commands.
+OBS2.3 result: passed - synthetic ACK without proof created critical event and resolved after cleanup proof.
+OBS2.4 result: passed - synthetic terminal operation with active outbox created critical and resolved after synthetic outbox delivery cleanup.
+OBS2.5 result: passed for healthy live path - Agent A online across runtime/browser projections and no false runtime presence event; controlled stop-agent path not run to avoid disrupting the live local agent.
+OBS2.6 result: passed - live anonymous observer access denied `401`, agent-token observer access denied `403`, synthetic account-boundary success anomaly created and resolved, no raw token printed or stored in Observer evidence.
+OBS2.7 result: passed - post-hardening live toolset state stayed clean; synthetic drift created error and resolved after hash alignment cleanup.
+OBS2.8 result: passed - synthetic duplicate problem candidates created governance error and resolved after dismissal cleanup; historical P4/P5 rows remained exactly suppressed.
+OBS2.9 result: passed - exact suppression hid only synthetic outbox `165`; sibling mismatch outbox `164` remained active until cleanup.
+OBS2.10 result: passed - real browser Observer, Admin Tech and Device Operations projected active drill state and resolved state consistently with DB/API counts.
+OBS2.11 result: passed - all six runbooks contain meaning, immediate checks, safe queries, safe actions, what not to do, escalation, related P0-P6 context and cleanup/suppression guidance.
+OBS2.12 result: passed - repeated scan updated the same event rows (`occurrence_count=2`) instead of creating duplicates; cleanup resolved active synthetic events; repeat scan created no new active duplicates.
+OBS2.13 result: passed - final gates below green and no stale OBS2 marker outbox/device_outbox remained active.
+
+Bugs found:
+- None requiring OBS2 bug block or product fix. The unsupported `item_type=device_event` probe attempt was a test-tool input issue and was corrected by using supported `item_type=job_event`.
+
+Verified fixed:
+- Synthetic ACK-without-proof, operation/outbox mismatch, account-boundary anomaly, toolset drift and governance duplicate events all resolved after cleanup.
+
+Deferred/known limitations:
+- Controlled stop/restart Agent A runtime presence drill was not run to avoid disrupting the live agent; healthy runtime presence path and targeted tests covered the false-offline invariant.
+
+Observer accuracy result:
+- Healthy baseline: green, no false current critical/error.
+- ACK audit v2: green, valid proof accepted; missing proof detected and resolved.
+- Operation lifecycle: green, stale terminal operation/outbox detected and resolved.
+- Runtime presence: green for healthy live path; no false offline.
+- Account/public boundary: green, denied observer access for anonymous/agent token; synthetic success anomaly detected and resolved.
+- Module/toolset: green, real drift remained resolved; synthetic drift detected and resolved.
+- Governance: green, synthetic duplicate detected/resolved; historical suppressions stayed exact.
+- Suppression: green, exact entity suppression only.
+- Browser projections: green, Observer/Tech/Device Operations matched active and resolved state.
+- Runbooks: green, actionable.
+
+Browser/UI evidence:
+- Baseline: `obs2-20260529-1314-194489a3-observer.png`, `obs2-20260529-1314-194489a3-tech.png`, `obs2-20260529-1314-194489a3-device-ops-observer.png`, `obs2-20260529-1314-194489a3-inventory.png` plus console/network captures.
+- Active drill: `obs2-20260529-1314-194489a3-observer-active.png`, `obs2-20260529-1314-194489a3-tech-active.png`, `obs2-20260529-1314-194489a3-device-ops-observer-active.png` plus console/network captures.
+- Resolved drill: `obs2-20260529-1314-194489a3-observer-resolved.png`, `obs2-20260529-1314-194489a3-tech-resolved.png`, `obs2-20260529-1314-194489a3-device-ops-observer-resolved.png` plus console/network captures.
+UIA evidence: `artifacts\obs2-20260529-1314-194489a3-uia-baseline.json` -> `pywinauto_version=0.6.9`, `backend=uia`, connected, account confirmed, `failures=[]`.
+DB/SQLite evidence:
+- Server DB after cleanup: global active events `0`; OBS2 marker active `device_outbox=0`; OBS2 marker total `device_outbox=2` delivered; synthetic active events resolved; exact suppression visible.
+- Agent SQLite after cleanup: OBS2 marker outbox `0`, failed outbox `0`, pending command results `0`, pending consents `0`.
+
+Verification:
+- `python scripts\verify_workspace.py` -> passed.
+- `python -m compileall -q server pc_agent scripts` -> passed.
+- `git diff --check` -> passed.
+- `python -m pytest server\tests\test_observer_integrity.py -q -s` -> `11 passed`.
+- `python -m pytest server\tests\test_live_ws_v3_probe_contract.py server\tests\test_probe_session_isolation.py -q` -> `7 passed`.
+- Webapp tests/build not run because OBS2 made no webapp code changes.
+- Remote server handoff: `python scripts\manage_remote_stack.py stop server` -> stopped (`active=inactive`, `sub=dead`).
+
+Next readiness:
+- ready
+
 ## OBS1 Operational Integrity Observer - 2026-05-29 - run_id=obs1-20260529-1033-7410ce46
 
 Status: OBS1 closed
