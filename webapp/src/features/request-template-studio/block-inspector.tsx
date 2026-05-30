@@ -57,12 +57,12 @@ export function BlockInspector({
 
 function InspectorAction({ blockKey, expertLinks }: { blockKey: ProcessBlock["key"]; expertLinks: StudioLinks }) {
   if (blockKey === "form") {
-    return <Link className="rounded-pill bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.forms}>Редактировать форму</Link>;
+    return <Link className="rounded-pill bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.forms}>Открыть экспертный конструктор</Link>;
   }
   if (blockKey === "publication" || blockKey === "identity") {
-    return <Link className="rounded-pill bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.serviceCatalog}>Открыть публикацию</Link>;
+    return <Link className="rounded-pill bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.serviceCatalog}>Открыть экспертную публикацию</Link>;
   }
-  return <Link className="rounded-pill bg-surface-subtle px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-brand-50 hover:text-brand-800" to={expertLinks.policyHealth}>Открыть проверку</Link>;
+  return <Link className="rounded-pill bg-surface-subtle px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-brand-50 hover:text-brand-800" to={expertLinks.policyHealth}>Открыть экспертную проверку</Link>;
 }
 
 function detailsForBlock(blockKey: ProcessBlock["key"], item: RequestStudioItem) {

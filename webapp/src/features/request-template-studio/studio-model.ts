@@ -287,7 +287,7 @@ function buildProcessBlocks({
       explanation: offering
         ? `${service.public_title || service.code}: ${offering.public_title || offering.full_code}`
         : "В разделе пока не выбран рабочий тип обращения.",
-      actionLabel: "Выбрать тип",
+      actionLabel: "Открыть блок",
     },
     {
       key: "form",
@@ -296,14 +296,14 @@ function buildProcessBlocks({
       explanation: formPreview?.fields.length
         ? `Пользователь заполнит ${formPreview.fields.length} полей, обязательных: ${formPreview.fields.filter((field) => field.required).length}.`
         : "Форма не найдена. Без формы публикация невозможна.",
-      actionLabel: "Редактировать форму",
+      actionLabel: "Открыть блок",
     },
     {
       key: "processing",
       title: "Правила обработки",
       status: profile.requiredMissing.length ? "needs_setup" : profile.recommendedMissing.length ? "recommended" : "ready",
       explanation: `Профиль: ${profile.profileName}. ${profile.requiredMissing.length ? `Не настроено: ${profile.requiredMissing.join(", ")}.` : "Обязательные правила есть."}`,
-      actionLabel: "Открыть профиль",
+      actionLabel: "Открыть блок",
     },
     {
       key: "routing",
@@ -312,7 +312,7 @@ function buildProcessBlocks({
       explanation: template?.routing_policy_code || offering?.routing_policy_code || service.default_routing_policy_code
         ? "Исполнитель будет выбран правилами маршрутизации."
         : "Не выбран маршрут. Заявка не сможет попасть в рабочую очередь.",
-      actionLabel: "Выбрать очередь",
+      actionLabel: "Открыть блок",
     },
     {
       key: "sla",
@@ -321,7 +321,7 @@ function buildProcessBlocks({
       explanation: template?.sla_policy_code || offering?.sla_policy_code || service.default_sla_policy_code
         ? "Срок ответа и выполнения определяются политикой SLA."
         : "Срок выполнения не выбран. Без срока публикация невозможна.",
-      actionLabel: "Выбрать срок",
+      actionLabel: "Открыть блок",
     },
     {
       key: "approval",
@@ -332,7 +332,7 @@ function buildProcessBlocks({
         : inferProfileName(template) === "Заявка на доступ"
           ? "Для заявок на доступ обычно требуется согласование."
           : "Для этого типа обращения согласование не используется.",
-      actionLabel: "Настроить",
+      actionLabel: "Открыть блок",
     },
     {
       key: "execution",
@@ -341,7 +341,7 @@ function buildProcessBlocks({
       explanation: template?.diagnostic_policy_code || offering?.diagnostic_policy_code || service.default_diagnostic_policy_code
         ? "Диагностика или playbook подключены."
         : "Автоматическая диагностика не используется.",
-      actionLabel: "Проверить",
+      actionLabel: "Открыть блок",
     },
     {
       key: "closure",
@@ -350,7 +350,7 @@ function buildProcessBlocks({
       explanation: template?.closure_policy_code || offering?.closure_policy_code
         ? "Правила закрытия определяют результат, сообщение и подтверждение."
         : "Не выбраны правила закрытия.",
-      actionLabel: "Настроить закрытие",
+      actionLabel: "Открыть блок",
     },
     {
       key: "notifications",
@@ -359,7 +359,7 @@ function buildProcessBlocks({
       explanation: template?.notification_policy_code || offering?.notification_policy_code
         ? "Уведомления подключены."
         : "Рекомендуется включить стандартные уведомления пользователю.",
-      actionLabel: "Настроить",
+      actionLabel: "Открыть блок",
     },
     {
       key: "validation",
@@ -370,7 +370,7 @@ function buildProcessBlocks({
         : health
           ? "Policy Health проверил выбранный сценарий."
           : "Запустите проверку перед публикацией.",
-      actionLabel: "Запустить проверку",
+      actionLabel: "Открыть блок",
     },
     {
       key: "publication",
@@ -379,7 +379,7 @@ function buildProcessBlocks({
       explanation: blockingHealth || !template || !offering
         ? "Публикация заблокирована до устранения проблем."
         : "Откройте экспертную публикацию для безопасного publish.",
-      actionLabel: "Открыть публикацию",
+      actionLabel: "Открыть блок",
     },
   ];
 }

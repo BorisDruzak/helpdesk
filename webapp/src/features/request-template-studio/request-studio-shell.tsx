@@ -4,14 +4,21 @@ import { ChevronDown, ClipboardCheck, Play, Plus, Settings2 } from "lucide-react
 import { Button } from "../../components/ui/button";
 import type { RequestStudioItem, RequestStudioMode, StudioLinks } from "./studio-model";
 
+type DraftStatus = "saved" | "dirty" | "draft_saved" | "validation_required";
+
 export function RequestStudioShell({
   children,
   selectedItem,
   mode,
   modeLabel,
+  draftStatus,
   publishHref,
   expertLinks,
+  saveDraftDisabled,
+  saveDraftPending,
   runValidationDisabled,
+  onCreateRequest,
+  onSaveDraft,
   onRunValidation,
   onModeChange,
 }: {
@@ -19,12 +26,24 @@ export function RequestStudioShell({
   selectedItem: RequestStudioItem | null;
   mode: RequestStudioMode;
   modeLabel: string;
+  draftStatus: DraftStatus;
   publishHref: string;
   expertLinks: StudioLinks;
+  saveDraftDisabled: boolean;
+  saveDraftPending: boolean;
   runValidationDisabled: boolean;
+  onCreateRequest: () => void;
+  onSaveDraft: () => void;
   onRunValidation: () => void;
   onModeChange: (mode: RequestStudioMode) => void;
 }) {
+  const draftLabel: Record<DraftStatus, string> = {
+    saved: "Сохранено",
+    dirty: "Есть несохранённые изменения",
+    draft_saved: "Черновик сохранён",
+    validation_required: "Проверка требуется",
+  };
+
   return (
     <section className="workspace-page space-y-5 p-6">
       <header className="workspace-page__header">
@@ -38,14 +57,17 @@ export function RequestStudioShell({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button disabled type="button" variant="secondary" leadingIcon={<Plus className="h-4 w-4" />}>
+          <Button onClick={onCreateRequest} type="button" variant="secondary" leadingIcon={<Plus className="h-4 w-4" />}>
             Создать обращение
+          </Button>
+          <Button disabled={saveDraftDisabled || saveDraftPending} onClick={onSaveDraft} type="button" variant="secondary">
+            {saveDraftPending ? "Сохраняем..." : "Сохранить черновик"}
           </Button>
           <Button disabled={runValidationDisabled} onClick={onRunValidation} type="button" leadingIcon={<Play className="h-4 w-4" />}>
             Запустить проверку
           </Button>
           <Link className="inline-flex h-11 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700" to={publishHref}>
-            Открыть публикацию
+            Открыть экспертную публикацию
           </Link>
           <details className="relative">
             <summary className="inline-flex h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-pill border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
@@ -66,6 +88,8 @@ export function RequestStudioShell({
         <div>
           <p className="text-sm font-semibold text-slate-950">Уровень сложности: {modeLabel}</p>
           <p className="text-xs text-slate-500">Базовый режим скрывает raw JSON, policy refs и внутренние идентификаторы.</p>
+          <p className="mt-1 text-xs font-semibold text-brand-800">{draftLabel[draftStatus]}</p>
+          <p className="mt-1 text-xs text-slate-500">Публикация через Studio пока недоступна: нет safe publish contract.</p>
         </div>
         <div className="inline-flex rounded-md border border-slate-200 bg-white p-1">
           {(["basic", "advanced", "expert"] as const).map((value) => (
@@ -84,7 +108,7 @@ export function RequestStudioShell({
       <section className="surface-panel p-4">
         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <ClipboardCheck className="h-4 w-4 text-brand-700" />
-          <span>Выберите тип обращения или создайте новый. Настройте форму, маршрут, сроки, согласование, закрытие, затем запустите проверку и опубликуйте.</span>
+          <span>Выберите тип обращения или создайте новый. Настройте форму, маршрут, сроки, согласование, закрытие, уведомления, затем сохраните черновик и запустите проверку.</span>
         </div>
       </section>
 

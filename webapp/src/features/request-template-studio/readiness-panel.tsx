@@ -10,10 +10,12 @@ export function ReadinessPanel({
   item,
   readiness,
   expertLinks,
+  onAutoFix,
 }: {
   item: RequestStudioItem | null;
   readiness: ReadinessSummary;
   expertLinks: StudioLinks;
+  onAutoFix?: () => void;
 }) {
   return (
     <aside className="space-y-5">
@@ -26,8 +28,8 @@ export function ReadinessPanel({
         <ReadinessSection title="Рекомендации" items={readiness.recommendations} empty="Рекомендаций нет." tone="warning" />
         <ReadinessSection title="Готово" items={readiness.ready} empty="Готовые блоки появятся после выбора обращения." tone="success" />
         <div className="mt-4 space-y-2">
-          <Button className="w-full" disabled type="button" variant="secondary">
-            Исправить автоматически пока недоступно
+          <Button className="w-full" onClick={onAutoFix} type="button" variant="secondary">
+            Исправить автоматически
           </Button>
           <Link className="flex h-10 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.serviceCatalog}>
             Открыть экспертную публикацию
