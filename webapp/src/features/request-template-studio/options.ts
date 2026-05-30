@@ -43,6 +43,20 @@ export function optionLabelWithCode(label: string, code: string): string {
   return label && label !== code ? `${label} (${code})` : code;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function optionLabelWithoutCode(label: string | null | undefined, code: string, fallback: string): string {
+  const rawLabel = label?.trim();
+  if (!rawLabel || rawLabel === code) {
+    return fallback;
+  }
+  const suffix = new RegExp(`\\s*\\(${escapeRegExp(code)}\\)\\s*$`, "i");
+  const cleaned = rawLabel.replace(suffix, "").trim();
+  return cleaned || fallback;
+}
+
 export function serviceOptions(services: AdminServiceCatalogService[]): PickerOption[] {
   return services.map((service) => ({
     value: service.code,
@@ -98,7 +112,7 @@ export function policyOptions(
 ): PickerOption[] {
   return (registry?.policies?.[kind] ?? []).map((policy) => ({
     value: policy.code,
-    label: optionLabelWithCode(policy.title || policy.code, policy.code),
+    label: optionLabelWithoutCode(policy.title, policy.code, POLICY_KIND_LABELS[kind] ?? "Policy"),
     subtitle: [POLICY_KIND_LABELS[kind] ?? kind, policy.version, policy.scope_level, policy.scope_ref].filter(Boolean).join(" · "),
     status: policy.is_active ? "active" : "inactive",
     disabled: !policy.is_active,

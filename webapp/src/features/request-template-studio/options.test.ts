@@ -75,6 +75,8 @@ describe("request template studio options", () => {
     };
 
     expect(requestTemplateOptions(registry as never)[0].label).toBe("Доступ (access)");
+    expect(policyOptions(registry as never, "routing")[0].label).toBe("Маршрут L1");
+    expect(policyOptions(registry as never, "routing")[0].label).not.toContain("route_l1");
     expect(policyOptions(registry as never, "routing")[0].subtitle).toContain("Маршрутизация");
   });
 
