@@ -55,7 +55,7 @@ describe("navigation helpers", () => {
 
   it("returns the first available item inside a domain with permission filtering", () => {
     expect(findFirstVisibleDomainItem("catalog-intake", fullAdminPermissions)?.to).toBe(
-      "/app/admin/service-catalog",
+      "/app/admin/request-template-studio",
     );
     expect(findFirstVisibleDomainItem("knowledge", fullAdminPermissions)?.to).toBe("/app/admin/knowledge");
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();

@@ -293,15 +293,15 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Студия шаблонов" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Студия обращений" })).toBeInTheDocument();
     expect((await screen.findAllByText("Форма почтового ящика")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Форма обращения")).toBeInTheDocument();
-    expect(screen.getByText("Политики шаблона")).toBeInTheDocument();
-    expect(screen.getByText("Симуляция выполнения")).toBeInTheDocument();
-    expect(screen.getByText("Готовность публикации")).toBeInTheDocument();
-    expect(screen.getByText("Связка шаблона")).toBeInTheDocument();
+    expect(screen.getByText("Карта настройки обращения")).toBeInTheDocument();
+    expect(screen.getAllByText("Форма пользователя").length).toBeGreaterThan(0);
+    expect(screen.getByText("Проверка и симуляция")).toBeInTheDocument();
+    expect(screen.getByText("Готовность к публикации")).toBeInTheDocument();
+    expect(screen.getByText("Как увидит пользователь")).toBeInTheDocument();
     expect(screen.getByText("Сотрудник")).toBeInTheDocument();
-    expect(screen.getAllByText("Приоритет").length).toBeGreaterThan(0);
+    expect(screen.getByText("Типы обращений")).toBeInTheDocument();
   });
 
   it("resets an offering that does not belong to the selected service", async () => {
@@ -327,7 +327,7 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     renderPage("/app/admin/request-template-studio?service=mail&offering=it.password_reset&template=mailbox");
 
-    expect(await screen.findByText("Вариант услуги не относится к выбранной услуге и был сброшен.")).toBeInTheDocument();
+    expect(await screen.findByText("Вариант услуги не относится к выбранному разделу и был сброшен.")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByTestId("location")).toHaveTextContent("/app/admin/request-template-studio?service=mail&template=mailbox");
     });
@@ -357,11 +357,11 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     renderPage();
 
-    await screen.findByRole("heading", { name: "Студия шаблонов" });
+    await screen.findByRole("heading", { name: "Студия обращений" });
     await screen.findAllByText("Форма почтового ящика");
     fireEvent.change(screen.getByPlaceholderText("Инициатор"), { target: { value: "ivanov" } });
-    fireEvent.change(screen.getByPlaceholderText("Краткое содержание ответов формы"), { target: { value: "Нужен новый ящик" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Запустить симуляцию" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("Краткое содержание/ответы формы"), { target: { value: "Нужен новый ящик" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Запустить проверку" })[0]);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -380,9 +380,9 @@ describe("AdminRequestTemplateStudioPage", () => {
       request_form_data: { summary: "Нужен новый ящик" },
     });
 
-    expect(await screen.findByText("Результат симуляции")).toBeInTheDocument();
+    expect(await screen.findByText("Результат тестового прогона")).toBeInTheDocument();
     expect(screen.getByText("Service Desk L1")).toBeInTheDocument();
-    expect(screen.getByText("Экспертный результат JSON")).toBeInTheDocument();
+    expect(screen.getByText("Экспертный JSON запроса")).toBeInTheDocument();
     expect(screen.getByTestId("studio-simulation-payload")).toHaveTextContent('"service_code": "mail"');
   });
 
@@ -409,17 +409,17 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     renderPage();
 
-    await screen.findByRole("heading", { name: "Студия шаблонов" });
+    await screen.findByRole("heading", { name: "Студия обращений" });
     await screen.findAllByText("Форма почтового ящика");
-    expect(screen.getAllByRole("link", { name: /Редактировать форму|Открыть конструктор форм/ })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: /Редактировать форму|Полный конструктор форм/ })[0]).toHaveAttribute(
       "href",
       "/app/admin/forms?service=mail&offering=mail.new_box&template=mailbox",
     );
-    expect(screen.getAllByRole("link", { name: "Открыть каталог услуг" }).at(-1)).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: /Открыть публикацию|Полный каталог услуг/ }).at(-1)).toHaveAttribute(
       "href",
       "/app/admin/service-catalog?service=mail&offering=mail.new_box&template=mailbox",
     );
-    expect(screen.getAllByRole("link", { name: "Открыть проверку политик" }).at(-1)).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Проверка политик" }).at(-1)).toHaveAttribute(
       "href",
       "/app/admin/policy-health?service=mail&offering=mail.new_box&template=mailbox",
     );
