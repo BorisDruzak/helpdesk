@@ -41,10 +41,10 @@ export function FormPreviewPanel({
           <h3 className="font-semibold text-slate-950">Как увидит исполнитель</h3>
           <dl className="mt-4 space-y-2 text-sm">
             <PreviewRow label="Заголовок тикета" value={item.offering?.public_title || item.template?.public_title} />
-            <PreviewRow label="Очередь" value={item.template?.routing_policy_code || item.offering?.routing_policy_code || "Будет определена маршрутом"} />
-            <PreviewRow label="Приоритет" value={item.template?.priority_policy_code || "По политике приоритета"} />
-            <PreviewRow label="SLA" value={item.template?.sla_policy_code || item.offering?.sla_policy_code || "Не выбрано"} />
-            <PreviewRow label="Checklist закрытия" value={item.template?.closure_policy_code || "Не настроено"} />
+            <PreviewRow label="Очередь" value={mode === "basic" ? humanRouting(item.template?.routing_policy_code || item.offering?.routing_policy_code) : item.template?.routing_policy_code || item.offering?.routing_policy_code || "Будет определена маршрутом"} />
+            <PreviewRow label="Приоритет" value={mode === "basic" ? "По правилам приоритета" : item.template?.priority_policy_code || "По политике приоритета"} />
+            <PreviewRow label="SLA" value={mode === "basic" ? humanSla(item.template?.sla_policy_code || item.offering?.sla_policy_code) : item.template?.sla_policy_code || item.offering?.sla_policy_code || "Не выбрано"} />
+            <PreviewRow label="Checklist закрытия" value={mode === "basic" ? humanClosure(item.template?.closure_policy_code) : item.template?.closure_policy_code || "Не настроено"} />
             <PreviewRow label="Согласование" value={item.template?.approval_policy_code || item.offering?.approval_policy_code || "Не требуется"} />
           </dl>
           {mode !== "basic" && form ? (
@@ -68,4 +68,28 @@ function PreviewRow({ label, value }: { label: string; value?: string | null }) 
       <dd className="text-right font-semibold text-slate-900">{value || "не задано"}</dd>
     </div>
   );
+}
+
+function humanRouting(value?: string | null) {
+  if (!value) {
+    return "Будет определена маршрутом";
+  }
+  if (value.toLowerCase().includes("l1")) {
+    return "Service Desk L1";
+  }
+  return "Выбранная очередь";
+}
+
+function humanSla(value?: string | null) {
+  if (!value) {
+    return "Не выбрано";
+  }
+  return "По выбранной политике сроков";
+}
+
+function humanClosure(value?: string | null) {
+  if (!value) {
+    return "Не настроено";
+  }
+  return "Результат и сообщение пользователю";
 }

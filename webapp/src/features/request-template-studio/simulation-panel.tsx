@@ -3,7 +3,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import type { PolicyHealthSimulationResult, PolicySimulationPayload } from "../policy-health/api";
 import type { GuidedSimulationDraft } from "./options";
-import type { RequestStudioItem } from "./studio-model";
+import type { RequestStudioItem, RequestStudioMode } from "./studio-model";
 import { statusTone, tech } from "./studio-model";
 
 export function SimulationPanel({
@@ -13,6 +13,8 @@ export function SimulationPanel({
   pending,
   result,
   error,
+  mode,
+  hasUnsavedChanges,
   onDraftChange,
   onRun,
 }: {
@@ -22,6 +24,8 @@ export function SimulationPanel({
   pending: boolean;
   result: PolicyHealthSimulationResult | undefined;
   error: unknown;
+  mode: RequestStudioMode;
+  hasUnsavedChanges: boolean;
   onDraftChange: (key: keyof GuidedSimulationDraft, value: string) => void;
   onRun: () => void;
 }) {
@@ -55,14 +59,22 @@ export function SimulationPanel({
         />
       </div>
 
+      {hasUnsavedChanges ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Симуляция использует сохранённый черновик. Сохраните изменения перед проверкой.
+        </div>
+      ) : null}
+
       <SimulationResult result={result} error={error} />
 
-      <details className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON запроса</summary>
-        <pre data-testid="studio-simulation-payload" className="mt-3 max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
-      </details>
+      {mode !== "basic" ? (
+        <details className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON запрос</summary>
+          <pre data-testid="studio-simulation-payload" className="mt-3 max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
+            {JSON.stringify(payload, null, 2)}
+          </pre>
+        </details>
+      ) : null}
     </section>
   );
 }

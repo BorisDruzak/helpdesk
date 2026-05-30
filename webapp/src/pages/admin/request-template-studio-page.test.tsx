@@ -270,6 +270,147 @@ afterEach(() => {
 });
 
 describe("AdminRequestTemplateStudioPage", () => {
+  it("opens create wizard and creates a dirty no-code draft", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/web/admin/service-catalog") {
+          return jsonResponse(catalogPayload());
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: registryPayload() });
+        }
+        if (url === "/api/web/admin/helpdesk/policy-health") {
+          return jsonResponse(healthPayload());
+        }
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: formsPayload() });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Студия обращений" });
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    fireEvent.click(screen.getByRole("button", { name: "Заявка на доступ" }));
+    fireEvent.change(screen.getByLabelText("Раздел"), { target: { value: "it" } });
+    fireEvent.change(screen.getAllByLabelText("Название для пользователей")[0], { target: { value: "Доступ к CRM" } });
+    fireEvent.change(screen.getAllByLabelText("Краткое описание")[0], { target: { value: "Запрос прав в CRM" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать черновик" }));
+
+    expect(await screen.findByText("Есть несохранённые изменения")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("template=crm");
+    expect(screen.getByText("В какую систему?")).toBeInTheDocument();
+  });
+
+  it("edits form, process blocks, auto-fixes safe policies and saves a durable draft", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/admin/service-catalog") {
+        return jsonResponse(catalogPayload());
+      }
+      if (url === "/api/web/admin/helpdesk-model/policies") {
+        return jsonResponse({ status: "success", data: registryPayload() });
+      }
+      if (url === "/api/web/admin/helpdesk/policy-health") {
+        return jsonResponse(healthPayload());
+      }
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({ status: "success", data: formsPayload() });
+      }
+      if (url === "/api/web/admin/forms/save-draft" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            draft_id: "draft-1",
+            pack_key: "request_forms",
+            base_version: "1.0.0",
+            status: "draft",
+            summary: formsPayload().summary,
+            published_version: "1.0.0",
+            preferred_version: "1.0.0",
+            message: "Черновик сохранён",
+          },
+        });
+      }
+      if (url === "/api/web/admin/service-catalog/offerings/save-draft" && init?.method === "POST") {
+        return jsonResponse({ status: "ok", offering: catalogPayload().offerings[0] });
+      }
+      throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    await screen.findByRole("button", { name: "Добавить поле" });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить поле" }));
+    fireEvent.change(screen.getByLabelText("Название поля"), { target: { value: "Обоснование" } });
+    fireEvent.change(screen.getByLabelText("Ключ поля"), { target: { value: "business_reason" } });
+    fireEvent.click(screen.getByLabelText("Обязательное поле"));
+    fireEvent.change(screen.getByLabelText("Кто выполняет заявку?"), { target: { value: "route_l1" } });
+    fireEvent.change(screen.getByLabelText("Срок выполнения"), { target: { value: "sla_p2" } });
+    fireEvent.click(screen.getByLabelText("Согласование не требуется"));
+    fireEvent.change(screen.getByLabelText("Правила закрытия"), { target: { value: "closure_basic" } });
+    fireEvent.change(screen.getByLabelText("Уведомления"), { target: { value: "__unused__" } });
+    fireEvent.click(screen.getByRole("button", { name: "Исправить автоматически" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Применить всё" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/forms/save-draft", expect.objectContaining({ method: "POST" })));
+    const saveFormsCall = fetchMock.mock.calls.find(([url]) => String(url) === "/api/web/admin/forms/save-draft");
+    const formBody = JSON.parse(String(saveFormsCall?.[1]?.body ?? "{}"));
+    expect(formBody.forms[0]).toMatchObject({
+      key: "mailbox",
+      routing_policy_ref: "route_l1",
+      sla_policy_ref: "sla_p2",
+      closure_policy_ref: "closure_basic",
+      notification_policy_ref: null,
+    });
+    expect(formBody.forms[0].fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "business_reason", label: "Обоснование", required: true }),
+      ]),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/service-catalog/offerings/save-draft", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText("Черновик сохранён")).toBeInTheDocument();
+  });
+
+  it("keeps raw technical policy refs hidden in basic mode and labels publication as expert-only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/web/admin/service-catalog") {
+          return jsonResponse(catalogPayload());
+        }
+        if (url === "/api/web/admin/helpdesk-model/policies") {
+          return jsonResponse({ status: "success", data: registryPayload() });
+        }
+        if (url === "/api/web/admin/helpdesk/policy-health") {
+          return jsonResponse(healthPayload());
+        }
+        if (url === "/api/web/admin/forms/current") {
+          return jsonResponse({ status: "success", data: formsPayload() });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    renderPage();
+
+    await screen.findByRole("button", { name: "Добавить поле" });
+    expect(screen.getAllByRole("link", { name: "Открыть экспертную публикацию" })[0]).toHaveAttribute(
+      "href",
+      "/app/admin/service-catalog?service=mail&offering=mail.new_box&template=mailbox",
+    );
+    expect(screen.getByText("Публикация через Studio пока недоступна: нет safe publish contract.")).toBeInTheDocument();
+    expect(screen.queryByText("routing_policy_code")).not.toBeInTheDocument();
+    expect(screen.queryByText("route_l1")).not.toBeInTheDocument();
+  });
+
   it("renders the primary workflow with selectors, form preview, policies, simulation and publication gates", async () => {
     vi.stubGlobal(
       "fetch",
@@ -300,7 +441,7 @@ describe("AdminRequestTemplateStudioPage", () => {
     expect(screen.getByText("Проверка и симуляция")).toBeInTheDocument();
     expect(screen.getByText("Готовность к публикации")).toBeInTheDocument();
     expect(screen.getByText("Как увидит пользователь")).toBeInTheDocument();
-    expect(screen.getByText("Сотрудник")).toBeInTheDocument();
+    expect(screen.getAllByText("Сотрудник").length).toBeGreaterThan(0);
     expect(screen.getByText("Типы обращений")).toBeInTheDocument();
   });
 
@@ -381,8 +522,9 @@ describe("AdminRequestTemplateStudioPage", () => {
     });
 
     expect(await screen.findByText("Результат тестового прогона")).toBeInTheDocument();
-    expect(screen.getByText("Service Desk L1")).toBeInTheDocument();
-    expect(screen.getByText("Экспертный JSON запроса")).toBeInTheDocument();
+    expect(screen.getAllByText("Service Desk L1").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Расширенный" }));
+    expect(screen.getByText("Экспертный JSON запрос")).toBeInTheDocument();
     expect(screen.getByTestId("studio-simulation-payload")).toHaveTextContent('"service_code": "mail"');
   });
 
