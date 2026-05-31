@@ -12,6 +12,10 @@ export type ReadinessSummary = {
 export function buildReadinessSummary(
   item: RequestStudioItem | null | undefined,
   simulationResult?: PolicyHealthSimulationResult,
+  options?: {
+    hasUnsavedChanges?: boolean;
+    hasDraft?: boolean;
+  },
 ): ReadinessSummary {
   if (!item) {
     return {
@@ -23,7 +27,9 @@ export function buildReadinessSummary(
   }
 
   const blockers = [
+    !item.service.code ? "Не выбран раздел." : null,
     !item.offering ? "Не выбран тип обращения." : null,
+    !item.offering?.public_title ? "Не заполнено название типа обращения." : null,
     !item.template ? "Не выбран сценарий обработки." : null,
     !item.formPreview?.fields.length ? "Не найдена форма пользователя." : null,
     ...item.processBlocks.filter((block) => block.status === "error").map((block) => block.explanation),
@@ -33,6 +39,7 @@ export function buildReadinessSummary(
   const recommendations = [
     ...item.processBlocks.filter((block) => block.status === "recommended").map((block) => block.explanation),
     ...item.processProfile.recommendedMissing.map((label) => `Проверьте, нужен ли блок: ${label}.`),
+    options?.hasUnsavedChanges ? "Есть несохранённые изменения. Сохраните черновик перед проверкой и экспертной публикацией." : null,
     simulationResult ? null : "Запустите тестовый прогон перед публикацией.",
     item.isTechnical ? "Выбран тестовый или выведенный объект. Для рабочей настройки выберите опубликованный тип обращения." : null,
   ].filter(Boolean) as string[];
@@ -42,6 +49,7 @@ export function buildReadinessSummary(
     item.offering ? "Тип обращения выбран." : null,
     item.formPreview?.fields.length ? "Форма содержит поля." : null,
     item.processProfile.readyLabels.length ? `Правила настроены: ${item.processProfile.readyLabels.join(", ")}.` : null,
+    options?.hasDraft && !options.hasUnsavedChanges ? "Черновик сохранён." : null,
     item.health && !item.health.issues.some(hasBlockingIssue) ? "Блокирующие ошибки Policy Health не найдены." : null,
     simulationResult ? "Тестовый прогон выполнен." : null,
   ].filter(Boolean) as string[];

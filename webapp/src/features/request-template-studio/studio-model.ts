@@ -7,6 +7,7 @@ import type {
 } from "../forms-builder/api";
 import type { PolicyHealthDashboard, PolicyHealthIssue, PolicyHealthTemplate } from "../policy-health/api";
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
+import type { StudioDraft } from "./draft-model";
 
 export type StudioStatus = "ready" | "needs_setup" | "recommended" | "unused" | "error";
 export type RequestStudioMode = "basic" | "advanced" | "expert";
@@ -73,6 +74,8 @@ export type RequestStudioItem = {
   processBlocks: ProcessBlock[];
   readinessStatus: "ok" | "warning" | "error";
   isTechnical: boolean;
+  isVirtualDraft?: boolean;
+  draftApplied?: boolean;
   technicalRefs: {
     serviceCode: string;
     offeringCode: string | null;
@@ -198,11 +201,88 @@ export function findStudioItem(
 }
 
 export function findDefaultStudioItem(items: RequestStudioItem[], showTechnicalItems: boolean) {
-  return items.find((item) => !item.isTechnical && item.offering?.lifecycle_status === "published") ?? (showTechnicalItems ? items[0] ?? null : null);
+  return (
+    items.find((item) => !item.isTechnical && item.service.code === "access" && item.offering?.full_code === "access.grant_access") ??
+    items.find((item) => !item.isTechnical && item.template?.template_code === "access") ??
+    items.find((item) => !item.isTechnical && item.offering?.lifecycle_status === "published") ??
+    (showTechnicalItems ? items[0] ?? null : null)
+  );
 }
 
 export function hasBlockingIssue(issue: PolicyHealthIssue) {
   return issue.severity === "critical" || issue.severity === "error";
+}
+
+export function buildWorkingRequestStudioItem({
+  selectedItem,
+  draft,
+  services,
+  health,
+}: {
+  selectedItem: RequestStudioItem | null;
+  draft: StudioDraft | null;
+  services: AdminServiceCatalogService[];
+  health: PolicyHealthDashboard | null | undefined;
+}): RequestStudioItem | null {
+  if (!draft) {
+    return selectedItem;
+  }
+
+  const service = selectedItem?.service ?? services.find((item) => item.code === draft.serviceCode) ?? buildVirtualService(draft);
+  const offeringCode = draft.offeringCode || draft.templateCode;
+  const offeringFullCode = selectedItem?.offering?.full_code ?? `${draft.serviceCode}.${offeringCode}`;
+  const offering: AdminServiceCatalogOffering = {
+    ...(selectedItem?.offering ?? {}),
+    code: offeringCode,
+    full_code: offeringFullCode,
+    service_code: draft.serviceCode,
+    public_title: draft.title,
+    short_description: draft.description,
+    lifecycle_status: selectedItem?.offering?.lifecycle_status ?? "draft",
+    visibility: draft.visibility,
+    request_template_key: draft.templateCode,
+    routing_policy_code: emptyToNull(draft.routingPolicyCode),
+    sla_policy_code: emptyToNull(draft.slaPolicyCode),
+    approval_policy_code: draft.approvalMode === "required" ? emptyToNull(draft.approvalPolicyCode) : null,
+    closure_policy_code: emptyToNull(draft.closurePolicyCode),
+    notification_policy_code: emptyToNull(draft.notificationPolicyCode),
+  };
+  const template = buildDraftTemplate(selectedItem?.template ?? null, draft);
+  const formPreview = buildDraftFormPreview(draft);
+  const selectedHealth = draft.templateCode
+    ? health?.templates.find((item) => item.template_code === draft.templateCode) ?? selectedItem?.health ?? null
+    : selectedItem?.health ?? null;
+  const profile = {
+    ...buildPolicySummary(template, selectedHealth),
+    profileName: draft.processProfile,
+  };
+  const processBlocks = buildProcessBlocks({ service, offering, template, formPreview, health: selectedHealth, profile, approvalMode: draft.approvalMode });
+  const readinessStatus = processBlocks.some((block) => block.status === "error")
+    ? "error"
+    : processBlocks.some((block) => block.status === "needs_setup" || block.status === "recommended")
+      ? "warning"
+      : "ok";
+
+  return {
+    id: selectedItem?.id ?? offering.full_code,
+    group: selectedItem?.group ?? groupService(service),
+    service,
+    offering,
+    template,
+    health: selectedHealth,
+    formPreview,
+    processProfile: profile,
+    processBlocks,
+    readinessStatus,
+    isTechnical: selectedItem?.isTechnical ?? false,
+    isVirtualDraft: !selectedItem,
+    draftApplied: true,
+    technicalRefs: {
+      serviceCode: draft.serviceCode,
+      offeringCode: offering.full_code,
+      templateCode: draft.templateCode,
+    },
+  };
 }
 
 function buildItem(
@@ -270,6 +350,7 @@ function buildProcessBlocks({
   formPreview,
   health,
   profile,
+  approvalMode,
 }: {
   service: AdminServiceCatalogService;
   offering: AdminServiceCatalogOffering | null;
@@ -277,8 +358,24 @@ function buildProcessBlocks({
   formPreview: FormPreviewModel | null;
   health: PolicyHealthTemplate | null;
   profile: PolicySummary;
+  approvalMode?: "none" | "required";
 }): ProcessBlock[] {
   const blockingHealth = health?.issues.some(hasBlockingIssue) ?? false;
+  const approvalConfigured = Boolean(template?.approval_policy_code || offering?.approval_policy_code);
+  const approvalStatus: StudioStatus = approvalConfigured
+    ? "ready"
+    : approvalMode === "required"
+      ? "error"
+      : profile.profileName === "Заявка на доступ" || profile.profileName === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї"
+        ? "recommended"
+        : "unused";
+  const approvalExplanation = approvalConfigured
+    ? "Согласование включено в сценарий обработки."
+    : approvalMode === "required"
+      ? "Согласование включено, но правило согласования не выбрано."
+      : profile.profileName === "Заявка на доступ" || profile.profileName === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї"
+        ? "Для заявок на доступ обычно требуется согласование."
+        : "Для этого типа обращения согласование не используется.";
   return [
     {
       key: "identity",
@@ -326,12 +423,8 @@ function buildProcessBlocks({
     {
       key: "approval",
       title: "Согласование",
-      status: template?.approval_policy_code || offering?.approval_policy_code ? "ready" : inferProfileName(template) === "Заявка на доступ" ? "recommended" : "unused",
-      explanation: template?.approval_policy_code || offering?.approval_policy_code
-        ? "Согласование включено в сценарий обработки."
-        : inferProfileName(template) === "Заявка на доступ"
-          ? "Для заявок на доступ обычно требуется согласование."
-          : "Для этого типа обращения согласование не используется.",
+      status: approvalStatus,
+      explanation: approvalExplanation,
       actionLabel: "Открыть блок",
     },
     {
@@ -435,6 +528,101 @@ function fromFormsBuilder(form: AdminFormsFormItem): FormPreviewModel {
       processMapping: field.process_mapping,
     })),
   };
+}
+
+function buildVirtualService(draft: StudioDraft): AdminServiceCatalogService {
+  return {
+    code: draft.serviceCode,
+    public_title: draft.serviceCode || "Новый раздел",
+    short_description: null,
+    lifecycle_status: "draft",
+    visibility: draft.visibility,
+  };
+}
+
+function buildDraftTemplate(base: AdminHelpdeskRequestTemplateItem | null, draft: StudioDraft): AdminHelpdeskRequestTemplateItem {
+  return {
+    template_code: draft.templateCode,
+    version: base?.version ?? "draft",
+    public_title: draft.title,
+    internal_name: base?.internal_name ?? null,
+    description: draft.description,
+    ticket_type: base?.ticket_type ?? ticketTypeForProfile(draft.processProfile),
+    category_id: base?.category_id ?? null,
+    service_id: base?.service_id ?? null,
+    subcategory_id: base?.subcategory_id ?? null,
+    form_schema_id: base?.form_schema_id ?? draft.templateCode,
+    workflow_profile_id: base?.workflow_profile_id ?? null,
+    priority_policy_code: base?.priority_policy_code ?? null,
+    routing_policy_code: emptyToNull(draft.routingPolicyCode),
+    sla_policy_id: base?.sla_policy_id ?? null,
+    sla_policy_code: emptyToNull(draft.slaPolicyCode),
+    ola_policy_code: base?.ola_policy_code ?? null,
+    approval_policy_code: draft.approvalMode === "required" ? emptyToNull(draft.approvalPolicyCode) : null,
+    diagnostic_policy_code: base?.diagnostic_policy_code ?? null,
+    closure_policy_code: emptyToNull(draft.closurePolicyCode),
+    visibility_policy_code: draft.visibility ? "visibility_default" : base?.visibility_policy_code ?? null,
+    notification_policy_code: emptyToNull(draft.notificationPolicyCode),
+    reporting_policy_code: base?.reporting_policy_code ?? null,
+    config: base?.config ?? {},
+    overrides: base?.overrides ?? {},
+    is_active: base?.is_active ?? false,
+    published_at: base?.published_at ?? null,
+    created_at: base?.created_at ?? null,
+    created_by: base?.created_by ?? null,
+    updated_at: base?.updated_at ?? null,
+    updated_by: base?.updated_by ?? null,
+  };
+}
+
+function buildDraftFormPreview(draft: StudioDraft): FormPreviewModel {
+  return {
+    title: draft.title || draft.templateCode,
+    description: draft.description,
+    source: "forms-builder",
+    fields: draft.fields.map((field) => ({
+      key: field.key,
+      label: field.label || field.key,
+      type: field.type,
+      required: field.required,
+      options: textOptionsToPreview(field.optionsText),
+      visibility: field.visibleWhenField
+        ? {
+            field: field.visibleWhenField,
+            equals: field.visibleWhenValue,
+          }
+        : null,
+      processMapping: {
+        roles: field.processMeaning ? [field.processMeaning] : [],
+      },
+    })),
+  };
+}
+
+function textOptionsToPreview(value: string): Array<Record<string, unknown>> {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [rawValue, ...labelParts] = line.split("=");
+      const optionValue = rawValue.trim();
+      return { value: optionValue, label: labelParts.join("=").trim() || optionValue };
+    });
+}
+
+function ticketTypeForProfile(profile: string) {
+  if (profile.includes("Инцидент") || profile.includes("РРЅС†РёРґРµРЅС‚")) {
+    return "incident";
+  }
+  if (profile === "Заявка на доступ" || profile === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї") {
+    return "access_request";
+  }
+  return "service_request";
+}
+
+function emptyToNull(value: string | null | undefined) {
+  return value && value !== "__unused__" ? value : null;
 }
 
 function groupService(service: AdminServiceCatalogService) {

@@ -209,12 +209,15 @@ export function buildFormsDraftPayload(args: {
 }
 
 export function buildOfferingDraftPayload(draft: StudioDraft, currentOffering: AdminServiceCatalogOffering | null | undefined) {
+  const code = draft.offeringCode || draft.templateCode;
   return {
     ...currentOffering,
     service_code: draft.serviceCode,
-    code: draft.offeringCode || draft.templateCode,
+    code,
+    full_code: currentOffering?.full_code ?? `${draft.serviceCode}.${code}`,
     public_title: draft.title,
     short_description: draft.description,
+    lifecycle_status: currentOffering?.lifecycle_status ?? "draft",
     visibility: draft.visibility,
     request_template_key: draft.templateCode,
     routing_policy_code: emptyToNull(draft.routingPolicyCode),

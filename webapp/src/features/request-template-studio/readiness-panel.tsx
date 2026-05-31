@@ -22,7 +22,7 @@ export function ReadinessPanel({
       <section className="surface-panel p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-950">Готовность к публикации</h2>
-          <Badge tone={statusTone(readiness.status)}>{readiness.status === "ok" ? "можно публиковать" : readiness.status === "warning" ? "есть рекомендации" : "заблокировано"}</Badge>
+          <Badge tone={statusTone(readiness.status)}>{readiness.status === "ok" ? "готово к экспертной публикации" : readiness.status === "warning" ? "есть рекомендации" : "заблокировано"}</Badge>
         </div>
         <ReadinessSection title="Блокирующие проблемы" items={readiness.blockers} empty="Блокирующих проблем нет." tone="danger" />
         <ReadinessSection title="Рекомендации" items={readiness.recommendations} empty="Рекомендаций нет." tone="warning" />

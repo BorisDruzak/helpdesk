@@ -6,10 +6,13 @@ import {
   fetchAdminFormsCatalog,
   fetchHelpdeskModelRegistry,
   saveAdminFormsDraft,
+  type AdminHelpdeskModelPayload,
 } from "../../features/forms-builder/api";
 import {
   fetchPolicyHealthDashboard,
   simulatePolicyHealth,
+  type PolicyHealthSimulationResult,
+  type PolicySimulationPayload,
 } from "../../features/policy-health/api";
 import { buildStudioSimulationPayload, defaultGuidedSimulationDraft, type GuidedSimulationDraft } from "../../features/request-template-studio/options";
 import { BlockInspector } from "../../features/request-template-studio/block-inspector";
@@ -32,10 +35,12 @@ import { SimulationPanel } from "../../features/request-template-studio/simulati
 import {
   buildDeepLink,
   buildRequestStudioItems,
+  buildWorkingRequestStudioItem,
   findDefaultStudioItem,
   findStudioItem,
   getRequestStudioModeLabel,
   type ProcessBlockKey,
+  type RequestStudioItem,
   type RequestStudioMode,
 } from "../../features/request-template-studio/studio-model";
 import { fetchServiceCatalogDashboard, saveOfferingDraft } from "../../features/service-catalog/api";
@@ -101,24 +106,37 @@ export function AdminRequestTemplateStudioPage() {
   }, [createdDraftTemplate, items, searchParams, showTechnicalItems]);
 
   const selectedTemplateCode = selectedItem?.template?.template_code ?? searchParams.get("template") ?? "";
+  const workingItem = useMemo(
+    () =>
+      buildWorkingRequestStudioItem({
+        selectedItem,
+        draft: studioDraft,
+        services: catalogQuery.data?.services ?? [],
+        health: healthQuery.data,
+      }),
+    [catalogQuery.data?.services, healthQuery.data, selectedItem, studioDraft],
+  );
   const links = {
-    forms: buildDeepLink("/app/admin/forms", selectedItem),
-    serviceCatalog: buildDeepLink("/app/admin/service-catalog", selectedItem),
-    policyHealth: buildDeepLink("/app/admin/policy-health", selectedItem),
+    forms: buildDeepLink("/app/admin/forms", workingItem ?? selectedItem),
+    serviceCatalog: buildDeepLink("/app/admin/service-catalog", workingItem ?? selectedItem),
+    policyHealth: buildDeepLink("/app/admin/policy-health", workingItem ?? selectedItem),
   };
-  const selectedBlock = selectedItem?.processBlocks.find((block) => block.key === selectedBlockKey) ?? selectedItem?.processBlocks[0] ?? null;
+  const selectedBlock = workingItem?.processBlocks.find((block) => block.key === selectedBlockKey) ?? workingItem?.processBlocks[0] ?? null;
   const draftSnapshot = studioDraft ? JSON.stringify(studioDraft) : "";
   const hasUnsavedChanges = Boolean(studioDraft && draftSnapshot !== savedDraftSnapshot);
   const studioSimulationPayload = buildStudioSimulationPayload({
-    selectedTemplateCode: studioDraft?.templateCode || selectedTemplateCode,
-    selectedService: selectedItem?.service ?? null,
-    selectedOffering: selectedItem?.offering ?? null,
+    selectedTemplateCode: studioDraft?.templateCode || workingItem?.template?.template_code || selectedTemplateCode,
+    selectedService: workingItem?.service ?? null,
+    selectedOffering: workingItem?.offering ?? null,
     simulationDraft,
   });
 
   const simulationMutation = useMutation({
     mutationFn: () => {
-      if (!selectedTemplateCode) {
+      if (hasUnsavedChanges) {
+        throw new Error("Сначала сохраните черновик, затем запустите проверку.");
+      }
+      if (!(studioDraft?.templateCode || selectedTemplateCode)) {
         throw new Error("Тип обращения не выбран");
       }
       return simulatePolicyHealth(studioSimulationPayload);
@@ -136,10 +154,17 @@ export function AdminRequestTemplateStudioPage() {
         baseVersion: formsQuery.data?.summary.version ?? null,
       });
       const offeringPayload = buildOfferingDraftPayload(studioDraft, selectedItem?.offering);
-      const [formsResult, offeringResult] = await Promise.all([
+      const results = await Promise.allSettled([
         saveAdminFormsDraft(formsPayload),
         saveOfferingDraft(offeringPayload),
       ]);
+      const failed = results
+        .map((result, index) => ({ result, label: index === 0 ? "форма" : "вариант услуги" }))
+        .filter((entry): entry is { result: PromiseRejectedResult; label: string } => entry.result.status === "rejected");
+      if (failed.length) {
+        throw new Error(`Не удалось сохранить: ${failed.map((entry) => entry.label).join(", ")}.`);
+      }
+      const [formsResult, offeringResult] = results.map((result) => (result as PromiseFulfilledResult<unknown>).value);
       return { formsResult, offeringResult };
     },
     onSuccess: async () => {
@@ -153,7 +178,10 @@ export function AdminRequestTemplateStudioPage() {
       ]);
     },
   });
-  const readiness = buildReadinessSummary(selectedItem, simulationMutation.data);
+  const readiness = buildReadinessSummary(workingItem, simulationMutation.data, {
+    hasDraft: Boolean(studioDraft),
+    hasUnsavedChanges,
+  });
 
   useEffect(() => {
     const requestedTemplate = searchParams.get("template");
@@ -261,8 +289,8 @@ export function AdminRequestTemplateStudioPage() {
       publishHref={links.serviceCatalog}
       saveDraftDisabled={!studioDraft || !hasUnsavedChanges}
       saveDraftPending={saveDraftMutation.isPending}
-      runValidationDisabled={!(studioDraft?.templateCode || selectedTemplateCode) || simulationMutation.isPending}
-      selectedItem={selectedItem}
+      runValidationDisabled={!(studioDraft?.templateCode || selectedTemplateCode) || hasUnsavedChanges || simulationMutation.isPending || saveDraftMutation.isPending}
+      selectedItem={workingItem}
     >
       <CreateRequestWizard
         open={wizardOpen}
@@ -295,51 +323,48 @@ export function AdminRequestTemplateStudioPage() {
         />
 
         <main className="space-y-5">
-          {selectedItem ? (
+          {workingItem ? (
             <>
-              {selectedItem.isTechnical ? (
+              {workingItem.isTechnical ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                   <p className="font-semibold">Выбран тестовый или выведенный объект.</p>
                   <p className="mt-1">Для настройки рабочего обращения выберите опубликованный раздел и тип обращения.</p>
                 </div>
               ) : null}
 
-              <ProcessMap blocks={selectedItem.processBlocks} onSelectBlock={setSelectedBlockKey} selectedBlockKey={selectedBlock?.key ?? selectedBlockKey} />
+              <ProcessMap blocks={workingItem.processBlocks} onSelectBlock={setSelectedBlockKey} selectedBlockKey={selectedBlock?.key ?? selectedBlockKey} />
 
-              <BlockInspector block={selectedBlock} item={selectedItem} mode={mode} expertLinks={links} />
+              <BlockInspector block={selectedBlock} item={workingItem} mode={mode} expertLinks={links} />
 
               {studioDraft ? (
-                <>
-                  <FormFieldEditor
-                    draft={studioDraft}
-                    selectedIndex={selectedFieldIndex}
-                    onSelectIndex={setSelectedFieldIndex}
-                    onChange={updateStudioDraft}
-                  />
-                  <ProcessEditors
-                    draft={studioDraft}
-                    registry={registryQuery.data}
-                    showAutoFix={showAutoFix}
-                    onDraftChange={updateStudioDraft}
-                    onShowAutoFixChange={setShowAutoFix}
-                  />
-                </>
+                <SelectedBlockEditor
+                  blockKey={selectedBlock?.key ?? selectedBlockKey}
+                  draft={studioDraft}
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  item={workingItem}
+                  mode={mode}
+                  registry={registryQuery.data}
+                  selectedFieldIndex={selectedFieldIndex}
+                  showAutoFix={showAutoFix}
+                  simulationDraft={simulationDraft}
+                  simulationError={simulationMutation.error}
+                  simulationPayload={studioSimulationPayload}
+                  simulationPending={simulationMutation.isPending}
+                  simulationResult={simulationMutation.data}
+                  onDraftChange={updateStudioDraft}
+                  onRunSimulation={() => simulationMutation.mutate()}
+                  onSelectFieldIndex={setSelectedFieldIndex}
+                  onShowAutoFixChange={setShowAutoFix}
+                  onSimulationDraftChange={updateSimulationDraft}
+                />
               ) : null}
 
-              <FormPreviewPanel item={selectedItem} mode={mode} />
-
-              <SimulationPanel
-                draft={simulationDraft}
-                error={simulationMutation.error}
-                item={selectedItem}
-                mode={mode}
-                hasUnsavedChanges={hasUnsavedChanges}
-                onDraftChange={updateSimulationDraft}
-                onRun={() => simulationMutation.mutate()}
-                payload={studioSimulationPayload}
-                pending={simulationMutation.isPending}
-                result={simulationMutation.data}
-              />
+              <details className="surface-panel p-5">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800">Preview пользователя и исполнителя</summary>
+                <div className="mt-4">
+                  <FormPreviewPanel item={workingItem} mode={mode} embedded />
+                </div>
+              </details>
             </>
           ) : studioDraft ? (
             <>
@@ -369,7 +394,7 @@ export function AdminRequestTemplateStudioPage() {
 
         <ReadinessPanel
           expertLinks={links}
-          item={selectedItem}
+          item={workingItem}
           readiness={readiness}
           onAutoFix={() => {
             setShowAutoFix(true);
@@ -378,5 +403,89 @@ export function AdminRequestTemplateStudioPage() {
         />
       </section>
     </RequestStudioShell>
+  );
+}
+
+function SelectedBlockEditor({
+  blockKey,
+  draft,
+  hasUnsavedChanges,
+  item,
+  mode,
+  registry,
+  selectedFieldIndex,
+  showAutoFix,
+  simulationDraft,
+  simulationError,
+  simulationPayload,
+  simulationPending,
+  simulationResult,
+  onDraftChange,
+  onRunSimulation,
+  onSelectFieldIndex,
+  onShowAutoFixChange,
+  onSimulationDraftChange,
+}: {
+  blockKey: ProcessBlockKey;
+  draft: StudioDraft;
+  hasUnsavedChanges: boolean;
+  item: RequestStudioItem;
+  mode: RequestStudioMode;
+  registry: AdminHelpdeskModelPayload | undefined;
+  selectedFieldIndex: number;
+  showAutoFix: boolean;
+  simulationDraft: GuidedSimulationDraft;
+  simulationError: unknown;
+  simulationPayload: PolicySimulationPayload;
+  simulationPending: boolean;
+  simulationResult: PolicyHealthSimulationResult | undefined;
+  onDraftChange: (draft: StudioDraft) => void;
+  onRunSimulation: () => void;
+  onSelectFieldIndex: (index: number) => void;
+  onShowAutoFixChange: (value: boolean) => void;
+  onSimulationDraftChange: (key: keyof GuidedSimulationDraft, value: string) => void;
+}) {
+  if (blockKey === "form") {
+    return <FormFieldEditor draft={draft} selectedIndex={selectedFieldIndex} onSelectIndex={onSelectFieldIndex} onChange={onDraftChange} />;
+  }
+
+  if (blockKey === "validation") {
+    return (
+      <SimulationPanel
+        draft={simulationDraft}
+        error={simulationError}
+        item={item}
+        mode={mode}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onDraftChange={onSimulationDraftChange}
+        onRun={onRunSimulation}
+        payload={simulationPayload}
+        pending={simulationPending}
+        result={simulationResult}
+      />
+    );
+  }
+
+  if (blockKey === "publication") {
+    return (
+      <section className="surface-panel p-5">
+        <h2 className="text-lg font-semibold text-slate-950">Публикация</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Черновик и проверка выполняются внутри Studio. Финальная публикация пока остаётся экспертным действием через каталог услуг, потому что отдельный safe publish contract для Studio ещё не введён.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <ProcessEditors
+      draft={draft}
+      focusedBlockKey={blockKey === "execution" ? "processing" : blockKey}
+      mode={mode}
+      registry={registry}
+      showAutoFix={showAutoFix}
+      onDraftChange={onDraftChange}
+      onShowAutoFixChange={onShowAutoFixChange}
+    />
   );
 }

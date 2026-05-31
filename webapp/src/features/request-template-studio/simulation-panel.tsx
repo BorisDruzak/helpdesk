@@ -36,7 +36,7 @@ export function SimulationPanel({
           <h2 className="text-lg font-semibold text-slate-950">Проверка и симуляция</h2>
           <p className="mt-1 text-sm text-slate-600">Тестовый прогон не требует JSON в базовом режиме.</p>
         </div>
-        <Button disabled={!item.template || pending} leadingIcon={<Play className="h-4 w-4" />} onClick={onRun} type="button">
+        <Button disabled={!item.template || pending || hasUnsavedChanges} leadingIcon={<Play className="h-4 w-4" />} onClick={onRun} type="button">
           Запустить проверку
         </Button>
       </div>

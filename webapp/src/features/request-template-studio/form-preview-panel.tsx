@@ -4,13 +4,15 @@ import type { RequestStudioItem, RequestStudioMode } from "./studio-model";
 export function FormPreviewPanel({
   item,
   mode,
+  embedded = false,
 }: {
   item: RequestStudioItem;
   mode: RequestStudioMode;
+  embedded?: boolean;
 }) {
   const form = item.formPreview;
   return (
-    <section className="surface-panel p-5">
+    <section className={embedded ? "space-y-4" : "surface-panel p-5"}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">Preview</h2>

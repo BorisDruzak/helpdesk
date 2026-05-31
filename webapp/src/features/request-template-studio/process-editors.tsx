@@ -3,22 +3,29 @@ import { Button } from "../../components/ui/button";
 import type { AdminHelpdeskModelPayload } from "../forms-builder/api";
 import { PROCESS_PROFILES, applyProfileDefaults, buildAutoFixSuggestions, applyAutoFix, type StudioDraft } from "./draft-model";
 import { policyOptions } from "./options";
+import type { ProcessBlockKey, RequestStudioMode } from "./studio-model";
 
 export function ProcessEditors({
   draft,
   registry,
   showAutoFix,
+  focusedBlockKey,
+  mode = "basic",
   onDraftChange,
   onShowAutoFixChange,
 }: {
   draft: StudioDraft;
   registry: AdminHelpdeskModelPayload | null | undefined;
   showAutoFix: boolean;
+  focusedBlockKey?: ProcessBlockKey;
+  mode?: RequestStudioMode;
   onDraftChange: (draft: StudioDraft) => void;
   onShowAutoFixChange: (value: boolean) => void;
 }) {
   const suggestions = buildAutoFixSuggestions(draft, registry);
   const activeSuggestions = suggestions.filter((item) => item.available);
+  const showAll = mode !== "basic" || !focusedBlockKey;
+  const isVisible = (...keys: ProcessBlockKey[]) => showAll || keys.includes(focusedBlockKey);
   return (
     <section className="surface-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -54,7 +61,7 @@ export function ProcessEditors({
       ) : null}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <section className="rounded-md border border-slate-200 bg-white p-4 xl:col-span-2">
+        {isVisible("identity") ? <section className="rounded-md border border-slate-200 bg-white p-4 xl:col-span-2">
           <h3 className="font-semibold text-slate-950">Раздел и тип обращения</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <label className="block text-sm font-semibold text-slate-800">
@@ -86,9 +93,9 @@ export function ProcessEditors({
               </select>
             </label>
           </div>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("processing") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">Профиль обработки</h3>
           <label className="mt-3 block text-sm font-semibold text-slate-800">
             Профиль обработки
@@ -100,9 +107,9 @@ export function ProcessEditors({
           <Button className="mt-3" type="button" variant="secondary" onClick={() => onDraftChange(applyProfileDefaults(draft, registry))}>
             Применить профиль
           </Button>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("routing") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">Кто выполняет</h3>
           <label className="mt-3 block text-sm font-semibold text-slate-800">
             Кто выполняет заявку?
@@ -112,9 +119,9 @@ export function ProcessEditors({
             </select>
           </label>
           <p className="mt-2 text-xs text-slate-500">Если подходящего маршрута нет, нужна экспертная настройка routing policy.</p>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("sla") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">SLA / сроки</h3>
           <label className="mt-3 block text-sm font-semibold text-slate-800">
             Срок выполнения
@@ -128,9 +135,9 @@ export function ProcessEditors({
             <span className="rounded-md bg-slate-50 px-3 py-2">Решение: 4 часа / 1 день / 3 дня</span>
             <span className="rounded-md bg-slate-50 px-3 py-2">Пауза: пользователь / согласование / поставщик</span>
           </div>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("approval") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">Согласование</h3>
           <div className="mt-3 flex flex-wrap gap-3">
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
@@ -149,9 +156,9 @@ export function ProcessEditors({
               {policyOptions(registry, "approval").map((option) => <option disabled={option.disabled} key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("closure") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">Закрытие</h3>
           <label className="mt-3 block text-sm font-semibold text-slate-800">
             Правила закрытия
@@ -161,9 +168,9 @@ export function ProcessEditors({
             </select>
           </label>
           <p className="mt-2 text-sm text-slate-600">Перед закрытием исполнитель должен указать результат, сообщение пользователю и код решения, если это требует policy.</p>
-        </section>
+        </section> : null}
 
-        <section className="rounded-md border border-slate-200 bg-white p-4">
+        {isVisible("notifications") ? <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold text-slate-950">Уведомления</h3>
           <label className="mt-3 block text-sm font-semibold text-slate-800">
             Уведомления
@@ -173,7 +180,7 @@ export function ProcessEditors({
             </select>
           </label>
           <p className="mt-2 text-sm text-slate-600">Отсутствие уведомлений не блокирует публикацию, но остаётся рекомендацией.</p>
-        </section>
+        </section> : null}
       </div>
     </section>
   );

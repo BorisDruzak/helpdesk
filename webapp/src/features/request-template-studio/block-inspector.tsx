@@ -32,7 +32,7 @@ export function BlockInspector({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {detailsForBlock(block.key, item).map((detail) => (
+        {detailsForBlock(block.key, item, mode).map((detail) => (
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={detail.label}>
             <p className="text-xs font-semibold text-slate-500">{detail.label}</p>
             <p className="mt-1 text-sm font-semibold text-slate-950">{detail.value}</p>
@@ -65,19 +65,19 @@ function InspectorAction({ blockKey, expertLinks }: { blockKey: ProcessBlock["ke
   return <Link className="rounded-pill bg-surface-subtle px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-brand-50 hover:text-brand-800" to={expertLinks.policyHealth}>Открыть экспертную проверку</Link>;
 }
 
-function detailsForBlock(blockKey: ProcessBlock["key"], item: RequestStudioItem) {
+function detailsForBlock(blockKey: ProcessBlock["key"], item: RequestStudioItem, mode: RequestStudioMode) {
   const template = item.template;
   const offering = item.offering;
   if (blockKey === "routing") {
     return [
-      { label: "Кто будет выполнять заявку?", value: template?.routing_policy_code || offering?.routing_policy_code || "Не выбрано", description: "В базовом режиме показывается итоговое правило, без raw policy refs." },
+      { label: "Кто будет выполнять заявку?", value: mode === "basic" ? humanPolicy("routing", template?.routing_policy_code || offering?.routing_policy_code) : template?.routing_policy_code || offering?.routing_policy_code || "Не выбрано", description: "В базовом режиме показывается итоговое правило, без raw policy refs." },
       { label: "Fallback", value: "Единая очередь Service Desk", description: "Если правило не сработает, заявка должна попадать в triage." },
     ];
   }
   if (blockKey === "sla") {
     return [
       { label: "Когда оператор должен ответить?", value: template?.sla_policy_code ? "По SLA policy" : "Не выбрано" },
-      { label: "Когда заявка должна быть решена?", value: template?.sla_policy_code || offering?.sla_policy_code || "Не выбрано" },
+      { label: "Когда заявка должна быть решена?", value: mode === "basic" ? humanPolicy("sla", template?.sla_policy_code || offering?.sla_policy_code) : template?.sla_policy_code || offering?.sla_policy_code || "Не выбрано" },
     ];
   }
   if (blockKey === "approval") {
@@ -88,7 +88,7 @@ function detailsForBlock(blockKey: ProcessBlock["key"], item: RequestStudioItem)
   }
   if (blockKey === "closure") {
     return [
-      { label: "Что требуется при закрытии?", value: template?.closure_policy_code || offering?.closure_policy_code ? "Результат и сообщение пользователю" : "Не настроено" },
+      { label: "Что требуется при закрытии?", value: mode === "basic" ? humanPolicy("closure", template?.closure_policy_code || offering?.closure_policy_code) : template?.closure_policy_code || offering?.closure_policy_code || "Не настроено" },
       { label: "Подтверждение пользователя", value: "По политике закрытия" },
     ];
   }
@@ -118,4 +118,17 @@ function ContextRow({ label, value }: { label: string; value?: string | number |
       <dd className="mt-1 font-mono text-slate-900">{tech(value)}</dd>
     </div>
   );
+}
+
+function humanPolicy(kind: "routing" | "sla" | "closure", value?: string | null) {
+  if (!value) {
+    return kind === "closure" ? "Не настроено" : "Не выбрано";
+  }
+  if (kind === "routing") {
+    return value.toLowerCase().includes("l1") ? "Service Desk L1" : "Выбранный маршрут";
+  }
+  if (kind === "sla") {
+    return "По выбранной политике сроков";
+  }
+  return "Результат и сообщение пользователю";
 }

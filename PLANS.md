@@ -1,6 +1,6 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: implementation complete, verification in progress
+Status: draft-aware stabilization implemented, verification in progress
 
 ## Goal
 
@@ -71,6 +71,8 @@ Primary user path:
 
 - Use existing `saveAdminFormsDraft()` for durable form draft persistence. The Studio payload updates or creates one form in the `request_forms` pack, preserving other forms from the loaded catalog.
 - Use existing `saveOfferingDraft()` for durable catalog draft persistence of title, description, visibility and selected policy refs.
+- Compose a single working Studio item from `selectedItem + studioDraft` so the process map, block inspector, readiness, preview, simulation payload and newly created wizard drafts all read the same current state.
+- Show the selected block editor in basic mode instead of the previous long tape of every editor; advanced/expert modes can still show broader processing details.
 - Treat policy selection as choosing existing active policies only. Presets and auto-fix may map to found active policies; if none exist, Studio must say expert setup is required.
 - Keep direct publish out of scope for this pass because there is no dedicated safe Studio publish contract. The UI must expose this honestly and preserve context in the expert link.
 - Do not mutate published live objects field-by-field. Local edits become a dirty Studio draft and persist only when `Сохранить черновик` is clicked.
@@ -89,6 +91,7 @@ Create or update:
 - `webapp/src/features/request-template-studio/block-inspector.tsx` - selected block configuration in simple language.
 - `webapp/src/features/request-template-studio/readiness.ts` - readiness categories and draft-aware blockers/recommendations.
 - `webapp/src/pages/admin/request-template-studio-page.test.tsx` - no-code MVP regression tests.
+- `webapp/src/features/request-template-studio/studio-model.test.ts`, `draft-model.test.ts` - draft overlay/default-selection/save-payload unit tests.
 - `docs/QUICK_LOOKUP.md`, `docs/ARCHITECTURE_BOUNDARIES.md` if needed, and `server/docs/CODEMAP.md` - document Studio as the primary request setup path.
 
 ## Acceptance Criteria
@@ -114,6 +117,7 @@ Create or update:
 - [x] Confirmed `de7ae78b` is an ancestor of the current branch.
 - [x] Add failing no-code MVP tests and verify RED.
 - [x] Implement draft model, wizard, inline editors, auto-fix and save flow.
+- [x] Stabilize Studio around one draft-aware `workingItem` and focused block editor UX.
 - [x] Update docs/CODEMAP navigation notes.
 - [ ] Run required verification:
   - `python scripts/verify_workspace.py`

@@ -303,7 +303,7 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     expect(await screen.findByText("Есть несохранённые изменения")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("template=crm");
-    expect(screen.getByText("В какую систему?")).toBeInTheDocument();
+    expect(screen.getAllByText("В какую систему?").length).toBeGreaterThan(0);
   });
 
   it("edits form, process blocks, auto-fixes safe policies and saves a durable draft", async () => {
@@ -350,10 +350,15 @@ describe("AdminRequestTemplateStudioPage", () => {
     fireEvent.change(screen.getByLabelText("Название поля"), { target: { value: "Обоснование" } });
     fireEvent.change(screen.getByLabelText("Ключ поля"), { target: { value: "business_reason" } });
     fireEvent.click(screen.getByLabelText("Обязательное поле"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[3]);
     fireEvent.change(screen.getByLabelText("Кто выполняет заявку?"), { target: { value: "route_l1" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[4]);
     fireEvent.change(screen.getByLabelText("Срок выполнения"), { target: { value: "sla_p2" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[5]);
     fireEvent.click(screen.getByLabelText("Согласование не требуется"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[7]);
     fireEvent.change(screen.getByLabelText("Правила закрытия"), { target: { value: "closure_basic" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[8]);
     fireEvent.change(screen.getByLabelText("Уведомления"), { target: { value: "__unused__" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Исправить автоматически" })[0]);
     fireEvent.click(await screen.findByRole("button", { name: "Применить всё" }));
@@ -438,6 +443,7 @@ describe("AdminRequestTemplateStudioPage", () => {
     expect((await screen.findAllByText("Форма почтового ящика")).length).toBeGreaterThan(0);
     expect(screen.getByText("Карта настройки обращения")).toBeInTheDocument();
     expect(screen.getAllByText("Форма пользователя").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[9]);
     expect(screen.getByText("Проверка и симуляция")).toBeInTheDocument();
     expect(screen.getByText("Готовность к публикации")).toBeInTheDocument();
     expect(screen.getByText("Как увидит пользователь")).toBeInTheDocument();
@@ -500,6 +506,7 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     await screen.findByRole("heading", { name: "Студия обращений" });
     await screen.findAllByText("Форма почтового ящика");
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[9]);
     fireEvent.change(screen.getByPlaceholderText("Инициатор"), { target: { value: "ivanov" } });
     fireEvent.change(screen.getByPlaceholderText("Краткое содержание/ответы формы"), { target: { value: "Нужен новый ящик" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Запустить проверку" })[0]);
