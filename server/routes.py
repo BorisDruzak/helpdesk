@@ -418,6 +418,12 @@ from web_api.policy_health_handlers import (
     handle_web_admin_policy_health_detail,
     handle_web_admin_policy_health_simulate,
 )
+from web_api.request_studio_handlers import (
+    handle_web_admin_request_studio_capabilities,
+    handle_web_admin_request_studio_publish,
+    handle_web_admin_request_studio_publish_preview,
+    handle_web_admin_request_studio_validate_draft,
+)
 from web_api.service_catalog_handlers import (
     handle_service_catalog_current,
     handle_service_catalog_offering,
@@ -928,6 +934,10 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/helpdesk/policy-health', handle_web_admin_policy_health),
         web.get('/api/web/admin/helpdesk/policy-health/{template_code}', handle_web_admin_policy_health_detail),
         web.post('/api/web/admin/helpdesk/policy-health/simulate', handle_web_admin_policy_health_simulate),
+        web.get('/api/web/admin/request-studio/capabilities', handle_web_admin_request_studio_capabilities),
+        web.post('/api/web/admin/request-studio/validate-draft', handle_web_admin_request_studio_validate_draft),
+        web.post('/api/web/admin/request-studio/publish-preview', handle_web_admin_request_studio_publish_preview),
+        web.post('/api/web/admin/request-studio/publish', handle_web_admin_request_studio_publish),
         web.get('/api/web/admin/service-catalog', handle_web_admin_service_catalog),
         web.get('/api/web/admin/service-catalog/services/{service_code}', handle_web_admin_service_catalog_service),
         web.post('/api/web/admin/service-catalog/services/save-draft', handle_web_admin_service_catalog_save_service),

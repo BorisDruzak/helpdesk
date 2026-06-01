@@ -12,11 +12,11 @@ Commit sequence:
 2. Record browser smoke evidence for the request setup pages. Completed in `cc39eb7d`.
 3. Clarify Request Studio readiness/publication wording before backend safe publish work. Completed in `fe0603ba`.
 4. Verify the small cleanup pass. Completed with fixture hardening in `10362c6e`.
-5. Add request-studio backend validation/capabilities contract.
-6. Add draft-aware request-studio simulation.
-7. Add request-studio publish preview/diff plan.
-8. Add safe publish execution.
-9. Wire frontend API, publish confirmation flow, tests and docs.
+5. Add request-studio backend validation/capabilities contract. Completed: typed DTO/handlers/routes validate draft and capabilities.
+6. Add draft-aware request-studio simulation. Kept as existing saved-draft Policy Health simulation for this checkpoint; safe publish validation now uses the current Studio draft payload directly.
+7. Add request-studio publish preview/diff plan. Completed: preview returns validation, publish steps and confirmation token.
+8. Add safe publish execution. Completed: publish revalidates token/draft, blocks unsafe payloads and commits form schema, request template and catalog offering through existing repos in one guarded transaction.
+9. Wire frontend API, publish confirmation flow, tests and docs. Completed: Studio publish button opens preview, confirms token-backed publish and invalidates Studio queries.
 
 Browser smoke evidence:
 

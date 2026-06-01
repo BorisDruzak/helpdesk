@@ -5,6 +5,7 @@ import type {
   AdminHelpdeskModelPayload,
 } from "../forms-builder/api";
 import type { AdminServiceCatalogOffering } from "../service-catalog/api";
+import type { RequestStudioDraftPayload } from "./api";
 import { resolveVisibilityPolicyCode } from "./policy-resolvers";
 import { isAccessProfile, isIncidentProfile } from "./studio-model";
 import type { RequestStudioItem } from "./studio-model";
@@ -238,6 +239,41 @@ export function buildOfferingDraftPayload(
     approval_policy_code: draft.approvalMode === "required" ? emptyToNull(draft.approvalPolicyCode) : null,
     closure_policy_code: emptyToNull(draft.closurePolicyCode),
     notification_policy_code: emptyToNull(draft.notificationPolicyCode),
+  };
+}
+
+export function buildRequestStudioPublishPayload(args: {
+  draft: StudioDraft;
+  registry?: AdminHelpdeskModelPayload | null;
+  confirmationToken?: string | null;
+}): RequestStudioDraftPayload {
+  const form = draftToForm(args.draft, args.registry);
+  const visibilityPolicyCode = resolveVisibilityPolicyCode(args.registry);
+  return {
+    form,
+    offering: {
+      service_code: args.draft.serviceCode,
+      code: args.draft.offeringCode || args.draft.templateCode,
+      public_title: args.draft.title,
+      short_description: args.draft.description,
+      lifecycle_status: "draft",
+      visibility: args.draft.visibility,
+      request_type: form.ticket_type ?? null,
+      ticket_type_code: form.ticket_type ?? null,
+      request_template_key: args.draft.templateCode,
+      routing_policy_code: emptyToNull(args.draft.routingPolicyCode),
+      sla_policy_code: emptyToNull(args.draft.slaPolicyCode),
+      approval_policy_code: args.draft.approvalMode === "required" ? emptyToNull(args.draft.approvalPolicyCode) : null,
+      closure_policy_code: emptyToNull(args.draft.closurePolicyCode),
+      visibility_policy_code: visibilityPolicyCode,
+      notification_policy_code: emptyToNull(args.draft.notificationPolicyCode),
+      metadata: {
+        source: "request_studio",
+      },
+    },
+    publish_service: true,
+    publish_offering: true,
+    confirmation_token: args.confirmationToken ?? null,
   };
 }
 

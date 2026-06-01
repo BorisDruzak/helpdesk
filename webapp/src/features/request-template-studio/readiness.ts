@@ -2,8 +2,6 @@ import type { PolicyHealthSimulationResult } from "../policy-health/api";
 import type { RequestStudioItem } from "./studio-model";
 import { hasBlockingIssue } from "./studio-model";
 
-const STUDIO_PUBLISH_UNSUPPORTED = "Studio publish недоступен до safe publish contract. Сейчас черновик можно довести до экспертной публикации.";
-
 export type ReadinessSummary = {
   status: "ok" | "warning" | "error";
   blockers: string[];
@@ -34,7 +32,7 @@ export function buildReadinessSummary(
     !item.offering?.public_title ? "Не заполнено название типа обращения." : null,
     !item.template ? "Не выбран сценарий обработки." : null,
     !item.template?.visibility_policy_code
-      ? "Правила видимости не выбраны. Проверьте видимость в экспертной настройке перед публикацией."
+      ? "Правила видимости не выбраны. Пользователь может увидеть неправильный статус."
       : null,
     ...item.processBlocks.filter((block) => block.status === "error").map((block) => block.explanation),
     ...(item.health?.issues.filter(hasBlockingIssue).map((issue) => issue.message) ?? []),
@@ -43,10 +41,9 @@ export function buildReadinessSummary(
   const recommendations = [
     ...item.processBlocks.filter((block) => block.status === "recommended").map((block) => block.explanation),
     ...item.processProfile.recommendedMissing.map((label) => `Проверьте, нужен ли блок: ${label}.`),
-    options?.hasUnsavedChanges ? "Есть несохранённые изменения. Сохраните черновик перед проверкой и экспертной публикацией." : null,
+    options?.hasUnsavedChanges ? "Есть несохранённые изменения. Сохраните черновик перед проверкой и публикацией." : null,
     simulationResult ? null : "Запустите тестовый прогон перед публикацией.",
     item.isTechnical ? "Выбран тестовый или выведенный объект. Для рабочей настройки выберите опубликованный тип обращения." : null,
-    STUDIO_PUBLISH_UNSUPPORTED,
   ].filter(Boolean) as string[];
 
   const ready = [
@@ -57,7 +54,7 @@ export function buildReadinessSummary(
     options?.hasDraft && !options.hasUnsavedChanges ? "Черновик сохранён." : null,
     item.health && !item.health.issues.some(hasBlockingIssue) ? "Блокирующие ошибки Policy Health не найдены." : null,
     simulationResult ? "Тестовый прогон выполнен." : null,
-    blockers.length === 0 ? "Черновик готов к экспертной публикации." : null,
+    blockers.length === 0 ? "Черновик готов к публикации из Studio." : null,
   ].filter(Boolean) as string[];
 
   return {

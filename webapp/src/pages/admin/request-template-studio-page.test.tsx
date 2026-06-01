@@ -397,7 +397,7 @@ describe("AdminRequestTemplateStudioPage", () => {
     expect(await screen.findByText("Проверка устарела, запустите повторно.")).toBeInTheDocument();
   });
 
-  it("keeps raw technical policy refs hidden in basic mode and labels publication as expert-only", async () => {
+  it("keeps raw technical policy refs hidden in basic mode and exposes Studio publish", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -421,11 +421,12 @@ describe("AdminRequestTemplateStudioPage", () => {
     renderPage();
 
     await screen.findByRole("button", { name: "Добавить поле" });
-    expect(screen.getAllByRole("link", { name: "Открыть экспертную публикацию" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Полный каталог услуг" })[0]).toHaveAttribute(
       "href",
       "/app/admin/service-catalog?service=mail&offering=mail.new_box&template=mailbox",
     );
-    expect(screen.getByText("Публикация через Studio пока недоступна: нет safe publish contract.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Опубликовать из Studio" })).toBeInTheDocument();
+    expect(screen.getByText("Публикация через Studio доступна после проверки draft и подтверждения safe publish preview.")).toBeInTheDocument();
     expect(screen.queryByText("routing_policy_code")).not.toBeInTheDocument();
     expect(screen.queryByText("route_l1")).not.toBeInTheDocument();
   });

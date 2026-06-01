@@ -544,7 +544,7 @@ function buildProcessBlocks({
       status: blockingHealth || !template || !offering ? "error" : "needs_setup",
       explanation: blockingHealth || !template || !offering
         ? "Публикация заблокирована до устранения проблем."
-        : "Откройте экспертную публикацию для безопасного publish.",
+        : "Публикация выполняется из Studio через safe publish preview и подтверждение текущего draft.",
       actionLabel: "Открыть блок",
     },
   ];

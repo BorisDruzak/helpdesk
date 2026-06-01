@@ -22,7 +22,7 @@ export function ReadinessPanel({
       <section className="surface-panel p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-950">Готовность к публикации</h2>
-          <Badge tone={statusTone(readiness.status)}>{readiness.status === "ok" ? "готово к экспертной публикации" : readiness.status === "warning" ? "есть рекомендации" : "заблокировано"}</Badge>
+          <Badge tone={statusTone(readiness.status)}>{readiness.status === "ok" ? "готово к публикации" : readiness.status === "warning" ? "есть рекомендации" : "заблокировано"}</Badge>
         </div>
         <ReadinessSection title="Блокирующие проблемы" items={readiness.blockers} empty="Блокирующих проблем нет." tone="danger" />
         <ReadinessSection title="Рекомендации" items={readiness.recommendations} empty="Рекомендаций нет." tone="warning" />
@@ -31,9 +31,9 @@ export function ReadinessPanel({
           <Button className="w-full" onClick={onAutoFix} type="button" variant="secondary">
             Исправить автоматически
           </Button>
-          <Link className="flex h-10 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700" to={expertLinks.serviceCatalog}>
-            Открыть экспертную публикацию
-          </Link>
+          <p className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+            Публикация выполняется кнопкой "Опубликовать из Studio" после сохранения черновика.
+          </p>
         </div>
       </section>
 

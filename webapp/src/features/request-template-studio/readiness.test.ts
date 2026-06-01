@@ -42,6 +42,7 @@ function item(overrides: Partial<RequestStudioItem> = {}): RequestStudioItem {
     formPreview: {
       title: "Выдать доступ",
       description: "Форма доступа",
+      source: "forms-builder",
       fields: [{ key: "system", label: "Система", type: "text", required: true }],
     },
     processProfile: {
@@ -59,7 +60,7 @@ function item(overrides: Partial<RequestStudioItem> = {}): RequestStudioItem {
 }
 
 describe("request studio readiness", () => {
-  it("marks a complete draft as ready only for expert publication until Studio publish exists", () => {
+  it("marks a complete draft as publishable from Studio when safe publish is available", () => {
     const summary = buildReadinessSummary(
       item(),
       {
@@ -78,12 +79,10 @@ describe("request studio readiness", () => {
       { hasDraft: true },
     );
 
-    expect(summary.status).toBe("warning");
+    expect(summary.status).toBe("ok");
     expect(summary.blockers).toEqual([]);
-    expect(summary.ready).toContain("Черновик готов к экспертной публикации.");
-    expect(summary.recommendations).toContain(
-      "Studio publish недоступен до safe publish contract. Сейчас черновик можно довести до экспертной публикации.",
-    );
+    expect(summary.ready).toContain("Черновик готов к публикации из Studio.");
+    expect(summary.recommendations).not.toContain("Studio publish недоступен до safe publish contract.");
   });
 
   it("does not duplicate the missing form blocker when the process block already explains it", () => {

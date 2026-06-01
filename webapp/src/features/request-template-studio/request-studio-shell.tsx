@@ -12,14 +12,16 @@ export function RequestStudioShell({
   mode,
   modeLabel,
   draftStatus,
-  publishHref,
   expertLinks,
+  publishDisabled,
+  publishPending,
   saveDraftDisabled,
   saveDraftPending,
   runValidationDisabled,
   onCreateRequest,
   onSaveDraft,
   onRunValidation,
+  onPublish,
   onModeChange,
 }: {
   children: ReactNode;
@@ -27,14 +29,16 @@ export function RequestStudioShell({
   mode: RequestStudioMode;
   modeLabel: string;
   draftStatus: DraftStatus;
-  publishHref: string;
   expertLinks: StudioLinks;
+  publishDisabled: boolean;
+  publishPending: boolean;
   saveDraftDisabled: boolean;
   saveDraftPending: boolean;
   runValidationDisabled: boolean;
   onCreateRequest: () => void;
   onSaveDraft: () => void;
   onRunValidation: () => void;
+  onPublish: () => void;
   onModeChange: (mode: RequestStudioMode) => void;
 }) {
   const draftLabel: Record<DraftStatus, string> = {
@@ -68,9 +72,9 @@ export function RequestStudioShell({
           <Button disabled={runValidationDisabled} onClick={onRunValidation} type="button" leadingIcon={<Play className="h-4 w-4" />}>
             Запустить проверку
           </Button>
-          <Link className="inline-flex h-11 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700" to={publishHref}>
-            Открыть экспертную публикацию
-          </Link>
+          <Button disabled={publishDisabled || publishPending} onClick={onPublish} type="button" variant="primary">
+            {publishPending ? "Готовим публикацию..." : "Опубликовать из Studio"}
+          </Button>
           <details className="relative">
             <summary className="inline-flex h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-pill border border-border bg-white px-4 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800">
               <Settings2 className="h-4 w-4" />
@@ -91,7 +95,7 @@ export function RequestStudioShell({
           <p className="text-sm font-semibold text-slate-950">Уровень сложности: {modeLabel}</p>
           <p className="text-xs text-slate-500">Базовый режим скрывает raw JSON, policy refs и внутренние идентификаторы.</p>
           <p className="mt-1 text-xs font-semibold text-brand-800">{draftLabel[draftStatus]}</p>
-          <p className="mt-1 text-xs text-slate-500">Публикация через Studio пока недоступна: нет safe publish contract.</p>
+          <p className="mt-1 text-xs text-slate-500">Публикация через Studio доступна после проверки draft и подтверждения safe publish preview.</p>
         </div>
         <div className="inline-flex rounded-md border border-slate-200 bg-white p-1">
           {(["basic", "advanced", "expert"] as const).map((value) => (

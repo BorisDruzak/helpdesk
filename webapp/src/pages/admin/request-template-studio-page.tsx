@@ -21,8 +21,14 @@ import {
   buildFormsDraftPayload,
   buildInitialStudioDraft,
   buildOfferingDraftPayload,
+  buildRequestStudioPublishPayload,
   type StudioDraft,
 } from "../../features/request-template-studio/draft-model";
+import {
+  previewRequestStudioPublish,
+  publishRequestStudioDraft,
+  type RequestStudioPublishPreview,
+} from "../../features/request-template-studio/api";
 import { FormFieldEditor } from "../../features/request-template-studio/form-field-editor";
 import { FormPreviewPanel } from "../../features/request-template-studio/form-preview-panel";
 import { ProcessEditors } from "../../features/request-template-studio/process-editors";
@@ -44,6 +50,7 @@ import {
   type RequestStudioMode,
 } from "../../features/request-template-studio/studio-model";
 import { fetchServiceCatalogDashboard, saveOfferingDraft } from "../../features/service-catalog/api";
+import { Button } from "../../components/ui/button";
 
 export function AdminRequestTemplateStudioPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,6 +68,7 @@ export function AdminRequestTemplateStudioPage() {
   const [studioDraft, setStudioDraft] = useState<StudioDraft | null>(null);
   const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "draft_saved" | "validation_required" | "check_complete" | "check_stale">("saved");
+  const [publishPreview, setPublishPreview] = useState<RequestStudioPublishPreview | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardValue, setWizardValue] = useState<{
     processProfile: string;
@@ -172,6 +180,50 @@ export function AdminRequestTemplateStudioPage() {
     onSuccess: async () => {
       setSavedDraftSnapshot(draftSnapshot);
       setSaveStatus("draft_saved");
+      setPublishPreview(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["request-studio", "catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["request-studio", "forms"] }),
+        queryClient.invalidateQueries({ queryKey: ["request-studio", "registry"] }),
+        queryClient.invalidateQueries({ queryKey: ["request-studio", "policy-health"] }),
+      ]);
+    },
+  });
+  const publishPreviewMutation = useMutation({
+    mutationFn: () => {
+      if (!studioDraft) {
+        throw new Error("Черновик не выбран.");
+      }
+      if (hasUnsavedChanges) {
+        throw new Error("Сначала сохраните черновик, затем подготовьте публикацию.");
+      }
+      return previewRequestStudioPublish(
+        buildRequestStudioPublishPayload({
+          draft: studioDraft,
+          registry: registryQuery.data,
+        }),
+      );
+    },
+    onSuccess: (preview) => {
+      setPublishPreview(preview);
+    },
+  });
+  const publishMutation = useMutation({
+    mutationFn: () => {
+      if (!studioDraft || !publishPreview?.confirmation_token) {
+        throw new Error("Сначала подготовьте safe publish preview.");
+      }
+      return publishRequestStudioDraft(
+        buildRequestStudioPublishPayload({
+          draft: studioDraft,
+          registry: registryQuery.data,
+          confirmationToken: publishPreview.confirmation_token,
+        }),
+      );
+    },
+    onSuccess: async () => {
+      setPublishPreview(null);
+      setSaveStatus("check_complete");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-studio", "catalog"] }),
         queryClient.invalidateQueries({ queryKey: ["request-studio", "forms"] }),
@@ -257,6 +309,7 @@ export function AdminRequestTemplateStudioPage() {
 
   function updateStudioDraft(nextDraft: StudioDraft) {
     setStudioDraft(nextDraft);
+    setPublishPreview(null);
     setSaveStatus(simulationMutation.data ? "check_stale" : "dirty");
   }
 
@@ -287,8 +340,10 @@ export function AdminRequestTemplateStudioPage() {
       onCreateRequest={() => setWizardOpen(true)}
       onSaveDraft={() => saveDraftMutation.mutate()}
       onModeChange={setMode}
+      onPublish={() => publishPreviewMutation.mutate()}
       onRunValidation={() => simulationMutation.mutate()}
-      publishHref={links.serviceCatalog}
+      publishDisabled={!studioDraft || hasUnsavedChanges || saveDraftMutation.isPending || publishMutation.isPending}
+      publishPending={publishPreviewMutation.isPending || publishMutation.isPending}
       saveDraftDisabled={!studioDraft || !hasUnsavedChanges}
       saveDraftPending={saveDraftMutation.isPending}
       runValidationDisabled={!(studioDraft?.templateCode || selectedTemplateCode) || hasUnsavedChanges || simulationMutation.isPending || saveDraftMutation.isPending}
@@ -307,6 +362,49 @@ export function AdminRequestTemplateStudioPage() {
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {saveDraftMutation.error instanceof Error ? saveDraftMutation.error.message : "Не удалось сохранить черновик."}
         </div>
+      ) : null}
+
+      {publishPreviewMutation.error || publishMutation.error ? (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {publishPreviewMutation.error instanceof Error
+            ? publishPreviewMutation.error.message
+            : publishMutation.error instanceof Error
+              ? publishMutation.error.message
+              : "Не удалось выполнить публикацию из Studio."}
+        </div>
+      ) : null}
+
+      {publishPreview ? (
+        <section className="surface-panel space-y-4 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Safe publish preview</h2>
+              <p className="mt-1 text-sm text-slate-600">{publishPreview.message}</p>
+            </div>
+            <Button disabled={!publishPreview.validation.can_publish || publishMutation.isPending} onClick={() => publishMutation.mutate()} type="button" variant="primary">
+              {publishMutation.isPending ? "Публикуем..." : "Подтвердить публикацию"}
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {publishPreview.steps.map((step) => (
+              <div className="rounded-md border border-slate-200 bg-white p-3" key={step.key}>
+                <p className="text-sm font-semibold text-slate-900">{step.label}</p>
+                <p className="mt-1 text-xs font-semibold text-brand-800">{step.status === "blocked" ? "Заблокировано" : "Будет опубликовано"}</p>
+                {step.details ? <p className="mt-2 text-sm text-slate-600">{step.details}</p> : null}
+              </div>
+            ))}
+          </div>
+          {publishPreview.validation.issues.length ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-900">Что нужно проверить</p>
+              <ul className="mt-2 space-y-1 text-sm text-amber-900">
+                {publishPreview.validation.issues.map((issue) => (
+                  <li key={`${issue.code}-${issue.path ?? ""}`}>{issue.message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {offeringResetNotice ? (
@@ -476,14 +574,14 @@ function SelectedBlockEditor({
       <section className="surface-panel space-y-4 p-5">
         <h2 className="text-lg font-semibold text-slate-950">Публикация</h2>
         <p className="text-sm text-slate-600">
-          Черновик и проверка выполняются внутри Studio. Прямая публикация из Studio пока заблокирована: нет safe publish contract, который валидирует draft, показывает diff и выполняет publish атомарно.
+          Черновик публикуется из Studio через safe publish preview: сначала backend проверяет форму, route, SLA, закрытие, видимость и каталог, затем требует подтверждение того же draft.
         </p>
         <div className="grid gap-3 md:grid-cols-2">
           <PublicationList title="Уже готово" items={readiness.ready} empty="Готовые блоки появятся после сохранения и проверки черновика." />
           <PublicationList title="Блокирует публикацию" items={readiness.blockers} empty="Базовые блокеры не найдены." />
         </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Сейчас доступна экспертная публикация через каталог услуг. После safe publish этапа эта карточка покажет diff формы, типа обращения и policy refs, затем даст подтвердить публикацию прямо в Studio.
+        <div className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+          Используйте кнопку "Опубликовать из Studio" вверху экрана. Если draft изменён, сначала сохраните черновик.
         </div>
       </section>
     );

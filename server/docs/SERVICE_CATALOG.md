@@ -88,6 +88,10 @@ Admin/auditor:
 - `POST /api/web/admin/service-catalog/offerings/save-draft`
 - `POST /api/web/admin/service-catalog/offerings/{full_code}/validate|publish|retire`
 - `POST /api/web/admin/service-catalog/simulate`
+- `GET /api/web/admin/request-studio/capabilities`
+- `POST /api/web/admin/request-studio/validate-draft`
+- `POST /api/web/admin/request-studio/publish-preview`
+- `POST /api/web/admin/request-studio/publish`
 
 Requester/agent safe projection:
 
@@ -108,7 +112,8 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 
 ## UX
 
-- `/app/admin/service-catalog`: service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
+- `/app/admin/request-template-studio`: primary no-code request setup UX. It edits the basic draft inside Studio and uses Request Studio safe publish endpoints to validate, preview, confirm and publish the form schema, request template and catalog offering without opening expert pages for the normal path.
+- `/app/admin/service-catalog`: expert service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
 - `/app/help`: requester chooses service, offering, sees requester-safe knowledge suggestions/deflection actions, fills the linked form, runs runtime-backed safe preview before catalog submit, and submits `service_code`, `offering_code`, `offering_full_code`, `request_template_key` and safe `knowledge_attempts` when applicable. Legacy form-only submit remains available when the catalog is unavailable.
 - Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`; it fetches requester-safe knowledge suggestions after offering selection, records feedback, keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` and safe `knowledge_attempts` without changing Protocol V3.
 
