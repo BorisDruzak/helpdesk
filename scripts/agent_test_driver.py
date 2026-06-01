@@ -148,6 +148,10 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--form-key", default=None)
     create.add_argument("--form-pack-key", default=None)
     create.add_argument("--form-pack-version", default=None)
+    create.add_argument("--request-template-key", default=None)
+    create.add_argument("--service-code", default=None)
+    create.add_argument("--offering-code", default=None)
+    create.add_argument("--offering-full-code", default=None)
     create.add_argument("--ticket-type", default=None)
     create.add_argument(
         "--form-payload-json",
@@ -281,6 +285,14 @@ def main() -> int:
             payload["form_pack_key"] = args.form_pack_key
         if args.form_pack_version:
             payload["form_pack_version"] = args.form_pack_version
+        if args.request_template_key:
+            payload["request_template_key"] = args.request_template_key
+        if args.service_code:
+            payload["service_code"] = args.service_code
+        if args.offering_code:
+            payload["offering_code"] = args.offering_code
+        if args.offering_full_code:
+            payload["offering_full_code"] = args.offering_full_code
         if args.ticket_type:
             payload["ticket_type"] = args.ticket_type
         if form_payload is not None:

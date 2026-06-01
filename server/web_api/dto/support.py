@@ -75,6 +75,9 @@ class SupportQueueTicketItem(BaseModel):
     public_status_label: str
     next_action_owner: str | None
     next_action_due_at: str | None
+    first_response_at: str | None = None
+    first_response_due_at: str | None = None
+    resolution_due_at: str | None = None
     status_reason: str | None
     priority: str | None = None
     priority_class: str | None = None

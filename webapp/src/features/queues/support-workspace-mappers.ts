@@ -450,7 +450,9 @@ export function mapWorkspaceTicketItems(
       nextActionOwner: ticket.next_action_owner,
       statusReason: ticket.status_reason,
     });
-    const remainingSeconds = secondsUntil(ticket.next_action_due_at, now);
+    const firstResponseDueAt = ticket.first_response_at ? null : ticket.first_response_due_at;
+    const dueAt = ticket.next_action_due_at || firstResponseDueAt || ticket.resolution_due_at || null;
+    const remainingSeconds = secondsUntil(dueAt, now);
     const status = timerStatus(remainingSeconds);
     const priority = normalizePriority(ticket.priority_class ?? ticket.priority);
     return {

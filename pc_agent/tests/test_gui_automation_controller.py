@@ -169,6 +169,35 @@ async def test_automation_create_ticket_sends_active_account_session():
 
 
 @pytest.mark.asyncio
+async def test_automation_create_ticket_forwards_service_catalog_selection():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._create_ticket(
+        {
+            "title": "Live Check",
+            "description": "Access request from automation",
+            "form_key": "live_check",
+            "request_template_key": "live_check",
+            "service_code": "access",
+            "offering_code": "live_check",
+            "offering_full_code": "access.live_check",
+            "form_payload": {"system": "resource"},
+        },
+        trace_parent_action_id="action-catalog",
+    )
+
+    assert result["status"] == "ok"
+    call = chat_panel.ticket_client.calls[0]
+    assert call["form_key"] == "live_check"
+    assert call["request_template_key"] == "live_check"
+    assert call["service_code"] == "access"
+    assert call["offering_code"] == "live_check"
+    assert call["offering_full_code"] == "access.live_check"
+
+
+@pytest.mark.asyncio
 async def test_automation_create_ticket_without_account_still_returns_server_denial():
     chat_panel = _ChatPanel(
         account_session=None,

@@ -117,3 +117,108 @@ async def test_ticket_create_with_service_catalog_stores_explicit_fields_and_sna
     snapshot = (ticket.custom_fields or {}).get("service_catalog")
     assert snapshot["service_code"] == service_code
     assert snapshot["offering_full_code"] == f"{service_code}.laptop_broken"
+
+
+@pytest.mark.asyncio
+async def test_ticket_create_infers_unique_catalog_selection_from_form_key(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    service_code = f"access_{suffix}"
+    template_code = f"live_check_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        queue = TicketQueue(code=f"queue_{suffix}", name="Access", is_active=True)
+        session.add(queue)
+        await session.flush()
+        forms_repo = TicketFormPacksRepo(session)
+        await forms_repo.upsert_pack(
+            pack_key="request_forms",
+            version=f"test-{suffix}",
+            schema_json={
+                "pack_key": "request_forms",
+                "version": f"test-{suffix}",
+                "forms": [
+                    {
+                        "key": template_code,
+                        "request_template_key": template_code,
+                        "title": "Live Check",
+                        "request_kind": "access_request",
+                        "ticket_type": "access_request",
+                        "fields": [{"key": "system", "label": "System", "type": "text", "required": True}],
+                    }
+                ],
+            },
+            created_by="test",
+        )
+        await forms_repo.set_preferred(pack_key="request_forms", version=f"test-{suffix}", updated_by="test")
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Live Check",
+                ticket_type="access_request",
+                config_json={"default_queue_id": queue.id, "no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        repo = ServiceCatalogRepo(session)
+        await repo.upsert_service_draft(
+            {
+                "code": service_code,
+                "public_title": "Access",
+                "short_description": "Access requests",
+                "visibility": "public",
+                "owner_queue_id": queue.id,
+                "default_queue_id": queue.id,
+                "business_criticality": "medium",
+                "reporting_category": "access",
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        offering = await repo.upsert_offering_draft(
+            {
+                "service_code": service_code,
+                "code": "live_check",
+                "public_title": "Live Check",
+                "short_description": "Access to resource",
+                "request_type": "access_request",
+                "request_template_key": template_code,
+                "visibility": "public",
+                "reporting_category": "access_requests",
+            },
+            actor_id="admin-test",
+            actor_role="admin",
+        )
+        await repo.publish_service(service_code, actor_id="admin-test", actor_role="admin")
+        await repo.publish_offering(offering["full_code"], actor_id="admin-test", actor_role="admin")
+        await session.commit()
+
+    resp = await test_client.post(
+        "/api/tickets/create",
+        headers={"Authorization": "Bearer test-ui-admin-token"},
+        json={
+            "title": "Live Check",
+            "description": "Need access",
+            "device_id": "device-form-key-catalog",
+            "form_key": template_code,
+            "form_payload": {"system": "resource"},
+            "ticket_type": "access_request",
+            "requester_profile": {"full_name": "Requester"},
+        },
+    )
+    assert resp.status == 200, await resp.text()
+    payload = await resp.json()
+    ticket_id = payload["ticket"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = await session.scalar(select(Ticket).where(Ticket.ticket_id == ticket_id))
+
+    assert ticket is not None
+    assert ticket.service_code == service_code
+    assert ticket.offering_code == f"{service_code}.live_check"
+    assert ticket.reporting_category == "access_requests"
+    snapshot = (ticket.custom_fields or {}).get("service_catalog")
+    assert snapshot["service_code"] == service_code
+    assert snapshot["offering_full_code"] == f"{service_code}.live_check"
+    assert snapshot["request_template_key"] == template_code

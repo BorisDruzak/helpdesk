@@ -150,13 +150,14 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
             catalog_process_fields: dict[str, Any] = {}
             ticket_type = str(data.get("ticket_type") or "request").strip() or "request"
             catalog_selection = None
-            if service_code or offering_code or offering_full_code or request_template_key:
+            catalog_template_key = request_template_key or form_key
+            if service_code or offering_code or offering_full_code or catalog_template_key:
                 try:
                     catalog_selection = await ServiceCatalogRuntimeResolver(db_session).resolve_selection(
                         service_code=service_code or None,
                         offering_code=offering_code or None,
                         offering_full_code=offering_full_code or None,
-                        request_template_key=request_template_key or None,
+                        request_template_key=catalog_template_key or None,
                         actor_role="requester",
                     )
                     if catalog_selection.request_template_key:

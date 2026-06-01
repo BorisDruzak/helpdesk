@@ -55,6 +55,9 @@ export type SupportQueuePayload = {
     requester_status_label?: string;
     next_action_owner?: string | null;
     next_action_due_at?: string | null;
+    first_response_at?: string | null;
+    first_response_due_at?: string | null;
+    resolution_due_at?: string | null;
     status_reason?: string | null;
     priority?: string | null;
     priority_class?: string | null;

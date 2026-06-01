@@ -100,7 +100,7 @@
 ### 2.4 UI bridge (core ↔ GUI)
 | Файл | Назначение |
 |------|------------|
-| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP), settings + local agent control/diagnostics (`/ui/agent/status`, `/ui/agent/logs`, `/ui/agent/shutdown`, `/ui/agent/update`); `/ui/automation/run` preserves structured downstream server `4xx` errors from GUI ticket actions instead of wrapping expected validation/auth/not-found/conflict denials as local `500` |
+| `pc_agent/ui_bridge/api_server.py` | Локальный API для GUI (SSE/HTTP), settings + local agent control/diagnostics (`/ui/agent/status`, `/ui/agent/logs`, `/ui/agent/shutdown`, `/ui/agent/update`); `/ui/automation/run` preserves structured downstream server `4xx` errors from GUI ticket actions instead of wrapping expected validation/auth/not-found/conflict denials as local `500`; `ticket.create` forwards the same Service Catalog identifiers as the GUI wizard (`request_template_key`, `service_code`, `offering_code`, `offering_full_code`) so automation probes exercise persisted catalog dimensions instead of legacy form-only create |
 | `pc_agent/ui_bridge/event_bus.py` | События между core и GUI; хранит sticky `connection_state` для поздних SSE-подписчиков |
 | `pc_agent/ui_bridge/models.py` | Модели данных для UI |
 | `pc_agent/ui_bridge/settings_service.py` | Настройки для GUI; `GET /ui/settings` отдаёт эффективные `enabled_modules`, read-only `core_enabled_modules` и исходные `configured_enabled_modules`, чтобы локальная форма не скрывала встроенные `inventory` / `presence` |

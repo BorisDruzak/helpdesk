@@ -11,6 +11,7 @@ import type {
 import {
   formatRemainingSeconds,
   mapSupportWorkspaceViewModel,
+  mapWorkspaceTicketItems,
   mapWorkspaceSlices,
   mapWorkspaceTimeline,
 } from "./support-workspace-mappers";
@@ -79,6 +80,20 @@ function queuePayload(): SupportQueuePayload {
     ],
   };
 }
+
+describe("mapWorkspaceTicketItems", () => {
+  it("uses SLA due dates when compact queue payload has no next action due date", () => {
+    const queue = queuePayload();
+    queue.tickets[0].next_action_due_at = null;
+    queue.tickets[0].first_response_due_at = "2026-05-05T10:15:00+05:00";
+    queue.tickets[0].resolution_due_at = "2026-05-05T14:00:00+05:00";
+
+    const [ticket] = mapWorkspaceTicketItems(queue, "ticket-1", NOW);
+
+    expect(ticket.nextDueLabel).toBe("15 мин");
+    expect(ticket.slaRisk).toBe(true);
+  });
+});
 
 function detailPayload(status = "in_progress"): SupportTicketDetailPayload {
   return {
