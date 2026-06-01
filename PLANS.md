@@ -1,6 +1,29 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: draft-aware stabilization implemented, verification in progress
+Status: draft-aware Request Studio MVP verified; expert page polish in progress
+
+## Current Follow-Up Pass After `7f72a5c7`
+
+Goal for this pass: stabilize the Request Studio no-code MVP with small commits, then make Service Catalog, Forms Builder and Policy Health read clearly as expert surfaces rather than competing primary setup pages.
+
+Commit sequence:
+
+1. Clean Request Studio profile detection and remove mojibake-specific production comparisons from the profile logic.
+2. Resolve Studio visibility policies through the loaded policy registry instead of blindly writing `visibility_default`.
+3. Clarify the save/check flow: saved draft, stale check, blocked simulation with unsaved changes.
+4. Run the required web verification checkpoint and record the remaining publish limitation. Completed green with `verify_workspace.py`, `bootstrap_web_toolchain.py`, `pnpm --dir webapp run test` and `pnpm --dir webapp run build`.
+5. Polish Service Catalog as an expert page with Studio CTA, default test/retired filtering and collapsed expert JSON.
+6. Polish Forms Builder as an expert page with Studio CTA and template-context return path.
+7. Polish Policy Health as expert diagnostics with Studio-first repair actions and hidden technical refs by default.
+8. Clarify request setup navigation labels so Studio is the primary path and the other pages are expert tools.
+9. Run final verification and update docs for the completed pass.
+
+Constraints for this pass:
+
+- Do not stage `pc_agent/ui_gui/tickets_list_model.py`.
+- Do not stage existing `artifacts/*`.
+- Keep direct Studio publish as a documented follow-up unless a safe publish contract is added.
+- Keep Service Catalog, Forms Builder and Policy Health available as expert surfaces.
 
 ## Goal
 
@@ -119,10 +142,12 @@ Create or update:
 - [x] Implement draft model, wizard, inline editors, auto-fix and save flow.
 - [x] Stabilize Studio around one draft-aware `workingItem` and focused block editor UX.
 - [x] Update docs/CODEMAP navigation notes.
-- [ ] Run required verification:
+- [x] Run required verification:
   - `python scripts/verify_workspace.py`
   - `pnpm --dir webapp run test`
   - `pnpm --dir webapp run build`
+- [x] Confirmed Request Studio No-Code MVP is draft-aware and verified after profile detection, visibility resolver and save/check flow cleanup.
+- [x] Direct Studio publish remains a follow-up until a safe publish contract is added.
 - [ ] Browser-check the canonical admin UI after deploy or live release.
 
 ## Known Constraints
