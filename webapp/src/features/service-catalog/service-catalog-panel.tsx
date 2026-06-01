@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, ShieldCheck } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -55,6 +55,44 @@ function policySummary(service: AdminServiceCatalogService, offering?: AdminServ
   return entries.length ? entries.map(([key, value]) => `${key}: ${value}`).join(" · ") : "Политики наследуются или не заданы";
 }
 
+function isTechnicalCatalogObject(service: AdminServiceCatalogService, offerings: AdminServiceCatalogOffering[] = []) {
+  const text = [
+    service.code,
+    service.public_title,
+    service.short_description,
+    ...offerings.map((offering) => `${offering.full_code} ${offering.public_title}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return service.lifecycle_status === "retired" || text.includes("test") || text.includes("smoke") || text.includes("codex");
+}
+
+function lifecycleLabel(status: string) {
+  if (status === "published") {
+    return "Опубликован";
+  }
+  if (status === "draft") {
+    return "Черновик";
+  }
+  if (status === "retired") {
+    return "Выведен";
+  }
+  return status;
+}
+
+function visibilityLabel(visibility: string) {
+  if (visibility === "public") {
+    return "Публичная";
+  }
+  if (visibility === "internal") {
+    return "Внутренняя";
+  }
+  if (visibility === "restricted") {
+    return "Ограниченная";
+  }
+  return visibility;
+}
+
 function emptyToNull(value: string | null | undefined): string | null {
   const trimmed = String(value ?? "").trim();
   return trimmed ? trimmed : null;
@@ -70,6 +108,15 @@ function numberOrNull(value: string | number | null | undefined): number | null 
 }
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2";
+
+function ExpertGroup({ children, defaultOpen = true, title }: { children: ReactNode; defaultOpen?: boolean; title: string }) {
+  return (
+    <details className="rounded-md border border-slate-200 bg-white p-3" open={defaultOpen}>
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800">{title}</summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
 
 function ServiceDetails({
   offerings,
@@ -228,11 +275,16 @@ function ServiceDetails({
         className="inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
         to={`/app/admin/request-template-studio?service=${encodeURIComponent(service.code)}${selectedOffering?.full_code ? `&offering=${encodeURIComponent(selectedOffering.full_code)}` : ""}${selectedOffering?.request_template_key ? `&template=${encodeURIComponent(selectedOffering.request_template_key)}` : ""}`}
       >
-        Открыть в студии
+        Открыть в Студии обращений
       </Link>
 
-      <section>
-        <h3 className="text-sm font-semibold text-slate-800">Проверки публикации</h3>
+      {isTechnicalCatalogObject(service, offerings) ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Выбран тестовый или выведенный объект. Для рабочей настройки откройте опубликованный тип обращения в Studio.
+        </div>
+      ) : null}
+
+      <ExpertGroup title="Проверки публикации">
         {validationQuery.data ? (
           <div className="mt-2 space-y-2">
             <Badge tone={tone(validationQuery.data.status)}>{validationQuery.data.status}</Badge>
@@ -275,9 +327,9 @@ function ServiceDetails({
             )}
           </div>
         ) : null}
-      </section>
+      </ExpertGroup>
 
-      <section>
+      <ExpertGroup title="Редактор типа обращения">
         <h3 className="text-sm font-semibold text-slate-800">Варианты услуги</h3>
         <div className="mt-2 space-y-2">
           {offerings.length ? (
@@ -307,13 +359,14 @@ function ServiceDetails({
             <p className="text-sm text-slate-500">Варианты услуги пока не заведены.</p>
           )}
         </div>
-      </section>
+      </ExpertGroup>
 
-      <section>
+      <ExpertGroup title="Политики">
         <h3 className="text-sm font-semibold text-slate-800">Наследование политик</h3>
         <p className="mt-2 text-sm text-slate-600">{policySummary(service, selectedOffering)}</p>
-      </section>
+      </ExpertGroup>
 
+      <ExpertGroup title="Редактор раздела">
       <section className="space-y-4">
         <h3 className="text-sm font-semibold text-slate-800">Редактор услуги</h3>
         <div className="grid gap-3 md:grid-cols-2">
@@ -629,7 +682,9 @@ function ServiceDetails({
           </div>
         </details>
       </section>
+      </ExpertGroup>
 
+      <ExpertGroup title="Симуляция">
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-slate-800">Симуляция выполнения</h3>
@@ -689,6 +744,7 @@ function ServiceDetails({
         ) : null}
         {simulationMutation.isError ? <p className="text-sm text-rose-700">Симуляция не выполнена.</p> : null}
       </section>
+      </ExpertGroup>
     </aside>
   );
 }
@@ -698,6 +754,7 @@ export function ServiceCatalogPanel() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibilityFilter, setVisibilityFilter] = useState("all");
+  const [showTechnicalItems, setShowTechnicalItems] = useState(false);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const requestedService = searchParams.get("service");
   const requestedOffering = searchParams.get("offering");
@@ -713,7 +770,14 @@ export function ServiceCatalogPanel() {
 
   const services = dashboardQuery.data?.services ?? [];
   const offerings = dashboardQuery.data?.offerings ?? [];
-  const selectedService = services.find((service) => service.code === selectedCode) ?? services[0] ?? null;
+  const nonTechnicalServices = services.filter((service) =>
+    !isTechnicalCatalogObject(service, offerings.filter((offering) => offering.service_code === service.code)),
+  );
+  const selectedService =
+    services.find((service) => service.code === selectedCode) ??
+    (showTechnicalItems ? services[0] : nonTechnicalServices[0]) ??
+    services[0] ??
+    null;
   const selectedOfferings = offerings.filter((offering) => offering.service_code === selectedService?.code);
   const requestedServiceMissing = Boolean(
     requestedService && services.length && !services.some((service) => service.code === requestedService),
@@ -763,9 +827,13 @@ export function ServiceCatalogPanel() {
       if (visibilityFilter !== "all" && service.visibility !== visibilityFilter) {
         return false;
       }
+      const serviceOfferings = offerings.filter((offering) => offering.service_code === service.code);
+      if (!showTechnicalItems && isTechnicalCatalogObject(service, serviceOfferings) && service.code !== requestedService) {
+        return false;
+      }
       return !normalizedQuery || `${service.code} ${service.public_title} ${service.short_description ?? ""}`.toLowerCase().includes(normalizedQuery);
     });
-  }, [query, services, statusFilter, visibilityFilter]);
+  }, [offerings, query, requestedService, services, showTechnicalItems, statusFilter, visibilityFilter]);
 
   if (dashboardQuery.isLoading) {
     return <section className="workspace-page p-6 text-sm text-slate-500">Загружаем Service Catalog...</section>;
@@ -779,10 +847,15 @@ export function ServiceCatalogPanel() {
     <section className="workspace-page space-y-5 p-6">
       <header className="workspace-page__header">
         <div className="workspace-page__copy">
-          <p className="workspace-boot__eyebrow">Управление обращениями</p>
           <h1>Каталог услуг</h1>
-          <p>Услуги, варианты услуги, проверки публикации и симуляция выполнения.</p>
+          <p>Экспертный раздел: lifecycle, overrides и публикация catalog-объектов. Основная настройка обращений — в Студии обращений.</p>
         </div>
+        <Link
+          className="inline-flex h-11 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700"
+          to={`/app/admin/request-template-studio${selectedService ? `?service=${encodeURIComponent(selectedService.code)}` : ""}`}
+        >
+          Открыть в Студии обращений
+        </Link>
         <dl className="workspace-page__stats">
           <div>
             <dt>Услуги</dt>
@@ -801,7 +874,7 @@ export function ServiceCatalogPanel() {
           className="font-semibold underline-offset-4 hover:underline"
           to={`/app/admin/request-template-studio${selectedService ? `?service=${encodeURIComponent(selectedService.code)}` : ""}`}
         >
-          Студии шаблонов
+          Студии обращений
         </Link>
         . Каталог услуг остаётся экспертным разделом для lifecycle, overrides и публикации catalog-объектов.
       </div>
@@ -822,6 +895,12 @@ export function ServiceCatalogPanel() {
       {requestedOfferingMismatch ? (
         <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Вариант услуги из ссылки не найден или не относится к выбранной услуге.
+        </div>
+      ) : null}
+
+      {selectedService && isTechnicalCatalogObject(selectedService, selectedOfferings) ? (
+        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Открыт тестовый или выведенный catalog-объект. Он показан для экспертной проверки и не считается рабочим сценарием Studio.
         </div>
       ) : null}
 
@@ -849,6 +928,10 @@ export function ServiceCatalogPanel() {
               <option value="restricted">restricted</option>
             </select>
           </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 md:col-span-3">
+            <input checked={showTechnicalItems} onChange={(event) => setShowTechnicalItems(event.currentTarget.checked)} type="checkbox" />
+            Показать тестовые и выведенные
+          </label>
         </div>
       </section>
 
@@ -857,11 +940,12 @@ export function ServiceCatalogPanel() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-3">Service</th>
-                <th className="px-4 py-3">Lifecycle</th>
-                <th className="px-4 py-3">Visibility</th>
-                <th className="px-4 py-3">Offerings</th>
-                <th className="px-4 py-3">Policies</th>
+                <th className="px-4 py-3">Раздел</th>
+                <th className="px-4 py-3">Статус</th>
+                <th className="px-4 py-3">Видимость</th>
+                <th className="px-4 py-3">Типов обращений</th>
+                <th className="px-4 py-3">Публикация</th>
+                <th className="px-4 py-3">Политики</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -878,9 +962,10 @@ export function ServiceCatalogPanel() {
                       <div className="font-semibold text-slate-950">{service.public_title || service.code}</div>
                       <div className="text-xs text-slate-500">{service.code}</div>
                     </td>
-                    <td className="px-4 py-3"><Badge tone={tone(service.lifecycle_status)}>{service.lifecycle_status}</Badge></td>
-                    <td className="px-4 py-3"><Badge tone="neutral">{service.visibility}</Badge></td>
+                    <td className="px-4 py-3"><Badge tone={tone(service.lifecycle_status)}>{lifecycleLabel(service.lifecycle_status)}</Badge></td>
+                    <td className="px-4 py-3"><Badge tone="neutral">{visibilityLabel(service.visibility)}</Badge></td>
                     <td className="px-4 py-3">{count}</td>
+                    <td className="px-4 py-3">{service.lifecycle_status === "published" ? "Опубликован" : "Требует проверки"}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{policySummary(service)}</td>
                   </tr>
                 );
