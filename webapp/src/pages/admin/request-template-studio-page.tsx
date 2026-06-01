@@ -60,7 +60,7 @@ export function AdminRequestTemplateStudioPage() {
   const [offeringResetNotice, setOfferingResetNotice] = useState(false);
   const [studioDraft, setStudioDraft] = useState<StudioDraft | null>(null);
   const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string>("");
-  const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "draft_saved" | "validation_required">("saved");
+  const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "draft_saved" | "validation_required" | "check_complete" | "check_stale">("saved");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardValue, setWizardValue] = useState<{
     processProfile: string;
@@ -142,7 +142,7 @@ export function AdminRequestTemplateStudioPage() {
       }
       return simulatePolicyHealth(studioSimulationPayload);
     },
-    onSuccess: () => setSaveStatus("saved"),
+    onSuccess: () => setSaveStatus("check_complete"),
   });
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -205,9 +205,9 @@ export function AdminRequestTemplateStudioPage() {
       return;
     }
     if (draftSnapshot !== savedDraftSnapshot) {
-      setSaveStatus("dirty");
+      setSaveStatus((current) => (current === "check_stale" || simulationMutation.data ? "check_stale" : "dirty"));
     }
-  }, [draftSnapshot, savedDraftSnapshot, studioDraft]);
+  }, [draftSnapshot, savedDraftSnapshot, simulationMutation.data, studioDraft]);
 
   useEffect(() => {
     const requestedOffering = searchParams.get("offering");
@@ -257,7 +257,7 @@ export function AdminRequestTemplateStudioPage() {
 
   function updateStudioDraft(nextDraft: StudioDraft) {
     setStudioDraft(nextDraft);
-    setSaveStatus("dirty");
+    setSaveStatus(simulationMutation.data ? "check_stale" : "dirty");
   }
 
   function handleCreateDraft(draft: StudioDraft) {

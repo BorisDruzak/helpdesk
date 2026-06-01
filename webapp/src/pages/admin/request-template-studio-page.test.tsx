@@ -339,6 +339,9 @@ describe("AdminRequestTemplateStudioPage", () => {
       if (url === "/api/web/admin/service-catalog/offerings/save-draft" && init?.method === "POST") {
         return jsonResponse({ status: "ok", offering: catalogPayload().offerings[0] });
       }
+      if (url === "/api/web/admin/helpdesk/policy-health/simulate" && init?.method === "POST") {
+        return jsonResponse(simulationResult());
+      }
       throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -362,6 +365,8 @@ describe("AdminRequestTemplateStudioPage", () => {
     fireEvent.change(screen.getByLabelText("Уведомления"), { target: { value: "__unused__" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Исправить автоматически" })[0]);
     fireEvent.click(await screen.findByRole("button", { name: "Применить всё" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[9]);
+    expect(screen.getByText("Сначала сохраните черновик.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/forms/save-draft", expect.objectContaining({ method: "POST" })));
@@ -380,7 +385,16 @@ describe("AdminRequestTemplateStudioPage", () => {
       ]),
     );
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/service-catalog/offerings/save-draft", expect.objectContaining({ method: "POST" })));
-    expect(await screen.findByText("Черновик сохранён")).toBeInTheDocument();
+    expect(await screen.findByText("Черновик сохранён. Запустите проверку.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[9]);
+    expect(screen.getByText("Теперь можно запустить проверку.")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Запустить проверку" })[0]);
+    expect(await screen.findByText("Проверка выполнена.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть блок" })[1]);
+    fireEvent.change(screen.getByLabelText("Название поля"), { target: { value: "Бизнес-обоснование" } });
+    expect(await screen.findByText("Проверка устарела, запустите повторно.")).toBeInTheDocument();
   });
 
   it("keeps raw technical policy refs hidden in basic mode and labels publication as expert-only", async () => {

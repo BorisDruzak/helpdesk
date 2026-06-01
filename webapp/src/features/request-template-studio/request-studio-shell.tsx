@@ -4,7 +4,7 @@ import { ChevronDown, ClipboardCheck, Play, Plus, Settings2 } from "lucide-react
 import { Button } from "../../components/ui/button";
 import type { RequestStudioItem, RequestStudioMode, StudioLinks } from "./studio-model";
 
-type DraftStatus = "saved" | "dirty" | "draft_saved" | "validation_required";
+type DraftStatus = "saved" | "dirty" | "draft_saved" | "validation_required" | "check_complete" | "check_stale";
 
 export function RequestStudioShell({
   children,
@@ -40,8 +40,10 @@ export function RequestStudioShell({
   const draftLabel: Record<DraftStatus, string> = {
     saved: "Сохранено",
     dirty: "Есть несохранённые изменения",
-    draft_saved: "Черновик сохранён",
+    draft_saved: "Черновик сохранён. Запустите проверку.",
     validation_required: "Проверка требуется",
+    check_complete: "Проверка выполнена.",
+    check_stale: "Проверка устарела, запустите повторно.",
   };
 
   return (
