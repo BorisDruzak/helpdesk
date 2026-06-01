@@ -343,12 +343,13 @@ export function AdminRequestTemplateStudioPage() {
                   blockKey={selectedBlock?.key ?? selectedBlockKey}
                   draft={studioDraft}
                   hasUnsavedChanges={hasUnsavedChanges}
-                  item={workingItem}
-                  mode={mode}
-                  registry={registryQuery.data}
-                  selectedFieldIndex={selectedFieldIndex}
-                  showAutoFix={showAutoFix}
-                  simulationDraft={simulationDraft}
+                item={workingItem}
+                mode={mode}
+                registry={registryQuery.data}
+                readiness={readiness}
+                selectedFieldIndex={selectedFieldIndex}
+                showAutoFix={showAutoFix}
+                simulationDraft={simulationDraft}
                   simulationError={simulationMutation.error}
                   simulationPayload={studioSimulationPayload}
                   simulationPending={simulationMutation.isPending}
@@ -414,6 +415,7 @@ function SelectedBlockEditor({
   hasUnsavedChanges,
   item,
   mode,
+  readiness,
   registry,
   selectedFieldIndex,
   showAutoFix,
@@ -433,6 +435,7 @@ function SelectedBlockEditor({
   hasUnsavedChanges: boolean;
   item: RequestStudioItem;
   mode: RequestStudioMode;
+  readiness: ReturnType<typeof buildReadinessSummary>;
   registry: AdminHelpdeskModelPayload | undefined;
   selectedFieldIndex: number;
   showAutoFix: boolean;
@@ -470,11 +473,18 @@ function SelectedBlockEditor({
 
   if (blockKey === "publication") {
     return (
-      <section className="surface-panel p-5">
+      <section className="surface-panel space-y-4 p-5">
         <h2 className="text-lg font-semibold text-slate-950">Публикация</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Черновик и проверка выполняются внутри Studio. Финальная публикация пока остаётся экспертным действием через каталог услуг, потому что отдельный safe publish contract для Studio ещё не введён.
+        <p className="text-sm text-slate-600">
+          Черновик и проверка выполняются внутри Studio. Прямая публикация из Studio пока заблокирована: нет safe publish contract, который валидирует draft, показывает diff и выполняет publish атомарно.
         </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <PublicationList title="Уже готово" items={readiness.ready} empty="Готовые блоки появятся после сохранения и проверки черновика." />
+          <PublicationList title="Блокирует публикацию" items={readiness.blockers} empty="Базовые блокеры не найдены." />
+        </div>
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Сейчас доступна экспертная публикация через каталог услуг. После safe publish этапа эта карточка покажет diff формы, типа обращения и policy refs, затем даст подтвердить публикацию прямо в Studio.
+        </div>
       </section>
     );
   }
@@ -489,5 +499,22 @@ function SelectedBlockEditor({
       onDraftChange={onDraftChange}
       onShowAutoFixChange={onShowAutoFixChange}
     />
+  );
+}
+
+function PublicationList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-3">
+      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+      {items.length ? (
+        <ul className="mt-2 space-y-1 text-sm text-slate-600">
+          {items.slice(0, 5).map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">{empty}</p>
+      )}
+    </div>
   );
 }

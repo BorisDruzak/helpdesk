@@ -2,6 +2,8 @@ import type { PolicyHealthSimulationResult } from "../policy-health/api";
 import type { RequestStudioItem } from "./studio-model";
 import { hasBlockingIssue } from "./studio-model";
 
+const STUDIO_PUBLISH_UNSUPPORTED = "Studio publish недоступен до safe publish contract. Сейчас черновик можно довести до экспертной публикации.";
+
 export type ReadinessSummary = {
   status: "ok" | "warning" | "error";
   blockers: string[];
@@ -31,7 +33,6 @@ export function buildReadinessSummary(
     !item.offering ? "Не выбран тип обращения." : null,
     !item.offering?.public_title ? "Не заполнено название типа обращения." : null,
     !item.template ? "Не выбран сценарий обработки." : null,
-    !item.formPreview?.fields.length ? "Не найдена форма пользователя." : null,
     !item.template?.visibility_policy_code
       ? "Правила видимости не выбраны. Проверьте видимость в экспертной настройке перед публикацией."
       : null,
@@ -45,6 +46,7 @@ export function buildReadinessSummary(
     options?.hasUnsavedChanges ? "Есть несохранённые изменения. Сохраните черновик перед проверкой и экспертной публикацией." : null,
     simulationResult ? null : "Запустите тестовый прогон перед публикацией.",
     item.isTechnical ? "Выбран тестовый или выведенный объект. Для рабочей настройки выберите опубликованный тип обращения." : null,
+    STUDIO_PUBLISH_UNSUPPORTED,
   ].filter(Boolean) as string[];
 
   const ready = [
@@ -55,6 +57,7 @@ export function buildReadinessSummary(
     options?.hasDraft && !options.hasUnsavedChanges ? "Черновик сохранён." : null,
     item.health && !item.health.issues.some(hasBlockingIssue) ? "Блокирующие ошибки Policy Health не найдены." : null,
     simulationResult ? "Тестовый прогон выполнен." : null,
+    blockers.length === 0 ? "Черновик готов к экспертной публикации." : null,
   ].filter(Boolean) as string[];
 
   return {
