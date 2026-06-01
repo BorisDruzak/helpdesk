@@ -1,6 +1,6 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: draft-aware Request Studio MVP verified; expert page polish in progress
+Status: Request Studio No-Code MVP verified; expert page polish verified
 
 ## Current Follow-Up Pass After `7f72a5c7`
 
@@ -16,7 +16,7 @@ Commit sequence:
 6. Polish Forms Builder as an expert page with Studio CTA and template-context return path.
 7. Polish Policy Health as expert diagnostics with Studio-first repair actions and hidden technical refs by default.
 8. Clarify request setup navigation labels so Studio is the primary path and the other pages are expert tools.
-9. Run final verification and update docs for the completed pass.
+9. Run final verification and update docs for the completed pass. Completed in the final docs/verification commit.
 
 Constraints for this pass:
 
@@ -24,6 +24,13 @@ Constraints for this pass:
 - Do not stage existing `artifacts/*`.
 - Keep direct Studio publish as a documented follow-up unless a safe publish contract is added.
 - Keep Service Catalog, Forms Builder and Policy Health available as expert surfaces.
+
+Final follow-ups:
+
+- Add a safe Studio publish contract so direct publish no longer depends on expert Service Catalog.
+- Add a draft-aware simulation endpoint that can validate the unsaved Studio aggregate directly after explicit save.
+- Add optional service-desk-ready presets for route/SLA/closure/notification.
+- Keep registry-builder and universal work-task modules out of this MVP; they belong to later dedicated passes.
 
 ## Goal
 
