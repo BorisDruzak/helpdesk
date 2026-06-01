@@ -73,12 +73,37 @@ class RequestStudioPublishStep(BaseModel):
     details: str | None = None
 
 
+class RequestStudioDiffChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    label: str
+    from_value: Any = None
+    to_value: Any = None
+    change_type: Literal["added", "removed", "changed", "unchanged"]
+    severity: Literal["info", "warning", "danger"] = "info"
+
+
+class RequestStudioObjectDiff(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    object_type: Literal["form_schema", "request_template", "offering", "service"]
+    object_code: str
+    action: Literal["create", "update", "noop", "blocked"]
+    title: str
+    changes: list[RequestStudioDiffChange] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RequestStudioPublishPreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     validation: RequestStudioValidationResult
     steps: list[RequestStudioPublishStep] = Field(default_factory=list)
-    confirmation_token: str
+    confirmation_token: str | None = None
+    expires_at: str | None = None
+    diffs: list[RequestStudioObjectDiff] = Field(default_factory=list)
+    summary: dict[str, int] = Field(default_factory=dict)
     message: str
 
 

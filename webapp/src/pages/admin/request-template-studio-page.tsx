@@ -27,6 +27,8 @@ import {
 import {
   previewRequestStudioPublish,
   publishRequestStudioDraft,
+  type RequestStudioDiffChange,
+  type RequestStudioObjectDiff,
   type RequestStudioPublishPreview,
 } from "../../features/request-template-studio/api";
 import { FormFieldEditor } from "../../features/request-template-studio/form-field-editor";
@@ -69,6 +71,7 @@ export function AdminRequestTemplateStudioPage() {
   const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "draft_saved" | "validation_required" | "check_complete" | "check_stale">("saved");
   const [publishPreview, setPublishPreview] = useState<RequestStudioPublishPreview | null>(null);
+  const [previewClock, setPreviewClock] = useState(() => Date.now());
   const [publishSuccessMessage, setPublishSuccessMessage] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardValue, setWizardValue] = useState<{
@@ -140,6 +143,8 @@ export function AdminRequestTemplateStudioPage() {
     selectedOffering: workingItem?.offering ?? null,
     simulationDraft,
   });
+  const publishPreviewExpiresAt = publishPreview?.expires_at ? Date.parse(publishPreview.expires_at) : null;
+  const publishPreviewExpired = Boolean(publishPreviewExpiresAt && publishPreviewExpiresAt <= previewClock);
 
   const simulationMutation = useMutation({
     mutationFn: () => {
@@ -216,6 +221,9 @@ export function AdminRequestTemplateStudioPage() {
       if (!studioDraft || !publishPreview?.confirmation_token) {
         throw new Error("Сначала подготовьте safe publish preview.");
       }
+      if (publishPreviewExpired) {
+        throw new Error("Preview устарел. Подготовьте публикацию заново.");
+      }
       return publishRequestStudioDraft(
         buildRequestStudioPublishPayload({
           draft: studioDraft,
@@ -265,6 +273,15 @@ export function AdminRequestTemplateStudioPage() {
       setSaveStatus((current) => (current === "check_stale" || simulationMutation.data ? "check_stale" : "dirty"));
     }
   }, [draftSnapshot, savedDraftSnapshot, simulationMutation.data, studioDraft]);
+
+  useEffect(() => {
+    if (!publishPreview?.expires_at) {
+      return;
+    }
+    setPreviewClock(Date.now());
+    const timer = window.setInterval(() => setPreviewClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [publishPreview?.expires_at]);
 
   useEffect(() => {
     const requestedOffering = searchParams.get("offering");
@@ -394,10 +411,24 @@ export function AdminRequestTemplateStudioPage() {
               <h2 className="text-lg font-semibold text-slate-950">Safe publish preview</h2>
               <p className="mt-1 text-sm text-slate-600">{publishPreview.message}</p>
             </div>
-            <Button disabled={!publishPreview.validation.can_publish || publishMutation.isPending} onClick={() => publishMutation.mutate()} type="button" variant="primary">
+            <Button
+              disabled={!publishPreview.validation.can_publish || publishPreviewExpired || !publishPreview.confirmation_token || publishMutation.isPending}
+              onClick={() => publishMutation.mutate()}
+              type="button"
+              variant="primary"
+            >
               {publishMutation.isPending ? "Публикуем..." : "Подтвердить публикацию"}
             </Button>
           </div>
+          {publishPreviewExpired ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <span>Preview устарел. Подготовьте публикацию заново.</span>
+              <Button disabled={publishPreviewMutation.isPending} onClick={() => publishPreviewMutation.mutate()} type="button" variant="secondary">
+                Обновить preview
+              </Button>
+            </div>
+          ) : null}
+          <PublishDiffSummary summary={publishPreview.summary} />
           <div className="grid gap-3 md:grid-cols-3">
             {publishPreview.steps.map((step) => (
               <div className="rounded-md border border-slate-200 bg-white p-3" key={step.key}>
@@ -407,6 +438,13 @@ export function AdminRequestTemplateStudioPage() {
               </div>
             ))}
           </div>
+          {publishPreview.diffs?.length ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {publishPreview.diffs.map((diff) => (
+                <PublishDiffCard diff={diff} key={`${diff.object_type}-${diff.object_code}`} mode={mode} />
+              ))}
+            </div>
+          ) : null}
           {publishPreview.validation.issues.length ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm font-semibold text-amber-900">Что нужно проверить</p>
@@ -518,6 +556,116 @@ export function AdminRequestTemplateStudioPage() {
       </section>
     </RequestStudioShell>
   );
+}
+
+function PublishDiffSummary({ summary }: { summary: RequestStudioPublishPreview["summary"] | undefined }) {
+  const items = [
+    { label: "Будет создано", value: summary?.creates ?? 0 },
+    { label: "Будет обновлено", value: summary?.updates ?? 0 },
+    { label: "Без изменений", value: summary?.noops ?? 0 },
+    { label: "Заблокировано", value: summary?.blocked ?? 0 },
+    { label: "Предупреждения", value: summary?.warnings ?? 0 },
+  ];
+  return (
+    <div className="grid gap-2 md:grid-cols-5">
+      {items.map((item) => (
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2" key={item.label}>
+          <p className="text-xs font-medium text-slate-500">{item.label}</p>
+          <p className="mt-1 text-lg font-semibold text-slate-950">{item.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PublishDiffCard({ diff, mode }: { diff: RequestStudioObjectDiff; mode: RequestStudioMode }) {
+  const actionLabel: Record<RequestStudioObjectDiff["action"], string> = {
+    create: "Будет создано",
+    update: "Будет обновлено",
+    noop: "Без изменений",
+    blocked: "Заблокировано",
+  };
+  const visibleChanges = diff.changes.slice(0, 8);
+  return (
+    <article className="rounded-md border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">{diff.title}</h3>
+          {mode !== "basic" ? <p className="mt-1 text-xs text-slate-500">{diff.object_code}</p> : null}
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{actionLabel[diff.action]}</span>
+      </div>
+      {diff.warnings.length ? (
+        <ul className="mt-3 space-y-1 text-sm text-amber-800">
+          {diff.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+      {visibleChanges.length ? (
+        <ul className="mt-3 space-y-2">
+          {visibleChanges.map((change) => (
+            <PublishDiffChangeRow change={change} key={`${change.path}-${change.label}`} mode={mode} />
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">Изменений не найдено.</p>
+      )}
+      {diff.changes.length > visibleChanges.length ? (
+        <p className="mt-2 text-xs text-slate-500">Ещё изменений: {diff.changes.length - visibleChanges.length}</p>
+      ) : null}
+    </article>
+  );
+}
+
+function PublishDiffChangeRow({ change, mode }: { change: RequestStudioDiffChange; mode: RequestStudioMode }) {
+  return (
+    <li className="rounded-md bg-slate-50 px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-slate-800">{change.label}</span>
+        <span className="text-xs font-semibold text-slate-500">{changeTypeLabel(change.change_type)}</span>
+      </div>
+      <p className="mt-1 text-slate-600">
+        {formatPreviewValue(change.from_value)} → {formatPreviewValue(change.to_value)}
+      </p>
+      {mode !== "basic" ? <p className="mt-1 text-xs text-slate-400">{change.path}</p> : null}
+    </li>
+  );
+}
+
+function changeTypeLabel(value: RequestStudioDiffChange["change_type"]) {
+  if (value === "added") {
+    return "добавлено";
+  }
+  if (value === "removed") {
+    return "удалено";
+  }
+  if (value === "unchanged") {
+    return "без изменений";
+  }
+  return "изменено";
+}
+
+function formatPreviewValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "не задано";
+  }
+  if (typeof value === "boolean") {
+    return value ? "да" : "нет";
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      return "пусто";
+    }
+    if (value.every((item) => typeof item === "string" || typeof item === "number")) {
+      return value.join(", ");
+    }
+    return `${value.length} знач.`;
+  }
+  return "настройка изменена";
 }
 
 function SelectedBlockEditor({

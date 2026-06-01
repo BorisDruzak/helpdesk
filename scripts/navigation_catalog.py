@@ -813,7 +813,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="service_catalog",
         title="Service Catalog / Offerings",
-        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, fallback other.unknown, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions. `/app/admin/request-template-studio` is the primary admin workflow that orchestrates Service Catalog, Forms Builder and Policy Health; legacy screens remain expert/deep-link surfaces. Request Studio safe publish uses typed validate/preview/confirm endpoints and publishes form schema, request template and offering in one transactional service layer.",
+        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, fallback other.unknown, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions. `/app/admin/request-template-studio` is the primary admin workflow that orchestrates Service Catalog, Forms Builder and Policy Health; legacy screens remain expert/deep-link surfaces. Request Studio safe publish uses typed validate/preview/confirm endpoints, one-time HMAC/nonce confirmation tokens stored only as hashes in `request_studio_publish_tokens`, object diffs, and guarded publication of form schema, request template and offering in one transactional service layer.",
         aliases=(
             "service catalog",
             "service-catalog",
@@ -837,12 +837,16 @@ TOPICS: tuple[Topic, ...] = (
             "/api/web/admin/request-studio/validate-draft",
             "/api/web/admin/request-studio/publish-preview",
             "/api/web/admin/request-studio/publish",
+            "request_studio_publish_tokens",
+            "REQUEST_STUDIO_CONFIRMATION_TTL_SECONDS",
+            "REQUEST_STUDIO_CONFIRMATION_SECRET",
             "/app/admin/service-catalog",
             "/app/admin/request-template-studio",
             "seed_service_catalog",
         ),
         first_files=(
             "server/docs/SERVICE_CATALOG.md",
+            "server/app/db/migrations/versions/20260601_106_request_studio_publish_tokens.py",
             "server/tickets/service_catalog_contract.py",
             "server/tickets/service_catalog_defaults.py",
             "server/tickets/service_catalog_runtime.py",
@@ -907,6 +911,8 @@ TOPICS: tuple[Topic, ...] = (
         ),
         exact_paths=(
             "server/app/db/models.py",
+            "server/app/db/migrations/versions/20260601_106_request_studio_publish_tokens.py",
+            "server/config.py",
             "server/routes.py",
             "server/app/repos/service_catalog_repo.py",
             "server/tickets/service_catalog_contract.py",

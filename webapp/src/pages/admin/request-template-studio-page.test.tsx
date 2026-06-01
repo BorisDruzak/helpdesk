@@ -456,6 +456,35 @@ describe("AdminRequestTemplateStudioPage", () => {
               { key: "request_template", label: "Тип обращения", status: "will_publish", details: "Будет опубликован." },
             ],
             confirmation_token: "token-1",
+            expires_at: "2099-01-01T00:00:00+00:00",
+            summary: { creates: 0, updates: 2, noops: 1, blocked: 0, warnings: 0 },
+            diffs: [
+              {
+                object_type: "form_schema",
+                object_code: "mailbox_form",
+                action: "update",
+                title: "Форма пользователя",
+                warnings: [],
+                changes: [
+                  {
+                    path: "title",
+                    label: "Название формы",
+                    from_value: "Старая форма",
+                    to_value: "Форма почтового ящика",
+                    change_type: "changed",
+                    severity: "info",
+                  },
+                ],
+              },
+              {
+                object_type: "request_template",
+                object_code: "mailbox",
+                action: "noop",
+                title: "Тип обращения",
+                warnings: [],
+                changes: [],
+              },
+            ],
             message: "Проверка пройдена. Подтвердите публикацию текущего draft.",
           },
         });
@@ -486,10 +515,63 @@ describe("AdminRequestTemplateStudioPage", () => {
     fireEvent.click(publishButton);
 
     expect(await screen.findByText("Safe publish preview")).toBeInTheDocument();
+    expect(screen.getAllByText("Будет обновлено").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Название формы").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Без изменений").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Подтвердить публикацию" }));
 
     expect(await screen.findByText("Тип обращения опубликован из Studio.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/request-studio/publish", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("disables publish confirmation when preview is blocked", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/admin/service-catalog") {
+        return jsonResponse(catalogPayload());
+      }
+      if (url === "/api/web/admin/helpdesk-model/policies") {
+        return jsonResponse({ status: "success", data: registryPayload() });
+      }
+      if (url === "/api/web/admin/helpdesk/policy-health") {
+        return jsonResponse(healthPayload());
+      }
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({ status: "success", data: formsPayload() });
+      }
+      if (url === "/api/web/admin/request-studio/publish-preview" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            validation: {
+              status: "error",
+              can_publish: false,
+              issues: [{ severity: "error", code: "sla_missing", message: "Не выбран срок выполнения.", path: "form.sla_policy_ref", suggested_fix: null }],
+              confirmation_token: null,
+            },
+            steps: [{ key: "request_template", label: "Тип обращения", status: "blocked", details: "Публикация заблокирована." }],
+            confirmation_token: null,
+            expires_at: null,
+            summary: { creates: 0, updates: 0, noops: 0, blocked: 2, warnings: 0 },
+            diffs: [{ object_type: "request_template", object_code: "mailbox", action: "blocked", title: "Тип обращения", changes: [], warnings: [] }],
+            message: "Публикация заблокирована. Исправьте ошибки в Studio.",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    const publishButton = await screen.findByRole("button", { name: /Studio/ });
+    await waitFor(() => expect(publishButton).toBeEnabled());
+    fireEvent.click(publishButton);
+
+    const confirmButton = await screen.findByRole("button", { name: /публикацию|publish/i });
+    expect(confirmButton).toBeDisabled();
+    expect(screen.getAllByText("Заблокировано").length).toBeGreaterThan(0);
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/web/admin/request-studio/publish", expect.anything());
   });
 
   it("renders the primary workflow with selectors, form preview, policies, simulation and publication gates", async () => {

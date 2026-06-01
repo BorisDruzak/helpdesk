@@ -45,6 +45,24 @@ export type RequestStudioValidationResult = {
   confirmation_token: string | null;
 };
 
+export type RequestStudioDiffChange = {
+  path: string;
+  label: string;
+  from_value: unknown;
+  to_value: unknown;
+  change_type: "added" | "removed" | "changed" | "unchanged";
+  severity: "info" | "warning" | "danger";
+};
+
+export type RequestStudioObjectDiff = {
+  object_type: "form_schema" | "request_template" | "offering" | "service";
+  object_code: string;
+  action: "create" | "update" | "noop" | "blocked";
+  title: string;
+  changes: RequestStudioDiffChange[];
+  warnings: string[];
+};
+
 export type RequestStudioPublishPreview = {
   validation: RequestStudioValidationResult;
   steps: Array<{
@@ -53,7 +71,16 @@ export type RequestStudioPublishPreview = {
     status: "ready" | "blocked" | "will_update" | "will_publish";
     details: string | null;
   }>;
-  confirmation_token: string;
+  confirmation_token: string | null;
+  expires_at: string | null;
+  diffs: RequestStudioObjectDiff[];
+  summary: {
+    creates?: number;
+    updates?: number;
+    noops?: number;
+    blocked?: number;
+    warnings?: number;
+  };
   message: string;
 };
 

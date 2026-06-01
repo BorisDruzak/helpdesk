@@ -6,7 +6,11 @@ from pydantic import ValidationError
 
 from app.db import get_session
 from auth.middleware import require_auth
-from tickets.request_studio_publication import RequestStudioPublicationService, RequestStudioPublishBlocked
+from tickets.request_studio_publication import (
+    RequestStudioConfirmationError,
+    RequestStudioPublicationService,
+    RequestStudioPublishBlocked,
+)
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.request_studio import (
     RequestStudioCapabilities,
@@ -64,7 +68,11 @@ async def handle_web_admin_request_studio_publish_preview(request: web.Request) 
         )
     try:
         async with get_session() as session:
-            result = await RequestStudioPublicationService(session).preview_publish(payload)
+            result = await RequestStudioPublicationService(session).preview_publish(
+                payload,
+                auth_context=request["auth_context"],
+            )
+            await session.commit()
         return json_model_response(SuccessResponse[RequestStudioPublishPreview](data=result))
     except Exception:
         logger.exception("[request_studio] failed to build publish preview")
@@ -94,6 +102,8 @@ async def handle_web_admin_request_studio_publish(request: web.Request) -> web.R
         return json_model_response(SuccessResponse[RequestStudioPublishResult](data=result))
     except RequestStudioPublishBlocked as exc:
         return json_model_response(SuccessResponse[RequestStudioValidationResult](data=exc.validation), status=409)
+    except RequestStudioConfirmationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": exc.error_code}, status=exc.status)
     except ValueError as exc:
         return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
     except Exception:

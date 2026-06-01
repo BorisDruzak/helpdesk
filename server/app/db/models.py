@@ -4311,6 +4311,44 @@ class HelpdeskServiceCatalogAudit(Base):
     )
 
 
+class RequestStudioPublishToken(Base):
+    """One-time confirmation tokens for guarded Request Studio publish."""
+
+    __tablename__ = "request_studio_publish_tokens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    draft_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor_id: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    used_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    preview_summary_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_request_studio_publish_tokens_hash", "token_hash"),
+        Index("ix_request_studio_publish_tokens_nonce", "nonce_hash"),
+        Index("ix_request_studio_publish_tokens_actor", "actor_id", "actor_role", "expires_at"),
+        Index("ix_request_studio_publish_tokens_draft", "draft_hash", "scope"),
+        Index("ix_request_studio_publish_tokens_unused", "expires_at", "used_at"),
+    )
+
+
 class _VersionedPolicyMixin:
     code: Mapped[str] = mapped_column(String(100), primary_key=True)
     version: Mapped[str] = mapped_column(String(32), primary_key=True)

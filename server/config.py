@@ -453,6 +453,8 @@ TICKET_ADMIN_AUDIT_HOT_RETENTION_DAYS = int(os.getenv("TICKET_ADMIN_AUDIT_HOT_RE
 TICKET_RETENTION_BATCH_SIZE = int(os.getenv("TICKET_RETENTION_BATCH_SIZE", "5000"))
 TICKET_RETENTION_MAX_BATCHES_PER_RUN = int(os.getenv("TICKET_RETENTION_MAX_BATCHES_PER_RUN", "200"))
 TICKET_RETENTION_DRY_RUN = os.getenv("TICKET_RETENTION_DRY_RUN", "true").lower() == "true"
+REQUEST_STUDIO_CONFIRMATION_TTL_SECONDS = int(os.getenv("REQUEST_STUDIO_CONFIRMATION_TTL_SECONDS", "600"))
+REQUEST_STUDIO_CONFIRMATION_SECRET = os.getenv("REQUEST_STUDIO_CONFIRMATION_SECRET", "").strip()
 # UI_USER_ROLES_JSON: JSON маппинг логин -> роль. Пример: {"admin":"admin","auditor1":"auditor"}
 # Fallback для логинов без маппинга: admin
 def _parse_ui_roles() -> dict:

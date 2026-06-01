@@ -93,7 +93,7 @@ Admin/auditor:
 - `POST /api/web/admin/request-studio/publish-preview`
 - `POST /api/web/admin/request-studio/publish`
 
-Request Studio publish preview returns validation, publish steps and a confirmation token bound to the canonical draft payload. In the current MVP this token is a deterministic draft integrity hash, not a server-side one-time nonce with TTL; publish is still admin-only and revalidates the draft before mutating data. The preview is also a step/blocker summary rather than a field-level diff. HMAC/nonce confirmation and create/update diffs are hardening follow-ups.
+Request Studio publish preview returns validation, publish steps, object diffs and a server-issued confirmation token bound to the canonical draft payload. Tokens use the `rs1.<payload>.<signature>` HMAC format, scope `request_studio.publish`, actor id/role binding, nonce, draft hash and a default 10 minute TTL from `REQUEST_STUDIO_CONFIRMATION_TTL_SECONDS`. Only `token_hash` and `nonce_hash` are stored in `request_studio_publish_tokens`; raw confirmation tokens are never persisted. Publish is admin-only, rejects missing/malformed/expired/used/wrong-actor/wrong-draft tokens, revalidates the draft and marks the token used only after successful guarded publication. Preview diffs show whether the form schema, request template, catalog offering and service will be created, updated, left unchanged or blocked, with field-level changes and overwrite warnings.
 
 Requester/agent safe projection:
 

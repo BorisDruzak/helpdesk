@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import (
     ClosurePolicy,
     HelpdeskService,
+    RequestStudioPublishToken,
     RequestTemplate,
     RoutingPolicy,
     SlaPolicy,
@@ -147,13 +148,26 @@ async def test_request_studio_preview_and_publish_use_confirmation_token(test_cl
 
     preview_resp = await test_client.post(
         "/api/web/admin/request-studio/publish-preview",
-        headers=_auditor_headers(),
+        headers=_admin_headers(),
         json=payload,
     )
     assert preview_resp.status == 200, await preview_resp.text()
     preview = (await preview_resp.json())["data"]
     assert preview["validation"]["can_publish"] is True
-    assert preview["confirmation_token"]
+    assert preview["confirmation_token"].startswith("rs1.")
+    assert preview["expires_at"]
+    assert preview["summary"]["creates"] >= 2
+    assert {item["object_type"] for item in preview["diffs"]} >= {"form_schema", "request_template", "offering", "service"}
+
+    preview_resp_2 = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_admin_headers(),
+        json=payload,
+    )
+    assert preview_resp_2.status == 200, await preview_resp_2.text()
+    preview_2 = (await preview_resp_2.json())["data"]
+    assert preview_2["confirmation_token"].startswith("rs1.")
+    assert preview_2["confirmation_token"] != preview["confirmation_token"]
 
     blocked_resp = await test_client.post(
         "/api/web/admin/request-studio/publish",
@@ -165,7 +179,7 @@ async def test_request_studio_preview_and_publish_use_confirmation_token(test_cl
     publish_resp = await test_client.post(
         "/api/web/admin/request-studio/publish",
         headers=_admin_headers(),
-        json={**payload, "confirmation_token": preview["confirmation_token"]},
+        json={**payload, "confirmation_token": preview_2["confirmation_token"]},
     )
     assert publish_resp.status == 200, await publish_resp.text()
     result = (await publish_resp.json())["data"]
@@ -176,5 +190,161 @@ async def test_request_studio_preview_and_publish_use_confirmation_token(test_cl
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         template = await session.scalar(select(RequestTemplate).where(RequestTemplate.template_code == f"studio_access_{suffix}"))
+        token_rows = list((await session.execute(select(RequestStudioPublishToken))).scalars().all())
     assert template is not None
     assert template.routing_policy_code == policies["routing"]
+    used_rows = [row for row in token_rows if row.used_at is not None]
+    assert len(token_rows) >= 2
+    assert len(used_rows) == 1
+    assert used_rows[0].token_hash != preview_2["confirmation_token"]
+    assert len(used_rows[0].token_hash) == 64
+
+    reused_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_admin_headers(),
+        json={**payload, "confirmation_token": preview_2["confirmation_token"]},
+    )
+    assert reused_resp.status == 409
+    assert (await reused_resp.json())["error_code"] == "CONFIRMATION_TOKEN_USED"
+
+
+@pytest.mark.asyncio
+async def test_request_studio_publish_rejects_invalid_mutated_and_expired_tokens(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    policies = await _seed_ready_context(test_engine, suffix)
+    payload = _payload(
+        suffix,
+        routing_code=policies["routing"],
+        sla_code=policies["sla"],
+        closure_code=policies["closure"],
+        visibility_code=policies["visibility"],
+    )
+
+    invalid_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_admin_headers(),
+        json={**payload, "confirmation_token": "not-a-token"},
+    )
+    assert invalid_resp.status == 400
+    assert (await invalid_resp.json())["error_code"] == "CONFIRMATION_TOKEN_MALFORMED"
+
+    preview_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_admin_headers(),
+        json=payload,
+    )
+    assert preview_resp.status == 200, await preview_resp.text()
+    token = (await preview_resp.json())["data"]["confirmation_token"]
+
+    mutated_payload = {**payload, "form": {**payload["form"], "title": "Mutated title"}, "confirmation_token": token}
+    mutated_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_admin_headers(),
+        json=mutated_payload,
+    )
+    assert mutated_resp.status == 409
+    assert (await mutated_resp.json())["error_code"] == "CONFIRMATION_TOKEN_DRAFT_MISMATCH"
+
+    preview_resp_2 = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_admin_headers(),
+        json=payload,
+    )
+    assert preview_resp_2.status == 200, await preview_resp_2.text()
+    expired_token = (await preview_resp_2.json())["data"]["confirmation_token"]
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                select(RequestStudioPublishToken).where(RequestStudioPublishToken.used_at.is_(None)).order_by(RequestStudioPublishToken.id.desc())
+            )
+        ).scalars().first()
+        assert row is not None
+        row.expires_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        await session.commit()
+
+    expired_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_admin_headers(),
+        json={**payload, "confirmation_token": expired_token},
+    )
+    assert expired_resp.status == 409
+    assert (await expired_resp.json())["error_code"] == "CONFIRMATION_TOKEN_EXPIRED"
+
+
+@pytest.mark.asyncio
+async def test_request_studio_preview_diff_updates_existing_objects(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    policies = await _seed_ready_context(test_engine, suffix)
+    payload = _payload(
+        suffix,
+        routing_code=policies["routing"],
+        sla_code=policies["sla"],
+        closure_code=policies["closure"],
+        visibility_code=policies["visibility"],
+    )
+    preview_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_admin_headers(),
+        json=payload,
+    )
+    assert preview_resp.status == 200, await preview_resp.text()
+    token = (await preview_resp.json())["data"]["confirmation_token"]
+    publish_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_admin_headers(),
+        json={**payload, "confirmation_token": token},
+    )
+    assert publish_resp.status == 200, await publish_resp.text()
+
+    updated = {
+        **payload,
+        "form": {
+            **payload["form"],
+            "title": "Updated access title",
+            "fields": [
+                {**payload["form"]["fields"][0], "label": "Updated summary"},
+                {"key": "business_reason", "label": "Business reason", "type": "textarea", "required": False, "options": []},
+            ],
+        },
+        "offering": {**payload["offering"], "public_title": "Updated access title"},
+    }
+    update_preview_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_admin_headers(),
+        json=updated,
+    )
+    assert update_preview_resp.status == 200, await update_preview_resp.text()
+    preview = (await update_preview_resp.json())["data"]
+    assert preview["summary"]["updates"] >= 3
+    form_diff = next(item for item in preview["diffs"] if item["object_type"] == "form_schema")
+    assert form_diff["action"] == "update"
+    assert {change["path"] for change in form_diff["changes"]} >= {"title", "fields.business_reason"}
+
+
+@pytest.mark.asyncio
+async def test_request_studio_auditor_can_preview_but_not_publish(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    policies = await _seed_ready_context(test_engine, suffix)
+    payload = _payload(
+        suffix,
+        routing_code=policies["routing"],
+        sla_code=policies["sla"],
+        closure_code=policies["closure"],
+        visibility_code=policies["visibility"],
+    )
+
+    preview_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish-preview",
+        headers=_auditor_headers(),
+        json=payload,
+    )
+    assert preview_resp.status == 200, await preview_resp.text()
+    token = (await preview_resp.json())["data"]["confirmation_token"]
+
+    publish_resp = await test_client.post(
+        "/api/web/admin/request-studio/publish",
+        headers=_auditor_headers(),
+        json={**payload, "confirmation_token": token},
+    )
+    assert publish_resp.status == 403

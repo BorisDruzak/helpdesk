@@ -1,6 +1,38 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: Request Studio No-Code MVP verified; safe publish pass completed; hardening follow-ups documented
+Status: Request Studio No-Code MVP verified; safe publish hardening completed
+
+## Current Production Hardening Pass After `5f12a609`
+
+Goal for this pass: replace the MVP deterministic Request Studio publish confirmation hash with a server-issued one-time HMAC/nonce token with TTL, and make publish preview show a real create/update/noop/blocked diff for the affected form schema, request template, catalog offering and service.
+
+Status: completed locally.
+
+Execution plan:
+
+1. Add `request_studio_publish_tokens` with token hash, nonce hash, actor binding, draft hash, scope, TTL, used-at and preview metadata. Raw confirmation tokens must never be stored.
+2. Replace the deterministic `confirmation_token` with `rs1.<payload>.<signature>` signed by `REQUEST_STUDIO_CONFIRMATION_SECRET`, bound to canonical draft hash, actor id/role and scope `request_studio.publish`.
+3. Reject publish when the token is missing, malformed, invalid, expired, already used, actor/scope mismatched or bound to a different draft; re-run draft validation before mutation and mark the token used only after successful guarded publication.
+4. Add typed preview diffs for `form_schema`, `request_template`, `offering` and `service`, including create/update/noop/blocked actions, field changes, warnings and summary counts.
+5. Update the Studio preview UI to show diff summary/cards, token expiry state and disabled confirmation for blocked or expired previews while preserving the publish success banner.
+6. Update backend/frontend tests and docs for the hardened publish contract.
+
+Verification:
+
+- `python scripts/verify_workspace.py` passed.
+- `python scripts/bootstrap_web_toolchain.py` passed with Node.js 24.15.0 and pnpm 10.33.0.
+- `pytest server/tests/test_request_studio_api.py -q` passed: 5 tests.
+- `pnpm --dir webapp exec vitest run src/pages/admin/request-template-studio-page.test.tsx` passed: 9 tests.
+- `pnpm --dir webapp run test` passed: 72 files, 343 tests.
+- `pnpm --dir webapp run build` passed.
+
+Constraints:
+
+- Do not change Protocol V3.
+- Do not add registry-builder, universal work tasks or free workflow canvas features.
+- Do not auto-create missing route/SLA/closure/notification policies.
+- Do not expose raw token, raw policy JSON or internal refs in basic Studio UI.
+- Do not stage unrelated `pc_agent/ui_gui/tickets_list_model.py` or generated `artifacts/*`.
 
 ## Current Safe Publish Pass After `3d73f678`
 
@@ -72,8 +104,6 @@ Constraints for this pass:
 
 Final follow-ups:
 
-- Replace the deterministic draft integrity hash with a server-issued HMAC/nonce confirmation token with TTL if strict "preview must have been executed" enforcement is required.
-- Add a true publish diff: create/update status, form schema diff, request template diff, offering diff and overwrite warning for existing `template_code`.
 - Add a draft-aware simulation endpoint that can validate the unsaved Studio aggregate directly after explicit save.
 - Add optional service-desk-ready presets for route/SLA/closure/notification.
 - Keep registry-builder and universal work-task modules out of this MVP; they belong to later dedicated passes.
@@ -206,8 +236,8 @@ Create or update:
 ## Known Constraints
 
 - Direct publish from Studio is available through the safe request-studio publish endpoint.
-- Confirmation token is currently a deterministic draft integrity hash, not a server-side one-time nonce with TTL.
-- Publish preview currently summarizes steps/blockers, not a field-level diff.
+- Confirmation token is now a server-issued one-time HMAC/nonce token with TTL and hashed DB state, not a deterministic draft hash.
+- Publish preview now includes field-level create/update/noop/blocked diffs for the form schema, request template, offering and service.
 - Existing Forms Builder draft API saves the form pack draft, not a separately named Studio aggregate object. The UI must explain that Studio saves a draft using the existing form/catalog draft contracts.
 - Full CI and full release gate are not part of this iteration unless explicitly requested after a frozen candidate SHA.
 
