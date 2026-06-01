@@ -86,7 +86,7 @@ export const appNavigationDomains: AppNavigationDomain[] = [
     id: "catalog-intake",
     workspace: "admin",
     label: "Каталог и заявки",
-    description: "Услуги, формы, шаблоны и проверка политик",
+    description: "Студия обращений и экспертные разделы каталога, форм и политик",
     icon: FolderKanban,
     order: 20,
   },
@@ -281,6 +281,7 @@ export const appNavigation: AppNavItem[] = [
     label: "Студия обращений",
     description: "Главный путь настройки типов обращений",
     icon: ClipboardCheck,
+    isPrimary: true,
     section: "admin",
     workspace: "admin",
     domainId: "catalog-intake",
@@ -290,7 +291,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Каталог услуг",
-    description: "Экспертный раздел: услуги, варианты и overrides",
+    description: "Экспертный раздел",
     icon: FolderKanban,
     section: "admin",
     workspace: "admin",
@@ -301,7 +302,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Конструктор форм",
-    description: "Экспертный раздел: формы и политики заявок",
+    description: "Экспертный раздел",
     icon: Workflow,
     section: "admin",
     workspace: "admin",
@@ -312,7 +313,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Проверка политик",
-    description: "Экспертный раздел: Policy Health и dry-run",
+    description: "Экспертная диагностика",
     icon: ClipboardCheck,
     section: "admin",
     workspace: "admin",
