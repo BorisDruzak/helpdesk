@@ -620,6 +620,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
 
   const publishAccess = requirePermission({ permissions: permissions ?? [] }, "admin.forms.publish");
   const selectedForm = draft?.forms.find((form) => form.key === selectedFormKey) ?? draft?.forms[0] ?? null;
+  const openedTemplateFromStudio = searchParams.get("template");
   const selectedField =
     selectedForm?.fields.find((field) => field.key === selectedFieldKey) ?? selectedForm?.fields[0] ?? null;
   const selectedPolicy =
@@ -998,12 +999,11 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     <section className="space-y-5">
       <div className="flex flex-col gap-4 border-b border-border pb-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
-          <p className="text-sm text-slate-500">Администрирование / Конструктор форм</p>
           <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight text-slate-950">
             Конструктор форм
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Каталог шаблонов обращений, политик, smart views и публикаций.
+            Экспертный раздел для детального редактирования форм, политик, smart views и версий. Основная no-code настройка — в Студии обращений.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1017,7 +1017,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
             className="inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
             to={`/app/admin/request-template-studio${selectedForm ? `?template=${encodeURIComponent(selectedForm.key)}` : ""}`}
           >
-            Открыть в студии
+            Открыть в Студии обращений
           </Link>
           <div className="flex rounded-pill border border-border bg-white p-1">
             {(["basic", "expert"] as const).map((mode) => (
@@ -1040,10 +1040,16 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
       <div className="rounded-[1rem] border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
         Основная настройка шаблонов доступна в{" "}
         <Link className="font-semibold underline-offset-4 hover:underline" to={`/app/admin/request-template-studio${selectedForm ? `?template=${encodeURIComponent(selectedForm.key)}` : ""}`}>
-          Студии шаблонов
+          Студии обращений
         </Link>
         . Этот раздел оставлен для детального редактирования формы и экспертных политик.
       </div>
+
+      {openedTemplateFromStudio && selectedForm?.key === openedTemplateFromStudio ? (
+        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Открыт шаблон из Studio: {selectedForm.title || selectedForm.key}. Для базовой настройки можно вернуться в Studio.
+        </div>
+      ) : null}
 
       <nav aria-label="Разделы конструктора форм" className="flex flex-wrap gap-2">
         {BUILDER_MODES.map((item) => {
@@ -1132,7 +1138,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
           </div>
 
           <div>
-            <h2 className="text-base font-semibold text-slate-950">Что хотите сделать?</h2>
+            <h2 className="text-base font-semibold text-slate-950">Экспертные действия</h2>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               {BUILDER_MODES.filter((item) => item.mode !== "overview").map((item) => {
                 const Icon = item.icon;
@@ -1196,8 +1202,14 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
                             size="sm"
                             variant="outline"
                           >
-                            Открыть
+                            Открыть в экспертном редакторе
                           </Button>
+                          <Link
+                            className="ml-2 inline-flex h-8 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+                            to={`/app/admin/request-template-studio?template=${encodeURIComponent(form.key)}`}
+                          >
+                            Открыть в Studio
+                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -1291,6 +1303,12 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Link
+                    className="inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+                    to={`/app/admin/request-template-studio?template=${encodeURIComponent(selectedForm.key)}`}
+                  >
+                    Вернуться в Studio
+                  </Link>
                   <Button disabled={saveDraftMutation.isPending} onClick={saveDraft} size="sm" variant="outline" leadingIcon={<Save className="h-4 w-4" />}>
                     {saveDraftMutation.isPending ? "Сохраняем..." : "Сохранить черновик"}
                   </Button>
@@ -1834,7 +1852,7 @@ function AdvancedCollapsedNotice() {
 
 function AdvancedJsonPanel({ form }: { form: AdminFormsFormItem }) {
   return (
-    <details open className="rounded-[1rem] border border-border bg-slate-950 px-4 py-4 text-slate-100">
+    <details className="rounded-[1rem] border border-border bg-slate-950 px-4 py-4 text-slate-100">
       <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
         <Braces className="h-4 w-4" />
         Advanced JSON / RAW
