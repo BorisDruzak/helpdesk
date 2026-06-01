@@ -69,7 +69,7 @@ const SOFTWARE_PROFILE = PROCESS_PROFILES[4];
 export const PROCESS_MEANINGS = [
   { value: "display_only", label: "Только отображать" },
   { value: "priority_impact", label: "Влияет на приоритет" },
-  { value: "routing_input", label: "Влияет на маршрут" },
+  { value: "routing_field", label: "Влияет на маршрут" },
   { value: "diagnostic_input", label: "Входные данные диагностики" },
   { value: "closure_evidence", label: "Факт для закрытия/паспорта" },
 ];
@@ -358,7 +358,7 @@ function firstActivePolicy(registry: AdminHelpdeskModelPayload | null | undefine
 function starterFields(profile: string): StudioDraftField[] {
   if (profile === ACCESS_PROFILE || isAccessProfile(profile)) {
     return [
-      { key: "system", label: "В какую систему?", type: "text", required: true, placeholder: "CRM, 1C, VPN", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_input" },
+      { key: "system", label: "В какую систему?", type: "text", required: true, placeholder: "CRM, 1C, VPN", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_field" },
       { key: "role", label: "Какая роль?", type: "text", required: false, placeholder: "Читатель, редактор", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "display_only" },
       { key: "reason", label: "Зачем нужен доступ?", type: "textarea", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "approval_subject" },
       { key: "until_date", label: "До какой даты?", type: "date", required: false, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "display_only" },
@@ -374,7 +374,7 @@ function starterFields(profile: string): StudioDraftField[] {
   }
   if (profile === SOFTWARE_PROFILE) {
     return [
-      { key: "software", label: "Какое ПО?", type: "text", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_input" },
+      { key: "software", label: "Какое ПО?", type: "text", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_field" },
       { key: "target_user", label: "Для кого?", type: "user_picker", required: false, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "display_only" },
       { key: "reason", label: "Обоснование", type: "textarea", required: false, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "approval_subject" },
     ];
@@ -391,6 +391,9 @@ function normalizeFieldType(value: string): AdminFormsFieldType {
 
 function normalizeProcessMeaning(mapping: Record<string, unknown> | undefined) {
   const roles = Array.isArray(mapping?.roles) ? mapping.roles : typeof mapping?.role === "string" ? [mapping.role] : [];
+  if (roles.includes("routing_input")) {
+    return "routing_field";
+  }
   const found = roles.find((role) => PROCESS_MEANINGS.some((item) => item.value === role));
   return typeof found === "string" ? found : "display_only";
 }

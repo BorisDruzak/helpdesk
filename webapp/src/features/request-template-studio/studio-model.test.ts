@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { StudioDraft } from "./draft-model";
+import { buildFormsDraftPayload } from "./draft-model";
 import {
   buildWorkingRequestStudioItem,
   findDefaultStudioItem,
@@ -36,7 +37,7 @@ function draft(overrides: Partial<StudioDraft> = {}): StudioDraft {
         optionsText: "",
         visibleWhenField: "",
         visibleWhenValue: "",
-        processMeaning: "routing_input",
+        processMeaning: "routing_field",
       },
     ],
     ...overrides,
@@ -77,8 +78,18 @@ describe("request studio model", () => {
       key: "system",
       label: "В какую систему?",
       required: true,
-      processMapping: { roles: ["routing_input"] },
+      processMapping: { roles: ["routing_field"] },
     });
+  });
+
+  it("uses canonical Forms Builder roles in save-draft payloads", () => {
+    const payload = buildFormsDraftPayload({
+      draft: draft(),
+      currentForms: [],
+      registry: null,
+    });
+
+    expect(payload.forms[0]?.fields[0]?.process_mapping).toEqual({ roles: ["routing_field"] });
   });
 
   it("overlays an existing item with unsaved draft values", () => {
