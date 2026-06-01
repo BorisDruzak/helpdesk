@@ -12,7 +12,7 @@ import {
   type GuidedSimulationDraft,
 } from "../request-template-studio/options";
 
-const POLICY_COLUMNS = ["routing", "sla", "ola", "approval", "closure", "visibility", "notification", "diagnostic", "reporting"];
+const POLICY_COLUMNS = ["routing", "sla", "approval", "closure", "visibility"];
 
 function statusTone(status: string) {
   if (status === "ok") {
@@ -25,6 +25,27 @@ function statusTone(status: string) {
     return "danger" as const;
   }
   return "neutral" as const;
+}
+
+function healthLabel(status: string | undefined) {
+  if (status === "ok") {
+    return "Настроено";
+  }
+  if (status === "missing") {
+    return "Не настроено";
+  }
+  if (status === "warning") {
+    return "Рекомендуется";
+  }
+  if (status === "unused" || status === "not_configured") {
+    return "Не используется";
+  }
+  return status ?? "Не настроено";
+}
+
+function isTechnicalTemplate(template: PolicyHealthTemplate) {
+  const text = `${template.template_code} ${template.template_name}`.toLowerCase();
+  return text.includes("test") || text.includes("smoke") || text.includes("codex_live") || text.includes("codex");
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -100,8 +121,16 @@ function TemplateDetails({ template }: { template: PolicyHealthTemplate | null }
         className="mt-4 inline-flex h-9 items-center justify-center rounded-pill border border-border bg-white px-3 text-xs font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
         to={`/app/admin/request-template-studio?template=${encodeURIComponent(template.template_code)}`}
       >
-        Открыть в студии
+        Открыть в Студии
       </Link>
+      {template.issue_count > 0 ? (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Исправьте в Studio базовые блоки: маршрут, сроки, согласование, закрытие и видимость.
+        </p>
+      ) : null}
+      {isTechnicalTemplate(template) ? (
+        <Badge tone="warning">test / acceptance</Badge>
+      ) : null}
       <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
         <div>
           <dt className="text-slate-500">Оценка</dt>
@@ -147,6 +176,7 @@ export function PolicyHealthPanel() {
   const [healthFilter, setHealthFilter] = useState("all");
   const [kindFilter, setKindFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showTechnicalTemplates, setShowTechnicalTemplates] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [simulationDraft, setSimulationDraft] = useState<GuidedSimulationDraft>(defaultGuidedSimulationDraft);
@@ -179,12 +209,15 @@ export function PolicyHealthPanel() {
       if (kindFilter !== "all" && !template.issues.some((issue) => issue.policy_kind === kindFilter)) {
         return false;
       }
+      if (!showTechnicalTemplates && isTechnicalTemplate(template)) {
+        return false;
+      }
       if (!normalizedQuery) {
         return true;
       }
       return `${template.template_code} ${template.template_name}`.toLowerCase().includes(normalizedQuery);
     });
-  }, [healthFilter, kindFilter, query, statusFilter, templates]);
+  }, [healthFilter, kindFilter, query, showTechnicalTemplates, statusFilter, templates]);
 
   const simulationMutation = useMutation({
     mutationFn: () => {
@@ -207,9 +240,15 @@ export function PolicyHealthPanel() {
     <section className="workspace-page space-y-5 p-6">
       <header className="workspace-page__header">
         <div className="workspace-page__copy">
-          <p className="workspace-boot__eyebrow">Управление обращениями</p>
           <h1>Проверка политик</h1>
+          <p>Экспертная диагностика Policy Health и dry-run. Основная настройка маршрута, SLA, согласования и закрытия доступна в Студии обращений.</p>
         </div>
+        <Link
+          className="inline-flex h-11 items-center justify-center rounded-pill bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700"
+          to={`/app/admin/request-template-studio${selectedTemplate ? `?template=${encodeURIComponent(selectedTemplate.template_code)}` : ""}`}
+        >
+          Открыть в Студии обращений
+        </Link>
         <dl className="workspace-page__stats">
           <div>
             <dt>Всего</dt>
@@ -232,7 +271,7 @@ export function PolicyHealthPanel() {
           className="font-semibold underline-offset-4 hover:underline"
           to={`/app/admin/request-template-studio${selectedTemplate ? `?template=${encodeURIComponent(selectedTemplate.template_code)}` : ""}`}
         >
-          Студии шаблонов
+          Студии обращений
         </Link>
         . Проверка политик остаётся экспертным разделом для диагностики проблем и dry-run деталей.
       </div>
@@ -291,6 +330,10 @@ export function PolicyHealthPanel() {
               <option value="archived">Архив</option>
             </select>
           </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700 lg:col-span-4">
+            <input checked={showTechnicalTemplates} onChange={(event) => setShowTechnicalTemplates(event.currentTarget.checked)} type="checkbox" />
+            Показать тестовые и acceptance-шаблоны
+          </label>
         </div>
       </section>
 
@@ -301,7 +344,7 @@ export function PolicyHealthPanel() {
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Шаблон</th>
-                  <th className="px-4 py-3">Состояние</th>
+                  <th className="px-4 py-3">Готовность</th>
                   <th className="px-4 py-3">Проблемы</th>
                   {POLICY_COLUMNS.map((kind) => <th key={kind} className="px-3 py-3">{POLICY_KIND_LABELS[kind] ?? kind}</th>)}
                   <th className="px-4 py-3">Проверен</th>
@@ -313,12 +356,13 @@ export function PolicyHealthPanel() {
                     <td className="px-4 py-3">
                       <p className="font-semibold text-slate-950">{template.template_code}</p>
                       <p className="text-xs text-slate-500">{template.template_name} / {template.version}</p>
+                      {isTechnicalTemplate(template) ? <Badge tone="warning">test</Badge> : null}
                     </td>
                     <td className="px-4 py-3"><Badge tone={statusTone(template.health_status)}>{template.health_status}</Badge></td>
-                    <td className="px-4 py-3">{template.issue_count} / conflicts {template.conflict_count}</td>
+                    <td className="px-4 py-3">{template.issue_count ? `${template.issue_count} проблем` : "Нет блокеров"}</td>
                     {POLICY_COLUMNS.map((kind) => (
                       <td key={kind} className="px-3 py-3">
-                        <Badge tone={statusTone(template.checks[kind]?.status)}>{template.checks[kind]?.status ?? "n/a"}</Badge>
+                        <Badge tone={statusTone(template.checks[kind]?.status)}>{healthLabel(template.checks[kind]?.status)}</Badge>
                       </td>
                     ))}
                     <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(template.last_checked_at)}</td>
@@ -326,7 +370,7 @@ export function PolicyHealthPanel() {
                 ))}
                 {!visibleTemplates.length ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={13}>Нет шаблонов под текущий фильтр.</td>
+                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={9}>Нет шаблонов под текущий фильтр.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -385,11 +429,14 @@ export function PolicyHealthPanel() {
               </pre>
             </details>
           </div>
-          <pre className="min-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
-            {simulationMutation.isError
-              ? String(simulationMutation.error instanceof Error ? simulationMutation.error.message : simulationMutation.error)
-              : JSON.stringify(simulationMutation.data ?? {}, null, 2)}
-          </pre>
+          <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON результата</summary>
+            <pre className="mt-3 min-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
+              {simulationMutation.isError
+                ? String(simulationMutation.error instanceof Error ? simulationMutation.error.message : simulationMutation.error)
+                : JSON.stringify(simulationMutation.data ?? {}, null, 2)}
+            </pre>
+          </details>
         </div>
       </section>
     </section>
