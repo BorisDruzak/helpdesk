@@ -200,4 +200,42 @@ describe("ServiceCatalogPanel", () => {
     });
     expect(await screen.findByRole("button", { name: /VPN setup/i })).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("uses human labels for lifecycle and visibility filters while preserving values", async () => {
+    mockServiceCatalogFetch();
+
+    const { container } = renderPanel("/app/admin/service-catalog");
+
+    await screen.findByRole("button", { name: /Mail box/i });
+    const filterSelects = Array.from(container.querySelectorAll("section.surface-panel select"));
+    expect(filterSelects).toHaveLength(2);
+    expect(Array.from(filterSelects[0].querySelectorAll("option")).map((option) => [option.value, option.textContent])).toEqual([
+      ["all", "Все"],
+      ["draft", "Черновик"],
+      ["published", "Опубликован"],
+      ["retired", "Выведен"],
+    ]);
+    expect(Array.from(filterSelects[1].querySelectorAll("option")).map((option) => [option.value, option.textContent])).toEqual([
+      ["all", "Все"],
+      ["public", "Публичная"],
+      ["internal", "Внутренняя"],
+      ["restricted", "Ограниченная"],
+    ]);
+  });
+
+  it("shows an inline expert JSON parse error without mutating the draft", async () => {
+    mockServiceCatalogFetch();
+
+    const { container } = renderPanel("/app/admin/service-catalog?service=mail&offering=mail.new_box");
+
+    await screen.findByRole("button", { name: /Mail box/i });
+    const textarea = container.querySelector("textarea");
+    expect(textarea).not.toBeNull();
+    fireEvent.change(textarea as HTMLTextAreaElement, { target: { value: "{bad json" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Загрузить JSON в форму услуги" }));
+
+    expect(await screen.findByText(/JSON невалиден:/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Mail")).toBeInTheDocument();
+  });
 });

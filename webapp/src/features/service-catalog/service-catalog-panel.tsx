@@ -107,6 +107,21 @@ function numberOrNull(value: string | number | null | undefined): number | null 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseExpertJson<T>(rawValue: string): { data: Partial<T>; error: null } | { data: null; error: string } {
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { data: null, error: "JSON невалиден: ожидается объект." };
+    }
+    return { data: parsed as Partial<T>, error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: `JSON невалиден: ${error instanceof Error ? error.message : "не удалось разобрать значение"}.`,
+    };
+  }
+}
+
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2";
 
 function ExpertGroup({ children, defaultOpen = true, title }: { children: ReactNode; defaultOpen?: boolean; title: string }) {
@@ -136,6 +151,7 @@ function ServiceDetails({
   const [selectedOfferingCode, setSelectedOfferingCode] = useState("");
   const [simulationDraft, setSimulationDraft] = useState<GuidedSimulationDraft>(defaultGuidedSimulationDraft);
   const [draftJson, setDraftJson] = useState("");
+  const [draftJsonError, setDraftJsonError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const selectedOffering =
     offerings.find((offering) => offering.full_code === selectedOfferingCode) ?? offerings[0] ?? null;
@@ -147,6 +163,7 @@ function ServiceDetails({
   useEffect(() => {
     setServiceDraft(service ?? {});
     setDraftJson("");
+    setDraftJsonError(null);
   }, [service?.code]);
 
   useEffect(() => {
@@ -174,6 +191,7 @@ function ServiceDetails({
         request_type: "service_request",
       },
     );
+    setDraftJsonError(null);
   }, [selectedOffering?.full_code, service?.code]);
 
   const validationQuery = useQuery({
@@ -654,15 +672,24 @@ function ServiceDetails({
           <summary className="cursor-pointer text-sm font-semibold text-slate-700">Экспертный JSON</summary>
           <textarea
             className="field-base mt-3 min-h-28 w-full px-3 py-2 font-mono text-xs"
-            onChange={(event) => setDraftJson(event.currentTarget.value)}
+            onChange={(event) => {
+              setDraftJson(event.currentTarget.value);
+              setDraftJsonError(null);
+            }}
             placeholder={JSON.stringify(selectedOffering ?? service, null, 2)}
             value={draftJson}
           />
+          {draftJsonError ? <p className="mt-2 text-sm font-medium text-rose-700">{draftJsonError}</p> : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
               disabled={saveServiceMutation.isPending || !draftJson.trim()}
               onClick={() => {
-                setServiceDraft((current) => ({ ...current, ...(JSON.parse(draftJson) as Partial<AdminServiceCatalogService>) }));
+                const parsed = parseExpertJson<AdminServiceCatalogService>(draftJson);
+                if (parsed.error) {
+                  setDraftJsonError(parsed.error);
+                  return;
+                }
+                setServiceDraft((current) => ({ ...current, ...parsed.data }));
               }}
               type="button"
               variant="outline"
@@ -672,7 +699,12 @@ function ServiceDetails({
             <Button
               disabled={saveOfferingMutation.isPending || !draftJson.trim()}
               onClick={() => {
-                setOfferingDraft((current) => ({ ...current, ...(JSON.parse(draftJson) as Partial<AdminServiceCatalogOffering>) }));
+                const parsed = parseExpertJson<AdminServiceCatalogOffering>(draftJson);
+                if (parsed.error) {
+                  setDraftJsonError(parsed.error);
+                  return;
+                }
+                setOfferingDraft((current) => ({ ...current, ...parsed.data }));
               }}
               type="button"
               variant="outline"
@@ -913,19 +945,19 @@ export function ServiceCatalogPanel() {
           <label className="text-sm font-medium text-slate-700">
             Жизненный цикл
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
-              <option value="all">all</option>
-              <option value="draft">draft</option>
-              <option value="published">published</option>
-              <option value="retired">retired</option>
+              <option value="all">Все</option>
+              <option value="draft">Черновик</option>
+              <option value="published">Опубликован</option>
+              <option value="retired">Выведен</option>
             </select>
           </label>
           <label className="text-sm font-medium text-slate-700">
             Видимость
             <select className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2" value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.currentTarget.value)}>
-              <option value="all">all</option>
-              <option value="public">public</option>
-              <option value="internal">internal</option>
-              <option value="restricted">restricted</option>
+              <option value="all">Все</option>
+              <option value="public">Публичная</option>
+              <option value="internal">Внутренняя</option>
+              <option value="restricted">Ограниченная</option>
             </select>
           </label>
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700 md:col-span-3">
