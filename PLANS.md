@@ -1,6 +1,41 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: Request Studio No-Code MVP verified; expert page polish verified
+Status: Request Studio No-Code MVP verified; safe publish pass in progress
+
+## Current Safe Publish Pass After `3d73f678`
+
+Goal for this pass: complete a short cleanup/hardening sequence, then add a typed safe publish contract for `/app/admin/request-template-studio` so the primary no-code path can validate, simulate, preview and publish from Studio without requiring Forms Builder, Service Catalog or Policy Health for the basic publication flow.
+
+Commit sequence:
+
+1. Harden Service Catalog expert controls. Completed in `db301661`: filter labels are human-readable while values stay stable, and the expert JSON loader now shows an inline parse error without mutating the draft.
+2. Record browser smoke evidence for the request setup pages.
+3. Clarify Request Studio readiness/publication wording before backend safe publish work.
+4. Verify the small cleanup pass.
+5. Add request-studio backend validation/capabilities contract.
+6. Add draft-aware request-studio simulation.
+7. Add request-studio publish preview/diff plan.
+8. Add safe publish execution.
+9. Wire frontend API, publish confirmation flow, tests and docs.
+
+Browser smoke evidence:
+
+- Stand URL: `https://192.168.100.17:9443/admin`.
+- Pages opened in browser after quick release smoke:
+  - `/app/admin/request-template-studio`
+  - `/app/admin/service-catalog`
+  - `/app/admin/forms`
+  - `/app/admin/policy-health`
+- Screenshot artifacts were written under `artifacts/catalog-requests-screenshots/` for local inspection but are intentionally not part of the committed source changes.
+- The remote server was stopped after the browser check.
+
+Constraints for this pass:
+
+- Do not stage `pc_agent/ui_gui/tickets_list_model.py`.
+- Do not stage existing `artifacts/*`.
+- Do not change Protocol V3.
+- Do not add a DB schema unless existing form/catalog/helpdesk-model tables cannot safely support the contract.
+- Safe publish must validate and preview before mutation, block unsafe drafts and avoid silent partial publication.
 
 ## Current Follow-Up Pass After `7f72a5c7`
 
