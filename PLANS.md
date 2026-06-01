@@ -1,6 +1,6 @@
 # Service Desk Core Completion / Request Studio No-Code MVP
 
-Status: Request Studio No-Code MVP verified; safe publish pass in progress
+Status: Request Studio No-Code MVP verified; safe publish pass completed; hardening follow-ups documented
 
 ## Current Safe Publish Pass After `3d73f678`
 
@@ -17,6 +17,7 @@ Commit sequence:
 7. Add request-studio publish preview/diff plan. Completed: preview returns validation, publish steps and confirmation token.
 8. Add safe publish execution. Completed: publish revalidates token/draft, blocks unsafe payloads and commits form schema, request template and catalog offering through existing repos in one guarded transaction.
 9. Wire frontend API, publish confirmation flow, tests and docs. Completed: Studio publish button opens preview, confirms token-backed publish and invalidates Studio queries.
+10. Clarify post-review UX/docs. Completed: Studio shows the backend publish success message after confirmed publish, and this plan now records token/diff hardening as follow-up instead of saying the safe publish contract is missing.
 
 Browser smoke evidence:
 
@@ -43,6 +44,8 @@ Constraints for this pass:
 - Do not change Protocol V3.
 - Do not add a DB schema unless existing form/catalog/helpdesk-model tables cannot safely support the contract.
 - Safe publish must validate and preview before mutation, block unsafe drafts and avoid silent partial publication.
+- Current confirmation token is a deterministic draft integrity hash, not a server-issued one-time nonce. That is acceptable for this MVP because publish is admin-only and revalidates the draft, but a future hardening pass should add HMAC/nonce+TTL server state.
+- Current preview shows publish steps and blockers, not a field-level create/update diff. A future hardening pass should add form schema, request template and offering diffs plus overwrite warnings for existing template codes.
 
 ## Current Follow-Up Pass After `7f72a5c7`
 
@@ -64,12 +67,13 @@ Constraints for this pass:
 
 - Do not stage `pc_agent/ui_gui/tickets_list_model.py`.
 - Do not stage existing `artifacts/*`.
-- Keep direct Studio publish as a documented follow-up unless a safe publish contract is added.
+- Keep Studio direct publish on the typed safe publish contract; Service Catalog, Forms Builder and Policy Health remain expert surfaces, not the primary publication path.
 - Keep Service Catalog, Forms Builder and Policy Health available as expert surfaces.
 
 Final follow-ups:
 
-- Add a safe Studio publish contract so direct publish no longer depends on expert Service Catalog.
+- Replace the deterministic draft integrity hash with a server-issued HMAC/nonce confirmation token with TTL if strict "preview must have been executed" enforcement is required.
+- Add a true publish diff: create/update status, form schema diff, request template diff, offering diff and overwrite warning for existing `template_code`.
 - Add a draft-aware simulation endpoint that can validate the unsaved Studio aggregate directly after explicit save.
 - Add optional service-desk-ready presets for route/SLA/closure/notification.
 - Keep registry-builder and universal work-task modules out of this MVP; they belong to later dedicated passes.
@@ -87,7 +91,7 @@ Primary user path:
 5. Choose route, SLA, approval, closure and notification settings inside Studio.
 6. Save the draft through existing safe draft APIs.
 7. Run validation/simulation against the saved draft context.
-8. See clear publication status; publication remains expert-only unless a safe Studio publish contract is added.
+8. See clear publication status and publish from Studio through the safe preview/confirmation contract.
 
 ## Scope
 
@@ -135,7 +139,7 @@ Primary user path:
 - Basic mode hides raw policy refs, JSON, internal ids, route preview payloads and version/debug details.
 - Advanced mode may show processing profile, inheritance, enabled policies, warnings and process mapping.
 - Expert mode keeps JSON, raw policy refs and deep links to Service Catalog, Forms Builder and Policy Health.
-- Publication button must not be a dead disabled control. Until a safe Studio publish contract exists, show `Открыть экспертную публикацию` and explain the limitation.
+- Publication button must not be a dead disabled control. Studio now uses the safe publish preview/confirmation contract; expert catalog publication remains available only as an expert surface.
 - Readiness must distinguish blockers, recommendations and ready items in human language.
 - Draft state must visibly distinguish saved, unsaved, saved draft, validation required and publication blocked/available states.
 
@@ -146,7 +150,7 @@ Primary user path:
 - Compose a single working Studio item from `selectedItem + studioDraft` so the process map, block inspector, readiness, preview, simulation payload and newly created wizard drafts all read the same current state.
 - Show the selected block editor in basic mode instead of the previous long tape of every editor; advanced/expert modes can still show broader processing details.
 - Treat policy selection as choosing existing active policies only. Presets and auto-fix may map to found active policies; if none exist, Studio must say expert setup is required.
-- Keep direct publish out of scope for this pass because there is no dedicated safe Studio publish contract. The UI must expose this honestly and preserve context in the expert link.
+- Direct publish is in scope through the dedicated safe Studio publish contract. The UI must preserve context in expert links but not make expert publication the basic path.
 - Do not mutate published live objects field-by-field. Local edits become a dirty Studio draft and persist only when `Сохранить черновик` is clicked.
 
 ## Component Plan
@@ -196,12 +200,14 @@ Create or update:
   - `pnpm --dir webapp run test`
   - `pnpm --dir webapp run build`
 - [x] Confirmed Request Studio No-Code MVP is draft-aware and verified after profile detection, visibility resolver and save/check flow cleanup.
-- [x] Direct Studio publish remains a follow-up until a safe publish contract is added.
-- [ ] Browser-check the canonical admin UI after deploy or live release.
+- [x] Direct Studio publish uses a safe publish preview/confirmation contract.
+- [x] Browser-check the canonical admin UI after deploy or live release.
 
 ## Known Constraints
 
-- Direct publish from Studio remains a follow-up unless a safe request-studio publish endpoint is added.
+- Direct publish from Studio is available through the safe request-studio publish endpoint.
+- Confirmation token is currently a deterministic draft integrity hash, not a server-side one-time nonce with TTL.
+- Publish preview currently summarizes steps/blockers, not a field-level diff.
 - Existing Forms Builder draft API saves the form pack draft, not a separately named Studio aggregate object. The UI must explain that Studio saves a draft using the existing form/catalog draft contracts.
 - Full CI and full release gate are not part of this iteration unless explicitly requested after a frozen candidate SHA.
 

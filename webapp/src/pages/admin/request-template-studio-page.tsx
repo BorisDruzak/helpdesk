@@ -69,6 +69,7 @@ export function AdminRequestTemplateStudioPage() {
   const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "draft_saved" | "validation_required" | "check_complete" | "check_stale">("saved");
   const [publishPreview, setPublishPreview] = useState<RequestStudioPublishPreview | null>(null);
+  const [publishSuccessMessage, setPublishSuccessMessage] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardValue, setWizardValue] = useState<{
     processProfile: string;
@@ -181,6 +182,7 @@ export function AdminRequestTemplateStudioPage() {
       setSavedDraftSnapshot(draftSnapshot);
       setSaveStatus("draft_saved");
       setPublishPreview(null);
+      setPublishSuccessMessage(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-studio", "catalog"] }),
         queryClient.invalidateQueries({ queryKey: ["request-studio", "forms"] }),
@@ -206,6 +208,7 @@ export function AdminRequestTemplateStudioPage() {
     },
     onSuccess: (preview) => {
       setPublishPreview(preview);
+      setPublishSuccessMessage(null);
     },
   });
   const publishMutation = useMutation({
@@ -221,8 +224,9 @@ export function AdminRequestTemplateStudioPage() {
         }),
       );
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setPublishPreview(null);
+      setPublishSuccessMessage(result.message || "Тип обращения опубликован из Studio.");
       setSaveStatus("check_complete");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["request-studio", "catalog"] }),
@@ -246,6 +250,7 @@ export function AdminRequestTemplateStudioPage() {
     }
     const nextDraft = buildInitialStudioDraft(selectedItem);
     setStudioDraft(nextDraft);
+    setPublishSuccessMessage(null);
     const snapshot = nextDraft ? JSON.stringify(nextDraft) : "";
     setSavedDraftSnapshot(snapshot);
     setSaveStatus("saved");
@@ -280,6 +285,7 @@ export function AdminRequestTemplateStudioPage() {
   function selectItem(itemId: string) {
     createdDraftTemplateRef.current = null;
     setCreatedDraftTemplate(null);
+    setPublishSuccessMessage(null);
     const item = items.find((candidate) => candidate.id === itemId);
     const next = new URLSearchParams(searchParams);
     if (!item) {
@@ -310,6 +316,7 @@ export function AdminRequestTemplateStudioPage() {
   function updateStudioDraft(nextDraft: StudioDraft) {
     setStudioDraft(nextDraft);
     setPublishPreview(null);
+    setPublishSuccessMessage(null);
     setSaveStatus(simulationMutation.data ? "check_stale" : "dirty");
   }
 
@@ -361,6 +368,12 @@ export function AdminRequestTemplateStudioPage() {
       {saveDraftMutation.error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {saveDraftMutation.error instanceof Error ? saveDraftMutation.error.message : "Не удалось сохранить черновик."}
+        </div>
+      ) : null}
+
+      {publishSuccessMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {publishSuccessMessage}
         </div>
       ) : null}
 

@@ -431,6 +431,67 @@ describe("AdminRequestTemplateStudioPage", () => {
     expect(screen.queryByText("route_l1")).not.toBeInTheDocument();
   });
 
+  it("shows a publish success banner after confirmed Studio publish", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/admin/service-catalog") {
+        return jsonResponse(catalogPayload());
+      }
+      if (url === "/api/web/admin/helpdesk-model/policies") {
+        return jsonResponse({ status: "success", data: registryPayload() });
+      }
+      if (url === "/api/web/admin/helpdesk/policy-health") {
+        return jsonResponse(healthPayload());
+      }
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({ status: "success", data: formsPayload() });
+      }
+      if (url === "/api/web/admin/request-studio/publish-preview" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            validation: { status: "ok", can_publish: true, issues: [], confirmation_token: "token-1" },
+            steps: [
+              { key: "form_schema", label: "Форма пользователя", status: "will_publish", details: "Будет опубликована." },
+              { key: "request_template", label: "Тип обращения", status: "will_publish", details: "Будет опубликован." },
+            ],
+            confirmation_token: "token-1",
+            message: "Проверка пройдена. Подтвердите публикацию текущего draft.",
+          },
+        });
+      }
+      if (url === "/api/web/admin/request-studio/publish" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}"));
+        expect(body.confirmation_token).toBe("token-1");
+        return jsonResponse({
+          status: "success",
+          data: {
+            validation: { status: "ok", can_publish: true, issues: [], confirmation_token: "token-1" },
+            request_template: registryPayload().request_templates[0],
+            form_schema: registryPayload().form_schemas[0],
+            service: catalogPayload().services[0],
+            offering: catalogPayload().offerings[0],
+            message: "Тип обращения опубликован из Studio.",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    const publishButton = await screen.findByRole("button", { name: "Опубликовать из Studio" });
+    await waitFor(() => expect(publishButton).toBeEnabled());
+    fireEvent.click(publishButton);
+
+    expect(await screen.findByText("Safe publish preview")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить публикацию" }));
+
+    expect(await screen.findByText("Тип обращения опубликован из Studio.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/request-studio/publish", expect.objectContaining({ method: "POST" }));
+  });
+
   it("renders the primary workflow with selectors, form preview, policies, simulation and publication gates", async () => {
     vi.stubGlobal(
       "fetch",

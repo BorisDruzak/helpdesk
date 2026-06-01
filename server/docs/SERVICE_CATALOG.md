@@ -93,6 +93,8 @@ Admin/auditor:
 - `POST /api/web/admin/request-studio/publish-preview`
 - `POST /api/web/admin/request-studio/publish`
 
+Request Studio publish preview returns validation, publish steps and a confirmation token bound to the canonical draft payload. In the current MVP this token is a deterministic draft integrity hash, not a server-side one-time nonce with TTL; publish is still admin-only and revalidates the draft before mutating data. The preview is also a step/blocker summary rather than a field-level diff. HMAC/nonce confirmation and create/update diffs are hardening follow-ups.
+
 Requester/agent safe projection:
 
 - `GET /api/service-catalog/current`
