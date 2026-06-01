@@ -60,7 +60,23 @@ function item(overrides: Partial<RequestStudioItem> = {}): RequestStudioItem {
 
 describe("request studio readiness", () => {
   it("marks a complete draft as ready only for expert publication until Studio publish exists", () => {
-    const summary = buildReadinessSummary(item(), { status: "ok" }, { hasDraft: true });
+    const summary = buildReadinessSummary(
+      item(),
+      {
+        template_code: "access",
+        routing: {},
+        priority: {},
+        sla: {},
+        ola: {},
+        approval: {},
+        closure: {},
+        visibility: {},
+        diagnostic: {},
+        warnings: [],
+        would_create_ticket: false,
+      },
+      { hasDraft: true },
+    );
 
     expect(summary.status).toBe("warning");
     expect(summary.blockers).toEqual([]);
@@ -73,13 +89,12 @@ describe("request studio readiness", () => {
   it("does not duplicate the missing form blocker when the process block already explains it", () => {
     const summary = buildReadinessSummary(
       item({
-        formPreview: { title: "Пустая форма", description: "", fields: [] },
+        formPreview: { title: "Пустая форма", description: "", source: "forms-builder", fields: [] },
         processBlocks: [
           {
             key: "form",
             title: "Форма пользователя",
             status: "error",
-            summary: "0 полей",
             explanation: "Форма не найдена. Без формы публикация невозможна.",
             actionLabel: "Настроить форму",
           },
