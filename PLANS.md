@@ -9,9 +9,9 @@ Goal for this pass: complete a short cleanup/hardening sequence, then add a type
 Commit sequence:
 
 1. Harden Service Catalog expert controls. Completed in `db301661`: filter labels are human-readable while values stay stable, and the expert JSON loader now shows an inline parse error without mutating the draft.
-2. Record browser smoke evidence for the request setup pages.
-3. Clarify Request Studio readiness/publication wording before backend safe publish work.
-4. Verify the small cleanup pass.
+2. Record browser smoke evidence for the request setup pages. Completed in `cc39eb7d`.
+3. Clarify Request Studio readiness/publication wording before backend safe publish work. Completed in `fe0603ba`.
+4. Verify the small cleanup pass. Completed with fixture hardening in `10362c6e`.
 5. Add request-studio backend validation/capabilities contract.
 6. Add draft-aware request-studio simulation.
 7. Add request-studio publish preview/diff plan.
@@ -28,6 +28,13 @@ Browser smoke evidence:
   - `/app/admin/policy-health`
 - Screenshot artifacts were written under `artifacts/catalog-requests-screenshots/` for local inspection but are intentionally not part of the committed source changes.
 - The remote server was stopped after the browser check.
+
+Cleanup verification:
+
+- `python scripts/verify_workspace.py` passed.
+- `python scripts/bootstrap_web_toolchain.py` passed with Node.js 24.15.0 and pnpm 10.33.0.
+- `pnpm --dir webapp run test` passed: 72 files, 341 tests.
+- `pnpm --dir webapp run build` passed after aligning Request Studio readiness test fixtures with the typed model.
 
 Constraints for this pass:
 
