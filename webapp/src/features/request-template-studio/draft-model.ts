@@ -5,6 +5,7 @@ import type {
   AdminHelpdeskModelPayload,
 } from "../forms-builder/api";
 import type { AdminServiceCatalogOffering } from "../service-catalog/api";
+import { isAccessProfile, isIncidentProfile } from "./studio-model";
 import type { RequestStudioItem } from "./studio-model";
 
 export type StudioDraftField = {
@@ -57,6 +58,11 @@ export const PROCESS_PROFILES = [
   "Консультация",
   "Пользовательский профиль",
 ] as const;
+
+const INCIDENT_PROFILE = PROCESS_PROFILES[1];
+const URGENT_INCIDENT_PROFILE = PROCESS_PROFILES[2];
+const ACCESS_PROFILE = PROCESS_PROFILES[3];
+const SOFTWARE_PROFILE = PROCESS_PROFILES[4];
 
 export const PROCESS_MEANINGS = [
   { value: "display_only", label: "Только отображать" },
@@ -118,7 +124,7 @@ export function createDraftFromWizard(input: {
     processProfile: input.processProfile,
     routingPolicyCode: "",
     slaPolicyCode: "",
-    approvalMode: input.processProfile === "Заявка на доступ" ? "required" : "none",
+    approvalMode: input.processProfile === ACCESS_PROFILE || isAccessProfile(input.processProfile) ? "required" : "none",
     approvalPolicyCode: "",
     closurePolicyCode: "",
     notificationPolicyCode: "",
@@ -236,7 +242,7 @@ function draftToForm(draft: StudioDraft): AdminFormsDraftSaveRequest["forms"][nu
   return {
     key: draft.templateCode || draft.offeringCode,
     request_kind: draft.templateCode || draft.offeringCode,
-    ticket_type: ticketTypeForProfile(draft.processProfile),
+    ticket_type: ticketTypeForProfile(draft.processProfile, draft),
     title: draft.title,
     description: draft.description,
     routing_policy_ref: emptyToNull(draft.routingPolicyCode),
@@ -307,7 +313,7 @@ function firstActivePolicy(registry: AdminHelpdeskModelPayload | null | undefine
 }
 
 function starterFields(profile: string): StudioDraftField[] {
-  if (profile === "Заявка на доступ") {
+  if (profile === ACCESS_PROFILE || isAccessProfile(profile)) {
     return [
       { key: "system", label: "В какую систему?", type: "text", required: true, placeholder: "CRM, 1C, VPN", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_input" },
       { key: "role", label: "Какая роль?", type: "text", required: false, placeholder: "Читатель, редактор", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "display_only" },
@@ -316,14 +322,14 @@ function starterFields(profile: string): StudioDraftField[] {
       { key: "approver", label: "Кто согласует?", type: "user_picker", required: false, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "approval_subject" },
     ];
   }
-  if (profile === "Инцидент" || profile === "Срочный инцидент") {
+  if (profile === INCIDENT_PROFILE || profile === URGENT_INCIDENT_PROFILE || isIncidentProfile(profile)) {
     return [
       { key: "what_happened", label: "Что случилось?", type: "textarea", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "diagnostic_input" },
       { key: "affected_scope", label: "Кого затронула проблема?", type: "select", required: true, placeholder: "", helpText: "", optionsText: "me=Только меня\nteam=Команду\ncompany=Всех", visibleWhenField: "", visibleWhenValue: "", processMeaning: "priority_impact" },
       { key: "can_work", label: "Можно ли продолжать работу?", type: "checkbox", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "priority_impact" },
     ];
   }
-  if (profile === "Установка ПО") {
+  if (profile === SOFTWARE_PROFILE) {
     return [
       { key: "software", label: "Какое ПО?", type: "text", required: true, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "routing_input" },
       { key: "target_user", label: "Для кого?", type: "user_picker", required: false, placeholder: "", helpText: "", optionsText: "", visibleWhenField: "", visibleWhenValue: "", processMeaning: "display_only" },
@@ -374,14 +380,27 @@ function slugify(value: string) {
   return ascii || `request_${Date.now()}`;
 }
 
-function ticketTypeForProfile(profile: string) {
-  if (profile.includes("Инцидент")) {
+function ticketTypeForProfile(profile: string, draft?: StudioDraft) {
+  if (profile === INCIDENT_PROFILE || profile === URGENT_INCIDENT_PROFILE || isIncidentProfile(profile, null, draft ? draftToOfferingSignals(draft) : null)) {
     return "incident";
   }
-  if (profile === "Заявка на доступ") {
+  if (profile === ACCESS_PROFILE || isAccessProfile(profile, null, draft ? draftToOfferingSignals(draft) : null)) {
     return "access_request";
   }
   return "service_request";
+}
+
+function draftToOfferingSignals(draft: StudioDraft): AdminServiceCatalogOffering {
+  return {
+    code: draft.offeringCode || draft.templateCode,
+    full_code: `${draft.serviceCode}.${draft.offeringCode || draft.templateCode}`,
+    service_code: draft.serviceCode,
+    public_title: draft.title,
+    short_description: draft.description,
+    lifecycle_status: "draft",
+    visibility: draft.visibility,
+    request_template_key: draft.templateCode,
+  };
 }
 
 function emptyToNull(value: string | null | undefined) {

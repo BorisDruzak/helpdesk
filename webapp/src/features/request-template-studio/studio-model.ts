@@ -62,6 +62,74 @@ export type PolicySummary = {
   issueLabels: string[];
 };
 
+export function normalizeProfileName(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isAccessProfile(
+  profileName: string | null | undefined,
+  template?: AdminHelpdeskRequestTemplateItem | null,
+  offering?: AdminServiceCatalogOffering | null,
+) {
+  const profile = normalizeProfileName(profileName);
+  const ticketType = normalizeProfileName(template?.ticket_type);
+  const stableSignals = normalizeProfileName(
+    [
+      template?.template_code,
+      template?.public_title,
+      template?.form_schema_id,
+      offering?.request_template_key,
+      offering?.request_type,
+      offering?.full_code,
+      offering?.code,
+      offering?.public_title,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return (
+    ticketType === "access_request" ||
+    stableSignals.includes("access") ||
+    stableSignals.includes("доступ") ||
+    profile.includes("access") ||
+    profile.includes("доступ")
+  );
+}
+
+export function isIncidentProfile(
+  profileName: string | null | undefined,
+  template?: AdminHelpdeskRequestTemplateItem | null,
+  offering?: AdminServiceCatalogOffering | null,
+) {
+  const profile = normalizeProfileName(profileName);
+  const ticketType = normalizeProfileName(template?.ticket_type);
+  const stableSignals = normalizeProfileName(
+    [
+      template?.template_code,
+      template?.public_title,
+      template?.form_schema_id,
+      offering?.request_template_key,
+      offering?.request_type,
+      offering?.full_code,
+      offering?.code,
+      offering?.public_title,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return (
+    ticketType === "incident" ||
+    stableSignals.includes("incident") ||
+    stableSignals.includes("инцид") ||
+    profile.includes("incident") ||
+    profile.includes("инцид")
+  );
+}
+
 export type RequestStudioItem = {
   id: string;
   group: string;
@@ -362,18 +430,19 @@ function buildProcessBlocks({
 }): ProcessBlock[] {
   const blockingHealth = health?.issues.some(hasBlockingIssue) ?? false;
   const approvalConfigured = Boolean(template?.approval_policy_code || offering?.approval_policy_code);
+  const accessProfile = isAccessProfile(profile.profileName, template, offering);
   const approvalStatus: StudioStatus = approvalConfigured
     ? "ready"
     : approvalMode === "required"
       ? "error"
-      : profile.profileName === "Заявка на доступ" || profile.profileName === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї"
+      : accessProfile
         ? "recommended"
         : "unused";
   const approvalExplanation = approvalConfigured
     ? "Согласование включено в сценарий обработки."
     : approvalMode === "required"
       ? "Согласование включено, но правило согласования не выбрано."
-      : profile.profileName === "Заявка на доступ" || profile.profileName === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї"
+      : accessProfile
         ? "Для заявок на доступ обычно требуется согласование."
         : "Для этого типа обращения согласование не используется.";
   return [
@@ -547,7 +616,7 @@ function buildDraftTemplate(base: AdminHelpdeskRequestTemplateItem | null, draft
     public_title: draft.title,
     internal_name: base?.internal_name ?? null,
     description: draft.description,
-    ticket_type: base?.ticket_type ?? ticketTypeForProfile(draft.processProfile),
+    ticket_type: base?.ticket_type ?? ticketTypeForProfile(draft.processProfile, draft),
     category_id: base?.category_id ?? null,
     service_id: base?.service_id ?? null,
     subcategory_id: base?.subcategory_id ?? null,
@@ -611,14 +680,27 @@ function textOptionsToPreview(value: string): Array<Record<string, unknown>> {
     });
 }
 
-function ticketTypeForProfile(profile: string) {
-  if (profile.includes("Инцидент") || profile.includes("РРЅС†РёРґРµРЅС‚")) {
+function ticketTypeForProfile(profile: string, draft?: StudioDraft) {
+  if (isIncidentProfile(profile, null, draft ? draftToOfferingSignals(draft) : null)) {
     return "incident";
   }
-  if (profile === "Заявка на доступ" || profile === "Р—Р°СЏРІРєР° РЅР° РґРѕСЃС‚СѓРї") {
+  if (isAccessProfile(profile, null, draft ? draftToOfferingSignals(draft) : null)) {
     return "access_request";
   }
   return "service_request";
+}
+
+function draftToOfferingSignals(draft: StudioDraft): AdminServiceCatalogOffering {
+  return {
+    code: draft.offeringCode || draft.templateCode,
+    full_code: `${draft.serviceCode}.${draft.offeringCode || draft.templateCode}`,
+    service_code: draft.serviceCode,
+    public_title: draft.title,
+    short_description: draft.description,
+    lifecycle_status: "draft",
+    visibility: draft.visibility,
+    request_template_key: draft.templateCode,
+  };
 }
 
 function emptyToNull(value: string | null | undefined) {
@@ -656,10 +738,10 @@ function isTechnicalCatalogObject(service: AdminServiceCatalogService, offering:
 
 function inferProfileName(template: AdminHelpdeskRequestTemplateItem | null) {
   const text = `${template?.template_code ?? ""} ${template?.public_title ?? ""} ${template?.ticket_type ?? ""}`.toLowerCase();
-  if (text.includes("access") || text.includes("доступ")) {
+  if (isAccessProfile(null, template)) {
     return "Заявка на доступ";
   }
-  if (text.includes("incident") || text.includes("инцид")) {
+  if (isIncidentProfile(null, template)) {
     return "Инцидент";
   }
   if (text.includes("software") || text.includes("по") || text.includes("установ")) {

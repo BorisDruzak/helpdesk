@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { StudioDraft } from "./draft-model";
-import { buildWorkingRequestStudioItem, findDefaultStudioItem, type RequestStudioItem } from "./studio-model";
+import {
+  buildWorkingRequestStudioItem,
+  findDefaultStudioItem,
+  isAccessProfile,
+  isIncidentProfile,
+  normalizeProfileName,
+  type RequestStudioItem,
+} from "./studio-model";
 
 function draft(overrides: Partial<StudioDraft> = {}): StudioDraft {
   return {
@@ -112,5 +119,24 @@ describe("request studio model", () => {
     } as RequestStudioItem;
 
     expect(findDefaultStudioItem([smoke, generic, access], false)?.id).toBe("access");
+  });
+
+  it("detects access and incident profiles from stable template signals", () => {
+    expect(normalizeProfileName("  Access Request  ")).toBe("access request");
+    expect(isAccessProfile("unknown", { template_code: "grant_access", ticket_type: "service_request" } as never)).toBe(true);
+    expect(isAccessProfile("unknown", { template_code: "legacy", ticket_type: "access_request" } as never)).toBe(true);
+    expect(isIncidentProfile("unknown", { template_code: "network_incident", ticket_type: "service_request" } as never)).toBe(true);
+    expect(isIncidentProfile("unknown", { template_code: "legacy", ticket_type: "incident" } as never)).toBe(true);
+  });
+
+  it("falls back to draft codes when the profile label is not usable", () => {
+    const item = buildWorkingRequestStudioItem({
+      selectedItem: null,
+      draft: draft({ processProfile: "legacy unreadable label", templateCode: "database_incident", offeringCode: "database_incident" }),
+      services: [],
+      health: undefined,
+    });
+
+    expect(item?.template?.ticket_type).toBe("incident");
   });
 });
