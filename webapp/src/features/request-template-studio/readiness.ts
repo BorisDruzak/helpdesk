@@ -32,6 +32,9 @@ export function buildReadinessSummary(
     !item.offering?.public_title ? "Не заполнено название типа обращения." : null,
     !item.template ? "Не выбран сценарий обработки." : null,
     !item.formPreview?.fields.length ? "Не найдена форма пользователя." : null,
+    !item.template?.visibility_policy_code
+      ? "Правила видимости не выбраны. Проверьте видимость в экспертной настройке перед публикацией."
+      : null,
     ...item.processBlocks.filter((block) => block.status === "error").map((block) => block.explanation),
     ...(item.health?.issues.filter(hasBlockingIssue).map((issue) => issue.message) ?? []),
   ].filter(Boolean) as string[];

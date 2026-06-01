@@ -5,6 +5,7 @@ import type {
   AdminHelpdeskModelPayload,
 } from "../forms-builder/api";
 import type { AdminServiceCatalogOffering } from "../service-catalog/api";
+import { resolveVisibilityPolicyCode } from "./policy-resolvers";
 import { isAccessProfile, isIncidentProfile } from "./studio-model";
 import type { RequestStudioItem } from "./studio-model";
 
@@ -203,8 +204,9 @@ export function buildFormsDraftPayload(args: {
   draft: StudioDraft;
   currentForms: AdminFormsFormItem[];
   baseVersion?: string | null;
+  registry?: AdminHelpdeskModelPayload | null;
 }): AdminFormsDraftSaveRequest {
-  const nextForm = draftToForm(args.draft);
+  const nextForm = draftToForm(args.draft, args.registry);
   const forms = args.currentForms.filter((form) => form.key !== nextForm.key).map(formsItemToSaveForm);
   return {
     title: "Каталог заявок",
@@ -214,7 +216,11 @@ export function buildFormsDraftPayload(args: {
   };
 }
 
-export function buildOfferingDraftPayload(draft: StudioDraft, currentOffering: AdminServiceCatalogOffering | null | undefined) {
+export function buildOfferingDraftPayload(
+  draft: StudioDraft,
+  currentOffering: AdminServiceCatalogOffering | null | undefined,
+  registry?: AdminHelpdeskModelPayload | null,
+) {
   const code = draft.offeringCode || draft.templateCode;
   return {
     ...currentOffering,
@@ -225,6 +231,7 @@ export function buildOfferingDraftPayload(draft: StudioDraft, currentOffering: A
     short_description: draft.description,
     lifecycle_status: currentOffering?.lifecycle_status ?? "draft",
     visibility: draft.visibility,
+    visibility_policy_code: resolveVisibilityPolicyCode(registry),
     request_template_key: draft.templateCode,
     routing_policy_code: emptyToNull(draft.routingPolicyCode),
     sla_policy_code: emptyToNull(draft.slaPolicyCode),
@@ -238,7 +245,7 @@ export function isDraftReadyForValidation(draft: StudioDraft | null) {
   return Boolean(draft?.templateCode && draft.fields.length && draft.routingPolicyCode && draft.slaPolicyCode && draft.closurePolicyCode);
 }
 
-function draftToForm(draft: StudioDraft): AdminFormsDraftSaveRequest["forms"][number] {
+function draftToForm(draft: StudioDraft, registry: AdminHelpdeskModelPayload | null | undefined): AdminFormsDraftSaveRequest["forms"][number] {
   return {
     key: draft.templateCode || draft.offeringCode,
     request_kind: draft.templateCode || draft.offeringCode,
@@ -249,7 +256,7 @@ function draftToForm(draft: StudioDraft): AdminFormsDraftSaveRequest["forms"][nu
     sla_policy_ref: emptyToNull(draft.slaPolicyCode),
     approval_policy_ref: draft.approvalMode === "required" ? emptyToNull(draft.approvalPolicyCode) : null,
     closure_policy_ref: emptyToNull(draft.closurePolicyCode),
-    visibility_policy_ref: draft.visibility === "public" ? "visibility_default" : null,
+    visibility_policy_ref: resolveVisibilityPolicyCode(registry),
     notification_policy_ref: emptyToNull(draft.notificationPolicyCode),
     fields: draft.fields.map((field) => ({
       key: field.key,

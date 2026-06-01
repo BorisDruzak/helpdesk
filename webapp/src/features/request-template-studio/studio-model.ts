@@ -8,6 +8,7 @@ import type {
 import type { PolicyHealthDashboard, PolicyHealthIssue, PolicyHealthTemplate } from "../policy-health/api";
 import type { AdminServiceCatalogOffering, AdminServiceCatalogService } from "../service-catalog/api";
 import type { StudioDraft } from "./draft-model";
+import { resolveVisibilityPolicyCode } from "./policy-resolvers";
 
 export type StudioStatus = "ready" | "needs_setup" | "recommended" | "unused" | "error";
 export type RequestStudioMode = "basic" | "advanced" | "expert";
@@ -227,7 +228,7 @@ export function buildRequestStudioItems({
 }: {
   services: AdminServiceCatalogService[];
   offerings: AdminServiceCatalogOffering[];
-  registry: AdminHelpdeskModelPayload | null | undefined;
+  registry?: AdminHelpdeskModelPayload | null;
   forms: AdminFormsFormItem[];
   health: PolicyHealthDashboard | null | undefined;
 }): RequestStudioItem[] {
@@ -285,11 +286,13 @@ export function buildWorkingRequestStudioItem({
   selectedItem,
   draft,
   services,
+  registry,
   health,
 }: {
   selectedItem: RequestStudioItem | null;
   draft: StudioDraft | null;
   services: AdminServiceCatalogService[];
+  registry?: AdminHelpdeskModelPayload | null;
   health: PolicyHealthDashboard | null | undefined;
 }): RequestStudioItem | null {
   if (!draft) {
@@ -308,6 +311,7 @@ export function buildWorkingRequestStudioItem({
     short_description: draft.description,
     lifecycle_status: selectedItem?.offering?.lifecycle_status ?? "draft",
     visibility: draft.visibility,
+    visibility_policy_code: resolveVisibilityPolicyCode(registry),
     request_template_key: draft.templateCode,
     routing_policy_code: emptyToNull(draft.routingPolicyCode),
     sla_policy_code: emptyToNull(draft.slaPolicyCode),
@@ -315,7 +319,7 @@ export function buildWorkingRequestStudioItem({
     closure_policy_code: emptyToNull(draft.closurePolicyCode),
     notification_policy_code: emptyToNull(draft.notificationPolicyCode),
   };
-  const template = buildDraftTemplate(selectedItem?.template ?? null, draft);
+  const template = buildDraftTemplate(selectedItem?.template ?? null, draft, registry);
   const formPreview = buildDraftFormPreview(draft);
   const selectedHealth = draft.templateCode
     ? health?.templates.find((item) => item.template_code === draft.templateCode) ?? selectedItem?.health ?? null
@@ -609,7 +613,11 @@ function buildVirtualService(draft: StudioDraft): AdminServiceCatalogService {
   };
 }
 
-function buildDraftTemplate(base: AdminHelpdeskRequestTemplateItem | null, draft: StudioDraft): AdminHelpdeskRequestTemplateItem {
+function buildDraftTemplate(
+  base: AdminHelpdeskRequestTemplateItem | null,
+  draft: StudioDraft,
+  registry: AdminHelpdeskModelPayload | null | undefined,
+): AdminHelpdeskRequestTemplateItem {
   return {
     template_code: draft.templateCode,
     version: base?.version ?? "draft",
@@ -630,7 +638,7 @@ function buildDraftTemplate(base: AdminHelpdeskRequestTemplateItem | null, draft
     approval_policy_code: draft.approvalMode === "required" ? emptyToNull(draft.approvalPolicyCode) : null,
     diagnostic_policy_code: base?.diagnostic_policy_code ?? null,
     closure_policy_code: emptyToNull(draft.closurePolicyCode),
-    visibility_policy_code: draft.visibility ? "visibility_default" : base?.visibility_policy_code ?? null,
+    visibility_policy_code: resolveVisibilityPolicyCode(registry),
     notification_policy_code: emptyToNull(draft.notificationPolicyCode),
     reporting_policy_code: base?.reporting_policy_code ?? null,
     config: base?.config ?? {},

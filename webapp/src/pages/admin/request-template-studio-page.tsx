@@ -112,9 +112,10 @@ export function AdminRequestTemplateStudioPage() {
         selectedItem,
         draft: studioDraft,
         services: catalogQuery.data?.services ?? [],
+        registry: registryQuery.data,
         health: healthQuery.data,
       }),
-    [catalogQuery.data?.services, healthQuery.data, selectedItem, studioDraft],
+    [catalogQuery.data?.services, healthQuery.data, registryQuery.data, selectedItem, studioDraft],
   );
   const links = {
     forms: buildDeepLink("/app/admin/forms", workingItem ?? selectedItem),
@@ -152,8 +153,9 @@ export function AdminRequestTemplateStudioPage() {
         draft: studioDraft,
         currentForms: formsQuery.data?.forms ?? [],
         baseVersion: formsQuery.data?.summary.version ?? null,
+        registry: registryQuery.data,
       });
-      const offeringPayload = buildOfferingDraftPayload(studioDraft, selectedItem?.offering);
+      const offeringPayload = buildOfferingDraftPayload(studioDraft, selectedItem?.offering, registryQuery.data);
       const results = await Promise.allSettled([
         saveAdminFormsDraft(formsPayload),
         saveOfferingDraft(offeringPayload),
