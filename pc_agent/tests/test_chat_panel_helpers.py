@@ -560,6 +560,109 @@ def test_create_ticket_type_grid_renders_cards_and_emits_template_key():
     assert selected_keys == ["site_system"]
 
 
+def test_create_ticket_type_grid_exposes_stable_uia_card_identifiers():
+    from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketTypeGrid
+
+    app = QApplication.instance() or QApplication([])
+    grid = CreateTicketTypeGrid(card_identifier_prefix="TicketTypeCard")
+    grid.set_templates(
+        [
+            {
+                "key": "access.live_check",
+                "title": "Live Check / Доступ к ресурсу",
+                "description": "Проверка опубликованного шаблона Studio.",
+            }
+        ],
+        current_key="access.live_check",
+    )
+
+    assert app is not None
+    assert grid.card_buttons[0].objectName() == "TicketTypeCard"
+    assert grid.card_buttons[0].accessibleName() == "ticket-type-card:access.live_check"
+    assert grid.card_buttons[0].accessibleDescription() == "Live Check / Доступ к ресурсу"
+    assert grid.card_buttons[0].accessibleIdentifier() == "TicketTypeCard:access.live_check"
+
+
+def test_ticket_create_wizard_refreshes_catalog_cards_after_catalog_only_update():
+    class _FakeClient:
+        async def preview_ticket_create(self, **_kwargs):
+            return {}
+
+    class _FakePanel:
+        user_display_name = "Tester"
+
+        def __init__(self):
+            self._ticket_form_pack = {
+                "forms": [
+                    {"key": "breakage", "title": "Поломка", "fields": []},
+                    {"key": "live_check", "title": "Live Check", "fields": []},
+                ]
+            }
+            self._service_catalog = normalize_service_catalog({})
+            self.ticket_client = _FakeClient()
+            self._profiles_data = {
+                "active_profile_id": "profile-1",
+                "profiles": [{"id": "profile-1", "display_name": "Tester"}],
+            }
+
+        def ticket_form_pack(self):
+            return self._ticket_form_pack
+
+        def service_catalog(self):
+            return self._service_catalog
+
+        def registry_options(self):
+            return {}
+
+        def _profiles(self):
+            return self._profiles_data["profiles"]
+
+        def has_active_profile(self):
+            return True
+
+        def current_requester_profile_summary(self):
+            return "Tester"
+
+        def _save_profiles(self):
+            return None
+
+    app = QApplication.instance() or QApplication([])
+    panel = _FakePanel()
+    wizard = chat_panel_module.TicketCreateWizardWidget(panel)
+    assert app is not None
+    assert wizard._catalog_services() == []
+    assert wizard.type_grid.card_buttons
+    assert "Поломка" in wizard.type_grid.card_buttons[0].text()
+
+    panel._service_catalog = normalize_service_catalog(
+        {
+            "services": [
+                {
+                    "service_code": "access",
+                    "title": "Доступы",
+                    "offerings": [
+                        {
+                            "offering_code": "live_check",
+                            "full_code": "access.live_check",
+                            "title": "Live Check / Доступ к ресурсу",
+                            "request_template_key": "live_check",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    wizard.refresh_from_panel()
+
+    assert [button.accessibleIdentifier() for button in wizard.service_grid.card_buttons] == [
+        "ServiceCatalogCard:access"
+    ]
+    assert [button.accessibleIdentifier() for button in wizard.type_grid.card_buttons] == [
+        "TicketTypeCard:access.live_check"
+    ]
+    assert "Live Check" in wizard.type_grid.card_buttons[0].text()
+
+
 def test_create_ticket_confirmation_panel_renders_summary_without_inline_checkbox():
     from pc_agent.ui_gui.ticket_create_wizard_widgets import CreateTicketConfirmationPanel
 
@@ -968,6 +1071,7 @@ def test_open_create_wizard_refreshes_when_form_pack_changes():
     source = inspect.getsource(main_window_module.MainWindow._setup_ui)
 
     assert "ticketFormPackChanged" in source
+    assert "serviceCatalogChanged" in source
     assert "ticket_create_page.refresh_from_panel" in source
 
 

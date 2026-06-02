@@ -14,6 +14,7 @@ from pc_agent.core.runtime_logging import read_log_tail, format_log_tail
 
 from .main_window import MainWindow
 from .tray_manager import TrayManager
+from .chat_panel import TICKET_DETAIL_POLL_INTERVAL_MS
 
 
 class GuiAutomationController:
@@ -123,12 +124,30 @@ class GuiAutomationController:
                 self._select_profile(profile_id)
                 self.window._render_profile_status()
                 result = await self._result(action, profile_id=profile_id)
+            elif action == "account.refresh":
+                await self.window._async_refresh_account_state()
+                result = await self._result(
+                    action,
+                    account_count=len((getattr(self.window, "_account_state", {}) or {}).get("accounts") or []),
+                )
+            elif action == "account.login_confirmed":
+                account = self._select_confirmed_account(payload)
+                await self.window._async_account_login_confirmed(account)
+                result = await self._result(
+                    action,
+                    binding_id=str(account.get("binding_id") or ""),
+                    account_mode=str(account.get("account_mode") or ""),
+                )
             elif action == "ticket.form_pack.refresh":
                 await self.window.chat_panel._async_refresh_ticket_form_pack(force=bool(payload.get("force", True)))
                 result = await self._result(
                     action,
                     form_pack_version=str((self.window.chat_panel.ticket_form_pack() or {}).get("version") or ""),
                 )
+            elif action == "ticket.create_wizard.snapshot":
+                result = await self._result(action, **self._create_wizard_snapshot())
+            elif action == "ticket.create_wizard.select_catalog":
+                result = await self._result(action, **self._select_create_wizard_catalog(payload))
             elif action == "ticket.list.refresh":
                 await self.window.chat_panel._async_refresh_ticket_list()
                 result = await self._result(action, ticket_count=len(self.window.chat_panel.tickets_cache))
@@ -244,7 +263,7 @@ class GuiAutomationController:
         chat_panel._last_detail_header_sig = None
         chat_panel._pending_ticket_snapshot = None
         chat_panel._reset_active_ticket_cache()
-        chat_panel._ticket_detail_timer.start(chat_panel._ticket_detail_timer.interval())
+        chat_panel._ticket_detail_timer.start(TICKET_DETAIL_POLL_INTERVAL_MS)
         await chat_panel._async_refresh_ticket_list()
         await chat_panel._async_refresh_ticket_detail()
         chat_panel._show_chat_screen()
@@ -274,7 +293,7 @@ class GuiAutomationController:
         chat_panel._pending_ticket_snapshot = None
         chat_panel._reset_active_ticket_cache()
         chat_panel._ensure_timeline_bottom_follow()
-        chat_panel._ticket_detail_timer.start(chat_panel._ticket_detail_timer.interval())
+        chat_panel._ticket_detail_timer.start(TICKET_DETAIL_POLL_INTERVAL_MS)
         await chat_panel._async_refresh_ticket_detail()
         chat_panel._show_chat_screen()
         self.window._select_sidebar_view("tickets", expand=True)
@@ -478,6 +497,87 @@ class GuiAutomationController:
         chat_panel._save_profiles()
         chat_panel._refresh_profile_selector()
         return {"profile_id": profile_id, "profile": profile}
+
+    def _select_confirmed_account(self, payload: dict[str, Any]) -> dict[str, Any]:
+        binding_id = str(payload.get("binding_id") or "").strip()
+        accounts = (getattr(self.window, "_account_state", {}) or {}).get("accounts") or []
+        candidates = [
+            item
+            for item in accounts
+            if isinstance(item, dict) and str(item.get("account_mode") or "") == "confirmed_binding"
+        ]
+        if binding_id:
+            candidates = [item for item in candidates if str(item.get("binding_id") or "") == binding_id]
+        if not candidates:
+            raise ValueError("account.login_confirmed requires an available confirmed_binding account")
+        return candidates[0]
+
+    def _create_wizard_snapshot(self) -> dict[str, Any]:
+        page = getattr(self.window, "ticket_create_page", None)
+        if page is None:
+            raise ValueError("ticket create wizard is not configured")
+        if hasattr(page, "_refresh_catalog_cards"):
+            page._refresh_catalog_cards()
+        services = list(getattr(getattr(page, "service_grid", None), "_templates", []) or [])
+        offerings = list(getattr(getattr(page, "type_grid", None), "_templates", []) or [])
+        return {
+            "selected_service_code": str(getattr(page, "_selected_catalog_service_code", "") or ""),
+            "selected_offering_full_code": str(getattr(page, "_selected_catalog_offering_full_code", "") or ""),
+            "services": [self._catalog_item_summary(item) for item in services],
+            "offerings": [self._catalog_item_summary(item) for item in offerings],
+        }
+
+    def _select_create_wizard_catalog(self, payload: dict[str, Any]) -> dict[str, Any]:
+        page = getattr(self.window, "ticket_create_page", None)
+        if page is None:
+            raise ValueError("ticket create wizard is not configured")
+        from .chat_panel import catalog_offerings_for_service
+
+        service_code = str(payload.get("service_code") or "").strip()
+        offering_full_code = str(payload.get("offering_full_code") or payload.get("full_code") or "").strip()
+        request_template_key = str(payload.get("request_template_key") or "").strip()
+        catalog = page._panel.service_catalog() if hasattr(page, "_panel") and hasattr(page._panel, "service_catalog") else {}
+        services = list(page._catalog_services()) if hasattr(page, "_catalog_services") else []
+        if not service_code:
+            for service in services:
+                candidate_service = str(service.get("service_code") or service.get("key") or "").strip()
+                offerings = catalog_offerings_for_service(catalog, candidate_service)
+                if any(
+                    (offering_full_code and str(item.get("full_code") or "") == offering_full_code)
+                    or (request_template_key and str(item.get("request_template_key") or "") == request_template_key)
+                    for item in offerings
+                ):
+                    service_code = candidate_service
+                    break
+        if not service_code:
+            raise ValueError("ticket.create_wizard.select_catalog requires service_code or matching offering/template")
+        page._on_service_card_selected(service_code)
+        offerings = catalog_offerings_for_service(catalog, service_code)
+        if not offering_full_code:
+            for item in offerings:
+                if request_template_key and str(item.get("request_template_key") or "") == request_template_key:
+                    offering_full_code = str(item.get("full_code") or "").strip()
+                    break
+        if not offering_full_code:
+            raise ValueError("ticket.create_wizard.select_catalog requires offering_full_code or request_template_key")
+        if offering_full_code not in {str(item.get("full_code") or "") for item in offerings}:
+            raise ValueError(f"offering is not available for selected service: {offering_full_code}")
+        page._on_type_card_selected(offering_full_code)
+        return {
+            "selected_service_code": str(getattr(page, "_selected_catalog_service_code", "") or ""),
+            "selected_offering_full_code": str(getattr(page, "_selected_catalog_offering_full_code", "") or ""),
+            "offerings": [self._catalog_item_summary(item) for item in offerings],
+        }
+
+    @staticmethod
+    def _catalog_item_summary(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "key": item.get("key"),
+            "service_code": item.get("service_code"),
+            "full_code": item.get("full_code"),
+            "title": item.get("title"),
+            "request_template_key": item.get("request_template_key"),
+        }
 
     def _select_profile(self, profile_id: str) -> None:
         chat_panel = self.window.chat_panel

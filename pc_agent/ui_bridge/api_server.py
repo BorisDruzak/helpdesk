@@ -757,8 +757,11 @@ class UiApiServer:
     async def handle_automation_status(self, request: Request) -> Response:
         if not self.on_get_automation_status:
             return web.json_response(
-                {"status": "error", "error": "automation status provider not configured"},
-                status=501,
+                {
+                    "status": "unavailable",
+                    "automation_provider_configured": False,
+                    "error": "automation status provider not configured",
+                },
                 headers={"Access-Control-Allow-Origin": "*"},
             )
         try:

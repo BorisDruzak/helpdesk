@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Signal, Qt
 from typing import Any
 
@@ -59,10 +61,18 @@ class CreateTicketTypeGrid(QFrame):
 
     typeSelected = Signal(str)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(
+        self,
+        parent=None,
+        *,
+        card_identifier_prefix: str = "TicketTypeCard",
+        card_accessible_prefix: str = "ticket-type-card",
+    ) -> None:
         super().__init__(parent)
         self.card_buttons: list[QPushButton] = []
         self._templates: list[dict[str, Any]] = []
+        self._card_identifier_prefix = str(card_identifier_prefix or "TicketTypeCard").strip() or "TicketTypeCard"
+        self._card_accessible_prefix = str(card_accessible_prefix or "ticket-type-card").strip() or "ticket-type-card"
         self.setObjectName("CreateTicketTypeGrid")
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -84,8 +94,11 @@ class CreateTicketTypeGrid(QFrame):
             button = QPushButton(f"{title}\n{description}")
             button.setCheckable(True)
             button.setObjectName("TicketTypeCard")
-            button.setAccessibleName(f"ticket-type-card:{key}")
+            safe_key = self._safe_identifier(key or f"card-{index}")
+            button.setAccessibleName(f"{self._card_accessible_prefix}:{safe_key}")
             button.setAccessibleDescription(title)
+            if hasattr(button, "setAccessibleIdentifier"):
+                button.setAccessibleIdentifier(f"{self._card_identifier_prefix}:{safe_key}")
             button.setMinimumHeight(104)
             button.setToolTip(description)
             button.clicked.connect(lambda _checked=False, value=key: self.typeSelected.emit(value))
@@ -131,6 +144,10 @@ class CreateTicketTypeGrid(QFrame):
         if "consult" in normalized or "консульта" in normalized:
             return "Вопрос по работе сервисов, систем или оборудования."
         return "Что-то не работает или требует помощи специалиста поддержки."
+
+    @staticmethod
+    def _safe_identifier(value: object) -> str:
+        return re.sub(r"[^A-Za-z0-9_.:-]+", "-", str(value or "").strip()).strip("-") or "unknown"
 
 
 class CreateTicketConfirmationPanel(QFrame):

@@ -2337,7 +2337,10 @@ class TicketCreateWizardWidget(QFrame):
         self.service_grid_label = QLabel("Раздел обращения")
         self.service_grid_label.setObjectName("ProfileFieldLabel")
         group_layout.addWidget(self.service_grid_label)
-        self.service_grid = CreateTicketTypeGrid()
+        self.service_grid = CreateTicketTypeGrid(
+            card_identifier_prefix="ServiceCatalogCard",
+            card_accessible_prefix="service-catalog-card",
+        )
         self.service_grid.setAccessibleName("ticket-create-service-grid")
         self.service_grid.typeSelected.connect(self._on_service_card_selected)
         group_layout.addWidget(self.service_grid)
@@ -3992,6 +3995,7 @@ class ChatPanel(QWidget):
     requesterProfileChanged = Signal()
     listNavigationVisibilityChanged = Signal(bool)
     ticketFormPackChanged = Signal(dict)
+    serviceCatalogChanged = Signal(dict)
     ticketsListChanged = Signal()
     accountSessionError = Signal(object)
 
@@ -4469,8 +4473,12 @@ class ChatPanel(QWidget):
         return self._service_catalog if isinstance(self._service_catalog, dict) else normalize_service_catalog({})
 
     def _apply_service_catalog(self, raw_catalog: Any) -> None:
-        self._service_catalog = normalize_service_catalog(raw_catalog)
+        next_catalog = normalize_service_catalog(raw_catalog)
+        if next_catalog == self._service_catalog:
+            return
+        self._service_catalog = next_catalog
         self._save_service_catalog()
+        self.serviceCatalogChanged.emit(self._service_catalog)
 
     def _load_registry_options(self) -> dict[str, Any]:
         try:

@@ -5,6 +5,7 @@ import json
 import pytest
 
 from pc_agent.ui_gui.automation_controller import GuiAutomationController
+from pc_agent.ui_gui.chat_panel import TICKET_DETAIL_POLL_INTERVAL_MS
 
 
 pytestmark = pytest.mark.no_db
@@ -12,10 +13,13 @@ pytestmark = pytest.mark.no_db
 
 class _Timer:
     def interval(self) -> int:
-        return 100
+        return 0
 
-    def start(self, _interval: int) -> None:
-        pass
+    def __init__(self) -> None:
+        self.started_intervals: list[int] = []
+
+    def start(self, interval: int) -> None:
+        self.started_intervals.append(interval)
 
 
 class _Stack:
@@ -128,6 +132,85 @@ class _ChatPanel:
         pass
 
 
+class _Grid:
+    def __init__(self) -> None:
+        self._templates: list[dict] = []
+
+
+class _PanelWithCatalog:
+    def service_catalog(self) -> dict:
+        return {
+            "services": [
+                {
+                    "service_code": "workplace",
+                    "key": "workplace",
+                    "title": "Workplace",
+                    "offerings": [
+                        {
+                            "offering_code": "breakage",
+                            "full_code": "workplace.breakage",
+                            "title": "Breakage",
+                            "request_template_key": "breakage",
+                        }
+                    ],
+                },
+                {
+                    "service_code": "access",
+                    "key": "access",
+                    "title": "Access",
+                    "offerings": [
+                        {
+                            "offering_code": "live_check",
+                            "full_code": "access.live_check",
+                            "title": "Live Check",
+                            "request_template_key": "live_check",
+                        }
+                    ],
+                },
+            ]
+        }
+
+    def ticket_form_pack(self) -> dict:
+        return {"forms": []}
+
+
+class _CreateWizardPage:
+    def __init__(self) -> None:
+        self._panel = _PanelWithCatalog()
+        self._selected_catalog_service_code = ""
+        self._selected_catalog_offering_full_code = ""
+        self.service_grid = _Grid()
+        self.type_grid = _Grid()
+
+    def _catalog_services(self) -> list[dict]:
+        from pc_agent.ui_gui.chat_panel import catalog_services_for_wizard
+
+        return catalog_services_for_wizard(self._panel.service_catalog())
+
+    def _refresh_catalog_cards(self) -> bool:
+        from pc_agent.ui_gui.chat_panel import catalog_offerings_for_service
+
+        services = self._catalog_services()
+        if not self._selected_catalog_service_code and services:
+            self._selected_catalog_service_code = services[0]["service_code"]
+        self.service_grid._templates = services
+        self.type_grid._templates = catalog_offerings_for_service(
+            self._panel.service_catalog(),
+            self._selected_catalog_service_code,
+        )
+        if not self._selected_catalog_offering_full_code and self.type_grid._templates:
+            self._selected_catalog_offering_full_code = self.type_grid._templates[0]["full_code"]
+        return True
+
+    def _on_service_card_selected(self, service_code: str) -> None:
+        self._selected_catalog_service_code = service_code
+        self._selected_catalog_offering_full_code = ""
+        self._refresh_catalog_cards()
+
+    def _on_type_card_selected(self, form_key: str) -> None:
+        self._selected_catalog_offering_full_code = form_key
+
+
 class _Window:
     def __init__(self, chat_panel: _ChatPanel):
         self.chat_panel = chat_panel
@@ -135,7 +218,11 @@ class _Window:
         self.tickets_sidebar = object()
         self.profile_sidebar = object()
         self.settings_page = object()
+        self.ticket_create_page = _CreateWizardPage()
         self.selected_views: list[str] = []
+        self._account_state = {"accounts": []}
+        self.account_refresh_count = 0
+        self.account_login_confirmed_calls: list[dict] = []
 
     def isVisible(self) -> bool:
         return True
@@ -148,6 +235,85 @@ class _Window:
 
     def _select_sidebar_view(self, view_name: str, *, expand: bool = True) -> None:
         self.selected_views.append(view_name)
+
+    async def _async_refresh_account_state(self) -> None:
+        self.account_refresh_count += 1
+
+    async def _async_account_login_confirmed(self, account: dict) -> None:
+        self.account_login_confirmed_calls.append(account)
+        self.chat_panel.account_session = {
+            "account_mode": "confirmed_binding",
+            "account_session_id": "session-from-binding",
+            "binding_id": account.get("binding_id"),
+        }
+
+
+@pytest.mark.asyncio
+async def test_automation_account_refresh_uses_window_account_state_flow():
+    chat_panel = _ChatPanel(account_session=None)
+    window = _Window(chat_panel)
+    window._account_state = {
+        "accounts": [
+            {
+                "account_mode": "confirmed_binding",
+                "binding_id": "binding-1",
+            }
+        ]
+    }
+    controller = GuiAutomationController(window)
+
+    result = await controller.run_action({"action": "account.refresh"})
+
+    assert result["status"] == "ok"
+    assert result["account_count"] == 1
+    assert window.account_refresh_count == 1
+
+
+@pytest.mark.asyncio
+async def test_automation_account_login_confirmed_uses_existing_gui_flow():
+    chat_panel = _ChatPanel(account_session=None)
+    window = _Window(chat_panel)
+    window._account_state = {
+        "accounts": [
+            {"account_mode": "confirmed_binding", "binding_id": "binding-1"},
+            {"account_mode": "verified_other_account", "binding_id": "other-1"},
+        ]
+    }
+    controller = GuiAutomationController(window)
+
+    result = await controller.run_action({"action": "account.login_confirmed", "binding_id": "binding-1"})
+
+    assert result["status"] == "ok"
+    assert result["binding_id"] == "binding-1"
+    assert window.account_login_confirmed_calls == [{"account_mode": "confirmed_binding", "binding_id": "binding-1"}]
+    assert chat_panel.account_session["account_mode"] == "confirmed_binding"
+
+
+@pytest.mark.asyncio
+async def test_automation_create_wizard_snapshot_reports_catalog_cards():
+    chat_panel = _ChatPanel(account_session={"account_session_id": "session-1"})
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller.run_action({"action": "ticket.create_wizard.snapshot"})
+
+    assert result["status"] == "ok"
+    assert [item["service_code"] for item in result["services"]] == ["workplace", "access"]
+    assert result["offerings"][0]["full_code"] == "workplace.breakage"
+
+
+@pytest.mark.asyncio
+async def test_automation_create_wizard_select_catalog_by_template():
+    chat_panel = _ChatPanel(account_session={"account_session_id": "session-1"})
+    window = _Window(chat_panel)
+    controller = GuiAutomationController(window)
+
+    result = await controller.run_action(
+        {"action": "ticket.create_wizard.select_catalog", "request_template_key": "live_check"}
+    )
+
+    assert result["status"] == "ok"
+    assert result["selected_service_code"] == "access"
+    assert result["selected_offering_full_code"] == "access.live_check"
 
 
 @pytest.mark.asyncio
@@ -166,6 +332,7 @@ async def test_automation_create_ticket_sends_active_account_session():
     call = chat_panel.ticket_client.calls[0]
     assert call["requester_account"] == account_session
     assert call["trace_parent_action_id"] == "action-1"
+    assert chat_panel._ticket_detail_timer.started_intervals == [TICKET_DETAIL_POLL_INTERVAL_MS]
 
 
 @pytest.mark.asyncio
@@ -195,6 +362,19 @@ async def test_automation_create_ticket_forwards_service_catalog_selection():
     assert call["service_code"] == "access"
     assert call["offering_code"] == "live_check"
     assert call["offering_full_code"] == "access.live_check"
+    assert chat_panel._ticket_detail_timer.started_intervals == [TICKET_DETAIL_POLL_INTERVAL_MS]
+
+
+@pytest.mark.asyncio
+async def test_automation_open_ticket_uses_configured_detail_poll_interval():
+    account_session = {"account_session_id": "session-1", "session_token": "token-1"}
+    chat_panel = _ChatPanel(account_session=account_session)
+    controller = GuiAutomationController(_Window(chat_panel))
+
+    result = await controller._open_ticket({"ticket_id": "ticket-1"})
+
+    assert result["status"] == "ok"
+    assert chat_panel._ticket_detail_timer.started_intervals == [TICKET_DETAIL_POLL_INTERVAL_MS]
 
 
 @pytest.mark.asyncio

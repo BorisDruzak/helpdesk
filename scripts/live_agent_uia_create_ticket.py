@@ -92,6 +92,86 @@ def _control_id(control: Any) -> str:
         return ""
 
 
+def _control_type(control: Any) -> str:
+    try:
+        return str(getattr(control.element_info, "control_type", "") or "")
+    except Exception:
+        return ""
+
+
+def _is_ticket_type_card(control: Any) -> bool:
+    auto_id = _control_id(control)
+    name = _control_text(control)
+    if "ServiceCatalogCard" in auto_id or name.startswith("service-catalog-card:"):
+        return False
+    return "TicketTypeCard" in auto_id or name.startswith("ticket-type-card:")
+
+
+def _is_service_catalog_card(control: Any) -> bool:
+    auto_id = _control_id(control)
+    name = _control_text(control)
+    return "ServiceCatalogCard" in auto_id or name.startswith("service-catalog-card:")
+
+
+def _find_service_catalog_cards(root: Any) -> list[Any]:
+    seen: set[int] = set()
+    cards: list[Any] = []
+
+    def add(item: Any) -> None:
+        try:
+            marker = int(item.handle)
+        except Exception:
+            marker = id(item)
+        if marker in seen:
+            return
+        seen.add(marker)
+        cards.append(item)
+
+    for item in _descendants_limited(root, control_type="Button", limit=500):
+        if _is_service_catalog_card(item):
+            add(item)
+    for item in _descendants_limited(root, limit=900):
+        if _is_service_catalog_card(item):
+            add(item)
+    return cards
+
+
+def _find_ticket_type_cards(root: Any, template: str) -> list[Any]:
+    seen: set[int] = set()
+    cards: list[Any] = []
+
+    def add(item: Any) -> None:
+        try:
+            marker = int(item.handle)
+        except Exception:
+            marker = id(item)
+        if marker in seen:
+            return
+        seen.add(marker)
+        cards.append(item)
+
+    for item in _descendants_limited(root, control_type="Button", limit=500):
+        if _is_ticket_type_card(item):
+            add(item)
+
+    all_items = _descendants_limited(root, limit=900)
+    for item in all_items:
+        if _is_ticket_type_card(item):
+            add(item)
+
+    template_text = str(template or "").strip().casefold()
+    if template_text:
+        for item in all_items:
+            auto_id = _control_id(item)
+            name = _control_text(item)
+            if "ServiceCatalogCard" in auto_id or name.startswith("service-catalog-card:"):
+                continue
+            if template_text in name.casefold() and _control_type(item) in {"Button", "Custom"}:
+                add(item)
+
+    return cards
+
+
 def _find(root: Any, *, auto_id_contains: str | None = None, name_contains: str | None = None, control_type: str | None = None, timeout: float = 8.0) -> Any:
     end = _deadline(timeout)
     while _now_ms() < end:
@@ -217,17 +297,48 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     wizard = _find(window, auto_id_contains="TicketCreateWizardRoot", timeout=8)
     evidence["wizard_root"] = {"name": _control_text(wizard), "automation_id": _control_id(wizard)}
 
-    cards = [
-        item
-        for item in _descendants_limited(window, control_type="Button", limit=220)
-        if "TicketTypeCard" in _control_id(item)
+    cards = _find_ticket_type_cards(window, args.template)
+    evidence["ticket_type_cards"] = [
+        {"type": _control_type(item), "name": _control_text(item), "automation_id": _control_id(item)}
+        for item in cards[:8]
     ]
-    evidence["ticket_type_cards"] = [{"name": _control_text(item), "automation_id": _control_id(item)} for item in cards[:8]]
-    if cards:
-        target = next((item for item in cards if args.template.casefold() in _control_text(item).casefold()), cards[0])
-        _invoke(target)
-        evidence["actions"].append({"action": "select_template_card", "name": _control_text(target), "automation_id": _control_id(target)})
-        time.sleep(0.8)
+    if not cards:
+        evidence["control_tree_excerpt"] = _dump_tree(window)
+        raise RuntimeError("ticket type cards not found; Service Catalog did not render in the create-ticket wizard")
+    target = next((item for item in cards if args.template.casefold() in _control_text(item).casefold()), None)
+    if target is None and args.template:
+        service_cards = _find_service_catalog_cards(window)
+        evidence["service_catalog_cards"] = [
+            {"type": _control_type(item), "name": _control_text(item), "automation_id": _control_id(item)}
+            for item in service_cards[:12]
+        ]
+        for service_card in service_cards:
+            _invoke(service_card)
+            time.sleep(0.7)
+            cards = _find_ticket_type_cards(window, args.template)
+            target = next((item for item in cards if args.template.casefold() in _control_text(item).casefold()), None)
+            if target is not None:
+                evidence["actions"].append(
+                    {
+                        "action": "select_service_card",
+                        "name": _control_text(service_card),
+                        "automation_id": _control_id(service_card),
+                    }
+                )
+                evidence["ticket_type_cards_after_service"] = [
+                    {"type": _control_type(item), "name": _control_text(item), "automation_id": _control_id(item)}
+                    for item in cards[:8]
+                ]
+                break
+    if target is None and not args.template:
+        target = cards[0]
+    if target is None:
+        evidence["control_tree_excerpt"] = _dump_tree(window)
+        available = [(_control_text(item) or _control_id(item))[:120] for item in cards]
+        raise RuntimeError(f"ticket type card not found for template {args.template!r}; available={available!r}")
+    _invoke(target)
+    evidence["actions"].append({"action": "select_template_card", "name": _control_text(target), "automation_id": _control_id(target)})
+    time.sleep(0.8)
 
     next_btn = _find(window, auto_id_contains="TicketCreateNextButton", control_type="Button", timeout=5)
     _invoke(next_btn)
