@@ -340,5 +340,5 @@ Execution checkpoints:
 - [x] Add focused UI structure tests.
 - [x] Implement tickets/device/policy-health layout updates.
 - [x] Run local verification.
-- [ ] Deploy/release quick gate and remote browser checks.
-- [ ] Commit and push only task files.
+- [x] Deploy/release quick gate and remote browser checks.
+- [x] Commit and push only task files.
