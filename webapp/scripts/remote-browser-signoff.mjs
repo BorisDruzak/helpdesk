@@ -19,7 +19,7 @@ const DEFAULT_EXPECT_ROUTE_MODE = "auto";
 
 const LOGIN_HEADING = "Вход в рабочие места";
 const ADMIN_HEADING = "Центр администрирования";
-const SUPPORT_HEADING = "Рабочий центр";
+const SUPPORT_HEADING = "Центр действий";
 const RUSSIAN_TITLE = "pc_client — рабочие места";
 
 const ADMIN_REQUIRED_TEXT = [
@@ -136,7 +136,11 @@ async function collectPageState(page, pageName, expectedHeading, requiredText) {
   const lang = await page.locator("html").getAttribute("lang");
   const title = await page.title();
   const missingText = requiredText.filter((text) => !bodyText.includes(text));
-  const headingVisible = bodyText.includes(expectedHeading);
+  const headingVisible = await page
+    .getByRole("heading", { name: expectedHeading, exact: true })
+    .first()
+    .isVisible({ timeout: 1000 })
+    .catch(() => false);
 
   return {
     pageName,
