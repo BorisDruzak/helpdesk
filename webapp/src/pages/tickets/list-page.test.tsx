@@ -1401,6 +1401,17 @@ describe("TicketListPage", () => {
     expect(screen.getByRole("button", { name: "Тёмная тема" })).toBeInTheDocument();
   });
 
+  it("renders the operator command strip and ticket inspector shell", async () => {
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByTestId("support-command-strip")).toHaveAttribute("data-layout", "operator-command-console");
+    expect(screen.getByTestId("support-inspector-panel")).toHaveAttribute("data-layout", "side-inspector");
+    expect(screen.getByTestId("support-inspector-summary")).toBeInTheDocument();
+  });
+
   it("renders SLA/OLA timer edge states and passport readiness clearly", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(

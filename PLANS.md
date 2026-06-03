@@ -304,3 +304,41 @@ Execution checkpoints:
 - [x] Run local test/build/verify gates.
 - [ ] Deploy to Linux stand, smoke and browser-audit the three URLs.
 - [ ] Commit and push only task files, leaving unrelated dirty files untouched.
+
+## 2026-06-03 Product Design variant 3 operator console
+
+Goal: apply the selected Variant 3 direction as a production-oriented operator console across `/app/tickets`, `/app/admin/device`, and `/app/admin/policy-health`.
+
+Mode: Feature / Execute. Ownership zone: React webapp UI. Classification: local UI change; no backend routes, DTOs, DB, auth, Protocol V3, observer, or release script changes planned.
+
+Scope:
+
+- `/app/tickets`: add an operator command strip, make the right side read as a ticket inspector, keep existing queue/ticket/expanded modes and API calls.
+- `/app/admin/device`: move device drilldown into explicit tabs for status, inventory, observer, and updates while keeping identity dominant.
+- `/app/admin/policy-health`: make the filter/table area a sticky audit console and the dry-run area a focused simulation workbench.
+
+Non-goals:
+
+- no new mockup route;
+- no new backend fields;
+- no full visual rebrand;
+- no unrelated cleanup of existing dirty artifacts.
+
+Verification matrix:
+
+- targeted Vitest for changed webapp tests;
+- `pnpm --dir webapp run test`;
+- `pnpm --dir webapp run build`;
+- `python scripts/verify_workspace.py`;
+- deploy/release quick gate, remote smoke, and browser signoff for the three audited URLs;
+- stop remote server after checks.
+
+Execution checkpoints:
+
+- [x] Confirmed design direction with user.
+- [x] Ran intake, context pack, context index rebuild, and web toolchain bootstrap.
+- [x] Add focused UI structure tests.
+- [x] Implement tickets/device/policy-health layout updates.
+- [x] Run local verification.
+- [ ] Deploy/release quick gate and remote browser checks.
+- [ ] Commit and push only task files.

@@ -318,7 +318,11 @@ export function PolicyHealthPanel() {
         </div>
       ) : null}
 
-      <section className="surface-panel p-4">
+      <section
+        className="surface-panel sticky top-0 z-20 p-4"
+        data-layout="sticky-audit-console"
+        data-testid="policy-health-console"
+      >
         <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <label className="text-sm font-medium text-slate-700">
             Поиск
@@ -404,7 +408,7 @@ export function PolicyHealthPanel() {
         <TemplateDetails template={selectedTemplate} />
       </section>
 
-      <section className="surface-panel p-5">
+      <section className="surface-panel p-5" data-layout="simulation-workbench" data-testid="policy-health-dry-run-workbench">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-950">Симуляция выполнения</h2>

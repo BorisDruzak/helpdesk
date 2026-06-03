@@ -105,5 +105,7 @@ describe("AdminDevicePage", () => {
     expect(identity).toHaveAttribute("aria-label", "Основная идентификация и статус устройства");
     expect(screen.getByTestId("device-secondary-rail")).toHaveAttribute("aria-label", "Вторичный контекст устройства");
     expect(screen.getByTestId("device-page-layout")).toHaveAttribute("data-audit-layout", "identity-first");
+    expect(screen.getByTestId("device-drilldown-tabs")).toHaveAttribute("data-layout", "tabbed-drilldown");
+    expect(screen.getByTestId("device-drilldown-panel")).toHaveAttribute("data-active-tab", "status");
   });
 });

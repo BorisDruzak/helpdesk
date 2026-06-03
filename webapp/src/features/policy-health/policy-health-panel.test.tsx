@@ -187,6 +187,7 @@ describe("PolicyHealthPanel", () => {
     expect(screen.getByLabelText("Состояние проверки политик")).toBeInTheDocument();
     expect(screen.getByLabelText("Тип политики")).toBeInTheDocument();
     expect(screen.getByLabelText("Статус публикации шаблона")).toBeInTheDocument();
+    expect(screen.getByTestId("policy-health-console")).toHaveAttribute("data-layout", "sticky-audit-console");
     expect(screen.getByTestId("policy-health-table-focus")).toHaveAttribute("data-layout", "table-focus");
     expect(screen.getByTestId("policy-health-template-detail")).toHaveAttribute("aria-live", "polite");
   });

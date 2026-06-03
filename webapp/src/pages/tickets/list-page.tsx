@@ -2384,6 +2384,63 @@ export function TicketListPage() {
         data-overlay-right={rightPanelInDrawer ? "true" : "false"}
         style={getWorkspaceGridStyle(workspaceMode, workspaceColumns, workspaceViewportWidth)}
       >
+        <section
+          aria-label="Operator command console"
+          className="col-span-full flex min-h-14 flex-wrap items-center gap-3 border-b border-white/10 bg-[#081321]/90 px-4 py-2"
+          data-layout="operator-command-console"
+          data-testid="support-command-strip"
+        >
+          <div className="min-w-0 pr-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Command console</p>
+            <p className="truncate text-sm font-semibold text-white">
+              {selectedTicket ? `${selectedTicket.code} · ${selectedTicket.subject}` : "Queue focus"}
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {selectedTicket ? (
+              <>
+                <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${toneClasses(selectedTicket.statusTone)}`}>
+                  {selectedTicket.statusLabel}
+                </span>
+                <span className={`rounded-lg border px-2.5 py-1 text-xs font-bold ${toneClasses(selectedTicket.priorityTone)}`}>
+                  {selectedTicket.priority}
+                </span>
+                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  SLA {selectedTicket.timers.filter((timer) => timer.status === "at_risk" || timer.status === "breached").length}
+                </span>
+                <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                  Passport {selectedTicket.closurePlan.missingCount}/{selectedTicket.closurePlan.total || selectedTicket.closurePlan.missingCount}
+                </span>
+              </>
+            ) : (
+              <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+                {visibleTickets.length} visible tickets
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white"
+              onClick={() => setWorkspaceMode("queue")}
+              type="button"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Queue
+            </button>
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-slate-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!selectedTicket}
+              onClick={() => {
+                setSidebarTab("context");
+                setWorkspaceMode("ticket");
+              }}
+              type="button"
+            >
+              <Eye className="h-4 w-4" />
+              Inspector
+            </button>
+          </div>
+        </section>
         {canResizeWorkspace ? <button
           aria-label="Изменить ширину левой колонки"
           className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 -translate-x-1/2 cursor-col-resize ${
@@ -3356,9 +3413,12 @@ export function TicketListPage() {
         </main>
 
         <aside
+          aria-label="Ticket inspector"
           className={`flex min-h-0 flex-col bg-[#0b1624] ${
             rightPanelInDrawer ? "support-workspace__right-panel--drawer" : ""
           }`}
+          data-layout={rightPanelInDrawer ? "drawer-inspector" : "side-inspector"}
+          data-testid="support-inspector-panel"
         >
           {workspaceMode === "queue" ? (
             <div className="flex min-h-0 flex-1">
@@ -3380,6 +3440,47 @@ export function TicketListPage() {
             </div>
           ) : (
             <>
+          <div className="border-b border-white/10 bg-[#081321]/70 px-3 py-3" data-testid="support-inspector-summary">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ticket inspector</p>
+                <p className="mt-1 truncate text-sm font-semibold text-white">
+                  {selectedTicket ? selectedTicket.code : "No ticket selected"}
+                </p>
+              </div>
+              {selectedTicket ? (
+                <span className={`shrink-0 rounded-lg border px-2 py-1 text-[11px] font-semibold ${toneClasses(selectedTicket.statusTone)}`}>
+                  {selectedTicket.statusLabel}
+                </span>
+              ) : null}
+            </div>
+            {selectedTicket ? (
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <button
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2 text-left text-slate-300 hover:text-white"
+                  onClick={() => selectRightTab("context")}
+                  type="button"
+                >
+                  Context
+                </button>
+                <button
+                  aria-label="Open SLA inspector"
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2 text-left text-slate-300 hover:text-white"
+                  onClick={() => selectRightTab("sla")}
+                  type="button"
+                >
+                  SLA
+                </button>
+                <button
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-2 text-left text-slate-300 hover:text-white"
+                  onClick={() => selectRightTab("tools")}
+                  type="button"
+                >
+                  Actions
+                </button>
+              </div>
+            ) : null}
+          </div>
           {workspaceMode === "tools" ? (
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Инструменты" />
           ) : workspaceMode === "sla" ? (

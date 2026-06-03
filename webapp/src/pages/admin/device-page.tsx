@@ -48,11 +48,14 @@ function getUpdateTone(value: string | null | undefined): "danger" | "info" | "n
   return "warning";
 }
 
+type DeviceDrilldownTab = "inventory" | "observer" | "status" | "updates";
+
 
 export function AdminDevicePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
+  const [deviceDrilldownTab, setDeviceDrilldownTab] = useState<DeviceDrilldownTab>("status");
 
   const devicesQuery = useQuery({
     queryKey: ["admin-device-page", query],
@@ -226,15 +229,83 @@ export function AdminDevicePage() {
             </CardContent>
           </Card>
 
-          <ObserverQuickPanel
-            deviceId={selectedDevice?.device_id ?? null}
-            deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "выбранного устройства"}
-          />
+          <section className="surface-panel overflow-hidden">
+            <div
+              aria-label="Device drilldown sections"
+              className="flex gap-1 overflow-x-auto border-b border-border bg-surface-subtle p-2"
+              data-layout="tabbed-drilldown"
+              data-testid="device-drilldown-tabs"
+              role="tablist"
+            >
+              {[
+                ["status", "Status"],
+                ["inventory", "Inventory"],
+                ["observer", "Observer"],
+                ["updates", "Updates"],
+              ].map(([value, label]) => (
+                <button
+                  aria-selected={deviceDrilldownTab === value}
+                  className={`rounded-[0.8rem] px-3 py-2 text-sm font-semibold transition ${
+                    deviceDrilldownTab === value
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:bg-white/70 hover:text-slate-900"
+                  }`}
+                  key={value}
+                  onClick={() => setDeviceDrilldownTab(value as DeviceDrilldownTab)}
+                  role="tab"
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="p-5" data-active-tab={deviceDrilldownTab} data-testid="device-drilldown-panel">
+              {deviceDrilldownTab === "status" ? (
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                    <p className="text-sm text-slate-500">Connection</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice?.connection_status_label ?? "n/a"}</p>
+                    <p className="mt-2 text-sm text-slate-500">{formatDateTime(selectedDevice?.last_seen_at)}</p>
+                  </div>
+                  <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                    <p className="text-sm text-slate-500">Agent version</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice?.agent_version ?? "n/a"}</p>
+                    <p className="mt-2 text-sm text-slate-500">{selectedDevice?.os ?? "OS n/a"}</p>
+                  </div>
+                  <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                    <p className="text-sm text-slate-500">Recommended action</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-950">{selectedDevice?.latest_update.label ?? "Select device"}</p>
+                    <p className="mt-2 text-sm text-slate-500">{selectedDevice?.latest_update.summary ?? "No update signal yet."}</p>
+                  </div>
+                </div>
+              ) : null}
+              {deviceDrilldownTab === "inventory" ? (
+                <DeviceInventoryPanel
+                  deviceId={selectedDevice?.device_id ?? null}
+                  deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? null}
+                />
+              ) : null}
+              {deviceDrilldownTab === "observer" ? (
+                <ObserverQuickPanel
+                  deviceId={selectedDevice?.device_id ?? null}
+                  deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "selected device"}
+                />
+              ) : null}
+              {deviceDrilldownTab === "updates" ? (
+                <DeviceUpdatePanel
+                  device={
+                    selectedDevice
+                      ? {
+                          device_id: selectedDevice.device_id,
+                          hostname: selectedDevice.hostname,
+                        }
+                      : null
+                  }
+                />
+              ) : null}
+            </div>
+          </section>
 
-          <DeviceInventoryPanel
-            deviceId={selectedDevice?.device_id ?? null}
-            deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? null}
-          />
         </div>
 
         <div className="space-y-4" data-testid="device-secondary-rail" aria-label="Вторичный контекст устройства">
@@ -261,17 +332,6 @@ export function AdminDevicePage() {
               </div>
             </CardContent>
           </Card>
-
-          <DeviceUpdatePanel
-            device={
-              selectedDevice
-                ? {
-                    device_id: selectedDevice.device_id,
-                    hostname: selectedDevice.hostname,
-                  }
-                : null
-            }
-          />
 
           <Card>
             <CardHeader>
