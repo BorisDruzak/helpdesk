@@ -247,3 +247,60 @@ Continue in Execute mode. Do not stage unrelated dirty files:
 
 - `pc_agent/ui_gui/tickets_list_model.py`
 - existing untracked `artifacts/*`
+
+## 2026-06-03 Product Design UI audit remediation
+
+Goal: apply the Product Design audit fixes for `/app/tickets`, `/app/admin/device`, and `/app/admin/policy-health`, then repeat the browser audit and verify the web UI.
+
+Mode: Plan / Execute. Ownership zone: React webapp UI. Classification: local UI change; no API, DB, Protocol V3, auth, observer, deploy script, or DTO contract change planned.
+
+Scope:
+
+- Variant 1 hygiene pass:
+  - add explicit accessible labels for affected search/select/textarea/file controls;
+  - increase the effective tickets column-resizer target size while preserving the slim visual affordance;
+  - improve icon/technical control discoverability where the audit found small or implicit controls;
+  - make Policy Health summary counters scannable metric cards;
+  - add helper text/examples to the Policy Health dry-run form.
+- Variant 2 focused layout refactor:
+  - make ticket diagnostics/context less visually cramped by default and make the right pane easier to collapse/focus;
+  - make Device Card identity/status the dominant first-screen content and reduce right-rail competition;
+  - make Policy Health support a table-first comparison view and visually tie the detail pane to the selected row.
+
+Primary files:
+
+- `webapp/src/styles.css`
+- `webapp/src/pages/tickets/list-page.tsx`
+- `webapp/src/pages/tickets/list-page.test.tsx`
+- `webapp/src/pages/admin/device-page.tsx`
+- `webapp/src/features/policy-health/policy-health-panel.tsx`
+- `webapp/src/features/policy-health/policy-health-panel.test.tsx`
+- optional targeted admin/device test if existing test coverage requires it
+
+Non-goals:
+
+- no backend payload changes;
+- no route renames;
+- no mobile redesign beyond avoiding obvious overflow;
+- no full Product Design image-to-code prototype pass in this iteration.
+
+Verification matrix:
+
+- `python scripts/bootstrap_web_toolchain.py`
+- targeted Vitest for changed webapp tests;
+- `pnpm --dir webapp run test`
+- `pnpm --dir webapp run build`
+- `python scripts/verify_workspace.py`
+- deploy/release through project scripts, then remote smoke and browser check on `https://192.168.100.17:9443/admin`;
+- repeat Product Design-style screenshot audit for the three requested URLs;
+- stop remote server after checks.
+
+Execution checkpoints:
+
+- [x] Ran task intake, context pack, context-index rebuild, and web toolchain bootstrap.
+- [x] Add RED tests for Policy Health summary/layout/accessibility and tickets resize/labels.
+- [x] Implement Variant 1 hygiene fixes.
+- [x] Implement Variant 2 layout refactor.
+- [x] Run local test/build/verify gates.
+- [ ] Deploy to Linux stand, smoke and browser-audit the three URLs.
+- [ ] Commit and push only task files, leaving unrelated dirty files untouched.

@@ -643,6 +643,25 @@ describe("TicketListPage", () => {
     expect(await screen.findByText("pc-01")).toBeInTheDocument();
   });
 
+  it("exposes accessible composer labels and larger resize targets", async () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1366);
+    fetchSupportQueueMock.mockResolvedValue(queuePayload());
+    fetchSupportTicketWorkspaceMock.mockResolvedValue(workspacePayload());
+
+    renderTicketListPage("/app/tickets/ticket-1");
+
+    expect(await screen.findByTestId("support-workspace-root")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Сообщение в тикет")).toBeInTheDocument();
+    expect(screen.getByLabelText("Файлы для сообщения")).toHaveAttribute("type", "file");
+
+    const leftResizer = screen.getByRole("button", { name: "Изменить ширину левой колонки" });
+    const rightResizer = screen.getByRole("button", { name: "Изменить ширину правой колонки" });
+    expect(leftResizer).toHaveClass("w-6");
+    expect(rightResizer).toHaveClass("w-6");
+    expect(leftResizer).toHaveAttribute("title", expect.stringContaining("двойной клик"));
+    expect(rightResizer).toHaveAttribute("title", expect.stringContaining("двойной клик"));
+  });
+
   it("unsubscribes from the previous ticket when the selected ticket changes", async () => {
     const baseQueuePayload = queuePayload();
     fetchSupportQueueMock.mockResolvedValue(
@@ -1604,7 +1623,7 @@ describe("TicketListPage", () => {
 
     renderTicketListPage("/app/tickets/ticket-1");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Quality" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Качество" }));
 
     const qualityPanel = await screen.findByTestId("support-quality-panel");
     expect(within(qualityPanel).getByText("Latest CSAT")).toBeInTheDocument();

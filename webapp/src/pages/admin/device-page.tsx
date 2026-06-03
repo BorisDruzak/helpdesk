@@ -115,6 +115,7 @@ export function AdminDevicePage() {
               </Button>
             ) : null}
             <Select
+              aria-label="Выбор устройства"
               className="min-w-[280px]"
               onChange={(event) => {
                 const nextSearchParams = new URLSearchParams(searchParams);
@@ -153,7 +154,7 @@ export function AdminDevicePage() {
         </p>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_320px]" data-audit-layout="identity-first" data-testid="device-page-layout">
         <div className="space-y-6">
           <Card>
             <CardHeader className="gap-4">
@@ -176,7 +177,11 @@ export function AdminDevicePage() {
             <CardContent className="space-y-5">
               {selectedDevice ? (
                 <>
-                  <div className="rounded-[1.3rem] bg-surface-subtle px-5 py-5">
+                  <div
+                    aria-label="Основная идентификация и статус устройства"
+                    className="rounded-[1.3rem] bg-surface-subtle px-5 py-5"
+                    data-testid="device-primary-identity"
+                  >
                     <p className="text-xs uppercase tracking-[0.22em] text-brand-700">{selectedDevice.device_id}</p>
                     <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                       {selectedDevice.hostname ?? selectedDevice.device_id}
@@ -232,7 +237,7 @@ export function AdminDevicePage() {
           />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4" data-testid="device-secondary-rail" aria-label="Вторичный контекст устройства">
           <Card>
             <CardHeader>
               <CardTitle>Контекст устройства</CardTitle>

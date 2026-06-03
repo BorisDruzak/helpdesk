@@ -340,7 +340,7 @@ function workspaceHasLiveOperations(payload: SupportTicketWorkspacePayload | und
 
 const sidebarTabs: Array<{ value: SidebarTab; label: string }> = [
   { value: "context", label: "Контекст" },
-  { value: "quality", label: "Quality" },
+  { value: "quality", label: "Качество" },
   { value: "sla", label: "SLA" },
   { value: "tools", label: "Инструменты" },
   { value: "knowledge", label: "Знания" },
@@ -2386,13 +2386,13 @@ export function TicketListPage() {
       >
         {canResizeWorkspace ? <button
           aria-label="Изменить ширину левой колонки"
-          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 -translate-x-1/2 cursor-col-resize ${
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 -translate-x-1/2 cursor-col-resize ${
             resizingPane === "left" ? "support-workspace__column-resizer--active" : ""
           }`}
           onPointerDown={(event) => startColumnResize("left", event)}
           onDoubleClick={resetWorkspaceColumnsForCurrentMode}
           style={{ left: `${workspaceColumns.left}px` }}
-          title="Потяните, чтобы изменить ширину списка тикетов"
+          title="Потяните, чтобы изменить ширину списка тикетов; двойной клик сбрасывает колонки"
           type="button"
         >
           <span className="support-workspace__column-resizer-line">
@@ -2401,13 +2401,13 @@ export function TicketListPage() {
         </button> : null}
         {canResizeWorkspace ? <button
           aria-label="Изменить ширину правой колонки"
-          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-3 translate-x-1/2 cursor-col-resize ${
+          className={`support-workspace__column-resizer absolute bottom-0 top-0 z-30 w-6 translate-x-1/2 cursor-col-resize ${
             resizingPane === "right" ? "support-workspace__column-resizer--active" : ""
           }`}
           onPointerDown={(event) => startColumnResize("right", event)}
           onDoubleClick={resetWorkspaceColumnsForCurrentMode}
           style={{ right: `${workspaceColumns.right}px` }}
-          title="Потяните, чтобы изменить ширину контекстной панели"
+          title="Потяните, чтобы изменить ширину контекстной панели; двойной клик сбрасывает колонки"
           type="button"
         >
           <span className="support-workspace__column-resizer-line">
@@ -3270,6 +3270,7 @@ export function TicketListPage() {
                 <div className="border-t border-white/10 bg-[#0b1624] p-3">
                   <div className="rounded-xl border border-white/10 bg-[#0d1828]">
                     <textarea
+                      aria-label="Сообщение в тикет"
                       className="min-h-10 max-h-44 w-full resize-y overflow-y-auto bg-transparent px-4 py-2.5 text-sm leading-5 text-white outline-none placeholder:text-slate-500"
                       data-testid="support-reply-composer"
                       onChange={(event) => setComposerText(event.currentTarget.value)}
@@ -3305,6 +3306,7 @@ export function TicketListPage() {
                     ) : null}
                     <div className="flex items-center gap-2 px-4 pb-3">
                       <input
+                        aria-label="Файлы для сообщения"
                         className="hidden"
                         multiple
                         onChange={handleAttachmentInputChange}
@@ -3386,14 +3388,16 @@ export function TicketListPage() {
             <ExpandedWorkspaceHeader onReturnToTicket={() => setWorkspaceMode("ticket")} title="Паспорт решения" />
           ) : null}
           <div className="border-b border-white/10 p-3">
-            <div className="grid grid-cols-6 gap-1 rounded-xl bg-white/[0.04] p-1">
+            <div aria-label="Разделы правой панели" className="flex gap-1 overflow-x-auto rounded-xl bg-white/[0.04] p-1">
               {sidebarTabs.map((tab) => (
                 <button
-                  className={`rounded-lg px-2 py-2 text-xs font-semibold transition ${
+                  aria-pressed={sidebarTab === tab.value}
+                  className={`min-w-[5.75rem] rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
                     sidebarTab === tab.value ? "bg-[#13233a] text-white shadow" : "text-slate-400 hover:text-white"
                   }`}
                   key={tab.value}
                   onClick={() => selectRightTab(tab.value)}
+                  title={tab.label}
                   type="button"
                 >
                   {tab.label}

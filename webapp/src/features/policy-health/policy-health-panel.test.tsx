@@ -125,7 +125,7 @@ describe("PolicyHealthPanel", () => {
     renderPanel("/app/admin/policy-health?service=mail&offering=mail.new_box&template=mailbox");
 
     await screen.findAllByText("mailbox");
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тестовый прогон" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -149,7 +149,7 @@ describe("PolicyHealthPanel", () => {
     renderPanel("/app/admin/policy-health");
 
     await screen.findAllByText("mailbox");
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тестовый прогон" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -174,5 +174,34 @@ describe("PolicyHealthPanel", () => {
     expect(container).toHaveTextContent('"service_code": "mail"');
     expect(container).toHaveTextContent('"offering_code": "new_box"');
     expect(container).toHaveTextContent('"offering_full_code": "mail.new_box"');
+  });
+
+  it("renders audit-friendly summary metrics, labeled filters, and table focus layout", async () => {
+    mockPolicyHealthFetch();
+
+    renderPanel("/app/admin/policy-health");
+
+    expect(await screen.findByTestId("policy-health-summary-metrics")).toHaveAttribute("aria-label", "Сводка проверки политик");
+    expect(screen.getByTestId("policy-health-metric-total")).toHaveTextContent("1");
+    expect(screen.getByLabelText("Поиск политик")).toBeInTheDocument();
+    expect(screen.getByLabelText("Состояние проверки политик")).toBeInTheDocument();
+    expect(screen.getByLabelText("Тип политики")).toBeInTheDocument();
+    expect(screen.getByLabelText("Статус публикации шаблона")).toBeInTheDocument();
+    expect(screen.getByTestId("policy-health-table-focus")).toHaveAttribute("data-layout", "table-focus");
+    expect(screen.getByTestId("policy-health-template-detail")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("explains the dry-run form and exposes labeled simulation controls", async () => {
+    mockPolicyHealthFetch();
+
+    renderPanel("/app/admin/policy-health");
+
+    expect((await screen.findAllByText("mailbox")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Подставьте пример/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Инициатор симуляции")).toBeInTheDocument();
+    expect(screen.getByLabelText("Устройство симуляции")).toBeInTheDocument();
+    expect(screen.getByLabelText("Локация симуляции")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ожидаемый приоритет")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ответы формы и ожидания")).toBeInTheDocument();
   });
 });
