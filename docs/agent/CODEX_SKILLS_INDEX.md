@@ -8,6 +8,8 @@ Root `AGENTS.md` should stay concise. Detailed repeatable workflows live in `.ag
 
 Subsystem-specific instructions are indexed in `docs/agent/NESTED_AGENTS_INDEX.md`.
 
+Project-scoped Codex custom subagents are indexed in `docs/agent/SUBAGENTS_INDEX.md`.
+
 ## Routing table
 
 | Task type | Skill | Supporting docs | Required evidence/checks |

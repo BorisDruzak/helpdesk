@@ -55,6 +55,20 @@ See `docs/agent/CODEX_SKILLS_INDEX.md` for the routing table.
 
 Do not duplicate full skill workflows in this file. Keep detailed procedures in the skill files.
 
+## Subagent routing
+
+Use project-scoped custom subagents for parallel read-heavy work and verification support:
+
+- Context mapping: `.codex/agents/context-mapper.toml`
+- Test/check execution: `.codex/agents/test-runner.toml`
+- Strict diff review: `.codex/agents/reviewer.toml`
+- Browser-visible validation: `.codex/agents/browser-verifier.toml`
+- Docs/CODEMAP drift audit: `.codex/agents/docs-drift-auditor.toml`
+
+Use subagents for exploration, checks, browser evidence, review, and docs drift audit. Do not use multiple agents to edit the same files concurrently. The main agent owns implementation, final integration, and final verification.
+
+See `docs/agent/SUBAGENTS_INDEX.md`.
+
 ## Nested instructions
 
 Subsystem-specific instructions live closer to the code:
