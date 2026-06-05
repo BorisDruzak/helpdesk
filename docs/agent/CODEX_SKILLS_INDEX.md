@@ -6,6 +6,8 @@ This document routes recurring Codex work to repo-local skills.
 
 Root `AGENTS.md` should stay concise. Detailed repeatable workflows live in `.agents/skills/*/SKILL.md`.
 
+Subsystem-specific instructions are indexed in `docs/agent/NESTED_AGENTS_INDEX.md`.
+
 ## Routing table
 
 | Task type | Skill | Supporting docs | Required evidence/checks |

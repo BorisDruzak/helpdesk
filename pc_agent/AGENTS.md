@@ -1,42 +1,93 @@
-# pc_agent/AGENTS.md
+# pc_agent/AGENTS.md - PC Agent Instructions
 
-## Agent-specific rules
+## Scope
 
-- Follow root `AGENTS.md`; the local Windows repo remains the source of truth.
-- Treat `pc_agent` changes as client/runtime/Protocol V3-sensitive unless clearly local.
-- The agent role includes local data collection, Qt GUI, WebSocket client runtime, module execution, and outbox/ACK delivery.
-- Local agent DB is SQLite `data/storage.db`; see `pc_agent/docs/DATABASE.md`.
-- Check server compatibility before changing messages, lifecycle states, identity, outbox behavior, account/session behavior, or agent runtime behavior.
-- Do not log raw tokens, passwords, cookies, consent tokens, or auth headers.
+This file applies to work under `pc_agent/`.
 
-## Start here
+Use it for:
 
-- Read `pc_agent/docs/CODEMAP.md` before analysis or edits in `pc_agent/`.
-- Read `pc_agent/docs/PROTOCOL_V3.md` and `.agents/skills/pc-client-protocol-v3/SKILL.md` for Protocol V3 work.
-- Read `pc_agent/docs/AUTHENTICATION.md` for token source or provisioning work.
-- Read `pc_agent/docs/MODULES.md`, `pc_agent/docs/ORCHESTRATOR.md`, and `pc_agent/docs/SENDER.md` for module/runtime/outbox work.
-- Read `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` for always-on runtime, tray, `ui_bridge`, or `ui_gui` work.
-- Read `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, and `server/docs/AGENT_UPDATES_API.md` for launcher/update/rollout work.
-- Read `server/docs/OBSERVER_LAYER.md` and `server/docs/OBSERVER_AUTHORING_RULES.md` when work touches action trace, module breadcrumbs, update trace, or agent-side dangerous flow instrumentation.
+- desktop/client agent runtime
+- agent startup/shutdown behavior
+- client-side Protocol V3 handling
+- GUI/UIA/live-debug behavior
+- local machine automation
+- agent logs/smoke checks
+- agent packaging or deployment assumptions
+- `pc_agent` CODEMAP/docs updates
 
-## Module observer rule
+Root `AGENTS.md` still applies.
 
-- Every new `BaseCollector` module must use the observer SDK from `pc_agent/modules/base_module.py`.
-- Add at least one top-level `with self.trace_span("tool.entry", ...)` per tool method.
-- Add `self.trace_event(...)` or `self.trace_span(...)` around dangerous steps such as subprocess, network, retry, timeout, artifact, consent, and publish.
-- Never put raw tokens, passwords, cookies, consent tokens, or other sensitive fields in `details`; use built-in redaction helpers.
-- Do not remove generated trace SDK scaffolding from workbench/builder modules unless replacing it with equivalent instrumentation.
+## Local context
 
-## CODEMAP and docs
+Before non-trivial `pc_agent` edits, consult available project routing docs:
 
-- The canonical agent CODEMAP is `pc_agent/docs/CODEMAP.md`.
-- Update it when agent structure, core/modules/ui_gui/ui_bridge entrypoints, runtime flows, or key files change.
-- If agent-side observer coverage, module breadcrumbs, action trace bridge, update trace, or dangerous flow instrumentation changes, update observer docs in the same change.
-- For docs drift decisions, use `.agents/skills/pc-client-docs-drift/SKILL.md`.
+- `docs/QUICK_LOOKUP.md`
+- `docs/CODEX_WORKFLOW.md`
+- `docs/CONTEXT_INDEX.md`
+- `docs/ARCHITECTURE_BOUNDARIES.md`
+- `docs/LIVE_TESTING_DEBUG_RULES.md`
+- `pc_agent/docs/CODEMAP.md`
 
-## Protocol V3 invariants
+Use focused context tools when available:
 
-- Protocol version on handshake is `ws_ticket_v3`.
-- Event type is determined only by `device_seq` vs `agent_seq`.
-- ACK for outbox means delete the outbox row; there is no durable `sent` state.
-- For protocol work, check both server and agent producers/consumers before editing.
+```powershell
+python scripts/build_context_pack.py --topic "<pc_agent task>"
+python scripts/search_context_index.py "<agent protocol error symbol>"
+python scripts/agent_find.py "<pattern>" --dir pc_agent
+```
+
+## Relevant skills
+
+Use repo-local skills when applicable:
+
+- Context discovery: `.agents/skills/pc-client-context-pack/SKILL.md`
+- Bugs, regressions, runtime errors: `.agents/skills/pc-client-systematic-debug/SKILL.md`
+- Code review: `.agents/skills/pc-client-code-review/SKILL.md`
+- Docs/CODEMAP drift: `.agents/skills/pc-client-docs-drift/SKILL.md`
+- Release/deploy validation: `.agents/skills/pc-client-release-gate/SKILL.md`
+
+## PC agent implementation rules
+
+- Treat Protocol V3 message/lifecycle changes as boundary-sensitive.
+- Check server compatibility before changing client-side protocol behavior.
+- Do not introduce behavior that silently diverges from server contracts.
+- Preserve existing startup/shutdown and recovery semantics unless the task explicitly changes them.
+- Do not log raw tokens, secrets, credentials, private keys, auth headers, or sensitive local-machine data.
+- Keep GUI/UIA/live-debug behavior evidence-based.
+- Preserve UTF-8; Russian text mojibake is a defect.
+- Prefer existing agent runtime patterns over parallel mechanisms.
+- If protocol handling, entrypoints, lifecycle states, runtime behavior, or packaging/deploy assumptions change, update relevant docs and CODEMAP.
+
+## Verification
+
+Before claiming completion for `pc_agent` work:
+
+- Run workspace sanity when available:
+  - `python scripts/verify_workspace.py`
+- Run targeted agent tests/checks relevant to the changed files.
+- For GUI/live-debug work, follow `docs/LIVE_TESTING_DEBUG_RULES.md`.
+- For Protocol V3 changes, verify both producer and consumer sides.
+- For runtime/deploy-sensitive changes, use project-approved smoke/log scripts.
+
+## Docs/CODEMAP drift
+
+Use `.agents/skills/pc-client-docs-drift/SKILL.md` when `pc_agent` work changes:
+
+- agent entrypoints
+- protocol handling
+- runtime lifecycle
+- GUI/UIA behavior
+- startup/shutdown behavior
+- packaging/deployment assumptions
+- files listed in `pc_agent/docs/CODEMAP.md`
+
+## Final response requirements
+
+For `pc_agent` tasks, include:
+
+- agent files changed
+- protocol/runtime/GUI impact
+- server compatibility impact
+- tests/checks run
+- docs/CODEMAP updates or why not needed
+- residual agent/runtime risks

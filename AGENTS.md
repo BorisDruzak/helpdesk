@@ -55,6 +55,18 @@ See `docs/agent/CODEX_SKILLS_INDEX.md` for the routing table.
 
 Do not duplicate full skill workflows in this file. Keep detailed procedures in the skill files.
 
+## Nested instructions
+
+Subsystem-specific instructions live closer to the code:
+
+- Backend/server work: `server/AGENTS.md`
+- PC agent/runtime work: `pc_agent/AGENTS.md`
+- Frontend/browser work: `webapp/AGENTS.md`
+
+When working primarily inside one of these directories, consult the local `AGENTS.md` before editing. Local instructions refine this root operating contract; they do not replace global safety, source-of-truth, verification, or release/deploy rules.
+
+Do not duplicate full workflows here. Detailed repeatable workflows live in `.agents/skills/*/SKILL.md`.
+
 ## Implementation rules
 
 - Make the smallest correct change.
