@@ -42,18 +42,18 @@ For any non-trivial task:
 
 ## Skill routing
 
-Use repo-local skills for repeatable workflows:
+Use repo-local Codex skills for repeatable workflows:
 
-- Task intake and routing: `.agents/skills/pc-client-task-intake/SKILL.md`
-- Context discovery: `.agents/skills/pc-client-context-pack/SKILL.md`
-- Bugs, regressions, failing tests, live-debug issues: `.agents/skills/pc-client-systematic-debug/SKILL.md`
-- Browser-visible changes: `.agents/skills/pc-client-browser-check/SKILL.md`
-- Release, deploy, full gate: `.agents/skills/pc-client-release-gate/SKILL.md`
-- Review changed code: `.agents/skills/pc-client-code-review/SKILL.md`
-- Docs/CODEMAP drift: `.agents/skills/pc-client-docs-drift/SKILL.md`
-- Protocol V3 and client/server contract work: `.agents/skills/pc-client-protocol-v3/SKILL.md`
+- Context discovery, file/symbol search, docs routing: `.agents/skills/pc-client-context-pack/SKILL.md`
+- Bugs, regressions, failing tests, runtime errors: `.agents/skills/pc-client-systematic-debug/SKILL.md`
+- Browser-visible UI/webapp/admin changes: `.agents/skills/pc-client-browser-check/SKILL.md`
+- Release candidate, deploy, remote smoke, full gate: `.agents/skills/pc-client-release-gate/SKILL.md`
+- Review diffs, PR-style review, staged/uncommitted changes: `.agents/skills/pc-client-code-review/SKILL.md`
+- Docs, CODEMAP, workflow, route, contract drift: `.agents/skills/pc-client-docs-drift/SKILL.md`
 
 See `docs/agent/CODEX_SKILLS_INDEX.md` for the routing table.
+
+Do not duplicate full skill workflows in this file. Keep detailed procedures in the skill files.
 
 ## Implementation rules
 
