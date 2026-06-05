@@ -1,35 +1,35 @@
-# AGENTS.md — инструкции для Codex (server)
+# server/AGENTS.md
 
-Канон инструкций и доков — **локальная рабочая копия** монорепо; шара `\\192.168.100.17\NTFS_Share\pc_client` и Linux `/var/chat_bot/pc_client` — зеркала. См. корневой `AGENTS.md`.
+## Server-specific rules
 
-## Главное про сервер
+- Follow root `AGENTS.md`; the local Windows repo remains the source of truth.
+- Treat server changes as backend/runtime changes.
+- The server role is relay between Web UI and agents through WebSocket Protocol V3 (`ws_ticket_v3`).
+- Main WS endpoints:
+  - `/ws` for agents; handshake requires version, capabilities, and token.
+  - `/ws_ui` for UI; first message is `ui_hello` with token.
+- Use only `https://192.168.100.17:9443/admin` for browser checks unless the user explicitly requests another target.
+- Do not weaken auth, role, actor, token, audit, or observer behavior.
 
-- Роль: relay-сервер между Web UI и агентами по WebSocket Protocol V3 (`ws_ticket_v3`).
-- WS endpoints:
-  - `/ws` — агенты (handshake обязателен: version/capabilities/token)
-  - `/ws_ui` — UI (первое сообщение `ui_hello` с токеном)
+## Start here
 
-## Документация, с которой начинать
+- Read `server/docs/CODEMAP.md` before analysis or edits in `server/`.
+- Read `server/docs/SECURITY_AND_AUTH.md` for auth-sensitive work.
+- Read `server/docs/PROTOCOL_V3.md` and `.agents/skills/pc-client-protocol-v3/SKILL.md` for Protocol V3 work.
+- Read `server/docs/OBSERVER_LAYER.md` and `server/docs/OBSERVER_AUTHORING_RULES.md` when work touches trace, dangerous flow, tech panel, support trace summary, observer API, or trace-visible UI.
 
-- `docs/README.md`
-- `docs/SECURITY_AND_AUTH.md`
-- `docs/PROTOCOL_V3.md` (серверные требования + ссылка на полную спецификацию у агента)
-- `docs/OBSERVER_LAYER.md` и `docs/OBSERVER_AUTHORING_RULES.md`, если задача затрагивает trace, dangerous flow, техпанель, support trace summary или observer API
+## CODEMAP and docs
 
-## CODEMAP
+- The canonical server CODEMAP is `server/docs/CODEMAP.md`.
+- Update it when server routes, handlers, services, startup/runtime flows, key entrypoints, or structure change.
+- If observer, dangerous flow, or trace-visible API/UI changes, update observer docs in the same change.
+- For docs drift decisions, use `.agents/skills/pc-client-docs-drift/SKILL.md`.
 
-- Каноническая карта сервера — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `server/docs/CODEMAP.md`).
-- Перед анализом/правками сначала смотреть этот файл.
-- При изменении структуры серверного кода, маршрутов или runtime-потоков **обязательно** обновлять `server/docs/CODEMAP.md`. Если change касается observer-слоя, dangerous flow или trace-visible API/UI, синхронно обновлять и `server/docs/OBSERVER_LAYER.md` + `server/docs/OBSERVER_AUTHORING_RULES.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
+## Hard invariants
 
-## Единый URL GUI
-
-- Для открытия веб-интерфейса сервера использовать **только**: `https://192.168.100.17:9443/admin`.
-- Не использовать `127.0.0.1` и альтернативные URL без явного запроса пользователя.
-
-## Инварианты, которые нельзя ломать
-
-- `command_result` всегда завершает операцию; `outbox=delivered` означает “доставлено/обработано”, а не “успех выполнения”:
-  - успех/ошибка/consent_required → `device_outbox: delivered`, а `operations` отражает результат выполнения
-  - таймаут → `device_outbox: failed` с `TIMEOUT` (см. `docs/COMMAND_RESULT_LIFECYCLE.md`)
-- `tool_call_started` создаётся сервером до отправки команды (см. `docs/TOOL_CALL_STARTED_INVARIANT.md`)
+- `command_result` always completes an operation.
+- `device_outbox=delivered` means delivered/processed, not tool success.
+- Tool success, error, and `consent_required` are reflected through operation state/result.
+- Timeout uses `device_outbox=failed` with `TIMEOUT`; see `server/docs/COMMAND_RESULT_LIFECYCLE.md`.
+- `tool_call_started` is created by the server before sending `run_tool`; see `server/docs/TOOL_CALL_STARTED_INVARIANT.md`.
+- Do not log raw tokens or auth headers.

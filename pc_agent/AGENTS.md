@@ -1,34 +1,42 @@
-# AGENTS.md — инструкции для Codex (pc_agent)
+# pc_agent/AGENTS.md
 
-Канон инструкций и доков — **локальная рабочая копия** монорепо; шара `\\192.168.100.17\NTFS_Share\pc_client` и Linux `/var/chat_bot/pc_client` — зеркала. См. корневой `AGENTS.md`.
+## Agent-specific rules
 
-## Главное про агента
+- Follow root `AGENTS.md`; the local Windows repo remains the source of truth.
+- Treat `pc_agent` changes as client/runtime/Protocol V3-sensitive unless clearly local.
+- The agent role includes local data collection, Qt GUI, WebSocket client runtime, module execution, and outbox/ACK delivery.
+- Local agent DB is SQLite `data/storage.db`; see `pc_agent/docs/DATABASE.md`.
+- Check server compatibility before changing messages, lifecycle states, identity, outbox behavior, account/session behavior, or agent runtime behavior.
+- Do not log raw tokens, passwords, cookies, consent tokens, or auth headers.
 
-- Роль: сбор данных на ПК, GUI (Qt), WebSocket клиент, модульная система, outbox/ACK доставка.
-- Локальная БД агента: SQLite `data/storage.db` (см. `docs/DATABASE.md`).
+## Start here
 
-## Документация, с которой начинать
+- Read `pc_agent/docs/CODEMAP.md` before analysis or edits in `pc_agent/`.
+- Read `pc_agent/docs/PROTOCOL_V3.md` and `.agents/skills/pc-client-protocol-v3/SKILL.md` for Protocol V3 work.
+- Read `pc_agent/docs/AUTHENTICATION.md` for token source or provisioning work.
+- Read `pc_agent/docs/MODULES.md`, `pc_agent/docs/ORCHESTRATOR.md`, and `pc_agent/docs/SENDER.md` for module/runtime/outbox work.
+- Read `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md` for always-on runtime, tray, `ui_bridge`, or `ui_gui` work.
+- Read `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, and `server/docs/AGENT_UPDATES_API.md` for launcher/update/rollout work.
+- Read `server/docs/OBSERVER_LAYER.md` and `server/docs/OBSERVER_AUTHORING_RULES.md` when work touches action trace, module breadcrumbs, update trace, or agent-side dangerous flow instrumentation.
 
-- `docs/README.md`
-- `docs/PROTOCOL_V3.md` (полная спецификация протокола)
-- `docs/AUTHENTICATION.md` (источники токена: `AUTH_TOKEN` → `auth_tokens` → legacy `identity.json`)
-- `docs/MODULES.md`, `docs/ORCHESTRATOR.md`, `docs/SENDER.md`
-- `../server/docs/OBSERVER_LAYER.md` и `../server/docs/OBSERVER_AUTHORING_RULES.md`, если задача затрагивает action trace, module breadcrumbs, update trace или agent-side dangerous flow instrumentation
+## Module observer rule
 
-## Обязательное правило для новых модулей
+- Every new `BaseCollector` module must use the observer SDK from `pc_agent/modules/base_module.py`.
+- Add at least one top-level `with self.trace_span("tool.entry", ...)` per tool method.
+- Add `self.trace_event(...)` or `self.trace_span(...)` around dangerous steps such as subprocess, network, retry, timeout, artifact, consent, and publish.
+- Never put raw tokens, passwords, cookies, consent tokens, or other sensitive fields in `details`; use built-in redaction helpers.
+- Do not remove generated trace SDK scaffolding from workbench/builder modules unless replacing it with equivalent instrumentation.
 
-- Каждый новый `BaseCollector`-модуль обязан использовать observer SDK из `pc_agent/modules/base_module.py`.
-- Минимум: один верхнеуровневый `with self.trace_span("tool.entry", ...)` на каждый tool method и дополнительные `self.trace_event(...)` или `self.trace_span(...)` на опасных шагах (`subprocess`, `network`, `retry`, `timeout`, `artifact`, `consent`, `publish`).
-- В `details` нельзя класть сырой токен, пароль, cookie, consent token или другие чувствительные поля; они должны идти через built-in redaction helpers.
-- Если модуль создаётся через workbench/builder, generated scaffold с trace SDK нельзя удалять без осознанной замены эквивалентной инструментировкой.
+## CODEMAP and docs
 
-## CODEMAP
+- The canonical agent CODEMAP is `pc_agent/docs/CODEMAP.md`.
+- Update it when agent structure, core/modules/ui_gui/ui_bridge entrypoints, runtime flows, or key files change.
+- If agent-side observer coverage, module breadcrumbs, action trace bridge, update trace, or dangerous flow instrumentation changes, update observer docs in the same change.
+- For docs drift decisions, use `.agents/skills/pc-client-docs-drift/SKILL.md`.
 
-- Каноническая карта агента — **только** `docs/CODEMAP.md` в этом дереве (путь от корня монорепо: `pc_agent/docs/CODEMAP.md`).
-- Перед анализом/правками сначала смотреть этот файл.
-- При изменении структуры агентского кода, точек входа или runtime-потоков **обязательно** обновлять `pc_agent/docs/CODEMAP.md`. Если меняется agent-side observer coverage, module breadcrumbs, action trace bridge или dangerous flow instrumentation, синхронно обновлять и `../server/docs/OBSERVER_LAYER.md` + `../server/docs/OBSERVER_AUTHORING_RULES.md`. Критерии — в конце файла, в `docs/QUICK_LOOKUP.md` и в корневом `AGENTS.md`.
+## Protocol V3 invariants
 
-## Инварианты Protocol V3
-
-- Тип события определяется ТОЛЬКО по `device_seq` vs `agent_seq` (см. `docs/PROTOCOL_V3.md`).
-- ACK удаляет outbox записи (нет статуса “sent” → ACK ⇒ DELETE) (см. `docs/SENDER.md`).
+- Protocol version on handshake is `ws_ticket_v3`.
+- Event type is determined only by `device_seq` vs `agent_seq`.
+- ACK for outbox means delete the outbox row; there is no durable `sent` state.
+- For protocol work, check both server and agent producers/consumers before editing.
