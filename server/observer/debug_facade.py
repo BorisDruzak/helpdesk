@@ -502,6 +502,7 @@ async def agent_presence_snapshot(
             "message": None if snapshots else "No persisted agent presence snapshots found",
             "live_ws_state": "unavailable_in_debug_readonly_mcp",
             "device_id": device_id,
+            "device_db_evidence": devices.get(device_id) if device_id else None,
             "snapshots": snapshots,
             "limits": {"limit": capped_limit, "returned": len(snapshots)},
         }
