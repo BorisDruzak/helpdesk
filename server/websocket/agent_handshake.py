@@ -905,29 +905,31 @@ async def handle_handshake(
                         f"already has pending list_tools"
                     )
                     should_request_toolset = False
-            if not should_request_toolset:
-                pass  # skip enqueue below
-            else:
+            if should_request_toolset:
                 # Enqueue list_tools command (создает операцию автоматически)
                 command_id = await enqueue_command_async(
-                state=state,
-                device_id=device_id,
-                command="list_tools",
-                params={},
-                actor_role="server",
-                trace_id=None
-            )
-            
-            logger.info(
-                f"[handshake] Enqueued list_tools: "
-                f"device_id={device_id} command_id={command_id}"
-            )
-            
-            # Update last_toolset_refresh_at immediately to prevent duplicates
-            async with get_session() as session:
-                devices_repo = DevicesRepo(session)
-                await devices_repo.update_toolset_refresh_time(device_id)
-                await session.commit()
+                    state=state,
+                    device_id=device_id,
+                    command="list_tools",
+                    params={},
+                    actor_role="server",
+                    trace_id=None
+                )
+
+                logger.info(
+                    f"[handshake] Enqueued list_tools: "
+                    f"device_id={device_id} command_id={command_id}"
+                )
+
+                # Update last_toolset_refresh_at only after a command was actually queued.
+                async with get_session() as session:
+                    devices_repo = DevicesRepo(session)
+                    await devices_repo.update_toolset_refresh_time(device_id)
+                    await session.commit()
+            else:
+                logger.debug(
+                    f"[handshake] list_tools enqueue skipped for device_id={device_id}"
+                )
                 
         except Exception as e:
             logger.error(
