@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   BookOpen,
+  Bot,
   Building2,
   ClipboardCheck,
   FileSearch,
@@ -33,6 +34,7 @@ export type AppDomainId =
   | "knowledge"
   | "automation"
   | "service-management"
+  | "ai-integration"
   | "system";
 
 export type AppNavItem = {
@@ -113,6 +115,14 @@ export const appNavigationDomains: AppNavigationDomain[] = [
     description: "Качество, проблемы и изменения",
     icon: Gauge,
     order: 50,
+  },
+  {
+    id: "ai-integration",
+    workspace: "admin",
+    label: "Интеграция ИИ",
+    description: "MCP, Codex и read-only диагностика",
+    icon: Bot,
+    order: 55,
   },
   {
     id: "system",
@@ -276,6 +286,17 @@ export const appNavigation: AppNavItem[] = [
     to: "/app/admin/tech",
     permission: "admin.observer.view",
     order: 55,
+  },
+  {
+    label: "MCP сервер",
+    description: "Статус helpdesk-server-debug, runtime snapshots и reload после deploy",
+    icon: Bot,
+    section: "admin",
+    workspace: "admin",
+    domainId: "ai-integration",
+    to: "/app/admin/ai-integration",
+    permission: "admin.observer.view",
+    order: 10,
   },
   {
     label: "Студия обращений",

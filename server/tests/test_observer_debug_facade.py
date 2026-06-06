@@ -157,7 +157,7 @@ async def test_runtime_and_presence_unavailable_do_not_crash(test_engine) -> Non
     session_maker = async_sessionmaker(test_engine)
 
     async with session_maker() as session:
-        runtime = await runtime_snapshot(session)
+        runtime = await runtime_snapshot(session, process_kind=f"missing-{uuid.uuid4()}")
         presence = await agent_presence_snapshot(session, device_id=seeded["device_id"], limit=5)
 
     assert runtime["status"] == "partial"

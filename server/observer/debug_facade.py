@@ -11,7 +11,16 @@ import sqlalchemy as sa
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Device, DeviceOutbox, DevicePresenceSnapshot, ObserverTrace, Operation, Ticket, TicketApproval
+from app.db.models import (
+    Device,
+    DeviceOutbox,
+    DevicePresenceSnapshot,
+    ObserverTrace,
+    Operation,
+    ServerRuntimeSnapshot,
+    Ticket,
+    TicketApproval,
+)
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from shared.redaction import REDACTED, redact_sensitive_payload
 
@@ -450,16 +459,72 @@ async def observer_ticket_summary(
     return _redact_debug_payload({"status": "ok", **payload})
 
 
-async def runtime_snapshot(session: AsyncSession, *, process_kind: str | None = None, include_details: bool = True) -> dict[str, Any]:
+async def _latest_runtime_snapshot(
+    session: AsyncSession,
+    *,
+    process_kind: str | None = None,
+) -> ServerRuntimeSnapshot | None:
+    now = datetime.now(timezone.utc)
+    stmt = select(ServerRuntimeSnapshot).where(ServerRuntimeSnapshot.expires_at >= now)
+    if process_kind:
+        stmt = stmt.where(ServerRuntimeSnapshot.process_kind == process_kind)
+    stmt = stmt.order_by(ServerRuntimeSnapshot.collected_at.desc()).limit(1)
+    return (await session.execute(stmt)).scalars().first()
+
+
+def _runtime_snapshot_payload(row: ServerRuntimeSnapshot) -> dict[str, Any]:
+    snapshot = dict(row.snapshot or {})
+    snapshot.setdefault("process_kind", row.process_kind)
+    snapshot.setdefault("instance_id", row.instance_id)
+    snapshot.setdefault("pid", row.pid)
+    snapshot.setdefault("git_revision", row.git_revision)
+    snapshot.setdefault("status", row.status)
+    snapshot.setdefault("collected_at", _iso(row.collected_at))
+    snapshot.setdefault("expires_at", _iso(row.expires_at))
+    return snapshot
+
+
+def _runtime_ws_evidence(row: ServerRuntimeSnapshot | None, device_id: str | None) -> dict[str, Any] | None:
+    if row is None or not device_id:
+        return None
+    snapshot = row.snapshot if isinstance(row.snapshot, dict) else {}
+    connected_agents = snapshot.get("connected_agents") if isinstance(snapshot.get("connected_agents"), dict) else {}
+    evidence = connected_agents.get(device_id)
+    if not isinstance(evidence, dict):
+        return None
     return {
-        "status": "partial",
-        "runtime_snapshot_available": False,
-        "process_kind": process_kind,
-        "include_details": bool(include_details),
-        "message": "Persisted server runtime snapshots are not implemented yet",
-        "recommended_next_step": "implement server_runtime_snapshots before live runtime status is trusted",
-        "confidence": "unknown",
+        **evidence,
+        "runtime_snapshot_id": row.id,
+        "runtime_collected_at": _iso(row.collected_at),
+        "runtime_expires_at": _iso(row.expires_at),
     }
+
+
+async def runtime_snapshot(session: AsyncSession, *, process_kind: str | None = None, include_details: bool = True) -> dict[str, Any]:
+    row = await _latest_runtime_snapshot(session, process_kind=process_kind)
+    if row is None:
+        return {
+            "status": "partial",
+            "runtime_snapshot_available": False,
+            "process_kind": process_kind,
+            "include_details": bool(include_details),
+            "message": "No fresh persisted server runtime snapshot found",
+            "recommended_next_step": "verify the live server runtime snapshot writer is running",
+            "confidence": "unknown",
+        }
+    payload = {
+        "status": row.status or "ok",
+        "runtime_snapshot_available": True,
+        "process_kind": row.process_kind,
+        "include_details": bool(include_details),
+        "snapshot_id": row.id,
+        "collected_at": _iso(row.collected_at),
+        "expires_at": _iso(row.expires_at),
+        "confidence": "fresh",
+    }
+    if include_details:
+        payload["snapshot"] = _runtime_snapshot_payload(row)
+    return _redact_debug_payload(payload)
 
 
 async def agent_presence_snapshot(
@@ -478,6 +543,8 @@ async def agent_presence_snapshot(
             .limit(capped_limit)
         )
     rows = (await session.execute(stmt)).scalars().all()
+    runtime_row = await _latest_runtime_snapshot(session, process_kind="server")
+    live_ws_evidence = _runtime_ws_evidence(runtime_row, device_id)
     devices: dict[str, dict[str, Any]] = {}
     if device_id:
         device = await session.get(Device, device_id)
@@ -518,11 +585,12 @@ async def agent_presence_snapshot(
     ]
     return _redact_debug_payload(
         {
-            "status": "ok" if snapshots else "partial",
+            "status": "ok" if snapshots or live_ws_evidence else "partial",
             "presence_snapshot_available": bool(snapshots),
-            "confidence": "db_snapshot" if snapshots else "unknown",
+            "confidence": "live_ws" if live_ws_evidence else ("db_snapshot" if snapshots else "unknown"),
             "message": None if snapshots else "No persisted agent presence snapshots found",
-            "live_ws_state": "unavailable_in_debug_readonly_mcp",
+            "live_ws_state": (live_ws_evidence or {}).get("live_ws_state") or "unavailable_in_debug_readonly_mcp",
+            "live_ws_evidence": live_ws_evidence,
             "device_id": device_id,
             "device_db_evidence": devices.get(device_id) if device_id else None,
             "snapshots": snapshots,

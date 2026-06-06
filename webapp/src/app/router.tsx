@@ -5,6 +5,7 @@ import { AppShell } from "./layouts/app-shell";
 import {
   AdminCenterPage,
   AdminAgentUpdatesPage,
+  AdminAiIntegrationPage,
   AdminChangesPage,
   AdminDeviceOperationsPage,
   AdminCapabilitiesPage,
@@ -436,6 +437,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminTechPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/ai-integration",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminAiIntegrationPage />
               </WorkspaceAccessGate>
             )
           },

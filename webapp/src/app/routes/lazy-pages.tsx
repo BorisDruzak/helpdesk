@@ -64,6 +64,10 @@ export const AdminAgentUpdatesPage = lazy(() =>
   import("../../pages/admin/agent-updates-page").then((module) => ({ default: module.AdminAgentUpdatesPage })),
 );
 
+export const AdminAiIntegrationPage = lazy(() =>
+  import("../../pages/admin/ai-integration-page").then((module) => ({ default: module.AdminAiIntegrationPage })),
+);
+
 export const AdminAccessPage = lazy(() =>
   import("../../pages/admin/access-page").then((module) => ({ default: module.AdminAccessPage })),
 );

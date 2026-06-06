@@ -486,6 +486,60 @@ describe("appRoutes", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/tech/snapshot", { credentials: "same-origin" });
   });
 
+  it("opens the AI integration MCP page for admin users", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createAdminSession()
+        });
+      }
+
+      if (url.endsWith("/api/web/admin/ai-integration/mcp")) {
+        return jsonResponse({
+          status: "ok",
+          generated_at: "2026-06-06T10:00:00Z",
+          mcp: {
+            manifest: {
+              name: "helpdesk-server-debug",
+              mode: "debug_readonly",
+              tools: ["helpdesk_db_health", "observer_runtime_status"],
+              safety: { no_business_mutation: true, no_run_tool: true },
+            },
+            db_health: { status: "ok", reachable: true, latency_ms: 2.1 },
+            context_freshness: { status: "ok", reason: "fresh", stale_sources_count: 0 },
+            runtime_status: {
+              status: "ok",
+              runtime_snapshot_available: true,
+              confidence: "fresh",
+              snapshot: {
+                git_revision: "abc1234",
+                service_health: { agent_ws_connections: 0 },
+                mcp: { mode: "debug_readonly" },
+              },
+            },
+            reload: {
+              required_after_deploy: true,
+              codex_restart_recommended: true,
+              status_text: "Перезапустите MCP/Codex после deploy",
+            },
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    renderApp(["/app/admin/ai-integration"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Интеграция ИИ" })).toBeInTheDocument();
+    expect(await screen.findByText("helpdesk-server-debug")).toBeInTheDocument();
+    expect(await screen.findByText("debug_readonly")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/ai-integration/mcp", { credentials: "same-origin" });
+  });
+
   it("opens requester help without a web session", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

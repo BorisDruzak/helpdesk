@@ -601,6 +601,7 @@ from remote_assist.handlers import (
     handle_remote_assist_viewer,
 )
 from jobs.handlers import handle_get_job_events, handle_start_job
+from web_api.ai_integration_handlers import handle_ai_integration_mcp_status
 from tech.handlers import (
     handle_observer_settings_get,
     handle_observer_settings_patch,
@@ -878,6 +879,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/agents/audit', handle_tech_agents_audit),
         web.get('/api/web/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
+        web.get('/api/web/admin/ai-integration/mcp', handle_ai_integration_mcp_status),
         web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_get_operation),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),

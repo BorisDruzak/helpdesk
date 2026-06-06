@@ -288,6 +288,13 @@ async def on_startup(app: web.Application):
             await start_inventory_refresh_runtime(app)
             logger.success("✅ Observer refresh runtime started")
 
+            from observer.runtime_snapshot_writer import ServerRuntimeSnapshotWriter
+
+            runtime_snapshot_writer = ServerRuntimeSnapshotWriter(app)
+            await runtime_snapshot_writer.start()
+            app["runtime_snapshot_writer"] = runtime_snapshot_writer
+            logger.success("✅ Server runtime snapshot writer started")
+
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
             if is_strict_runtime_mode():
@@ -315,6 +322,11 @@ async def on_cleanup(app: web.Application):
     Обработчик события остановки приложения.
     Закрывает подключение к базе данных.
     """
+    if 'runtime_snapshot_writer' in app:
+        logger.info("⏹️ Stopping server runtime snapshot writer...")
+        await app['runtime_snapshot_writer'].stop()
+        logger.success("✅ Server runtime snapshot writer stopped")
+
     # Этап 7.2: Stop artifacts cleanup task
     if 'artifacts_cleanup_task' in app:
         logger.info("⏹️ Stopping artifacts cleanup task...")

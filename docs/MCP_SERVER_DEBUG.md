@@ -25,9 +25,15 @@ It exposes Observer, Tech locator, Context Index, DB health and persisted runtim
 - `observer_debug_bundle`: returns a bounded observer diagnostics bundle for one locator input.
 - `observer_trace_detail`: returns trace, spans, span links and error occurrences.
 - `observer_ticket_summary`: returns compact ticket-scoped observer summary.
-- `observer_runtime_status`: returns persisted runtime snapshot when implemented, otherwise controlled partial.
-- `observer_presence_snapshot`: returns persisted `device_presence_snapshots` and clearly labels `devices.last_seen_at` as DB evidence, not live WS state.
+- `observer_runtime_status`: returns a fresh persisted `server_runtime_snapshots` row written by the live aiohttp server; if no fresh row exists it returns a controlled partial.
+- `observer_presence_snapshot`: returns persisted `device_presence_snapshots`, DB `Device.last_seen_at` / `last_handshake_at` evidence, and live WS evidence from the latest fresh server runtime snapshot when available.
 - `helpdesk_mcp_manifest`: returns the server manifest.
+
+## Admin UI
+
+The React admin route `/app/admin/ai-integration` shows the MCP server status, DB health, Context Index freshness, latest persisted runtime snapshot and the reload-after-deploy instruction. The backing endpoint is `GET /api/web/admin/ai-integration/mcp` and stays read-only.
+
+After deploy, restart or reload the Codex MCP connection so the stdio process imports the new server code instead of keeping an old Python import graph.
 
 ## Codex Config Example
 

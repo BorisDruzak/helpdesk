@@ -3379,6 +3379,30 @@ class DevicePresenceDailySummary(Base):
     )
 
 
+class ServerRuntimeSnapshot(Base):
+    """Persisted live-server runtime evidence for read-only diagnostics."""
+    __tablename__ = "server_runtime_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    process_kind: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    pid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    git_revision: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    collected_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_server_runtime_snapshots_kind_collected", "process_kind", "collected_at"),
+        Index("ix_server_runtime_snapshots_kind_expires", "process_kind", "expires_at"),
+    )
+
+
 class DeviceOutbox(Base):
     """
     Device outbox model for Protocol V3.

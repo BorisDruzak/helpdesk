@@ -78,6 +78,16 @@ describe("navigation helpers", () => {
     expect(activeItem?.domainId).toBe("devices-agents");
   });
 
+  it("exposes AI integration as a dedicated admin navigation domain", () => {
+    const domains = getVisibleNavigationDomains("admin", fullAdminPermissions);
+    const aiDomain = domains.find((domain) => domain.id === "ai-integration");
+    const activeItem = getActiveNavItem("/app/admin/ai-integration?tab=mcp", fullAdminPermissions);
+
+    expect(aiDomain?.label).toBe("Интеграция ИИ");
+    expect(aiDomain?.items.map((item) => item.to)).toEqual(["/app/admin/ai-integration"]);
+    expect(activeItem?.label).toBe("MCP сервер");
+  });
+
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");

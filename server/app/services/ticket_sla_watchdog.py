@@ -16,7 +16,7 @@ from loguru import logger
 from sqlalchemy import and_, select
 
 from app.db import get_session
-from app.db.models import Ticket
+from app.db.models import Ticket, TicketEvent
 from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.sla_service import (
     _duration_to_minutes,
@@ -98,11 +98,13 @@ class TicketSlaWatchdog:
     Watchdog для SLA тикетов: breach и напоминания.
     """
 
-    def __init__(self, interval: Optional[int] = None, state=None):
+    def __init__(self, interval: Optional[int] = None, state=None, startup_grace_seconds: int = 120):
         self.interval = interval or 120  # проверка каждые 2 мин
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._state = state  # для push_ticket_event_committed
+        self._started_at = datetime.now(timezone.utc)
+        self._startup_grace_seconds = max(0, int(startup_grace_seconds))
 
     async def _check_breaches(self) -> None:
         try:
@@ -314,6 +316,10 @@ class TicketSlaWatchdog:
             async with get_session() as session:
                 repo = TicketEventsRepo(session)
                 # Тикеты с breach и не resolved/closed
+                now = datetime.now(timezone.utc)
+                if self._startup_grace_seconds and (now - self._started_at) < timedelta(seconds=self._startup_grace_seconds):
+                    logger.info("[TicketSlaWatchdog] Reminder cycle skipped during startup grace window")
+                    return
                 stmt = select(Ticket).where(
                     and_(
                         Ticket.status.notin_(["resolved", "closed"]),
@@ -322,7 +328,6 @@ class TicketSlaWatchdog:
                 ).limit(100)
                 result = await session.execute(stmt)
                 tickets = list(result.scalars().all())
-                now = datetime.now(timezone.utc)
                 interval = timedelta(seconds=SLA_REMINDER_INTERVAL_SEC)
 
                 for ticket in tickets:
@@ -335,6 +340,19 @@ class TicketSlaWatchdog:
                                     last_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
                                 except Exception:
                                     pass
+                        event_last_at = await session.scalar(
+                            select(TicketEvent.created_at)
+                            .where(
+                                and_(
+                                    TicketEvent.ticket_id == ticket.ticket_id,
+                                    TicketEvent.event_type == "sla_reminder_sent",
+                                )
+                            )
+                            .order_by(TicketEvent.created_at.desc())
+                            .limit(1)
+                        )
+                        if isinstance(event_last_at, datetime) and (last_at is None or event_last_at > last_at):
+                            last_at = event_last_at
                         if last_at and (now - last_at) < interval:
                             continue
                         cf = dict(ticket.custom_fields or {})
