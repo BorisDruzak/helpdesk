@@ -9,6 +9,35 @@
 
 ---
 
+## helpdesk-server-debug (read-only Observer / Tech / Context)
+
+Для read-only диагностики сервера через Codex используйте MCP-сервер **helpdesk-server-debug**.
+
+- Код: `mcp_helpdesk_server/`
+- Manifest: `docs/mcp/helpdesk-server-debug.manifest.json`
+- Подробности и Codex config example: [MCP_SERVER_DEBUG.md](MCP_SERVER_DEBUG.md)
+
+Сервер работает через stdio, не поднимает aiohttp, не проксирует `/api/*`, не выполняет `run_tool`, не пишет `DeviceOutbox`, не принимает approval/consent decisions и не возвращает raw secrets.
+
+Пример:
+
+```toml
+[mcp_servers.helpdesk-server-debug]
+command = "python"
+args = ["-m", "mcp_helpdesk_server.server"]
+
+[mcp_servers.helpdesk-server-debug.env]
+MCP_HELPDESK_MODE = "debug_readonly"
+```
+
+Если нужно указать `DATABASE_URL`, используйте только локальный secret/config, не документацию. Плейсхолдер допустим:
+
+```toml
+DATABASE_URL = "postgresql+asyncpg://<user>:<password>@<host>:<port>/<db>"
+```
+
+---
+
 ## MCP для работы с базой данных
 
 ## Текущая ситуация
@@ -157,7 +186,7 @@ npm install -g @modelcontextprotocol/server-mysql
 
 Затем в настройках Codex:
 - **Command**: `npx`
-- **Args**: `["-y", "@modelcontextprotocol/server-mysql", "--connection-string", "mysql://user:password@host:port/database"]`
+- **Args**: `["-y", "@modelcontextprotocol/server-mysql", "--connection-string", "mysql://<user>:<password>@<host>:<port>/<database>"]`
 
 ## Рекомендация
 

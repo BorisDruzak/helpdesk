@@ -167,6 +167,7 @@ Known historical contamination belongs in `observer_known_contamination` with ex
 - ticket-bound observer summary должен быть пригоден для support UI;
 - tech API должен поддерживать быстрый drilldown, а не только сырой dump.
 - web bootstrap contracts (`/api/web/support/bootstrap`, `/api/web/admin/bootstrap`) должны отдавать capability links для observer surfaces, а не заставлять frontend разбрасывать raw trace URLs по коду.
+- stdio MCP debug surfaces such as `helpdesk-server-debug` must use a pure service/facade layer (`server/observer/debug_facade.py`) instead of importing HTTP handlers or `aiohttp request.app`; they must stay read-only, bounded and redacted, and must not call `run_tool`, DeviceOutbox, approvals, WS RPC or observer rebuild.
 
 Additional API rules for explainable operation traces:
 

@@ -1,0 +1,47 @@
+{
+  "name": "helpdesk-server-debug",
+  "transport": "stdio",
+  "command": "python",
+  "args": [
+    "-m",
+    "mcp_helpdesk_server.server"
+  ],
+  "mode": "debug_readonly",
+  "required_env": [],
+  "optional_env": [
+    "DATABASE_URL",
+    "MCP_HELPDESK_MODE",
+    "MCP_HELPDESK_MAX_ROWS",
+    "MCP_HELPDESK_CONTEXT_INDEX_PATH"
+  ],
+  "tools": [
+    "helpdesk_db_health",
+    "helpdesk_context_search",
+    "helpdesk_context_freshness",
+    "helpdesk_locate",
+    "observer_debug_bundle",
+    "observer_trace_detail",
+    "observer_ticket_summary",
+    "observer_runtime_status",
+    "observer_presence_snapshot",
+    "helpdesk_mcp_manifest"
+  ],
+  "modes": {
+    "debug_readonly": {
+      "allow_business_mutation": false,
+      "allow_observer_rebuild": false,
+      "allow_ws_rpc": false,
+      "allow_run_tool": false,
+      "allow_device_outbox_writes": false,
+      "allow_approvals": false
+    }
+  },
+  "safety": {
+    "redaction_required": true,
+    "no_raw_tokens": true,
+    "no_business_mutation": true,
+    "no_device_outbox_writes": true,
+    "no_run_tool": true,
+    "no_http_api_proxy": true
+  }
+}
