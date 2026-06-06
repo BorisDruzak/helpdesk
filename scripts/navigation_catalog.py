@@ -3243,6 +3243,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
         key="observer",
         title="Observer layer changed",
         reason="Observer runtime, quick diagnosis, trace APIs, projection-session behavior and dangerous-flow instrumentation must stay aligned with canonical observer docs.",
+        # MCP observer debug output redaction is part of the observer contract and quick lookup map.
         path_prefixes=("server/observer/",),
         exact_paths=(
             "server/auth/connection_request_handlers.py",

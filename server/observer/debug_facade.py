@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Device, DeviceOutbox, DevicePresenceSnapshot, ObserverTrace, Operation, Ticket, TicketApproval
 from observer.service import ObserverOverlayService, TraceOverlayFilters
-from shared.redaction import redact_sensitive_payload
+from shared.redaction import REDACTED, redact_sensitive_payload
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 TICKET_CODE_RE = re.compile(r"^T-\d{3,}$", re.IGNORECASE)
@@ -31,6 +31,13 @@ ACTIVE_TICKET_STATUSES = {
 ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
 FAILED_OPERATION_STATUSES = {"failed", "timed_out"}
 SEVERITY_RANK = {"ok": 0, "info": 1, "unknown": 2, "warning": 3, "critical": 4}
+PUBLIC_ACCESS_CODE_MARKERS = {"access_code", "public_access_code", "ticket_access_code"}
+AUTH_CODE_TEXT_RE = re.compile(
+    "((?:ticket\\s+)?(?:authorization|access)\\s+code[^:\\n]*:\\s*|"
+    "\u041a\u043e\u0434\\s+\u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0430\u0446\u0438\u0438[^:\\n]*:\\s*)"
+    "([A-Z0-9][A-Z0-9_-]{3,})",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -89,6 +96,21 @@ def _limit(value: int | None, *, default: int, cap: int) -> int:
 
 def _safe_link(label: str, href: str, kind: str) -> dict[str, str]:
     return {"label": label, "href": href, "kind": kind}
+
+
+def _redact_debug_payload(payload: Any) -> Any:
+    redacted = redact_sensitive_payload(payload, extra_markers=PUBLIC_ACCESS_CODE_MARKERS)
+    return _redact_public_access_code_text(redacted)
+
+
+def _redact_public_access_code_text(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _redact_public_access_code_text(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_public_access_code_text(item) for item in value]
+    if isinstance(value, str):
+        return AUTH_CODE_TEXT_RE.sub(lambda match: f"{match.group(1)}{REDACTED}", value)
+    return value
 
 
 def _severity_max(values: list[str]) -> str:
@@ -355,7 +377,7 @@ async def locate_debug_context(
             "message": "In-memory server logs require live aiohttp runtime and are not available in debug_readonly MCP.",
         }
 
-    matches = [redact_sensitive_payload(item) for item in matches[:capped_limit]]
+    matches = [_redact_debug_payload(item) for item in matches[:capped_limit]]
     return {
         "status": "ok",
         "query": q,
@@ -403,7 +425,7 @@ async def observer_trace_detail(
         payload["agent_actions_warning"] = (
             "agent actions require live server runtime and are not available in debug_readonly MCP"
         )
-    return redact_sensitive_payload(payload)
+    return _redact_debug_payload(payload)
 
 
 async def observer_ticket_summary(
@@ -425,7 +447,7 @@ async def observer_ticket_summary(
         span_limit=_limit(span_limit, default=12, cap=50),
         occurrence_limit=_limit(occurrence_limit, default=6, cap=50),
     )
-    return redact_sensitive_payload({"status": "ok", **payload})
+    return _redact_debug_payload({"status": "ok", **payload})
 
 
 async def runtime_snapshot(session: AsyncSession, *, process_kind: str | None = None, include_details: bool = True) -> dict[str, Any]:
@@ -494,7 +516,7 @@ async def agent_presence_snapshot(
         }
         for row in rows
     ]
-    return redact_sensitive_payload(
+    return _redact_debug_payload(
         {
             "status": "ok" if snapshots else "partial",
             "presence_snapshot_available": bool(snapshots),
@@ -605,7 +627,7 @@ async def observer_debug_bundle_v2(session: AsyncSession, filters: ObserverDebug
         "limits": {"limit": limit, "related_traces": len(related_traces), "redaction": "recursive"},
         "redaction": {"applied": True},
     }
-    return redact_sensitive_payload(payload)
+    return _redact_debug_payload(payload)
 
 
 async def _load_ticket_context(session: AsyncSession, ticket_id: str) -> dict[str, Any] | None:

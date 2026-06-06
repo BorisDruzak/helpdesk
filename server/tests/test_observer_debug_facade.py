@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Device, DevicePresenceSnapshot, ObserverTrace, Operation, Ticket
 from observer.debug_facade import (
     ObserverDebugFilters,
+    _redact_debug_payload,
     agent_presence_snapshot,
     locate_debug_context,
     observer_debug_bundle_v2,
@@ -80,7 +81,12 @@ async def _seed_debug_context(test_engine):
                 started_at=now - timedelta(minutes=20),
                 finished_at=now - timedelta(minutes=10),
                 error_count=1,
-                attrs_json={"title": "MCP debug trace", "password": "must-redact"},
+                attrs_json={
+                    "title": "MCP debug trace",
+                    "password": "must-redact",
+                    "public_access_code": "ABCD1234",
+                    "system_message": "Authorization code for ticket access: ABCD1234",
+                },
             )
         )
         session.add(
@@ -141,6 +147,7 @@ async def test_observer_debug_bundle_v2_returns_partial_or_ok_and_redacts(test_e
     assert payload["status"] in {"ok", "partial"}
     assert payload["primary_trace"]["trace_id"] == seeded["trace_id"]
     assert "must-redact" not in str(payload)
+    assert "ABCD1234" not in str(payload)
     assert payload["redaction"]["applied"] is True
 
 
@@ -189,3 +196,20 @@ async def test_presence_snapshot_includes_db_device_evidence_without_snapshot(te
     assert presence["device_db_evidence"]["device_id"] == device_id
     assert presence["device_db_evidence"]["hostname"] == "mcp-no-presence-host"
     assert presence["live_ws_state"] == "unavailable_in_debug_readonly_mcp"
+
+
+def test_observer_debug_redaction_hides_public_access_codes_in_nested_text() -> None:
+    payload = _redact_debug_payload(
+        {
+            "public_access_code": "ZXCV9876",
+            "nested": {
+                "message": "Authorization code for ticket access: ZXCV9876",
+                "ru_message": "\u041a\u043e\u0434 \u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0430\u0446\u0438\u0438 "
+                "\u0434\u043b\u044f \u0432\u0445\u043e\u0434\u0430 \u0432 \u0442\u0438\u043a\u0435\u0442: ZXCV9876",
+            },
+        }
+    )
+
+    rendered = str(payload)
+    assert "ZXCV9876" not in rendered
+    assert "***REDACTED***" in rendered
