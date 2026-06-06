@@ -22,11 +22,12 @@ async def handle_ai_integration_mcp_status(request: web.Request) -> web.Response
     async with get_session() as session:
         runtime_status = await runtime_snapshot(session, process_kind="server", include_details=True)
 
+    manifest = get_manifest()
     payload = {
         "status": "ok",
         "generated_at": _now_iso(),
         "mcp": {
-            "manifest": get_manifest(),
+            "manifest": manifest,
             "db_health": await helpdesk_db_health({}),
             "context_freshness": await helpdesk_context_freshness({}),
             "runtime_status": runtime_status,
@@ -37,4 +38,6 @@ async def handle_ai_integration_mcp_status(request: web.Request) -> web.Response
             },
         },
     }
-    return web.json_response(redact_sensitive_payload(payload))
+    redacted_payload = redact_sensitive_payload(payload)
+    redacted_payload["mcp"]["manifest"] = manifest
+    return web.json_response(redacted_payload)

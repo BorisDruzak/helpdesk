@@ -43,6 +43,7 @@ async def test_ai_integration_mcp_endpoint_returns_manifest_and_runtime_snapshot
     payload = await response.json()
     assert payload["status"] == "ok"
     assert payload["mcp"]["manifest"]["name"] == "helpdesk-server-debug"
+    assert payload["mcp"]["manifest"]["safety"]["no_raw_tokens"] is True
     assert payload["mcp"]["runtime_status"]["status"] == "ok"
     assert payload["mcp"]["runtime_status"]["runtime_snapshot_available"] is True
     assert payload["mcp"]["runtime_status"]["snapshot"]["git_revision"] == "abc1234"
