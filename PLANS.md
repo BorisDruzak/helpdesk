@@ -69,7 +69,10 @@ Classification: cross-cutting. The implementation will likely add routes, DTOs, 
 - Shared devices must not leak another user's tickets.
 - `verified_other_account` must remain strict: it can see only the exact approved/session-owned scope where applicable.
 - Sensitive tokens, auth headers, cookies, raw machine tokens and consent tokens must never be logged.
-- Browser-visible changes require real browser evidence at `https://192.168.100.17:9443/admin` or the relevant canonical route.
+- Agent machine token is transport/device identity only and must not be treated as requester identity.
+- Agent-side user consent decisions require a valid requester account session or an explicitly audited local-user confirmation mechanism.
+- Pairing secrets must be one-time, short-lived, stored hashed/protected and never logged.
+- Browser-visible changes require screenshots or browser-run evidence from the relevant canonical route: `/app/requester`, `/app/device/register`, `/app/device/login`, or the changed admin/support route.
 
 ## Architecture Decisions
 
@@ -100,11 +103,28 @@ Recommended fields:
 - `created_at`
 - `expires_at`
 - `confirmed_at`
+- `consumed_at`
+- `canceled_at`
 - `confirmed_by_actor_id`
 - `confirmed_person_id`
 - `resulting_claim_id`
 - `resulting_account_session_id`
+- `failed_reason`
+- `last_polled_at`
+- `poll_attempt_count`
+- `created_by_agent_version`
+- `created_from_ip`
+- `created_from_user_agent`
 - `metadata_json`
+
+Pairing token/code storage rules:
+
+- raw pairing token/code may be shown only once to the agent/user;
+- raw pairing token/code must never be logged;
+- pairing token/code must be stored hashed or otherwise protected;
+- plaintext agent account `session_token` must not be stored in pairing state.
+
+Creating a new pending pairing for the same `device_id` and `purpose` should cancel or supersede older pending pairings. This prevents multiple open browser tabs from racing stale pairing requests.
 
 ### Registration Flow
 
@@ -125,6 +145,8 @@ Server returns:
 - `poll_url`
 
 Browser opens `/app/device/register?pairing_id=...`.
+
+If the agent cannot open the system browser automatically, the user can open `/app/device/pair` manually and enter `pairing_code`. The code resolves to a pending pairing only after web login, expiry checks and rate-limit checks.
 
 If the web user is not logged in, redirect to `/app/login?next=...`.
 
@@ -171,6 +193,17 @@ Agent polling endpoint:
 - marks pairing `consumed`;
 - rejects repeated token retrieval.
 
+Browser pairing result delivery must not rely on process-local memory in production. The confirmation/result state must be backed by DB state and one-time pickup semantics.
+
+Recommended token issuance model:
+
+- browser confirms login;
+- server marks pairing `confirmed`;
+- agent polls with machine-token authentication;
+- server creates or loads the account session at pickup time;
+- server returns the plaintext `session_token` to the agent exactly once;
+- only `session_token_hash` is stored.
+
 ### Agent Fallback
 
 Keep "Войти в агенте" only as a fallback:
@@ -209,6 +242,8 @@ Add requester permissions:
 - `requester.ticket.close`
 - `requester.ticket.reopen`
 - `requester.ticket.feedback`
+- `requester.ticket.attachment.upload`
+- `requester.ticket.attachment.download`
 - `requester.device.view`
 - `requester.profile.view`
 - `requester.consent.decide`
@@ -252,6 +287,14 @@ Do not build requester ownership only on `requester_id == user_login`. Ticket vi
 - `requester_binding_id`
 - `requester_account_session_id`
 
+Requester-owned account sessions are sessions where:
+
+- `session.person_id == resolved_person_id`;
+- or `session.binding_id IN active/requester bindings`;
+- or `verified_other_account` is matched to the resolved person and allowed by strict session scope.
+
+For `verified_other_account`, visibility remains limited to tickets created by the exact approved session unless policy explicitly allows a broader authenticated requester view.
+
 ### Requester Bootstrap
 
 Add:
@@ -285,6 +328,7 @@ Add:
 - `POST /api/web/requester/tickets/{ticket_id}/close`
 - `POST /api/web/requester/tickets/{ticket_id}/feedback`
 - `POST /api/web/requester/tickets/{ticket_id}/reopen`
+- `POST /api/web/requester/tickets/claim-public`
 
 Ticket list scope:
 
@@ -294,6 +338,14 @@ Ticket list scope:
 - or `requester_account_session_id IN requester-owned account sessions`.
 
 Authenticated requester ticket detail should reuse requester-safe serialization and timeline, but should not require public access code for owned tickets.
+
+Public ticket claim flow:
+
+- user enters `ticket_id` and public access code/token;
+- server verifies the code/token through existing public-ticket access rules;
+- server resolves requester person from web session;
+- server attaches requester identity metadata such as `requester_person_id`, `requester_id` or a dedicated link record;
+- ticket becomes visible in the authenticated requester cabinet.
 
 ### Request Creation
 
@@ -319,6 +371,13 @@ Authenticated mode adds context selection:
 - general service request when allowed.
 
 Server must verify that selected device belongs to requester identity scope.
+
+No-device request strategy:
+
+- Stage 2 may keep a server-owned virtual/placeholder device strategy for compatibility with current ticket assumptions.
+- Requester frontend must not invent `device_id`.
+- Ticket custom fields must explicitly mark `request_context = "no_device"` or equivalent.
+- Later migration may make `device_id` nullable if the ticket/device boundary is refactored.
 
 ### Requester Devices And Profile
 
@@ -399,9 +458,13 @@ Recommended fields:
 - `device_id`
 - `requester_person_id`
 - `requester_binding_id`
+- `requester_account_session_id`
 - `requested_by_actor_id`
 - `requested_by_role`
 - `risk_level`
+- `policy_snapshot`
+- `risk_explanation`
+- `requested_action_payload_redacted`
 - `title`
 - `description`
 - `reason`
@@ -427,6 +490,18 @@ Agent GUI:
 - `GET /api/registry/agent/consents`
 - `POST /api/registry/agent/consents/{consent_id}/approve`
 - `POST /api/registry/agent/consents/{consent_id}/deny`
+
+Agent GUI consent decisions that count as user consent must carry a valid requester account session. Agent machine-token authentication can deliver the transport, but cannot be the identity that approves user consent.
+
+### Idempotency And Uniqueness
+
+There must be at most one active pending consent per `subject_type + subject_id` unless policy explicitly allows multiple consent rounds.
+
+Decision transitions must use an atomic compare-and-set from `pending` to `approved` or `denied`:
+
+- first decision wins;
+- second decision returns the current final state;
+- repeated approve/deny must not queue a second operation or start a second Remote Assist session.
 
 ### Diagnostics And Tool Operations
 
@@ -519,6 +594,7 @@ Add or update:
 
 - `server/docs/BROWSER_AGENT_PAIRING.md`
 - `server/docs/REQUESTER_WORKSPACE.md`
+- `server/docs/REQUESTER_IDENTITY_RESOLVER.md`
 - `server/docs/USER_CONSENT_MODEL.md`
 - `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`
 - `server/docs/SECURITY_AND_AUTH.md`
@@ -548,6 +624,9 @@ Stage 1:
 - browser pairing login smoke;
 - pairing expiry/reuse tests;
 - wrong-device substitution tests;
+- pairing secret hashing/protected-storage tests;
+- active pairing supersede/cancel tests;
+- manual pairing-code entry smoke;
 - account-state and session invalidation tests.
 
 Stage 2:
@@ -555,6 +634,9 @@ Stage 2:
 - requester identity resolver tests;
 - requester ticket visibility tests;
 - shared-device privacy tests;
+- no-device request compatibility tests;
+- public ticket claim-to-account tests;
+- requester attachment upload/download permission tests;
 - requester ticket create preview/create tests;
 - public ticket compatibility tests;
 - webapp route and build tests.
@@ -563,6 +645,8 @@ Stage 3:
 
 - consent browser approve smoke;
 - consent agent approve smoke;
+- agent consent decision with requester account session tests;
+- one-active-pending-consent tests;
 - idempotent approve/deny tests;
 - foreign-user denial tests;
 - expired consent tests;
