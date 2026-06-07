@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import hmac
+import re
+import secrets
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import DeviceBrowserPairing
+from app.repos.account_session_repo import AccountSessionRepo
+from app.repos.browser_pairing_repo import BrowserPairingRepo
+from app.repos.registration_repo import RegistrationRepo
+from registry.account_session_service import AccountSessionService
+
+
+BROWSER_PAIRING_TTL_MINUTES = 10
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _hash_secret(secret: str | None) -> str | None:
+    if not secret:
+        return None
+    return sha256(str(secret).encode("utf-8")).hexdigest()
+
+
+def _clean_text(value: object, *, max_length: int = 500) -> str | None:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    return text[:max_length] if text else None
+
+
+def _normalize_pairing_code(value: object) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def _new_pairing_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+class BrowserPairingService:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.repo = BrowserPairingRepo(session)
+        self.registration_repo = RegistrationRepo(session)
+        self.account_session_repo = AccountSessionRepo(session)
+
+    async def serialize_pairing(self, row: DeviceBrowserPairing) -> dict[str, Any]:
+        return {
+            "pairing_id": row.pairing_id,
+            "device_id": row.device_id,
+            "purpose": row.purpose,
+            "status": row.status,
+            "resulting_account_session_id": row.resulting_account_session_id,
+            "confirmed_person_id": row.confirmed_person_id,
+            "binding_id": row.binding_id,
+            "claim_id": row.claim_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+            "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
+            "consumed_at": row.consumed_at.isoformat() if row.consumed_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        }
+
+    async def _expire_if_needed(self, row: DeviceBrowserPairing) -> bool:
+        if row.status in {"pending", "confirmed"} and row.expires_at <= _now():
+            row.status = "expired"
+            row.completed_at = _now()
+            await self.session.flush()
+            return True
+        return False
+
+    async def create_pairing(
+        self,
+        *,
+        device_id: str,
+        purpose: str,
+        actor_id: str | None = None,
+        agent_version: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
+        purpose = str(purpose or "").strip().lower()
+        if purpose not in {"login", "registration"}:
+            raise ValueError("unsupported browser pairing purpose")
+        for pending in await self.repo.list_pending_for_device_purpose(device_id=device_id, purpose=purpose):
+            await self.repo.mark_superseded(pending)
+        token = secrets.token_urlsafe(32)
+        code = _new_pairing_code()
+        row = await self.repo.create_pairing(
+            device_id=str(device_id),
+            purpose=purpose,
+            status="pending",
+            pairing_token_hash=_hash_secret(token),
+            pairing_code_hash=_hash_secret(code),
+            created_at=_now(),
+            expires_at=_now() + timedelta(minutes=BROWSER_PAIRING_TTL_MINUTES),
+            metadata_json={
+                "actor_id": _clean_text(actor_id, max_length=200),
+                "agent_version": _clean_text(agent_version, max_length=80),
+                "user_agent": _clean_text(user_agent, max_length=300),
+            },
+        )
+        await self.account_session_repo.append_event(
+            device_id=str(device_id),
+            event_type="browser_pairing_created",
+            actor_id=actor_id,
+            actor_role="agent",
+            payload={"pairing_id": row.pairing_id, "purpose": row.purpose},
+        )
+        payload = await self.serialize_pairing(row)
+        payload.update(
+            {
+                "pairing_token": token,
+                "pairing_code": code,
+                "browser_url": f"/app/device/pair?pairing_id={row.pairing_id}",
+                "poll_url": f"/api/registry/agent/browser-pairings/{row.pairing_id}",
+            }
+        )
+        return payload
+
+    async def lookup_by_pairing_code(self, pairing_code: str) -> dict[str, Any] | None:
+        normalized = _normalize_pairing_code(pairing_code)
+        if not normalized:
+            return None
+        row = await self.repo.find_pending_by_code_hash(str(_hash_secret(normalized)))
+        if row is None:
+            return None
+        if await self._expire_if_needed(row):
+            return None
+        return await self.serialize_pairing(row)
+
+    async def _require_pending_pairing(self, pairing_id: str, pairing_token: str | None) -> DeviceBrowserPairing:
+        row = await self.repo.get_pairing(pairing_id)
+        if row is None:
+            raise ValueError("browser pairing not found")
+        if await self._expire_if_needed(row):
+            raise ValueError("browser pairing expired")
+        if row.status != "pending":
+            raise ValueError("browser pairing is not pending")
+        if not pairing_token or not hmac.compare_digest(str(row.pairing_token_hash), str(_hash_secret(pairing_token) or "")):
+            raise ValueError("browser pairing token is invalid")
+        return row
+
+    async def confirm_login_pairing(
+        self,
+        *,
+        pairing_id: str,
+        pairing_token: str,
+        binding_id: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        row = await self._require_pending_pairing(pairing_id, pairing_token)
+        if row.purpose != "login":
+            raise ValueError("browser pairing purpose is not login")
+        binding = await self.registration_repo.get_active_binding_for_device(row.device_id, binding_id)
+        if binding is None:
+            raise ValueError("active binding not found for device")
+        row.status = "confirmed"
+        row.binding_id = binding.binding_id
+        row.confirmed_person_id = binding.person_id
+        row.confirmed_at = _now()
+        row.confirmed_by = _clean_text(actor_id, max_length=200)
+        row.metadata_json = {**(row.metadata_json or {}), "confirmation_method": "browser_binding"}
+        await self.session.flush()
+        await self.account_session_repo.append_event(
+            device_id=row.device_id,
+            event_type="browser_pairing_confirmed",
+            actor_id=actor_id,
+            actor_role="browser",
+            payload={"pairing_id": row.pairing_id, "binding_id": binding.binding_id, "person_id": binding.person_id},
+        )
+        return await self.serialize_pairing(row)
+
+    async def pickup_agent_result(self, *, device_id: str, pairing_id: str) -> dict[str, Any]:
+        row = await self.repo.get_pairing(pairing_id)
+        if row is None or row.device_id != str(device_id):
+            raise ValueError("browser pairing not found")
+        if await self._expire_if_needed(row):
+            return await self.serialize_pairing(row)
+        if row.status == "pending":
+            return await self.serialize_pairing(row)
+        if row.status == "consumed":
+            payload = await self.serialize_pairing(row)
+            if row.resulting_account_session_id:
+                session_row = await self.account_session_repo.get_session(row.resulting_account_session_id)
+                if session_row:
+                    payload["session"] = await AccountSessionService(self.session).serialize_session(session_row)
+            return payload
+        if row.status != "confirmed":
+            return await self.serialize_pairing(row)
+        if row.purpose != "login" or not row.binding_id:
+            raise ValueError("browser pairing result is incomplete")
+        created = await AccountSessionService(self.session).create_confirmed_binding_session(
+            device_id=row.device_id,
+            binding_id=row.binding_id,
+        )
+        row.status = "consumed"
+        row.resulting_account_session_id = created["session"]["session_id"]
+        row.consumed_at = _now()
+        row.completed_at = row.consumed_at
+        await self.session.flush()
+        await self.account_session_repo.append_event(
+            device_id=row.device_id,
+            session_id=row.resulting_account_session_id,
+            event_type="browser_pairing_consumed",
+            actor_id=row.device_id,
+            actor_role="agent",
+            payload={"pairing_id": row.pairing_id, "purpose": row.purpose},
+        )
+        payload = await self.serialize_pairing(row)
+        payload["session"] = created["session"]
+        payload["session_token"] = created["session_token"]
+        return payload

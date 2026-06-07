@@ -10,6 +10,7 @@ from auth.middleware import require_auth
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
+from registry.browser_pairing_service import BrowserPairingService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
@@ -179,6 +180,55 @@ async def handle_registry_agent_account_session_confirmed_binding(request: web.R
             await session.commit()
         except ValueError as exc:
             return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("agent")
+async def handle_registry_agent_browser_pairing_create(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _validate_uuid_device_id(auth_context.actor_id)
+    if not device_id:
+        return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+    data = await request.json() if request.can_read_body else {}
+    body_device_id = str(data.get("device_id") or "").strip()
+    try:
+        if body_device_id and _validate_uuid_device_id(body_device_id) != device_id:
+            return _forbidden("forbidden device_id")
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
+        try:
+            payload = await BrowserPairingService(session).create_pairing(
+                device_id=device_id,
+                purpose=str(data.get("purpose") or "login"),
+                actor_id=auth_context.actor_id,
+                agent_version=str(data.get("agent_version") or "").strip() or None,
+                user_agent=request.headers.get("User-Agent"),
+            )
+            await session.commit()
+        except ValueError as exc:
+            return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("agent")
+async def handle_registry_agent_browser_pairing_get(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _validate_uuid_device_id(auth_context.actor_id)
+    if not device_id:
+        return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+    pairing_id = str(request.match_info.get("pairing_id") or "").strip()
+    try:
+        async with get_session() as session:
+            payload = await BrowserPairingService(session).pickup_agent_result(
+                device_id=device_id,
+                pairing_id=pairing_id,
+            )
+            await session.commit()
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "NOT_FOUND"}, status=404)
     return _success(payload)
 
 

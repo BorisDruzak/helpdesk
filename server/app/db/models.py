@@ -2988,6 +2988,61 @@ class DeviceAccountLoginRequest(Base):
     )
 
 
+class DeviceBrowserPairing(Base):
+    """Persisted browser-to-agent pairing state for account session handoff."""
+    __tablename__ = "device_browser_pairings"
+
+    pairing_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    pairing_token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    pairing_code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    resulting_account_session_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    confirmed_person_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    binding_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    claim_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_registration_claims.claim_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    confirmed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "purpose IN ('login', 'registration')",
+            name="ck_device_browser_pairings_purpose",
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'confirmed', 'consumed', 'expired', 'canceled', 'superseded', 'failed')",
+            name="ck_device_browser_pairings_status",
+        ),
+        Index("ix_device_browser_pairings_device_status", "device_id", "status"),
+        Index("ix_device_browser_pairings_device_purpose_status", "device_id", "purpose", "status"),
+        Index("ix_device_browser_pairings_code_hash", "pairing_code_hash"),
+        Index("ix_device_browser_pairings_token_hash", "pairing_token_hash"),
+        Index("ix_device_browser_pairings_session", "resulting_account_session_id"),
+    )
+
+
 class DeviceAccountEvent(Base):
     """Audit event for requester account session lifecycle and ticket use."""
     __tablename__ = "device_account_events"

@@ -8,6 +8,16 @@ This document fixes the current production boundary for device registration and 
 - Registration binding is the authoritative device-person link in `device_user_bindings`. `registry_assets.assigned_person_id` is derived from the active binding.
 - Account session is the requester identity used by the local agent GUI for ticket actions. Agent machine tokens do not identify the requester.
 
+## Browser pairing
+
+Browser-to-agent account handoff is persisted in `device_browser_pairings` and starts from the agent endpoint `POST /api/registry/agent/browser-pairings`. The agent polls `GET /api/registry/agent/browser-pairings/{pairing_id}` for the result.
+
+- Pairing rows store only `pairing_token_hash` and `pairing_code_hash`; raw pairing tokens/codes are returned only in the create response.
+- A new pending pairing for the same `device_id` and purpose supersedes older pending rows.
+- Browser confirmation marks the pairing as confirmed but does not return an account `session_token` to the browser.
+- The agent pickup creates/returns the account `session_token` once and marks the pairing `consumed`; later pickups return session metadata without the token.
+- Agent auth can create or poll pairings only for its own UUID `device_id`.
+
 ## Session modes
 
 - `confirmed_binding`: server-issued, verified by an active `device_user_bindings` row for the same device.

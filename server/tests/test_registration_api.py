@@ -56,6 +56,35 @@ async def test_agent_cannot_submit_profile_for_different_device_id(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_agent_browser_pairing_rejects_different_device_id(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    actor_device_id = str(uuid.uuid4())
+    other_device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add_all([_device(actor_device_id), _device(other_device_id)])
+        await session.commit()
+
+    forbidden = await test_client.post(
+        "/api/registry/agent/browser-pairings",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{actor_device_id}"),
+        json={"device_id": other_device_id, "purpose": "login"},
+    )
+    created = await test_client.post(
+        "/api/registry/agent/browser-pairings",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{actor_device_id}"),
+        json={"purpose": "login"},
+    )
+    payload = await created.json()
+
+    assert forbidden.status == 403
+    assert created.status == 200, payload
+    assert payload["data"]["device_id"] == actor_device_id
+    assert payload["data"]["purpose"] == "login"
+    assert payload["data"]["pairing_token"]
+    assert payload["data"]["pairing_code"]
+
+
+@pytest.mark.asyncio
 async def test_agent_cannot_assert_user_confirmed(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
