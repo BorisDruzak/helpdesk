@@ -1,344 +1,611 @@
-# Service Desk Core Completion / Request Studio No-Code MVP
+# Browser / Requester / Agent Identity Model
 
-Status: Request Studio No-Code MVP verified; safe publish hardening completed
-
-## Current Production Hardening Pass After `5f12a609`
-
-Goal for this pass: replace the MVP deterministic Request Studio publish confirmation hash with a server-issued one-time HMAC/nonce token with TTL, and make publish preview show a real create/update/noop/blocked diff for the affected form schema, request template, catalog offering and service.
-
-Status: completed locally.
-
-Execution plan:
-
-1. Add `request_studio_publish_tokens` with token hash, nonce hash, actor binding, draft hash, scope, TTL, used-at and preview metadata. Raw confirmation tokens must never be stored.
-2. Replace the deterministic `confirmation_token` with `rs1.<payload>.<signature>` signed by `REQUEST_STUDIO_CONFIRMATION_SECRET`, bound to canonical draft hash, actor id/role and scope `request_studio.publish`.
-3. Reject publish when the token is missing, malformed, invalid, expired, already used, actor/scope mismatched or bound to a different draft; re-run draft validation before mutation and mark the token used only after successful guarded publication.
-4. Add typed preview diffs for `form_schema`, `request_template`, `offering` and `service`, including create/update/noop/blocked actions, field changes, warnings and summary counts.
-5. Update the Studio preview UI to show diff summary/cards, token expiry state and disabled confirmation for blocked or expired previews while preserving the publish success banner.
-6. Update backend/frontend tests and docs for the hardened publish contract.
-
-Verification:
-
-- `python scripts/verify_workspace.py` passed.
-- `python scripts/bootstrap_web_toolchain.py` passed with Node.js 24.15.0 and pnpm 10.33.0.
-- `pytest server/tests/test_request_studio_api.py -q` passed: 5 tests.
-- `pnpm --dir webapp exec vitest run src/pages/admin/request-template-studio-page.test.tsx` passed: 9 tests.
-- `pnpm --dir webapp run test` passed: 72 files, 343 tests.
-- `pnpm --dir webapp run build` passed.
-
-Constraints:
-
-- Do not change Protocol V3.
-- Do not add registry-builder, universal work tasks or free workflow canvas features.
-- Do not auto-create missing route/SLA/closure/notification policies.
-- Do not expose raw token, raw policy JSON or internal refs in basic Studio UI.
-- Do not stage unrelated `pc_agent/ui_gui/tickets_list_model.py` or generated `artifacts/*`.
-
-## Current Safe Publish Pass After `3d73f678`
-
-Goal for this pass: complete a short cleanup/hardening sequence, then add a typed safe publish contract for `/app/admin/request-template-studio` so the primary no-code path can validate, simulate, preview and publish from Studio without requiring Forms Builder, Service Catalog or Policy Health for the basic publication flow.
-
-Commit sequence:
-
-1. Harden Service Catalog expert controls. Completed in `db301661`: filter labels are human-readable while values stay stable, and the expert JSON loader now shows an inline parse error without mutating the draft.
-2. Record browser smoke evidence for the request setup pages. Completed in `cc39eb7d`.
-3. Clarify Request Studio readiness/publication wording before backend safe publish work. Completed in `fe0603ba`.
-4. Verify the small cleanup pass. Completed with fixture hardening in `10362c6e`.
-5. Add request-studio backend validation/capabilities contract. Completed: typed DTO/handlers/routes validate draft and capabilities.
-6. Add draft-aware request-studio simulation. Kept as existing saved-draft Policy Health simulation for this checkpoint; safe publish validation now uses the current Studio draft payload directly.
-7. Add request-studio publish preview/diff plan. Completed: preview returns validation, publish steps and confirmation token.
-8. Add safe publish execution. Completed: publish revalidates token/draft, blocks unsafe payloads and commits form schema, request template and catalog offering through existing repos in one guarded transaction.
-9. Wire frontend API, publish confirmation flow, tests and docs. Completed: Studio publish button opens preview, confirms token-backed publish and invalidates Studio queries.
-10. Clarify post-review UX/docs. Completed: Studio shows the backend publish success message after confirmed publish, and this plan now records token/diff hardening as follow-up instead of saying the safe publish contract is missing.
-
-Browser smoke evidence:
-
-- Stand URL: `https://192.168.100.17:9443/admin`.
-- Pages opened in browser after quick release smoke:
-  - `/app/admin/request-template-studio`
-  - `/app/admin/service-catalog`
-  - `/app/admin/forms`
-  - `/app/admin/policy-health`
-- Screenshot artifacts were written under `artifacts/catalog-requests-screenshots/` for local inspection but are intentionally not part of the committed source changes.
-- The remote server was stopped after the browser check.
-
-Cleanup verification:
-
-- `python scripts/verify_workspace.py` passed.
-- `python scripts/bootstrap_web_toolchain.py` passed with Node.js 24.15.0 and pnpm 10.33.0.
-- `pnpm --dir webapp run test` passed: 72 files, 341 tests.
-- `pnpm --dir webapp run build` passed after aligning Request Studio readiness test fixtures with the typed model.
-
-Constraints for this pass:
-
-- Do not stage `pc_agent/ui_gui/tickets_list_model.py`.
-- Do not stage existing `artifacts/*`.
-- Do not change Protocol V3.
-- Do not add a DB schema unless existing form/catalog/helpdesk-model tables cannot safely support the contract.
-- Safe publish must validate and preview before mutation, block unsafe drafts and avoid silent partial publication.
-- Current confirmation token is a deterministic draft integrity hash, not a server-issued one-time nonce. That is acceptable for this MVP because publish is admin-only and revalidates the draft, but a future hardening pass should add HMAC/nonce+TTL server state.
-- Current preview shows publish steps and blockers, not a field-level create/update diff. A future hardening pass should add form schema, request template and offering diffs plus overwrite warnings for existing template codes.
-
-## Current Follow-Up Pass After `7f72a5c7`
-
-Goal for this pass: stabilize the Request Studio no-code MVP with small commits, then make Service Catalog, Forms Builder and Policy Health read clearly as expert surfaces rather than competing primary setup pages.
-
-Commit sequence:
-
-1. Clean Request Studio profile detection and remove mojibake-specific production comparisons from the profile logic.
-2. Resolve Studio visibility policies through the loaded policy registry instead of blindly writing `visibility_default`.
-3. Clarify the save/check flow: saved draft, stale check, blocked simulation with unsaved changes.
-4. Run the required web verification checkpoint and record the remaining publish limitation. Completed green with `verify_workspace.py`, `bootstrap_web_toolchain.py`, `pnpm --dir webapp run test` and `pnpm --dir webapp run build`.
-5. Polish Service Catalog as an expert page with Studio CTA, default test/retired filtering and collapsed expert JSON.
-6. Polish Forms Builder as an expert page with Studio CTA and template-context return path.
-7. Polish Policy Health as expert diagnostics with Studio-first repair actions and hidden technical refs by default.
-8. Clarify request setup navigation labels so Studio is the primary path and the other pages are expert tools.
-9. Run final verification and update docs for the completed pass. Completed in the final docs/verification commit.
-
-Constraints for this pass:
-
-- Do not stage `pc_agent/ui_gui/tickets_list_model.py`.
-- Do not stage existing `artifacts/*`.
-- Keep Studio direct publish on the typed safe publish contract; Service Catalog, Forms Builder and Policy Health remain expert surfaces, not the primary publication path.
-- Keep Service Catalog, Forms Builder and Policy Health available as expert surfaces.
-
-Final follow-ups:
-
-- Add a draft-aware simulation endpoint that can validate the unsaved Studio aggregate directly after explicit save.
-- Add optional service-desk-ready presets for route/SLA/closure/notification.
-- Keep registry-builder and universal work-task modules out of this MVP; they belong to later dedicated passes.
+Status: planning handoff for a three-stage cross-cutting implementation.
 
 ## Goal
 
-Continue the `/app/admin/request-template-studio` rebuild after `de7ae78b` and make it a real no-code editing MVP. An administrator must be able to select or create a request type, edit the basic form and processing blocks inside Studio, save a durable draft, run validation/simulation, and see whether publication is possible without opening Forms Builder, Service Catalog or Policy Health for the basic setup path.
+Move helpdesk requester identity to a clear model:
 
-Primary user path:
+- Browser is the primary identity and requester surface.
+- Agent is the local device endpoint for diagnostics, Remote Assist, inventory and command execution.
+- Server is the only source of truth for identity, binding, session, ticket access and user consent.
 
-1. Select an existing request type or create a draft through a wizard.
-2. Edit display title, description and visibility.
-3. Edit form fields inline.
-4. Choose a processing profile and apply safe defaults.
-5. Choose route, SLA, approval, closure and notification settings inside Studio.
-6. Save the draft through existing safe draft APIs.
-7. Run validation/simulation against the saved draft context.
-8. See clear publication status and publish from Studio through the safe preview/confirmation contract.
+The work should reuse existing registration, account-state, public requester, ticket creation and consent foundations instead of rewriting them from scratch.
+
+## Current State
+
+The project already has the core identity layers needed for this work:
+
+- Agent / device identity: agent registers as a device and has `device_id`, machine token and websocket/HTTP access.
+- Registry person / device binding: `RegistryPerson` is linked to a device through `DeviceUserBinding`.
+- Requester account session: the agent has account-session states such as `confirmed_binding`, `registration_pending` and `verified_other_account`.
+
+Existing implementation capabilities to preserve and extend:
+
+- Agent account state already includes active bindings, pending registration, server sessions, confirmed binding accounts, verified-other-account sessions and the flags `can_register`, `can_login_confirmed_binding`, `can_login_other_account`.
+- Agent profile registration already creates or finds a person, identities and registration claim, then moves the claim into `pending_user_confirmation`, `pending_admin_review` or `conflict`.
+- User claim confirmation already checks web user identity against claim/person identities.
+- Web login already exists through `/api/web/session/login`, creates a UI token and stores it in an HttpOnly cookie.
+- Role `user` already exists as a valid role, but does not yet have a full requester workspace model.
+- Public requester flow already partially exists through `/app/help`, `/app/ticket/:ticketId` and public ticket token/code.
 
 ## Scope
 
-- React webapp UX first; no new DB schema in this pass.
-- Keep route `/app/admin/request-template-studio`.
-- Use existing APIs first:
-  - `fetchServiceCatalogDashboard`
-  - `fetchHelpdeskModelRegistry`
-  - `fetchPolicyHealthDashboard`
-  - `fetchAdminFormsCatalog`
-  - `saveAdminFormsDraft`
-  - `saveOfferingDraft`
-  - `simulatePolicyHealth`
-- Add a mutable Studio draft model over existing service/offering/template/form/policy data.
-- Add inline no-code editors under `webapp/src/features/request-template-studio/`.
-- Update tests and docs for the no-code MVP.
+Implement in three stages:
+
+1. Browser-mediated registration/login for the agent.
+2. Authenticated requester workspace in the browser.
+3. Unified browser/agent consent layer.
+
+Expected ownership zones:
+
+- Auth, sessions and device identity.
+- Registry / inventory / CMDB.
+- Typed web boundary.
+- React webapp UI.
+- Agent runtime / GUI.
+- Ticket service-desk contract.
+- Tool execution and operations.
+- Docs / navigation.
+
+Classification: cross-cutting. The implementation will likely add routes, DTOs, DB models/migrations, web UI, agent GUI behavior and security checks.
 
 ## Non-Goals
 
-- Do not change Protocol V3.
-- Do not weaken P0-P5 contracts.
-- Do not add a registry/task universal constructor.
-- Do not add a free BPMN/n8n canvas.
-- Do not add a DB schema or backend endpoint unless existing draft APIs cannot persist the MVP safely.
-- Do not remove expert surfaces. Service Catalog, Forms Builder and Policy Health remain available as expert tools.
-- Do not show retired/test/smoke entries as the default working selection.
-- Do not show raw JSON/policy refs in basic mode.
+- Do not change Protocol V3 unless a later implementation step proves it is strictly required.
+- Do not let browser routes accept arbitrary `device_id` for pairing, login or requester ticket creation.
+- Do not store agent account session tokens in browser localStorage/sessionStorage.
+- Do not return agent session tokens to the browser.
+- Do not make local agent forms the authoritative source for user registration.
+- Do not merge public requester access and authenticated requester access into one implicit security model.
+- Do not allow support/admin to approve user consent on the user's behalf except through an explicit audited override policy.
 
-## Ownership And Boundary Classification
+## Constraints
 
-- Ownership zone: React webapp UI plus Service Catalog process layer documentation.
-- Classification: boundary change if using existing draft APIs without changing DTO shape; cross-cutting only if new `/api/web/*` DTO/routes are added.
-- Boundary surfaces consumed but not changed unless implementation proves otherwise:
-  - `/api/web/admin/service-catalog`
-  - `/api/web/admin/service-catalog/offerings/save-draft`
-  - `/api/web/admin/helpdesk-model/policies`
-  - `/api/web/admin/helpdesk/policy-health`
-  - `/api/web/admin/forms/current`
-  - `/api/web/admin/forms/save-draft`
-  - `/api/web/admin/helpdesk/policy-health/simulate`
+- Preserve existing agent technical registration and machine-token authorization.
+- Pairing tokens and codes must be short-lived, one-time and auditable.
+- Browser state-changing requester actions need CSRF protection because web auth uses HttpOnly cookies.
+- Requester ticket/device/consent access must be checked through resolved ownership, not by trusting client-provided ids.
+- Shared devices must not leak another user's tickets.
+- `verified_other_account` must remain strict: it can see only the exact approved/session-owned scope where applicable.
+- Sensitive tokens, auth headers, cookies, raw machine tokens and consent tokens must never be logged.
+- Browser-visible changes require real browser evidence at `https://192.168.100.17:9443/admin` or the relevant canonical route.
 
-## UX Decisions
+## Architecture Decisions
 
-- Main UI entity is `Тип обращения`, not `service/offering/template/form/policy`.
-- Basic mode hides raw policy refs, JSON, internal ids, route preview payloads and version/debug details.
-- Advanced mode may show processing profile, inheritance, enabled policies, warnings and process mapping.
-- Expert mode keeps JSON, raw policy refs and deep links to Service Catalog, Forms Builder and Policy Health.
-- Publication button must not be a dead disabled control. Studio now uses the safe publish preview/confirmation contract; expert catalog publication remains available only as an expert surface.
-- Readiness must distinguish blockers, recommendations and ready items in human language.
-- Draft state must visibly distinguish saved, unsaved, saved draft, validation required and publication blocked/available states.
+- Browser pairing links must use `pairing_id` or an opaque `pairing_token`, not `device_id`.
+- Server maps pairing to `device_id`; browser never chooses the device directly.
+- Browser confirms user identity and user decisions.
+- Agent polls server for pairing/session/consent results and receives agent-only session tokens.
+- Server owns all transitions, ownership checks, audit records and ticket timeline events.
+- Authenticated requester endpoints should live under `/api/web/requester/*`.
+- Generic `/api/tickets/*` must not be used directly for authenticated requester actions without an explicit requester ownership wrapper.
+- Public `/app/help` and `/app/ticket/:ticketId` remain guest/public flows and should be reused carefully, not collapsed into authenticated requester semantics.
 
-## Implementation Decisions For This Pass
+## Stage 1: Browser-Mediated Agent Registration/Login
 
-- Use existing `saveAdminFormsDraft()` for durable form draft persistence. The Studio payload updates or creates one form in the `request_forms` pack, preserving other forms from the loaded catalog.
-- Use existing `saveOfferingDraft()` for durable catalog draft persistence of title, description, visibility and selected policy refs.
-- Compose a single working Studio item from `selectedItem + studioDraft` so the process map, block inspector, readiness, preview, simulation payload and newly created wizard drafts all read the same current state.
-- Show the selected block editor in basic mode instead of the previous long tape of every editor; advanced/expert modes can still show broader processing details.
-- Treat policy selection as choosing existing active policies only. Presets and auto-fix may map to found active policies; if none exist, Studio must say expert setup is required.
-- Direct publish is in scope through the dedicated safe Studio publish contract. The UI must preserve context in expert links but not make expert publication the basic path.
-- Do not mutate published live objects field-by-field. Local edits become a dirty Studio draft and persist only when `Сохранить черновик` is clicked.
+Goal: device registration to a user and agent user login happen through the browser, with the agent participating only as the device endpoint.
 
-## Component Plan
+### Main Entity
 
-Create or update:
+Introduce server entity `DeviceBrowserPairing`.
 
-- `webapp/src/pages/admin/request-template-studio-page.tsx` - page entrypoint, data orchestration and save mutations.
-- `webapp/src/features/request-template-studio/studio-model.ts` - aggregate item selection and process block derivation.
-- `webapp/src/features/request-template-studio/draft-model.ts` - Studio draft, presets, auto-fix suggestions and save payload builders.
-- `webapp/src/features/request-template-studio/create-request-wizard.tsx` - MVP request type wizard.
-- `webapp/src/features/request-template-studio/form-field-editor.tsx` - inline basic form editor.
-- `webapp/src/features/request-template-studio/process-editors.tsx` - inline route/SLA/approval/closure/notification/profile editors.
-- `webapp/src/features/request-template-studio/request-studio-shell.tsx` - header commands, status chips and expert publication wording.
-- `webapp/src/features/request-template-studio/block-inspector.tsx` - selected block configuration in simple language.
-- `webapp/src/features/request-template-studio/readiness.ts` - readiness categories and draft-aware blockers/recommendations.
-- `webapp/src/pages/admin/request-template-studio-page.test.tsx` - no-code MVP regression tests.
-- `webapp/src/features/request-template-studio/studio-model.test.ts`, `draft-model.test.ts` - draft overlay/default-selection/save-payload unit tests.
-- `docs/QUICK_LOOKUP.md`, `docs/ARCHITECTURE_BOUNDARIES.md` if needed, and `server/docs/CODEMAP.md` - document Studio as the primary request setup path.
+Recommended fields:
 
-## Acceptance Criteria
+- `pairing_id`
+- `device_id`
+- `purpose`: `registration | login`
+- `status`: `pending | confirmed | consumed | expired | canceled | failed`
+- `pairing_code`
+- `created_at`
+- `expires_at`
+- `confirmed_at`
+- `confirmed_by_actor_id`
+- `confirmed_person_id`
+- `resulting_claim_id`
+- `resulting_account_session_id`
+- `metadata_json`
 
-- First screen reads as one request setup workflow, not four equal admin tools.
-- `Студия обращений` is the visible page title.
-- Basic mode has no raw JSON and no policy refs.
-- The selected request type shows editable user form, executor routing, SLA, approval, closure, notifications and publication readiness.
-- `Создать обращение` opens a wizard and produces a dirty draft.
-- `Исправить автоматически` opens safe suggestions and applies only found existing policies/presets.
-- `Сохранить черновик` calls real draft APIs and survives backend persistence.
-- Route/SLA/approval/closure/notifications can be edited inside Studio in basic mode.
-- Simulation warns when unsaved changes exist and uses saved/draft context after save.
-- Retired/test/smoke entries are excluded from default selection and appear only behind the technical-items toggle.
-- Expert tools are reachable but do not dominate the basic flow.
-- Existing Service Catalog, Forms Builder and Policy Health routes are not removed or renamed.
-- Webapp tests and build pass.
+### Registration Flow
+
+Agent action: "Зарегистрировать через браузер".
+
+Backend:
+
+- `POST /api/registry/agent/browser-pairings`
+- body includes `purpose=registration`
+- authenticated by agent machine token.
+
+Server returns:
+
+- `pairing_id`
+- `pairing_code`
+- `expires_at`
+- `browser_url`
+- `poll_url`
+
+Browser opens `/app/device/register?pairing_id=...`.
+
+If the web user is not logged in, redirect to `/app/login?next=...`.
+
+Browser confirmation page should show safe device facts such as hostname, OS, agent version and safe location/organization details when available.
+
+Server confirmation must:
+
+- validate pairing status and expiry;
+- validate web session;
+- resolve `RegistryPerson` for the web user;
+- create or update `DeviceRegistrationClaim`;
+- apply registration policy;
+- return user-facing status: `approved`, `pending_admin_review`, `pending_user_confirmation`, `conflict`, `rejected` or `failed`.
+
+### Login Flow
+
+Agent action: "Войти через браузер".
+
+Backend:
+
+- `POST /api/registry/agent/browser-pairings`
+- body includes `purpose=login`.
+
+Browser opens `/app/device/login?pairing_id=...`.
+
+If the user is already logged in, the page should still require explicit confirmation:
+
+- show current user;
+- show target device;
+- ask whether to connect the agent on that device.
+
+Server confirmation must:
+
+- resolve `RegistryPerson` for the web user;
+- check active binding between the person and device;
+- create `DeviceAccountSession(account_mode=confirmed_binding)` only when an active binding exists;
+- offer registration or policy-driven alternative login when binding is absent or belongs to another user;
+- refuse session creation on conflict.
+
+Agent polling endpoint:
+
+- `GET /api/registry/agent/browser-pairings/{pairing_id}`
+- returns `session` and `session_token` to the agent exactly once after browser confirmation;
+- marks pairing `consumed`;
+- rejects repeated token retrieval.
+
+### Agent Fallback
+
+Keep "Войти в агенте" only as a fallback:
+
+- confirmed binding can select an already confirmed user;
+- different user creates a `verified_other_account` request;
+- unregistered device prompts browser registration;
+- local form must not become authoritative registration.
+
+### Stage 1 Acceptance Criteria
+
+- New device creates browser registration pairing, browser confirms, claim appears and agent sees confirmed binding after required approval.
+- Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
+- Already logged-in browser user confirms login without re-entering password.
+- Expired pairing is rejected.
+- Consumed pairing cannot be reused.
+- Browser cannot substitute a foreign `device_id`.
+- Device registered to another user does not receive a confirmed-binding session through browser login.
+- Logout or revoked binding invalidates the agent session and returns the agent to account gate.
+
+## Stage 2: Authenticated Requester Workspace
+
+Goal: create `/app/requester` as the authenticated browser workspace for end users.
+
+### Permissions And Routes
+
+Add requester workspace permission:
+
+- `workspace.requester.view`
+
+Add requester permissions:
+
+- `requester.ticket.view`
+- `requester.ticket.create`
+- `requester.ticket.comment`
+- `requester.ticket.close`
+- `requester.ticket.reopen`
+- `requester.ticket.feedback`
+- `requester.device.view`
+- `requester.profile.view`
+- `requester.consent.decide`
+
+Protected routes:
+
+- `/app/requester`
+- `/app/requester/tickets`
+- `/app/requester/tickets/:ticketId`
+- `/app/requester/new`
+- `/app/requester/devices`
+- `/app/requester/profile`
+- `/app/requester/consents`
+
+Public routes `/app/help` and `/app/ticket/:ticketId` remain unchanged.
+
+### RequesterIdentityResolver
+
+Add backend service `RequesterIdentityResolver`.
+
+Behavior-level functions:
+
+- `resolve_person_for_web_user(actor_id)`
+- `list_allowed_devices(person_id)`
+- `list_active_bindings(person_id)`
+- `can_view_ticket(actor_id, ticket)`
+- `can_create_ticket_for_device(actor_id, device_id)`
+- `can_decide_consent(actor_id, consent)`
+
+Resolve person through identities such as:
+
+- `ui_login`
+- `email`
+- `windows_login`
+- `ad`
+
+Do not build requester ownership only on `requester_id == user_login`. Ticket visibility must account for:
+
+- `requester_id`
+- `requester_person_id`
+- `requester_binding_id`
+- `requester_account_session_id`
+
+### Requester Bootstrap
+
+Add:
+
+- `GET /api/web/requester/bootstrap`
+
+Return:
+
+- profile/person summary;
+- devices;
+- active bindings;
+- pending registration claims;
+- open ticket count;
+- tickets requiring user action count;
+- pending consent count;
+- feature flags and policies.
+
+Behavior:
+
+- if no person is found, open the workspace with onboarding and limited actions;
+- if person exists but has no devices, allow general request creation when service policy allows it;
+- if devices exist, show devices and quick actions.
+
+### Requester Tickets
+
+Add:
+
+- `GET /api/web/requester/tickets`
+- `GET /api/web/requester/tickets/{ticket_id}`
+- `POST /api/web/requester/tickets/{ticket_id}/message`
+- `POST /api/web/requester/tickets/{ticket_id}/close`
+- `POST /api/web/requester/tickets/{ticket_id}/feedback`
+- `POST /api/web/requester/tickets/{ticket_id}/reopen`
+
+Ticket list scope:
+
+- `requester_id == actor_id`
+- or `requester_person_id == resolved_person_id`
+- or `requester_binding_id IN active_binding_ids`
+- or `requester_account_session_id IN requester-owned account sessions`.
+
+Authenticated requester ticket detail should reuse requester-safe serialization and timeline, but should not require public access code for owned tickets.
+
+### Request Creation
+
+Add:
+
+- `POST /api/web/requester/tickets/preview`
+- `POST /api/web/requester/tickets`
+
+Reuse `create_ticket_with_side_effects()` so routing, SLA, OLA, auto-assign, playbooks, initial message and request-template behavior stay consistent.
+
+Frontend should reuse the existing requester form flow from `/app/help`:
+
+- service catalog;
+- offering;
+- dynamic form;
+- safe preview;
+- knowledge suggestions;
+- urgency/importance.
+
+Authenticated mode adds context selection:
+
+- request linked to one of my devices;
+- general service request when allowed.
+
+Server must verify that selected device belongs to requester identity scope.
+
+### Requester Devices And Profile
+
+Add:
+
+- `GET /api/web/requester/devices`
+- `GET /api/web/requester/devices/{device_id}`
+
+Show safe device facts:
+
+- hostname;
+- OS;
+- agent version;
+- online/offline;
+- relationship type;
+- binding status;
+- last seen;
+- open ticket count;
+- available actions.
+
+Add `/app/requester/profile`:
+
+- display name;
+- full name;
+- email;
+- phone;
+- department;
+- location;
+- identities;
+- devices.
+
+Profile edits must be policy-controlled. Authoritative registry fields should be read-only or changed through verification/request workflows.
+
+### Admin User/Person Workflow
+
+Unify admin user and registry person management:
+
+- UI login account: `user_login`, role, active/inactive, password reset, lock state.
+- Registry person: display/full name, email, phone, department, location, identities, devices, active bindings, tickets.
+- Explicit link: `ui_users.user_login` ↔ `RegistryPersonIdentity(provider='ui_login', identifier=user_login, verified=true)` ↔ `RegistryPerson`.
+
+### Stage 2 Acceptance Criteria
+
+- User logs into `/app/requester` through web session.
+- If person is found, user sees owned devices.
+- If person is not found, requester workspace opens with onboarding and limited actions.
+- Tickets created through the agent appear in the user's cabinet through person/binding/session matching.
+- Tickets for another user on a shared device are hidden.
+- User can create a request without a device when the selected service allows it.
+- User can create a request for an owned device.
+- User cannot create a request for a foreign `device_id`.
+- Public ticket can still be opened by old access code.
+- Authenticated cabinet does not require access code for owned tickets.
+- User has clear profile and devices pages.
+
+## Stage 3: Unified Browser/Agent Consent Layer
+
+Goal: one consent mechanism works in both requester browser workspace and agent GUI.
+
+Consent prompts should appear:
+
+- in requester cabinet;
+- in agent GUI when the agent is online;
+- in ticket timeline when applicable.
+
+First decision wins. Other surfaces show the already decided result.
+
+### Main Entity
+
+Introduce `UserConsentRequest`.
+
+Recommended fields:
+
+- `consent_id`
+- `subject_type`: `operation | remote_assist | diagnostic | tool_run | file_transfer | clipboard | elevated`
+- `subject_id`
+- `ticket_id`
+- `device_id`
+- `requester_person_id`
+- `requester_binding_id`
+- `requested_by_actor_id`
+- `requested_by_role`
+- `risk_level`
+- `title`
+- `description`
+- `reason`
+- `status`: `pending | approved | denied | expired | superseded | canceled`
+- `expires_at`
+- `decided_by_actor_id`
+- `decided_by_role`
+- `decided_from_surface`: `browser | agent_gui | api`
+- `decided_at`
+- `metadata_json`
+
+### APIs
+
+Requester browser:
+
+- `GET /api/web/requester/consents`
+- `GET /api/web/requester/consents/{consent_id}`
+- `POST /api/web/requester/consents/{consent_id}/approve`
+- `POST /api/web/requester/consents/{consent_id}/deny`
+
+Agent GUI:
+
+- `GET /api/registry/agent/consents`
+- `POST /api/registry/agent/consents/{consent_id}/approve`
+- `POST /api/registry/agent/consents/{consent_id}/deny`
+
+### Diagnostics And Tool Operations
+
+Flow:
+
+- support starts a diagnostic/tool operation;
+- policy requires user consent;
+- server creates operation with `status=waiting_consent`;
+- server creates `UserConsentRequest(status=pending)`;
+- browser requester workspace shows pending consent;
+- agent GUI shows prompt if online;
+- user approves or denies on any surface;
+- server atomically transitions consent;
+- approved consent queues the operation;
+- denied consent cancels/denies the operation;
+- ticket timeline receives an event.
+
+Approve/deny endpoints must check requester ownership:
+
+- web user;
+- resolved person;
+- bindings;
+- consent ticket/device scope.
+
+Knowing only `consent_id` is not sufficient.
+
+### Remote Assist
+
+Split Remote Assist into two steps:
+
+1. User consent approved.
+2. Agent technically starts or accepts the session.
+
+Browser approval must not receive agent signaling token, ICE, SDP or other technical session secrets. Browser only approves consent. After approval, server sends the agent a command to start approved Remote Assist.
+
+Agent GUI approval remains possible through the same `consent_id`.
+
+### UI Behavior
+
+Requester cabinet should show a block such as "Ожидают вашего подтверждения":
+
+- diagnostic: what will run, why, risk and requester;
+- Remote Assist: mode, access, duration and operator;
+- file transfer / clipboard / elevated action: clear warning;
+- actions: approve, deny, details.
+
+Agent GUI should show a local prompt with the same `consent_id`.
+
+If the user already decided in one surface, the other surface updates to the final result.
+
+Polling is acceptable for the first version, but the UI should be ready for websocket/event stream updates.
+
+### Stage 3 Acceptance Criteria
+
+- Diagnostic requiring consent appears in browser cabinet and agent GUI.
+- Browser approval queues the operation.
+- Agent GUI approval updates browser cabinet.
+- Repeated approve/deny after decision is idempotent and does not create a second run.
+- Foreign user cannot approve consent for another user's ticket/device.
+- Remote Assist can be approved in browser and then agent receives a start command.
+- Remote Assist can be approved in agent and browser sees approved status.
+- Expired consent does not start an operation.
+- All decisions are written to audit and ticket timeline.
+- Revoked binding/session blocks pending consent decisions.
+
+## API Response Guidance
+
+Endpoints should consistently return:
+
+- `status`
+- `data`
+- `error_code` on failure
+- user-facing `message`
+- safe technical details only when appropriate
+- `next_action`
+
+Pairing `next_action` examples:
+
+- `open_browser`
+- `login_required`
+- `confirm_registration`
+- `wait_admin_review`
+- `conflict_contact_support`
+- `agent_poll`
+- `complete`
+
+## Documentation Plan
+
+Add or update:
+
+- `server/docs/BROWSER_AGENT_PAIRING.md`
+- `server/docs/REQUESTER_WORKSPACE.md`
+- `server/docs/USER_CONSENT_MODEL.md`
+- `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`
+- `server/docs/SECURITY_AND_AUTH.md`
+- `server/docs/TICKET_SYSTEM.md`
+- `server/docs/CODEMAP.md`
+- `pc_agent/docs/CODEMAP.md`
+- `pc_agent/docs/AUTHENTICATION.md` if agent auth/session behavior changes.
+- `docs/QUICK_LOOKUP.md`
+- `docs/ARCHITECTURE_BOUNDARIES.md` if ownership/contract map changes.
+
+Each new model doc should cover:
+
+- identity layers;
+- lifecycle;
+- security boundaries;
+- known non-goals;
+- smoke checklist;
+- migration notes.
+
+## Verification Plan
+
+Each implementation stage needs targeted tests before browser/live checks.
+
+Stage 1:
+
+- browser pairing registration smoke;
+- browser pairing login smoke;
+- pairing expiry/reuse tests;
+- wrong-device substitution tests;
+- account-state and session invalidation tests.
+
+Stage 2:
+
+- requester identity resolver tests;
+- requester ticket visibility tests;
+- shared-device privacy tests;
+- requester ticket create preview/create tests;
+- public ticket compatibility tests;
+- webapp route and build tests.
+
+Stage 3:
+
+- consent browser approve smoke;
+- consent agent approve smoke;
+- idempotent approve/deny tests;
+- foreign-user denial tests;
+- expired consent tests;
+- Remote Assist browser consent smoke.
+
+Common checks:
+
+- `python scripts/verify_workspace.py`
+- focused server pytest for changed domains;
+- focused `pc_agent` tests for GUI/session behavior;
+- `pnpm --dir webapp run test` for requester/web changes;
+- `pnpm --dir webapp run build`;
+- browser evidence for visible flows;
+- quick deploy/smoke through project scripts when validating on Linux stand;
+- stop remote services after checks unless explicitly asked to leave them running.
 
 ## Execution Checkpoints
 
-- [x] Read project workflow, boundaries, context index, testing rules and service catalog/ticket docs.
-- [x] Ran `python scripts/bootstrap_web_toolchain.py`.
-- [x] Confirmed `de7ae78b` is an ancestor of the current branch.
-- [x] Add failing no-code MVP tests and verify RED.
-- [x] Implement draft model, wizard, inline editors, auto-fix and save flow.
-- [x] Stabilize Studio around one draft-aware `workingItem` and focused block editor UX.
-- [x] Update docs/CODEMAP navigation notes.
-- [x] Run required verification:
-  - `python scripts/verify_workspace.py`
-  - `pnpm --dir webapp run test`
-  - `pnpm --dir webapp run build`
-- [x] Confirmed Request Studio No-Code MVP is draft-aware and verified after profile detection, visibility resolver and save/check flow cleanup.
-- [x] Direct Studio publish uses a safe publish preview/confirmation contract.
-- [x] Browser-check the canonical admin UI after deploy or live release.
-
-## Known Constraints
-
-- Direct publish from Studio is available through the safe request-studio publish endpoint.
-- Confirmation token is now a server-issued one-time HMAC/nonce token with TTL and hashed DB state, not a deterministic draft hash.
-- Publish preview now includes field-level create/update/noop/blocked diffs for the form schema, request template, offering and service.
-- Existing Forms Builder draft API saves the form pack draft, not a separately named Studio aggregate object. The UI must explain that Studio saves a draft using the existing form/catalog draft contracts.
-- Full CI and full release gate are not part of this iteration unless explicitly requested after a frozen candidate SHA.
+- [ ] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
+- [ ] Stage 1 tests: add RED coverage for pairing lifecycle, login, expiry, reuse and wrong-device behavior.
+- [ ] Stage 1 backend: implement `DeviceBrowserPairing`, routes, repo/service, audit and account-state integration.
+- [ ] Stage 1 frontend/agent: implement browser confirm pages and agent account-gate actions/polling.
+- [ ] Stage 1 verification and docs.
+- [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
+- [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
+- [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
+- [ ] Stage 2 frontend: implement `/app/requester` workspace and reuse safe public requester components where appropriate.
+- [ ] Stage 2 admin: connect UI users to registry persons through explicit admin workflow.
+- [ ] Stage 2 verification and docs.
+- [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
+- [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
+- [ ] Stage 3 backend: implement `UserConsentRequest`, requester/agent APIs and operation transition integration.
+- [ ] Stage 3 frontend/agent: implement requester consent center and agent prompts.
+- [ ] Stage 3 verification and docs.
 
 ## Handoff
 
-Continue in Execute mode. Do not stage unrelated dirty files:
+Continue in Plan / Execute mode. This `PLANS.md` is the current source of truth for the next long-running work item.
 
-- `pc_agent/ui_gui/tickets_list_model.py`
-- existing untracked `artifacts/*`
+Before code changes, read the nested instructions for the target area:
 
-## 2026-06-03 Product Design UI audit remediation
+- `server/AGENTS.md` for backend/auth/registry/ticket work.
+- `pc_agent/AGENTS.md` for agent GUI/runtime work.
+- `webapp/AGENTS.md` for requester browser UI work.
 
-Goal: apply the Product Design audit fixes for `/app/tickets`, `/app/admin/device`, and `/app/admin/policy-health`, then repeat the browser audit and verify the web UI.
-
-Mode: Plan / Execute. Ownership zone: React webapp UI. Classification: local UI change; no API, DB, Protocol V3, auth, observer, deploy script, or DTO contract change planned.
-
-Scope:
-
-- Variant 1 hygiene pass:
-  - add explicit accessible labels for affected search/select/textarea/file controls;
-  - increase the effective tickets column-resizer target size while preserving the slim visual affordance;
-  - improve icon/technical control discoverability where the audit found small or implicit controls;
-  - make Policy Health summary counters scannable metric cards;
-  - add helper text/examples to the Policy Health dry-run form.
-- Variant 2 focused layout refactor:
-  - make ticket diagnostics/context less visually cramped by default and make the right pane easier to collapse/focus;
-  - make Device Card identity/status the dominant first-screen content and reduce right-rail competition;
-  - make Policy Health support a table-first comparison view and visually tie the detail pane to the selected row.
-
-Primary files:
-
-- `webapp/src/styles.css`
-- `webapp/src/pages/tickets/list-page.tsx`
-- `webapp/src/pages/tickets/list-page.test.tsx`
-- `webapp/src/pages/admin/device-page.tsx`
-- `webapp/src/features/policy-health/policy-health-panel.tsx`
-- `webapp/src/features/policy-health/policy-health-panel.test.tsx`
-- optional targeted admin/device test if existing test coverage requires it
-
-Non-goals:
-
-- no backend payload changes;
-- no route renames;
-- no mobile redesign beyond avoiding obvious overflow;
-- no full Product Design image-to-code prototype pass in this iteration.
-
-Verification matrix:
-
-- `python scripts/bootstrap_web_toolchain.py`
-- targeted Vitest for changed webapp tests;
-- `pnpm --dir webapp run test`
-- `pnpm --dir webapp run build`
-- `python scripts/verify_workspace.py`
-- deploy/release through project scripts, then remote smoke and browser check on `https://192.168.100.17:9443/admin`;
-- repeat Product Design-style screenshot audit for the three requested URLs;
-- stop remote server after checks.
-
-Execution checkpoints:
-
-- [x] Ran task intake, context pack, context-index rebuild, and web toolchain bootstrap.
-- [x] Add RED tests for Policy Health summary/layout/accessibility and tickets resize/labels.
-- [x] Implement Variant 1 hygiene fixes.
-- [x] Implement Variant 2 layout refactor.
-- [x] Run local test/build/verify gates.
-- [ ] Deploy to Linux stand, smoke and browser-audit the three URLs.
-- [ ] Commit and push only task files, leaving unrelated dirty files untouched.
-
-## 2026-06-03 Product Design variant 3 operator console
-
-Goal: apply the selected Variant 3 direction as a production-oriented operator console across `/app/tickets`, `/app/admin/device`, and `/app/admin/policy-health`.
-
-Mode: Feature / Execute. Ownership zone: React webapp UI. Classification: local UI change; no backend routes, DTOs, DB, auth, Protocol V3, observer, or release script changes planned.
-
-Scope:
-
-- `/app/tickets`: add an operator command strip, make the right side read as a ticket inspector, keep existing queue/ticket/expanded modes and API calls.
-- `/app/admin/device`: move device drilldown into explicit tabs for status, inventory, observer, and updates while keeping identity dominant.
-- `/app/admin/policy-health`: make the filter/table area a sticky audit console and the dry-run area a focused simulation workbench.
-
-Non-goals:
-
-- no new mockup route;
-- no new backend fields;
-- no full visual rebrand;
-- no unrelated cleanup of existing dirty artifacts.
-
-Verification matrix:
-
-- targeted Vitest for changed webapp tests;
-- `pnpm --dir webapp run test`;
-- `pnpm --dir webapp run build`;
-- `python scripts/verify_workspace.py`;
-- deploy/release quick gate, remote smoke, and browser signoff for the three audited URLs;
-- stop remote server after checks.
-
-Execution checkpoints:
-
-- [x] Confirmed design direction with user.
-- [x] Ran intake, context pack, context index rebuild, and web toolchain bootstrap.
-- [x] Add focused UI structure tests.
-- [x] Implement tickets/device/policy-health layout updates.
-- [x] Run local verification.
-- [x] Deploy/release quick gate and remote browser checks.
-- [x] Commit and push only task files.
+Do not stage unrelated existing dirty files or generated artifacts. Current known unrelated dirty surfaces include `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py`, `scripts/live_agent_uia_state_probe.py` and untracked files under `artifacts/` / `audit_artifacts/`.
