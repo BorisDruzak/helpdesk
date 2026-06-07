@@ -40,6 +40,10 @@ export const RequesterTicketPage = lazy(() =>
   import("../../pages/requester-ticket").then((module) => ({ default: module.RequesterTicketPage })),
 );
 
+export const DevicePairingPage = lazy(() =>
+  import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairingPage })),
+);
+
 export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );

@@ -125,3 +125,72 @@ async def test_confirmed_login_pairing_pickup_returns_session_token_once(test_en
     assert second_pickup["status"] == "consumed"
     assert "session_token" not in second_pickup
     assert session_row.resulting_account_session_id == first_pickup["session"]["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_web_user_login_confirmation_requires_active_binding(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id, email="owner@example.test")
+        service = BrowserPairingService(session)
+
+        created = await service.create_pairing(device_id=device_id, purpose="login", actor_id=device_id)
+        confirmed = await service.confirm_login_pairing_for_web_user(
+            pairing_id=created["pairing_id"],
+            actor_id="owner@example.test",
+        )
+        pickup = await service.pickup_agent_result(device_id=device_id, pairing_id=created["pairing_id"])
+
+        foreign = await service.create_pairing(device_id=device_id, purpose="login", actor_id=device_id)
+        with pytest.raises(ValueError, match="active binding"):
+            await service.confirm_login_pairing_for_web_user(
+                pairing_id=foreign["pairing_id"],
+                actor_id="foreign@example.test",
+            )
+        await session.commit()
+
+    assert confirmed["status"] == "confirmed"
+    assert confirmed["binding_id"] == approved["binding"]["binding_id"]
+    assert pickup["status"] == "consumed"
+    assert pickup["session"]["account_mode"] == "confirmed_binding"
+    assert pickup["session_token"]
+
+
+@pytest.mark.asyncio
+async def test_web_user_registration_confirmation_creates_claim_for_pairing_device(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = BrowserPairingService(session)
+
+        created = await service.create_pairing(device_id=device_id, purpose="registration", actor_id=device_id)
+        confirmed = await service.confirm_registration_pairing_for_web_user(
+            pairing_id=created["pairing_id"],
+            actor_id="new-user@example.test",
+        )
+        row = await session.get(DeviceBrowserPairing, created["pairing_id"])
+        await session.commit()
+
+    assert confirmed["status"] == "confirmed"
+    assert confirmed["claim_id"]
+    assert confirmed["registration"]["device_id"] == device_id
+    assert confirmed["registration"]["status"] in {"pending_admin_review", "user_confirmed", "approved", "conflict"}
+    assert row.claim_id == confirmed["claim_id"]
+    assert row.device_id == device_id
+
+
+@pytest.mark.asyncio
+async def test_create_registration_pairing_returns_register_browser_url(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = BrowserPairingService(session)
+
+        created = await service.create_pairing(device_id=device_id, purpose="registration", actor_id=device_id)
+        await session.commit()
+
+    assert created["browser_url"].startswith("/app/device/register?pairing_id=")

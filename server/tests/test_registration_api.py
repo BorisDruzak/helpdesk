@@ -10,11 +10,12 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DeviceRegistrationClaim
+from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
 from registry.registration_service import RegistrationService
 from server import create_app
-from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
+from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -82,6 +83,109 @@ async def test_agent_browser_pairing_rejects_different_device_id(test_client, te
     assert payload["data"]["purpose"] == "login"
     assert payload["data"]["pairing_token"]
     assert payload["data"]["pairing_code"]
+
+
+@pytest.mark.asyncio
+async def test_web_user_confirms_login_pairing_and_agent_picks_up_token_once(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        claim = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="owner@example.test",
+            display_name="Owner User",
+            profile={"full_name": "Owner User", "email": "owner@example.test", "user_confirmed": True},
+        )
+        approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="login", actor_id=device_id)
+        await session.commit()
+
+    confirmed = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/login/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}owner@example.test"),
+        json={},
+    )
+    assert confirmed.status == 200, await confirmed.text()
+    confirmed_payload = await confirmed.json()
+    assert confirmed_payload["data"]["status"] == "confirmed"
+    assert confirmed_payload["data"]["binding_id"] == approved["binding"]["binding_id"]
+    assert "session_token" not in confirmed_payload["data"]
+
+    picked_up = await test_client.get(
+        f"/api/registry/agent/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert picked_up.status == 200, await picked_up.text()
+    pickup_payload = await picked_up.json()
+    assert pickup_payload["data"]["status"] == "consumed"
+    assert pickup_payload["data"]["session"]["account_mode"] == "confirmed_binding"
+    assert pickup_payload["data"]["session_token"]
+
+    repeated = await test_client.get(
+        f"/api/registry/agent/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    repeated_payload = await repeated.json()
+    assert repeated.status == 200
+    assert repeated_payload["data"]["status"] == "consumed"
+    assert "session_token" not in repeated_payload["data"]
+
+
+@pytest.mark.asyncio
+async def test_web_user_cannot_confirm_login_pairing_for_foreign_binding(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        claim = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="owner@example.test",
+            display_name="Owner User",
+            profile={"full_name": "Owner User", "email": "owner@example.test", "user_confirmed": True},
+        )
+        await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="login", actor_id=device_id)
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/login/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}foreign@example.test"),
+        json={},
+    )
+    payload = await response.json()
+
+    assert response.status == 403
+    assert payload["error_code"] == "PAIRING_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_web_user_confirms_registration_pairing_for_pairing_device(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="registration", actor_id=device_id)
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/registration/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}new-user@example.test"),
+        json={},
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["data"]["status"] == "confirmed"
+    assert payload["data"]["claim_id"]
+    assert payload["data"]["registration"]["device_id"] == device_id
+
+    async with session_maker() as session:
+        claim = await session.get(DeviceRegistrationClaim, payload["data"]["claim_id"])
+    assert claim is not None
+    assert claim.device_id == device_id
 
 
 @pytest.mark.asyncio

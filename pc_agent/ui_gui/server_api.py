@@ -795,6 +795,34 @@ class TicketApiClient:
             logger.info("Confirmed binding account session create error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def create_browser_pairing(self, purpose: str) -> dict:
+        url = f"{self.base_url}/registry/agent/browser-pairings"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers, json={"purpose": str(purpose or "login")}) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось создать вход через браузер")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Browser pairing create error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def get_browser_pairing(self, pairing_id: str) -> dict:
+        url = f"{self.base_url}/registry/agent/browser-pairings/{pairing_id}"
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.get(url, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось проверить вход через браузер")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("Browser pairing fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def create_registration_pending_account_session(self, claim_id: str) -> dict:
         url = f"{self.base_url}/registry/agent/account-sessions/registration-pending"
         session = await self._get_session()

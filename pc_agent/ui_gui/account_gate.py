@@ -40,7 +40,9 @@ def account_gate_view_state(
             "title": "Не удалось проверить аккаунт",
             "message": error,
             "show_register": False,
+            "show_browser_register": False,
             "show_login_confirmed": False,
+            "show_browser_login": False,
             "show_login_other": False,
             "show_confirm": False,
             "warning": None,
@@ -55,7 +57,9 @@ def account_gate_view_state(
             "title": "Заявка на вход в другой аккаунт ожидает подтверждения",
             "message": "Администратор должен подтвердить вход. Можно проверить статус вручную или дождаться автоматического обновления.",
             "show_register": False,
+            "show_browser_register": False,
             "show_login_confirmed": False,
+            "show_browser_login": False,
             "show_login_other": False,
             "show_confirm": False,
             "show_check_pending_request": True,
@@ -119,7 +123,9 @@ def account_gate_view_state(
         }.get(mode, "Проверяем регистрацию устройства..."),
         "message": str(account_state.get("message") or ""),
         "show_register": can_register and confirmed is None,
+        "show_browser_register": can_register and confirmed is None,
         "show_login_confirmed": confirmed is not None,
+        "show_browser_login": confirmed is not None,
         "show_login_other": can_login_other,
         "show_confirm": mode == "pending",
         "show_check_pending_request": False,
@@ -131,6 +137,8 @@ def account_gate_view_state(
 
 
 class AccountGateWidget(QFrame):
+    browserLoginRequested = Signal()
+    browserRegisterRequested = Signal()
     loginConfirmedRequested = Signal(dict)
     loginOtherRequested = Signal(dict)
     registerRequested = Signal()
@@ -189,14 +197,20 @@ class AccountGateWidget(QFrame):
         layout.addWidget(self.other_form)
 
         actions = QHBoxLayout()
+        self.browser_login_button = QPushButton("Войти через браузер")
+        self.browser_login_button.setObjectName("PrimaryButton")
+        self.browser_login_button.clicked.connect(self.browserLoginRequested.emit)
         self.login_button = QPushButton("Войти")
-        self.login_button.setObjectName("PrimaryButton")
+        self.login_button.setObjectName("SecondaryButton")
         self.login_button.clicked.connect(self._on_login_confirmed)
         self.other_button = QPushButton("Войти в другой аккаунт")
         self.other_button.setObjectName("SecondaryButton")
         self.other_button.clicked.connect(self._on_other_clicked)
+        self.browser_register_button = QPushButton("Зарегистрировать через браузер")
+        self.browser_register_button.setObjectName("PrimaryButton")
+        self.browser_register_button.clicked.connect(self.browserRegisterRequested.emit)
         self.register_button = QPushButton("Регистрация")
-        self.register_button.setObjectName("PrimaryButton")
+        self.register_button.setObjectName("SecondaryButton")
         self.register_button.clicked.connect(self.registerRequested.emit)
         self.confirm_button = QPushButton("Подтвердить данные")
         self.confirm_button.setObjectName("SecondaryButton")
@@ -211,8 +225,10 @@ class AccountGateWidget(QFrame):
         self.check_request_button.setObjectName("SecondaryButton")
         self.check_request_button.clicked.connect(self._on_check_pending_request)
         for button in (
+            self.browser_login_button,
             self.login_button,
             self.other_button,
+            self.browser_register_button,
             self.register_button,
             self.confirm_button,
             self.check_request_button,
@@ -269,6 +285,7 @@ class AccountGateWidget(QFrame):
             if state.get("warning") == "other_account"
             else ""
         )
+        self.browser_login_button.setVisible(bool(state["show_browser_login"]))
         self.login_button.setVisible(bool(state["show_login_confirmed"]))
         if state.get("warning") == "pending_other_account_request":
             self.warning_label.setText("Заявка отправлена. До подтверждения вход в другой аккаунт недоступен.")
@@ -290,6 +307,7 @@ class AccountGateWidget(QFrame):
             self.other_button.setText(f"Войти как {name}")
         elif not self._showing_other_form:
             self.other_button.setText("Войти в другой аккаунт")
+        self.browser_register_button.setVisible(bool(state["show_browser_register"]))
         self.register_button.setVisible(bool(state["show_register"]))
         self.register_button.setText("Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))

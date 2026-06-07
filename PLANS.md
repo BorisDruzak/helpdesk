@@ -1,6 +1,6 @@
 # Browser / Requester / Agent Identity Model
 
-Status: planning handoff for a three-stage cross-cutting implementation.
+Status: Stage 1 in progress. Backend pairing persistence is implemented and pushed in commit `f5e3e01a`; browser confirmation, registration flow, agent GUI polling and live verification remain active work.
 
 ## Goal
 
@@ -28,6 +28,17 @@ Existing implementation capabilities to preserve and extend:
 - Web login already exists through `/api/web/session/login`, creates a UI token and stores it in an HttpOnly cookie.
 - Role `user` already exists as a valid role, but does not yet have a full requester workspace model.
 - Public requester flow already partially exists through `/app/help`, `/app/ticket/:ticketId` and public ticket token/code.
+
+Completed Stage 1 backend foundation:
+
+- Migration `108_device_browser_pairings` adds persisted `device_browser_pairings`.
+- `BrowserPairingService` creates short-lived login/registration pairings with hashed pairing token/code storage.
+- New pending pairing for the same `device_id + purpose` supersedes older pending rows.
+- Agent endpoints exist:
+  - `POST /api/registry/agent/browser-pairings`
+  - `GET /api/registry/agent/browser-pairings/{pairing_id}`
+- Login pairing pickup creates a `confirmed_binding` account session and returns the plaintext `session_token` to the agent exactly once.
+- Existing coverage includes pairing secret hashing, supersede, expiry lookup, one-time pickup and wrong-device API rejection.
 
 ## Scope
 
@@ -146,7 +157,7 @@ Server returns:
 
 Browser opens `/app/device/register?pairing_id=...`.
 
-If the agent cannot open the system browser automatically, the user can open `/app/device/pair` manually and enter `pairing_code`. The code resolves to a pending pairing only after web login, expiry checks and rate-limit checks.
+Future fallback: if the agent cannot open the system browser automatically, `/app/device/pair` can be added later as a manual code-entry page for `pairing_code`. That page must resolve only pending pairings after web login, expiry checks and rate-limit checks.
 
 If the web user is not logged in, redirect to `/app/login?next=...`.
 
@@ -215,14 +226,15 @@ Keep "Войти в агенте" only as a fallback:
 
 ### Stage 1 Acceptance Criteria
 
-- New device creates browser registration pairing, browser confirms, claim appears and agent sees confirmed binding after required approval.
-- Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
-- Already logged-in browser user confirms login without re-entering password.
-- Expired pairing is rejected.
-- Consumed pairing cannot be reused.
-- Browser cannot substitute a foreign `device_id`.
-- Device registered to another user does not receive a confirmed-binding session through browser login.
-- Logout or revoked binding invalidates the agent session and returns the agent to account gate.
+- [ ] New device creates browser registration pairing, browser confirms, claim appears and agent sees confirmed binding after required approval.
+- [ ] Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
+- [ ] Already logged-in browser user confirms login without re-entering password.
+- [x] Expired pairing is rejected at service lookup/pickup boundaries.
+- [x] Consumed pairing cannot be reused for token pickup.
+- [x] Browser cannot substitute a foreign `device_id` through the agent pairing create endpoint.
+- [ ] Browser confirmation cannot create a confirmed-binding session for a different user or an unbound device.
+- [ ] Device registered to another user does not receive a confirmed-binding session through browser login.
+- [ ] Logout or revoked binding invalidates the agent session and returns the agent to account gate.
 
 ## Stage 2: Authenticated Requester Workspace
 
@@ -620,14 +632,14 @@ Each implementation stage needs targeted tests before browser/live checks.
 
 Stage 1:
 
-- browser pairing registration smoke;
-- browser pairing login smoke;
-- pairing expiry/reuse tests;
-- wrong-device substitution tests;
-- pairing secret hashing/protected-storage tests;
-- active pairing supersede/cancel tests;
-- manual pairing-code entry smoke;
-- account-state and session invalidation tests.
+- [x] browser pairing registration smoke;
+- [x] browser pairing login smoke;
+- [x] pairing expiry/reuse tests;
+- [x] wrong-device substitution tests;
+- [x] pairing secret hashing/protected-storage tests;
+- [x] active pairing supersede/cancel tests;
+- [ ] manual pairing-code entry smoke;
+- [~] account-state and session invalidation tests.
 
 Stage 2:
 
@@ -665,11 +677,11 @@ Common checks:
 
 ## Execution Checkpoints
 
-- [ ] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
-- [ ] Stage 1 tests: add RED coverage for pairing lifecycle, login, expiry, reuse and wrong-device behavior.
-- [ ] Stage 1 backend: implement `DeviceBrowserPairing`, routes, repo/service, audit and account-state integration.
-- [ ] Stage 1 frontend/agent: implement browser confirm pages and agent account-gate actions/polling.
-- [ ] Stage 1 verification and docs.
+- [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
+- [~] Stage 1 tests: RED coverage now covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, web route behavior, webapp confirm pages and agent polling. Remaining: live route behavior on Linux stand and manual pairing-code entry if promoted into this stage.
+- [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
+- [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll and main-window polling/session save are implemented. `/app/device/pair` manual code entry is not in this slice.
+- [~] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests started. Remaining: full local verification, `verify_workspace.py`, live MCP browser checks, DB invariants on Linux stand and bug-fix loop for anything found.
 - [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
 - [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
 - [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
@@ -684,7 +696,30 @@ Common checks:
 
 ## Handoff
 
-Continue in Plan / Execute mode. This `PLANS.md` is the current source of truth for the next long-running work item.
+Continue in Execute mode for Stage 1. This `PLANS.md` is the current source of truth for the next long-running work item.
+
+Done in this slice:
+
+- web-authenticated pairing lookup/confirmation endpoints;
+- confirmed-binding login requires active binding for the logged-in web user;
+- registration pairing creates/updates a registration claim for the pairing device;
+- `/app/device/login` and `/app/device/register` pages;
+- agent account-gate browser-first actions and polling;
+- one-time account-session token remains agent-only.
+
+Deferred:
+
+- `/app/device/pair` manual code entry remains outside this verified Stage 1 slice unless live testing shows direct URL handoff is insufficient.
+
+Immediate remaining work:
+
+1. Verify:
+   - local targeted pytest and webapp build/tests;
+   - `python scripts/verify_workspace.py`;
+   - deploy through project scripts;
+   - live MCP browser checks for canonical routes;
+   - DB query checks for pairing status, hashes, resulting session and absence of raw secrets;
+   - fix bugs found before commit/push.
 
 Before code changes, read the nested instructions for the target area:
 

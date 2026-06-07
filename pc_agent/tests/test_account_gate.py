@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 from pc_agent.ui_gui.account_gate import account_gate_view_state
 from pc_agent.ui_gui.main_window import MainWindow
 
@@ -24,6 +28,7 @@ def test_account_gate_registered_state_hides_registration():
     assert state["mode"] == "registered"
     assert state["primary_account"]["display_name"] == "Registered User"
     assert state["show_login_confirmed"] is True
+    assert state["show_browser_login"] is True
     assert state["show_register"] is False
     assert state["show_login_other"] is True
 
@@ -68,6 +73,7 @@ def test_account_gate_no_binding_state_shows_registration():
 
     assert state["mode"] == "unregistered"
     assert state["show_register"] is True
+    assert state["show_browser_register"] is True
     assert state["show_login_other"] is False
 
 
@@ -149,3 +155,103 @@ def test_account_gate_pending_other_account_request_state():
     assert state["show_check_pending_request"] is True
     assert state["pending_request_id"] == "request-1"
     assert state["pending_account"]["display_name"] == "Guest User"
+
+
+def test_main_window_builds_absolute_browser_pairing_url():
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="https://example.test/api"))
+
+    assert (
+        window._browser_pairing_url("/app/device/login?pairing_id=pair-1")
+        == "https://example.test/app/device/login?pairing_id=pair-1"
+    )
+    assert (
+        window._browser_pairing_url("https://helpdesk.example/app/device/login?pairing_id=pair-1")
+        == "https://helpdesk.example/app/device/login?pairing_id=pair-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_main_window_browser_login_pairing_polls_and_saves_session(monkeypatch):
+    opened_urls: list[str] = []
+    selected_views: list[str] = []
+    rendered: list[dict] = []
+    saved_sessions: list[dict] = []
+
+    class FakeClient:
+        base_url = "https://example.test/api"
+        device_id = "device-1"
+
+        async def create_browser_pairing(self, purpose: str) -> dict:
+            assert purpose == "login"
+            return {"pairing_id": "pair-1", "browser_url": "/app/device/login?pairing_id=pair-1"}
+
+        async def get_browser_pairing(self, pairing_id: str) -> dict:
+            assert pairing_id == "pair-1"
+            return {
+                "status": "consumed",
+                "session_token": "secret-token",
+                "session": {
+                    "session_id": "session-1",
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "display_name": "Registered User",
+                },
+            }
+
+    class FakeSessionManager:
+        def build_confirmed_binding_session(self, account: dict, *, device_id: str) -> dict:
+            return {**account, "device_id": device_id, "account_mode": "confirmed_binding"}
+
+        def save(self, session: dict) -> dict:
+            saved_sessions.append(session)
+            return session
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session_manager = FakeSessionManager()
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._set_account_entry_mode = lambda value: None
+    window._render_profile_status = lambda: None
+    window._select_sidebar_view = lambda view, **kwargs: selected_views.append(view)
+    window._browser_pairing_open_url = lambda url: opened_urls.append(url)
+
+    await window._async_browser_pairing("login", poll_interval_seconds=0.0, max_polls=1)
+
+    assert opened_urls == ["https://example.test/app/device/login?pairing_id=pair-1"]
+    assert saved_sessions[0]["session_token"] == "secret-token"
+    assert saved_sessions[0]["account_mode"] == "confirmed_binding"
+    assert selected_views == ["tickets"]
+
+
+@pytest.mark.asyncio
+async def test_main_window_browser_registration_pairing_refreshes_account_state():
+    rendered: list[dict] = []
+
+    class FakeClient:
+        base_url = "https://example.test/api"
+        device_id = "device-1"
+
+        async def create_browser_pairing(self, purpose: str) -> dict:
+            assert purpose == "registration"
+            return {"pairing_id": "pair-2", "browser_url": "/app/device/register?pairing_id=pair-2"}
+
+        async def get_browser_pairing(self, pairing_id: str) -> dict:
+            assert pairing_id == "pair-2"
+            return {"status": "consumed", "claim_id": "claim-1"}
+
+        async def get_account_state(self) -> dict:
+            return {"accounts": [], "registration": {"status": "pending_user_confirmation"}}
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._browser_pairing_open_url = lambda url: None
+
+    await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
+
+    assert rendered[-1]["state"]["registration"]["status"] == "pending_user_confirmation"

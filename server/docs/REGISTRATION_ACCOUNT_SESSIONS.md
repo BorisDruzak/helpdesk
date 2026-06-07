@@ -14,8 +14,10 @@ Browser-to-agent account handoff is persisted in `device_browser_pairings` and s
 
 - Pairing rows store only `pairing_token_hash` and `pairing_code_hash`; raw pairing tokens/codes are returned only in the create response.
 - A new pending pairing for the same `device_id` and purpose supersedes older pending rows.
-- Browser confirmation marks the pairing as confirmed but does not return an account `session_token` to the browser.
-- The agent pickup creates/returns the account `session_token` once and marks the pairing `consumed`; later pickups return session metadata without the token.
+- Browser confirmation is handled by web-authenticated `/api/web/registry/browser-pairings/{pairing_id}` plus `/login/confirm` or `/registration/confirm`; browser pages are `/app/device/login` and `/app/device/register`.
+- Login confirmation resolves the web user to a registry person and requires an active primary/shared/responsible binding for the pairing device. Registration confirmation creates or updates the registration claim for the pairing device through `RegistrationService`.
+- Browser confirmation marks the pairing as confirmed but does not return an account `session_token` to the browser UI.
+- The agent pickup creates/returns the account `session_token` once for login and marks the pairing `consumed`; later pickups return session metadata without the token. Registration pairing pickup consumes the pairing and leaves the agent on the account gate/account-state polling path.
 - Agent auth can create or poll pairings only for its own UUID `device_id`.
 
 ## Session modes

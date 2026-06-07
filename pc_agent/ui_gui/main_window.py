@@ -251,6 +251,8 @@ class MainWindow(QMainWindow):
         self.chat_panel.set_profile_sidebar(self.profile_sidebar)
         self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
         self.account_gate_page = AccountGateWidget()
+        self.account_gate_page.browserLoginRequested.connect(self._on_browser_login_requested)
+        self.account_gate_page.browserRegisterRequested.connect(self._on_browser_register_requested)
         self.account_gate_page.loginConfirmedRequested.connect(self._on_account_login_confirmed)
         self.account_gate_page.loginOtherRequested.connect(self._on_account_login_other)
         self.account_gate_page.registerRequested.connect(self._on_account_register_requested)
@@ -1365,6 +1367,114 @@ class MainWindow(QMainWindow):
             session_token=str(session.get("session_token") or "").strip() or None,
         )
         return isinstance(validated, dict) and validated.get("valid") is True
+
+    def _on_browser_login_requested(self) -> None:
+        self._spawn_gui_task(self._async_browser_pairing("login"), name="account.browser_login")
+
+    def _on_browser_register_requested(self) -> None:
+        self._spawn_gui_task(self._async_browser_pairing("registration"), name="account.browser_register")
+
+    def _browser_pairing_url(self, browser_url: str) -> str:
+        browser_url = str(browser_url or "").strip()
+        if browser_url.startswith(("http://", "https://")):
+            return browser_url
+        base_url = str(getattr(self.chat_panel.ticket_client, "base_url", "") or "").rstrip("/")
+        if base_url.endswith("/api"):
+            base_url = base_url[:-4]
+        if browser_url.startswith("/"):
+            return f"{base_url}{browser_url}" if base_url else browser_url
+        return browser_url
+
+    def _browser_pairing_open_url(self, url: str) -> None:
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+    async def _async_browser_pairing(
+        self,
+        purpose: str,
+        *,
+        poll_interval_seconds: float = 2.0,
+        max_polls: int = 90,
+    ) -> None:
+        purpose = "registration" if str(purpose or "").strip() == "registration" else "login"
+        action_label = "регистрации" if purpose == "registration" else "входа"
+        payload = await self.chat_panel.ticket_client.create_browser_pairing(purpose)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=str(payload.get("error") or f"Не удалось создать ссылку {action_label} через браузер"),
+            )
+            return
+        pairing_id = str(payload.get("pairing_id") or "").strip() if isinstance(payload, dict) else ""
+        browser_url = self._browser_pairing_url(str(payload.get("browser_url") or "")) if isinstance(payload, dict) else ""
+        if not pairing_id or not browser_url:
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=f"Сервер вернул неполные данные {action_label} через браузер.",
+            )
+            return
+        self._browser_pairing_open_url(browser_url)
+        self.account_gate_page.render(
+            {**self._account_state, "message": "Открылся браузер. Подтвердите действие на веб-странице."},
+            local_session=self._account_session,
+        )
+        for attempt in range(max(1, int(max_polls))):
+            result = await self.chat_panel.ticket_client.get_browser_pairing(pairing_id)
+            if isinstance(result, dict) and result.get("status") == "error":
+                self.account_gate_page.render(
+                    self._account_state,
+                    local_session=self._account_session,
+                    error=str(result.get("error") or f"Не удалось проверить {action_label} через браузер"),
+                )
+                return
+            status = str((result or {}).get("status") or "").strip().lower()
+            if purpose == "login" and status == "consumed":
+                session_payload = result.get("session") if isinstance(result.get("session"), dict) else {}
+                token = str(result.get("session_token") or "").strip()
+                if not session_payload or not token:
+                    self.account_gate_page.render(
+                        self._account_state,
+                        local_session=self._account_session,
+                        error="Сервер не вернул токен сессии аккаунта. Создайте новую ссылку входа.",
+                    )
+                    return
+                session_payload = {**session_payload, "session_token": token}
+                self._account_session = self._account_session_manager.save(
+                    self._account_session_manager.build_confirmed_binding_session(
+                        session_payload,
+                        device_id=self.chat_panel.device_id,
+                    )
+                )
+                self.account_gate_page.render(self._account_state, local_session=self._account_session)
+                self._set_account_entry_mode(False)
+                self._render_profile_status()
+                self._select_sidebar_view("tickets", expand=True)
+                return
+            if purpose == "registration" and status in {"confirmed", "consumed"}:
+                refreshed = await self.chat_panel.ticket_client.get_account_state()
+                if isinstance(refreshed, dict) and refreshed.get("status") != "error":
+                    self._account_state = refreshed
+                self.account_gate_page.render(
+                    {**self._account_state, "message": "Регистрация подтверждена через браузер."},
+                    local_session=self._account_session,
+                )
+                return
+            if status in {"expired", "superseded"}:
+                self.account_gate_page.render(
+                    self._account_state,
+                    local_session=self._account_session,
+                    error=f"Ссылка {action_label} больше не активна. Создайте новую ссылку.",
+                )
+                return
+            if attempt + 1 < max_polls:
+                await asyncio.sleep(max(0.0, float(poll_interval_seconds)))
+        self.account_gate_page.render(
+            self._account_state,
+            local_session=self._account_session,
+            error=f"Не дождались подтверждения {action_label} через браузер.",
+        )
 
     def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
         self._spawn_gui_task(self._async_account_login_confirmed(account), name="account.login_confirmed")

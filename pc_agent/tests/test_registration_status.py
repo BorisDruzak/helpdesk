@@ -166,6 +166,66 @@ async def test_registration_api_client_creates_confirmed_binding_session(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_registration_api_client_creates_browser_pairing(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            payload={
+                "status": "success",
+                "data": {
+                    "pairing_id": "pair-1",
+                    "purpose": "login",
+                    "browser_url": "/app/device/login?pairing_id=pair-1",
+                    "poll_url": "/api/registry/agent/browser-pairings/pair-1",
+                },
+            }
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.create_browser_pairing("login")
+
+    assert result["pairing_id"] == "pair-1"
+    assert fake_session.calls[0]["method"] == "POST"
+    assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/browser-pairings"
+    assert fake_session.calls[0]["json"] == {"purpose": "login"}
+
+
+@pytest.mark.asyncio
+async def test_registration_api_client_gets_browser_pairing(monkeypatch):
+    client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
+    fake_session = FakeSession(
+        FakeResponse(
+            payload={
+                "status": "success",
+                "data": {
+                    "pairing_id": "pair-1",
+                    "status": "consumed",
+                    "session": {"session_id": "session-1", "account_mode": "confirmed_binding"},
+                    "session_token": "token-1",
+                },
+            }
+        )
+    )
+
+    async def fake_get_session():
+        return fake_session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    result = await client.get_browser_pairing("pair-1")
+
+    assert result["session"]["session_id"] == "session-1"
+    assert result["session_token"] == "token-1"
+    assert fake_session.calls[0]["method"] == "GET"
+    assert fake_session.calls[0]["url"] == "http://localhost:8666/api/registry/agent/browser-pairings/pair-1"
+
+
+@pytest.mark.asyncio
 async def test_registration_api_client_requests_other_account_login(monkeypatch):
     client = TicketApiClient("http://localhost:8666/api", "device-1", user_display_name="User", auth_token="token-123")
     fake_session = FakeSession(

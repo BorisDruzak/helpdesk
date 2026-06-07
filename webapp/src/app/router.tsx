@@ -30,6 +30,7 @@ import {
   KnowledgeBasePage,
   ReportsPage,
   RequesterTicketPage,
+  DevicePairingPage,
   SettingsPage,
   SupportCommandCenterPage,
   TicketDetailPage,
@@ -92,6 +93,27 @@ function PublicPageFallback() {
 }
 
 function PublicPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PublicPageFallback />}>{children}</Suspense>;
+}
+
+function ProtectedDevicePage({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const { status } = useSession();
+
+  if (status === "loading") {
+    return (
+      <SessionState
+        description="Проверяем web-сессию перед подтверждением устройства."
+        title="Проверяем сессию"
+      />
+    );
+  }
+
+  if (status === "anonymous") {
+    const nextPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate replace to={`/app/login?next=${encodeURIComponent(nextPath)}`} />;
+  }
+
   return <Suspense fallback={<PublicPageFallback />}>{children}</Suspense>;
 }
 
@@ -191,6 +213,22 @@ export const appRoutes: RouteObject[] = [
           <PublicPage>
             <RequesterTicketPage />
           </PublicPage>
+        )
+      },
+      {
+        path: "device/login",
+        element: (
+          <ProtectedDevicePage>
+            <DevicePairingPage purpose="login" />
+          </ProtectedDevicePage>
+        )
+      },
+      {
+        path: "device/register",
+        element: (
+          <ProtectedDevicePage>
+            <DevicePairingPage purpose="registration" />
+          </ProtectedDevicePage>
         )
       },
       {

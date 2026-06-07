@@ -213,6 +213,74 @@ async def handle_registry_agent_browser_pairing_create(request: web.Request) -> 
     return _success(payload)
 
 
+async def _browser_pairing_payload_with_device(session, service: BrowserPairingService, pairing_id: str) -> dict | None:
+    row = await service.repo.get_pairing(pairing_id)
+    if row is None:
+        return None
+    payload = await service.serialize_pairing(row)
+    device = await session.get(Device, row.device_id)
+    payload["device"] = {
+        "device_id": row.device_id,
+        "hostname": getattr(device, "hostname", None),
+        "os": getattr(device, "os", None),
+        "agent_version": getattr(device, "agent_version", None),
+    }
+    return payload
+
+
+@require_auth("user")
+async def handle_web_registry_browser_pairing_get(request: web.Request) -> web.Response:
+    pairing_id = str(request.match_info.get("pairing_id") or "").strip()
+    async with get_session() as session:
+        service = BrowserPairingService(session)
+        payload = await _browser_pairing_payload_with_device(session, service, pairing_id)
+        if payload is None:
+            return web.json_response({"status": "error", "error": "pairing not found", "error_code": "NOT_FOUND"}, status=404)
+    return _success(payload)
+
+
+@require_auth("user")
+async def handle_web_registry_browser_pairing_login_confirm(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    pairing_id = str(request.match_info.get("pairing_id") or "").strip()
+    async with get_session() as session:
+        service = BrowserPairingService(session)
+        try:
+            payload = await service.confirm_login_pairing_for_web_user(
+                pairing_id=pairing_id,
+                actor_id=auth_context.actor_id,
+            )
+            await session.commit()
+        except ValueError as exc:
+            message = str(exc)
+            if "active binding" in message:
+                return web.json_response({"status": "error", "error": message, "error_code": "PAIRING_FORBIDDEN"}, status=403)
+            if "not found" in message:
+                return web.json_response({"status": "error", "error": message, "error_code": "NOT_FOUND"}, status=404)
+            return web.json_response({"status": "error", "error": message, "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("user")
+async def handle_web_registry_browser_pairing_registration_confirm(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    pairing_id = str(request.match_info.get("pairing_id") or "").strip()
+    async with get_session() as session:
+        service = BrowserPairingService(session)
+        try:
+            payload = await service.confirm_registration_pairing_for_web_user(
+                pairing_id=pairing_id,
+                actor_id=auth_context.actor_id,
+            )
+            await session.commit()
+        except ValueError as exc:
+            message = str(exc)
+            if "not found" in message:
+                return web.json_response({"status": "error", "error": message, "error_code": "NOT_FOUND"}, status=404)
+            return web.json_response({"status": "error", "error": message, "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
 @require_auth("agent")
 async def handle_registry_agent_browser_pairing_get(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]

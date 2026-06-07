@@ -14,6 +14,7 @@ from app.repos.account_session_repo import AccountSessionRepo
 from app.repos.browser_pairing_repo import BrowserPairingRepo
 from app.repos.registration_repo import RegistrationRepo
 from registry.account_session_service import AccountSessionService
+from registry.registration_service import RegistrationService
 
 
 BROWSER_PAIRING_TTL_MINUTES = 10
@@ -41,6 +42,20 @@ def _normalize_pairing_code(value: object) -> str:
 def _new_pairing_code() -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+def _profile_from_actor(actor_id: str) -> dict[str, Any]:
+    clean = _clean_text(actor_id, max_length=320) or "Web user"
+    profile: dict[str, Any] = {
+        "full_name": clean,
+        "display_name": clean,
+        "login": clean,
+        "relationship_type": "primary_user",
+        "user_confirmed": True,
+    }
+    if "@" in clean:
+        profile["email"] = clean.lower()
+    return profile
 
 
 class BrowserPairingService:
@@ -113,11 +128,12 @@ class BrowserPairingService:
             payload={"pairing_id": row.pairing_id, "purpose": row.purpose},
         )
         payload = await self.serialize_pairing(row)
+        route_purpose = "register" if row.purpose == "registration" else row.purpose
         payload.update(
             {
                 "pairing_token": token,
                 "pairing_code": code,
-                "browser_url": f"/app/device/pair?pairing_id={row.pairing_id}",
+                "browser_url": f"/app/device/{route_purpose}?pairing_id={row.pairing_id}",
                 "poll_url": f"/api/registry/agent/browser-pairings/{row.pairing_id}",
             }
         )
@@ -145,6 +161,42 @@ class BrowserPairingService:
         if not pairing_token or not hmac.compare_digest(str(row.pairing_token_hash), str(_hash_secret(pairing_token) or "")):
             raise ValueError("browser pairing token is invalid")
         return row
+
+    async def _require_pending_pairing_link(self, pairing_id: str, *, purpose: str) -> DeviceBrowserPairing:
+        row = await self.repo.get_pairing(pairing_id)
+        if row is None:
+            raise ValueError("browser pairing not found")
+        if await self._expire_if_needed(row):
+            raise ValueError("browser pairing expired")
+        if row.status != "pending":
+            raise ValueError("browser pairing is not pending")
+        if row.purpose != purpose:
+            raise ValueError(f"browser pairing purpose is not {purpose}")
+        return row
+
+    async def _resolve_person_for_actor(self, actor_id: str | None):
+        actor = _clean_text(actor_id, max_length=320)
+        if not actor:
+            return None
+        providers = ["ui_login"]
+        if "@" in actor:
+            providers.append("email")
+        providers.extend(["windows_login", "ad"])
+        for provider in providers:
+            person = await self.registration_repo.find_person_by_identity(provider, actor)
+            if person is not None:
+                return person
+        if "\\" in actor:
+            local = actor.split("\\", 1)[1]
+            person = await self.registration_repo.find_person_by_identity("ui_login", local)
+            if person is not None:
+                return person
+        if "@" in actor:
+            local = actor.split("@", 1)[0]
+            person = await self.registration_repo.find_person_by_identity("ui_login", local)
+            if person is not None:
+                return person
+        return None
 
     async def confirm_login_pairing(
         self,
@@ -176,6 +228,83 @@ class BrowserPairingService:
         )
         return await self.serialize_pairing(row)
 
+    async def confirm_login_pairing_for_web_user(
+        self,
+        *,
+        pairing_id: str,
+        actor_id: str,
+    ) -> dict[str, Any]:
+        row = await self._require_pending_pairing_link(pairing_id, purpose="login")
+        person = await self._resolve_person_for_actor(actor_id)
+        if person is None:
+            raise ValueError("active binding not found for web user")
+        binding = next(
+            (
+                item
+                for item in await self.registration_repo.list_active_bindings_for_device(row.device_id)
+                if item.person_id == person.person_id
+                and item.relationship_type in {"primary_user", "shared_user", "responsible"}
+            ),
+            None,
+        )
+        if binding is None:
+            raise ValueError("active binding not found for web user")
+        row.status = "confirmed"
+        row.binding_id = binding.binding_id
+        row.confirmed_person_id = person.person_id
+        row.confirmed_at = _now()
+        row.confirmed_by = _clean_text(actor_id, max_length=200)
+        row.metadata_json = {**(row.metadata_json or {}), "confirmation_method": "web_user_login"}
+        await self.session.flush()
+        await self.account_session_repo.append_event(
+            device_id=row.device_id,
+            event_type="browser_pairing_confirmed",
+            actor_id=actor_id,
+            actor_role="user",
+            payload={"pairing_id": row.pairing_id, "binding_id": binding.binding_id, "person_id": person.person_id},
+        )
+        return await self.serialize_pairing(row)
+
+    async def confirm_registration_pairing_for_web_user(
+        self,
+        *,
+        pairing_id: str,
+        actor_id: str,
+    ) -> dict[str, Any]:
+        row = await self._require_pending_pairing_link(pairing_id, purpose="registration")
+        profile = _profile_from_actor(actor_id)
+        result = await RegistrationService(self.session).submit_agent_profile_claim(
+            device_id=row.device_id,
+            requester_id=actor_id,
+            display_name=profile.get("display_name"),
+            profile=profile,
+            actor_id=actor_id,
+            actor_role="user",
+        )
+        claim_id = ((result.get("registration") or {}).get("claim_id") or None)
+        person_id = ((result.get("person") or {}).get("person_id") or None)
+        row.status = "confirmed"
+        row.claim_id = claim_id
+        row.confirmed_person_id = person_id
+        row.confirmed_at = _now()
+        row.confirmed_by = _clean_text(actor_id, max_length=200)
+        row.metadata_json = {**(row.metadata_json or {}), "confirmation_method": "web_user_registration"}
+        await self.session.flush()
+        await self.account_session_repo.append_event(
+            device_id=row.device_id,
+            event_type="browser_pairing_confirmed",
+            actor_id=actor_id,
+            actor_role="user",
+            payload={"pairing_id": row.pairing_id, "claim_id": claim_id, "person_id": person_id},
+        )
+        payload = await self.serialize_pairing(row)
+        registration = dict(result.get("registration") or {})
+        registration["device_id"] = row.device_id
+        payload["registration"] = registration
+        payload["person"] = result.get("person")
+        payload["claim_id"] = claim_id
+        return payload
+
     async def pickup_agent_result(self, *, device_id: str, pairing_id: str) -> dict[str, Any]:
         row = await self.repo.get_pairing(pairing_id)
         if row is None or row.device_id != str(device_id):
@@ -192,6 +321,19 @@ class BrowserPairingService:
                     payload["session"] = await AccountSessionService(self.session).serialize_session(session_row)
             return payload
         if row.status != "confirmed":
+            return await self.serialize_pairing(row)
+        if row.purpose == "registration":
+            row.status = "consumed"
+            row.consumed_at = _now()
+            row.completed_at = row.consumed_at
+            await self.session.flush()
+            await self.account_session_repo.append_event(
+                device_id=row.device_id,
+                event_type="browser_pairing_consumed",
+                actor_id=row.device_id,
+                actor_role="agent",
+                payload={"pairing_id": row.pairing_id, "purpose": row.purpose, "claim_id": row.claim_id},
+            )
             return await self.serialize_pairing(row)
         if row.purpose != "login" or not row.binding_id:
             raise ValueError("browser pairing result is incomplete")
