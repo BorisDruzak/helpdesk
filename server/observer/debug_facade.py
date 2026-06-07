@@ -469,7 +469,19 @@ async def _latest_runtime_snapshot(
     if process_kind:
         stmt = stmt.where(ServerRuntimeSnapshot.process_kind == process_kind)
     stmt = stmt.order_by(ServerRuntimeSnapshot.collected_at.desc()).limit(1)
-    return (await session.execute(stmt)).scalars().first()
+    try:
+        result = await session.execute(stmt)
+    except AttributeError:
+        return None
+    scalars = result.scalars()
+    first = getattr(scalars, "first", None)
+    if callable(first):
+        return first()
+    all_rows = getattr(scalars, "all", None)
+    if callable(all_rows):
+        rows = all_rows()
+        return rows[0] if rows else None
+    return None
 
 
 def _runtime_snapshot_payload(row: ServerRuntimeSnapshot) -> dict[str, Any]:
@@ -484,16 +496,43 @@ def _runtime_snapshot_payload(row: ServerRuntimeSnapshot) -> dict[str, Any]:
     return snapshot
 
 
-def _runtime_ws_evidence(row: ServerRuntimeSnapshot | None, device_id: str | None) -> dict[str, Any] | None:
-    if row is None or not device_id:
+def _runtime_ws_evidence(
+    row: ServerRuntimeSnapshot | None,
+    device_id: str | None,
+    *,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    if row is None:
         return None
     snapshot = row.snapshot if isinstance(row.snapshot, dict) else {}
     connected_agents = snapshot.get("connected_agents") if isinstance(snapshot.get("connected_agents"), dict) else {}
-    evidence = connected_agents.get(device_id)
-    if not isinstance(evidence, dict):
+    if device_id:
+        evidence = connected_agents.get(device_id)
+        if not isinstance(evidence, dict):
+            return None
+        return {
+            **evidence,
+            "runtime_snapshot_id": row.id,
+            "runtime_collected_at": _iso(row.collected_at),
+            "runtime_expires_at": _iso(row.expires_at),
+        }
+    if not connected_agents:
+        return None
+    agents: list[dict[str, Any]] = []
+    for connected_device_id in sorted(connected_agents.keys())[: max(1, int(limit))]:
+        evidence = connected_agents.get(connected_device_id)
+        if not isinstance(evidence, dict):
+            continue
+        agent = {**evidence}
+        agent.setdefault("device_id", str(connected_device_id))
+        agents.append(agent)
+    if not agents:
         return None
     return {
-        **evidence,
+        "live_ws_state": "online",
+        "connected_count": len(connected_agents),
+        "returned": len(agents),
+        "agents": agents,
         "runtime_snapshot_id": row.id,
         "runtime_collected_at": _iso(row.collected_at),
         "runtime_expires_at": _iso(row.expires_at),
@@ -544,7 +583,7 @@ async def agent_presence_snapshot(
         )
     rows = (await session.execute(stmt)).scalars().all()
     runtime_row = await _latest_runtime_snapshot(session, process_kind="server")
-    live_ws_evidence = _runtime_ws_evidence(runtime_row, device_id)
+    live_ws_evidence = _runtime_ws_evidence(runtime_row, device_id, limit=capped_limit)
     devices: dict[str, dict[str, Any]] = {}
     if device_id:
         device = await session.get(Device, device_id)

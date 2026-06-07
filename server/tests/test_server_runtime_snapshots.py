@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, ServerRuntimeSnapshot
+from app.db.models import Device, DevicePresenceSnapshot, ServerRuntimeSnapshot
 from observer.debug_facade import agent_presence_snapshot, runtime_snapshot
 from observer.runtime_snapshot_writer import build_runtime_snapshot_payload, persist_runtime_snapshot
 
@@ -99,6 +100,57 @@ async def test_presence_snapshot_uses_fresh_runtime_ws_evidence_when_present(tes
     assert payload["live_ws_evidence"]["device_id"] == device_id
     assert payload["live_ws_evidence"]["agent_version"] == "3.1.61"
     assert payload["device_db_evidence"]["hostname"] == "live-device"
+
+
+@pytest.mark.asyncio
+async def test_presence_snapshot_without_device_id_reports_aggregate_live_ws_evidence(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async with session_maker() as session:
+        await session.execute(delete(DevicePresenceSnapshot))
+        session.add(
+            ServerRuntimeSnapshot(
+                process_kind="server",
+                instance_id="test-instance",
+                pid=12345,
+                git_revision="abc1234",
+                collected_at=now,
+                expires_at=now + timedelta(minutes=2),
+                status="ok",
+                snapshot={
+                    "connected_agents": {
+                        "device-live-1": {
+                            "device_id": "device-live-1",
+                            "live_ws_state": "online",
+                            "agent_version": "3.1.61",
+                            "connection_id": "conn-1",
+                        },
+                        "device-live-2": {
+                            "device_id": "device-live-2",
+                            "live_ws_state": "online",
+                            "agent_version": "3.1.62",
+                            "connection_id": "conn-2",
+                        },
+                    }
+                },
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        payload = await agent_presence_snapshot(session, limit=5)
+
+    assert payload["status"] == "ok"
+    assert payload["presence_snapshot_available"] is False
+    assert payload["confidence"] == "live_ws"
+    assert payload["live_ws_state"] == "online"
+    assert payload["live_ws_evidence"]["connected_count"] == 2
+    assert payload["live_ws_evidence"]["returned"] == 2
+    assert {agent["device_id"] for agent in payload["live_ws_evidence"]["agents"]} == {
+        "device-live-1",
+        "device-live-2",
+    }
 
 
 def test_build_runtime_snapshot_payload_excludes_raw_websocket_objects() -> None:

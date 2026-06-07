@@ -26,7 +26,7 @@ It exposes Observer, Tech locator, Context Index, DB health and persisted runtim
 - `observer_trace_detail`: returns trace, spans, span links and error occurrences.
 - `observer_ticket_summary`: returns compact ticket-scoped observer summary.
 - `observer_runtime_status`: returns a fresh persisted `server_runtime_snapshots` row written by the live aiohttp server; if no fresh row exists it returns a controlled partial.
-- `observer_presence_snapshot`: returns persisted `device_presence_snapshots`, DB `Device.last_seen_at` / `last_handshake_at` evidence, and live WS evidence from the latest fresh server runtime snapshot when available.
+- `observer_presence_snapshot`: returns persisted `device_presence_snapshots`, DB `Device.last_seen_at` / `last_handshake_at` evidence, and live WS evidence from the latest fresh server runtime snapshot when available. Without `device_id`, fresh runtime snapshots expose aggregate connected-agent WS evidence; with `device_id`, they expose that device's live WS evidence.
 - `helpdesk_mcp_manifest`: returns the server manifest.
 
 ## Admin UI
