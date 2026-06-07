@@ -226,14 +226,14 @@ Keep "Войти в агенте" only as a fallback:
 
 ### Stage 1 Acceptance Criteria
 
-- [ ] New device creates browser registration pairing, browser confirms, claim appears and agent sees confirmed binding after required approval.
-- [ ] Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
-- [ ] Already logged-in browser user confirms login without re-entering password.
+- [~] New device creates browser registration pairing, browser confirms, and claim appears. Agent transition to confirmed binding after admin approval remains covered by existing account-state/account-session flow, not by this browser-pairing smoke.
+- [x] Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
+- [x] Already logged-in browser user confirms login without re-entering password.
 - [x] Expired pairing is rejected at service lookup/pickup boundaries.
 - [x] Consumed pairing cannot be reused for token pickup.
 - [x] Browser cannot substitute a foreign `device_id` through the agent pairing create endpoint.
-- [ ] Browser confirmation cannot create a confirmed-binding session for a different user or an unbound device.
-- [ ] Device registered to another user does not receive a confirmed-binding session through browser login.
+- [x] Browser confirmation cannot create a confirmed-binding session for a different user or an unbound device.
+- [x] Device registered to another user does not receive a confirmed-binding session through browser login.
 - [ ] Logout or revoked binding invalidates the agent session and returns the agent to account gate.
 
 ## Stage 2: Authenticated Requester Workspace
@@ -678,10 +678,10 @@ Common checks:
 ## Execution Checkpoints
 
 - [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
-- [~] Stage 1 tests: RED coverage now covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, web route behavior, webapp confirm pages and agent polling. Remaining: live route behavior on Linux stand and manual pairing-code entry if promoted into this stage.
+- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, web route behavior, webapp confirm pages and agent polling. Linux stand smoke covered live API/DB behavior. Manual pairing-code entry is deferred.
 - [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
 - [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll and main-window polling/session save are implemented. `/app/device/pair` manual code entry is not in this slice.
-- [~] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests started. Remaining: full local verification, `verify_workspace.py`, live MCP browser checks, DB invariants on Linux stand and bug-fix loop for anything found.
+- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check and Linux DB/API invariants passed. Remote server was stopped after checks.
 - [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
 - [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
 - [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
@@ -713,13 +713,8 @@ Deferred:
 
 Immediate remaining work:
 
-1. Verify:
-   - local targeted pytest and webapp build/tests;
-   - `python scripts/verify_workspace.py`;
-   - deploy through project scripts;
-   - live MCP browser checks for canonical routes;
-   - DB query checks for pairing status, hashes, resulting session and absence of raw secrets;
-   - fix bugs found before commit/push.
+1. Push the verified Stage 1 commits to GitHub.
+2. Continue with Stage 2 requester workspace design and tests.
 
 Before code changes, read the nested instructions for the target area:
 
