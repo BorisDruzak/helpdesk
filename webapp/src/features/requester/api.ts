@@ -16,6 +16,7 @@ import type {
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
   RequesterTicketDetail,
+  RequesterTicketPreviewPayload,
   RequesterTicketCloseResult,
   RequesterTicketFeedbackPayload,
   RequesterTicketFeedbackResult,
@@ -154,6 +155,18 @@ export async function createRequesterTicket(
     body: JSON.stringify(payload),
   });
   return readSuccess<RequesterTicketCreateResult>(response, "Не удалось создать обращение");
+}
+
+export async function previewRequesterTicket(
+  payload: RequesterTicketPreviewPayload,
+): Promise<ServiceCatalogSafePreview> {
+  const response = await fetch("/api/web/requester/tickets/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readSuccess<ServiceCatalogSafePreview>(response, "Requester ticket preview failed");
 }
 
 export async function fetchRequesterTicket(ticketId: string): Promise<RequesterTicketDetail> {

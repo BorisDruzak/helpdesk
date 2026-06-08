@@ -132,6 +132,7 @@ from web_api.requester_handlers import (
     handle_web_requester_ticket_detail,
     handle_web_requester_ticket_feedback,
     handle_web_requester_ticket_message,
+    handle_web_requester_ticket_preview,
     handle_web_requester_ticket_reopen,
     handle_web_requester_tickets,
 )
@@ -1027,6 +1028,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/requester/devices', handle_web_requester_devices),
         web.get('/api/web/requester/tickets', handle_web_requester_tickets),
         web.post('/api/web/requester/tickets', handle_web_requester_ticket_create),
+        web.post('/api/web/requester/tickets/preview', handle_web_requester_ticket_preview),
         web.get('/api/web/requester/tickets/{ticket_id}', handle_web_requester_ticket_detail),
         web.post('/api/web/requester/tickets/{ticket_id}/message', handle_web_requester_ticket_message),
         web.post('/api/web/requester/tickets/{ticket_id}/close', handle_web_requester_ticket_close),

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
@@ -256,6 +256,122 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert custom_fields["request_form_data"] == {"summary": "No boot"}
     assert custom_fields["service_catalog"]["service_code"] == service_code
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
+
+
+@pytest.mark.asyncio
+async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    service_code = f"requester_preview_{suffix}"
+    template_code = f"requester_preview_laptop_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-preview@example.test"
+    async with session_maker() as session:
+        queue = TicketQueue(code=f"requester_preview_queue_{suffix}", name="Requester preview queue", is_active=True)
+        session.add_all([_device(device_id, "preview-owned-device"), queue])
+        await session.flush()
+        forms_repo = TicketFormPacksRepo(session)
+        await forms_repo.upsert_pack(
+            pack_key="request_forms",
+            version=f"test-{suffix}",
+            schema_json={
+                "pack_key": "request_forms",
+                "version": f"test-{suffix}",
+                "forms": [
+                    {
+                        "key": template_code,
+                        "request_template_key": template_code,
+                        "title": "Laptop preview incident",
+                        "request_kind": "incident",
+                        "ticket_type": "incident",
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            },
+            created_by="test",
+        )
+        await forms_repo.set_preferred(pack_key="request_forms", version=f"test-{suffix}", updated_by="test")
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Laptop preview incident",
+                ticket_type="incident",
+                config_json={"default_queue_id": queue.id, "no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        repo = ServiceCatalogRepo(session)
+        await repo.upsert_service_draft(
+            {
+                "code": service_code,
+                "public_title": "Requester preview workplace",
+                "short_description": "Requester preview support",
+                "visibility": "public",
+                "owner_queue_id": queue.id,
+                "default_queue_id": queue.id,
+                "business_criticality": "medium",
+                "reporting_category": "requester_preview_workplace",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        offering = await repo.upsert_offering_draft(
+            {
+                "service_code": service_code,
+                "code": "laptop_broken",
+                "public_title": "Laptop broken preview",
+                "short_description": "Laptop does not start",
+                "request_type": "incident",
+                "request_template_key": template_code,
+                "visibility": "public",
+                "reporting_category": "requester_preview_incidents",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        await repo.publish_service(service_code, actor_id="test", actor_role="admin")
+        await repo.publish_offering(offering["full_code"], actor_id="test", actor_role="admin")
+        await _approved_binding(session, device_id=device_id, login=login)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "service_code": service_code,
+            "offering_code": "laptop_broken",
+            "request_template_key": template_code,
+            "form_key": template_code,
+            "form_payload": {"summary": "No boot"},
+            "description": "No boot",
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["status"] == "success"
+    assert payload["data"]["ok"] is True
+    assert payload["data"]["service"]["code"] == service_code
+    assert payload["data"]["offering"]["full_code"] == f"{service_code}.laptop_broken"
+    assert payload["data"]["would_create_ticket"] is False
+
+    async with session_maker() as session:
+        ticket_count = await session.scalar(select(func.count()).select_from(Ticket))
+        event_count = await session.scalar(select(func.count()).select_from(TicketEvent))
+    assert ticket_count == 0
+    assert event_count == 0
+
+    agent_denied = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"service_code": service_code, "offering_code": "laptop_broken", "form_payload": {"summary": "No boot"}},
+    )
+    assert agent_denied.status == 403
 
 
 @pytest.mark.asyncio

@@ -243,6 +243,22 @@ describe("RequesterWorkspacePage", () => {
           ],
         });
       }
+      if (url === "/api/web/requester/tickets/preview") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ok: true,
+            service: { code: "workplace", title: "Workplace" },
+            offering: { code: "laptop_broken", full_code: "workplace.laptop_broken", title: "Laptop broken" },
+            request_type_label: "Incident",
+            approval: { required: false, text: "Approval is not required" },
+            diagnostics: { required: false, consent_required: false, text: "Diagnostics are not required" },
+            warnings: [],
+            blockers: [],
+            would_create_ticket: false,
+          },
+        });
+      }
       if (url === "/api/service-catalog/preview") {
         return jsonResponse({
           status: "ok",
@@ -278,6 +294,9 @@ describe("RequesterWorkspacePage", () => {
     });
     fireEvent.change(screen.getByLabelText("Описание"), {
       target: { value: "Ноутбук не загружается после включения" },
+    });
+    fireEvent.change(screen.getByLabelText("Requester form field summary"), {
+      target: { value: "Ноутбук не включается" },
     });
     fireEvent.click(screen.getByLabelText("Preview requester ticket"));
 

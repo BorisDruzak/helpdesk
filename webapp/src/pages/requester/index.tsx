@@ -9,7 +9,7 @@ import {
   fetchRequesterTicket,
   fetchRequesterTickets,
   fetchServiceCatalogCurrent,
-  previewServiceCatalogRequest,
+  previewRequesterTicket,
   reopenRequesterTicket,
   RequesterApiError,
   sendRequesterTicketMessage,
@@ -349,7 +349,8 @@ export function RequesterWorkspacePage() {
     setPreviewResult(null);
     try {
       const createPayload = buildCreatePayload();
-      const result = await previewServiceCatalogRequest({
+      const result = await previewRequesterTicket({
+        device_id: createPayload.device_id,
         service_code: createPayload.service_code,
         offering_code: createPayload.offering_code,
         offering_full_code: createPayload.offering_full_code,

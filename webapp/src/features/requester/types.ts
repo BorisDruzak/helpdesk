@@ -61,6 +61,7 @@ export type ServiceCatalogCurrent = {
 };
 
 export type ServiceCatalogPreviewPayload = {
+  device_id?: string;
   service_code?: string;
   offering_code?: string;
   offering_full_code?: string;
@@ -73,6 +74,10 @@ export type ServiceCatalogPreviewPayload = {
   device_metadata?: Record<string, unknown>;
   description?: string;
   diagnostic_consent?: Record<string, unknown>;
+};
+
+export type RequesterTicketPreviewPayload = ServiceCatalogPreviewPayload & {
+  device_id: string;
 };
 
 export type ServiceCatalogSafePreview = {

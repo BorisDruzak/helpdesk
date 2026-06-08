@@ -8,6 +8,7 @@ import {
   fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
+  previewRequesterTicket,
   reopenRequesterTicket,
   reopenPublicTicket,
   sendRequesterTicketMessage,
@@ -194,6 +195,53 @@ describe("requester public api", () => {
 });
 
 describe("authenticated requester api", () => {
+  it("previews an authenticated requester ticket through the requester boundary", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          ok: true,
+          service: { code: "workplace", title: "Workplace" },
+          offering: { code: "laptop_broken", full_code: "workplace.laptop_broken", title: "Laptop broken" },
+          warnings: [],
+          blockers: [],
+          would_create_ticket: false,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await previewRequesterTicket({
+      device_id: "device-1",
+      service_code: "workplace",
+      offering_code: "laptop_broken",
+      offering_full_code: "workplace.laptop_broken",
+      request_template_key: "breakage",
+      form_key: "breakage",
+      form_payload: { summary: "No boot" },
+      description: "Laptop does not boot",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/preview",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          device_id: "device-1",
+          service_code: "workplace",
+          offering_code: "laptop_broken",
+          offering_full_code: "workplace.laptop_broken",
+          request_template_key: "breakage",
+          form_key: "breakage",
+          form_payload: { summary: "No boot" },
+          description: "Laptop does not boot",
+        }),
+      }),
+    );
+  });
+
   it("creates an authenticated requester ticket with catalog form fields", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

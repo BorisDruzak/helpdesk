@@ -26,6 +26,7 @@ from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from tickets.request_template_submission import resolve_create_form_submission
+from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from tickets.statuses import enrich_chat_payload_with_requester_name
 from tickets.workflow_service import TicketWorkflowService
@@ -329,6 +330,58 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
             "linked_feedback_id": result.get("linked_feedback_id"),
         }
     )
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_preview(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    try:
+        data = await request.json()
+    except Exception:
+        return _error("Invalid JSON", status=400)
+    if not isinstance(data, dict):
+        return _error("JSON body must be an object", status=400)
+
+    device_id = _clean(data.get("device_id"), max_length=80)
+    if not device_id:
+        return _error("device_id is required", status=400)
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        try:
+            person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=device_id)
+        except PermissionError as exc:
+            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+
+        preview_payload = dict(data)
+        requester_context = preview_payload.get("requester_context") if isinstance(preview_payload.get("requester_context"), dict) else {}
+        requester_context = dict(requester_context)
+        requester_context.setdefault(
+            "requester_profile",
+            {
+                "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
+                "email": getattr(person, "email", None) or auth_context.actor_id,
+                "phone": getattr(person, "phone", None),
+            },
+        )
+        requester_context.setdefault(
+            "requester_account",
+            {
+                "account_mode": "confirmed_binding",
+                "person_id": person.person_id if person else None,
+                "binding_id": binding.binding_id,
+                "validation": "web_requester_identity_resolved",
+            },
+        )
+        preview_payload["requester_context"] = requester_context
+        try:
+            preview = await build_requester_service_catalog_preview(session, preview_payload)
+        except ServiceCatalogPreviewError as exc:
+            return _validation_error(exc.details)
+        except ValueError as exc:
+            return _validation_error({"preview": str(exc)})
+
+    return _success(preview)
 
 
 @require_auth("user")
