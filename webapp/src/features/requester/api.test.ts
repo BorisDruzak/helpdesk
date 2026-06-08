@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   authorizePublicTicket,
+  closeRequesterTicket,
   createPublicTicket,
   fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
+  reopenRequesterTicket,
   reopenPublicTicket,
   sendRequesterTicketMessage,
   sendPublicTicketMessage,
+  submitRequesterTicketFeedback,
   submitPublicTicketFeedback,
 } from "./api";
 
@@ -223,6 +226,69 @@ describe("authenticated requester api", () => {
         method: "POST",
         credentials: "same-origin",
         body: JSON.stringify({ text: "Authenticated follow-up" }),
+      }),
+    );
+  });
+
+  it("submits authenticated requester close, feedback, and reopen actions", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/web/requester/tickets/T-42/close") {
+        return jsonResponse({
+          status: "success",
+          data: { ticket: { ticket_id: "T-42", status: "closed" } },
+        });
+      }
+      if (url === "/api/web/requester/tickets/T-42/feedback") {
+        return jsonResponse({
+          status: "success",
+          data: { ok: true, feedback_id: "fb-42", reopen_available: true },
+        });
+      }
+      if (url === "/api/web/requester/tickets/T-42/reopen") {
+        return jsonResponse({
+          status: "success",
+          data: { ok: true, ticket_id: "T-42", ticket_status: "in_progress", reopen_id: "ro-42" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const closed = await closeRequesterTicket("T-42");
+    const feedback = await submitRequesterTicketFeedback("T-42", {
+      rating: 2,
+      problem_resolved: false,
+      reason_codes: ["not_resolved"],
+      comment: "Still broken",
+    });
+    const reopened = await reopenRequesterTicket("T-42", {
+      reason_code: "not_resolved",
+      reason_comment: "Still broken",
+      linked_feedback_id: feedback.feedback_id,
+    });
+
+    expect(closed.ticket.status).toBe("closed");
+    expect(feedback.reopen_available).toBe(true);
+    expect(reopened.ticket_status).toBe("in_progress");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/T-42/close",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/T-42/feedback",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          rating: 2,
+          problem_resolved: false,
+          reason_codes: ["not_resolved"],
+          comment: "Still broken",
+        }),
       }),
     );
   });

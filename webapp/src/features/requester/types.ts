@@ -300,6 +300,10 @@ export type RequesterTicketMessageResult = {
   event_id?: string | number | null;
 };
 
+export type RequesterTicketCloseResult = {
+  ticket: AuthenticatedRequesterTicket;
+};
+
 export type PublicTicketAuthorizeResult = {
   ticket_id: string;
   public_token: string;
@@ -331,6 +335,10 @@ export type PublicTicketFeedbackResult = {
   reopen_available: boolean;
 };
 
+export type RequesterTicketFeedbackPayload = PublicTicketFeedbackPayload;
+
+export type RequesterTicketFeedbackResult = PublicTicketFeedbackResult;
+
 export type PublicTicketReopenPayload = {
   reason_code: string;
   reason_comment?: string | null;
@@ -343,3 +351,7 @@ export type PublicTicketReopenResult = {
   ticket_status: string;
   reopen_id: string;
 };
+
+export type RequesterTicketReopenPayload = PublicTicketReopenPayload;
+
+export type RequesterTicketReopenResult = PublicTicketReopenResult;

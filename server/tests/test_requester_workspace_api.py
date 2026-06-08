@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Ticket, TicketEvent
+from app.db.models import Device, Ticket, TicketEvent, TicketFeedback, TicketReopenEvent
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
@@ -209,3 +209,148 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
     texts = [event.payload.get("text") for event in events if isinstance(event.payload, dict)]
     assert "Requester authenticated follow-up" in texts
     assert "Should not be accepted" not in texts
+
+
+@pytest.mark.asyncio
+async def test_requester_can_close_owned_resolved_ticket_only(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owned_device_id = str(uuid.uuid4())
+    foreign_device_id = str(uuid.uuid4())
+    owner_login = "requester-close-owner@example.test"
+    foreign_login = "requester-close-foreign@example.test"
+    async with session_maker() as session:
+        session.add_all([_device(owned_device_id, "close-owned-device"), _device(foreign_device_id, "close-foreign-device")])
+        approved = await _approved_binding(session, device_id=owned_device_id, login=owner_login)
+        await _approved_binding(session, device_id=foreign_device_id, login=foreign_login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=owned_device_id,
+            requester_id=owner_login,
+            title="Requester close ticket",
+            description="Can be closed by owner only",
+            user_display_name="Requester Close Owner",
+            requester_profile={"full_name": "Requester Close Owner", "email": owner_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.status = "resolved"
+        ticket.resolved_at = datetime.now(timezone.utc)
+        await session.commit()
+
+    foreign_denied = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/close",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
+        json={"reason": "requester_confirmed_resolution"},
+    )
+    assert foreign_denied.status == 404, await foreign_denied.text()
+
+    closed = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/close",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
+        json={"reason": "requester_confirmed_resolution"},
+    )
+    closed_payload = await closed.json()
+    assert closed.status == 200, closed_payload
+    assert closed_payload["data"]["ticket"]["status"] == "closed"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+    assert ticket.status == "closed"
+    assert ticket.closed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_requester_can_submit_feedback_and_reopen_owned_ticket_only(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owned_device_id = str(uuid.uuid4())
+    foreign_device_id = str(uuid.uuid4())
+    owner_login = "requester-quality-owner@example.test"
+    foreign_login = "requester-quality-foreign@example.test"
+    async with session_maker() as session:
+        session.add_all([_device(owned_device_id, "quality-owned-device"), _device(foreign_device_id, "quality-foreign-device")])
+        approved = await _approved_binding(session, device_id=owned_device_id, login=owner_login)
+        await _approved_binding(session, device_id=foreign_device_id, login=foreign_login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=owned_device_id,
+            requester_id=owner_login,
+            title="Requester quality ticket",
+            description="Can receive feedback and reopen",
+            user_display_name="Requester Quality Owner",
+            requester_profile={"full_name": "Requester Quality Owner", "email": owner_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.status = "resolved"
+        ticket.resolved_at = datetime.now(timezone.utc)
+        await session.commit()
+
+    foreign_feedback = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/feedback",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
+        json={"rating": 1, "problem_resolved": False, "reason_codes": ["not_resolved"]},
+    )
+    assert foreign_feedback.status == 404, await foreign_feedback.text()
+
+    feedback = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/feedback",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
+        json={
+            "rating": 2,
+            "problem_resolved": False,
+            "resolution_confirmed": False,
+            "reason_codes": ["not_resolved"],
+            "comment": "Still broken",
+        },
+    )
+    feedback_payload = await feedback.json()
+    assert feedback.status == 200, feedback_payload
+    assert feedback_payload["data"]["feedback_id"]
+    assert feedback_payload["data"]["reopen_available"] is True
+
+    foreign_reopen = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/reopen",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
+        json={"reason_code": "not_resolved", "linked_feedback_id": feedback_payload["data"]["feedback_id"]},
+    )
+    assert foreign_reopen.status == 404, await foreign_reopen.text()
+
+    reopened = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/reopen",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
+        json={
+            "reason_code": "not_resolved",
+            "reason_comment": "Still broken",
+            "linked_feedback_id": feedback_payload["data"]["feedback_id"],
+        },
+    )
+    reopened_payload = await reopened.json()
+    assert reopened.status == 200, reopened_payload
+    assert reopened_payload["data"]["ticket_status"] == "in_progress"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        feedback_rows = (
+            await session.execute(select(TicketFeedback).where(TicketFeedback.ticket_id == ticket_id))
+        ).scalars().all()
+        reopen_rows = (
+            await session.execute(select(TicketReopenEvent).where(TicketReopenEvent.ticket_id == ticket_id))
+        ).scalars().all()
+    assert ticket.status == "in_progress"
+    assert len(feedback_rows) == 1
+    assert len(reopen_rows) == 1
+    assert reopen_rows[0].linked_feedback_id == feedback_payload["data"]["feedback_id"]

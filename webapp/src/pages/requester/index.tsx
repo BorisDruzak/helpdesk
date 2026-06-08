@@ -1,13 +1,16 @@
-import { RefreshCw, Send } from "lucide-react";
+﻿import { CheckCircle2, RefreshCw, RotateCcw, Send, Star } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
+  closeRequesterTicket,
   createRequesterTicket,
   fetchRequesterBootstrap,
   fetchRequesterTicket,
   fetchRequesterTickets,
+  reopenRequesterTicket,
   RequesterApiError,
   sendRequesterTicketMessage,
+  submitRequesterTicketFeedback,
 } from "../../features/requester/api";
 import type {
   AuthenticatedRequesterTicket,
@@ -40,6 +43,16 @@ export function RequesterWorkspacePage() {
   const [messageText, setMessageText] = useState("");
   const [messageSending, setMessageSending] = useState(false);
   const [messageNotice, setMessageNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackProblemResolved, setFeedbackProblemResolved] = useState(true);
+  const [feedbackReason, setFeedbackReason] = useState("not_resolved");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackId, setFeedbackId] = useState<string | null>(null);
+  const [reopenReason, setReopenReason] = useState("not_resolved");
+  const [reopenComment, setReopenComment] = useState("");
+  const [reopenAvailable, setReopenAvailable] = useState(false);
 
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
@@ -49,6 +62,11 @@ export function RequesterWorkspacePage() {
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
     [devices, selectedDeviceId],
   );
+  const selectedTicket = selectedTicketDetail?.ticket ?? null;
+  const selectedTicketStatus = selectedTicket?.status ?? "";
+  const canCloseSelectedTicket = selectedTicketStatus === "resolved";
+  const canRateSelectedTicket = selectedTicketStatus === "resolved" || selectedTicketStatus === "closed";
+  const canReopenSelectedTicket = canRateSelectedTicket && (reopenAvailable || feedbackRating <= 3 || !feedbackProblemResolved);
 
   async function load() {
     setLoading(true);
@@ -64,6 +82,15 @@ export function RequesterWorkspacePage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function refreshSelectedTicket(ticketId: string) {
+    const [nextDetail, nextTickets] = await Promise.all([
+      fetchRequesterTicket(ticketId),
+      fetchRequesterTickets(),
+    ]);
+    setSelectedTicketDetail(nextDetail);
+    setTickets(nextTickets);
   }
 
   useEffect(() => {
@@ -105,6 +132,9 @@ export function RequesterWorkspacePage() {
     setSelectedTicketDetail(null);
     setDetailLoading(true);
     setMessageNotice(null);
+    setActionNotice(null);
+    setFeedbackId(null);
+    setReopenAvailable(false);
     setError(null);
     try {
       setSelectedTicketDetail(await fetchRequesterTicket(ticketId));
@@ -134,6 +164,76 @@ export function RequesterWorkspacePage() {
       setError(exc instanceof RequesterApiError ? exc.message : "Не удалось отправить сообщение");
     } finally {
       setMessageSending(false);
+    }
+  }
+
+  async function handleCloseSelectedTicket() {
+    const ticketId = selectedTicketId;
+    if (!ticketId) {
+      return;
+    }
+    setActionSubmitting(true);
+    setActionNotice(null);
+    setError(null);
+    try {
+      await closeRequesterTicket(ticketId);
+      await refreshSelectedTicket(ticketId);
+      setActionNotice("Решение подтверждено, обращение закрыто");
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось закрыть обращение");
+    } finally {
+      setActionSubmitting(false);
+    }
+  }
+
+  async function handleFeedbackSubmit() {
+    const ticketId = selectedTicketId;
+    if (!ticketId) {
+      return;
+    }
+    setActionSubmitting(true);
+    setActionNotice(null);
+    setError(null);
+    try {
+      const result = await submitRequesterTicketFeedback(ticketId, {
+        rating: feedbackRating,
+        problem_resolved: feedbackProblemResolved,
+        resolution_confirmed: feedbackProblemResolved,
+        reason_codes: feedbackRating <= 3 || !feedbackProblemResolved ? [feedbackReason] : [],
+        comment: feedbackComment.trim() || null,
+        source_surface: "requester_portal",
+      });
+      setFeedbackId(result.feedback_id);
+      setReopenAvailable(result.reopen_available);
+      await refreshSelectedTicket(ticketId);
+      setActionNotice(result.message || "Оценка сохранена");
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось сохранить оценку");
+    } finally {
+      setActionSubmitting(false);
+    }
+  }
+
+  async function handleReopenSelectedTicket() {
+    const ticketId = selectedTicketId;
+    if (!ticketId) {
+      return;
+    }
+    setActionSubmitting(true);
+    setActionNotice(null);
+    setError(null);
+    try {
+      await reopenRequesterTicket(ticketId, {
+        reason_code: reopenReason,
+        reason_comment: reopenComment.trim() || feedbackComment.trim() || null,
+        linked_feedback_id: feedbackId,
+      });
+      await refreshSelectedTicket(ticketId);
+      setActionNotice("Обращение вернулось в работу");
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось вернуть обращение в работу");
+    } finally {
+      setActionSubmitting(false);
     }
   }
 
@@ -240,6 +340,129 @@ export function RequesterWorkspacePage() {
                   <p className="text-sm text-slate-500">Сообщений пока нет.</p>
                 )}
               </div>
+
+              {selectedTicket ? (
+                <div className="mt-4 grid gap-3 rounded-panel border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Действия по обращению</p>
+                      <p className="text-xs text-slate-500">
+                        Статус: {selectedTicket.requester_status_label || selectedTicket.status_label || selectedTicket.status}
+                      </p>
+                    </div>
+                    {canCloseSelectedTicket ? (
+                      <button
+                        aria-label="Close requester ticket"
+                        className="inline-flex items-center justify-center gap-2 rounded-panel bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                        disabled={actionSubmitting}
+                        onClick={() => void handleCloseSelectedTicket()}
+                        type="button"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Подтвердить и закрыть
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {canRateSelectedTicket ? (
+                    <div className="grid gap-3 border-t border-slate-200 pt-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block text-sm font-semibold text-slate-700">
+                          Оценка
+                          <select
+                            aria-label="Requester feedback rating"
+                            className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                            onChange={(event) => setFeedbackRating(Number(event.target.value))}
+                            value={feedbackRating}
+                          >
+                            {[5, 4, 3, 2, 1].map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2 self-end text-sm font-semibold text-slate-700">
+                          <input
+                            aria-label="Requester problem resolved"
+                            checked={feedbackProblemResolved}
+                            onChange={(event) => {
+                              setFeedbackProblemResolved(event.target.checked);
+                              if (!event.target.checked) {
+                                setReopenAvailable(true);
+                              }
+                            }}
+                            type="checkbox"
+                          />
+                          Проблема решена
+                        </label>
+                      </div>
+                      {feedbackRating <= 3 || !feedbackProblemResolved ? (
+                        <label className="block text-sm font-semibold text-slate-700">
+                          Причина
+                          <select
+                            className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                            onChange={(event) => {
+                              setFeedbackReason(event.target.value);
+                              setReopenReason(event.target.value);
+                            }}
+                            value={feedbackReason}
+                          >
+                            <option value="not_resolved">Не решено</option>
+                            <option value="problem_returned">Проблема вернулась</option>
+                            <option value="slow_resolution">Долгое решение</option>
+                            <option value="poor_communication">Недостаточно коммуникации</option>
+                            <option value="other">Другое</option>
+                          </select>
+                        </label>
+                      ) : null}
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Комментарий
+                        <textarea
+                          className="mt-1 min-h-20 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                          onChange={(event) => setFeedbackComment(event.target.value)}
+                          value={feedbackComment}
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          aria-label="Submit requester feedback"
+                          className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                          disabled={actionSubmitting || (feedbackReason === "other" && !feedbackComment.trim())}
+                          onClick={() => void handleFeedbackSubmit()}
+                          type="button"
+                        >
+                          <Star className="h-4 w-4" />
+                          Отправить оценку
+                        </button>
+                        {canReopenSelectedTicket ? (
+                          <button
+                            aria-label="Reopen requester ticket"
+                            className="inline-flex items-center justify-center gap-2 rounded-panel border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:bg-slate-100"
+                            disabled={actionSubmitting || (reopenReason === "other" && !reopenComment.trim() && !feedbackComment.trim())}
+                            onClick={() => void handleReopenSelectedTicket()}
+                            type="button"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Вернуть в работу
+                          </button>
+                        ) : null}
+                      </div>
+                      {canReopenSelectedTicket ? (
+                        <label className="block text-sm font-semibold text-slate-700">
+                          Комментарий для повторного открытия
+                          <textarea
+                            className="mt-1 min-h-16 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                            onChange={(event) => setReopenComment(event.target.value)}
+                            value={reopenComment}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {actionNotice ? <p className="text-sm text-emerald-700">{actionNotice}</p> : null}
+                </div>
+              ) : null}
 
               <form className="mt-4 space-y-3" onSubmit={(event) => void handleMessageSubmit(event)}>
                 <label className="block text-sm font-semibold text-slate-700">

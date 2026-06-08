@@ -16,7 +16,12 @@ import type {
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
   RequesterTicketDetail,
+  RequesterTicketCloseResult,
+  RequesterTicketFeedbackPayload,
+  RequesterTicketFeedbackResult,
   RequesterTicketMessageResult,
+  RequesterTicketReopenPayload,
+  RequesterTicketReopenResult,
   AuthenticatedRequesterTicket,
 } from "./types";
 
@@ -170,6 +175,42 @@ export async function sendRequesterTicketMessage(
     body: JSON.stringify({ text }),
   });
   return readSuccess<RequesterTicketMessageResult>(response, "Не удалось отправить сообщение");
+}
+
+export async function closeRequesterTicket(ticketId: string): Promise<RequesterTicketCloseResult> {
+  const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}/close`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify({ reason: "requester_confirmed_resolution" }),
+  });
+  return readSuccess<RequesterTicketCloseResult>(response, "Requester ticket close failed");
+}
+
+export async function submitRequesterTicketFeedback(
+  ticketId: string,
+  payload: RequesterTicketFeedbackPayload,
+): Promise<RequesterTicketFeedbackResult> {
+  const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}/feedback`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readSuccess<RequesterTicketFeedbackResult>(response, "Requester feedback failed");
+}
+
+export async function reopenRequesterTicket(
+  ticketId: string,
+  payload: RequesterTicketReopenPayload,
+): Promise<RequesterTicketReopenResult> {
+  const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}/reopen`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readSuccess<RequesterTicketReopenResult>(response, "Requester ticket reopen failed");
 }
 
 export async function previewServiceCatalogRequest(

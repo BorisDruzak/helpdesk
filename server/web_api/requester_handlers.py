@@ -9,12 +9,16 @@ from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
+from quality.feedback_service import TicketFeedbackService
+from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver
 from tickets.handlers import (
     _event_visible_to_requester,
     _push_ticket_event,
+    _resolution_confirmation_pending,
     _serialize_event_for_requester,
     _serialize_message_for_requester,
+    _store_resolution_confirmation_state,
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 from tickets.statuses import enrich_chat_payload_with_requester_name
@@ -31,6 +35,14 @@ def _error(message: str, *, status: int = 400, error_code: str = "VALIDATION_ERR
 
 def _clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
+
+
+async def _json_body(request: web.Request) -> dict[str, Any]:
+    try:
+        data = await request.json()
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 @require_auth("user")
@@ -158,6 +170,137 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
     if status_result:
         await _push_ticket_event(request, ticket_id, status_result, "status_changed", status_payload or {})
     return _success({"message_id": message_id, "event_id": result[0] if result else None})
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_close(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
+    data = await _json_body(request)
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        if ticket is None:
+            return _error("ticket not found", status=404, error_code="NOT_FOUND")
+
+        repo = TicketEventsRepo(session)
+        if getattr(ticket, "status", None) == "closed":
+            return _success({"ticket": ticket_to_dict(ticket, visibility="requester")})
+        if getattr(ticket, "status", None) != "resolved":
+            return _error(
+                "ticket can be closed only from resolved",
+                status=400,
+                error_code="INVALID_TICKET_STATUS",
+            )
+
+        workflow = TicketWorkflowService(session, repo)
+        try:
+            transition = await workflow.apply_status_transition(
+                ticket_id=ticket.ticket_id,
+                from_status=ticket.status,
+                to_status="closed",
+                actor_id=auth_context.actor_id,
+                actor_role="requester",
+                reason=_clean(data.get("reason"), max_length=200) or "requester_confirmed_resolution",
+                source="requester_workspace",
+            )
+        except ValueError as exc:
+            return _error(str(exc), status=400, error_code="WORKFLOW_POLICY_ERROR")
+
+        ticket = await repo.get_ticket(ticket.ticket_id)
+        if ticket is not None and _resolution_confirmation_pending(ticket):
+            ticket = await _store_resolution_confirmation_state(
+                repo,
+                ticket,
+                pending=False,
+                responded_option_id="confirm",
+            )
+        await session.commit()
+
+    await _push_ticket_event(
+        request,
+        ticket_id,
+        transition.get("event_result"),
+        "status_changed",
+        transition.get("event_payload") or {},
+    )
+    return _success({"ticket": ticket_to_dict(ticket, visibility="requester")})
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
+    data = await _json_body(request)
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        if ticket is None:
+            return _error("ticket not found", status=404, error_code="NOT_FOUND")
+
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        metadata["web_actor_id"] = auth_context.actor_id
+        data["metadata"] = metadata
+        data["ticket_id"] = ticket.ticket_id
+        data["source_surface"] = "requester_portal"
+        data.pop("visibility", None)
+        try:
+            result = await TicketFeedbackService(session).submit_feedback(
+                data,
+                actor_id=str(getattr(ticket, "requester_id", None) or auth_context.actor_id),
+                actor_role="requester",
+            )
+        except ValueError as exc:
+            return _error(str(exc), status=400, error_code="QUALITY_FEEDBACK_ERROR")
+        await session.commit()
+
+    return _success(
+        {
+            "ok": True,
+            "feedback_id": result["feedback_id"],
+            "message": result.get("message"),
+            "reopen_available": bool(result.get("reopen_available")),
+        }
+    )
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
+    data = await _json_body(request)
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        if ticket is None:
+            return _error("ticket not found", status=404, error_code="NOT_FOUND")
+
+        try:
+            result = await TicketReopenService(session).reopen_ticket(
+                ticket.ticket_id,
+                reason_code=str(data.get("reason_code") or ""),
+                reason_comment=data.get("reason_comment"),
+                linked_feedback_id=data.get("linked_feedback_id"),
+                linked_knowledge_item_id=data.get("linked_knowledge_item_id"),
+                actor_id=str(getattr(ticket, "requester_id", None) or auth_context.actor_id),
+                actor_role="requester",
+            )
+        except ValueError as exc:
+            return _error(str(exc), status=400, error_code="QUALITY_REOPEN_ERROR")
+        await session.commit()
+
+    return _success(
+        {
+            "ok": True,
+            "ticket_id": result["ticket_id"],
+            "ticket_status": result["status"],
+            "reopen_id": result["reopen_id"],
+            "linked_feedback_id": result.get("linked_feedback_id"),
+        }
+    )
 
 
 @require_auth("user")
