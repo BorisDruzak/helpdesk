@@ -1,27 +1,30 @@
 import {
   ADMIN_HOME_PATH,
+  REQUESTER_HOME_PATH,
   SUPPORT_HOME_PATH,
   canAccessNavigationPath,
   isWorkspacePath,
 } from "../../app/navigation";
 import type { WebSession } from "./api";
 
-export type AppWorkspace = "support" | "admin";
+export type AppWorkspace = "support" | "admin" | "requester";
 
 type WorkspaceStorage = Pick<Storage, "getItem" | "setItem">;
 
 const WORKSPACE_PATHS: Record<AppWorkspace, string> = {
   support: SUPPORT_HOME_PATH,
-  admin: ADMIN_HOME_PATH
+  admin: ADMIN_HOME_PATH,
+  requester: REQUESTER_HOME_PATH
 };
 
 const WORKSPACE_HISTORY_KEYS: Record<AppWorkspace, string> = {
   support: "pc-client:last-support-path",
-  admin: "pc-client:last-admin-path"
+  admin: "pc-client:last-admin-path",
+  requester: "pc-client:last-requester-path"
 };
 
 function isWorkspace(value: string | null | undefined): value is AppWorkspace {
-  return value === "support" || value === "admin";
+  return value === "support" || value === "admin" || value === "requester";
 }
 
 function getBrowserStorage(): WorkspaceStorage | null {
@@ -75,6 +78,10 @@ export function resolveNextWorkspacePath(
     return canAccessNavigationPath(nextPath, session?.permissions ?? []) ? nextPath : ADMIN_HOME_PATH;
   }
 
+  if (nextPath && isWorkspacePath(nextPath, "requester") && hasWorkspaceAccess(session, "requester")) {
+    return canAccessNavigationPath(nextPath, session?.permissions ?? []) ? nextPath : REQUESTER_HOME_PATH;
+  }
+
   return resolveDefaultWorkspacePath(session);
 }
 
@@ -107,7 +114,13 @@ export function rememberWorkspacePath(
   session: WebSession | null,
   storage: WorkspaceStorage | null | undefined = getBrowserStorage()
 ): void {
-  const workspace = isWorkspacePath(path, "admin") ? "admin" : isWorkspacePath(path, "support") ? "support" : null;
+  const workspace = isWorkspacePath(path, "admin")
+    ? "admin"
+    : isWorkspacePath(path, "support")
+      ? "support"
+      : isWorkspacePath(path, "requester")
+        ? "requester"
+        : null;
   if (!workspace || !hasWorkspaceAccess(session, workspace)) {
     return;
   }

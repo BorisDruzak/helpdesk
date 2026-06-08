@@ -12,6 +12,10 @@ import type {
   ServiceCatalogSafePreview,
   ServiceCatalogCurrent,
   RequestFormPack,
+  RequesterBootstrap,
+  RequesterTicketCreatePayload,
+  RequesterTicketCreateResult,
+  AuthenticatedRequesterTicket,
 } from "./types";
 
 type OkResponse<T> = {
@@ -23,6 +27,12 @@ type ErrorResponse = {
   error?: string;
   message?: string;
   details?: unknown;
+  error_code?: string;
+};
+
+type SuccessResponse<T> = {
+  status: "success";
+  data: T;
 };
 
 export class RequesterApiError extends Error {
@@ -56,6 +66,19 @@ async function readOk<T>(response: Response, fallbackMessage: string): Promise<O
     );
   }
   return payload;
+}
+
+async function readSuccess<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await readJson<SuccessResponse<T> | ErrorResponse>(response);
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new RequesterApiError(
+      errorPayload?.message ?? errorPayload?.error ?? fallbackMessage,
+      response.status,
+      errorPayload?.details ?? errorPayload?.error_code,
+    );
+  }
+  return payload.data;
 }
 
 function publicHeaders(token?: string | null, json = false): HeadersInit {
@@ -92,6 +115,38 @@ export async function createPublicTicket(payload: PublicTicketCreatePayload): Pr
     body: JSON.stringify(payload),
   });
   return readOk<PublicTicketCreateResult>(response, "Не удалось создать заявку");
+}
+
+export async function fetchRequesterBootstrap(): Promise<RequesterBootstrap> {
+  const response = await fetch("/api/web/requester/bootstrap", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterBootstrap>(response, "Не удалось загрузить кабинет заявителя");
+}
+
+export async function fetchRequesterTickets(): Promise<AuthenticatedRequesterTicket[]> {
+  const response = await fetch("/api/web/requester/tickets", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const payload = await readSuccess<{ tickets: AuthenticatedRequesterTicket[] }>(
+    response,
+    "Не удалось загрузить обращения",
+  );
+  return payload.tickets ?? [];
+}
+
+export async function createRequesterTicket(
+  payload: RequesterTicketCreatePayload,
+): Promise<RequesterTicketCreateResult> {
+  const response = await fetch("/api/web/requester/tickets", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readSuccess<RequesterTicketCreateResult>(response, "Не удалось создать обращение");
 }
 
 export async function previewServiceCatalogRequest(

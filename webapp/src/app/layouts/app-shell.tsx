@@ -47,6 +47,7 @@ export function AppShell({ children }: AppShellProps) {
   const { logout, session } = useSession();
   const hasSupport = hasWorkspaceAccess(session, "support");
   const hasAdmin = hasWorkspaceAccess(session, "admin");
+  const hasRequester = hasWorkspaceAccess(session, "requester");
   const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
   const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname);
   const [formsSidebarCollapsed, setFormsSidebarCollapsed] = useState(readFormsSidebarCollapsed);
@@ -68,6 +69,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   const workspaceOptions = [
+    hasRequester ? { label: "Requester", value: "requester" } : null,
     hasSupport ? { label: "Поддержка", value: "support" } : null,
     hasAdmin ? { label: "Администрирование", value: "admin" } : null
   ].filter(Boolean) as Array<{ label: string; value: string }>;
@@ -106,6 +108,7 @@ export function AppShell({ children }: AppShellProps) {
         <AppSidebar
           collapsed={isFormsBuilderRoute ? formsSidebarCollapsed : false}
           hasAdminAccess={hasAdmin}
+          hasRequesterAccess={hasRequester}
           hasSupportAccess={hasSupport}
           onCollapsedChange={handleFormsSidebarCollapsedChange}
           permissions={session?.permissions ?? []}

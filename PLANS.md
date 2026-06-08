@@ -682,12 +682,12 @@ Common checks:
 - [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
 - [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll, main-window polling/session save and invalid-session return-to-gate behavior are implemented. `/app/device/pair` manual code entry is not in this slice.
 - [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke, invalid-session GUI regression and Linux DB/API invariants passed. Remote server was stopped after checks.
-- [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
-- [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
-- [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
-- [ ] Stage 2 frontend: implement `/app/requester` workspace and reuse safe public requester components where appropriate.
+- [x] Stage 2 design: requester resolver, requester permission catalog, `/api/web/requester/*` boundary and authenticated/public separation are confirmed for the first workspace slice.
+- [x] Stage 2 tests: resolver-owned visibility and owned/foreign device create coverage are added for the authenticated workspace slice. Shared-device privacy, attachment/comment/close/reopen/feedback and consent tests remain follow-up coverage.
+- [x] Stage 2 backend: implemented `/api/web/requester/bootstrap`, `/devices`, `/tickets`, `/tickets/{ticket_id}` and owned-device `POST /tickets`; server resolves person/bindings/sessions and does not trust arbitrary browser `device_id`.
+- [x] Stage 2 frontend: implemented `/app/requester` route, workspace navigation/access wiring and first authenticated requester page for profile summary, owned devices, recent tickets and owned-device ticket creation.
 - [ ] Stage 2 admin: connect UI users to registry persons through explicit admin workflow.
-- [ ] Stage 2 verification and docs.
+- [ ] Stage 2 verification and docs: local tests pass; live browser/GUI/DB checks are in progress.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
 - [ ] Stage 3 backend: implement `UserConsentRequest`, requester/agent APIs and operation transition integration.
@@ -696,7 +696,7 @@ Common checks:
 
 ## Handoff
 
-Continue in Execute mode for Stage 2. This `PLANS.md` is the current source of truth for the next long-running work item.
+Continue in Execute mode for Stage 2 live verification. This `PLANS.md` is the current source of truth for the next long-running work item.
 
 Done in this slice:
 
@@ -707,14 +707,23 @@ Done in this slice:
 - agent account-gate browser-first actions and polling;
 - agent account-state refresh clears revoked/invalid local account sessions and returns to account gate;
 - one-time account-session token remains agent-only.
+- authenticated requester workspace route `/app/requester`;
+- requester permission catalog and `user` default workspace access;
+- requester identity resolver over web login, person identities, active bindings and server account sessions;
+- requester-safe bootstrap/devices/tickets APIs under `/api/web/requester/*`;
+- requester ticket creation for server-verified owned devices;
+- local backend/frontend coverage for owned visibility and foreign-device denial.
 
 Deferred:
 
 - `/app/device/pair` manual code entry remains outside this verified Stage 1 slice unless live testing shows direct URL handoff is insufficient.
+- requester no-device creation/onboarding remains outside the current Stage 2 slice; first live scope requires an owned registered device.
+- requester comment, close, reopen, feedback, attachment and consent-center endpoints remain Stage 2/3 follow-up items.
+- explicit admin UI workflow for linking existing UI users to registry persons remains follow-up; current resolver uses existing person identities.
 
 Immediate remaining work:
 
-1. Continue with Stage 2 requester workspace design and tests.
+1. Finish live browser, agent GUI and DB verification for Stage 1 registration plus the Stage 2 requester workspace slice.
 
 Before code changes, read the nested instructions for the target area:
 

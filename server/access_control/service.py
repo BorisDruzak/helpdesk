@@ -76,6 +76,8 @@ def _workspaces_from_permissions(permissions: list[str]) -> list[str]:
         workspaces.append("admin")
     if "workspace.support.view" in permission_set:
         workspaces.append("support")
+    if "workspace.requester.view" in permission_set:
+        workspaces.append("requester")
     return workspaces
 
 

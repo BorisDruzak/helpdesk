@@ -4,6 +4,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   ADMIN_HOME_PATH,
+  REQUESTER_HOME_PATH,
   type AppNavItem,
   type AppWorkspaceId,
   canUseNavigationItemInContext,
@@ -19,6 +20,7 @@ import { cn } from "../../shared/ui/cn";
 type AppSidebarProps = {
   collapsed?: boolean;
   hasAdminAccess: boolean;
+  hasRequesterAccess?: boolean;
   hasSupportAccess: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
   permissions?: string[];
@@ -49,14 +51,19 @@ function writeOpenGroups(groupIds: string[]) {
 
 function resolveSidebarWorkspace({
   hasAdminAccess,
+  hasRequesterAccess = false,
   hasSupportAccess,
   pathname,
 }: {
   hasAdminAccess: boolean;
+  hasRequesterAccess: boolean;
   hasSupportAccess: boolean;
   pathname: string;
 }): AppWorkspaceId | null {
   const activeWorkspace = getActiveWorkspace(pathname);
+  if (activeWorkspace === "requester" && hasRequesterAccess) {
+    return "requester";
+  }
   if (activeWorkspace === "admin" && hasAdminAccess) {
     return "admin";
   }
@@ -68,6 +75,9 @@ function resolveSidebarWorkspace({
   }
   if (hasAdminAccess) {
     return "admin";
+  }
+  if (hasRequesterAccess) {
+    return "requester";
   }
   return null;
 }
@@ -253,6 +263,7 @@ function AdminSidebar({
 export function AppSidebar({
   collapsed = false,
   hasAdminAccess,
+  hasRequesterAccess = false,
   hasSupportAccess,
   onCollapsedChange,
   permissions = [],
@@ -262,12 +273,17 @@ export function AppSidebar({
   const currentPath = `${location.pathname}${location.search}${location.hash}`;
   const workspace = resolveSidebarWorkspace({
     hasAdminAccess,
+    hasRequesterAccess,
     hasSupportAccess,
     pathname: location.pathname,
   });
   const ToggleIcon = collapsed ? ChevronRight : ChevronLeft;
   const supportItems = useMemo(
     () => getVisibleNavigationItems("support", permissions, { includeWorkspaceHome: true }),
+    [permissions],
+  );
+  const requesterItems = useMemo(
+    () => getVisibleNavigationItems("requester", permissions, { includeWorkspaceHome: true }),
     [permissions],
   );
 
@@ -285,7 +301,7 @@ export function AppSidebar({
           collapsed ? "justify-center px-2" : "",
         )}
         title={collapsed ? "pc_client HelpDesk workspace" : undefined}
-        to={workspace === "admin" ? ADMIN_HOME_PATH : "/app/support"}
+        to={workspace === "admin" ? ADMIN_HOME_PATH : workspace === "requester" ? REQUESTER_HOME_PATH : "/app/support"}
       >
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-panel bg-white text-brand-700 shadow-soft">
           <span className={cn("text-base font-black", collapsed ? "tracking-normal" : "tracking-[0.18em]")}>PC</span>
@@ -293,7 +309,7 @@ export function AppSidebar({
         <div className={cn("min-w-0", collapsed ? "sr-only" : "")}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-100/70">pc_client</p>
           <p className="text-sm font-semibold leading-tight">
-            {workspace === "admin" ? "Admin workspace" : "Support workspace"}
+            {workspace === "admin" ? "Admin workspace" : workspace === "requester" ? "Requester workspace" : "Support workspace"}
           </p>
         </div>
       </Link>
@@ -301,6 +317,9 @@ export function AppSidebar({
       <div className="flex-1 overflow-y-auto pr-1">
         {workspace === "support" ? (
           <SupportSidebar collapsed={collapsed} currentPath={currentPath} items={supportItems} />
+        ) : null}
+        {workspace === "requester" ? (
+          <SupportSidebar collapsed={collapsed} currentPath={currentPath} items={requesterItems} />
         ) : null}
         {workspace === "admin" ? (
           <AdminSidebar collapsed={collapsed} currentPath={currentPath} permissions={permissions} />

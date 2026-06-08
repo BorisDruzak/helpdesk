@@ -18,6 +18,7 @@ import {
   Settings2,
   ShieldCheck,
   Ticket,
+  UserRound,
   Workflow,
 } from "lucide-react";
 
@@ -25,10 +26,12 @@ import { hasPermission } from "../features/auth/permissions";
 
 export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin";
+export const REQUESTER_HOME_PATH = "/app/requester";
 
-export type AppWorkspaceId = "support" | "admin";
+export type AppWorkspaceId = "support" | "admin" | "requester";
 export type AppDomainId =
   | "support-primary"
+  | "requester-primary"
   | "devices-agents"
   | "catalog-intake"
   | "knowledge"
@@ -68,6 +71,14 @@ export type VisibleNavigationDomain = AppNavigationDomain & {
 };
 
 export const appNavigationDomains: AppNavigationDomain[] = [
+  {
+    id: "requester-primary",
+    workspace: "requester",
+    label: "Requester",
+    description: "Authenticated requester cabinet",
+    icon: UserRound,
+    order: 5,
+  },
   {
     id: "support-primary",
     workspace: "support",
@@ -135,6 +146,19 @@ export const appNavigationDomains: AppNavigationDomain[] = [
 ];
 
 export const appNavigation: AppNavItem[] = [
+  {
+    label: "Мои обращения",
+    description: "Устройства, заявки и создание обращения",
+    icon: UserRound,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_HOME_PATH,
+    permission: "workspace.requester.view",
+    order: 10,
+    isPrimary: true,
+    isWorkspaceHome: true,
+  },
   {
     label: "Центр действий",
     description: "Что сделать дальше",
@@ -522,6 +546,10 @@ function pathMatchesPattern(pathname: string, pattern: string) {
 export function getActiveWorkspace(path: string): AppWorkspaceId | null {
   const pathname = normalizePath(path);
 
+  if (pathname === REQUESTER_HOME_PATH || pathname.startsWith("/app/requester/")) {
+    return "requester";
+  }
+
   if (pathname === SUPPORT_HOME_PATH || pathname.startsWith("/app/tickets") || pathname === "/app/reports" || pathname === "/app/knowledge" || pathname === "/app/settings") {
     return "support";
   }
@@ -630,7 +658,7 @@ export function canAccessNavigationPath(path: string, permissions: string[] = []
     return false;
   }
 
-  if (normalizePath(path) === ADMIN_HOME_PATH || normalizePath(path) === SUPPORT_HOME_PATH) {
+  if (normalizePath(path) === ADMIN_HOME_PATH || normalizePath(path) === SUPPORT_HOME_PATH || normalizePath(path) === REQUESTER_HOME_PATH) {
     return true;
   }
 

@@ -30,6 +30,7 @@ import {
   KnowledgeBasePage,
   ReportsPage,
   RequesterTicketPage,
+  RequesterWorkspacePage,
   DevicePairingPage,
   SettingsPage,
   SupportCommandCenterPage,
@@ -237,6 +238,22 @@ export const appRoutes: RouteObject[] = [
           {
             index: true,
             element: <WorkspaceIndexRedirect />
+          },
+          {
+            path: "requester",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterWorkspacePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/:section",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterWorkspacePage />
+              </WorkspaceAccessGate>
+            )
           },
           {
             path: "support",

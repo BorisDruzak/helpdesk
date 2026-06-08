@@ -217,6 +217,78 @@ export type PublicTicketCreateResult = {
   public_token_expires_at?: string | null;
 };
 
+export type RequesterDevice = {
+  device_id: string;
+  binding_id?: string | null;
+  relationship_type?: string | null;
+  binding_status?: string | null;
+  hostname?: string | null;
+  os?: string | null;
+  agent_version?: string | null;
+  last_seen_at?: string | null;
+  online?: boolean;
+  asset_id?: string | null;
+  asset_name?: string | null;
+};
+
+export type RequesterProfile = {
+  person_id: string;
+  display_name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  department_id?: string | null;
+  location_id?: string | null;
+  status?: string | null;
+};
+
+export type AuthenticatedRequesterTicket = PublicTicket & {
+  device_id?: string | null;
+  requester_person_id?: string | null;
+  requester_binding_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  priority_class?: string | null;
+  public_access_url?: string | null;
+};
+
+export type RequesterBootstrap = {
+  workspace: "requester";
+  profile?: RequesterProfile | null;
+  devices: RequesterDevice[];
+  active_bindings: Array<{
+    binding_id?: string | null;
+    device_id?: string | null;
+    relationship_type?: string | null;
+    status?: string | null;
+  }>;
+  pending_registration_claims: Array<Record<string, unknown>>;
+  open_ticket_count: number;
+  tickets_requiring_user_action_count: number;
+  pending_consent_count: number;
+  recent_tickets: AuthenticatedRequesterTicket[];
+  feature_flags?: Record<string, boolean>;
+  policies?: Record<string, unknown>;
+};
+
+export type RequesterTicketCreatePayload = {
+  device_id: string;
+  title: string;
+  description: string;
+  user_display_name?: string;
+  urgency?: boolean;
+  importance?: boolean;
+  urgency_reason?: string;
+  importance_reason?: string;
+};
+
+export type RequesterTicketCreateResult = {
+  ticket: AuthenticatedRequesterTicket;
+  ticket_id: string;
+  public_access_code?: string | null;
+  public_access_url?: string | null;
+};
+
 export type PublicTicketAuthorizeResult = {
   ticket_id: string;
   public_token: string;

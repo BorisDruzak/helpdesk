@@ -1,0 +1,1 @@
+"""Authenticated requester workspace services."""

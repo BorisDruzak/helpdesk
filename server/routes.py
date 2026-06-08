@@ -124,6 +124,13 @@ from web_api.change_handlers import (
     handle_web_changes_list,
 )
 from web_api.approval_handlers import handle_web_support_approvals
+from web_api.requester_handlers import (
+    handle_web_requester_bootstrap,
+    handle_web_requester_devices,
+    handle_web_requester_ticket_create,
+    handle_web_requester_ticket_detail,
+    handle_web_requester_tickets,
+)
 from tickets.form_pack_handlers import (
     handle_ticket_form_pack_current,
     handle_ticket_form_pack_detail,
@@ -1010,6 +1017,11 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/registry/browser-pairings/{pairing_id}', handle_web_registry_browser_pairing_get),
         web.post('/api/web/registry/browser-pairings/{pairing_id}/login/confirm', handle_web_registry_browser_pairing_login_confirm),
         web.post('/api/web/registry/browser-pairings/{pairing_id}/registration/confirm', handle_web_registry_browser_pairing_registration_confirm),
+        web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
+        web.get('/api/web/requester/devices', handle_web_requester_devices),
+        web.get('/api/web/requester/tickets', handle_web_requester_tickets),
+        web.post('/api/web/requester/tickets', handle_web_requester_ticket_create),
+        web.get('/api/web/requester/tickets/{ticket_id}', handle_web_requester_ticket_detail),
         web.get('/api/web/admin/registry/account-login-requests', handle_web_admin_registry_account_login_requests),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/approve', handle_web_admin_registry_account_login_request_approve),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/reject', handle_web_admin_registry_account_login_request_reject),

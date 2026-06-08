@@ -39,6 +39,90 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         "Рабочие области",
     ),
     PermissionDefinition(
+        "workspace.requester.view",
+        "Requester workspace",
+        "Authenticated requester workspace /app/requester.",
+        "workspaces",
+        "Workspaces",
+    ),
+    PermissionDefinition(
+        "requester.ticket.view",
+        "View own requester tickets",
+        "Read requester-safe tickets owned by the authenticated web user.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.create",
+        "Create requester tickets",
+        "Create tickets for devices owned by the authenticated web user.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.comment",
+        "Comment on own requester tickets",
+        "Send requester-visible messages on owned tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.close",
+        "Close own requester tickets",
+        "Confirm closure for owned requester tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.reopen",
+        "Reopen own requester tickets",
+        "Request reopen for owned requester tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.feedback",
+        "Leave requester feedback",
+        "Submit requester feedback for owned tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.attachment.upload",
+        "Upload requester attachments",
+        "Upload attachments for owned requester tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.ticket.attachment.download",
+        "Download requester attachments",
+        "Download requester-visible attachments for owned tickets.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.device.view",
+        "View own devices",
+        "Read devices actively bound to the authenticated requester identity.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.profile.view",
+        "View requester profile",
+        "Read the registry person profile resolved for the authenticated web user.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
+        "requester.consent.decide",
+        "Decide requester consent",
+        "Approve or deny requester-owned consent prompts.",
+        "requester",
+        "Requester workspace",
+    ),
+    PermissionDefinition(
         "admin.access.view",
         "Открывать Access Control",
         "Просмотр панели пользователей, ролей, прав и effective access.",
@@ -364,7 +448,24 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "control.server.view",
         }
     ),
-    "user": frozenset({"ticket.detail.view", "ticket.comment.public"}),
+    "user": frozenset(
+        {
+            "workspace.requester.view",
+            "requester.ticket.view",
+            "requester.ticket.create",
+            "requester.ticket.comment",
+            "requester.ticket.close",
+            "requester.ticket.reopen",
+            "requester.ticket.feedback",
+            "requester.ticket.attachment.upload",
+            "requester.ticket.attachment.download",
+            "requester.device.view",
+            "requester.profile.view",
+            "requester.consent.decide",
+            "ticket.detail.view",
+            "ticket.comment.public",
+        }
+    ),
     "agent": frozenset(),
     "system": frozenset(),
 }
@@ -399,6 +500,8 @@ def get_available_workspaces(actor_role: str | None) -> list[str]:
         workspaces.append("admin")
     if "workspace.support.view" in permissions:
         workspaces.append("support")
+    if "workspace.requester.view" in permissions:
+        workspaces.append("requester")
     return workspaces
 
 
