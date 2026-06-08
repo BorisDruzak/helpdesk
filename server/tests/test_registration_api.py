@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 from unittest.mock import patch
 
@@ -9,7 +9,8 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceRegistrationClaim
+from app.db.models import Device, DeviceBrowserPairing, DeviceRegistrationClaim
+from auth.rate_limit import reset_rate_limits
 from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
@@ -83,6 +84,95 @@ async def test_agent_browser_pairing_rejects_different_device_id(test_client, te
     assert payload["data"]["purpose"] == "login"
     assert payload["data"]["pairing_token"]
     assert payload["data"]["pairing_code"]
+
+
+@pytest.mark.asyncio
+async def test_web_user_lookup_browser_pairing_code_returns_minimal_redirect_payload(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        pairing = await BrowserPairingService(session).create_pairing(
+            device_id=device_id,
+            purpose="registration",
+            actor_id=device_id,
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/registry/browser-pairings/lookup",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}manual-code@example.test"),
+        json={"pairing_code": pairing["pairing_code"]},
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    data = payload["data"]
+    assert data == {
+        "pairing_id": pairing["pairing_id"],
+        "purpose": "registration",
+        "expires_at": pairing["expires_at"],
+        "next_url": f"/app/device/register?pairing_id={pairing['pairing_id']}",
+    }
+    assert "device_id" not in data
+    assert "device" not in data
+    assert "pairing_token" not in data
+    assert "pairing_code" not in data
+
+
+@pytest.mark.asyncio
+async def test_web_user_lookup_browser_pairing_code_rejects_inactive_pairings(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    expired_device_id = str(uuid.uuid4())
+    consumed_device_id = str(uuid.uuid4())
+    superseded_device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add_all([
+            _device(expired_device_id),
+            _device(consumed_device_id),
+            _device(superseded_device_id),
+        ])
+        service = BrowserPairingService(session)
+        expired = await service.create_pairing(device_id=expired_device_id, purpose="login", actor_id=expired_device_id)
+        expired_row = await session.get(DeviceBrowserPairing, expired["pairing_id"])
+        expired_row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        consumed = await service.create_pairing(device_id=consumed_device_id, purpose="login", actor_id=consumed_device_id)
+        consumed_row = await session.get(DeviceBrowserPairing, consumed["pairing_id"])
+        consumed_row.status = "consumed"
+        consumed_row.completed_at = datetime.now(timezone.utc)
+        superseded = await service.create_pairing(device_id=superseded_device_id, purpose="login", actor_id=superseded_device_id)
+        await service.create_pairing(device_id=superseded_device_id, purpose="login", actor_id=superseded_device_id)
+        await session.commit()
+
+    for code in [expired["pairing_code"], consumed["pairing_code"], superseded["pairing_code"]]:
+        response = await test_client.post(
+            "/api/web/registry/browser-pairings/lookup",
+            headers=_headers(f"{TEST_UI_USER_PREFIX}inactive-code@example.test"),
+            json={"pairing_code": code},
+        )
+        payload = await response.json()
+
+        assert response.status == 404, payload
+        assert payload["error_code"] == "PAIRING_CODE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_web_user_lookup_browser_pairing_code_rate_limits_invalid_attempts(test_client):
+    reset_rate_limits()
+    try:
+        statuses = []
+        for index in range(6):
+            response = await test_client.post(
+                "/api/web/registry/browser-pairings/lookup",
+                headers=_headers(f"{TEST_UI_USER_PREFIX}rate-limited-code@example.test"),
+                json={"pairing_code": f"BAD-{index}"},
+            )
+            statuses.append(response.status)
+
+        assert statuses[:5] == [404, 404, 404, 404, 404]
+        assert statuses[5] == 429
+    finally:
+        reset_rate_limits()
 
 
 @pytest.mark.asyncio

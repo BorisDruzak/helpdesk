@@ -127,6 +127,14 @@ describe("navigation helpers", () => {
 
   it("keeps protected device pairing next paths after login", () => {
     expect(
+      resolveNextWorkspacePath("/app/device/pair", {
+        ...fullSession,
+        default_workspace: "requester",
+        available_workspaces: ["requester"],
+        permissions: ["workspace.requester.view"],
+      }),
+    ).toBe("/app/device/pair");
+    expect(
       resolveNextWorkspacePath("/app/device/register?pairing_id=pair-1", {
         ...fullSession,
         default_workspace: "requester",

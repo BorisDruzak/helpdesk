@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.db import get_session
 from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity
 from auth.middleware import require_auth
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
@@ -43,6 +44,11 @@ async def _device_exists(session, device_id: str) -> bool:
 
 def _forbidden(message: str = "forbidden") -> web.Response:
     return web.json_response({"status": "error", "error": message, "error_code": "FORBIDDEN"}, status=403)
+
+
+def _browser_pairing_next_url(payload: dict) -> str:
+    route_purpose = "register" if payload.get("purpose") == "registration" else "login"
+    return f"/app/device/{route_purpose}?pairing_id={payload['pairing_id']}"
 
 
 async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy: bool = False) -> str | web.Response:
@@ -226,6 +232,45 @@ async def _browser_pairing_payload_with_device(session, service: BrowserPairingS
         "agent_version": getattr(device, "agent_version", None),
     }
     return payload
+
+
+@require_auth("user")
+async def handle_web_registry_browser_pairing_code_lookup(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    rate_key = f"{client_ip(request)}:{auth_context.actor_id}"
+    if not check_rate_limit("browser_pairing_code_lookup", rate_key, limit=5, window_seconds=60):
+        return rate_limited_response()
+    try:
+        data = await request.json() if request.can_read_body else {}
+    except Exception:
+        data = {}
+    pairing_code = str(data.get("pairing_code") or data.get("code") or "").strip()
+    if not pairing_code:
+        return web.json_response(
+            {"status": "error", "error": "pairing_code is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    async with get_session() as session:
+        service = BrowserPairingService(session)
+        payload = await service.lookup_by_pairing_code(pairing_code)
+        await session.commit()
+    if payload is None:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "pairing code not found or expired",
+                "error_code": "PAIRING_CODE_NOT_FOUND",
+            },
+            status=404,
+        )
+    return _success(
+        {
+            "pairing_id": payload["pairing_id"],
+            "purpose": payload["purpose"],
+            "expires_at": payload.get("expires_at"),
+            "next_url": _browser_pairing_next_url(payload),
+        }
+    )
 
 
 @require_auth("user")

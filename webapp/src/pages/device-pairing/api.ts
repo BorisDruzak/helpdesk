@@ -19,6 +19,13 @@ export type DevicePairingPayload = {
   } | null;
 };
 
+export type DevicePairingCodeLookupPayload = {
+  pairing_id: string;
+  purpose: DevicePairingPurpose;
+  expires_at?: string | null;
+  next_url: string;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -69,6 +76,18 @@ export async function fetchDevicePairing(pairingId: string): Promise<DevicePairi
     cache: "no-store",
   });
   return readSuccess<DevicePairingPayload>(response, "Не удалось загрузить привязку устройства");
+}
+
+export async function lookupDevicePairingCode(pairingCode: string): Promise<DevicePairingCodeLookupPayload> {
+  const response = await fetch("/api/web/registry/browser-pairings/lookup", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ pairing_code: pairingCode.trim() }),
+  });
+  return readSuccess<DevicePairingCodeLookupPayload>(response, "Код подключения не найден или истек");
 }
 
 export async function confirmDevicePairing(

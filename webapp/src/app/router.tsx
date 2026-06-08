@@ -31,6 +31,7 @@ import {
   ReportsPage,
   RequesterTicketPage,
   RequesterWorkspacePage,
+  DevicePairCodePage,
   DevicePairingPage,
   SettingsPage,
   SupportCommandCenterPage,
@@ -214,6 +215,14 @@ export const appRoutes: RouteObject[] = [
           <PublicPage>
             <RequesterTicketPage />
           </PublicPage>
+        )
+      },
+      {
+        path: "device/pair",
+        element: (
+          <ProtectedDevicePage>
+            <DevicePairCodePage />
+          </ProtectedDevicePage>
         )
       },
       {

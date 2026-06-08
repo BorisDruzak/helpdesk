@@ -46,7 +46,7 @@ function normalizePath(path: string) {
 
 function isAuthenticatedAppPath(path: string) {
   const pathname = normalizePath(path);
-  return pathname === "/app/device/register" || pathname === "/app/device/login";
+  return pathname === "/app/device/pair" || pathname === "/app/device/register" || pathname === "/app/device/login";
 }
 
 export function getWorkspacePath(workspace: AppWorkspace): string {

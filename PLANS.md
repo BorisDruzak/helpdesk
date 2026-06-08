@@ -2,7 +2,7 @@
 
 Status:
 
-- Stage 1: complete for primary browser-link flow; `/app/device/pair` manual code entry is deferred.
+- Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: full requester workspace remains in progress.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
@@ -17,10 +17,6 @@ Latest live verification, 2026-06-08:
 - DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
 
 ## Remaining Work
-
-Stage 1 follow-up:
-
-- `/app/device/pair` manual pairing-code entry.
 
 Stage 2B follow-up:
 
@@ -81,6 +77,9 @@ Completed Stage 1 backend foundation:
 - Agent endpoints exist:
   - `POST /api/registry/agent/browser-pairings`
   - `GET /api/registry/agent/browser-pairings/{pairing_id}`
+- Web-authenticated manual-code lookup exists:
+  - `POST /api/web/registry/browser-pairings/lookup`
+  - returns only `pairing_id`, `purpose`, `expires_at` and `next_url`; it does not return `device_id`, device facts, pairing token or raw pairing code.
 - Login pairing pickup creates a `confirmed_binding` account session and returns the plaintext `session_token` to the agent exactly once.
 - Existing coverage includes pairing secret hashing, supersede, expiry lookup, one-time pickup and wrong-device API rejection.
 
@@ -127,7 +126,7 @@ Classification: cross-cutting. The implementation will likely add routes, DTOs, 
 - Agent machine token is transport/device identity only and must not be treated as requester identity.
 - Agent-side user consent decisions require a valid requester account session or an explicitly audited local-user confirmation mechanism.
 - Pairing secrets must be one-time, short-lived, stored hashed/protected and never logged.
-- Browser-visible changes require screenshots or browser-run evidence from the relevant canonical route: `/app/requester`, `/app/device/register`, `/app/device/login`, or the changed admin/support route.
+- Browser-visible changes require screenshots or browser-run evidence from the relevant canonical route: `/app/requester`, `/app/device/pair`, `/app/device/register`, `/app/device/login`, or the changed admin/support route.
 
 ## Architecture Decisions
 
@@ -201,7 +200,7 @@ Server returns:
 
 Browser opens `/app/device/register?pairing_id=...`.
 
-Future fallback: if the agent cannot open the system browser automatically, `/app/device/pair` can be added later as a manual code-entry page for `pairing_code`. That page must resolve only pending pairings after web login, expiry checks and rate-limit checks.
+Fallback: if the agent cannot open the system browser automatically, the user can open `/app/device/pair`, sign in, enter the displayed `pairing_code`, and be redirected to `/app/device/login?pairing_id=...` or `/app/device/register?pairing_id=...`. The lookup resolves only pending pairings after web login, expiry checks and rate-limit checks.
 
 If the web user is not logged in, redirect to `/app/login?next=...`.
 
@@ -682,7 +681,7 @@ Stage 1:
 - [x] wrong-device substitution tests;
 - [x] pairing secret hashing/protected-storage tests;
 - [x] active pairing supersede/cancel tests;
-- [ ] manual pairing-code entry smoke;
+- [x] manual pairing-code entry smoke;
 - [x] account-state confirmed-binding transition and session tests.
 
 Stage 2:
@@ -722,9 +721,9 @@ Common checks:
 ## Execution Checkpoints
 
 - [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
-- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages and agent polling. Linux stand smoke covered live API/DB behavior. Manual pairing-code entry is deferred.
-- [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
-- [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll, main-window polling/session save and invalid-session return-to-gate behavior are implemented. `/app/device/pair` manual code entry is not in this slice.
+- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages, manual pairing-code lookup/rate-limit/inactive rejection and agent polling. Linux stand smoke covered live API/DB behavior.
+- [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated manual code lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
+- [x] Stage 1 frontend/agent: `/app/device/pair`, `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll, main-window polling/session save and invalid-session return-to-gate behavior are implemented.
 - [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke, invalid-session GUI regression and Linux DB/API invariants passed. Remote server was stopped after checks.
 - [x] Stage 2 design: requester resolver, requester permission catalog, `/api/web/requester/*` boundary and authenticated/public separation are confirmed for the first workspace slice.
 - [x] Stage 2 tests: resolver-owned visibility and owned/foreign device create coverage are added for the authenticated workspace slice. Shared-device privacy, attachment/comment/close/reopen/feedback and consent tests remain follow-up coverage.
@@ -741,7 +740,7 @@ Common checks:
 
 ## Handoff
 
-Continue with Slice 2: Stage 1 manual pairing-code flow, unless the user explicitly chooses a Stage 2B requester-workspace slice first. Stage 2A live verification is complete; do not repeat it as the next handoff item unless a regression needs to be checked.
+Continue with a Stage 2B requester-workspace slice unless the user explicitly asks for Stage 3 consent work first. Stage 1 and Stage 2A live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -749,6 +748,7 @@ Done in this slice:
 - confirmed-binding login requires active binding for the logged-in web user;
 - registration pairing creates/updates a registration claim for the pairing device;
 - `/app/device/login` and `/app/device/register` pages;
+- `/app/device/pair` manual pairing-code page with safe web-authenticated lookup and redirect to confirmation;
 - agent account-gate browser-first actions and polling;
 - agent account-state refresh clears revoked/invalid local account sessions and returns to account gate;
 - one-time account-session token remains agent-only.
@@ -761,14 +761,13 @@ Done in this slice:
 
 Deferred / next:
 
-- Stage 1 follow-up: `/app/device/pair` manual code entry.
 - Stage 2B follow-up: requester no-device creation/onboarding, ticket detail, message/chat, close/reopen/feedback, preview/catalog/forms, attachments, device/profile pages, public ticket claim and shared-device privacy coverage.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Implement Stage 1 manual pairing-code flow: `/app/device/pair`, pairing-code lookup endpoint, rate limit, tests and browser smoke.
+1. Start Stage 2B requester lifecycle: ticket detail, message/chat, close/reopen/feedback, preview/catalog/forms or no-device creation.
 
 Before code changes, read the nested instructions for the target area:
 
