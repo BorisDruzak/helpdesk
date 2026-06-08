@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and local-verified, live verification pending.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -16,6 +16,8 @@ Latest live verification, 2026-06-08:
 - Login pairing `/app/device/login` was rechecked after the redirect/pairing UI fixes: `next` returned to the pairing page and device facts stayed visible after confirmation.
 - DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
 - Authenticated requester lifecycle check used isolated requester `requester-lifecycle-20260608-144009@example.test` and ticket `T-000649`: Browser MCP verified owned ticket detail controls, close changed the UI status to `Закрыта`, negative CSAT saved feedback, reopen changed the UI status to `Заявка в работе`, console errors were 0, and DB verification showed status transitions `queued -> closed -> in_progress`, one latest requester feedback row rating 2, one reopen event linked to that feedback, and requester person/binding set. The temporary live user was deactivated after verification.
+
+- Authenticated requester catalog/form create check used isolated requester `requester-catalog-20260608113032@example.test`, owned device `catalog-live-113032` and ticket `e9741d40-73da-4176-8466-3fa3e00325c8`: Browser MCP verified `/app/requester` service catalog selection, dynamic required form fields, safe preview summary, unlocked create button, accepted ticket in the requester list, and 0 console errors. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, has `service_code=workplace`, `offering_code=workplace.laptop_broken`, `request_form_key=breakage`, form data keys persisted, catalog ids present, requester status `accepted`, and 6 ticket events. The temporary live user was deactivated and its binding revoked after verification.
 
 ## Remaining Work
 
@@ -732,6 +734,7 @@ Common checks:
 - [x] Stage 2B lifecycle slice 1: authenticated requester ticket detail and message/chat are implemented through `/api/web/requester/tickets/{ticket_id}` and `/message`, with requester-safe messages/events and owned-ticket checks.
 - [x] Stage 2B lifecycle slice 2: authenticated requester close/reopen/feedback are implemented through `/api/web/requester/tickets/{ticket_id}/close|feedback|reopen`, with owned-ticket checks before workflow/quality services and requester workspace controls.
 - [x] Stage 2B create slice 3: authenticated requester owned-device create now reuses published Service Catalog selection, `request_forms` dynamic form validation, safe `POST /api/service-catalog/preview`, request-template custom fields, priority-policy computation and explicit ticket catalog/reporting fields before `create_ticket_with_side_effects()`.
+- [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create.
 - [ ] Stage 2B lifecycle follow-up: attachments, dedicated requester preview wrapper, knowledge suggestions, no-device creation and public ticket claim remain follow-up work.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
