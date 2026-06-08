@@ -243,6 +243,28 @@ describe("RequesterWorkspacePage", () => {
           ],
         });
       }
+      if (url === "/api/knowledge/suggest") {
+        return jsonResponse({
+          status: "ok",
+          suggestions: [
+            {
+              item_id: "kb-requester-1",
+              version_id: "kb-version-1",
+              slug: "laptop-power-check",
+              type: "article",
+              title: "Проверьте питание ноутбука",
+              summary: "Перед созданием обращения проверьте блок питания и индикатор зарядки.",
+              snippet: "Отключите зарядку на 10 секунд и подключите снова.",
+              quality_label: "Проверено",
+              freshness_label: "Свежее",
+            },
+          ],
+          rollout: { enabled: true, show_before_form: true, show_quality_badge: true, show_review_freshness: true },
+        });
+      }
+      if (url === "/api/knowledge/feedback") {
+        return jsonResponse({ status: "ok" });
+      }
       if (url === "/api/web/requester/tickets/preview") {
         return jsonResponse({
           status: "success",
@@ -289,6 +311,10 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     await screen.findByLabelText("Requester offering");
+    await screen.findByText("Проверьте питание ноутбука");
+    fireEvent.click(screen.getByLabelText("Open requester knowledge suggestion"));
+    await screen.findByText("Отключите зарядку на 10 секунд и подключите снова.");
+    fireEvent.click(screen.getByLabelText("Mark requester knowledge suggestion not helpful"));
     fireEvent.change(screen.getByLabelText("Requester form field summary"), {
       target: { value: "Ноутбук не включается" },
     });
@@ -327,6 +353,20 @@ describe("RequesterWorkspacePage", () => {
       form_pack_version: "2026.06",
       form_payload: { summary: "Ноутбук не включается" },
       ticket_type: "incident",
+      knowledge_attempts: expect.arrayContaining([
+        expect.objectContaining({
+          item_id: "kb-requester-1",
+          version_id: "kb-version-1",
+          result: "viewed",
+          surface: "requester_portal",
+        }),
+        expect.objectContaining({
+          item_id: "kb-requester-1",
+          version_id: "kb-version-1",
+          result: "not_helpful",
+          surface: "requester_portal",
+        }),
+      ]),
     });
   });
 });

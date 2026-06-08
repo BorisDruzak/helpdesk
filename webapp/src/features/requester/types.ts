@@ -295,6 +295,7 @@ export type RequesterTicketCreatePayload = {
   offering_full_code?: string;
   request_template_key?: string;
   diagnostic_consent?: Record<string, unknown>;
+  knowledge_attempts?: KnowledgeAttempt[];
 };
 
 export type RequesterTicketCreateResult = {

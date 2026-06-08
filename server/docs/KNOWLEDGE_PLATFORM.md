@@ -68,7 +68,7 @@ Content-pack baseline bindings must use the same canonical Service Catalog defau
 
 ## Helpdesk Deflection
 
-The requester portal `/app/help` now inserts a knowledge step after service/offering selection. It calls `POST /api/knowledge/suggest`, shows safe suggestions, records helpful/not helpful/deflected feedback through `POST /api/knowledge/feedback`, and includes safe `knowledge_attempts` in ticket creation when the user continues after a failed article.
+The requester portal `/app/help` and authenticated requester workspace `/app/requester` insert a knowledge step after service/offering selection. They call `POST /api/knowledge/suggest`, show safe suggestions, record helpful/not helpful/deflected feedback through `POST /api/knowledge/feedback`, and include safe `knowledge_attempts` in ticket creation when the user continues after a viewed or failed article. Authenticated requester tickets store those attempts through the `/api/web/requester/tickets` ownership boundary and also write `ticket_created_after_view` feedback metrics.
 
 The local Qt agent wizard uses the same safe suggestion and feedback APIs through `TicketApiClient.get_knowledge_suggestions()` and `record_knowledge_feedback()`. It continues ticket creation if the knowledge API is unavailable. Protocol V3 is unchanged.
 

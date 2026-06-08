@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
+from app.db.models import Device, KnowledgeFeedbackEvent, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from registry.registration_service import RegistrationService
@@ -234,6 +234,15 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
             "form_key": template_code,
             "form_payload": {"summary": "No boot"},
             "ticket_type": "incident",
+            "knowledge_attempts": [
+                {
+                    "item_id": "kb-requester-1",
+                    "version_id": "kb-version-1",
+                    "result": "not_helpful",
+                    "surface": "requester_portal",
+                    "timestamp": "2026-06-08T08:00:00Z",
+                }
+            ],
         },
     )
     payload = await created.json()
@@ -256,6 +265,23 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert custom_fields["request_form_data"] == {"summary": "No boot"}
     assert custom_fields["service_catalog"]["service_code"] == service_code
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
+    assert custom_fields["knowledge_attempts"] == [
+        {
+            "item_id": "kb-requester-1",
+            "version_id": "kb-version-1",
+            "result": "not_helpful",
+            "surface": "requester_portal",
+            "occurred_at": "2026-06-08T08:00:00Z",
+        }
+    ]
+    async with session_maker() as session:
+        feedback_event = (
+            await session.execute(
+                select(KnowledgeFeedbackEvent).where(KnowledgeFeedbackEvent.ticket_id == payload["data"]["ticket_id"])
+            )
+        ).scalar_one()
+    assert feedback_event.event_type == "ticket_created_after_view"
+    assert feedback_event.metadata_json["knowledge_attempts"][0]["item_id"] == "kb-requester-1"
 
 
 @pytest.mark.asyncio

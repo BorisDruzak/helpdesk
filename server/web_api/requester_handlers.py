@@ -9,6 +9,8 @@ from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
+from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
+from knowledge.feedback_service import KnowledgeFeedbackService
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver
@@ -409,6 +411,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
+    knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="requester_portal")
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
@@ -499,6 +502,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
+        extra_custom_fields = attach_knowledge_attempts(extra_custom_fields, knowledge_attempts)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -532,6 +536,20 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             requester_account=requester_account,
             state=request.app.get("state"),
         )
+        if knowledge_attempts:
+            ticket_row = created["ticket"]
+            await KnowledgeFeedbackService(session).record_event(
+                {
+                    "event_type": "ticket_created_after_view",
+                    "ticket_id": created["ticket_id"],
+                    "service_code": service_code or getattr(ticket_row, "service_code", None),
+                    "offering_code": offering_full_code or offering_code or getattr(ticket_row, "offering_code", None),
+                    "surface": "requester_portal",
+                    "metadata": {"knowledge_attempts": knowledge_attempts},
+                },
+                actor_role="requester",
+                actor_id=auth_context.actor_id,
+            )
         await session.commit()
         ticket = ticket_to_dict(created["ticket"], visibility="requester")
 
