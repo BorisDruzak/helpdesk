@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   authorizePublicTicket,
   createPublicTicket,
+  fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
   reopenPublicTicket,
+  sendRequesterTicketMessage,
   sendPublicTicketMessage,
   submitPublicTicketFeedback,
 } from "./api";
@@ -184,5 +186,44 @@ describe("requester public api", () => {
     );
 
     await expect(fetchPublicFormPack()).rejects.toThrow("Не удалось загрузить форму заявки");
+  });
+});
+
+describe("authenticated requester api", () => {
+  it("loads owned ticket detail and sends authenticated message", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/web/requester/tickets/T-42") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket: { ticket_id: "T-42", title: "Owned ticket", status: "waiting_on_user" },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets/T-42/message") {
+        return jsonResponse({ status: "success", data: { message_id: "m-42", event_id: 12 } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const detail = await fetchRequesterTicket("T-42");
+    const sent = await sendRequesterTicketMessage("T-42", "Authenticated follow-up");
+
+    expect(detail.ticket.ticket_id).toBe("T-42");
+    expect(sent.message_id).toBe("m-42");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/T-42",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/T-42/message",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ text: "Authenticated follow-up" }),
+      }),
+    );
   });
 });

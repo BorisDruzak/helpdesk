@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Ticket
+from app.db.models import Device, Ticket, TicketEvent
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
@@ -135,3 +136,76 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
         headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
     )
     assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_detail_and_message_are_owned_only(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owned_device_id = str(uuid.uuid4())
+    foreign_device_id = str(uuid.uuid4())
+    owner_login = "requester-chat-owner@example.test"
+    foreign_login = "requester-chat-foreign@example.test"
+    async with session_maker() as session:
+        session.add_all([_device(owned_device_id, "chat-owned-device"), _device(foreign_device_id, "chat-foreign-device")])
+        approved = await _approved_binding(session, device_id=owned_device_id, login=owner_login)
+        await _approved_binding(session, device_id=foreign_device_id, login=foreign_login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=owned_device_id,
+            requester_id=owner_login,
+            title="Requester message ticket",
+            description="Visible to owner only",
+            user_display_name="Requester Chat Owner",
+            requester_profile={"full_name": "Requester Chat Owner", "email": owner_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        await session.commit()
+
+    owner_headers = _headers(f"{TEST_UI_USER_PREFIX}{owner_login}")
+    foreign_headers = _headers(f"{TEST_UI_USER_PREFIX}{foreign_login}")
+
+    detail = await test_client.get(f"/api/web/requester/tickets/{ticket_id}", headers=owner_headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    assert detail_payload["data"]["ticket"]["ticket_id"] == ticket_id
+    assert any(
+        message.get("text") == "Visible to owner only"
+        for message in detail_payload["data"].get("messages", [])
+    )
+
+    sent = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/message",
+        headers=owner_headers,
+        json={"text": "Requester authenticated follow-up"},
+    )
+    sent_payload = await sent.json()
+    assert sent.status == 200, sent_payload
+    assert sent_payload["data"]["message_id"]
+
+    denied = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/message",
+        headers=foreign_headers,
+        json={"text": "Should not be accepted"},
+    )
+    denied_payload = await denied.json()
+    assert denied.status == 404, denied_payload
+
+    async with session_maker() as session:
+        events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "chat_message")
+            )
+        ).scalars().all()
+
+    texts = [event.payload.get("text") for event in events if isinstance(event.payload, dict)]
+    assert "Requester authenticated follow-up" in texts
+    assert "Should not be accepted" not in texts

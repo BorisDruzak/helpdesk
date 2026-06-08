@@ -15,6 +15,8 @@ import type {
   RequesterBootstrap,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
+  RequesterTicketDetail,
+  RequesterTicketMessageResult,
   AuthenticatedRequesterTicket,
 } from "./types";
 
@@ -147,6 +149,27 @@ export async function createRequesterTicket(
     body: JSON.stringify(payload),
   });
   return readSuccess<RequesterTicketCreateResult>(response, "Не удалось создать обращение");
+}
+
+export async function fetchRequesterTicket(ticketId: string): Promise<RequesterTicketDetail> {
+  const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterTicketDetail>(response, "Не удалось загрузить обращение");
+}
+
+export async function sendRequesterTicketMessage(
+  ticketId: string,
+  text: string,
+): Promise<RequesterTicketMessageResult> {
+  const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}/message`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify({ text }),
+  });
+  return readSuccess<RequesterTicketMessageResult>(response, "Не удалось отправить сообщение");
 }
 
 export async function previewServiceCatalogRequest(

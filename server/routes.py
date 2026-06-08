@@ -129,6 +129,7 @@ from web_api.requester_handlers import (
     handle_web_requester_devices,
     handle_web_requester_ticket_create,
     handle_web_requester_ticket_detail,
+    handle_web_requester_ticket_message,
     handle_web_requester_tickets,
 )
 from tickets.form_pack_handlers import (
@@ -1024,6 +1025,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/requester/tickets', handle_web_requester_tickets),
         web.post('/api/web/requester/tickets', handle_web_requester_ticket_create),
         web.get('/api/web/requester/tickets/{ticket_id}', handle_web_requester_ticket_detail),
+        web.post('/api/web/requester/tickets/{ticket_id}/message', handle_web_requester_ticket_message),
         web.get('/api/web/admin/registry/account-login-requests', handle_web_admin_registry_account_login_requests),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/approve', handle_web_admin_registry_account_login_request_approve),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/reject', handle_web_admin_registry_account_login_request_reject),

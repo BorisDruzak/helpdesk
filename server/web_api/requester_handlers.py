@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from aiohttp import web
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
+from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
 from requester.identity_service import RequesterIdentityResolver
+from tickets.handlers import (
+    _event_visible_to_requester,
+    _push_ticket_event,
+    _serialize_event_for_requester,
+    _serialize_message_for_requester,
+)
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.statuses import enrich_chat_payload_with_requester_name
+from tickets.workflow_service import TicketWorkflowService
 
 
 def _success(data: dict[str, Any]) -> web.Response:
@@ -59,8 +69,95 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
         ticket = await RequesterIdentityResolver(session).get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
+        repo = TicketEventsRepo(session)
+        raw_events = await repo.get_events(ticket.ticket_id, since_agent_seq=None, limit=200)
+        visible_events = [event for event in raw_events if _event_visible_to_requester(event)]
+        messages = [event for event in visible_events if getattr(event, "event_type", None) == "chat_message"]
         payload = ticket_to_dict(ticket, visibility="requester")
-    return _success({"ticket": payload})
+    return _success(
+        {
+            "ticket": payload,
+            "messages": [_serialize_message_for_requester(event, ticket=ticket) for event in messages],
+            "events": [_serialize_event_for_requester(event, ticket=ticket) for event in visible_events],
+        }
+    )
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_message(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
+    try:
+        data = await request.json()
+    except Exception:
+        return _error("Invalid JSON", status=400)
+    if not isinstance(data, dict):
+        return _error("JSON body must be an object", status=400)
+
+    text = _clean(data.get("text"), max_length=5000)
+    if not text:
+        return _error("text is required", status=400)
+
+    message_id = _clean(data.get("message_id"), max_length=120) or str(uuid.uuid4())
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        if ticket is None:
+            return _error("ticket not found", status=404, error_code="NOT_FOUND")
+
+        payload: dict[str, Any] = {
+            "message_id": message_id,
+            "sender_role": "user",
+            "sender_display_name": auth_context.actor_id,
+            "from": "user",
+            "text": text,
+            "visibility": "public",
+            "requester_person_id": getattr(ticket, "requester_person_id", None),
+            "requester_binding_id": getattr(ticket, "requester_binding_id", None),
+            "requester_account_session_id": getattr(ticket, "requester_account_session_id", None),
+            "requester_account_mode": getattr(ticket, "requester_account_mode", None),
+        }
+        if metadata:
+            payload["metadata"] = metadata
+        payload = enrich_chat_payload_with_requester_name(ticket, payload)
+
+        repo = TicketEventsRepo(session)
+        result = await repo.add_event(
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="chat_message",
+            payload=payload,
+            trace_id=str(uuid.uuid4()),
+            event_id=message_id,
+        )
+
+        status_result = None
+        status_payload: dict[str, Any] | None = None
+        if getattr(ticket, "status", None) == "waiting_on_user":
+            workflow = TicketWorkflowService(session, repo)
+            transition = await workflow.apply_triggered_transition(
+                ticket_id=ticket.ticket_id,
+                trigger="requester_replied",
+                actor_id="system",
+                actor_role="system",
+                reason="requester_reply",
+                source="requester_reply",
+                trigger_actor_id=auth_context.actor_id,
+                trigger_actor_role=auth_context.actor_role,
+                fallback_status="assigned",
+            )
+            status_result = transition.get("event_result")
+            status_payload = transition.get("event_payload") or {}
+
+        await session.commit()
+
+    await _push_ticket_event(request, ticket_id, result, "chat_message", payload)
+    if status_result:
+        await _push_ticket_event(request, ticket_id, status_result, "status_changed", status_payload or {})
+    return _success({"message_id": message_id, "event_id": result[0] if result else None})
 
 
 @require_auth("user")

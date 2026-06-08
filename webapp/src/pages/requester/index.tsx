@@ -4,13 +4,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createRequesterTicket,
   fetchRequesterBootstrap,
+  fetchRequesterTicket,
   fetchRequesterTickets,
   RequesterApiError,
+  sendRequesterTicketMessage,
 } from "../../features/requester/api";
 import type {
   AuthenticatedRequesterTicket,
   RequesterBootstrap,
   RequesterDevice,
+  RequesterTicketDetail,
 } from "../../features/requester/types";
 
 function deviceLabel(device: RequesterDevice): string {
@@ -31,6 +34,12 @@ export function RequesterWorkspacePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [selectedTicketDetail, setSelectedTicketDetail] = useState<RequesterTicketDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [messageText, setMessageText] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageNotice, setMessageNotice] = useState<string | null>(null);
 
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
@@ -91,6 +100,43 @@ export function RequesterWorkspacePage() {
     }
   }
 
+  async function openTicket(ticketId: string) {
+    setSelectedTicketId(ticketId);
+    setSelectedTicketDetail(null);
+    setDetailLoading(true);
+    setMessageNotice(null);
+    setError(null);
+    try {
+      setSelectedTicketDetail(await fetchRequesterTicket(ticketId));
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить обращение");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function handleMessageSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const ticketId = selectedTicketId;
+    const text = messageText.trim();
+    if (!ticketId || !text) {
+      return;
+    }
+    setMessageSending(true);
+    setMessageNotice(null);
+    setError(null);
+    try {
+      await sendRequesterTicketMessage(ticketId, text);
+      setMessageText("");
+      setSelectedTicketDetail(await fetchRequesterTicket(ticketId));
+      setMessageNotice("Сообщение отправлено");
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось отправить сообщение");
+    } finally {
+      setMessageSending(false);
+    }
+  }
+
   if (loading) {
     return <section className="workspace-page p-6 text-sm text-slate-500">Загружаем кабинет заявителя...</section>;
   }
@@ -127,6 +173,7 @@ export function RequesterWorkspacePage() {
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
         <section className="support-workspace__panel">
           <div className="support-workspace__panel-head">
             <div>
@@ -141,20 +188,83 @@ export function RequesterWorkspacePage() {
           <div className="mt-4 divide-y divide-slate-100">
             {visibleTickets.length ? (
               visibleTickets.map((ticket) => (
-                <article className="py-3" key={ticket.ticket_id}>
+                <button
+                  aria-label={`Open requester ticket ${ticket.ticket_id}`}
+                  className={`block w-full py-3 text-left ${selectedTicketId === ticket.ticket_id ? "bg-slate-50" : ""}`}
+                  key={ticket.ticket_id}
+                  onClick={() => void openTicket(ticket.ticket_id)}
+                  type="button"
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-slate-950">{ticket.ticket_id}</span>
                     <span className="rounded-panel bg-slate-100 px-2 py-1 text-xs text-slate-600">{ticketStatus(ticket)}</span>
                   </div>
                   <h3 className="mt-1 text-sm font-semibold text-slate-800">{ticket.title || "Без темы"}</h3>
                   <p className="mt-1 line-clamp-2 text-sm text-slate-500">{ticket.description || "Описание не указано"}</p>
-                </article>
+                </button>
               ))
             ) : (
               <p className="py-6 text-sm text-slate-500">Обращений пока нет.</p>
             )}
           </div>
         </section>
+
+          {selectedTicketId ? (
+            <section className="support-workspace__panel">
+              <div className="support-workspace__panel-head">
+                <div>
+                  <p className="workspace-boot__eyebrow">Диалог</p>
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    {selectedTicketDetail?.ticket.title || selectedTicketId}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {selectedTicketDetail?.ticket.description || (detailLoading ? "Загружаем обращение..." : "Описание не указано")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {detailLoading ? (
+                  <p className="text-sm text-slate-500">Загружаем историю...</p>
+                ) : selectedTicketDetail?.messages?.length ? (
+                  selectedTicketDetail.messages.map((message) => (
+                    <div className="rounded-panel border border-slate-200 p-3" key={message.message_id || message.event_id || message.ts}>
+                      <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                        <span>{message.from_role === "support" ? "Поддержка" : "Заявитель"}</span>
+                        <span>{message.ts || message.created_at || ""}</span>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{message.text || ""}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500">Сообщений пока нет.</p>
+                )}
+              </div>
+
+              <form className="mt-4 space-y-3" onSubmit={(event) => void handleMessageSubmit(event)}>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Ответ
+                  <textarea
+                    aria-label="Requester message"
+                    className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                    onChange={(event) => setMessageText(event.target.value)}
+                    value={messageText}
+                  />
+                </label>
+                {messageNotice ? <p className="text-sm text-emerald-700">{messageNotice}</p> : null}
+                <button
+                  aria-label="Send requester message"
+                  className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  disabled={messageSending || !selectedTicketId || !messageText.trim()}
+                  type="submit"
+                >
+                  <Send className="h-4 w-4" />
+                  {messageSending ? "Отправляем..." : "Отправить"}
+                </button>
+              </form>
+            </section>
+          ) : null}
+        </div>
 
         <aside className="space-y-5">
           <section className="support-workspace__panel">

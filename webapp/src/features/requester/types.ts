@@ -289,6 +289,17 @@ export type RequesterTicketCreateResult = {
   public_access_url?: string | null;
 };
 
+export type RequesterTicketDetail = {
+  ticket: AuthenticatedRequesterTicket;
+  messages?: PublicTicketMessage[];
+  events?: PublicTicketEvent[];
+};
+
+export type RequesterTicketMessageResult = {
+  message_id: string;
+  event_id?: string | number | null;
+};
+
 export type PublicTicketAuthorizeResult = {
   ticket_id: string;
   public_token: string;
