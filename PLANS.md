@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented locally; live verification is pending on the next committed deploy.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -15,6 +15,7 @@ Latest live verification, 2026-06-08:
 - `/app/requester` for `requester-user-20260608-093700` showed one owned device and both live tickets; browser requester creation created ticket `T-000647`.
 - Login pairing `/app/device/login` was rechecked after the redirect/pairing UI fixes: `next` returned to the pairing page and device facts stayed visible after confirmation.
 - DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
+- Authenticated requester lifecycle check used isolated requester `requester-lifecycle-20260608-144009@example.test` and ticket `T-000649`: Browser MCP verified owned ticket detail controls, close changed the UI status to `Закрыта`, negative CSAT saved feedback, reopen changed the UI status to `Заявка в работе`, console errors were 0, and DB verification showed status transitions `queued -> closed -> in_progress`, one latest requester feedback row rating 2, one reopen event linked to that feedback, and requester person/binding set. The temporary live user was deactivated after verification.
 
 ## Remaining Work
 
