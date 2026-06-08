@@ -1,6 +1,6 @@
 # Browser / Requester / Agent Identity Model
 
-Status: Stage 1 in progress. Backend pairing persistence is implemented and pushed in commit `f5e3e01a`; browser confirmation, registration flow, agent GUI polling and live verification remain active work.
+Status: Stage 1 registration flow verified. Browser pairing, web confirmation, agent pickup, admin approval and agent confirmed-binding transition are covered by local API acceptance and live MCP/API/DB verification.
 
 ## Goal
 
@@ -226,7 +226,7 @@ Keep "Войти в агенте" only as a fallback:
 
 ### Stage 1 Acceptance Criteria
 
-- [~] New device creates browser registration pairing, browser confirms, and claim appears. Agent transition to confirmed binding after admin approval remains covered by existing account-state/account-session flow, not by this browser-pairing smoke.
+- [x] New device creates browser registration pairing, browser confirms, claim appears, agent consumes the registration pairing, admin approves the claim, and the agent sees a `confirmed_binding` account/session candidate. Covered by `test_registration_pairing_approval_surfaces_confirmed_binding_to_agent` and live MCP/API/DB registration-flow smoke.
 - [x] Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
 - [x] Already logged-in browser user confirms login without re-entering password.
 - [x] Expired pairing is rejected at service lookup/pickup boundaries.
@@ -639,7 +639,7 @@ Stage 1:
 - [x] pairing secret hashing/protected-storage tests;
 - [x] active pairing supersede/cancel tests;
 - [ ] manual pairing-code entry smoke;
-- [~] account-state and session invalidation tests.
+- [x] account-state confirmed-binding transition and session tests.
 
 Stage 2:
 
@@ -678,10 +678,10 @@ Common checks:
 ## Execution Checkpoints
 
 - [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
-- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, web route behavior, webapp confirm pages and agent polling. Linux stand smoke covered live API/DB behavior. Manual pairing-code entry is deferred.
+- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages and agent polling. Linux stand smoke covered live API/DB behavior. Manual pairing-code entry is deferred.
 - [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
 - [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll and main-window polling/session save are implemented. `/app/device/pair` manual code entry is not in this slice.
-- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check and Linux DB/API invariants passed. Remote server was stopped after checks.
+- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke and Linux DB/API invariants passed. Remote server was stopped after checks.
 - [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
 - [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
 - [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
@@ -713,7 +713,7 @@ Deferred:
 
 Immediate remaining work:
 
-1. Push the verified Stage 1 commits to GitHub.
+1. Commit and push the verified Stage 1 registration-flow test/plan update.
 2. Continue with Stage 2 requester workspace design and tests.
 
 Before code changes, read the nested instructions for the target area:

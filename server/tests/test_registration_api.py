@@ -189,6 +189,99 @@ async def test_web_user_confirms_registration_pairing_for_pairing_device(test_cl
 
 
 @pytest.mark.asyncio
+async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await session.commit()
+
+    created = await test_client.post(
+        "/api/registry/agent/browser-pairings",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"purpose": "registration"},
+    )
+    assert created.status == 200, await created.text()
+    created_payload = await created.json()
+    pairing = created_payload["data"]
+    assert pairing["purpose"] == "registration"
+    assert pairing["browser_url"] == f"/app/device/register?pairing_id={pairing['pairing_id']}"
+
+    confirmed = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/registration/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}stage1-new-user@example.test"),
+        json={},
+    )
+    assert confirmed.status == 200, await confirmed.text()
+    confirmed_payload = await confirmed.json()
+    claim_id = confirmed_payload["data"]["claim_id"]
+    assert confirmed_payload["data"]["status"] == "confirmed"
+    assert confirmed_payload["data"]["registration"]["status"] == "pending_admin_review"
+    assert confirmed_payload["data"]["registration"]["device_id"] == device_id
+    assert "session_token" not in confirmed_payload["data"]
+
+    picked_up = await test_client.get(
+        f"/api/registry/agent/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert picked_up.status == 200, await picked_up.text()
+    pickup_payload = await picked_up.json()
+    assert pickup_payload["data"]["status"] == "consumed"
+    assert pickup_payload["data"]["claim_id"] == claim_id
+    assert "session_token" not in pickup_payload["data"]
+
+    pending_state = await test_client.get(
+        "/api/registry/agent/account-state",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert pending_state.status == 200, await pending_state.text()
+    pending_payload = await pending_state.json()
+    assert pending_payload["data"]["registration"]["requires_admin_action"] is True
+    assert pending_payload["data"]["accounts"][0]["account_mode"] == "registration_pending"
+    assert pending_payload["data"]["accounts"][0]["claim_id"] == claim_id
+
+    approved = await test_client.post(
+        f"/api/web/admin/registry/registrations/{claim_id}/approve",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+        json={},
+    )
+    assert approved.status == 200, await approved.text()
+    approved_payload = await approved.json()
+    binding_id = approved_payload["data"]["binding"]["binding_id"]
+
+    confirmed_state = await test_client.get(
+        "/api/registry/agent/account-state",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert confirmed_state.status == 200, await confirmed_state.text()
+    state_payload = await confirmed_state.json()
+    account = state_payload["data"]["accounts"][0]
+    assert account["account_mode"] == "confirmed_binding"
+    assert account["binding_id"] == binding_id
+    assert account["email"] == "stage1-new-user@example.test"
+    assert account["registration_status"] == "admin_confirmed"
+    assert account["can_login"] is True
+    assert state_payload["data"]["can_login_confirmed_binding"] is True
+    assert state_payload["data"]["can_register"] is False
+
+    session_response = await test_client.post(
+        "/api/registry/agent/account-sessions/confirmed-binding",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"binding_id": binding_id},
+    )
+    assert session_response.status == 200, await session_response.text()
+    session_payload = await session_response.json()
+    assert session_payload["data"]["session"]["account_mode"] == "confirmed_binding"
+    assert session_payload["data"]["session"]["binding_id"] == binding_id
+    assert session_payload["data"].get("session_token")
+
+    async with session_maker() as session:
+        claim = await session.get(DeviceRegistrationClaim, claim_id)
+    assert claim is not None
+    assert claim.status == "approved"
+
+
+@pytest.mark.asyncio
 async def test_agent_cannot_assert_user_confirmed(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
