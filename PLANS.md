@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented with local coverage.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -19,6 +19,7 @@ Latest live verification, 2026-06-08:
 
 - Authenticated requester catalog/form create check used isolated requester `requester-catalog-20260608113032@example.test`, owned device `catalog-live-113032` and ticket `e9741d40-73da-4176-8466-3fa3e00325c8`: Browser MCP verified `/app/requester` service catalog selection, dynamic required form fields, safe preview summary, unlocked create button, accepted ticket in the requester list, and 0 console errors. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, has `service_code=workplace`, `offering_code=workplace.laptop_broken`, `request_form_key=breakage`, form data keys persisted, catalog ids present, requester status `accepted`, and 6 ticket events. The temporary live user was deactivated and its binding revoked after verification.
 - Authenticated requester preview wrapper check used isolated requester `requester-preview-20260608130244@example.test`, owned device `preview-live-130244` and ticket `0d266a8e-9a9d-40f7-ac3b-4775c8ce998f`: Browser MCP verified `/app/requester` dynamic form fill, authenticated safe preview summary, unlocked create button, accepted ticket in the requester list, and 0 fresh console errors. Remote DB verification confirmed preview did not create an extra ticket (`ticket_count_for_live_person=1` after preview+create), the created ticket is linked to the expected device/person/binding, has `service_code=workplace`, `offering_code=workplace.laptop_broken`, `request_form_key=breakage`, form data persisted, catalog ids present, requester status `accepted`, and 6 ticket events. The temporary live user was deactivated and its binding revoked after verification.
+- Authenticated requester knowledge suggestions reuse check used isolated requester `codex_stage2b_knowledge_20260608_2107@example.test`, owned device `codex-stage2b-kb-live` and ticket `80885bf6-38ab-42fa-8cc7-f0d9175216dd`: Browser MCP verified login to `/app/requester`, one owned registered device, requester-safe suggestions, opening the live article snippet, marking it not helpful, safe preview, and accepted ticket creation. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, `knowledge_attempts` contains `viewed` and `not_helpful` attempts for the live knowledge item with `surface=requester_portal`, `/api/knowledge/feedback` stored `viewed`/`not_helpful` feedback rows, and the ticket has `ticket_created_after_view` feedback metadata with both attempts.
 
 ## Remaining Work
 
@@ -735,7 +736,7 @@ Common checks:
 - [x] Stage 2B create slice 3: authenticated requester owned-device create now reuses published Service Catalog selection, `request_forms` dynamic form validation, authenticated safe `POST /api/web/requester/tickets/preview`, request-template custom fields, priority-policy computation and explicit ticket catalog/reporting fields before `create_ticket_with_side_effects()`.
 - [x] Stage 2B preview wrapper: authenticated `POST /api/web/requester/tickets/preview` now verifies requester ownership of browser-supplied `device_id`, delegates to the safe Service Catalog runtime without creating tickets/events, and feeds `/app/requester` preview before submit.
 - [x] Stage 2B knowledge suggestions reuse: `/app/requester` now calls requester-safe `POST /api/knowledge/suggest`, displays safe suggestions in the authenticated create form, records viewed/helpful/not-helpful/deflected feedback, sends `knowledge_attempts` with ticket creation, and `/api/web/requester/tickets` stores sanitized attempts plus `ticket_created_after_view` knowledge feedback metrics behind the requester ownership boundary.
-- [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create.
+- [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create, preview wrapper and requester knowledge suggestions reuse.
 - [ ] Stage 2B lifecycle follow-up: attachments, no-device creation and public ticket claim remain follow-up work.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
@@ -776,7 +777,7 @@ Deferred / next:
 
 Immediate next work:
 
-1. Continue Stage 2B requester lifecycle with attachments, no-device creation or public ticket claim after live verification for knowledge suggestions reuse.
+1. Continue Stage 2B requester lifecycle with attachments, no-device creation or public ticket claim.
 
 Before code changes, read the nested instructions for the target area:
 
