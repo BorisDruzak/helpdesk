@@ -4,6 +4,7 @@ import {
   authorizePublicTicket,
   closeRequesterTicket,
   createPublicTicket,
+  createRequesterTicket,
   fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
@@ -193,6 +194,59 @@ describe("requester public api", () => {
 });
 
 describe("authenticated requester api", () => {
+  it("creates an authenticated requester ticket with catalog form fields", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          ticket_id: "T-52",
+          ticket: { ticket_id: "T-52", status: "new" },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await createRequesterTicket({
+      device_id: "device-1",
+      title: "Laptop broken",
+      description: "Laptop does not boot",
+      user_display_name: "Requester One",
+      service_code: "workplace",
+      offering_code: "laptop_broken",
+      offering_full_code: "workplace.laptop_broken",
+      request_template_key: "breakage",
+      form_key: "breakage",
+      form_pack_key: "request_forms",
+      form_pack_version: "2026.06",
+      form_payload: { summary: "No boot" },
+      ticket_type: "incident",
+    });
+
+    expect(result.ticket_id).toBe("T-52");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          device_id: "device-1",
+          title: "Laptop broken",
+          description: "Laptop does not boot",
+          user_display_name: "Requester One",
+          service_code: "workplace",
+          offering_code: "laptop_broken",
+          offering_full_code: "workplace.laptop_broken",
+          request_template_key: "breakage",
+          form_key: "breakage",
+          form_pack_key: "request_forms",
+          form_pack_version: "2026.06",
+          form_payload: { summary: "No boot" },
+          ticket_type: "incident",
+        }),
+      }),
+    );
+  });
+
   it("loads owned ticket detail and sends authenticated message", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

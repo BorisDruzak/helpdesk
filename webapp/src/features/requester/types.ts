@@ -280,6 +280,16 @@ export type RequesterTicketCreatePayload = {
   importance?: boolean;
   urgency_reason?: string;
   importance_reason?: string;
+  form_key?: string;
+  form_pack_key?: string;
+  form_pack_version?: string;
+  form_payload?: Record<string, unknown>;
+  ticket_type?: string;
+  service_code?: string;
+  offering_code?: string;
+  offering_full_code?: string;
+  request_template_key?: string;
+  diagnostic_consent?: Record<string, unknown>;
 };
 
 export type RequesterTicketCreateResult = {

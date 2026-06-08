@@ -7,7 +7,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Ticket, TicketEvent, TicketFeedback, TicketReopenEvent
+from app.db.models import Device, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
+from app.repos.service_catalog_repo import ServiceCatalogRepo
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
@@ -136,6 +138,124 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
         headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
     )
     assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_create_ticket_accepts_catalog_form_payload(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    service_code = f"requester_workspace_{suffix}"
+    template_code = f"requester_laptop_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-catalog-create@example.test"
+    async with session_maker() as session:
+        queue = TicketQueue(code=f"requester_queue_{suffix}", name="Requester queue", is_active=True)
+        session.add_all([_device(device_id, "catalog-owned-device"), queue])
+        await session.flush()
+        forms_repo = TicketFormPacksRepo(session)
+        await forms_repo.upsert_pack(
+            pack_key="request_forms",
+            version=f"test-{suffix}",
+            schema_json={
+                "pack_key": "request_forms",
+                "version": f"test-{suffix}",
+                "forms": [
+                    {
+                        "key": template_code,
+                        "request_template_key": template_code,
+                        "title": "Laptop incident",
+                        "request_kind": "incident",
+                        "ticket_type": "incident",
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            },
+            created_by="test",
+        )
+        await forms_repo.set_preferred(pack_key="request_forms", version=f"test-{suffix}", updated_by="test")
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Laptop incident",
+                ticket_type="incident",
+                config_json={"default_queue_id": queue.id, "no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        repo = ServiceCatalogRepo(session)
+        await repo.upsert_service_draft(
+            {
+                "code": service_code,
+                "public_title": "Requester workplace",
+                "short_description": "Requester workplace support",
+                "visibility": "public",
+                "owner_queue_id": queue.id,
+                "default_queue_id": queue.id,
+                "business_criticality": "medium",
+                "reporting_category": "requester_workplace",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        offering = await repo.upsert_offering_draft(
+            {
+                "service_code": service_code,
+                "code": "laptop_broken",
+                "public_title": "Laptop broken",
+                "short_description": "Laptop does not start",
+                "request_type": "incident",
+                "request_template_key": template_code,
+                "visibility": "public",
+                "reporting_category": "requester_incidents",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        await repo.publish_service(service_code, actor_id="test", actor_role="admin")
+        await repo.publish_offering(offering["full_code"], actor_id="test", actor_role="admin")
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        await session.commit()
+
+    created = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "title": "Laptop broken from requester workspace",
+            "description": "Laptop does not boot",
+            "user_display_name": "Requester Catalog",
+            "service_code": service_code,
+            "offering_code": "laptop_broken",
+            "request_template_key": template_code,
+            "form_key": template_code,
+            "form_payload": {"summary": "No boot"},
+            "ticket_type": "incident",
+        },
+    )
+    payload = await created.json()
+    assert created.status == 200, payload
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, payload["data"]["ticket_id"])
+
+    assert ticket is not None
+    assert ticket.device_id == device_id
+    assert ticket.requester_person_id == approved["person"]["person_id"]
+    assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+    assert ticket.service_code == service_code
+    assert ticket.offering_code == f"{service_code}.laptop_broken"
+    assert ticket.ticket_type == "incident"
+    assert ticket.request_type == "incident"
+    assert ticket.reporting_category == "requester_incidents"
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["request_context"] == "authenticated_requester_workspace"
+    assert custom_fields["request_form_data"] == {"summary": "No boot"}
+    assert custom_fields["service_catalog"]["service_code"] == service_code
+    assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
 
 
 @pytest.mark.asyncio

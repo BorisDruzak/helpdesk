@@ -21,6 +21,12 @@ from tickets.handlers import (
     _store_resolution_confirmation_state,
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
+from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields
+from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
+from tickets.priority_policy import compute_priority_from_policy
+from tickets.request_template_submission import resolve_create_form_submission
+from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from tickets.statuses import enrich_chat_payload_with_requester_name
 from tickets.workflow_service import TicketWorkflowService
 
@@ -33,8 +39,30 @@ def _error(message: str, *, status: int = 400, error_code: str = "VALIDATION_ERR
     return web.json_response({"status": "error", "error": message, "error_code": error_code}, status=status)
 
 
+def _validation_error(details: dict[str, Any]) -> web.Response:
+    return web.json_response(
+        {"status": "error", "error": "validation_error", "error_code": "VALIDATION_ERROR", "details": details},
+        status=400,
+    )
+
+
 def _clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
+
+
+def _priority_policy_fallback(data: dict[str, Any]) -> dict[str, Any]:
+    fallback: dict[str, Any] = {
+        "impact": data.get("impact"),
+        "urgency": data.get("urgency"),
+        "importance": data.get("importance"),
+        "actor_role": "requester",
+        "manual_actor_role": "requester",
+    }
+    manual_priority = data.get("manual_priority")
+    if manual_priority is not None:
+        fallback["manual_priority"] = manual_priority
+        fallback["manual_reason"] = data.get("manual_reason") or data.get("manual_priority_reason")
+    return fallback
 
 
 async def _json_body(request: web.Request) -> dict[str, Any]:
@@ -320,6 +348,14 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     if not description:
         return _error("description is required", status=400)
     title = _clean(data.get("title"), max_length=300) or "Requester workspace request"
+    request_template_key = _clean(data.get("request_template_key"), max_length=120)
+    service_code = _clean(data.get("service_code"), max_length=120)
+    offering_code = _clean(data.get("offering_code"), max_length=160)
+    offering_full_code = _clean(data.get("offering_full_code") or data.get("full_offering_code"), max_length=240)
+    form_key = _clean(data.get("form_key") or request_template_key, max_length=120)
+    pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
+    pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
+    form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
@@ -342,6 +378,74 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             "email": getattr(person, "email", None),
             "validation": "web_requester_identity_resolved",
         }
+        extra_custom_fields: dict[str, Any] = {"request_context": "authenticated_requester_workspace"}
+        template_context: dict[str, Any] = {}
+        catalog_process_fields: dict[str, Any] = {}
+        ticket_type = _clean(data.get("ticket_type"), max_length=64) or "request"
+        normalized_priority = build_default_priority_payload(data)
+        catalog_selection = None
+        catalog_template_key = request_template_key or form_key
+        if service_code or offering_code or offering_full_code or catalog_template_key:
+            try:
+                catalog_selection = await ServiceCatalogRuntimeResolver(session).resolve_selection(
+                    service_code=service_code or None,
+                    offering_code=offering_code or None,
+                    offering_full_code=offering_full_code or None,
+                    request_template_key=catalog_template_key or None,
+                    actor_role="requester",
+                )
+                if catalog_selection.request_template_key:
+                    request_template_key = catalog_selection.request_template_key
+                    form_key = form_key or request_template_key
+            except ServiceCatalogResolutionError as exc:
+                return _validation_error(exc.details)
+        if form_key:
+            try:
+                validated_submission = await resolve_create_form_submission(
+                    session,
+                    pack_key=pack_key,
+                    pack_version=pack_version,
+                    form_key=form_key,
+                    request_template_key=request_template_key,
+                    raw_values=form_payload,
+                )
+                if catalog_selection is not None:
+                    validated_submission = await ServiceCatalogRuntimeResolver(session).apply_to_validated_submission(
+                        validated_submission,
+                        catalog_selection,
+                    )
+                validated_submission = await apply_effective_registry_policies(session, validated_submission)
+                extra_custom_fields.update(build_form_custom_fields(validated_submission))
+                catalog_process_fields = (
+                    validated_submission.get("catalog_fields")
+                    if isinstance(validated_submission.get("catalog_fields"), dict)
+                    else {}
+                )
+                diagnostic_consent = normalize_diagnostic_consent_payload(data.get("diagnostic_consent"))
+                if diagnostic_consent:
+                    extra_custom_fields["diagnostic_consent"] = diagnostic_consent
+                ticket_type = str(validated_submission.get("ticket_type") or ticket_type).strip() or ticket_type
+                template_context = (
+                    validated_submission.get("template_context")
+                    if isinstance(validated_submission.get("template_context"), dict)
+                    else {}
+                )
+                if isinstance(template_context.get("service_catalog"), dict):
+                    extra_custom_fields["service_catalog"] = template_context["service_catalog"]
+                priority_policy = (
+                    template_context.get("priority_policy")
+                    if isinstance(template_context.get("priority_policy"), dict)
+                    else {}
+                )
+                if priority_policy:
+                    normalized_priority = compute_priority_from_policy(
+                        priority_policy=priority_policy,
+                        submitted_values=validated_submission.get("submitted_values") or {},
+                        fallback=_priority_policy_fallback(data),
+                    )
+            except ValueError as exc:
+                details = exc.args[0] if exc.args else "invalid form payload"
+                return _validation_error({"form_payload": details})
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -352,13 +456,26 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             or getattr(person, "display_name", None)
             or auth_context.actor_id,
             requester_profile=requester_profile,
-            normalized_priority=build_default_priority_payload(data),
+            normalized_priority=normalized_priority,
             initial_message_text=description,
             initial_message_sender_role="user",
             initial_message_from="user",
             include_public_access=True,
-            ticket_type=_clean(data.get("ticket_type"), max_length=64) or "request",
-            extra_custom_fields={"request_context": "authenticated_requester_workspace"},
+            ticket_type=ticket_type,
+            category_id=template_context.get("category_id"),
+            service_id=template_context.get("service_id"),
+            subcategory_id=template_context.get("subcategory_id"),
+            sla_policy_id=template_context.get("sla_policy_id"),
+            catalog_service_id=catalog_process_fields.get("catalog_service_id"),
+            catalog_offering_id=catalog_process_fields.get("catalog_offering_id"),
+            service_code=catalog_process_fields.get("service_code"),
+            offering_code=catalog_process_fields.get("offering_code"),
+            request_type=catalog_process_fields.get("request_type"),
+            business_criticality=catalog_process_fields.get("business_criticality"),
+            reporting_category=catalog_process_fields.get("reporting_category"),
+            service_owner_actor_id=catalog_process_fields.get("service_owner_actor_id"),
+            support_group_code=catalog_process_fields.get("support_group_code"),
+            extra_custom_fields=extra_custom_fields,
             requester_account=requester_account,
             state=request.app.get("state"),
         )

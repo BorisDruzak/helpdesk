@@ -4,9 +4,12 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   closeRequesterTicket,
   createRequesterTicket,
+  fetchPublicFormPack,
   fetchRequesterBootstrap,
   fetchRequesterTicket,
   fetchRequesterTickets,
+  fetchServiceCatalogCurrent,
+  previewServiceCatalogRequest,
   reopenRequesterTicket,
   RequesterApiError,
   sendRequesterTicketMessage,
@@ -14,10 +17,16 @@ import {
 } from "../../features/requester/api";
 import type {
   AuthenticatedRequesterTicket,
+  RequestFormDefinition,
+  RequestFormField,
   RequesterBootstrap,
   RequesterDevice,
   RequesterTicketDetail,
+  ServiceCatalogCurrent,
+  ServiceCatalogSafePreview,
 } from "../../features/requester/types";
+
+type FieldValues = Record<string, string | boolean>;
 
 function deviceLabel(device: RequesterDevice): string {
   return device.hostname || device.asset_name || device.device_id;
@@ -27,12 +36,138 @@ function ticketStatus(ticket: AuthenticatedRequesterTicket): string {
   return ticket.requester_status_label || ticket.status_label || ticket.requester_status || ticket.status || "open";
 }
 
+function isFieldVisible(field: RequestFormField, values: FieldValues): boolean {
+  const rule = field.visible_when;
+  if (!rule?.field) {
+    return true;
+  }
+  const currentValue = values[rule.field];
+  if (Object.prototype.hasOwnProperty.call(rule, "equals")) {
+    return String(currentValue ?? "").trim() === String(rule.equals ?? "").trim();
+  }
+  if (Array.isArray(rule.in)) {
+    return rule.in.map((item) => String(item ?? "").trim()).includes(String(currentValue ?? "").trim());
+  }
+  return true;
+}
+
+function buildDefaultFieldValues(form: RequestFormDefinition | null): FieldValues {
+  const nextValues: FieldValues = {};
+  for (const field of form?.fields ?? []) {
+    nextValues[field.key] = field.type === "checkbox" ? false : "";
+  }
+  return nextValues;
+}
+
+function collectVisiblePayload(form: RequestFormDefinition | null, values: FieldValues): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of form?.fields ?? []) {
+    if (isFieldVisible(field, values)) {
+      payload[field.key] = values[field.key] ?? (field.type === "checkbox" ? false : "");
+    }
+  }
+  return payload;
+}
+
+function missingRequiredFields(form: RequestFormDefinition | null, values: FieldValues): string[] {
+  return (form?.fields ?? [])
+    .filter((field) => field.required && isFieldVisible(field, values))
+    .filter((field) => {
+      const value = values[field.key];
+      return field.type === "checkbox" ? value !== true : !String(value ?? "").trim();
+    })
+    .map((field) => field.label || field.key);
+}
+
+function RequestFormFieldControl({
+  field,
+  onChange,
+  value,
+}: {
+  field: RequestFormField;
+  onChange: (value: string | boolean) => void;
+  value: string | boolean;
+}) {
+  const label = `${field.label || field.key}${field.required ? " *" : ""}`;
+  if (field.type === "textarea") {
+    return (
+      <label className="block text-sm font-semibold text-slate-700">
+        {label}
+        <textarea
+          aria-label={`Requester form field ${field.key}`}
+          className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          onChange={(event) => onChange(event.currentTarget.value)}
+          placeholder={field.placeholder ?? ""}
+          value={String(value ?? "")}
+        />
+      </label>
+    );
+  }
+  if (field.type === "select" || field.type === "radio") {
+    return (
+      <label className="block text-sm font-semibold text-slate-700">
+        {label}
+        <select
+          aria-label={`Requester form field ${field.key}`}
+          className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          onChange={(event) => onChange(event.currentTarget.value)}
+          value={String(value ?? "")}
+        >
+          <option value="">Выберите...</option>
+          {(field.options ?? []).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label || option.value}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  if (field.type === "checkbox") {
+    return (
+      <label className="flex items-center gap-2 rounded-panel border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+        <input
+          aria-label={`Requester form field ${field.key}`}
+          checked={value === true}
+          onChange={(event) => onChange(event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <span>{label}</span>
+      </label>
+    );
+  }
+  return (
+    <label className="block text-sm font-semibold text-slate-700">
+      {label}
+      <input
+        aria-label={`Requester form field ${field.key}`}
+        className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+        onChange={(event) => onChange(event.currentTarget.value)}
+        placeholder={field.placeholder ?? ""}
+        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+        value={String(value ?? "")}
+      />
+    </label>
+  );
+}
+
 export function RequesterWorkspacePage() {
   const [bootstrap, setBootstrap] = useState<RequesterBootstrap | null>(null);
   const [tickets, setTickets] = useState<AuthenticatedRequesterTicket[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [title, setTitle] = useState("Проверка рабочего места");
   const [description, setDescription] = useState("");
+  const [catalog, setCatalog] = useState<ServiceCatalogCurrent | null>(null);
+  const [forms, setForms] = useState<RequestFormDefinition[]>([]);
+  const [formPackMeta, setFormPackMeta] = useState<{ pack_key: string; version: string } | null>(null);
+  const [selectedServiceCode, setSelectedServiceCode] = useState("");
+  const [selectedOfferingFullCode, setSelectedOfferingFullCode] = useState("");
+  const [selectedFormKey, setSelectedFormKey] = useState("");
+  const [fieldValues, setFieldValues] = useState<FieldValues>({});
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
+  const [previewResult, setPreviewResult] = useState<ServiceCatalogSafePreview | null>(null);
+  const [previewKey, setPreviewKey] = useState("");
+  const [previewSubmitting, setPreviewSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,26 +192,73 @@ export function RequesterWorkspacePage() {
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
   const profileName = bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || bootstrap?.profile?.email || "Пользователь";
+  const services = catalog?.services ?? [];
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
     [devices, selectedDeviceId],
+  );
+  const selectedService = useMemo(
+    () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
+    [selectedServiceCode, services],
+  );
+  const selectedOffering = useMemo(
+    () =>
+      selectedService?.offerings.find((offering) => offering.full_code === selectedOfferingFullCode) ??
+      selectedService?.offerings[0] ??
+      null,
+    [selectedOfferingFullCode, selectedService],
+  );
+  const selectedForm = useMemo(
+    () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
+    [forms, selectedFormKey],
+  );
+  const visibleFields = useMemo(
+    () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
+    [fieldValues, selectedForm],
+  );
+  const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
+  const currentPreviewKey = useMemo(
+    () =>
+      JSON.stringify({
+        device_id: selectedDevice?.device_id,
+        service_code: selectedService?.service_code,
+        offering_full_code: selectedOffering?.full_code,
+        form_key: selectedForm?.key,
+        form_payload: visiblePayload,
+        description,
+      }),
+    [description, selectedDevice?.device_id, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, visiblePayload],
   );
   const selectedTicket = selectedTicketDetail?.ticket ?? null;
   const selectedTicketStatus = selectedTicket?.status ?? "";
   const canCloseSelectedTicket = selectedTicketStatus === "resolved";
   const canRateSelectedTicket = selectedTicketStatus === "resolved" || selectedTicketStatus === "closed";
   const canReopenSelectedTicket = canRateSelectedTicket && (reopenAvailable || feedbackRating <= 3 || !feedbackProblemResolved);
+  const previewIsFresh =
+    Boolean(selectedOffering) &&
+    previewKey === currentPreviewKey &&
+    Boolean(previewResult?.ok) &&
+    !(previewResult?.blockers ?? []).length;
 
   async function load() {
     setLoading(true);
     setError(null);
+    setCatalogNotice(null);
     try {
       const nextBootstrap = await fetchRequesterBootstrap();
       const nextTickets = await fetchRequesterTickets();
       setBootstrap(nextBootstrap);
       setTickets(nextTickets);
       setSelectedDeviceId((current) => current || nextBootstrap.devices[0]?.device_id || "");
+      try {
+        const [nextForms, nextCatalog] = await Promise.all([fetchPublicFormPack(), fetchServiceCatalogCurrent()]);
+        setForms(nextForms.forms ?? []);
+        setFormPackMeta({ pack_key: nextForms.pack_key, version: nextForms.version });
+        setCatalog(nextCatalog);
+      } catch {
+        setCatalogNotice("Каталог услуг временно недоступен. Можно создать обращение по теме и описанию.");
+      }
     } catch (exc) {
       setError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить кабинет");
     } finally {
@@ -97,31 +279,136 @@ export function RequesterWorkspacePage() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!selectedServiceCode && services[0]) {
+      setSelectedServiceCode(services[0].service_code);
+    }
+  }, [selectedServiceCode, services]);
+
+  useEffect(() => {
+    if (selectedService?.offerings[0] && !selectedOfferingFullCode) {
+      setSelectedOfferingFullCode(selectedService.offerings[0].full_code);
+    }
+  }, [selectedOfferingFullCode, selectedService]);
+
+  useEffect(() => {
+    if (selectedOffering?.request_template_key) {
+      setSelectedFormKey(selectedOffering.request_template_key);
+    }
+  }, [selectedOffering?.request_template_key]);
+
+  useEffect(() => {
+    if (!selectedFormKey && forms[0]) {
+      setSelectedFormKey(forms[0].key);
+    }
+  }, [forms, selectedFormKey]);
+
+  useEffect(() => {
+    setFieldValues(buildDefaultFieldValues(selectedForm));
+  }, [selectedForm?.key]);
+
+  function buildCreatePayload() {
+    if (!selectedDevice) {
+      throw new Error("Выберите устройство");
+    }
+    if (!description.trim()) {
+      throw new Error("Заполните описание");
+    }
+    const missing = missingRequiredFields(selectedForm, fieldValues);
+    if (missing.length) {
+      throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
+    }
+    return {
+      device_id: selectedDevice.device_id,
+      title: title.trim() || selectedForm?.title || selectedOffering?.title || "Проверка рабочего места",
+      description: description.trim(),
+      user_display_name: profileName,
+      urgency: false,
+      importance: false,
+      urgency_reason: "Создано из кабинета заявителя",
+      importance_reason: "Создано из кабинета заявителя",
+      ...(selectedForm && formPackMeta
+        ? {
+            form_key: selectedForm.key,
+            form_pack_key: formPackMeta.pack_key,
+            form_pack_version: formPackMeta.version,
+            form_payload: visiblePayload,
+            ticket_type: selectedForm.request_kind || selectedForm.key,
+            request_template_key: selectedOffering?.request_template_key ?? selectedForm.key,
+            service_code: selectedService?.service_code,
+            offering_code: selectedOffering?.offering_code,
+            offering_full_code: selectedOffering?.full_code,
+          }
+        : {}),
+    };
+  }
+
+  async function handlePreview() {
+    setPreviewSubmitting(true);
+    setError(null);
+    setPreviewResult(null);
+    try {
+      const createPayload = buildCreatePayload();
+      const result = await previewServiceCatalogRequest({
+        service_code: createPayload.service_code,
+        offering_code: createPayload.offering_code,
+        offering_full_code: createPayload.offering_full_code,
+        request_template_key: createPayload.request_template_key,
+        form_key: createPayload.form_key,
+        form_pack_key: createPayload.form_pack_key,
+        form_pack_version: createPayload.form_pack_version,
+        form_payload: createPayload.form_payload,
+        description: createPayload.description,
+        requester_context: {
+          requester_profile: {
+            full_name: profileName,
+            email: bootstrap?.profile?.email,
+            phone: bootstrap?.profile?.phone,
+          },
+        },
+        device_metadata: {
+          device_id: selectedDevice?.device_id,
+          hostname: selectedDevice?.hostname,
+          os: selectedDevice?.os,
+        },
+      });
+      setPreviewResult(result);
+      setPreviewKey(currentPreviewKey);
+      if ((result.blockers ?? []).length) {
+        setError(result.blockers.join(" "));
+      } else {
+        setCatalogNotice((result.warnings ?? []).length ? `Preview рассчитан: ${result.warnings.join(" ")}` : "Preview рассчитан");
+      }
+    } catch (exc) {
+      setPreviewKey("");
+      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось проверить обращение");
+    } finally {
+      setPreviewSubmitting(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDevice || !description.trim()) {
       setError("Выберите устройство и заполните описание");
       return;
     }
+    if (selectedOffering && !previewIsFresh) {
+      setError("Сначала выполните безопасный preview заявки");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setCreatedTicketId(null);
     try {
-      const result = await createRequesterTicket({
-        device_id: selectedDevice.device_id,
-        title,
-        description,
-        user_display_name: profileName,
-        urgency: false,
-        importance: false,
-        urgency_reason: "Создано из кабинета заявителя",
-        importance_reason: "Создано из кабинета заявителя",
-      });
+      const result = await createRequesterTicket(buildCreatePayload());
       setCreatedTicketId(result.ticket_id);
       setDescription("");
+      setPreviewKey("");
+      setPreviewResult(null);
       setTickets(await fetchRequesterTickets());
     } catch (exc) {
-      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось создать обращение");
+      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось создать обращение");
     } finally {
       setSubmitting(false);
     }
@@ -527,6 +814,115 @@ export function RequesterWorkspacePage() {
                 <h2 className="text-lg font-semibold text-slate-950">Создать обращение</h2>
               </div>
             </div>
+            {catalogNotice ? (
+              <div
+                className={
+                  catalogNotice.startsWith("Каталог услуг временно")
+                    ? "rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                    : "rounded-panel border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
+                }
+              >
+                {catalogNotice}
+              </div>
+            ) : null}
+            {services.length ? (
+              <div className="grid gap-3">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Услуга
+                  <select
+                    aria-label="Requester service"
+                    className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                    onChange={(event) => {
+                      const nextCode = event.currentTarget.value;
+                      setSelectedServiceCode(nextCode);
+                      const nextService = services.find((service) => service.service_code === nextCode);
+                      setSelectedOfferingFullCode(nextService?.offerings[0]?.full_code ?? "");
+                      setPreviewKey("");
+                      setPreviewResult(null);
+                    }}
+                    value={selectedService?.service_code ?? ""}
+                  >
+                    {services.map((service) => (
+                      <option key={service.service_code} value={service.service_code}>
+                        {service.title || service.service_code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedService?.offerings.length ? (
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Тип обращения
+                    <select
+                      aria-label="Requester offering"
+                      className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                      onChange={(event) => {
+                        setSelectedOfferingFullCode(event.currentTarget.value);
+                        setPreviewKey("");
+                        setPreviewResult(null);
+                      }}
+                      value={selectedOffering?.full_code ?? ""}
+                    >
+                      {selectedService.offerings.map((offering) => (
+                        <option key={offering.full_code} value={offering.full_code}>
+                          {offering.title || offering.offering_code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {selectedOffering ? (
+                  <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900">{selectedOffering.title}</p>
+                    {selectedOffering.description ? <p className="mt-1">{selectedOffering.description}</p> : null}
+                    <p className="mt-1 text-xs">
+                      {[
+                        selectedOffering.expected_response ? `Ответ: ${selectedOffering.expected_response}` : null,
+                        selectedOffering.expected_resolution ? `Решение: ${selectedOffering.expected_resolution}` : null,
+                        selectedOffering.approval_required ? "Потребуется согласование" : null,
+                        selectedOffering.diagnostic_consent_required ? "Потребуется согласие на диагностику" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {forms.length ? (
+              <div className="grid gap-3">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Форма обращения
+                  <select
+                    aria-label="Requester form"
+                    className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                    onChange={(event) => {
+                      setSelectedFormKey(event.currentTarget.value);
+                      setPreviewKey("");
+                      setPreviewResult(null);
+                    }}
+                    value={selectedForm?.key ?? ""}
+                  >
+                    {forms.map((form) => (
+                      <option key={form.key} value={form.key}>
+                        {form.title || form.key}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {visibleFields.map((field) => (
+                  <RequestFormFieldControl
+                    field={field}
+                    key={field.key}
+                    onChange={(value) => {
+                      setFieldValues((current) => ({ ...current, [field.key]: value }));
+                      setPreviewKey("");
+                      setPreviewResult(null);
+                    }}
+                    value={fieldValues[field.key] ?? (field.type === "checkbox" ? false : "")}
+                  />
+                ))}
+              </div>
+            ) : null}
             <label className="block text-sm font-semibold text-slate-700">
               Тема
               <input className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal" onChange={(event) => setTitle(event.target.value)} value={title} />
@@ -539,14 +935,38 @@ export function RequesterWorkspacePage() {
                 value={description}
               />
             </label>
-            <button
-              className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={submitting || !selectedDevice || !description.trim()}
-              type="submit"
-            >
-              <Send className="h-4 w-4" />
-              {submitting ? "Создаем..." : "Создать обращение"}
-            </button>
+            {previewResult ? (
+              <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <p className="font-semibold text-slate-900">Безопасный preview</p>
+                <p>{[previewResult.service?.title, previewResult.offering?.title].filter(Boolean).join(" / ")}</p>
+                {previewResult.request_type_label ? <p>Тип: {previewResult.request_type_label}</p> : null}
+                {previewResult.expected_first_response ? <p>Ответ: {previewResult.expected_first_response}</p> : null}
+                {previewResult.expected_resolution ? <p>Решение: {previewResult.expected_resolution}</p> : null}
+                {previewResult.approval?.text ? <p>{previewResult.approval.text}</p> : null}
+                {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
+                {previewResult.blockers?.length ? <p className="text-rose-700">{previewResult.blockers.join(" ")}</p> : null}
+              </div>
+            ) : null}
+            <div className="grid gap-2">
+              <button
+                aria-label="Preview requester ticket"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                disabled={previewSubmitting || !selectedDevice || !description.trim() || !selectedOffering}
+                onClick={() => void handlePreview()}
+                type="button"
+              >
+                {previewSubmitting ? "Проверяем..." : "Проверить заявку"}
+              </button>
+              <button
+                aria-label="Create requester ticket"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={submitting || !selectedDevice || !description.trim() || Boolean(selectedOffering && !previewIsFresh)}
+                type="submit"
+              >
+                <Send className="h-4 w-4" />
+                {submitting ? "Создаем..." : "Создать обращение"}
+              </button>
+            </div>
           </form>
         </aside>
       </div>

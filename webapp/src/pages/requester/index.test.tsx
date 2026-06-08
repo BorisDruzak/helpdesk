@@ -183,4 +183,131 @@ describe("RequesterWorkspacePage", () => {
       );
     });
   });
+
+  it("creates a requester ticket through catalog form preview", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
+            devices: [{ device_id: "device-1", hostname: "desk-1", os: "Windows", agent_version: "3.1.61" }],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack: {
+            pack_key: "request_forms",
+            version: "2026.06",
+            forms: [
+              {
+                key: "breakage",
+                title: "Поломка",
+                request_kind: "incident",
+                fields: [{ key: "summary", label: "Кратко", type: "text", required: true }],
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({
+          status: "ok",
+          catalog_version: "runtime",
+          services: [
+            {
+              service_code: "workplace",
+              title: "Рабочее место",
+              offerings: [
+                {
+                  offering_code: "laptop_broken",
+                  full_code: "workplace.laptop_broken",
+                  title: "Сломался ноутбук",
+                  request_template_key: "breakage",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url === "/api/service-catalog/preview") {
+        return jsonResponse({
+          status: "ok",
+          ok: true,
+          service: { code: "workplace", title: "Рабочее место" },
+          offering: { code: "laptop_broken", full_code: "workplace.laptop_broken", title: "Сломался ноутбук" },
+          request_type_label: "Инцидент",
+          approval: { required: false, text: "Согласование не требуется" },
+          diagnostics: { required: false, consent_required: false, text: "Диагностика не требуется" },
+          warnings: [],
+          blockers: [],
+          would_create_ticket: false,
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-88",
+            ticket: { ticket_id: "T-88", title: "Проверка рабочего места", status: "new" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByLabelText("Requester offering");
+    fireEvent.change(screen.getByLabelText("Requester form field summary"), {
+      target: { value: "Ноутбук не включается" },
+    });
+    fireEvent.change(screen.getByLabelText("Описание"), {
+      target: { value: "Ноутбук не загружается после включения" },
+    });
+    fireEvent.click(screen.getByLabelText("Preview requester ticket"));
+
+    await screen.findByText("Безопасный preview");
+    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/requester/tickets",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"service_code":"workplace"'),
+        }),
+      );
+    });
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse(String((createCall?.[1] as RequestInit).body));
+    expect(body).toMatchObject({
+      device_id: "device-1",
+      service_code: "workplace",
+      offering_code: "laptop_broken",
+      offering_full_code: "workplace.laptop_broken",
+      request_template_key: "breakage",
+      form_key: "breakage",
+      form_pack_key: "request_forms",
+      form_pack_version: "2026.06",
+      form_payload: { summary: "Ноутбук не включается" },
+      ticket_type: "incident",
+    });
+  });
 });
