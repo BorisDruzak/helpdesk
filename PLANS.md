@@ -1,6 +1,12 @@
 # Browser / Requester / Agent Identity Model
 
-Status: Stage 1 registration flow verified. Browser pairing, web confirmation, agent pickup, admin approval and agent confirmed-binding transition are covered by local API acceptance and live MCP/API/DB verification. Stage 2 requester workspace MVP is implemented and live-verified for owned-device listing and ticket creation.
+Status:
+
+- Stage 1: complete for primary browser-link flow; `/app/device/pair` manual code entry is deferred.
+- Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
+- Stage 2B: full requester workspace remains in progress.
+- Stage 3: unified browser/agent requester consent layer is not implemented yet.
+- Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
 Latest live verification, 2026-06-08:
 
@@ -9,6 +15,36 @@ Latest live verification, 2026-06-08:
 - `/app/requester` for `requester-user-20260608-093700` showed one owned device and both live tickets; browser requester creation created ticket `T-000647`.
 - Login pairing `/app/device/login` was rechecked after the redirect/pairing UI fixes: `next` returned to the pairing page and device facts stayed visible after confirmation.
 - DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
+
+## Remaining Work
+
+Stage 1 follow-up:
+
+- `/app/device/pair` manual pairing-code entry.
+
+Stage 2B follow-up:
+
+- requester ticket message/chat;
+- requester close/reopen/feedback;
+- requester ticket preview;
+- service catalog / dynamic form / knowledge suggestions reuse;
+- no-device request creation;
+- public ticket claim-to-account;
+- requester attachments upload/download;
+- requester device detail;
+- requester profile workflow;
+- admin user to registry person linking workflow;
+- shared-device privacy coverage.
+
+Stage 3:
+
+- `UserConsentRequest`;
+- requester consent APIs;
+- agent consent APIs;
+- operation consent integration;
+- Remote Assist browser consent integration;
+- requester/agent UI prompts;
+- atomic/idempotent consent decisions.
 
 ## Goal
 
@@ -694,8 +730,9 @@ Common checks:
 - [x] Stage 2 tests: resolver-owned visibility and owned/foreign device create coverage are added for the authenticated workspace slice. Shared-device privacy, attachment/comment/close/reopen/feedback and consent tests remain follow-up coverage.
 - [x] Stage 2 backend: implemented `/api/web/requester/bootstrap`, `/devices`, `/tickets`, `/tickets/{ticket_id}` and owned-device `POST /tickets`; server resolves person/bindings/sessions and does not trust arbitrary browser `device_id`.
 - [x] Stage 2 frontend: implemented `/app/requester` route, workspace navigation/access wiring and first authenticated requester page for profile summary, owned devices, recent tickets and owned-device ticket creation.
-- [ ] Stage 2 admin: connect UI users to registry persons through explicit admin workflow.
-- [ ] Stage 2 verification and docs: local tests pass; live browser/GUI/DB checks are in progress.
+- [x] Stage 2A verification and docs: local tests, browser, agent GUI, MCP and DB live checks passed for owned-device listing and owned-device ticket creation.
+- [ ] Stage 2B lifecycle: requester message/chat, close/reopen/feedback, ticket detail, attachments, preview/catalog/forms, no-device creation and public ticket claim remain follow-up work.
+- [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
 - [ ] Stage 3 backend: implement `UserConsentRequest`, requester/agent APIs and operation transition integration.
@@ -704,7 +741,7 @@ Common checks:
 
 ## Handoff
 
-Continue in Execute mode for Stage 2 live verification. This `PLANS.md` is the current source of truth for the next long-running work item.
+Continue with Slice 2: Stage 1 manual pairing-code flow, unless the user explicitly chooses a Stage 2B requester-workspace slice first. Stage 2A live verification is complete; do not repeat it as the next handoff item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -722,16 +759,16 @@ Done in this slice:
 - requester ticket creation for server-verified owned devices;
 - local backend/frontend coverage for owned visibility and foreign-device denial.
 
-Deferred:
+Deferred / next:
 
-- `/app/device/pair` manual code entry remains outside this verified Stage 1 slice unless live testing shows direct URL handoff is insufficient.
-- requester no-device creation/onboarding remains outside the current Stage 2 slice; first live scope requires an owned registered device.
-- requester comment, close, reopen, feedback, attachment and consent-center endpoints remain Stage 2/3 follow-up items.
-- explicit admin UI workflow for linking existing UI users to registry persons remains follow-up; current resolver uses existing person identities.
+- Stage 1 follow-up: `/app/device/pair` manual code entry.
+- Stage 2B follow-up: requester no-device creation/onboarding, ticket detail, message/chat, close/reopen/feedback, preview/catalog/forms, attachments, device/profile pages, public ticket claim and shared-device privacy coverage.
+- Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
+- Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
-Immediate remaining work:
+Immediate next work:
 
-1. Finish live browser, agent GUI and DB verification for Stage 1 registration plus the Stage 2 requester workspace slice.
+1. Implement Stage 1 manual pairing-code flow: `/app/device/pair`, pairing-code lookup endpoint, rate limit, tests and browser smoke.
 
 Before code changes, read the nested instructions for the target area:
 
