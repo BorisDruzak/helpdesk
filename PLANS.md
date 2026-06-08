@@ -234,7 +234,7 @@ Keep "Войти в агенте" only as a fallback:
 - [x] Browser cannot substitute a foreign `device_id` through the agent pairing create endpoint.
 - [x] Browser confirmation cannot create a confirmed-binding session for a different user or an unbound device.
 - [x] Device registered to another user does not receive a confirmed-binding session through browser login.
-- [ ] Logout or revoked binding invalidates the agent session and returns the agent to account gate.
+- [x] Logout or revoked binding invalidates the agent session and returns the agent to account gate. Covered by `test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate`.
 
 ## Stage 2: Authenticated Requester Workspace
 
@@ -680,8 +680,8 @@ Common checks:
 - [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
 - [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages and agent polling. Linux stand smoke covered live API/DB behavior. Manual pairing-code entry is deferred.
 - [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
-- [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll and main-window polling/session save are implemented. `/app/device/pair` manual code entry is not in this slice.
-- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke and Linux DB/API invariants passed. Remote server was stopped after checks.
+- [x] Stage 1 frontend/agent: `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll, main-window polling/session save and invalid-session return-to-gate behavior are implemented. `/app/device/pair` manual code entry is not in this slice.
+- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke, invalid-session GUI regression and Linux DB/API invariants passed. Remote server was stopped after checks.
 - [ ] Stage 2 design: confirm requester resolver, permissions, routes and authenticated/public separation.
 - [ ] Stage 2 tests: add resolver, visibility, create and shared-device privacy coverage.
 - [ ] Stage 2 backend: implement `/api/web/requester/*` bootstrap, ticket, device and profile APIs.
@@ -696,7 +696,7 @@ Common checks:
 
 ## Handoff
 
-Continue in Execute mode for Stage 1. This `PLANS.md` is the current source of truth for the next long-running work item.
+Continue in Execute mode for Stage 2. This `PLANS.md` is the current source of truth for the next long-running work item.
 
 Done in this slice:
 
@@ -705,6 +705,7 @@ Done in this slice:
 - registration pairing creates/updates a registration claim for the pairing device;
 - `/app/device/login` and `/app/device/register` pages;
 - agent account-gate browser-first actions and polling;
+- agent account-state refresh clears revoked/invalid local account sessions and returns to account gate;
 - one-time account-session token remains agent-only.
 
 Deferred:
@@ -713,8 +714,7 @@ Deferred:
 
 Immediate remaining work:
 
-1. Commit and push the verified Stage 1 registration-flow test/plan update.
-2. Continue with Stage 2 requester workspace design and tests.
+1. Continue with Stage 2 requester workspace design and tests.
 
 Before code changes, read the nested instructions for the target area:
 

@@ -255,3 +255,65 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
     await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
 
     assert rendered[-1]["state"]["registration"]["status"] == "pending_user_confirmation"
+
+
+@pytest.mark.asyncio
+async def test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate():
+    rendered: list[dict] = []
+    selected_views: list[str] = []
+    cleared: list[bool] = []
+    profile_refreshes: list[bool] = []
+
+    class FakeClient:
+        async def get_account_state(self) -> dict:
+            return {
+                "accounts": [],
+                "registration": {"status": "unregistered"},
+                "can_register": True,
+            }
+
+        async def validate_account_session(self, session_id: str, session_token: str | None = None) -> dict:
+            assert session_id == "session-1"
+            assert session_token == "token-1"
+            raise RuntimeError("HTTP 403 ACCOUNT_SESSION_REVOKED")
+
+    class FakeSessionManager:
+        def clear(self) -> None:
+            cleared.append(True)
+
+        def enrich_from_account_state(self, session: dict, state: dict) -> dict:
+            raise AssertionError("revoked session must not be enriched")
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(
+        ticket_client=FakeClient(),
+        tickets_cache=["T-1"],
+        active_ticket_id="T-1",
+        _ticket_detail_timer=SimpleNamespace(stop=lambda: None),
+        _reset_active_ticket_cache=lambda: None,
+        _update_tickets_list_ui=lambda: None,
+    )
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session_manager = FakeSessionManager()
+    window._account_session = {
+        "account_mode": "confirmed_binding",
+        "account_session_id": "session-1",
+        "session_token": "token-1",
+        "binding_id": "binding-1",
+    }
+    window._account_state = {}
+    window._active_sidebar_view = "tickets"
+    window._render_profile_status = lambda: profile_refreshes.append(True)
+    window._select_sidebar_view = lambda view, **kwargs: selected_views.append(view)
+
+    await window._async_refresh_account_state()
+
+    assert cleared == [True]
+    assert window._account_session["account_mode"] == "none"
+    assert window.chat_panel.tickets_cache == []
+    assert window.chat_panel.active_ticket_id is None
+    assert rendered[-1]["state"]["registration"]["status"] == "unregistered"
+    assert rendered[-1]["local_session"]["account_mode"] == "none"
+    assert rendered[-1]["error"]
+    assert selected_views == ["account_gate"]
+    assert profile_refreshes == [True]

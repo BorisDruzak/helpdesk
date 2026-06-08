@@ -1338,7 +1338,24 @@ class MainWindow(QMainWindow):
             self.account_gate_page.render({}, local_session=self._account_session, error=message)
             return
         self._account_state = state if isinstance(state, dict) else {}
-        if not await self._validate_local_account_session_with_server(self._account_session, self._account_state):
+        try:
+            local_session_valid = await self._validate_local_account_session_with_server(
+                self._account_session,
+                self._account_state,
+            )
+        except Exception as exc:
+            if account_session_error_action(exc) != "clear_session":
+                raise
+            self._clear_local_account_session_state()
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error="РЎРµСЃСЃРёСЏ Р°РєРєР°СѓРЅС‚Р° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР°. Р’РѕР№РґРёС‚Рµ СЃРЅРѕРІР°.",
+            )
+            self._render_profile_status()
+            self._select_sidebar_view("account_gate", expand=True)
+            return
+        if not local_session_valid:
             self._account_session = {"schema_version": 1, "account_mode": "none"}
             self._account_session_manager.clear()
         else:
