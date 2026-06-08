@@ -35,6 +35,20 @@ function getBrowserStorage(): WorkspaceStorage | null {
   return window.localStorage;
 }
 
+function normalizePath(path: string) {
+  const withoutHash = path.split("#", 1)[0] ?? path;
+  const withoutQuery = withoutHash.split("?", 1)[0] ?? withoutHash;
+  if (withoutQuery.length > 1) {
+    return withoutQuery.replace(/\/+$/, "");
+  }
+  return withoutQuery || "/";
+}
+
+function isAuthenticatedAppPath(path: string) {
+  const pathname = normalizePath(path);
+  return pathname === "/app/device/register" || pathname === "/app/device/login";
+}
+
 export function getWorkspacePath(workspace: AppWorkspace): string {
   return WORKSPACE_PATHS[workspace];
 }
@@ -70,6 +84,10 @@ export function resolveNextWorkspacePath(
   nextPath: string | null,
   session: WebSession | null
 ): string | null {
+  if (nextPath && isAuthenticatedAppPath(nextPath)) {
+    return nextPath;
+  }
+
   if (nextPath && isWorkspacePath(nextPath, "support") && hasWorkspaceAccess(session, "support")) {
     return canAccessNavigationPath(nextPath, session?.permissions ?? []) ? nextPath : SUPPORT_HOME_PATH;
   }

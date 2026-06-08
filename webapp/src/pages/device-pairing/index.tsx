@@ -86,8 +86,12 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
     setIsConfirming(true);
     try {
       const payload = await confirmDevicePairing(pairingId, purpose);
-      setConfirmed(payload);
-      setPairing(payload);
+      const nextPayload = {
+        ...payload,
+        device: payload.device ?? pairing?.device ?? confirmed?.device,
+      };
+      setConfirmed(nextPayload);
+      setPairing(nextPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось подтвердить устройство");
     } finally {

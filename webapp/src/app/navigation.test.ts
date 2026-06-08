@@ -11,6 +11,7 @@ import {
 } from "./navigation";
 import {
   readWorkspaceHistoryPath,
+  resolveNextWorkspacePath,
   resolveWorkspaceSwitchPath,
   writeWorkspaceHistoryPath,
 } from "../features/auth/workspace-access";
@@ -122,5 +123,19 @@ describe("navigation helpers", () => {
     expect(resolveWorkspaceSwitchPath("admin", { ...fullSession, permissions: [] }, localStorageLike)).toBe(
       ADMIN_HOME_PATH,
     );
+  });
+
+  it("keeps protected device pairing next paths after login", () => {
+    expect(
+      resolveNextWorkspacePath("/app/device/register?pairing_id=pair-1", {
+        ...fullSession,
+        default_workspace: "requester",
+        available_workspaces: ["requester"],
+        permissions: ["workspace.requester.view"],
+      }),
+    ).toBe("/app/device/register?pairing_id=pair-1");
+    expect(
+      resolveNextWorkspacePath("https://example.test/app/device/register?pairing_id=pair-1", fullSession),
+    ).toBe(ADMIN_HOME_PATH);
   });
 });

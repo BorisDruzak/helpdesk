@@ -120,5 +120,7 @@ describe("DevicePairingPage", () => {
 
     expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
     expect(screen.getByText("pending_admin_review")).toBeInTheDocument();
+    expect(screen.getByText("NEW-PC")).toBeInTheDocument();
+    expect(screen.getByText("Windows")).toBeInTheDocument();
   });
 });

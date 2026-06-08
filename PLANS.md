@@ -1,6 +1,14 @@
 # Browser / Requester / Agent Identity Model
 
-Status: Stage 1 registration flow verified. Browser pairing, web confirmation, agent pickup, admin approval and agent confirmed-binding transition are covered by local API acceptance and live MCP/API/DB verification.
+Status: Stage 1 registration flow verified. Browser pairing, web confirmation, agent pickup, admin approval and agent confirmed-binding transition are covered by local API acceptance and live MCP/API/DB verification. Stage 2 requester workspace MVP is implemented and live-verified for owned-device listing and ticket creation.
+
+Latest live verification, 2026-06-08:
+
+- Empty local agent `codex-live-requester-0608` registered through `/app/device/register`, agent pickup consumed the registration pairing, admin approval created active binding `e3cacd33-ba5e-436d-8930-520d0e66307a`.
+- Agent GUI account gate refreshed to `confirmed_binding`; GUI automation created ticket `T-000646`.
+- `/app/requester` for `requester-user-20260608-093700` showed one owned device and both live tickets; browser requester creation created ticket `T-000647`.
+- Login pairing `/app/device/login` was rechecked after the redirect/pairing UI fixes: `next` returned to the pairing page and device facts stayed visible after confirmation.
+- DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
 
 ## Goal
 
