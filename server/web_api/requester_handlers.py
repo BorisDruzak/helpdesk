@@ -107,6 +107,23 @@ async def handle_web_requester_devices(request: web.Request) -> web.Response:
 
 
 @require_auth("user")
+async def handle_web_requester_device_detail(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _clean(request.match_info.get("device_id"), max_length=80)
+    if not device_id:
+        return _error("device not found", status=404, error_code="NOT_FOUND")
+    async with get_session() as session:
+        try:
+            payload = await RequesterIdentityResolver(session).get_device_detail(
+                actor_id=auth_context.actor_id,
+                device_id=device_id,
+            )
+        except PermissionError:
+            return _error("device not found", status=404, error_code="NOT_FOUND")
+    return _success(payload)
+
+
+@require_auth("user")
 async def handle_web_requester_tickets(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     limit = int(request.query.get("limit") or 100)

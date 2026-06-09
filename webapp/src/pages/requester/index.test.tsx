@@ -17,6 +17,73 @@ afterEach(() => {
 });
 
 describe("RequesterWorkspacePage", () => {
+  it("opens requester device detail from the owned devices list", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One" },
+            devices: [{ device_id: "device-1", hostname: "desk-1", os: "Windows", agent_version: "3.1.61" }],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 2,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/devices/device-1") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            device: {
+              device_id: "device-1",
+              hostname: "desk-1.corp",
+              os: "Windows 11",
+              agent_version: "3.1.61",
+              relationship_type: "primary_user",
+              binding_status: "active",
+              asset_name: "Desk one asset",
+              open_ticket_count: 2,
+              available_actions: { create_ticket: true },
+            },
+            recent_tickets: [{ ticket_id: "T-1", title: "Device ticket", status: "new" }],
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("desk-1");
+    fireEvent.click(screen.getByLabelText("Open requester device detail device-1"));
+
+    await screen.findByText("Сведения об устройстве");
+    await screen.findByText("desk-1.corp");
+    await screen.findByText(/Основной пользователь/);
+    await screen.findByText((_, element) => element?.textContent === "offline · Открытые обращения: 2");
+    await screen.findByText("Device ticket");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/devices/device-1",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
+    );
+  });
+
   it("claims a public ticket and opens it in the requester workspace", async () => {
     let claimed = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

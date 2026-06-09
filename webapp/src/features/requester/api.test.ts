@@ -6,6 +6,7 @@ import {
   closeRequesterTicket,
   createPublicTicket,
   createRequesterTicket,
+  fetchRequesterDevice,
   fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
@@ -197,6 +198,35 @@ describe("requester public api", () => {
 });
 
 describe("authenticated requester api", () => {
+  it("loads authenticated requester device detail through the requester boundary", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          device: {
+            device_id: "device-1",
+            hostname: "desk-1",
+            relationship_type: "primary_user",
+            binding_status: "active",
+            open_ticket_count: 2,
+            available_actions: { create_ticket: true },
+          },
+          recent_tickets: [{ ticket_id: "T-1", title: "Device ticket" }],
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await fetchRequesterDevice("device-1");
+
+    expect(result.device.device_id).toBe("device-1");
+    expect(result.device.open_ticket_count).toBe(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/devices/device-1",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
+    );
+  });
+
   it("previews an authenticated requester ticket through the requester boundary", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

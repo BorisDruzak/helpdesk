@@ -126,6 +126,7 @@ from web_api.change_handlers import (
 from web_api.approval_handlers import handle_web_support_approvals
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
+    handle_web_requester_device_detail,
     handle_web_requester_devices,
     handle_web_requester_ticket_claim_public,
     handle_web_requester_ticket_close,
@@ -1027,6 +1028,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/registry/browser-pairings/{pairing_id}/registration/confirm', handle_web_registry_browser_pairing_registration_confirm),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
         web.get('/api/web/requester/devices', handle_web_requester_devices),
+        web.get('/api/web/requester/devices/{device_id}', handle_web_requester_device_detail),
         web.get('/api/web/requester/tickets', handle_web_requester_tickets),
         web.post('/api/web/requester/tickets', handle_web_requester_ticket_create),
         web.post('/api/web/requester/tickets/preview', handle_web_requester_ticket_preview),

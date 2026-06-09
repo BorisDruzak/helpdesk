@@ -245,6 +245,15 @@ export type RequesterDevice = {
   online?: boolean;
   asset_id?: string | null;
   asset_name?: string | null;
+  asset_type?: string | null;
+  asset_status?: string | null;
+  department_id?: string | null;
+  location_id?: string | null;
+  open_ticket_count?: number;
+  available_actions?: {
+    create_ticket?: boolean;
+    view_tickets?: boolean;
+  };
 };
 
 export type RequesterProfile = {
@@ -266,6 +275,11 @@ export type AuthenticatedRequesterTicket = PublicTicket & {
   updated_at?: string | null;
   priority_class?: string | null;
   public_access_url?: string | null;
+};
+
+export type RequesterDeviceDetail = {
+  device: RequesterDevice;
+  recent_tickets?: AuthenticatedRequesterTicket[];
 };
 
 export type RequesterBootstrap = {

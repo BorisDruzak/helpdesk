@@ -56,6 +56,39 @@ class RequesterIdentityResolver:
             devices.append(self.serialize_device(binding, device, asset))
         return devices
 
+    async def get_device_detail(self, *, actor_id: str, device_id: str) -> dict[str, Any]:
+        _person, binding = await self.require_owned_device(actor_id=actor_id, device_id=device_id)
+        device = await self.session.get(Device, binding.device_id)
+        asset = await self.registry_repo.get_asset_by_device_id(binding.device_id)
+        tickets = [
+            ticket
+            for ticket in await self.list_tickets(actor_id=actor_id, limit=300)
+            if str(getattr(ticket, "device_id", "") or "") == binding.device_id
+        ]
+        open_statuses = {"resolved", "closed", "canceled"}
+        detail = self.serialize_device(binding, device, asset)
+        detail.update(
+            {
+                "asset_type": getattr(asset, "asset_type", None),
+                "asset_status": getattr(asset, "status", None),
+                "department_id": getattr(asset, "department_id", None),
+                "location_id": getattr(asset, "location_id", None),
+                "last_seen_at": getattr(getattr(device, "last_seen_at", None), "isoformat", lambda: None)()
+                or getattr(getattr(asset, "last_seen_at", None), "isoformat", lambda: None)(),
+                "open_ticket_count": sum(
+                    1 for ticket in tickets if str(getattr(ticket, "status", "") or "") not in open_statuses
+                ),
+                "available_actions": {
+                    "create_ticket": True,
+                    "view_tickets": True,
+                },
+            }
+        )
+        return {
+            "device": detail,
+            "recent_tickets": [ticket_to_dict(ticket, visibility="requester") for ticket in tickets[:10]],
+        }
+
     def serialize_person(self, person: RegistryPerson | None) -> dict[str, Any] | None:
         if person is None:
             return None

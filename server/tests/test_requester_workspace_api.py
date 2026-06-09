@@ -11,6 +11,7 @@ from app.db.models import (
     Artifact,
     Device,
     KnowledgeFeedbackEvent,
+    RegistryAsset,
     RegistryPerson,
     RegistryPersonIdentity,
     RequestTemplate,
@@ -170,6 +171,84 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
 
     agent_denied = await test_client.get(
         "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
+    )
+    assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_device_detail_is_owned_only_and_safe(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owned_device_id = str(uuid.uuid4())
+    foreign_device_id = str(uuid.uuid4())
+    owner_login = "requester-device-detail-owner@example.test"
+    foreign_login = "requester-device-detail-foreign@example.test"
+    async with session_maker() as session:
+        session.add_all([
+            _device(owned_device_id, "owned-detail-device"),
+            _device(foreign_device_id, "foreign-detail-device"),
+        ])
+        session.add(
+            RegistryAsset(
+                asset_id=str(uuid.uuid4()),
+                asset_type="pc",
+                name="Owned detail asset",
+                hostname="owned-detail-asset",
+                device_id=owned_device_id,
+                source="test",
+                status="active",
+                discovery_payload={"raw_token": "must-not-leak", "os": "Windows 11"},
+            )
+        )
+        approved = await _approved_binding(session, device_id=owned_device_id, login=owner_login)
+        await _approved_binding(session, device_id=foreign_device_id, login=foreign_login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=owned_device_id,
+            requester_id=owner_login,
+            title="Owned device detail ticket",
+            description="Visible from the requester device detail",
+            user_display_name="Requester Device Detail",
+            requester_profile={"full_name": "Requester Device Detail", "email": owner_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        await session.commit()
+
+    detail = await test_client.get(
+        f"/api/web/requester/devices/{owned_device_id}",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
+    )
+    payload = await detail.json()
+    assert detail.status == 200, payload
+    device = payload["data"]["device"]
+    assert device["device_id"] == owned_device_id
+    assert device["binding_id"] == approved["binding"]["binding_id"]
+    assert device["relationship_type"] == "primary_user"
+    assert device["binding_status"] == "active"
+    assert device["hostname"] == "owned-detail-device"
+    assert device["asset_name"] == "Owned detail asset"
+    assert device["open_ticket_count"] == 1
+    assert device["available_actions"]["create_ticket"] is True
+    assert created["ticket_id"] in {item["ticket_id"] for item in payload["data"]["recent_tickets"]}
+    assert "must-not-leak" not in str(payload)
+    assert "raw_token" not in str(payload)
+
+    denied = await test_client.get(
+        f"/api/web/requester/devices/{owned_device_id}",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
+    )
+    denied_payload = await denied.json()
+    assert denied.status == 404, denied_payload
+    assert denied_payload["error_code"] == "NOT_FOUND"
+
+    agent_denied = await test_client.get(
+        f"/api/web/requester/devices/{owned_device_id}",
         headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
     )
     assert agent_denied.status == 403

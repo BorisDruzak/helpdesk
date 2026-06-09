@@ -7,6 +7,7 @@ import {
   createRequesterTicket,
   fetchPublicFormPack,
   fetchRequesterBootstrap,
+  fetchRequesterDevice,
   fetchRequesterTicket,
   fetchRequesterTickets,
   fetchServiceCatalogCurrent,
@@ -28,6 +29,7 @@ import type {
   RequestFormField,
   RequesterBootstrap,
   RequesterDevice,
+  RequesterDeviceDetail,
   RequesterTicketCreatePayload,
   RequesterTicketDetail,
   ServiceCatalogCurrent,
@@ -46,6 +48,17 @@ type PendingAttachment = {
 
 function deviceLabel(device: RequesterDevice): string {
   return device.hostname || device.asset_name || device.device_id;
+}
+
+function relationshipLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    primary_user: "Основной пользователь",
+    responsible: "Ответственный",
+    owner: "Владелец",
+    shared_user: "Общий доступ",
+    temporary_user: "Временный пользователь",
+  };
+  return labels[value || ""] || value || "Связь не указана";
 }
 
 function ticketStatus(ticket: AuthenticatedRequesterTicket): string {
@@ -211,6 +224,9 @@ export function RequesterWorkspacePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
+  const [selectedDeviceDetail, setSelectedDeviceDetail] = useState<RequesterDeviceDetail | null>(null);
+  const [deviceDetailLoading, setDeviceDetailLoading] = useState(false);
+  const [deviceDetailError, setDeviceDetailError] = useState<string | null>(null);
   const [claimTicketId, setClaimTicketId] = useState("");
   const [claimCode, setClaimCode] = useState("");
   const [claimSubmitting, setClaimSubmitting] = useState(false);
@@ -426,6 +442,20 @@ export function RequesterWorkspacePage() {
       attempt,
     ]);
     return attempt;
+  }
+
+  async function openDeviceDetail(deviceId: string) {
+    setSelectedDeviceId(deviceId);
+    setDeviceDetailLoading(true);
+    setDeviceDetailError(null);
+    try {
+      setSelectedDeviceDetail(await fetchRequesterDevice(deviceId));
+    } catch (exc) {
+      setSelectedDeviceDetail(null);
+      setDeviceDetailError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить устройство");
+    } finally {
+      setDeviceDetailLoading(false);
+    }
   }
 
   function recordKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
@@ -1065,19 +1095,30 @@ export function RequesterWorkspacePage() {
             <div className="mt-4 space-y-2">
               {devices.length ? (
                 devices.map((device) => (
-                  <label className="flex cursor-pointer items-start gap-3 rounded-panel border border-slate-200 p-3 text-sm" key={device.device_id}>
-                    <input
-                      checked={(selectedDevice?.device_id ?? "") === device.device_id}
-                      className="mt-1"
-                      name="requester-device"
-                      onChange={() => setSelectedDeviceId(device.device_id)}
-                      type="radio"
-                    />
-                    <span>
-                      <span className="block font-semibold text-slate-900">{deviceLabel(device)}</span>
-                      <span className="block text-xs text-slate-500">{device.os || "OS не указан"} · agent {device.agent_version || "unknown"}</span>
-                    </span>
-                  </label>
+                  <div className="rounded-panel border border-slate-200 p-3 text-sm" key={device.device_id}>
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <input
+                        checked={(selectedDevice?.device_id ?? "") === device.device_id}
+                        className="mt-1"
+                        name="requester-device"
+                        onChange={() => setSelectedDeviceId(device.device_id)}
+                        type="radio"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words font-semibold text-slate-900">{deviceLabel(device)}</span>
+                        <span className="block break-words text-xs text-slate-500">{device.os || "OS не указан"} · agent {device.agent_version || "unknown"}</span>
+                      </span>
+                    </label>
+                    <button
+                      aria-label={`Open requester device detail ${device.device_id}`}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                      disabled={deviceDetailLoading}
+                      onClick={() => void openDeviceDetail(device.device_id)}
+                      type="button"
+                    >
+                      {deviceDetailLoading && selectedDeviceId === device.device_id ? "Загружаем..." : "Подробнее"}
+                    </button>
+                  </div>
                 ))
                 ) : (
                   <p className="text-sm text-slate-500">
@@ -1086,6 +1127,54 @@ export function RequesterWorkspacePage() {
                   </p>
                 )}
             </div>
+            {deviceDetailError ? <p className="mt-3 text-sm text-rose-700">{deviceDetailError}</p> : null}
+            {selectedDeviceDetail ? (
+              <div className="mt-4 rounded-panel border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-950">Сведения об устройстве</p>
+                <dl className="mt-3 grid gap-2">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Имя</dt>
+                    <dd className="break-words font-semibold text-slate-900">{deviceLabel(selectedDeviceDetail.device)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Система</dt>
+                    <dd className="break-words">{selectedDeviceDetail.device.os || "OS не указан"} · agent {selectedDeviceDetail.device.agent_version || "unknown"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Связь</dt>
+                    <dd>{relationshipLabel(selectedDeviceDetail.device.relationship_type)} · {selectedDeviceDetail.device.binding_status || "status unknown"}</dd>
+                  </div>
+                  {selectedDeviceDetail.device.asset_name ? (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-slate-500">Актив</dt>
+                      <dd className="break-words">{selectedDeviceDetail.device.asset_name}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Активность</dt>
+                    <dd>{selectedDeviceDetail.device.online ? "online" : "offline"} · Открытые обращения: {selectedDeviceDetail.device.open_ticket_count ?? 0}</dd>
+                  </div>
+                </dl>
+                {selectedDeviceDetail.recent_tickets?.length ? (
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Последние обращения</p>
+                    <div className="mt-2 grid gap-2">
+                      {selectedDeviceDetail.recent_tickets.map((ticket) => (
+                        <button
+                          className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-700 hover:border-brand-300"
+                          key={ticket.ticket_id}
+                          onClick={() => void openTicket(ticket.ticket_id)}
+                          type="button"
+                        >
+                          <span className="block break-words font-semibold text-slate-900">{ticket.title || ticket.ticket_code || ticket.ticket_id}</span>
+                          <span className="block text-slate-500">{ticketStatus(ticket)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           <form className="support-workspace__panel space-y-3" onSubmit={(event) => void handleClaimPublicTicket(event)}>

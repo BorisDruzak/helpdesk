@@ -13,6 +13,7 @@ import type {
   ServiceCatalogCurrent,
   RequestFormPack,
   RequesterBootstrap,
+  RequesterDeviceDetail,
   RequesterAttachmentUploadResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
@@ -145,6 +146,14 @@ export async function fetchRequesterTickets(): Promise<AuthenticatedRequesterTic
     "Не удалось загрузить обращения",
   );
   return payload.tickets ?? [];
+}
+
+export async function fetchRequesterDevice(deviceId: string): Promise<RequesterDeviceDetail> {
+  const response = await fetch(`/api/web/requester/devices/${encodeURIComponent(deviceId)}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterDeviceDetail>(response, "Не удалось загрузить устройство");
 }
 
 export async function createRequesterTicket(
