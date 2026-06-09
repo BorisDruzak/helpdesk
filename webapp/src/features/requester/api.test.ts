@@ -7,6 +7,7 @@ import {
   createPublicTicket,
   createRequesterTicket,
   fetchRequesterDevice,
+  fetchRequesterProfile,
   fetchRequesterTicket,
   fetchPublicFormPack,
   fetchPublicTicket,
@@ -198,6 +199,33 @@ describe("requester public api", () => {
 });
 
 describe("authenticated requester api", () => {
+  it("loads authenticated requester profile through the requester boundary", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
+          identities: [{ provider: "ui_login", identifier: "requester@example.test", verified: true }],
+          devices: [{ device_id: "device-1", hostname: "desk-1" }],
+          active_bindings: [{ binding_id: "binding-1", device_id: "device-1", status: "active" }],
+          pending_registration_claims: [],
+          profile_policy: { editable: false, editable_fields: [], change_request_required: true },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await fetchRequesterProfile();
+
+    expect(result.profile?.person_id).toBe("person-1");
+    expect(result.identities[0]?.provider).toBe("ui_login");
+    expect(result.profile_policy.editable).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/profile",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
+    );
+  });
+
   it("loads authenticated requester device detail through the requester boundary", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

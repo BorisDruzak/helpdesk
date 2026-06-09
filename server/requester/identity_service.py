@@ -6,7 +6,16 @@ from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.serializers import ticket_to_dict
-from app.db.models import Device, DeviceAccountSession, DeviceRegistrationClaim, DeviceUserBinding, RegistryAsset, RegistryPerson, Ticket
+from app.db.models import (
+    Device,
+    DeviceAccountSession,
+    DeviceRegistrationClaim,
+    DeviceUserBinding,
+    RegistryAsset,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    Ticket,
+)
 from app.repos.registration_repo import RegistrationRepo
 from app.repos.registry_repo import RegistryRepo
 
@@ -102,6 +111,27 @@ class RequesterIdentityResolver:
             "location_id": person.location_id,
             "status": person.status,
         }
+
+    async def list_person_identities(self, person_id: str | None) -> list[dict[str, Any]]:
+        if not person_id:
+            return []
+        result = await self.session.execute(
+            select(RegistryPersonIdentity)
+            .where(RegistryPersonIdentity.person_id == str(person_id))
+            .order_by(RegistryPersonIdentity.provider, RegistryPersonIdentity.identifier)
+        )
+        return [
+            {
+                "identity_id": identity.identity_id,
+                "provider": identity.provider,
+                "identifier": identity.identifier,
+                "verified": bool(identity.verified),
+                "source": identity.source,
+                "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
+                "created_at": identity.created_at.isoformat() if identity.created_at else None,
+            }
+            for identity in result.scalars().all()
+        ]
 
     def serialize_device(
         self,
@@ -218,4 +248,29 @@ class RequesterIdentityResolver:
                 "requester_no_device_create": True,
             },
             "policies": {"device_selection_required": False},
+        }
+
+    async def build_profile(self, *, actor_id: str) -> dict[str, Any]:
+        person = await self.resolve_person_for_web_user(actor_id)
+        person_id = person.person_id if person else None
+        devices = await self.list_allowed_devices(person_id)
+        return {
+            "profile": self.serialize_person(person),
+            "identities": await self.list_person_identities(person_id),
+            "devices": devices,
+            "active_bindings": [
+                {
+                    "binding_id": device["binding_id"],
+                    "device_id": device["device_id"],
+                    "relationship_type": device["relationship_type"],
+                    "status": device["binding_status"],
+                }
+                for device in devices
+            ],
+            "pending_registration_claims": await self.list_pending_claims(person_id),
+            "profile_policy": {
+                "editable": False,
+                "editable_fields": [],
+                "change_request_required": True,
+            },
         }

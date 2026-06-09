@@ -83,6 +83,68 @@ async def _person_for_login(session, *, login: str) -> RegistryPerson:
 
 
 @pytest.mark.asyncio
+async def test_requester_profile_returns_safe_identities_and_devices(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-profile-owner@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "profile-owned-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        person = await session.get(RegistryPerson, approved["person"]["person_id"])
+        assert person is not None
+        person.phone = "+7 000 111-22-33"
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person.person_id,
+                provider="employee_id",
+                identifier="EMP-42",
+                normalized_identifier="emp-42",
+                verified=True,
+                source="hr",
+                metadata_json={"raw_token": "must-not-leak-profile"},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    data = payload["data"]
+    assert data["profile"]["person_id"] == approved["person"]["person_id"]
+    assert data["profile"]["email"] == login
+    assert data["profile"]["phone"] == "+7 000 111-22-33"
+    assert data["profile_policy"]["editable"] is False
+    assert data["profile_policy"]["change_request_required"] is True
+    assert data["devices"][0]["device_id"] == device_id
+    identities = {(item["provider"], item["identifier"]) for item in data["identities"]}
+    assert ("ui_login", login) in identities
+    assert ("employee_id", "EMP-42") in identities
+    assert all("normalized_identifier" not in item for item in data["identities"])
+    assert "metadata_json" not in str(payload)
+    assert "must-not-leak-profile" not in str(payload)
+
+    anonymous_profile = await test_client.get(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}requester-profile-missing@example.test"),
+    )
+    anonymous_payload = await anonymous_profile.json()
+    assert anonymous_profile.status == 200, anonymous_payload
+    assert anonymous_payload["data"]["profile"] is None
+    assert anonymous_payload["data"]["identities"] == []
+    assert anonymous_payload["data"]["devices"] == []
+
+    agent_denied = await test_client.get(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
 async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

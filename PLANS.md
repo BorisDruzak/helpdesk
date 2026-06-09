@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented locally and pending live verification.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -441,6 +441,7 @@ Add:
 
 - `GET /api/web/requester/devices`
 - `GET /api/web/requester/devices/{device_id}`
+- `GET /api/web/requester/profile`
 
 Show safe device facts:
 
@@ -455,6 +456,11 @@ Show safe device facts:
 - available actions.
 
 Add `/app/requester/profile`:
+
+- show read-only requester profile facts in `/app/requester`;
+- show verified identity aliases without raw `metadata_json` or `normalized_identifier`;
+- show owned devices, active bindings and pending registration claims;
+- expose an explicit read-only profile policy until profile edits have a governed change workflow.
 
 - display name;
 - full name;
@@ -741,6 +747,7 @@ Common checks:
 - [x] Stage 2B public ticket claim: authenticated `POST /api/web/requester/tickets/claim-public` verifies an existing public access code, attaches the ticket to the logged-in requester/person, clears the public unbound marker, writes a `requester_ticket_claimed` audit event without storing the code, and `/app/requester` exposes the claim form before opening the claimed ticket.
 - [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
 - [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
+- [ ] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel. Live browser/API/DB verification is pending.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.

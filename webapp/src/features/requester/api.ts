@@ -14,6 +14,7 @@ import type {
   RequestFormPack,
   RequesterBootstrap,
   RequesterDeviceDetail,
+  RequesterProfileDetail,
   RequesterAttachmentUploadResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
@@ -154,6 +155,14 @@ export async function fetchRequesterDevice(deviceId: string): Promise<RequesterD
     cache: "no-store",
   });
   return readSuccess<RequesterDeviceDetail>(response, "Не удалось загрузить устройство");
+}
+
+export async function fetchRequesterProfile(): Promise<RequesterProfileDetail> {
+  const response = await fetch("/api/web/requester/profile", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterProfileDetail>(response, "Не удалось загрузить профиль");
 }
 
 export async function createRequesterTicket(

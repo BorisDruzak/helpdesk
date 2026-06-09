@@ -8,6 +8,7 @@ import {
   fetchPublicFormPack,
   fetchRequesterBootstrap,
   fetchRequesterDevice,
+  fetchRequesterProfile,
   fetchRequesterTicket,
   fetchRequesterTickets,
   fetchServiceCatalogCurrent,
@@ -30,6 +31,7 @@ import type {
   RequesterBootstrap,
   RequesterDevice,
   RequesterDeviceDetail,
+  RequesterProfileDetail,
   RequesterTicketCreatePayload,
   RequesterTicketDetail,
   ServiceCatalogCurrent,
@@ -227,6 +229,9 @@ export function RequesterWorkspacePage() {
   const [selectedDeviceDetail, setSelectedDeviceDetail] = useState<RequesterDeviceDetail | null>(null);
   const [deviceDetailLoading, setDeviceDetailLoading] = useState(false);
   const [deviceDetailError, setDeviceDetailError] = useState<string | null>(null);
+  const [profileDetail, setProfileDetail] = useState<RequesterProfileDetail | null>(null);
+  const [profileDetailLoading, setProfileDetailLoading] = useState(false);
+  const [profileDetailError, setProfileDetailError] = useState<string | null>(null);
   const [claimTicketId, setClaimTicketId] = useState("");
   const [claimCode, setClaimCode] = useState("");
   const [claimSubmitting, setClaimSubmitting] = useState(false);
@@ -455,6 +460,19 @@ export function RequesterWorkspacePage() {
       setDeviceDetailError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить устройство");
     } finally {
       setDeviceDetailLoading(false);
+    }
+  }
+
+  async function openProfileDetail() {
+    setProfileDetailLoading(true);
+    setProfileDetailError(null);
+    try {
+      setProfileDetail(await fetchRequesterProfile());
+    } catch (exc) {
+      setProfileDetail(null);
+      setProfileDetailError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить профиль");
+    } finally {
+      setProfileDetailLoading(false);
     }
   }
 
@@ -1085,6 +1103,96 @@ export function RequesterWorkspacePage() {
         </div>
 
         <aside className="space-y-5">
+          <section className="support-workspace__panel">
+            <div className="support-workspace__panel-head">
+              <div>
+                <p className="workspace-boot__eyebrow">Профиль</p>
+                <h2 className="text-lg font-semibold text-slate-950">Мой профиль</h2>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 text-sm text-slate-700">
+              <div>
+                <p className="break-words font-semibold text-slate-950">{profileName}</p>
+                {bootstrap?.profile?.email ? <p className="break-words text-slate-500">{bootstrap.profile.email}</p> : null}
+              </div>
+              <button
+                aria-label="Open requester profile detail"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                disabled={profileDetailLoading}
+                onClick={() => void openProfileDetail()}
+                type="button"
+              >
+                <Link2 className="h-4 w-4" />
+                {profileDetailLoading ? "Загружаем..." : "Подробнее"}
+              </button>
+            </div>
+            {profileDetailError ? <p className="mt-3 text-sm text-rose-700">{profileDetailError}</p> : null}
+            {profileDetail ? (
+              <div className="mt-4 rounded-panel border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-950">Профиль заявителя</p>
+                <dl className="mt-3 grid gap-2">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Имя</dt>
+                    <dd className="break-words font-semibold text-slate-900">
+                      {profileDetail.profile?.full_name || profileDetail.profile?.display_name || profileName}
+                    </dd>
+                  </div>
+                  {profileDetail.profile?.email ? (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-slate-500">Email</dt>
+                      <dd className="break-words">{profileDetail.profile.email}</dd>
+                    </div>
+                  ) : null}
+                  {profileDetail.profile?.phone ? (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-slate-500">Телефон</dt>
+                      <dd className="break-words">{profileDetail.profile.phone}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-xs font-semibold uppercase text-slate-500">Статус</dt>
+                    <dd>{profileDetail.profile?.status || "profile not linked"}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 rounded-panel border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  Данные профиля доступны только для чтения.
+                </p>
+                {profileDetail.identities.length ? (
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Идентификаторы</p>
+                    <div className="mt-2 grid gap-2">
+                      {profileDetail.identities.map((identity) => (
+                        <div
+                          className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                          key={identity.identity_id || `${identity.provider}:${identity.identifier}`}
+                        >
+                          <span className="block font-semibold text-slate-900">{identity.provider}</span>
+                          <span className="block break-words">{identity.identifier}</span>
+                          <span className="block text-slate-500">{identity.verified ? "verified" : "not verified"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {profileDetail.devices.length ? (
+                  <div className="mt-3 border-t border-slate-200 pt-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Устройства профиля</p>
+                    <div className="mt-2 grid gap-2">
+                      {profileDetail.devices.map((device) => (
+                        <span
+                          className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                          key={device.device_id}
+                        >
+                          {deviceLabel(device)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
           <section className="support-workspace__panel">
             <div className="support-workspace__panel-head">
               <div>

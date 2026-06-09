@@ -267,6 +267,16 @@ export type RequesterProfile = {
   status?: string | null;
 };
 
+export type RequesterIdentity = {
+  identity_id?: string | null;
+  provider: string;
+  identifier: string;
+  verified?: boolean;
+  source?: string | null;
+  last_seen_at?: string | null;
+  created_at?: string | null;
+};
+
 export type AuthenticatedRequesterTicket = PublicTicket & {
   device_id?: string | null;
   requester_person_id?: string | null;
@@ -280,6 +290,24 @@ export type AuthenticatedRequesterTicket = PublicTicket & {
 export type RequesterDeviceDetail = {
   device: RequesterDevice;
   recent_tickets?: AuthenticatedRequesterTicket[];
+};
+
+export type RequesterProfileDetail = {
+  profile?: RequesterProfile | null;
+  identities: RequesterIdentity[];
+  devices: RequesterDevice[];
+  active_bindings: Array<{
+    binding_id?: string | null;
+    device_id?: string | null;
+    relationship_type?: string | null;
+    status?: string | null;
+  }>;
+  pending_registration_claims: Array<Record<string, unknown>>;
+  profile_policy: {
+    editable: boolean;
+    editable_fields: string[];
+    change_request_required: boolean;
+  };
 };
 
 export type RequesterBootstrap = {

@@ -107,6 +107,14 @@ async def handle_web_requester_devices(request: web.Request) -> web.Response:
 
 
 @require_auth("user")
+async def handle_web_requester_profile(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        payload = await RequesterIdentityResolver(session).build_profile(actor_id=auth_context.actor_id)
+    return _success(payload)
+
+
+@require_auth("user")
 async def handle_web_requester_device_detail(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     device_id = _clean(request.match_info.get("device_id"), max_length=80)

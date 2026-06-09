@@ -17,6 +17,80 @@ afterEach(() => {
 });
 
 describe("RequesterWorkspacePage", () => {
+  it("opens requester profile detail from the requester workspace", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
+            devices: [{ device_id: "device-1", hostname: "desk-1", os: "Windows", agent_version: "3.1.61" }],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 1,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/profile") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            profile: {
+              person_id: "person-1",
+              display_name: "Requester One",
+              full_name: "Requester One Full",
+              email: "requester@example.test",
+              phone: "+7 000 111-22-33",
+              status: "active",
+            },
+            identities: [
+              { provider: "ui_login", identifier: "requester@example.test", verified: true, source: "web" },
+              { provider: "employee_id", identifier: "EMP-42", verified: true, source: "hr" },
+            ],
+            devices: [{ device_id: "device-1", hostname: "desk-1", relationship_type: "primary_user", binding_status: "active" }],
+            active_bindings: [{ binding_id: "binding-1", device_id: "device-1", relationship_type: "primary_user", status: "active" }],
+            pending_registration_claims: [],
+            profile_policy: { editable: false, editable_fields: [], change_request_required: true },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    const profileButton = await screen.findByLabelText("Open requester profile detail");
+    fireEvent.click(profileButton);
+
+    await screen.findByText("Профиль заявителя");
+    await screen.findByText("Requester One Full");
+    expect((await screen.findAllByText("requester@example.test")).length).toBeGreaterThan(1);
+    await screen.findByText("+7 000 111-22-33");
+    await screen.findByText("employee_id");
+    await screen.findByText("EMP-42");
+    expect((await screen.findAllByText("desk-1")).length).toBeGreaterThan(1);
+    await screen.findByText("Данные профиля доступны только для чтения.");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/profile",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
+    );
+  });
+
   it("opens requester device detail from the owned devices list", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
