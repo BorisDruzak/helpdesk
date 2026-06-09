@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   authorizePublicTicket,
+  claimPublicRequesterTicket,
   closeRequesterTicket,
   createPublicTicket,
   createRequesterTicket,
@@ -292,6 +293,33 @@ describe("authenticated requester api", () => {
           form_payload: { summary: "No boot" },
           ticket_type: "incident",
         }),
+      }),
+    );
+  });
+
+  it("claims a public ticket into the authenticated requester workspace", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          ticket_id: "T-91",
+          claimed: true,
+          requester_person_id: "person-91",
+          ticket: { ticket_id: "T-91", status: "new" },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await claimPublicRequesterTicket("T-91", "ABCD12");
+
+    expect(result.claimed).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/tickets/claim-public",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ ticket_id: "T-91", code: "ABCD12" }),
       }),
     );
   });

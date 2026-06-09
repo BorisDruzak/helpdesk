@@ -1,8 +1,9 @@
-﻿import { CheckCircle2, Paperclip, RefreshCw, RotateCcw, Send, Star, X } from "lucide-react";
+﻿import { CheckCircle2, Link2, Paperclip, RefreshCw, RotateCcw, Send, Star, X } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   closeRequesterTicket,
+  claimPublicRequesterTicket,
   createRequesterTicket,
   fetchPublicFormPack,
   fetchRequesterBootstrap,
@@ -210,6 +211,10 @@ export function RequesterWorkspacePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
+  const [claimTicketId, setClaimTicketId] = useState("");
+  const [claimCode, setClaimCode] = useState("");
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const [claimNotice, setClaimNotice] = useState<string | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [selectedTicketDetail, setSelectedTicketDetail] = useState<RequesterTicketDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -543,6 +548,32 @@ export function RequesterWorkspacePage() {
       setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось создать обращение");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleClaimPublicTicket(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextTicketId = claimTicketId.trim();
+    const nextCode = claimCode.trim();
+    if (!nextTicketId || !nextCode) {
+      setClaimNotice(null);
+      setError("Укажите номер заявки и код доступа");
+      return;
+    }
+    setClaimSubmitting(true);
+    setClaimNotice(null);
+    setError(null);
+    try {
+      const result = await claimPublicRequesterTicket(nextTicketId, nextCode);
+      setClaimTicketId("");
+      setClaimCode("");
+      setClaimNotice("Обращение привязано");
+      setTickets(await fetchRequesterTickets());
+      await openTicket(result.ticket_id);
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось привязать обращение");
+    } finally {
+      setClaimSubmitting(false);
     }
   }
 
@@ -1045,6 +1076,43 @@ export function RequesterWorkspacePage() {
               )}
             </div>
           </section>
+
+          <form className="support-workspace__panel space-y-3" onSubmit={(event) => void handleClaimPublicTicket(event)}>
+            <div className="support-workspace__panel-head">
+              <div>
+                <p className="workspace-boot__eyebrow">Публичный доступ</p>
+                <h2 className="text-lg font-semibold text-slate-950">Привязать обращение</h2>
+              </div>
+            </div>
+            <label className="block text-sm font-semibold text-slate-700">
+              Номер заявки
+              <input
+                aria-label="Public ticket id to claim"
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                onChange={(event) => setClaimTicketId(event.currentTarget.value)}
+                value={claimTicketId}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Код доступа
+              <input
+                aria-label="Public ticket access code to claim"
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                onChange={(event) => setClaimCode(event.currentTarget.value)}
+                value={claimCode}
+              />
+            </label>
+            {claimNotice ? <p className="text-sm text-emerald-700">{claimNotice}</p> : null}
+            <button
+              aria-label="Claim public requester ticket"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+              disabled={claimSubmitting || !claimTicketId.trim() || !claimCode.trim()}
+              type="submit"
+            >
+              <Link2 className="h-4 w-4" />
+              {claimSubmitting ? "Привязываем..." : "Привязать"}
+            </button>
+          </form>
 
           <form className="support-workspace__panel space-y-3" onSubmit={(event) => void handleSubmit(event)}>
             <div className="support-workspace__panel-head">

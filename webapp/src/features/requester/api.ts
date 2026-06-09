@@ -16,6 +16,7 @@ import type {
   RequesterAttachmentUploadResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
+  RequesterTicketClaimPublicResult,
   RequesterTicketDetail,
   RequesterTicketPreviewPayload,
   RequesterTicketCloseResult,
@@ -156,6 +157,19 @@ export async function createRequesterTicket(
     body: JSON.stringify(payload),
   });
   return readSuccess<RequesterTicketCreateResult>(response, "Не удалось создать обращение");
+}
+
+export async function claimPublicRequesterTicket(
+  ticketId: string,
+  code: string,
+): Promise<RequesterTicketClaimPublicResult> {
+  const response = await fetch("/api/web/requester/tickets/claim-public", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify({ ticket_id: ticketId, code }),
+  });
+  return readSuccess<RequesterTicketClaimPublicResult>(response, "Не удалось привязать обращение");
 }
 
 export async function previewRequesterTicket(

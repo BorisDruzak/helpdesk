@@ -474,6 +474,127 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
 
 
 @pytest.mark.asyncio
+async def test_requester_can_claim_public_ticket_with_access_code(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owner_device_id = str(uuid.uuid4())
+    public_device_id = str(uuid.uuid4())
+    login = "requester-public-claim@example.test"
+    async with session_maker() as session:
+        session.add_all([
+            _device(owner_device_id, "claim-owned-device"),
+            _device(public_device_id, "claim-public-device"),
+        ])
+        approved = await _approved_binding(session, device_id=owner_device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=public_device_id,
+            requester_id="public:claim-unbound",
+            title="Public ticket to claim",
+            description="Created before requester login",
+            user_display_name="Public Claim Requester",
+            requester_profile={"full_name": "Public Claim Requester"},
+            normalized_priority=build_default_priority_payload({}),
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        public_access_code = created["public_access_code"]
+        await session.commit()
+
+    before_claim = await test_client.get(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    before_payload = await before_claim.json()
+    assert before_claim.status == 200, before_payload
+    assert ticket_id not in {item["ticket_id"] for item in before_payload["data"]["tickets"]}
+
+    response = await test_client.post(
+        "/api/web/requester/tickets/claim-public",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"ticket_id": ticket_id, "code": public_access_code},
+    )
+    payload = await response.json()
+    assert response.status == 200, payload
+    assert payload["data"]["ticket_id"] == ticket_id
+    assert payload["data"]["requester_person_id"] == approved["person"]["person_id"]
+
+    after_claim = await test_client.get(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    after_payload = await after_claim.json()
+    assert after_claim.status == 200, after_payload
+    assert ticket_id in {item["ticket_id"] for item in after_payload["data"]["tickets"]}
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "requester_ticket_claimed")
+            )
+        ).scalars().all()
+    assert ticket is not None
+    assert ticket.requester_id == login
+    assert ticket.requester_person_id == approved["person"]["person_id"]
+    assert ticket.custom_fields["requester_claim"]["claimed_by_actor_id"] == login
+    assert ticket.custom_fields["requester_claim"]["previous_requester_id"] == "public:claim-unbound"
+    assert events
+    assert events[0].payload["actor_id"] == login
+    assert "code" not in events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_requester_claim_public_ticket_rejects_invalid_access_code(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owner_device_id = str(uuid.uuid4())
+    public_device_id = str(uuid.uuid4())
+    login = "requester-public-claim-invalid@example.test"
+    async with session_maker() as session:
+        session.add_all([
+            _device(owner_device_id, "claim-invalid-owned-device"),
+            _device(public_device_id, "claim-invalid-public-device"),
+        ])
+        await _approved_binding(session, device_id=owner_device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=public_device_id,
+            requester_id="public:claim-invalid-unbound",
+            title="Public ticket invalid claim",
+            description="Wrong code must not claim",
+            user_display_name="Public Claim Invalid",
+            requester_profile={"full_name": "Public Claim Invalid"},
+            normalized_priority=build_default_priority_payload({}),
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/requester/tickets/claim-public",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"ticket_id": ticket_id, "code": "WRONG-CODE"},
+    )
+    payload = await response.json()
+    assert response.status == 403, payload
+    assert payload["error_code"] == "INVALID_PUBLIC_ACCESS_CODE"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        claimed_events = await session.scalar(
+            select(func.count())
+            .select_from(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id)
+            .where(TicketEvent.event_type == "requester_ticket_claimed")
+        )
+    assert ticket is not None
+    assert ticket.requester_id == "public:claim-invalid-unbound"
+    assert ticket.requester_person_id is None
+    assert claimed_events == 0
+
+
+@pytest.mark.asyncio
 async def test_requester_ticket_message_accepts_attachment_refs(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

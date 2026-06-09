@@ -127,6 +127,7 @@ from web_api.approval_handlers import handle_web_support_approvals
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
     handle_web_requester_devices,
+    handle_web_requester_ticket_claim_public,
     handle_web_requester_ticket_close,
     handle_web_requester_ticket_create,
     handle_web_requester_ticket_detail,
@@ -1029,6 +1030,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/requester/tickets', handle_web_requester_tickets),
         web.post('/api/web/requester/tickets', handle_web_requester_ticket_create),
         web.post('/api/web/requester/tickets/preview', handle_web_requester_ticket_preview),
+        web.post('/api/web/requester/tickets/claim-public', handle_web_requester_ticket_claim_public),
         web.get('/api/web/requester/tickets/{ticket_id}', handle_web_requester_ticket_detail),
         web.post('/api/web/requester/tickets/{ticket_id}/message', handle_web_requester_ticket_message),
         web.post('/api/web/requester/tickets/{ticket_id}/close', handle_web_requester_ticket_close),

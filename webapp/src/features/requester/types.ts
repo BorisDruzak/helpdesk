@@ -316,6 +316,13 @@ export type RequesterTicketCreateResult = {
   public_access_url?: string | null;
 };
 
+export type RequesterTicketClaimPublicResult = {
+  ticket: AuthenticatedRequesterTicket;
+  ticket_id: string;
+  claimed: boolean;
+  requester_person_id?: string | null;
+};
+
 export type RequesterTicketDetail = {
   ticket: AuthenticatedRequesterTicket;
   messages?: PublicTicketMessage[];

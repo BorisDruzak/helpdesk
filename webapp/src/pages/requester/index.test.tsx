@@ -17,6 +17,91 @@ afterEach(() => {
 });
 
 describe("RequesterWorkspacePage", () => {
+  it("claims a public ticket and opens it in the requester workspace", async () => {
+    let claimed = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One" },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            tickets: claimed ? [{ ticket_id: "T-91", title: "Claimed public ticket", status: "new" }] : [],
+          },
+        });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/tickets/claim-public") {
+        claimed = true;
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-91",
+            claimed: true,
+            requester_person_id: "person-1",
+            ticket: { ticket_id: "T-91", title: "Claimed public ticket", status: "new" },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets/T-91") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket: {
+              ticket_id: "T-91",
+              title: "Claimed public ticket",
+              description: "Created from public portal",
+              status: "new",
+            },
+            messages: [],
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Привязать обращение");
+    fireEvent.change(screen.getByLabelText("Public ticket id to claim"), { target: { value: "T-91" } });
+    fireEvent.change(screen.getByLabelText("Public ticket access code to claim"), { target: { value: "ABCD12" } });
+    fireEvent.click(screen.getByLabelText("Claim public requester ticket"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/requester/tickets/claim-public",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ ticket_id: "T-91", code: "ABCD12" }),
+        }),
+      );
+    });
+    await screen.findByText("Обращение привязано");
+    expect(await screen.findAllByText("Claimed public ticket")).toHaveLength(2);
+    await screen.findByText("Created from public portal");
+  });
+
   it("opens owned ticket detail and sends an authenticated requester message", async () => {
     let detailReloadedAfterMessage = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
@@ -30,6 +31,7 @@ from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
+from tickets.public_access import verify_public_access_code
 from tickets.request_template_submission import resolve_create_form_submission
 from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
@@ -125,6 +127,79 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
             "ticket": payload,
             "messages": [_serialize_message_for_requester(event, ticket=ticket) for event in messages],
             "events": [_serialize_event_for_requester(event, ticket=ticket) for event in visible_events],
+        }
+    )
+
+
+@require_auth("user")
+async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await _json_body(request)
+    ticket_id = _clean(data.get("ticket_id"), max_length=80)
+    code = _clean(data.get("code"), max_length=80)
+    if not ticket_id:
+        return _validation_error({"ticket_id": "ticket_id is required"})
+    if not code:
+        return _validation_error({"code": "code is required"})
+
+    async with get_session() as session:
+        repo = TicketEventsRepo(session)
+        resolver = RequesterIdentityResolver(session)
+        ticket = await repo.get_ticket(ticket_id)
+        if ticket is None:
+            return _error("ticket not found", status=404, error_code="NOT_FOUND")
+        if not verify_public_access_code(ticket, code):
+            return _error("invalid public access code", status=403, error_code="INVALID_PUBLIC_ACCESS_CODE")
+
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        existing_person_id = getattr(ticket, "requester_person_id", None)
+        if existing_person_id and (person is None or existing_person_id != person.person_id):
+            return _error("ticket is already claimed", status=409, error_code="PUBLIC_TICKET_ALREADY_CLAIMED")
+
+        previous_requester_id = getattr(ticket, "requester_id", None)
+        custom_fields = dict(getattr(ticket, "custom_fields", None) or {})
+        custom_fields["requester_claim"] = {
+            "claimed_at": datetime.now(timezone.utc).isoformat(),
+            "claimed_by_actor_id": auth_context.actor_id,
+            "previous_requester_id": previous_requester_id,
+            "source": "requester_workspace",
+        }
+        public_access = custom_fields.get("public_access")
+        if isinstance(public_access, dict):
+            public_access = dict(public_access)
+            public_access["unbound"] = False
+            custom_fields["public_access"] = public_access
+
+        await repo.update_ticket(
+            ticket.ticket_id,
+            requester_id=auth_context.actor_id,
+            requester_person_id=person.person_id if person else None,
+            custom_fields=custom_fields,
+        )
+        await repo.add_event(
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            agent_seq=None,
+            event_type="requester_ticket_claimed",
+            payload={
+                "actor_id": auth_context.actor_id,
+                "actor_role": "requester",
+                "requester_person_id": person.person_id if person else None,
+                "previous_requester_id": previous_requester_id,
+                "source": "requester_workspace",
+            },
+            trace_id=str(uuid.uuid4()),
+            event_id=str(uuid.uuid4()),
+        )
+        await session.commit()
+        ticket = await repo.get_ticket(ticket.ticket_id)
+
+    return _success(
+        {
+            "ticket_id": ticket_id,
+            "claimed": True,
+            "requester_person_id": getattr(ticket, "requester_person_id", None) if ticket else None,
+            "ticket": ticket_to_dict(ticket, visibility="requester") if ticket else None,
         }
     )
 
