@@ -182,7 +182,7 @@ class RequesterIdentityResolver:
             "feature_flags": {
                 "requester_ticket_create": True,
                 "requester_owned_device_create": True,
-                "requester_no_device_create": False,
+                "requester_no_device_create": True,
             },
-            "policies": {"device_selection_required": True},
+            "policies": {"device_selection_required": False},
         }

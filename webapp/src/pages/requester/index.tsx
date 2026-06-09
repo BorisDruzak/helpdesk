@@ -239,11 +239,13 @@ export function RequesterWorkspacePage() {
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
   const profileName = bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || bootstrap?.profile?.email || "Пользователь";
   const services = catalog?.services ?? [];
+  const noDeviceCreateEnabled = bootstrap?.feature_flags?.requester_no_device_create === true;
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
     [devices, selectedDeviceId],
   );
+  const canCreateForCurrentScope = Boolean(selectedDevice) || noDeviceCreateEnabled;
   const selectedService = useMemo(
     () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
     [selectedServiceCode, services],
@@ -440,7 +442,7 @@ export function RequesterWorkspacePage() {
   }
 
   function buildCreatePayload(): RequesterTicketCreatePayload {
-    if (!selectedDevice) {
+    if (!canCreateForCurrentScope) {
       throw new Error("Выберите устройство");
     }
     if (!description.trim()) {
@@ -451,7 +453,6 @@ export function RequesterWorkspacePage() {
       throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
     }
     const payload: RequesterTicketCreatePayload = {
-      device_id: selectedDevice.device_id,
       title: title.trim() || selectedForm?.title || selectedOffering?.title || "Проверка рабочего места",
       description: description.trim(),
       user_display_name: profileName,
@@ -473,6 +474,9 @@ export function RequesterWorkspacePage() {
           }
         : {}),
     };
+    if (selectedDevice?.device_id) {
+      payload.device_id = selectedDevice.device_id;
+    }
     if (knowledgeAttempts.length) {
       payload.knowledge_attempts = knowledgeAttempts;
     }
@@ -486,7 +490,7 @@ export function RequesterWorkspacePage() {
     try {
       const createPayload = buildCreatePayload();
       const result = await previewRequesterTicket({
-        device_id: createPayload.device_id,
+        ...(createPayload.device_id ? { device_id: createPayload.device_id } : {}),
         service_code: createPayload.service_code,
         offering_code: createPayload.offering_code,
         offering_full_code: createPayload.offering_full_code,
@@ -503,11 +507,15 @@ export function RequesterWorkspacePage() {
             phone: bootstrap?.profile?.phone,
           },
         },
-        device_metadata: {
-          device_id: selectedDevice?.device_id,
-          hostname: selectedDevice?.hostname,
-          os: selectedDevice?.os,
-        },
+        ...(selectedDevice
+          ? {
+              device_metadata: {
+                device_id: selectedDevice.device_id,
+                hostname: selectedDevice.hostname,
+                os: selectedDevice.os,
+              },
+            }
+          : {}),
       });
       setPreviewResult(result);
       setPreviewKey(currentPreviewKey);
@@ -526,8 +534,8 @@ export function RequesterWorkspacePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedDevice || !description.trim()) {
-      setError("Выберите устройство и заполните описание");
+    if (!canCreateForCurrentScope || !description.trim()) {
+      setError(canCreateForCurrentScope ? "Заполните описание" : "Выберите устройство и заполните описание");
       return;
     }
     if (selectedOffering && !previewIsFresh) {
@@ -1071,9 +1079,12 @@ export function RequesterWorkspacePage() {
                     </span>
                   </label>
                 ))
-              ) : (
-                <p className="text-sm text-slate-500">Зарегистрированных устройств пока нет.</p>
-              )}
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    <span className="block">Зарегистрированных устройств пока нет.</span>
+                    <span className="block">Можно создать общее обращение без привязки к устройству.</span>
+                  </p>
+                )}
             </div>
           </section>
 
@@ -1318,7 +1329,7 @@ export function RequesterWorkspacePage() {
               <button
                 aria-label="Preview requester ticket"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
-                disabled={previewSubmitting || !selectedDevice || !description.trim() || !selectedOffering}
+                disabled={previewSubmitting || !canCreateForCurrentScope || !description.trim() || !selectedOffering}
                 onClick={() => void handlePreview()}
                 type="button"
               >
@@ -1327,7 +1338,7 @@ export function RequesterWorkspacePage() {
               <button
                 aria-label="Create requester ticket"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={submitting || !selectedDevice || !description.trim() || Boolean(selectedOffering && !previewIsFresh)}
+                disabled={submitting || !canCreateForCurrentScope || !description.trim() || Boolean(selectedOffering && !previewIsFresh)}
                 type="submit"
               >
                 <Send className="h-4 w-4" />

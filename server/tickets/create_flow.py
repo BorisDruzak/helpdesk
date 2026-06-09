@@ -348,6 +348,7 @@ async def create_ticket_with_side_effects(
             account_mode = str(requester_account.get("account_mode") or "").strip()
     skip_profile_ingest = bool(requester_account_session_validation) or account_mode in {
         "confirmed_binding",
+        "browser_no_device",
         "other_account",
         "verified_other_account",
         "unverified_other_account",
@@ -448,6 +449,21 @@ async def create_ticket_with_side_effects(
                     "validation": (requester_account or {}).get("validation") or ("legacy_payload_unverified" if not verified else "server_session_verified"),
                     "warning": "ticket_created_from_other_account" if verified else "unverified_other_account_legacy_payload",
                 }
+        elif account_mode == "browser_no_device":
+            requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
+            requester_binding_id = None
+            requester_registration_status = "no_device"
+            requester_registration_context = {
+                "status": "no_device",
+                "device_scope": "none",
+                "validation": (requester_account or {}).get("validation") or "web_requester_identity_resolved",
+            }
+            requester_account_context = {
+                **_safe_account_payload(requester_account or {}),
+                "account_mode": "browser_no_device",
+                "person_id": requester_person_id,
+                "validation": (requester_account or {}).get("validation") or "web_requester_identity_resolved",
+            }
         elif account_mode == "registration_pending":
             pending_claim = registration_status.get("pending_claim") if isinstance(registration_status, dict) else None
             requester_registration_status = str(
@@ -516,7 +532,8 @@ async def create_ticket_with_side_effects(
                 or (registration_status or {}).get("status")
                 or "unregistered"
             )
-        requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
+        if account_mode != "browser_no_device":
+            requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
 

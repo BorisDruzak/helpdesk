@@ -504,4 +504,72 @@ describe("RequesterWorkspacePage", () => {
       ]),
     });
   });
+
+  it("creates a requester ticket without a registered device", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-no-device", display_name: "Requester No Device" },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true },
+            policies: { device_selection_required: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({
+          status: "success",
+          data: { tickets: [] },
+        });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-99",
+            ticket: { ticket_id: "T-99", title: "Проверка рабочего места", status: "new" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Зарегистрированных устройств пока нет.");
+    fireEvent.change(screen.getByLabelText("Описание"), {
+      target: { value: "Нужна помощь без зарегистрированного устройства" },
+    });
+    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+
+    await screen.findByText("Создано обращение T-99");
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(createCall).toBeTruthy();
+    const body = JSON.parse(String((createCall?.[1] as RequestInit).body));
+    expect(body).toMatchObject({
+      title: "Проверка рабочего места",
+      description: "Нужна помощь без зарегистрированного устройства",
+      user_display_name: "Requester No Device",
+    });
+    expect(body).not.toHaveProperty("device_id");
+  });
 });

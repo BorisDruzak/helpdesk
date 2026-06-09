@@ -77,7 +77,7 @@ export type ServiceCatalogPreviewPayload = {
 };
 
 export type RequesterTicketPreviewPayload = ServiceCatalogPreviewPayload & {
-  device_id: string;
+  device_id?: string;
 };
 
 export type ServiceCatalogSafePreview = {
@@ -288,7 +288,7 @@ export type RequesterBootstrap = {
 };
 
 export type RequesterTicketCreatePayload = {
-  device_id: string;
+  device_id?: string;
   title: string;
   description: string;
   user_display_name?: string;

@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -22,12 +22,12 @@ Latest live verification, 2026-06-08/09:
 - Authenticated requester knowledge suggestions reuse check used isolated requester `codex_stage2b_knowledge_20260608_2107@example.test`, owned device `codex-stage2b-kb-live` and ticket `80885bf6-38ab-42fa-8cc7-f0d9175216dd`: Browser MCP verified login to `/app/requester`, one owned registered device, requester-safe suggestions, opening the live article snippet, marking it not helpful, safe preview, and accepted ticket creation. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, `knowledge_attempts` contains `viewed` and `not_helpful` attempts for the live knowledge item with `surface=requester_portal`, `/api/knowledge/feedback` stored `viewed`/`not_helpful` feedback rows, and the ticket has `ticket_created_after_view` feedback metadata with both attempts.
 - Authenticated requester attachment check used isolated requester `codex_stage2b_attach_20260609083214@example.test`, owned device `stage2b-attach-20260609083214` and ticket `T-000653`: Browser MCP verified `/app/requester` login, exactly one owned device, owned ticket detail, file selection through the requester composer, immediate `/api/upload` result shown as a pending attachment, attachment-only send through `/api/web/requester/tickets/{ticket_id}/message`, rendered download link, browser-authenticated download 200 with matching file contents, and 0 console errors. Remote DB verification confirmed the artifact is bound to the expected ticket/device, the `chat_message` payload stores empty `text`, matching `attachment_refs`, normalized `attachments[0].name/url`, and the ticket requester/person/binding match the live requester. The temporary live user was deactivated and its binding revoked after verification.
 - Authenticated requester public-claim check used isolated requester `codex_stage2b_claim-20260609-152039@example.test` and public ticket `T-000654`: Browser MCP verified `/app/requester` login, empty requester list before claim, visible `Привязать обращение` controls, successful claim with the existing public access code, immediate requester list refresh, opened ticket detail, fresh reload persistence and 0 console errors. Remote DB verification confirmed the ticket `requester_id` and `requester_person_id` match the live requester/person, `custom_fields.public_access.unbound=false`, one `requester_ticket_claimed` audit event exists and the event payload does not store the access code. The temporary live user was deactivated after verification.
+- Authenticated requester no-device creation check used isolated requester `codex_stage2b_nodev_20260609153139@example.test` with no active bindings/devices and created ticket `T-000655`: Browser MCP/Playwright verified `/app/requester` login, no-device notice, required form completion, preview/submit, created-ticket notice, fresh reload persistence, and 0 console errors. Remote DB verification confirmed `requester_id`/`requester_person_id` match the live requester/person, `requester_binding_id IS NULL`, `requester_registration_status=no_device`, `requester_account_mode=browser_no_device`, `custom_fields.request_context=no_device`, `requester_account_context.account_mode=browser_no_device`, no `devices` row exists for the placeholder device id, and active binding count for the requester person is 0. Temporary no-device live users were deactivated after verification.
 
 ## Remaining Work
 
 Stage 2B follow-up:
 
-- no-device request creation;
 - requester device detail;
 - requester profile workflow;
 - admin user to registry person linking workflow;
@@ -739,7 +739,7 @@ Common checks:
 - [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create, preview wrapper and requester knowledge suggestions reuse.
 - [x] Stage 2B requester attachments: `/app/requester` uploads files through `/api/upload`, sends `attachment_refs` through owned-ticket `POST /api/web/requester/tickets/{ticket_id}/message`, permits attachment-only requester messages, renders returned attachment links, and keeps artifact resolution behind requester ownership/device-ticket checks.
 - [x] Stage 2B public ticket claim: authenticated `POST /api/web/requester/tickets/claim-public` verifies an existing public access code, attaches the ticket to the logged-in requester/person, clears the public unbound marker, writes a `requester_ticket_claimed` audit event without storing the code, and `/app/requester` exposes the claim form before opening the claimed ticket.
-- [ ] Stage 2B lifecycle follow-up: no-device creation remains follow-up work.
+- [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
@@ -775,13 +775,13 @@ Done in this slice:
 
 Deferred / next:
 
-- Stage 2B follow-up: requester no-device creation/onboarding, device/profile pages and shared-device privacy coverage.
+ - Stage 2B follow-up: requester device/profile pages and shared-device privacy coverage.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Continue Stage 2B requester lifecycle with no-device creation or requester device/profile pages.
+1. Continue Stage 2B requester lifecycle with requester device/profile pages or shared-device privacy coverage.
 
 Before code changes, read the nested instructions for the target area:
 

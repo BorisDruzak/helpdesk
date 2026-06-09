@@ -58,6 +58,13 @@ def _clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
 
 
+def _has_catalog_selection(data: dict[str, Any]) -> bool:
+    return any(
+        _clean(data.get(key), max_length=240)
+        for key in ("service_code", "offering_code", "offering_full_code", "full_offering_code", "request_template_key", "form_key")
+    )
+
+
 def _priority_policy_fallback(data: dict[str, Any]) -> dict[str, Any]:
     fallback: dict[str, Any] = {
         "impact": data.get("impact"),
@@ -442,19 +449,24 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         return _error("JSON body must be an object", status=400)
 
     device_id = _clean(data.get("device_id"), max_length=80)
-    if not device_id:
-        return _error("device_id is required", status=400)
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
-        try:
-            person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=device_id)
-        except PermissionError as exc:
-            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+        binding = None
+        if device_id:
+            try:
+                person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=device_id)
+            except PermissionError as exc:
+                return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+        else:
+            person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+            if person is None:
+                return _error("requester person not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
 
         preview_payload = dict(data)
         requester_context = preview_payload.get("requester_context") if isinstance(preview_payload.get("requester_context"), dict) else {}
         requester_context = dict(requester_context)
+        account_mode = "confirmed_binding" if binding is not None else "browser_no_device"
         requester_context.setdefault(
             "requester_profile",
             {
@@ -466,13 +478,33 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         requester_context.setdefault(
             "requester_account",
             {
-                "account_mode": "confirmed_binding",
+                "account_mode": account_mode,
                 "person_id": person.person_id if person else None,
-                "binding_id": binding.binding_id,
+                "binding_id": binding.binding_id if binding is not None else None,
                 "validation": "web_requester_identity_resolved",
             },
         )
         preview_payload["requester_context"] = requester_context
+        if not _has_catalog_selection(preview_payload):
+            return _success(
+                {
+                    "ok": True,
+                    "service": {"code": None, "title": None},
+                    "offering": {"code": None, "full_code": None, "title": None},
+                    "request_type_label": "Request",
+                    "public_status_after_create": "Новая заявка",
+                    "approval": {"required": False, "text": "Согласование не требуется"},
+                    "diagnostics": {
+                        "required": False,
+                        "consent_required": False,
+                        "text": "Диагностика не требуется до отправки",
+                    },
+                    "next_action": "После отправки заявка попадет в поддержку.",
+                    "warnings": [],
+                    "blockers": [],
+                    "would_create_ticket": False,
+                }
+            )
         try:
             preview = await build_requester_service_catalog_preview(session, preview_payload)
         except ServiceCatalogPreviewError as exc:
@@ -493,9 +525,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     if not isinstance(data, dict):
         return _error("JSON body must be an object", status=400)
 
-    device_id = _clean(data.get("device_id"), max_length=80)
-    if not device_id:
-        return _error("device_id is required", status=400)
+    supplied_device_id = _clean(data.get("device_id"), max_length=80)
     description = _clean(data.get("description"), max_length=5000)
     if not description:
         return _error("description is required", status=400)
@@ -512,10 +542,22 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
-        try:
-            person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=device_id)
-        except PermissionError as exc:
-            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+        binding = None
+        if supplied_device_id:
+            try:
+                person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=supplied_device_id)
+            except PermissionError as exc:
+                return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
+            device_id = supplied_device_id
+            account_mode = "confirmed_binding"
+            request_context = "authenticated_requester_workspace"
+        else:
+            person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+            if person is None:
+                return _error("requester person not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
+            device_id = str(uuid.uuid4())
+            account_mode = "browser_no_device"
+            request_context = "no_device"
 
         requester_profile = {
             "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
@@ -523,15 +565,21 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             "phone": getattr(person, "phone", None),
         }
         requester_account = {
-            "account_mode": "confirmed_binding",
+            "account_mode": account_mode,
             "person_id": person.person_id if person else None,
-            "binding_id": binding.binding_id,
+            "binding_id": binding.binding_id if binding is not None else None,
             "display_name": getattr(person, "display_name", None),
             "full_name": getattr(person, "full_name", None),
             "email": getattr(person, "email", None),
             "validation": "web_requester_identity_resolved",
         }
-        extra_custom_fields: dict[str, Any] = {"request_context": "authenticated_requester_workspace"}
+        extra_custom_fields: dict[str, Any] = {"request_context": request_context}
+        if account_mode == "browser_no_device":
+            extra_custom_fields["no_device"] = {
+                "created_from": "requester_portal",
+                "device_scope": "none",
+                "placeholder_device_id": device_id,
+            }
         template_context: dict[str, Any] = {}
         catalog_process_fields: dict[str, Any] = {}
         ticket_type = _clean(data.get("ticket_type"), max_length=64) or "request"

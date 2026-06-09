@@ -7,7 +7,19 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Artifact, Device, KnowledgeFeedbackEvent, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
+from app.db.models import (
+    Artifact,
+    Device,
+    KnowledgeFeedbackEvent,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    RequestTemplate,
+    Ticket,
+    TicketEvent,
+    TicketFeedback,
+    TicketQueue,
+    TicketReopenEvent,
+)
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from registry.registration_service import RegistrationService
@@ -44,6 +56,29 @@ async def _approved_binding(session, *, device_id: str, login: str):
         profile={"full_name": f"Requester {login}", "email": login, "login": login, "user_confirmed": True},
     )
     return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+
+
+async def _person_for_login(session, *, login: str) -> RegistryPerson:
+    person = RegistryPerson(
+        person_id=str(uuid.uuid4()),
+        display_name=f"Requester {login}",
+        full_name=f"Requester {login}",
+        email=login,
+        source="manual",
+        status="active",
+    )
+    session.add(person)
+    session.add(
+        RegistryPersonIdentity(
+            person_id=person.person_id,
+            provider="ui_login",
+            identifier=login,
+            normalized_identifier=login,
+            verified=True,
+            source="test",
+        )
+    )
+    return person
 
 
 @pytest.mark.asyncio
@@ -138,6 +173,89 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
         headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
     )
     assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_can_create_no_device_ticket_and_preview_without_device(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    foreign_device_id = str(uuid.uuid4())
+    login = "requester-no-device@example.test"
+    async with session_maker() as session:
+        session.add(_device(foreign_device_id, "foreign-device"))
+        person = await _person_for_login(session, login=login)
+        await session.commit()
+
+    bootstrap = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    bootstrap_payload = await bootstrap.json()
+    assert bootstrap.status == 200, bootstrap_payload
+    assert bootstrap_payload["data"]["profile"]["person_id"] == person.person_id
+    assert bootstrap_payload["data"]["devices"] == []
+    assert bootstrap_payload["data"]["feature_flags"]["requester_no_device_create"] is True
+    assert bootstrap_payload["data"]["policies"]["device_selection_required"] is False
+
+    preview = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"description": "Need help without registered device"},
+    )
+    preview_payload = await preview.json()
+    assert preview.status == 200, preview_payload
+    assert preview_payload["data"]["ok"] is True
+    assert preview_payload["data"]["would_create_ticket"] is False
+
+    created = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "No device requester ticket",
+            "description": "Need help without registered device",
+            "user_display_name": "Requester No Device",
+        },
+    )
+    created_payload = await created.json()
+    assert created.status == 200, created_payload
+    ticket_id = created_payload["data"]["ticket_id"]
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+
+    assert ticket is not None
+    assert ticket.device_id
+    assert ticket.device_id != foreign_device_id
+    assert ticket.requester_id == login
+    assert ticket.requester_person_id == person.person_id
+    assert ticket.requester_binding_id is None
+    assert ticket.requester_registration_status == "no_device"
+    assert ticket.requester_account_mode == "browser_no_device"
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["request_context"] == "no_device"
+    assert custom_fields["requester_account_context"]["account_mode"] == "browser_no_device"
+    assert custom_fields["requester_account_context"]["validation"] == "web_requester_identity_resolved"
+    assert custom_fields["requester_registration"]["status"] == "no_device"
+
+    listed = await test_client.get(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    listed_payload = await listed.json()
+    assert listed.status == 200, listed_payload
+    assert ticket_id in {item["ticket_id"] for item in listed_payload["data"]["tickets"]}
+
+    denied = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": foreign_device_id,
+            "title": "Foreign requester ticket",
+            "description": "Should still be rejected",
+        },
+    )
+    denied_payload = await denied.json()
+    assert denied.status == 403, denied_payload
+    assert denied_payload["error_code"] == "REQUESTER_DEVICE_FORBIDDEN"
 
 
 @pytest.mark.asyncio
