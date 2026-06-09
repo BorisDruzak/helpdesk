@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented locally and pending live verification.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -24,12 +24,12 @@ Latest live verification, 2026-06-08/09:
 - Authenticated requester public-claim check used isolated requester `codex_stage2b_claim-20260609-152039@example.test` and public ticket `T-000654`: Browser MCP verified `/app/requester` login, empty requester list before claim, visible `Привязать обращение` controls, successful claim with the existing public access code, immediate requester list refresh, opened ticket detail, fresh reload persistence and 0 console errors. Remote DB verification confirmed the ticket `requester_id` and `requester_person_id` match the live requester/person, `custom_fields.public_access.unbound=false`, one `requester_ticket_claimed` audit event exists and the event payload does not store the access code. The temporary live user was deactivated after verification.
 - Authenticated requester no-device creation check used isolated requester `codex_stage2b_nodev_20260609153139@example.test` with no active bindings/devices and created ticket `T-000655`: Browser MCP/Playwright verified `/app/requester` login, no-device notice, required form completion, preview/submit, created-ticket notice, fresh reload persistence, and 0 console errors. Remote DB verification confirmed `requester_id`/`requester_person_id` match the live requester/person, `requester_binding_id IS NULL`, `requester_registration_status=no_device`, `requester_account_mode=browser_no_device`, `custom_fields.request_context=no_device`, `requester_account_context.account_mode=browser_no_device`, no `devices` row exists for the placeholder device id, and active binding count for the requester person is 0. Temporary no-device live users were deactivated after verification.
 - Authenticated requester device detail check used isolated requester `codex_stage2b_device_20260609182934@example.test`, owned device `stage2b-device-detail-20260609182934` and ticket `T-000656`: Browser MCP/Playwright verified `/app/requester` login, owned device list, opening device detail, safe hostname/asset facts, recent requester-owned ticket, 0 console errors, and screenshot `artifacts/requester-stage2b-device-detail/requester-device-detail-live.png`. Direct browser-authenticated API verified `GET /api/web/requester/devices/{device_id}` returns 200 with the expected device id, `open_ticket_count=1`, recent ticket id `84b3404c-7730-4579-9445-6ca11e0b5eaa`, no raw discovery marker leak, and unknown device returns 404. Remote DB verification confirmed user/person/device/asset/binding/ticket links, ticket `requester_account_mode=confirmed_binding`, the raw discovery marker exists only in `registry_assets.discovery_payload`, and cleanup deactivated the temporary UI user plus revoked the live binding.
+- Authenticated requester profile check used isolated requester `codex_stage2b_profile_20260609201103@example.test`, owned device `stage2b-profile-20260609201103`, active binding `89061f1c-ad5f-43cd-864e-8ee52b2f2c20` and pending claim `ee3eeb27-b133-49ca-a08e-a514e930c84b`: MCP/Playwright verified `/app/requester` login, opening profile detail, safe full name/phone/identity/device rendering, 0 console errors, and screenshot `artifacts/requester-stage2b-profile/requester-profile-live.png`. Browser-authenticated API verified `GET /api/web/requester/profile` returns 200, expected person id, identity providers `employee_id`/`ui_login`, one owned device, one active binding, one pending claim, `profile_policy.editable=false`, no raw `metadata_json`/`normalized_identifier`/marker leak, and `GET /api/web/requester/devices` count 1. Remote DB verification confirmed the UI user/person/device/binding/claim/identity links and raw marker exists only in `registry_person_identities.metadata_json`; cleanup deactivated the temporary UI user, revoked the binding, expired the pending claim and revoked active UI tokens.
 
 ## Remaining Work
 
 Stage 2B follow-up:
 
-- requester profile workflow;
 - admin user to registry person linking workflow;
 - shared-device privacy coverage.
 
@@ -747,7 +747,7 @@ Common checks:
 - [x] Stage 2B public ticket claim: authenticated `POST /api/web/requester/tickets/claim-public` verifies an existing public access code, attaches the ticket to the logged-in requester/person, clears the public unbound marker, writes a `requester_ticket_claimed` audit event without storing the code, and `/app/requester` exposes the claim form before opening the claimed ticket.
 - [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
 - [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
-- [ ] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel. Live browser/API/DB verification is pending.
+- [x] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel; live browser/API/DB verification passed.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
@@ -783,13 +783,13 @@ Done in this slice:
 
 Deferred / next:
 
-- Stage 2B follow-up: requester profile page and shared-device privacy coverage.
+- Stage 2B follow-up: shared-device privacy coverage.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Continue Stage 2B requester profile page or shared-device privacy coverage.
+1. Continue Stage 2B shared-device privacy coverage or the admin workflow for linking existing UI users to registry persons.
 
 Before code changes, read the nested instructions for the target area:
 
