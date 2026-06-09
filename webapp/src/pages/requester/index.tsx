@@ -1,5 +1,5 @@
-﻿import { CheckCircle2, RefreshCw, RotateCcw, Send, Star } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+﻿import { CheckCircle2, Paperclip, RefreshCw, RotateCcw, Send, Star, X } from "lucide-react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   closeRequesterTicket,
@@ -16,6 +16,7 @@ import {
   sendRequesterTicketMessage,
   suggestKnowledge,
   submitRequesterTicketFeedback,
+  uploadRequesterTicketAttachment,
 } from "../../features/requester/api";
 import type {
   AuthenticatedRequesterTicket,
@@ -33,6 +34,14 @@ import type {
 } from "../../features/requester/types";
 
 type FieldValues = Record<string, string | boolean>;
+
+type PendingAttachment = {
+  artifact_id: string;
+  name: string;
+  url?: string | null;
+  mime_type?: string | null;
+  kind?: string | null;
+};
 
 function deviceLabel(device: RequesterDevice): string {
   return device.hostname || device.asset_name || device.device_id;
@@ -206,6 +215,8 @@ export function RequesterWorkspacePage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [messageSending, setMessageSending] = useState(false);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [messageNotice, setMessageNotice] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [actionSubmitting, setActionSubmitting] = useState(false);
@@ -217,6 +228,7 @@ export function RequesterWorkspacePage() {
   const [reopenReason, setReopenReason] = useState("not_resolved");
   const [reopenComment, setReopenComment] = useState("");
   const [reopenAvailable, setReopenAvailable] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
@@ -540,6 +552,11 @@ export function RequesterWorkspacePage() {
     setDetailLoading(true);
     setMessageNotice(null);
     setActionNotice(null);
+    setPendingAttachments([]);
+    setMessageText("");
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
     setFeedbackId(null);
     setReopenAvailable(false);
     setError(null);
@@ -556,21 +573,56 @@ export function RequesterWorkspacePage() {
     event.preventDefault();
     const ticketId = selectedTicketId;
     const text = messageText.trim();
-    if (!ticketId || !text) {
+    const attachmentRefs = pendingAttachments.map((attachment) => attachment.artifact_id);
+    if (!ticketId || (!text && !attachmentRefs.length)) {
       return;
     }
     setMessageSending(true);
     setMessageNotice(null);
     setError(null);
     try {
-      await sendRequesterTicketMessage(ticketId, text);
+      await sendRequesterTicketMessage(ticketId, text, attachmentRefs);
       setMessageText("");
+      setPendingAttachments([]);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
       setSelectedTicketDetail(await fetchRequesterTicket(ticketId));
       setMessageNotice("Сообщение отправлено");
     } catch (exc) {
       setError(exc instanceof RequesterApiError ? exc.message : "Не удалось отправить сообщение");
     } finally {
       setMessageSending(false);
+    }
+  }
+
+  async function handleAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
+    const ticketId = selectedTicketId;
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    if (!ticketId || !files.length) {
+      return;
+    }
+    setAttachmentUploading(true);
+    setMessageNotice(null);
+    setError(null);
+    try {
+      const uploaded = await Promise.all(files.map((file) => uploadRequesterTicketAttachment(ticketId, file)));
+      setPendingAttachments((current) => [
+        ...current,
+        ...uploaded.map((item, index) => ({
+          artifact_id: item.artifact_id,
+          name: files[index]?.name || item.filename || item.artifact_id,
+          url: item.url,
+          mime_type: item.mime_type,
+          kind: item.kind,
+        })),
+      ]);
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить вложение");
+    } finally {
+      setAttachmentUploading(false);
+      input.value = "";
     }
   }
 
@@ -741,6 +793,22 @@ export function RequesterWorkspacePage() {
                         <span>{message.ts || message.created_at || ""}</span>
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{message.text || ""}</p>
+                      {message.attachments?.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {message.attachments.map((attachment) => (
+                            <a
+                              className="inline-flex items-center gap-2 rounded-panel border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-brand-700"
+                              href={attachment.url || `/api/artifacts/${encodeURIComponent(attachment.artifact_id)}/download`}
+                              key={attachment.artifact_id}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              <Paperclip className="h-3.5 w-3.5" />
+                              {attachment.name || attachment.artifact_id}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 ) : (
@@ -881,11 +949,62 @@ export function RequesterWorkspacePage() {
                     value={messageText}
                   />
                 </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    aria-label="Attach requester file"
+                    className="sr-only"
+                    disabled={attachmentUploading || messageSending || !selectedTicketId}
+                    multiple
+                    onChange={(event) => void handleAttachmentChange(event)}
+                    ref={attachmentInputRef}
+                    type="file"
+                  />
+                  <button
+                    aria-label="Attach requester file button"
+                    className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    disabled={attachmentUploading || messageSending || !selectedTicketId}
+                    onClick={() => attachmentInputRef.current?.click()}
+                    type="button"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    {attachmentUploading ? "Загружаем..." : "Вложить файл"}
+                  </button>
+                </div>
+                {pendingAttachments.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {pendingAttachments.map((attachment) => (
+                      <span
+                        className="inline-flex items-center gap-2 rounded-panel border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700"
+                        key={attachment.artifact_id}
+                      >
+                        <Paperclip className="h-3.5 w-3.5" />
+                        {attachment.name}
+                        <button
+                          aria-label={`Remove requester attachment ${attachment.name}`}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"
+                          onClick={() =>
+                            setPendingAttachments((current) =>
+                              current.filter((item) => item.artifact_id !== attachment.artifact_id),
+                            )
+                          }
+                          type="button"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 {messageNotice ? <p className="text-sm text-emerald-700">{messageNotice}</p> : null}
                 <button
                   aria-label="Send requester message"
                   className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                  disabled={messageSending || !selectedTicketId || !messageText.trim()}
+                  disabled={
+                    messageSending ||
+                    attachmentUploading ||
+                    !selectedTicketId ||
+                    (!messageText.trim() && !pendingAttachments.length)
+                  }
                   type="submit"
                 >
                   <Send className="h-4 w-4" />

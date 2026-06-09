@@ -177,8 +177,8 @@ id  | agent_seq | created_at          | sender_role | text
 
 ## Attachments
 
-Support UI first uploads files through `POST /api/upload` with `ticket_id`, then sends a message through
-`POST /api/web/support/tickets/{ticket_id}/messages` with `attachment_refs: ["<artifact_id>"]`.
+Support UI and authenticated requester UI first upload files through `POST /api/upload` with `ticket_id`, then send a message through
+`POST /api/web/support/tickets/{ticket_id}/messages` or `POST /api/web/requester/tickets/{ticket_id}/message` with `attachment_refs: ["<artifact_id>"]`.
 The message can contain text, attachments, or both. The server resolves artifact descriptors into
 `payload.attachments` and keeps the original `payload.attachment_refs` for stable artifact identity.
 
@@ -568,7 +568,7 @@ Rules:
 
 Server validation for every ref:
 - Artifact must exist.
-- Artifact must be bound to the same `ticket_id`.
+- Artifact must be bound to the same `ticket_id` or be unbound and claimable for that ticket.
 - Artifact `device_id` must match `ticket.device_id`.
 
 Saved `chat_message` payload contains normalized fields:

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, KnowledgeFeedbackEvent, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
+from app.db.models import Artifact, Device, KnowledgeFeedbackEvent, RequestTemplate, Ticket, TicketEvent, TicketFeedback, TicketQueue, TicketReopenEvent
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from registry.registration_service import RegistrationService
@@ -471,6 +471,137 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
     texts = [event.payload.get("text") for event in events if isinstance(event.payload, dict)]
     assert "Requester authenticated follow-up" in texts
     assert "Should not be accepted" not in texts
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_message_accepts_attachment_refs(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-attachment@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "attachment-owned-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester attachment ticket",
+            description="Requester can attach evidence",
+            user_display_name="Requester Attachment",
+            requester_profile={"full_name": "Requester Attachment", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        artifact = Artifact(
+            artifact_id=str(uuid.uuid4()),
+            storage_path="requester-log.txt",
+            original_name="requester-log.txt",
+            mime_type="text/plain",
+            size_bytes=64,
+            sha256="b" * 64,
+            kind="file",
+            device_id=device_id,
+            ticket_id=ticket_id,
+            operation_id=None,
+            expires_at=None,
+        )
+        session.add(artifact)
+        artifact_id = artifact.artifact_id
+        await session.commit()
+
+    sent = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/message",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"text": "", "attachment_refs": [artifact_id]},
+    )
+    sent_payload = await sent.json()
+    assert sent.status == 200, sent_payload
+    assert sent_payload["data"]["attachments_count"] == 1
+
+    detail = await test_client.get(
+        f"/api/web/requester/tickets/{ticket_id}",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    attached_messages = [
+        message
+        for message in detail_payload["data"]["messages"]
+        if message.get("attachment_refs") == [artifact_id]
+    ]
+    assert attached_messages
+    assert attached_messages[0]["attachments"][0]["artifact_id"] == artifact_id
+    assert attached_messages[0]["attachments"][0]["name"] == "requester-log.txt"
+
+    async with session_maker() as session:
+        events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "chat_message")
+            )
+        ).scalars().all()
+    event = next(item for item in events if item.payload.get("attachment_refs") == [artifact_id])
+    assert event.payload["attachments"][0]["url"] == f"/api/artifacts/{artifact_id}/download"
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_message_rejects_foreign_attachment_ref(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owned_device_id = str(uuid.uuid4())
+    foreign_device_id = str(uuid.uuid4())
+    login = "requester-foreign-attachment@example.test"
+    async with session_maker() as session:
+        session.add_all([_device(owned_device_id, "attachment-owned-device"), _device(foreign_device_id, "attachment-foreign-device")])
+        approved = await _approved_binding(session, device_id=owned_device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=owned_device_id,
+            requester_id=login,
+            title="Requester attachment boundary ticket",
+            description="Requester attachment boundary",
+            user_display_name="Requester Attachment Boundary",
+            requester_profile={"full_name": "Requester Attachment Boundary", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        foreign_artifact = Artifact(
+            artifact_id=str(uuid.uuid4()),
+            storage_path="foreign-log.txt",
+            original_name="foreign-log.txt",
+            mime_type="text/plain",
+            size_bytes=64,
+            sha256="c" * 64,
+            kind="file",
+            device_id=foreign_device_id,
+            ticket_id=None,
+            operation_id=None,
+            expires_at=None,
+        )
+        session.add(foreign_artifact)
+        ticket_id = created["ticket_id"]
+        artifact_id = foreign_artifact.artifact_id
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_id}/message",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"text": "", "attachment_refs": [artifact_id]},
+    )
+    payload = await response.json()
+    assert response.status == 400, payload
+    assert payload["details"]["attachment_refs"]
 
 
 @pytest.mark.asyncio

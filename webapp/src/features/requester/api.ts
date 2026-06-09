@@ -13,6 +13,7 @@ import type {
   ServiceCatalogCurrent,
   RequestFormPack,
   RequesterBootstrap,
+  RequesterAttachmentUploadResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
   RequesterTicketDetail,
@@ -180,14 +181,52 @@ export async function fetchRequesterTicket(ticketId: string): Promise<RequesterT
 export async function sendRequesterTicketMessage(
   ticketId: string,
   text: string,
+  attachmentRefs: string[] = [],
 ): Promise<RequesterTicketMessageResult> {
+  const body: { text: string; attachment_refs?: string[] } = { text };
+  if (attachmentRefs.length) {
+    body.attachment_refs = attachmentRefs;
+  }
   const response = await fetch(`/api/web/requester/tickets/${encodeURIComponent(ticketId)}/message`, {
     method: "POST",
     credentials: "same-origin",
     headers: publicHeaders(null, true),
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   return readSuccess<RequesterTicketMessageResult>(response, "Не удалось отправить сообщение");
+}
+
+export async function uploadRequesterTicketAttachment(
+  ticketId: string,
+  file: File,
+): Promise<RequesterAttachmentUploadResult> {
+  const body = new FormData();
+  body.append("ticket_id", ticketId);
+  body.append("kind", "file");
+  body.append("file", file);
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    body,
+  });
+  const payload = await readJson<(RequesterAttachmentUploadResult & { status: "success" }) | ErrorResponse>(response);
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new RequesterApiError(
+      errorPayload?.message ?? errorPayload?.error ?? "Не удалось загрузить вложение",
+      response.status,
+      errorPayload?.details ?? errorPayload?.error_code,
+    );
+  }
+  return {
+    artifact_id: payload.artifact_id,
+    filename: payload.filename,
+    url: payload.url,
+    size: payload.size,
+    sha256: payload.sha256,
+    mime_type: payload.mime_type,
+    kind: payload.kind,
+  };
 }
 
 export async function closeRequesterTicket(ticketId: string): Promise<RequesterTicketCloseResult> {

@@ -7,6 +7,7 @@ from aiohttp import web
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
+from app.repos import ArtifactsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
@@ -16,8 +17,10 @@ from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver
 from tickets.handlers import (
     _event_visible_to_requester,
+    _normalize_attachment_refs,
     _push_ticket_event,
     _resolution_confirmation_pending,
+    _resolve_attachment_descriptors,
     _serialize_event_for_requester,
     _serialize_message_for_requester,
     _store_resolution_confirmation_state,
@@ -138,8 +141,12 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         return _error("JSON body must be an object", status=400)
 
     text = _clean(data.get("text"), max_length=5000)
-    if not text:
-        return _error("text is required", status=400)
+    try:
+        attachment_refs = _normalize_attachment_refs(data.get("attachment_refs"))
+    except ValueError as exc:
+        return _validation_error({"attachment_refs": str(exc)})
+    if not text and not attachment_refs:
+        return _validation_error({"text": "text or attachment_refs is required"})
 
     message_id = _clean(data.get("message_id"), max_length=120) or str(uuid.uuid4())
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
@@ -149,6 +156,18 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
+
+        attachments: list[dict[str, Any]] = []
+        if attachment_refs:
+            try:
+                attachments = await _resolve_attachment_descriptors(
+                    ArtifactsRepo(session),
+                    ticket.ticket_id,
+                    ticket.device_id,
+                    attachment_refs,
+                )
+            except ValueError as exc:
+                return _validation_error({"attachment_refs": [str(exc)]})
 
         payload: dict[str, Any] = {
             "message_id": message_id,
@@ -165,6 +184,9 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         if metadata:
             payload["metadata"] = metadata
         payload = enrich_chat_payload_with_requester_name(ticket, payload)
+        if attachment_refs:
+            payload["attachment_refs"] = attachment_refs
+            payload["attachments"] = attachments
 
         repo = TicketEventsRepo(session)
         result = await repo.add_event(
@@ -200,7 +222,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
     await _push_ticket_event(request, ticket_id, result, "chat_message", payload)
     if status_result:
         await _push_ticket_event(request, ticket_id, status_result, "status_changed", status_payload or {})
-    return _success({"message_id": message_id, "event_id": result[0] if result else None})
+    return _success({"message_id": message_id, "event_id": result[0] if result else None, "attachments_count": len(attachments)})
 
 
 @require_auth("user")

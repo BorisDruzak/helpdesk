@@ -15,6 +15,7 @@ import {
   sendPublicTicketMessage,
   submitRequesterTicketFeedback,
   submitPublicTicketFeedback,
+  uploadRequesterTicketAttachment,
 } from "./api";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -113,7 +114,7 @@ describe("requester public api", () => {
   });
 
   it("loads and writes ticket chat with bearer token", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/tickets/T-1") {
         return jsonResponse({
@@ -149,7 +150,7 @@ describe("requester public api", () => {
   });
 
   it("submits structured CSAT and reopens through public ticket endpoints", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/public_api/tickets/T-1/feedback") {
         return jsonResponse({ status: "ok", ok: true, feedback_id: "fb-1", reopen_available: true });
@@ -295,8 +296,8 @@ describe("authenticated requester api", () => {
     );
   });
 
-  it("loads owned ticket detail and sends authenticated message", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  it("loads owned ticket detail, uploads an attachment, and sends authenticated message refs", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/web/requester/tickets/T-42") {
         return jsonResponse({
@@ -306,28 +307,51 @@ describe("authenticated requester api", () => {
           },
         });
       }
+      if (url === "/api/upload") {
+        return jsonResponse({
+          status: "success",
+          artifact_id: "artifact-42",
+          filename: "requester-log.txt",
+          url: "/api/artifacts/artifact-42/download",
+          size: 19,
+          mime_type: "text/plain",
+          kind: "file",
+        });
+      }
       if (url === "/api/web/requester/tickets/T-42/message") {
-        return jsonResponse({ status: "success", data: { message_id: "m-42", event_id: 12 } });
+        return jsonResponse({ status: "success", data: { message_id: "m-42", event_id: 12, attachments_count: 1 } });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
     const detail = await fetchRequesterTicket("T-42");
-    const sent = await sendRequesterTicketMessage("T-42", "Authenticated follow-up");
+    const uploaded = await uploadRequesterTicketAttachment("T-42", new File(["requester evidence"], "requester-log.txt", { type: "text/plain" }));
+    const sent = await sendRequesterTicketMessage("T-42", "Authenticated follow-up", [uploaded.artifact_id]);
 
     expect(detail.ticket.ticket_id).toBe("T-42");
+    expect(uploaded.artifact_id).toBe("artifact-42");
     expect(sent.message_id).toBe("m-42");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/web/requester/tickets/T-42",
       expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
     );
+    const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/upload");
+    expect(uploadCall?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: expect.any(FormData),
+      }),
+    );
+    const uploadBody = (uploadCall?.[1] as RequestInit).body as FormData;
+    expect(uploadBody.get("ticket_id")).toBe("T-42");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/web/requester/tickets/T-42/message",
       expect.objectContaining({
         method: "POST",
         credentials: "same-origin",
-        body: JSON.stringify({ text: "Authenticated follow-up" }),
+        body: JSON.stringify({ text: "Authenticated follow-up", attachment_refs: ["artifact-42"] }),
       }),
     );
   });

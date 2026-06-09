@@ -162,6 +162,15 @@ export type PublicTicketConfirmationRequest = {
   }>;
 };
 
+export type PublicTicketAttachment = {
+  artifact_id: string;
+  type?: string | null;
+  mime_type?: string | null;
+  kind?: string | null;
+  name?: string | null;
+  url?: string | null;
+};
+
 export type PublicTicketMessage = {
   message_id?: string | null;
   event_id?: string | null;
@@ -173,6 +182,8 @@ export type PublicTicketMessage = {
   metadata?: {
     confirmation_request?: PublicTicketConfirmationRequest;
   } | null;
+  attachment_refs?: string[];
+  attachments?: PublicTicketAttachment[];
 };
 
 export type PublicTicketEvent = {
@@ -314,6 +325,17 @@ export type RequesterTicketDetail = {
 export type RequesterTicketMessageResult = {
   message_id: string;
   event_id?: string | number | null;
+  attachments_count?: number;
+};
+
+export type RequesterAttachmentUploadResult = {
+  artifact_id: string;
+  filename?: string | null;
+  url?: string | null;
+  size?: number | null;
+  sha256?: string | null;
+  mime_type?: string | null;
+  kind?: string | null;
 };
 
 export type RequesterTicketCloseResult = {

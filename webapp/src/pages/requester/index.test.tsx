@@ -18,6 +18,7 @@ afterEach(() => {
 
 describe("RequesterWorkspacePage", () => {
   it("opens owned ticket detail and sends an authenticated requester message", async () => {
+    let detailReloadedAfterMessage = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/web/requester/bootstrap") {
@@ -45,6 +46,35 @@ describe("RequesterWorkspacePage", () => {
         });
       }
       if (url === "/api/web/requester/tickets/T-42") {
+        if (detailReloadedAfterMessage) {
+          return jsonResponse({
+            status: "success",
+            data: {
+              ticket: {
+                ticket_id: "T-42",
+                title: "Owned ticket detail",
+                description: "Support asked for more information",
+                status: "waiting_on_user",
+                requester_status_label: "Waiting",
+              },
+              messages: [
+                {
+                  message_id: "m-42",
+                  from_role: "user",
+                  text: "Here is the requested context",
+                  attachments: [
+                    {
+                      artifact_id: "artifact-42",
+                      name: "requester-log.txt",
+                      url: "/api/artifacts/artifact-42/download",
+                      type: "file",
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
         return jsonResponse({
           status: "success",
           data: {
@@ -55,10 +85,23 @@ describe("RequesterWorkspacePage", () => {
               status: "waiting_on_user",
               requester_status_label: "Waiting",
             },
+            messages: [],
           },
         });
       }
+      if (url === "/api/upload") {
+        return jsonResponse({
+          status: "success",
+          artifact_id: "artifact-42",
+          filename: "requester-log.txt",
+          url: "/api/artifacts/artifact-42/download",
+          size: 18,
+          mime_type: "text/plain",
+          kind: "file",
+        });
+      }
       if (url === "/api/web/requester/tickets/T-42/message") {
+        detailReloadedAfterMessage = true;
         return jsonResponse({ status: "success", data: { message_id: "m-42", event_id: 12 } });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -71,20 +114,27 @@ describe("RequesterWorkspacePage", () => {
     fireEvent.click(screen.getByText("Owned ticket"));
 
     await screen.findByText("Owned ticket detail");
+    fireEvent.change(screen.getByLabelText("Attach requester file"), {
+      target: { files: [new File(["requester evidence"], "requester-log.txt", { type: "text/plain" })] },
+    });
+    await screen.findByText("requester-log.txt");
     fireEvent.change(screen.getByLabelText("Requester message"), {
       target: { value: "Here is the requested context" },
     });
     fireEvent.click(screen.getByLabelText("Send requester message"));
 
     await waitFor(() => {
+      const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/upload");
+      expect(uploadCall?.[1]).toEqual(expect.objectContaining({ method: "POST", body: expect.any(FormData) }));
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/requester/tickets/T-42/message",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ text: "Here is the requested context" }),
+          body: JSON.stringify({ text: "Here is the requested context", attachment_refs: ["artifact-42"] }),
         }),
       );
     });
+    await screen.findByRole("link", { name: "requester-log.txt" });
   });
 
   it("closes, rates, and reopens an owned resolved ticket", async () => {

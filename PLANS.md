@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and locally verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -27,7 +27,6 @@ Stage 2B follow-up:
 
 - no-device request creation;
 - public ticket claim-to-account;
-- requester attachments upload/download;
 - requester device detail;
 - requester profile workflow;
 - admin user to registry person linking workflow;
@@ -737,7 +736,8 @@ Common checks:
 - [x] Stage 2B preview wrapper: authenticated `POST /api/web/requester/tickets/preview` now verifies requester ownership of browser-supplied `device_id`, delegates to the safe Service Catalog runtime without creating tickets/events, and feeds `/app/requester` preview before submit.
 - [x] Stage 2B knowledge suggestions reuse: `/app/requester` now calls requester-safe `POST /api/knowledge/suggest`, displays safe suggestions in the authenticated create form, records viewed/helpful/not-helpful/deflected feedback, sends `knowledge_attempts` with ticket creation, and `/api/web/requester/tickets` stores sanitized attempts plus `ticket_created_after_view` knowledge feedback metrics behind the requester ownership boundary.
 - [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create, preview wrapper and requester knowledge suggestions reuse.
-- [ ] Stage 2B lifecycle follow-up: attachments, no-device creation and public ticket claim remain follow-up work.
+- [x] Stage 2B requester attachments: `/app/requester` uploads files through `/api/upload`, sends `attachment_refs` through owned-ticket `POST /api/web/requester/tickets/{ticket_id}/message`, permits attachment-only requester messages, renders returned attachment links, and keeps artifact resolution behind requester ownership/device-ticket checks.
+- [ ] Stage 2B lifecycle follow-up: no-device creation and public ticket claim remain follow-up work.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
@@ -767,17 +767,18 @@ Done in this slice:
 - requester ticket detail/message and close/reopen/feedback lifecycle for owned tickets;
 - requester owned-device catalog/form create with authenticated safe preview;
 - requester knowledge suggestions reuse in authenticated create flow with sanitized attempts and deflection metrics;
+- requester attachment upload/message/download through owned-ticket browser workspace controls;
 - local backend/frontend coverage for owned visibility, foreign-device denial and foreign-ticket lifecycle denial.
 
 Deferred / next:
 
-- Stage 2B follow-up: requester no-device creation/onboarding, attachments, device/profile pages, public ticket claim and shared-device privacy coverage.
+- Stage 2B follow-up: requester no-device creation/onboarding, device/profile pages, public ticket claim and shared-device privacy coverage.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Continue Stage 2B requester lifecycle with attachments, no-device creation or public ticket claim.
+1. Continue Stage 2B requester lifecycle with no-device creation, public ticket claim or requester device/profile pages.
 
 Before code changes, read the nested instructions for the target area:
 
